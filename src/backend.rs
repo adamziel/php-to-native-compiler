@@ -1539,7 +1539,7 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Null
         | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
-        | ValueExpr::Constant(_)
+        | ValueExpr::Constant { .. }
         | ValueExpr::MagicConstant { .. } => {}
         ValueExpr::Assign { target, value, .. } => {
             collect_assignment_target_runtime_requirements(target, functions, requirements);
@@ -2168,7 +2168,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::Bool(_)
         | ValueExpr::Null
         | ValueExpr::Closure { .. }
-        | ValueExpr::Constant(_)
+        | ValueExpr::Constant { .. }
         | ValueExpr::MagicConstant { .. } => false,
     }
 }
@@ -2971,8 +2971,13 @@ impl ValueEmitter {
                 c_string(&self.source_file),
                 line
             ),
-            ValueExpr::Constant(name) => {
-                format!("ptn_read_constant(&runtime, \"{}\")", c_string(name))
+            ValueExpr::Constant { name, line } => {
+                format!(
+                    "ptn_read_constant(&runtime, \"{}\", \"{}\", {})",
+                    c_string(name),
+                    c_string(&self.source_file),
+                    line
+                )
             }
             ValueExpr::MagicConstant { kind, line } => match kind {
                 MagicConstantKind::Line => format!("ptn_int({line})"),

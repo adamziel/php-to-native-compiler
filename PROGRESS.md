@@ -1,17 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:28Z
-Measured: `ptn-107` rebased on `origin/master@51e3314d`; anonymous callback
-closures, static callables, string-callable callbacks, recursive directory
-APIs, bounded `stdClass` property evidence, and non-array `foreach`
-source-path diagnostics.
+Refresh: 2026-06-10T14:37Z
+Measured: `ptn-yhd` rebased on `origin/master@df737c70`; non-array
+`foreach` source-path diagnostics and catchable undefined-constant `Error`s.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 368 | 368 | 0 |
+| Native compiled PHP snippets | 370 | 370 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -42,12 +40,13 @@ string/math/type internals, ordered arrays, `foreach`, source-spanned
 non-array `foreach` warnings, cursors, numeric keys, payload refcounts,
 array/string COW, references, by-reference params/foreach, array dimensions,
 temporaries, recursive/user functions, anonymous function values for direct
-dynamic calls and internal callbacks, magic constants, `func_*`, `print_r`,
-binary strings, string offsets, scalar diagnostics, array literal references,
-array union `+`, scalar type hints, by-reference return boundaries, `count()`,
-`??`, assignment expressions, expression-level `@`, file APIs including
-recursive `mkdir()` plus directory predicates, array-path snapshots,
-`array_sum()`/`strtr()`/`in_array()`, recursive array merge/replace,
+dynamic calls and internal callbacks, magic constants, catchable
+undefined-constant `Error`s, `func_*`, `print_r`, binary strings,
+string offsets, scalar diagnostics, array literal references, array union `+`,
+scalar type hints, by-reference return boundaries, `count()`, `??`, assignment
+expressions, expression-level `@`, file APIs including recursive `mkdir()` plus
+directory predicates, array-path snapshots, `array_sum()`/`strtr()`/`in_array()`,
+recursive array merge/replace,
 `debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
 expressions, nested same-array reference lvalues, direct-variable and
 offset-form `??=`, grouped reference targets, `array_fill_keys()`,
@@ -69,6 +68,6 @@ fatal parity, and broader file APIs.
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-anonymous/static/object callback native tests; focused non-array `foreach`
-native tests; `tools/run-native-smoke-matrix.sh`;
+focused undefined-constant and non-array `foreach` native tests;
+`tools/run-native-smoke-matrix.sh`;
 `tools/run-post-merge-cow-gate.sh`.

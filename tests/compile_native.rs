@@ -5221,6 +5221,64 @@ var_dump(defined(\"USER_CONST\"), constant(\"USER_CONST\"), constant(1), constan
 }
 
 #[test]
+fn compile_undefined_constant_errors_are_catchable_to_native_binary() {
+    let root = temp_dir("ptn-native-undefined-constant-errors-catchable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("undefined-constant-errors-catchable.php");
+    let output = root.join("undefined-constant-errors-catchable-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    echo PTN_MISSING_CONSTANT;\n\
+    echo \"unreached\\n\";\n\
+} catch (\\Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump(constant(\"PTN_MISSING_RUNTIME_CONSTANT\"));\n\
+} catch (\\Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Undefined constant \"PTN_MISSING_CONSTANT\"\nUndefined constant \"PTN_MISSING_RUNTIME_CONSTANT\"\nafter\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uncaught_undefined_constant_error_fatals() {
+    let root = temp_dir("ptn-native-uncaught-undefined-constant-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uncaught-undefined-constant-error.php");
+    let output = root.join("uncaught-undefined-constant-error-bin");
+    fs::write(&input, "<?php\necho PTN_MISSING_CONSTANT;\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Uncaught Error: Undefined constant \"PTN_MISSING_CONSTANT\" in {}:2\nStack trace:\n#0 {{main}}\n  thrown in {} on line 2\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_duplicate_define_warns_and_preserves_original_constant() {
     let root = temp_dir("ptn-native-duplicate-define");
     fs::create_dir_all(&root).unwrap();

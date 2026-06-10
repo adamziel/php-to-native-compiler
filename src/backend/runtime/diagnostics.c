@@ -150,7 +150,7 @@ static PTN_UNUSED void ptn_emit_undefined_function_error(PtnDiagnosticSink *diag
     fputs("()\n", stream);
 }
 
-static void ptn_emit_undefined_constant_error(PtnDiagnosticSink *diagnostics, const char *name) {
+static PTN_UNUSED void ptn_emit_undefined_constant_error(PtnDiagnosticSink *diagnostics, const char *name) {
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: Undefined constant \"", stream);
     fputs(name, stream);

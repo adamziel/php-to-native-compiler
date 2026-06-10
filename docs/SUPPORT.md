@@ -15,6 +15,9 @@ supports in generated native binaries.
   constant-expression subset. Declared constants are visible to bare constant
   reads, `defined()`, and `constant()`. Duplicate declarations emit the modeled
   warning boundary and preserve the original value.
+- Undefined bare constant reads and undefined names passed to `constant()`
+  raise modeled catchable `Error` exceptions, with source-spanned uncaught
+  fatal diagnostics for bare reads.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
 - Statement-form expressions over the currently supported expression subset.
@@ -323,7 +326,8 @@ supports in generated native binaries.
 - `define()` creates runtime constants over the current boxed value subset,
   returning `false` with a warning when the requested name is already defined.
 - `constant()` reads the same runtime and modeled built-in constant registry
-  using the current scalar string-conversion result for the name.
+  using the current scalar string-conversion result for the name. Undefined
+  names raise modeled catchable `Error` exceptions.
 - `defined()` over global `const` declarations, constants created with
   `define()`, plus the current modeled constant registry, including `E_ERROR`,
   `PHP_EOL`, `DIRECTORY_SEPARATOR`,
@@ -451,7 +455,8 @@ supports in generated native binaries.
 - Complex/braced string interpolation and interpolation of arrays, objects,
   offsets, properties, variable variables, or other non-direct-variable forms.
 - Internal functions outside the registered internal-function subset.
-- Exact undefined-constant and unsupported-expression-statement diagnostics.
+- Exact unsupported-expression-statement diagnostics and undefined-constant
+  diagnostic edges beyond modeled catchable `Error` exceptions.
 - Namespace/class constants, global `const` duplicate diagnostics and ordering
   parity with runtime `define()`, `define()`'s legacy case-insensitive flag, and
   built-in PHP/extension constants other than the currently modeled `E_ERROR`,

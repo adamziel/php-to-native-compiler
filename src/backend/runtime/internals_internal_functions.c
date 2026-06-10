@@ -2,13 +2,18 @@
     return 1;
 }
 
-static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name) {
+static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name, const char *path, size_t line) {
     PtnValue value;
     if (ptn_runtime_constant_value(runtime, name, &value)) {
         return value;
     }
-    ptn_emit_undefined_constant_error(&runtime->diagnostics, name);
-    exit(255);
+
+    char message[512];
+    int written = snprintf(message, sizeof(message), "Undefined constant \"%s\"", name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, path, line);
     return ptn_null();
 }
 
@@ -3299,9 +3304,8 @@ static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
     char *name = ptn_value_to_string(args[0]);
-    PtnValue value = ptn_read_constant(runtime, name);
+    PtnValue value = ptn_read_constant(runtime, name, runtime->source_path, line);
     free(name);
     return value;
 }

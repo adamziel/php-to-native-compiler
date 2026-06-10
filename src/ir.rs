@@ -183,7 +183,10 @@ pub enum ValueExpr {
         target: AssignmentTarget,
         source: Box<ValueExpr>,
     },
-    Constant(String),
+    Constant {
+        name: String,
+        line: usize,
+    },
     MagicConstant {
         kind: MagicConstantKind,
         line: usize,
@@ -937,7 +940,10 @@ impl LoweringContext {
                 target: self.lower_assignment_target(target),
                 source: Box::new(self.lower_expr(source)),
             },
-            Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),
+            Expr::Constant(name, span) => ValueExpr::Constant {
+                name: name.clone(),
+                line: span.line,
+            },
             Expr::MagicConstant(kind, span) => ValueExpr::MagicConstant {
                 kind: lower_magic_constant_kind(*kind),
                 line: span.line,
