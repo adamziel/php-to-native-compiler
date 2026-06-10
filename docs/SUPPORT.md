@@ -28,7 +28,9 @@ supports in generated native binaries.
   source-spanned PHP-style parse errors through `phpc`.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
   variables use the same runtime variable read, scalar string cast, and
-  concatenation paths as ordinary expressions.
+  concatenation paths as ordinary expressions. Double-quoted string literals
+  also decode common C-style, octal, and hex byte escapes in the current
+  literal-string subset.
 - Direct variable assignment and scalar reads through the generated runtime
   symbol table.
 - Assignment expressions for direct variables, array dimension/append lvalues,
@@ -168,6 +170,7 @@ supports in generated native binaries.
   and leading-numeric-string warning boundary.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `print_r(expr[, return]);`, `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
+  `addcslashes(expr, expr);`, `stripcslashes(expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
@@ -186,6 +189,7 @@ supports in generated native binaries.
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
   including `print_r(expr[, return])`, `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
+  `addcslashes(expr, expr)`, `stripcslashes(expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
@@ -242,6 +246,14 @@ supports in generated native binaries.
 - `quotemeta()` over current boxed scalar values after scalar string
   conversion, prefixing `.`, `\`, `+`, `*`, `?`, `[`, `^`, `]`, `(`, `$`, and
   `)` bytes with backslashes through the current C-string-backed value path.
+- `addcslashes()` over current boxed scalar values after scalar string
+  conversion, using decoded literal bytes and simple increasing `x..y` byte
+  ranges in the charlist, PHP-style warnings for reversed ranges, C-style
+  names for common control-byte output, and octal output for other escaped
+  control/high bytes.
+- `stripcslashes()` over current boxed scalar values after scalar string
+  conversion, decoding common C-style escapes plus one-to-three digit octal and
+  one-to-two digit hex byte escapes.
 - `chunk_split()` over current boxed scalar values after scalar string
   conversion, using a chunk length converted through the current scalar integer
   conversion path and an ending converted through the current scalar string
@@ -487,6 +499,9 @@ supports in generated native binaries.
   unsupported array/object/resource/reference operands.
 - Exact `str_starts_with()`/`str_ends_with()` binary-string behavior for
   embedded NUL bytes and unsupported array/object/resource/reference operands.
+- Full `addcslashes()` charlist escape syntax parity for runtime literal
+  backslash sequences beyond already-decoded string-literal bytes and simple
+  ranges.
 - Exact `quotemeta()` embedded-NUL behavior and unsupported
   array/object/resource/reference operand diagnostics.
 - Exact `chunk_split()` embedded-NUL behavior, non-positive length exception

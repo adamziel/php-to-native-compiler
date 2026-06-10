@@ -407,6 +407,21 @@ impl<'a> Lexer<'a> {
                 let escaped = self.peek_char().ok_or_else(|| {
                     Diagnostic::new("unterminated string escape", Some(self.current_span(0)))
                 })?;
+                if escaped == 'x' {
+                    self.bump_char();
+                    let Some(value) = self.lex_hex_escape_value(2) else {
+                        literal.push('\\');
+                        literal.push('x');
+                        continue;
+                    };
+                    literal.push(value as char);
+                    continue;
+                }
+                if matches!(escaped, '0'..='7') {
+                    let value = self.lex_octal_escape_value();
+                    literal.push(value as char);
+                    continue;
+                }
                 match escaped {
                     'n' => literal.push('\n'),
                     'r' => literal.push('\r'),
@@ -460,6 +475,44 @@ impl<'a> Lexer<'a> {
         }
 
         Err(Diagnostic::new("unterminated string literal", Some(start)))
+    }
+
+    fn lex_hex_escape_value(&mut self, max_digits: usize) -> Option<u8> {
+        let mut value = 0u16;
+        let mut digits = 0usize;
+        while digits < max_digits {
+            let Some(ch) = self.peek_char() else {
+                break;
+            };
+            let Some(digit) = ch.to_digit(16) else {
+                break;
+            };
+            value = (value << 4) | digit as u16;
+            self.bump_char();
+            digits += 1;
+        }
+        if digits == 0 {
+            None
+        } else {
+            Some(value as u8)
+        }
+    }
+
+    fn lex_octal_escape_value(&mut self) -> u8 {
+        let mut value = 0u16;
+        let mut digits = 0usize;
+        while digits < 3 {
+            let Some(ch) = self.peek_char() else {
+                break;
+            };
+            if !matches!(ch, '0'..='7') {
+                break;
+            }
+            value = (value << 3) | (ch as u16 - '0' as u16);
+            self.bump_char();
+            digits += 1;
+        }
+        value as u8
     }
 
     fn lex_number(&mut self) -> Result<()> {

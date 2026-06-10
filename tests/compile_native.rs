@@ -103,6 +103,13 @@ fn lexer_preserves_unknown_string_escape_backslashes() {
 }
 
 #[test]
+fn lexer_decodes_double_quoted_hex_and_octal_string_escapes() {
+    let tokens = lexer::lex("<?php \"a\\145..\\160z\" \"\\x35\\x64\"").unwrap();
+    assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "ae..pz"));
+    assert!(matches!(&tokens[2].kind, TokenKind::String(value) if value == "5d"));
+}
+
+#[test]
 fn lexer_accepts_keyword_boolean_operators() {
     let tokens = lexer::lex("<?php true and false or true xor false").unwrap();
     assert!(matches!(tokens[2].kind, TokenKind::KeywordAnd));
@@ -714,6 +721,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function STRLEN($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strlen()");
 
+    let error = parser::parse("<?php function ADDCSLASHES($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function addcslashes()");
+
     let error = parser::parse("<?php function Substr($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function substr()");
 
@@ -722,6 +732,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
 
     let error = parser::parse("<?php function Strip_Tags($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strip_tags()");
+
+    let error =
+        parser::parse("<?php function StripCSlashes($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function stripcslashes()");
 
     let error =
         parser::parse("<?php function STR_STARTS_WITH($haystack, $needle) { return true; }")
@@ -3362,6 +3376,45 @@ fn var_dump_float_exponents_use_php_spelling_in_native_binary() {
         "float(-9.22337203900226E+18)\nfloat(1.4757395258967642E+19)\nfloat(1.2E-5)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_addcslashes_and_stripcslashes_to_native_binary() {
+    let root = temp_dir("ptn-native-cslashes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cslashes.php");
+    let output = root.join("cslashes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo addcslashes(\"\", \"\"), \"\\n\";\n\
+echo addcslashes(\"\", \"burp\"), \"\\n\";\n\
+echo addcslashes(\"kaboemkara!\", \"\"), \"\\n\";\n\
+echo addcslashes(\"foobarbaz\", 'bar'), \"\\n\";\n\
+echo addcslashes('foo[ ]', 'A..z'), \"\\n\";\n\
+echo @addcslashes(\"zoo['.']\", 'z..A'), \"\\n\";\n\
+echo addcslashes('abcdefghijklmnopqrstuvwxyz', \"a\\145..\\160z\"), \"\\n\";\n\
+echo \"\\n\\r\" == stripcslashes('\\\\n\\\\r'), \"\\n\";\n\
+echo stripcslashes('\\\\065\\\\x64'), \"\\n\";\n\
+echo stripcslashes(''), \"\\n\";\n\
+var_dump(function_exists('addcslashes'), function_exists('STRIPCSLASHES'));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\n\nkaboemkara!\nfoo\\b\\a\\r\\b\\az\n\\f\\o\\o\\[ \\]\n\\zoo['\\.']\n\\abcd\\e\\f\\g\\h\\i\\j\\k\\l\\m\\n\\o\\pqrstuvwxy\\z\n1\n5d\n\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_addcslashes"));
+    assert!(c_source.contains("ptn_internal_stripcslashes"));
+    assert!(c_source.contains("ptn_addcslashes_map_from_charlist"));
 }
 
 #[test]

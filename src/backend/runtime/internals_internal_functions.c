@@ -1500,6 +1500,209 @@ static PtnValue ptn_internal_strtr(PtnRuntime *runtime, size_t argc, const PtnVa
     return result;
 }
 
+static void ptn_addcslashes_map_from_charlist(
+    PtnRuntime *runtime,
+    PtnStringOperand charlist,
+    unsigned char map[256],
+    size_t line
+) {
+    memset(map, 0, 256);
+    for (size_t i = 0; i < charlist.len; i++) {
+        unsigned char start = (unsigned char)charlist.data[i];
+        if (i + 3 < charlist.len && charlist.data[i + 1] == '.' && charlist.data[i + 2] == '.') {
+            unsigned char end = (unsigned char)charlist.data[i + 3];
+            if (start <= end) {
+                for (unsigned int byte = start; byte <= end; byte++) {
+                    map[byte] = 1;
+                }
+                i += 3;
+                continue;
+            }
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "addcslashes(): Invalid '..'-range, '..'-range needs to be incrementing",
+                line
+            );
+            map[start] = 1;
+            map[(unsigned char)'.'] = 1;
+            map[end] = 1;
+            i += 3;
+            continue;
+        }
+        map[start] = 1;
+    }
+}
+
+static void ptn_addcslashes_append_escaped(PtnStringBuffer *output, unsigned char byte) {
+    switch (byte) {
+        case '\0':
+            ptn_string_buffer_append(output, "\\000");
+            return;
+        case 7:
+            ptn_string_buffer_append(output, "\\a");
+            return;
+        case '\b':
+            ptn_string_buffer_append(output, "\\b");
+            return;
+        case '\t':
+            ptn_string_buffer_append(output, "\\t");
+            return;
+        case '\n':
+            ptn_string_buffer_append(output, "\\n");
+            return;
+        case 11:
+            ptn_string_buffer_append(output, "\\v");
+            return;
+        case '\f':
+            ptn_string_buffer_append(output, "\\f");
+            return;
+        case '\r':
+            ptn_string_buffer_append(output, "\\r");
+            return;
+        default:
+            break;
+    }
+
+    if (byte < 32 || byte >= 127) {
+        ptn_string_buffer_append_format(output, "\\%03o", (unsigned int)byte);
+        return;
+    }
+    ptn_string_buffer_append_char(output, '\\');
+    ptn_string_buffer_append_char(output, (char)byte);
+}
+
+static PtnValue ptn_addcslashes(PtnRuntime *runtime, PtnStringOperand input, PtnStringOperand charlist, size_t line) {
+    unsigned char map[256];
+    ptn_addcslashes_map_from_charlist(runtime, charlist, map, line);
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (map[byte]) {
+            ptn_addcslashes_append_escaped(&output, byte);
+        } else {
+            ptn_string_buffer_append_char(&output, (char)byte);
+        }
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_internal_addcslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand charlist = ptn_value_to_string_operand(args[1]);
+    PtnValue result = ptn_addcslashes(runtime, input, charlist, line);
+    ptn_string_operand_free(input);
+    ptn_string_operand_free(charlist);
+    return result;
+}
+
+static int ptn_cslashes_hex_value(unsigned char byte) {
+    if (byte >= '0' && byte <= '9') {
+        return byte - '0';
+    }
+    if (byte >= 'a' && byte <= 'f') {
+        return 10 + byte - 'a';
+    }
+    if (byte >= 'A' && byte <= 'F') {
+        return 10 + byte - 'A';
+    }
+    return -1;
+}
+
+static PtnValue ptn_stripcslashes(PtnStringOperand input) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (byte != '\\' || i + 1 >= input.len) {
+            ptn_string_buffer_append_char(&output, (char)byte);
+            continue;
+        }
+
+        unsigned char escaped = (unsigned char)input.data[++i];
+        switch (escaped) {
+            case 'n':
+                ptn_string_buffer_append_char(&output, '\n');
+                continue;
+            case 'r':
+                ptn_string_buffer_append_char(&output, '\r');
+                continue;
+            case 't':
+                ptn_string_buffer_append_char(&output, '\t');
+                continue;
+            case 'v':
+                ptn_string_buffer_append_char(&output, 11);
+                continue;
+            case 'f':
+                ptn_string_buffer_append_char(&output, '\f');
+                continue;
+            case 'a':
+                ptn_string_buffer_append_char(&output, 7);
+                continue;
+            case 'b':
+                ptn_string_buffer_append_char(&output, '\b');
+                continue;
+            case '\\':
+                ptn_string_buffer_append_char(&output, '\\');
+                continue;
+            case '\'':
+                ptn_string_buffer_append_char(&output, '\'');
+                continue;
+            case '"':
+                ptn_string_buffer_append_char(&output, '"');
+                continue;
+            case 'x': {
+                unsigned int value = 0;
+                size_t digits = 0;
+                while (digits < 2 && i + 1 < input.len) {
+                    int digit = ptn_cslashes_hex_value((unsigned char)input.data[i + 1]);
+                    if (digit < 0) {
+                        break;
+                    }
+                    value = (value << 4) | (unsigned int)digit;
+                    i++;
+                    digits++;
+                }
+                ptn_string_buffer_append_char(&output, digits == 0 ? 'x' : (char)value);
+                continue;
+            }
+            default:
+                break;
+        }
+
+        if (escaped >= '0' && escaped <= '7') {
+            unsigned int value = escaped - '0';
+            size_t digits = 1;
+            while (digits < 3 && i + 1 < input.len) {
+                unsigned char digit = (unsigned char)input.data[i + 1];
+                if (digit < '0' || digit > '7') {
+                    break;
+                }
+                value = (value << 3) | (unsigned int)(digit - '0');
+                i++;
+                digits++;
+            }
+            ptn_string_buffer_append_char(&output, (char)(unsigned char)value);
+            continue;
+        }
+
+        ptn_string_buffer_append_char(&output, (char)escaped);
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_internal_stripcslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnValue result = ptn_stripcslashes(input);
+    ptn_string_operand_free(input);
+    return result;
+}
+
 static int ptn_quotemeta_needs_escape(unsigned char byte) {
     switch (byte) {
         case '.':
@@ -3238,6 +3441,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "addcslashes", 2, 2, ptn_internal_addcslashes },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
@@ -3323,6 +3527,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
+        { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "strtr", 2, 3, ptn_internal_strtr },
         { "substr", 2, 3, ptn_internal_substr },
