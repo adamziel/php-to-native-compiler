@@ -9524,6 +9524,38 @@ var_dump($recursive_seed, $recursive);
 }
 
 #[test]
+fn compile_array_reduce_callback_by_ref_return_to_native_binary() {
+    let root = temp_dir("ptn-native-array-reduce-by-ref-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-reduce-by-ref-callback.php");
+    let output = root.join("array-reduce-by-ref-callback-bin");
+    fs::write(
+        &input,
+        "<?php
+function &pick_reduce_value($carry, $value) {
+    return $value;
+}
+
+$array = [1, 2];
+var_dump(array_reduce($array, \"pick_reduce_value\", 0));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(2)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_reduce"));
+    assert!(c_source.contains("ptn_call_function(runtime, function_name, 2, callback_args"));
+    assert!(c_source.contains("carry = ptn_value_clone_deref(callback_result);"));
+}
+
+#[test]
 fn compile_typed_by_ref_return_separates_function_boundaries_to_native_binary() {
     let root = temp_dir("ptn-native-typed-by-ref-return-separation");
     fs::create_dir_all(&root).unwrap();

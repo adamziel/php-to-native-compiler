@@ -93,6 +93,8 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
 /* PTN_DIRECT_INTERNAL_HELPERS_END */
 
 /* PTN_INTERNAL_FUNCTIONS_START */
+static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
+
 static void ptn_var_dump_indent(size_t indent) {
     for (size_t i = 0; i < indent; i++) {
         fputs("  ", stdout);
@@ -577,6 +579,28 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
         }
     }
     return use_float ? ptn_float(float_sum) : ptn_int(integer_sum);
+}
+
+static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_reduce", 1, "array", args[0]);
+    char *function_name = ptn_value_to_string(args[1]);
+    PtnValue carry = argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_null();
+
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue callback_args[2] = {
+            ptn_value_clone(carry),
+            ptn_value_clone_deref(array->entries[i].value)
+        };
+        PtnValue callback_result = ptn_call_function(runtime, function_name, 2, callback_args, line);
+        ptn_value_destroy(&callback_args[0]);
+        ptn_value_destroy(&callback_args[1]);
+        ptn_value_destroy(&carry);
+        carry = ptn_value_clone_deref(callback_result);
+        ptn_value_destroy(&callback_result);
+    }
+
+    free(function_name);
+    return carry;
 }
 
 static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -2545,6 +2569,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
+        { "array_reduce", 2, 3, ptn_internal_array_reduce },
         { "array_replace_recursive", 1, PTN_VARIADIC_ARGS, ptn_internal_array_replace_recursive },
         { "array_reverse", 1, 2, ptn_internal_array_reverse },
         { "array_shift", 1, 1, ptn_internal_array_shift },
