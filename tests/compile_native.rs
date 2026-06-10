@@ -6758,6 +6758,72 @@ var_dump($assoc_left[\"both\"][\"x\"], $assoc_right[\"both\"][\"y\"], function_e
 }
 
 #[test]
+fn compile_array_replace_recursive_to_native_binary() {
+    let root = temp_dir("ptn-native-array-replace-recursive");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-replace-recursive.php");
+    let output = root.join("array-replace-recursive-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$x = 24;\n\
+$left = [[42], \"old\"];\n\
+$right = [[&$x], \"new\"];\n\
+unset($x);\n\
+$merged = array_replace_recursive($left, $right);\n\
+$right[0][0] = 12;\n\
+$merged[0][] = \"tail\";\n\
+var_dump($merged, $left, $right, function_exists(\"array_replace_recursive\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    int(24)\n",
+            "    [1]=>\n",
+            "    string(4) \"tail\"\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  string(3) \"new\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(42)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  string(3) \"old\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(12)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  string(3) \"new\"\n",
+            "}\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_replace_recursive"));
+    assert!(c_source.contains("ptn_array_replace_recursive_into"));
+}
+
+#[test]
 fn compile_array_copy_on_write_detaches_shared_payloads_to_native_binary() {
     let root = temp_dir("ptn-native-array-cow-detach");
     fs::create_dir_all(&root).unwrap();

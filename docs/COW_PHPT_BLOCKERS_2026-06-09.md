@@ -2,12 +2,10 @@
 
 Evidence base:
 
-- Refreshed on `ptn-6vg` replayed on `master` at 2026-06-10T01:15Z.
+- Refreshed on `polecat/prime/ptn-kia@mq7unevm` at 2026-06-10T09:34Z.
 - `tools/phpt-cow-manifest.txt` still has 29 rows in seven buckets.
-- Focused foreach rerun is 3/4 after whitespace-only prelude before `<?php`
-  is accepted. Safe nested rerun excluding `Zend/tests/bug38469.phpt` is 1/3.
-- `bug38469` is still counted failing because it exhausts `run-tests.php` diff
-  memory when included in the full bounded runner.
+- Focused COW manifest is 24/29. Nested rerun is 3/4; `bug38469` passes in the
+  focused bucket, and only `bug35163` remains failing there.
 
 ## Focused COW Counts
 
@@ -16,17 +14,17 @@ Evidence base:
 | assignment-aliasing | 4 | 4 | 0 |
 | string-offsets | 4 | 4 | 0 |
 | array-writes-appends-unset | 4 | 4 | 0 |
-| nested-arrays | 4 | 1 | 3 |
+| nested-arrays | 4 | 3 | 1 |
 | foreach-mutation | 4 | 3 | 1 |
 | function-boundaries | 4 | 1 | 3 |
 | reference-interaction | 5 | 5 | 0 |
-| **Total** | **29** | **22** | **7** |
+| **Total** | **29** | **24** | **5** |
 
 ## Linked Generic Blocker Beads
 
 | Generic blocker | Rows held | Bead |
 | --- | ---: | --- |
-| Nested recursive reference lvalues, recursive array internals, cycle-safe dumps, and recursive merge reference semantics | 3 | `ptn-4yt.2` |
+| Nested recursive reference lvalues | 1 | `ptn-4yt.2` |
 | Closure callback mutation through `array_walk()` and `$GLOBALS` | 1 | `ptn-4yt.7`, `ptn-4yt.3` |
 | Call-result references and callback return references | 3 | `ptn-4yt.8`, `ptn-4yt.3` |
 
@@ -38,6 +36,7 @@ Evidence base:
 | array-writes-appends-unset | `Zend/tests/assign_dim_op_same_var.phpt` | Array-dim compound assignment snapshots overlapping RHS values before writeback. | `compile_array_path_self_assignment_snapshots_rhs_to_native_binary` |
 | array-writes-appends-unset | `ext/standard/tests/array/array_unshift_basic1.phpt` | `array_unshift()` mutates direct variable arrays with COW detach and PHP key handling. | `array_unshift_shared_alias` |
 | nested-arrays | `ext/standard/tests/array/array_merge_recursive_basic1.phpt` | `array_merge_recursive()` is registered and preserves array merge COW boundaries for the basic default-key row. | `compile_array_merge_recursive_to_native_binary` |
+| nested-arrays | `ext/standard/tests/array/array_merge_replace_recursive_refs.phpt` | `array_replace_recursive()` is registered and recursively replaces ordered-map keys while cloning dereferenced values across COW boundaries. | `compile_array_replace_recursive_to_native_binary`, `compile_nested_array_cow_reducers_match_php_oracle` |
 | foreach-mutation | `Zend/tests/foreach/foreach_reference.phpt` | `array_values()` and `array_reverse()` unwrap single-owner references while preserving shared references. | `array_reindexing_internals_unwrap_single_owner_refs` |
 | foreach-mutation | `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` | Whitespace-only source prelude before the first PHP open tag is skipped. | `parser_accepts_whitespace_prelude_and_reference_array_entries` |
 | foreach-mutation | `Zend/tests/foreach/foreach_temp_array_expr_with_refs.phpt` | Array literal entries can store references, and temporary reference arrays feed by-reference `foreach`. | `compile_foreach_temporary_reference_array_literal_to_native_binary` |
@@ -55,10 +54,6 @@ Evidence base:
 | Bucket | PHPT row | Current generic blocker | Bead |
 | --- | --- | --- | --- |
 | nested-arrays | `Zend/tests/bug35163.phpt` | Nested recursive reference lvalues remain unsupported. | `ptn-4yt.2` |
-| nested-arrays | `Zend/tests/bug38469.phpt` | Recursive copied value exhausts PHPT diff memory. | `ptn-4yt.2` |
-| nested-arrays | `ext/standard/tests/array/array_merge_recursive_basic1.phpt` | PHPT-level recursive merge semantics remain incomplete. | `ptn-4yt.2` |
-| nested-arrays | `ext/standard/tests/array/array_merge_replace_recursive_refs.phpt` | Recursive merge/replace reference semantics remain unsupported. | `ptn-4yt.2` |
-| foreach-mutation | `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` | By-reference foreach packed-to-hash repacking semantics remain incomplete. | `ptn-4yt.7` |
 | foreach-mutation | `ext/standard/tests/array/array_walk/bug69068_2.phpt` | Closure with by-reference callback and global swap is unsupported. | `ptn-4yt.7`, `ptn-4yt.3` |
 | function-boundaries | `Zend/tests/assign_by_val_function_by_ref_return_value.phpt` | Assignment by reference from a function result is rejected. | `ptn-4yt.8`, `ptn-4yt.3` |
 | function-boundaries | `ext/standard/tests/array/array_reduce_accumulator_refcount.phpt` | `array_reduce()` callback/refcount behavior is unsupported. | `ptn-4yt.8`, `ptn-4yt.3` |

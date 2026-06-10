@@ -1,8 +1,8 @@
 # PTN Progress
 
-Refresh: 2026-06-10T01:15Z
-Measured branches: `ptn-4yt.9` then `ptn-4yt.7` rebased on `master`;
-`ptn-4yt.2` adds array-path RHS snapshots and `array_merge_recursive()`.
+Refresh: 2026-06-10T09:34Z
+Measured branch: `polecat/prime/ptn-kia@mq7unevm`; focused COW manifest
+command: `tools/run-bounded-phpt.sh tools/phpt-cow-manifest.txt`.
 
 ## Test Dashboard
 
@@ -18,26 +18,26 @@ Measured branches: `ptn-4yt.9` then `ptn-4yt.7` rebased on `master`;
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
 | COW-focused native tests | 16 | 16 | 0 |
-| Focused COW reducer snippets | 30 | 30 | 0 |
+| Focused COW reducer snippets | 34 | 34 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
 | Post-merge COW gate | 15 | 15 | 0 |
 | COW/reference-focused native tests | 12 | 12 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
-| PHPT COW manifest | 29 | 22 | 7 |
+| PHPT COW manifest | 29 | 24 | 5 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` still has 29 rows. Current evidence is 22 passing,
-7 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
-array-writes-appends-unset 4/4, nested-arrays 1/4, foreach-mutation 3/4,
-function-boundaries 1/4, reference-interaction 5/5. The full bounded runner
-still stops at `Zend/tests/bug38469.phpt`; that row is counted failing.
-Remaining blockers are tracked in `docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
-Native COW reducers are 30/30, by-reference foreach oracle is 11/11,
-mutating-internal matrix is 14/14 plus six unsupported target diagnostics, and
-the post-merge COW gate is 15/15.
+`tools/phpt-cow-manifest.txt` has 29 rows. Current focused evidence is 24
+passing, 5 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets
+4/4, array-writes-appends-unset 4/4, nested-arrays 3/4, foreach-mutation 3/4,
+function-boundaries 1/4, reference-interaction 5/5. Nested rows now pass
+`bug38469`, `array_merge_recursive_basic1`, and
+`array_merge_replace_recursive_refs`; `bug35163` still needs recursive
+reference lvalues. Native COW reducers are 34/34, by-reference foreach oracle
+is 11/11, mutating-internal matrix is 14/14 plus six unsupported target
+diagnostics, and the post-merge COW gate is 15/15.
 
 ## Already Ported
 
@@ -52,7 +52,7 @@ by-reference return separation, `count()`, `??`, COW gates/oracles, assignment
 expressions, expression-level `@` suppression, `file_put_contents()`,
 `sha1_file()`, `unlink()` byte-file slices, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()` replacement maps and byte maps,
-`array_merge_recursive()`, `debug_zval_dump()` reference inspection, and
+`array_merge_recursive()`/`array_replace_recursive()`, `debug_zval_dump()`,
 string-valued dynamic calls with lvalue reference arguments through fallback
 dispatch, append/list assignment expressions for reference arrays,
 direct-variable assignment-form `??=`, and six offset-form `??=` diagnostics.

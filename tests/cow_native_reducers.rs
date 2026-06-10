@@ -390,6 +390,139 @@ echo \"dynamic temporary COW: pass=\", $pass, \" fail=\", $fail, \"\\n\";",
     assert!(c_source.contains("ptn_array_read(&runtime"));
 }
 
+#[test]
+fn compile_nested_array_cow_reducers_match_php_oracle() {
+    let cases = [
+        CowReducerCase {
+            name: "recursive_replace_unwraps_nested_reference",
+            oracle: "ext/standard/tests/array/array_merge_replace_recursive_refs.phpt",
+            source: "<?php\n\
+$x = 24;\n\
+$arr1 = [[42]];\n\
+$arr2 = [[&$x]];\n\
+unset($x);\n\
+$arr3 = array_replace_recursive($arr1, $arr2);\n\
+$arr2[0][0] = 12;\n\
+echo $arr3[0][0], \":\", $arr2[0][0], \"\\n\";",
+            expected_stdout: "24:12\n",
+        },
+        CowReducerCase {
+            name: "recursive_merge_unwraps_reference_append",
+            oracle: "ext/standard/tests/array/array_merge_replace_recursive_refs.phpt",
+            source: "<?php\n\
+$x = 24;\n\
+$arr1 = [42];\n\
+$arr2 = [&$x];\n\
+unset($x);\n\
+$arr3 = array_merge_recursive($arr1, $arr2);\n\
+$arr2[0] = 12;\n\
+echo $arr3[0], \":\", $arr3[1], \":\", $arr2[0], \"\\n\";",
+            expected_stdout: "42:24:12\n",
+        },
+        CowReducerCase {
+            name: "recursive_replace_detaches_nested_sources",
+            oracle: "PHP oracle: array_replace_recursive recursively detaches nested arrays",
+            source: "<?php\n\
+$left = [\"k\" => [\"x\" => 1, \"same\" => \"left\"]];\n\
+$right = [\"k\" => [\"same\" => \"right\", \"y\" => 2]];\n\
+$out = array_replace_recursive($left, $right);\n\
+$out[\"k\"][\"x\"] = 9;\n\
+$right[\"k\"][\"same\"] = \"changed\";\n\
+echo $left[\"k\"][\"x\"], \":\", $left[\"k\"][\"same\"], \":\", $out[\"k\"][\"x\"], \":\", $out[\"k\"][\"same\"], \":\", $out[\"k\"][\"y\"], \":\", $right[\"k\"][\"same\"], \"\\n\";",
+            expected_stdout: "1:left:9:right:2:changed\n",
+        },
+        CowReducerCase {
+            name: "recursive_replace_numeric_keys_replace",
+            oracle: "PHP oracle: array_replace_recursive replaces numeric keys instead of appending",
+            source: "<?php\n\
+$left = [[\"x\" => 1], \"old\"];\n\
+$right = [0 => [\"y\" => 2], 1 => \"new\"];\n\
+$out = array_replace_recursive($left, $right);\n\
+echo count($out), \":\", $out[0][\"x\"], \":\", $out[0][\"y\"], \":\", $out[1], \":\", count($left[0]), \"\\n\";",
+            expected_stdout: "2:1:2:new:1\n",
+        },
+    ];
+
+    let root = temp_dir("ptn-native-nested-cow-reducers");
+    fs::create_dir_all(&root).unwrap();
+
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+    for case in cases {
+        let input = root.join(format!("{}.php", case.name));
+        let output = root.join(format!("{}-bin", case.name));
+        fs::write(&input, case.source).unwrap();
+
+        let php = Command::new("php")
+            .arg(&input)
+            .output()
+            .unwrap_or_else(|error| {
+                panic!("{} ({}) PHP oracle failed: {error}", case.name, case.oracle)
+            });
+        assert!(
+            php.status.success(),
+            "{} ({}) PHP oracle exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+            case.name,
+            case.oracle,
+            php.status.code(),
+            String::from_utf8_lossy(&php.stdout),
+            String::from_utf8_lossy(&php.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(php.stdout.clone()).unwrap(),
+            case.expected_stdout,
+            "{} ({}) PHP oracle stdout changed",
+            case.name,
+            case.oracle
+        );
+        assert_eq!(
+            String::from_utf8(php.stderr.clone()).unwrap(),
+            "",
+            "{} ({}) PHP oracle stderr changed",
+            case.name,
+            case.oracle
+        );
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap_or_else(|error| {
+            panic!("{} ({}) compile failed: {error}", case.name, case.oracle)
+        });
+        let native = Command::new(&output).output().unwrap_or_else(|error| {
+            panic!("{} ({}) native run failed: {error}", case.name, case.oracle)
+        });
+
+        if native.status.success() && native.stdout == php.stdout && native.stderr == php.stderr {
+            passed += 1;
+            continue;
+        }
+
+        failed += 1;
+        assert!(
+            native.status.success(),
+            "{} ({}) native exited with {:?}",
+            case.name,
+            case.oracle,
+            native.status.code()
+        );
+        assert_eq!(
+            String::from_utf8(native.stdout).unwrap(),
+            String::from_utf8(php.stdout).unwrap(),
+            "{} ({}) stdout mismatch",
+            case.name,
+            case.oracle
+        );
+        assert_eq!(
+            String::from_utf8(native.stderr).unwrap(),
+            String::from_utf8(php.stderr).unwrap(),
+            "{} ({}) stderr mismatch",
+            case.name,
+            case.oracle
+        );
+    }
+
+    assert_eq!(passed, 4, "nested COW reducer pass count changed");
+    assert_eq!(failed, 0, "nested COW reducer fail count changed");
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     let unique = SystemTime::now()

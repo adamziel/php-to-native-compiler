@@ -2174,6 +2174,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_merge_recursive"
             | "array_pop"
             | "array_push"
+            | "array_replace_recursive"
             | "array_reverse"
             | "array_shift"
             | "array_sum"

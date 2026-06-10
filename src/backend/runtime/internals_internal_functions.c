@@ -701,6 +701,48 @@ static PtnValue ptn_internal_array_merge_recursive(PtnRuntime *runtime, size_t a
     return result;
 }
 
+static void ptn_array_replace_recursive_into(PtnArray *target, PtnArray *source);
+
+static void ptn_array_replace_recursive_entry(PtnArray *target, PtnArrayKey key, PtnValue value) {
+    PtnArrayEntry *entry = ptn_array_entry_for_key(target, key);
+    if (entry == NULL) {
+        ptn_array_set_entry(target, ptn_array_key_clone(key), ptn_value_clone_deref(value));
+        return;
+    }
+
+    PtnValue *entry_value = entry->value.type == PTN_REFERENCE
+        ? &entry->value.as.reference->value
+        : &entry->value;
+    PtnValue existing = ptn_value_deref(*entry_value);
+    PtnValue incoming = ptn_value_deref(value);
+    if (existing.type == PTN_ARRAY && incoming.type == PTN_ARRAY) {
+        PtnArray *target_child = ptn_array_detach_value(entry_value);
+        if (target_child != NULL) {
+            ptn_array_replace_recursive_into(target_child, incoming.as.array);
+        }
+        return;
+    }
+
+    ptn_value_destroy(entry_value);
+    *entry_value = ptn_value_clone(incoming);
+}
+
+static void ptn_array_replace_recursive_into(PtnArray *target, PtnArray *source) {
+    for (size_t i = 0; i < source->len; i++) {
+        ptn_array_replace_recursive_entry(target, source->entries[i].key, source->entries[i].value);
+    }
+}
+
+static PtnValue ptn_internal_array_replace_recursive(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < argc; i++) {
+        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_replace_recursive", i + 1, "array", args[i]);
+        ptn_array_replace_recursive_into(result.as.array, array);
+    }
+    (void)line;
+    return result;
+}
+
 static PtnValue ptn_internal_current(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -2485,6 +2527,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
+        { "array_replace_recursive", 1, PTN_VARIADIC_ARGS, ptn_internal_array_replace_recursive },
         { "array_reverse", 1, 2, ptn_internal_array_reverse },
         { "array_shift", 1, 1, ptn_internal_array_shift },
         { "array_sum", 1, 1, ptn_internal_array_sum },
