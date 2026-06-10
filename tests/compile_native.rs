@@ -3011,6 +3011,53 @@ echo \"done\\n\";\n",
 }
 
 #[test]
+fn compile_directory_status_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-directory-status-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("directory-status-internals.php");
+    let output = root.join("directory-status-internals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$base = __DIR__ . \"/dir-api\";\n\
+$nested = $base . \"/child\";\n\
+@rmdir($nested);\n\
+@rmdir($base);\n\
+var_dump(is_dir($base), is_file($base));\n\
+var_dump(mkdir($base));\n\
+clearstatcache();\n\
+var_dump(is_dir($base), is_file($base));\n\
+var_dump(mkdir($nested));\n\
+var_dump(is_dir($nested));\n\
+var_dump(rmdir($nested));\n\
+var_dump(rmdir($base));\n\
+var_dump(is_dir($base));\n\
+var_dump(@rmdir($base));\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(false)\n\
+bool(true)\n\
+bool(true)\nbool(false)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_str_rot13_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-str-rot13-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

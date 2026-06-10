@@ -1,15 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-10T11:41Z
-Measured: `ptn-4p5` rebased on `origin/master@b6446c197`; focused
-call-result by-reference return-chain evidence plus prior gates and manifests.
+Refresh: 2026-06-10T12:03Z
+Measured: `ptn-s1z` on `origin/master@206a98c5a`; focused directory
+native/PHPT evidence, `cargo test`, plus prior gates/manifests.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 346 | 346 | 0 |
+| Native compiled PHP snippets | 350 | 350 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 150 | 50 |
 | PHPT Zend rows | 76 | 67 | 9 |
@@ -27,14 +27,13 @@ call-result by-reference return-chain evidence plus prior gates and manifests.
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows. Current focused evidence is 24
-passing, 5 failing: assignment-aliasing 4/4, string-offsets 4/4,
+`tools/phpt-cow-manifest.txt` has 29 rows. Focused evidence is 24 passing, 5
+failing: assignment-aliasing 4/4, string-offsets 4/4,
 array-writes-appends-unset 4/4, nested-arrays 3/4, foreach-mutation 3/4,
 function-boundaries 1/4, reference-interaction 5/5. Named `array_reduce()`
-callbacks now preserve by-reference callback returns; the exact closure-backed
-PHPT row remains blocked by Closure/callable values (`ptn-dis`). Offset-form
-`??=` now has keyed array/string native coverage. Details live in
-`docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
+callbacks preserve by-reference callback returns; the closure-backed row is
+blocked by Closure/callables (`ptn-dis`). Offset-form `??=` has keyed
+array/string native coverage. See `docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
 
 ## Already Ported
 
@@ -45,30 +44,33 @@ references, by-reference parameters and `foreach`, array dimensions,
 temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
 binary strings, string offsets, scalar offset diagnostics, array literal
 reference elements, array union `+`, scalar type hints, by-reference return
-alias/separation boundaries, `count()`, `??`, assignment expressions,
-expression-level `@`, selected file APIs, array-path RHS snapshots,
+alias/separation boundaries, `count()`, `??`, assignment expressions, `@`,
+selected file/directory APIs, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
 replace, `debug_zval_dump()`, dynamic lvalue-reference calls, append/list
 assignment expressions for reference arrays, direct-variable `??=`, keyed
 array/string offset-form `??=`, append-form `??=` diagnostics, grouped
 reference targets, recursive/same-array/nested reference and class-syntax
 diagnostics, named `array_reduce()` callback dispatch with by-reference
-returns, value fallback with PHP notice when non-reference call results are
-assigned by reference, and call-result by-reference return chains.
+returns, value fallback when non-reference call results are assigned by
+reference, and call-result by-reference return chains. The file/directory slice
+includes byte writes, SHA1 reads, unlink, `mkdir()`, `rmdir()`, `is_dir()`,
+`is_file()`, and no-op `clearstatcache()` over local paths.
 
 ## Still Needed
 
-Remaining COW PHPT gaps are recursive reference lvalue implementation, closure
-callback mutation through `array_walk()`/`$GLOBALS`, recursive by-reference
-return chaining, closure-backed callback by-reference returns, and
-`array_reduce()` callback/refcount behavior. Broader bounded-PHPT gaps are still
-objects, unsupported array/string internals, 64-bit operator exactness, foreach
-edge diagnostics, object/property compound lvalues, scalar offset-lvalue fatal
-parity, and broader file APIs.
+COW PHPT gaps: recursive reference lvalues, closure callback mutation through
+`array_walk()`/`$GLOBALS`, recursive by-reference return chaining,
+closure-backed callback by-reference returns, and `array_reduce()`
+callback/refcount behavior. Broader bounded-PHPT gaps are still objects,
+unsupported array/string internals, 64-bit operator exactness, foreach edge
+diagnostics, object/property compound lvalues, scalar offset-lvalue fatal
+parity, and broader file APIs including recursive mkdir, stream contexts,
+stat-cache parity, and exact path diagnostics.
 
 ## Verification
 
 Commands: `cargo test`; `tools/run-native-smoke-matrix.sh`;
 `tools/run-post-merge-cow-gate.sh`; `tools/run-bounded-phpt.sh
 tools/phpt-cow-manifest.txt`; `tools/run-phpt-manifest.sh
-tools/phpt-manifest-200.txt`.
+tools/phpt-manifest-200.txt`; focused `is_dir_variation1.phpt`.

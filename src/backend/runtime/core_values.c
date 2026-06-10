@@ -7,7 +7,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #if defined(_WIN32)
+#include <direct.h>
 #include <process.h>
 #else
 #include <unistd.h>

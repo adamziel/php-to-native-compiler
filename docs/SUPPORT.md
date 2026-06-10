@@ -179,6 +179,8 @@ supports in generated native binaries.
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
+  `mkdir(expr[, mode]);`, `rmdir(expr);`, `is_dir(expr);`, `is_file(expr);`,
+  `clearstatcache([expr[, expr]]);`,
   `count(expr);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
@@ -196,7 +198,8 @@ supports in generated native binaries.
   `abs(expr)`, `sqrt(expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
-  `ord(expr)`,
+  `ord(expr)`, `mkdir(expr[, mode])`, `rmdir(expr)`, `is_dir(expr)`,
+  `is_file(expr)`, `clearstatcache([expr[, expr]])`,
   `count(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
   `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
@@ -268,6 +271,10 @@ supports in generated native binaries.
   the current C-string-backed value path.
 - `dirname()` over current boxed scalar values after scalar string conversion,
   returning the parent directory for the current C-string-backed path.
+- Local filesystem directory/status internals over current boxed scalar path
+  values: `mkdir(path[, mode])`, `rmdir(path)`, `is_dir(path)`, and
+  `is_file(path)`. `clearstatcache()` is accepted as a no-op because PTN does
+  not cache stat results yet.
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
 - `ceil()` and `floor()` over current boxed scalar values after scalar numeric
@@ -500,6 +507,8 @@ supports in generated native binaries.
   array/object/resource/reference diagnostics.
 - Exact `dirname()` edge parity for unusual paths, embedded NULs, and
   unsupported array/object/resource/reference operands.
+- Recursive `mkdir()`, filesystem stream contexts, exact stat-cache behavior,
+  and PHP-exact filesystem path ValueError/type diagnostics.
 - Exact `soundex()` locale/non-ASCII behavior and unsupported
   array/object/resource/reference operand diagnostics.
 - Exact non-finite formatting outside current scalar `var_dump()` output and

@@ -1740,6 +1740,126 @@ static PtnValue ptn_internal_unlink(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_bool(0);
 }
 
+static int ptn_stat_path(const char *path, struct stat *info) {
+    return stat(path, info) == 0;
+}
+
+static int ptn_path_is_directory(const char *path) {
+    struct stat info;
+    if (!ptn_stat_path(path, &info)) {
+        return 0;
+    }
+    return S_ISDIR(info.st_mode) ? 1 : 0;
+}
+
+static int ptn_path_is_regular_file(const char *path) {
+    struct stat info;
+    if (!ptn_stat_path(path, &info)) {
+        return 0;
+    }
+    return S_ISREG(info.st_mode) ? 1 : 0;
+}
+
+static PtnValue ptn_internal_path_status(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line,
+    int want_directory
+) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(value);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        char message[128];
+        int needed = snprintf(message, sizeof(message), "%s(): Filename contains null byte", function_name);
+        if (needed < 0 || (size_t)needed >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_bool(0);
+    }
+
+    int result = want_directory ? ptn_path_is_directory(path) : ptn_path_is_regular_file(path);
+    free(path);
+    return ptn_bool(result);
+}
+
+static PtnValue ptn_internal_is_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_path_status(runtime, "is_dir", args[0], line, 1);
+}
+
+static PtnValue ptn_internal_is_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_path_status(runtime, "is_file", args[0], line, 0);
+}
+
+static int ptn_platform_mkdir(const char *path, int64_t mode) {
+#if defined(_WIN32)
+    (void)mode;
+    return _mkdir(path);
+#else
+    return mkdir(path, (mode_t)mode);
+#endif
+}
+
+static int ptn_platform_rmdir(const char *path) {
+#if defined(_WIN32)
+    return _rmdir(path);
+#else
+    return rmdir(path);
+#endif
+}
+
+static PtnValue ptn_internal_mkdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "mkdir(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    int64_t mode = argc >= 2 ? ptn_value_to_integer(args[1]) : 0777;
+    if (ptn_platform_mkdir(path, mode) == 0) {
+        free(path);
+        return ptn_bool(1);
+    }
+
+    ptn_emit_file_warning(runtime, "mkdir", path, strerror(errno), line);
+    free(path);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_rmdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "rmdir(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    if (ptn_platform_rmdir(path) == 0) {
+        free(path);
+        return ptn_bool(1);
+    }
+
+    ptn_emit_file_warning(runtime, "rmdir", path, strerror(errno), line);
+    free(path);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_clearstatcache(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_null();
+}
+
 static size_t ptn_substr_clamped_positive(int64_t value, size_t limit) {
     if (value <= 0) {
         return 0;
@@ -2581,6 +2701,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
+        { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 1, ptn_internal_count },
         { "current", 1, 1, ptn_internal_current },
@@ -2607,7 +2728,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intval", 1, 2, ptn_internal_intval },
         { "is_array", 1, 1, ptn_internal_is_array },
         { "is_bool", 1, 1, ptn_internal_is_bool },
+        { "is_dir", 1, 1, ptn_internal_is_dir },
         { "is_double", 1, 1, ptn_internal_is_float },
+        { "is_file", 1, 1, ptn_internal_is_file },
         { "is_finite", 1, 1, ptn_internal_is_finite },
         { "is_float", 1, 1, ptn_internal_is_float },
         { "is_infinite", 1, 1, ptn_internal_is_infinite },
@@ -2620,6 +2743,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_string", 1, 1, ptn_internal_is_string },
         { "key", 1, 1, ptn_internal_key },
         { "md5", 1, 2, ptn_internal_md5 },
+        { "mkdir", 1, 2, ptn_internal_mkdir },
         { "next", 1, 1, ptn_internal_next },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "ord", 1, 1, ptn_internal_ord },
@@ -2631,6 +2755,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "reset", 1, 1, ptn_internal_reset },
+        { "rmdir", 1, 1, ptn_internal_rmdir },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "soundex", 1, 1, ptn_internal_soundex },

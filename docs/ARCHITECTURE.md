@@ -109,7 +109,10 @@ Current runtime/compiler slices:
   return boxed floats after that same numeric conversion path, with `fdiv`
   preserving IEEE zero-divisor and non-finite results; `pi` returns the boxed
   `M_PI` math constant; `getrandmax` returns the modeled maximum random
-  integer; `getmypid` returns the generated native process id;
+  integer; `getmypid` returns the generated native process id; selected
+  filesystem internals convert boxed path operands through the shared scalar
+  string path and call OS `stat`, `mkdir`, and `rmdir` without a runtime stat
+  cache yet, so `clearstatcache()` is currently a no-op;
   `bindec`, `hexdec`, and `octdec` parse scalar string-conversion results
   through shared base-conversion helpers with prefix handling and line-aware
   deprecation diagnostics; `chr` constructs one-byte strings from scalar
