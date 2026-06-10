@@ -411,6 +411,7 @@ impl<'a> Lexer<'a> {
                     'n' => literal.push('\n'),
                     'r' => literal.push('\r'),
                     't' => literal.push('\t'),
+                    '0' => literal.push('\0'),
                     '\\' => literal.push('\\'),
                     '"' => literal.push('"'),
                     '$' => literal.push('$'),

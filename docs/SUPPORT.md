@@ -168,6 +168,7 @@ supports in generated native binaries.
   and leading-numeric-string warning boundary.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `print_r(expr[, return]);`, `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
+  `addslashes(expr);`, `stripslashes(expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
@@ -186,6 +187,7 @@ supports in generated native binaries.
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
   including `print_r(expr[, return])`, `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
+  `addslashes(expr)`, `stripslashes(expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
@@ -233,6 +235,9 @@ supports in generated native binaries.
 - `strcmp()` over current boxed scalar values after scalar string conversion,
   returning a negative integer, zero, or a positive integer from bytewise
   comparison of the current C-string-backed values.
+- `addslashes()` and `stripslashes()` over current boxed scalar values after
+  scalar string conversion, covering backslash, single-quote, double-quote, and
+  NUL quoting/unquoting with binary-safe string lengths.
 - `str_contains()` over current boxed scalar values after scalar string
   conversion, returning whether the needle string is present in the haystack
   string through the current C-string-backed value path.
@@ -483,6 +488,8 @@ supports in generated native binaries.
   `soundex()`, `ord()`, or bitwise string results.
 - Exact `strcmp()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
+- `addcslashes()`, `stripcslashes()`, and cslashes range/escape-sequence
+  behavior remain unsupported.
 - Exact `str_contains()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
 - Exact `str_starts_with()`/`str_ends_with()` binary-string behavior for

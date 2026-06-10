@@ -1308,6 +1308,86 @@ static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int(0);
 }
 
+static int ptn_addslashes_needs_escape(unsigned char byte) {
+    return byte == '\0' || byte == '\'' || byte == '"' || byte == '\\';
+}
+
+static char *ptn_addslashes_string(const char *input, size_t len, size_t *output_len_out) {
+    size_t escape_count = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (ptn_addslashes_needs_escape((unsigned char)input[i])) {
+            escape_count++;
+        }
+    }
+    if (escape_count > SIZE_MAX - len - 1) {
+        ptn_abort_out_of_memory();
+    }
+
+    char *output = malloc(len + escape_count + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t out = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        if (ptn_addslashes_needs_escape(byte)) {
+            output[out++] = '\\';
+            output[out++] = byte == '\0' ? '0' : (char)byte;
+        } else {
+            output[out++] = (char)byte;
+        }
+    }
+    output[out] = '\0';
+    *output_len_out = out;
+    return output;
+}
+
+static PtnValue ptn_internal_addslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    size_t output_len = 0;
+    char *output = ptn_addslashes_string(input.data, input.len, &output_len);
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(output, output_len);
+}
+
+static char *ptn_stripslashes_string(const char *input, size_t len, size_t *output_len_out) {
+    char *output = malloc(len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t out = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (input[i] == '\\') {
+            if (i + 1 >= len) {
+                continue;
+            }
+            unsigned char escaped = (unsigned char)input[++i];
+            output[out++] = escaped == '0' ? '\0' : (char)escaped;
+        } else {
+            output[out++] = input[i];
+        }
+    }
+    output[out] = '\0';
+    *output_len_out = out;
+    return output;
+}
+
+static PtnValue ptn_internal_stripslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    size_t output_len = 0;
+    char *output = ptn_stripslashes_string(input.data, input.len, &output_len);
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(output, output_len);
+}
+
 static PtnValue ptn_internal_str_contains(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -3238,6 +3318,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "addslashes", 1, 1, ptn_internal_addslashes },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
@@ -3323,6 +3404,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
+        { "stripslashes", 1, 1, ptn_internal_stripslashes },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "strtr", 2, 3, ptn_internal_strtr },
         { "substr", 2, 3, ptn_internal_substr },

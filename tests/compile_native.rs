@@ -95,11 +95,14 @@ fn lexer_keeps_leading_zero_floats_decimal() {
 
 #[test]
 fn lexer_preserves_unknown_string_escape_backslashes() {
-    let tokens = lexer::lex("<?php \"\\+\" '\\t' \"\\$\" \"\\n\"").unwrap();
+    let tokens = lexer::lex("<?php \"\\+\" '\\t' \"\\$\" \"\\n\" \"\\0\" '\\0' \"a\\0b\"").unwrap();
     assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "\\+"));
     assert!(matches!(&tokens[2].kind, TokenKind::String(value) if value == "\\t"));
     assert!(matches!(&tokens[3].kind, TokenKind::String(value) if value == "$"));
     assert!(matches!(&tokens[4].kind, TokenKind::String(value) if value == "\n"));
+    assert!(matches!(&tokens[5].kind, TokenKind::String(value) if value == "\0"));
+    assert!(matches!(&tokens[6].kind, TokenKind::String(value) if value == "\\0"));
+    assert!(matches!(&tokens[7].kind, TokenKind::String(value) if value == "a\0b"));
 }
 
 #[test]
@@ -714,6 +717,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function STRLEN($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strlen()");
 
+    let error = parser::parse("<?php function AddSlashes($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function addslashes()");
+
     let error = parser::parse("<?php function Substr($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function substr()");
 
@@ -727,6 +733,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         parser::parse("<?php function STR_STARTS_WITH($haystack, $needle) { return true; }")
             .unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function str_starts_with()");
+
+    let error =
+        parser::parse("<?php function StripSlashes($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function stripslashes()");
 
     let error = parser::parse("<?php function Str_Ends_With($haystack, $needle) { return true; }")
         .unwrap_err();
@@ -2798,7 +2808,7 @@ fn compile_string_internals_use_direct_string_operand_fast_paths_to_native_binar
         "<?php\n\
 echo strlen(\"abcdef\"), \" \", strcmp(\"abc\", \"abd\"), \" \", str_contains(\"abcdef\", \"cd\"), \" \", str_starts_with(\"abcdef\", \"ab\"), \" \", str_ends_with(\"abcdef\", \"ef\"), \"\\n\";\n\
 echo str_rot13(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \" \", bin2hex(\"Az\"), \" \", quotemeta(\"a.b\"), \" \", chunk_split(\"abcd\", 2, \"|\"), \"\\n\";\n\
-echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
+echo strip_tags(\"<b>x</b>\"), \" \", addslashes(\"'\\\"\\\\\"), \" \", stripslashes(\"\\\\'\\\\\\\"\\\\\\\\\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
 echo bin2hex(strip_tags(\"<b>A</b>\" . chr(0) . \"<i>B</i>\")), \" \", soundex(\"A\" . chr(0) . \"B\"), \"\\n\";\n\
 echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
 var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2));",
@@ -2812,7 +2822,7 @@ var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2));",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "6 -1 1 1 1\nnop cde 417a a\\.b ab|cd|\n\
-x A R163 65 5 255 8\n\
+x \\'\\\"\\\\ '\"\\ A R163 65 5 255 8\n\
 4142 A100\n\
 d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
 int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
@@ -2829,9 +2839,11 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
         "ptn_internal_strlen",
         "ptn_internal_str_rot13",
         "ptn_internal_strcmp",
+        "ptn_internal_addslashes",
         "ptn_internal_str_contains",
         "ptn_internal_str_starts_with",
         "ptn_internal_str_ends_with",
+        "ptn_internal_stripslashes",
         "ptn_internal_quotemeta",
         "ptn_internal_chunk_split",
         "ptn_internal_strip_tags",
@@ -2863,6 +2875,8 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
 
     for expected_call in [
         "ptn_rot13_string(string.data, string.len)",
+        "ptn_addslashes_string(input.data, input.len, &output_len)",
+        "ptn_stripslashes_string(input.data, input.len, &output_len)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
         "ptn_dirname_string(path.data, path.len)",
@@ -2883,6 +2897,8 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
 
     for marker in [
         "static char *ptn_rot13_string(",
+        "static char *ptn_addslashes_string(",
+        "static char *ptn_stripslashes_string(",
         "static char *ptn_quotemeta_string(",
         "static char *ptn_chunk_split_string(",
         "static char *ptn_strip_tags_string(",
@@ -3360,6 +3376,44 @@ fn var_dump_float_exponents_use_php_spelling_in_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "float(-9.22337203900226E+18)\nfloat(1.4757395258967642E+19)\nfloat(1.2E-5)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_addslashes_and_stripslashes_to_native_binary() {
+    let root = temp_dir("ptn-native-addslashes-stripslashes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("addslashes-stripslashes.php");
+    let output = root.join("addslashes-stripslashes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$special = \"\\\"\" . \"'\" . \"\\\\\" . chr(0) . \"A\";\n\
+var_dump(bin2hex(addslashes($special)));\n\
+var_dump(bin2hex(stripslashes(addslashes($special))));\n\
+var_dump(bin2hex(stripslashes(\"\\\\a\\\\n\\\\0\\\\\\\\\\\\\\\"\\\\'x\\\\\")));\n\
+$input = '';\n\
+for ($i = 0; $i < 512; $i++) { $input .= chr($i % 256); }\n\
+var_dump(bin2hex(stripslashes(addslashes($input))) === bin2hex($input));\n\
+var_dump(addslashes(123.5), stripslashes(\"\\\\1\\\\2\\\\3\"), function_exists(\"addslashes\"), function_exists(\"STRIPSLASHES\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(18) \"5c225c275c5c5c3041\"\n\
+string(10) \"22275c0041\"\n\
+string(14) \"616e005c222778\"\n\
+bool(true)\n\
+string(5) \"123.5\"\n\
+string(3) \"123\"\n\
+bool(true)\n\
+bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
