@@ -1,15 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-10T12:58Z
-Measured: `ptn-7h1` rebased on `origin/master@bb82827d`; recursive `mkdir()`
-and directory predicate evidence on the native path.
+Refresh: 2026-06-10T13:14Z
+Measured: `ptn-na6` rebased on `origin/master@1cbcfe1`; recursive `mkdir()`
+and string-callable `array_map()` evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 355 | 355 | 0 |
+| Native compiled PHP snippets | 357 | 357 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -24,7 +24,7 @@ and directory predicate evidence on the native path.
 | Mutating-internal COW matrix | 14 | 14 | 0 |
 | Post-merge COW gate | 25 | 25 | 0 |
 | PHPT COW manifest | 29 | 26 | 3 |
-| PHPT callback manifest | 1 | 1 | 0 |
+| PHPT callback manifest | 2 | 2 | 0 |
 
 ## COW PHPT Buckets
 
@@ -51,6 +51,7 @@ assignment expressions for reference arrays, nested same-array reference
 lvalues with recursive `var_dump()`, direct-variable `??=`, keyed array/string
 offset-form `??=`, append-form `??=` diagnostics, grouped reference targets,
 named `array_reduce()` callback dispatch with by-reference returns,
+string-callable and null-callback `array_map()`,
 non-reference call-result by-reference fallback notices, call-result
 by-reference return chains, `array_fill_keys()`, string-callable
 `call_user_func()` dispatch, and variable-assigned recursive array literals
@@ -64,11 +65,11 @@ Remaining COW PHPT gaps are Closure/callable `use` syntax for the
 `array_reduce()` callback/refcount behavior, and broader recursive
 by-reference return edges. Broader bounded-PHPT gaps are objects, unsupported
 array/string internals, 64-bit operator exactness, foreach diagnostics,
-object/property compound lvalues, scalar offset-lvalue fatal parity, and
-broader file APIs beyond the current local filesystem subset.
+object/property compound lvalues, class/static array callables, scalar
+offset-lvalue fatal parity, and broader file APIs.
 
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`; focused callback, recursive literal,
-`array_walk()`, and `mkdir-003.phpt` evidence.
+`tools/run-post-merge-cow-gate.sh`; callback manifest 2/2; focused recursive
+literal, `array_walk()`, and `mkdir-003.phpt` evidence.

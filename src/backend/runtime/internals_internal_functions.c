@@ -830,6 +830,102 @@ static PtnValue ptn_internal_array_walk(PtnRuntime *runtime, size_t argc, const 
     return result;
 }
 
+static PtnArray **ptn_array_map_arrays(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t *max_len_out) {
+    size_t array_count = argc - 1;
+    PtnArray **arrays = malloc(array_count * sizeof(PtnArray *));
+    if (arrays == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t max_len = 0;
+    for (size_t i = 0; i < array_count; i++) {
+        arrays[i] = ptn_internal_expect_array_arg(runtime, "array_map", i + 2, "array", args[i + 1]);
+        if (arrays[i]->len > max_len) {
+            max_len = arrays[i]->len;
+        }
+    }
+    *max_len_out = max_len;
+    return arrays;
+}
+
+static PtnArrayKey ptn_array_map_result_key(PtnArray **arrays, size_t array_count, size_t index) {
+    if (array_count == 1) {
+        return ptn_array_key_clone(arrays[0]->entries[index].key);
+    }
+    if (index > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_array_int_key((int64_t)index);
+}
+
+static PtnValue ptn_array_map_argument_at(PtnArray *array, size_t index) {
+    if (index >= array->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(array->entries[index].value);
+}
+
+static PtnValue ptn_array_map_null_callback_row(PtnArray **arrays, size_t array_count, size_t index) {
+    if (array_count == 1) {
+        return ptn_array_map_argument_at(arrays[0], index);
+    }
+
+    PtnValue row = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < array_count; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            row.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_array_map_argument_at(arrays[i], index)
+        );
+    }
+    return row;
+}
+
+static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t max_len = 0;
+    PtnArray **arrays = ptn_array_map_arrays(runtime, argc, args, &max_len);
+    size_t array_count = argc - 1;
+    int has_callback = ptn_value_deref(args[0]).type != PTN_NULL;
+    char *function_name = has_callback ? ptn_value_to_string(args[0]) : NULL;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+
+    for (size_t i = 0; i < max_len; i++) {
+        PtnValue mapped;
+        if (has_callback) {
+            PtnValue *callback_args = malloc(array_count * sizeof(PtnValue));
+            if (callback_args == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            for (size_t arg_index = 0; arg_index < array_count; arg_index++) {
+                callback_args[arg_index] = ptn_array_map_argument_at(arrays[arg_index], i);
+            }
+
+            PtnValue callback_result = ptn_call_function(runtime, function_name, array_count, callback_args, line);
+            for (size_t arg_index = 0; arg_index < array_count; arg_index++) {
+                ptn_value_destroy(&callback_args[arg_index]);
+            }
+            free(callback_args);
+            mapped = ptn_value_clone_deref(callback_result);
+            ptn_value_destroy(&callback_result);
+        } else {
+            mapped = ptn_array_map_null_callback_row(arrays, array_count, i);
+        }
+
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_map_result_key(arrays, array_count, i),
+            mapped
+        );
+    }
+
+    free(function_name);
+    free(arrays);
+    return result;
+}
+
 static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "in_array", 2, "haystack", args[1]);
@@ -3020,6 +3116,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "abs", 1, 1, ptn_internal_abs },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
+        { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
