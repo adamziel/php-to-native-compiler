@@ -245,7 +245,7 @@ pub enum ArrayElementValue {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayDimTarget {
     pub array: String,
-    pub index: Option<ValueExpr>,
+    pub dimensions: Vec<Option<ValueExpr>>,
     pub line: usize,
 }
 
@@ -630,11 +630,11 @@ fn lower_array_dim_store(
 fn lower_array_dim_target(target: &AstArrayDimTarget) -> ArrayDimTarget {
     ArrayDimTarget {
         array: target.array.clone(),
-        index: target
+        dimensions: target
             .dimensions
-            .first()
-            .and_then(|dimension| dimension.as_ref())
-            .map(lower_expr),
+            .iter()
+            .map(|dimension| dimension.as_ref().map(lower_expr))
+            .collect(),
         line: target.span.line,
     }
 }

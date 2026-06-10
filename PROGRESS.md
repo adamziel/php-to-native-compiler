@@ -1,8 +1,9 @@
 # PTN Progress
 
-Refresh: 2026-06-10T11:41Z
-Measured: `ptn-4p5` rebased on `origin/master@b6446c197`; focused
-call-result by-reference return-chain evidence plus prior gates and manifests.
+Refresh: 2026-06-10T11:48Z
+Measured: `ptn-2p4` rebased on `origin/master@206a98c5`; focused
+`bug35163` nested recursive reference lvalue evidence plus prior gates and
+manifests.
 
 ## Test Dashboard
 
@@ -17,19 +18,19 @@ call-result by-reference return-chain evidence plus prior gates and manifests.
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
-| Focused COW reducer snippets | 39 | 39 | 0 |
-| Recursive reference diagnostics | 9 | 9 | 0 |
+| Focused COW reducer snippets | 41 | 41 | 0 |
+| Recursive reference diagnostics | 7 | 7 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
 | Post-merge COW gate | 25 | 25 | 0 |
-| PHPT COW manifest | 29 | 24 | 5 |
+| PHPT COW manifest | 29 | 25 | 4 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows. Current focused evidence is 24
-passing, 5 failing: assignment-aliasing 4/4, string-offsets 4/4,
-array-writes-appends-unset 4/4, nested-arrays 3/4, foreach-mutation 3/4,
+`tools/phpt-cow-manifest.txt` has 29 rows. Current focused evidence is 25
+passing, 4 failing: assignment-aliasing 4/4, string-offsets 4/4,
+array-writes-appends-unset 4/4, nested-arrays 4/4, foreach-mutation 3/4,
 function-boundaries 1/4, reference-interaction 5/5. Named `array_reduce()`
 callbacks now preserve by-reference callback returns; the exact closure-backed
 PHPT row remains blocked by Closure/callable values (`ptn-dis`). Offset-form
@@ -49,26 +50,27 @@ alias/separation boundaries, `count()`, `??`, assignment expressions,
 expression-level `@`, selected file APIs, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
 replace, `debug_zval_dump()`, dynamic lvalue-reference calls, append/list
-assignment expressions for reference arrays, direct-variable `??=`, keyed
-array/string offset-form `??=`, append-form `??=` diagnostics, grouped
-reference targets, recursive/same-array/nested reference and class-syntax
-diagnostics, named `array_reduce()` callback dispatch with by-reference
-returns, value fallback with PHP notice when non-reference call results are
-assigned by reference, and call-result by-reference return chains.
+assignment expressions for reference arrays, nested same-array reference
+lvalues with recursive `var_dump()`, direct-variable `??=`, keyed array/string
+offset-form `??=`, append-form `??=` diagnostics, grouped reference targets,
+recursive/same-array/nested reference and class-syntax diagnostics, named
+`array_reduce()` callback dispatch with by-reference returns, value fallback
+with PHP notice when non-reference call results are assigned by reference, and
+call-result by-reference return chains.
 
 ## Still Needed
 
-Remaining COW PHPT gaps are recursive reference lvalue implementation, closure
-callback mutation through `array_walk()`/`$GLOBALS`, recursive by-reference
-return chaining, closure-backed callback by-reference returns, and
-`array_reduce()` callback/refcount behavior. Broader bounded-PHPT gaps are still
-objects, unsupported array/string internals, 64-bit operator exactness, foreach
-edge diagnostics, object/property compound lvalues, scalar offset-lvalue fatal
+Remaining COW PHPT gaps are closure callback mutation through
+`array_walk()`/`$GLOBALS`, recursive by-reference return chaining,
+closure-backed callback by-reference returns, and `array_reduce()`
+callback/refcount behavior. Broader bounded-PHPT gaps are still objects,
+unsupported array/string internals, 64-bit operator exactness, foreach edge
+diagnostics, object/property compound lvalues, scalar offset-lvalue fatal
 parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo test`; `tools/run-native-smoke-matrix.sh`;
+Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
 `tools/run-post-merge-cow-gate.sh`; `tools/run-bounded-phpt.sh
-tools/phpt-cow-manifest.txt`; `tools/run-phpt-manifest.sh
-tools/phpt-manifest-200.txt`.
+tools/phpt-cow-manifest.txt`. Prior broad manifest remains 150/200; it does not
+include `Zend/tests/bug35163.phpt`.

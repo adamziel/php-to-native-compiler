@@ -29,20 +29,6 @@ fn recursive_reference_diagnostic_reducers_fail_before_codegen() {
             expected_diagnostic: "recursive array references are unsupported",
         },
         CowDiagnosticReducerCase {
-            name: "same_array_append_element_reference",
-            oracle:
-                "PHP oracle: appending a reference to an existing slot aliases same-array entries",
-            source: "<?php\n$array = [1];\n$array[] =& $array[0];",
-            expected_diagnostic: "same-array element references are unsupported",
-        },
-        CowDiagnosticReducerCase {
-            name: "same_array_element_reference_assignment",
-            oracle:
-                "PHP oracle: assigning one slot by reference to another aliases same-array entries",
-            source: "<?php\n$array = [1, 2];\n$array[0] =& $array[1];",
-            expected_diagnostic: "same-array element references are unsupported",
-        },
-        CowDiagnosticReducerCase {
             name: "recursive_array_literal_self",
             oracle:
                 "PHP oracle: array literal value reference to assigned variable creates recursion",
@@ -175,6 +161,26 @@ $b = $a;\n\
 $b[\"n\"] += 4;\n\
 echo $a[\"n\"], \":\", $b[\"n\"], \"\\n\";",
             expected_stdout: "1:5\n",
+        },
+        CowReducerCase {
+            name: "same_array_append_element_reference",
+            oracle: "PHP oracle: appending a reference to an existing slot aliases same-array entries",
+            source: "<?php\n\
+$array = [1];\n\
+$array[] =& $array[0];\n\
+$array[0] = 3;\n\
+echo $array[0], \":\", $array[1], \"\\n\";",
+            expected_stdout: "3:3\n",
+        },
+        CowReducerCase {
+            name: "same_array_element_reference_assignment",
+            oracle: "PHP oracle: assigning one slot by reference to another aliases same-array entries",
+            source: "<?php\n\
+$array = [1, 2];\n\
+$array[0] =& $array[1];\n\
+$array[1] = 5;\n\
+echo $array[0], \":\", $array[1], \"\\n\";",
+            expected_stdout: "5:5\n",
         },
         CowReducerCase {
             name: "nested_extracted_child_write",
@@ -418,7 +424,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 23, "COW reducer pass count changed");
+    assert_eq!(passed, 25, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

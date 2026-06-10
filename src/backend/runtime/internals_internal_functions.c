@@ -101,10 +101,65 @@ static void ptn_var_dump_indent(size_t indent) {
     }
 }
 
-static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
+typedef struct {
+    PtnArray **items;
+    size_t len;
+    size_t capacity;
+} PtnDumpSeenArrays;
+
+static void ptn_dump_seen_arrays_init(PtnDumpSeenArrays *seen) {
+    seen->items = NULL;
+    seen->len = 0;
+    seen->capacity = 0;
+}
+
+static void ptn_dump_seen_arrays_free(PtnDumpSeenArrays *seen) {
+    free(seen->items);
+    seen->items = NULL;
+    seen->len = 0;
+    seen->capacity = 0;
+}
+
+static int ptn_dump_seen_arrays_contains(PtnDumpSeenArrays *seen, PtnArray *array) {
+    for (size_t i = 0; i < seen->len; i++) {
+        if (seen->items[i] == array) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_dump_seen_arrays_push(PtnDumpSeenArrays *seen, PtnArray *array) {
+    if (seen->len == seen->capacity) {
+        size_t new_capacity = seen->capacity == 0 ? 8 : seen->capacity * 2;
+        if (new_capacity < seen->capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArray **new_items = realloc(seen->items, new_capacity * sizeof(PtnArray *));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->items = new_items;
+        seen->capacity = new_capacity;
+    }
+    seen->items[seen->len++] = array;
+}
+
+static void ptn_dump_seen_arrays_pop(PtnDumpSeenArrays *seen) {
+    if (seen->len > 0) {
+        seen->len--;
+    }
+}
+
+static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen) {
     int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
     if (value.type == PTN_REFERENCE) {
         value = ptn_value_deref(value);
+    }
+    if (value.type == PTN_ARRAY && ptn_dump_seen_arrays_contains(seen, value.as.array)) {
+        ptn_var_dump_indent(indent);
+        fputs("*RECURSION*\n", stdout);
+        return;
     }
     ptn_var_dump_indent(indent);
     if (print_reference) {
@@ -134,6 +189,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
         case PTN_ARRAY: {
             PtnArray *array = value.as.array;
             printf("array(%zu) {\n", array->len);
+            ptn_dump_seen_arrays_push(seen, array);
             for (size_t i = 0; i < array->len; i++) {
                 ptn_var_dump_indent(indent + 1);
                 PtnArrayKey key = array->entries[i].key;
@@ -142,8 +198,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
                 } else {
                     printf("[\"%s\"]=>\n", key.as.string);
                 }
-                ptn_var_dump_value_indented(array->entries[i].value, indent + 1);
+                ptn_var_dump_value_indented(array->entries[i].value, indent + 1, seen);
             }
+            ptn_dump_seen_arrays_pop(seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
@@ -169,7 +226,10 @@ static void ptn_var_dump_value(PtnValue value) {
     if (value.type == PTN_REFERENCE) {
         value = ptn_value_deref(value);
     }
-    ptn_var_dump_value_indented(value, 0);
+    PtnDumpSeenArrays seen;
+    ptn_dump_seen_arrays_init(&seen);
+    ptn_var_dump_value_indented(value, 0, &seen);
+    ptn_dump_seen_arrays_free(&seen);
 }
 
 static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -181,18 +241,23 @@ static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_null();
 }
 
-static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent) {
+static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen) {
     ptn_var_dump_indent(indent);
     switch (value.type) {
         case PTN_REFERENCE:
             printf("reference refcount(%zu) {\n", value.as.reference->refcount);
-            ptn_debug_zval_dump_value_indented(value.as.reference->value, indent + 1);
+            ptn_debug_zval_dump_value_indented(value.as.reference->value, indent + 1, seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
         case PTN_ARRAY: {
             PtnArray *array = value.as.array;
+            if (ptn_dump_seen_arrays_contains(seen, array)) {
+                fputs("*RECURSION*\n", stdout);
+                break;
+            }
             printf("array(%zu) packed refcount(%zu){\n", array->len, array->refcount);
+            ptn_dump_seen_arrays_push(seen, array);
             for (size_t i = 0; i < array->len; i++) {
                 ptn_var_dump_indent(indent + 1);
                 PtnArrayKey key = array->entries[i].key;
@@ -201,8 +266,9 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent) {
                 } else {
                     printf("[\"%s\"]=>\n", key.as.string);
                 }
-                ptn_debug_zval_dump_value_indented(array->entries[i].value, indent + 1);
+                ptn_debug_zval_dump_value_indented(array->entries[i].value, indent + 1, seen);
             }
+            ptn_dump_seen_arrays_pop(seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
@@ -245,7 +311,10 @@ static PtnValue ptn_internal_debug_zval_dump(PtnRuntime *runtime, size_t argc, c
     (void)runtime;
     (void)line;
     for (size_t i = 0; i < argc; i++) {
-        ptn_debug_zval_dump_value_indented(args[i], 0);
+        PtnDumpSeenArrays seen;
+        ptn_dump_seen_arrays_init(&seen);
+        ptn_debug_zval_dump_value_indented(args[i], 0, &seen);
+        ptn_dump_seen_arrays_free(&seen);
     }
     return ptn_null();
 }

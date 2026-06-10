@@ -1340,8 +1340,10 @@ fn collect_instruction_runtime_requirements(
             collect_value_runtime_requirements(source, functions, requirements);
         }
         Instruction::StoreArrayDimRef { target, source } => {
-            if let Some(index) = &target.index {
-                collect_value_runtime_requirements(index, functions, requirements);
+            for dimension in &target.dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
             }
             collect_value_runtime_requirements(source, functions, requirements);
         }
@@ -1422,8 +1424,10 @@ fn collect_reference_target_runtime_requirements(
     match target {
         ReferenceTarget::Variable { .. } => {}
         ReferenceTarget::ArrayDim(target) => {
-            if let Some(index) = &target.index {
-                collect_value_runtime_requirements(index, functions, requirements);
+            for dimension in &target.dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
             }
         }
     }
@@ -1707,17 +1711,41 @@ fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
             name: name.clone(),
             line: *line,
         }),
-        ValueExpr::ArrayAccess { array, index, line } => match array.as_ref() {
-            ValueExpr::Load { name, .. } => {
-                Some(ReferenceTarget::ArrayDim(crate::ir::ArrayDimTarget {
-                    array: name.clone(),
-                    index: Some((**index).clone()),
-                    line: *line,
-                }))
-            }
-            _ => None,
-        },
+        ValueExpr::ArrayAccess { .. } => reference_array_dim_target_from_value(value),
         _ => None,
+    }
+}
+
+fn reference_array_dim_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
+    let mut dimensions = Vec::new();
+    let mut current = value;
+    let mut line = None;
+    loop {
+        match current {
+            ValueExpr::ArrayAccess {
+                array,
+                index,
+                line: access_line,
+            } => {
+                if line.is_none() {
+                    line = Some(*access_line);
+                }
+                dimensions.push(Some((**index).clone()));
+                current = array.as_ref();
+            }
+            ValueExpr::Load {
+                name,
+                line: load_line,
+            } => {
+                dimensions.reverse();
+                return Some(ReferenceTarget::ArrayDim(crate::ir::ArrayDimTarget {
+                    array: name.clone(),
+                    dimensions,
+                    line: line.unwrap_or(*load_line),
+                }));
+            }
+            _ => return None,
+        }
     }
 }
 
@@ -2196,20 +2224,13 @@ impl ValueEmitter {
     ) {
         if let Some(source_target) = reference_target_from_value(source) {
             let source_temp = self.emit_reference_target(out, &source_target);
-            let index_temp = target
-                .index
-                .as_ref()
-                .map(|index| self.emit_materialized_value(out, index));
-            out.push_str("    ptn_runtime_bind_array_dim_reference(&runtime, \"");
+            let path = emit_array_path_segments(out, self, &target.dimensions);
+            out.push_str("    ptn_runtime_bind_array_path_reference(&runtime, \"");
             out.push_str(&c_string(&target.array));
             out.push_str("\", ");
-            match &index_temp {
-                Some(index_temp) => {
-                    out.push('&');
-                    out.push_str(index_temp);
-                }
-                None => out.push_str("NULL"),
-            }
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
             out.push_str(", ");
             out.push_str(&source_temp);
             out.push_str(", \"");
@@ -2218,25 +2239,24 @@ impl ValueEmitter {
             out.push_str(&target.line.to_string());
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &source_temp);
-            if let Some(index_temp) = index_temp {
-                emit_value_cleanup(out, "    ", &index_temp);
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
             }
             return;
         }
 
         let source_temp = self.emit_materialized_value(out, source);
-        let dimensions = vec![target.index.clone()];
-        let path = emit_array_path_segments(out, self, &dimensions);
+        let path = emit_array_path_segments(out, self, &target.dimensions);
         out.push_str("    if (");
         out.push_str(&source_temp);
         out.push_str(".type == PTN_REFERENCE) {\n");
-        out.push_str("        ptn_runtime_bind_array_dim_reference(&runtime, \"");
+        out.push_str("        ptn_runtime_bind_array_path_reference(&runtime, \"");
         out.push_str(&c_string(&target.array));
         out.push_str("\", ");
         out.push_str(&path.name);
-        out.push_str("[0].append ? NULL : &");
-        out.push_str(&path.name);
-        out.push_str("[0].value, ");
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
         out.push_str(&source_temp);
         out.push_str(", \"");
         out.push_str(&c_string(source_path));
@@ -2298,7 +2318,7 @@ impl ValueEmitter {
                     out,
                     &ReferenceTarget::ArrayDim(crate::ir::ArrayDimTarget {
                         array: array.clone(),
-                        index: dimensions.first().cloned().flatten(),
+                        dimensions: dimensions.clone(),
                         line: *line,
                     }),
                     reference_temp,
@@ -2586,20 +2606,13 @@ impl ValueEmitter {
                 out.push_str(");\n");
             }
             ReferenceTarget::ArrayDim(target) => {
-                let index_temp = target
-                    .index
-                    .as_ref()
-                    .map(|index| self.emit_materialized_value(out, index));
-                out.push_str("    ptn_runtime_bind_array_dim_reference(&runtime, \"");
+                let path = emit_array_path_segments(out, self, &target.dimensions);
+                out.push_str("    ptn_runtime_bind_array_path_reference(&runtime, \"");
                 out.push_str(&c_string(&target.array));
                 out.push_str("\", ");
-                match &index_temp {
-                    Some(index_temp) => {
-                        out.push('&');
-                        out.push_str(index_temp);
-                    }
-                    None => out.push_str("NULL"),
-                }
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
                 out.push_str(", ");
                 out.push_str(reference_temp);
                 out.push_str(", \"");
@@ -2607,8 +2620,8 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&target.line.to_string());
                 out.push_str(");\n");
-                if let Some(index_temp) = index_temp {
-                    emit_value_cleanup(out, "    ", &index_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
                 }
             }
         }
@@ -3703,31 +3716,24 @@ impl ValueEmitter {
                 temp
             }
             ReferenceTarget::ArrayDim(target) => {
-                let index_temp = target
-                    .index
-                    .as_ref()
-                    .map(|index| self.emit_materialized_value(out, index));
+                let path = emit_array_path_segments(out, self, &target.dimensions);
                 let temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&temp);
-                out.push_str(" = ptn_runtime_reference_for_array_dim(&runtime, \"");
+                out.push_str(" = ptn_runtime_reference_for_array_path(&runtime, \"");
                 out.push_str(&c_string(&target.array));
                 out.push_str("\", ");
-                match &index_temp {
-                    Some(index_temp) => {
-                        out.push('&');
-                        out.push_str(index_temp);
-                    }
-                    None => out.push_str("NULL"),
-                }
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
                 out.push_str(", ");
                 out.push('"');
                 out.push_str(&c_string(&self.source_file));
                 out.push_str("\", ");
                 out.push_str(&target.line.to_string());
                 out.push_str(");\n");
-                if let Some(index_temp) = index_temp {
-                    emit_value_cleanup(out, "    ", &index_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
                 }
                 temp
             }

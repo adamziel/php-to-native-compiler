@@ -37,6 +37,8 @@ oracle_cases=(
     string_offset_alias_detach
     function_return_string_offset
     array_element_reference_after_copy
+    same_array_append_element_reference
+    same_array_element_reference_assignment
     typed_by_reference_return_separation
     by_reference_return_boundaries
 )
@@ -50,8 +52,6 @@ diagnostic_cases=(
     unsupported_foreach_destructuring
     unsupported_by_reference_return
     unsupported_recursive_array_append_self
-    unsupported_same_array_append_element_reference
-    unsupported_same_array_element_reference_assignment
     unsupported_recursive_array_literal_self
     unsupported_recursive_array_literal_keyed_self
     unsupported_recursive_array_literal_nested_self
@@ -92,6 +92,12 @@ coverage() {
         array_element_reference_after_copy)
             printf 'array element references and copied siblings preserve COW\n'
             ;;
+        same_array_append_element_reference)
+            printf 'same-array append by reference aliases existing elements\n'
+            ;;
+        same_array_element_reference_assignment)
+            printf 'same-array element reference assignment aliases existing elements\n'
+            ;;
         typed_by_reference_return_separation)
             printf 'typed by-reference returns separate reference-bound values\n'
             ;;
@@ -112,12 +118,6 @@ coverage() {
             ;;
         unsupported_recursive_array_append_self)
             printf 'diagnostic: array append by reference to itself remains explicit unsupported behavior\n'
-            ;;
-        unsupported_same_array_append_element_reference)
-            printf 'diagnostic: appending a same-array element reference remains explicit unsupported behavior\n'
-            ;;
-        unsupported_same_array_element_reference_assignment)
-            printf 'diagnostic: same-array element reference assignment remains explicit unsupported behavior\n'
             ;;
         unsupported_recursive_array_literal_self)
             printf 'diagnostic: array literal reference to assigned variable remains explicit unsupported behavior\n'
@@ -267,6 +267,24 @@ $copy[1] = 8;
 echo $items[0], ":", $copy[0], ":", $items[1], ":", $copy[1], ":", $ref, "\n";
 PHP
             ;;
+        same_array_append_element_reference)
+            cat >"$path" <<'PHP'
+<?php
+$array = [1];
+$array[] =& $array[0];
+$array[0] = 3;
+echo $array[0], ":", $array[1], "\n";
+PHP
+            ;;
+        same_array_element_reference_assignment)
+            cat >"$path" <<'PHP'
+<?php
+$array = [1, 2];
+$array[0] =& $array[1];
+$array[1] = 5;
+echo $array[0], ":", $array[1], "\n";
+PHP
+            ;;
         typed_by_reference_return_separation)
             cat >"$path" <<'PHP'
 <?php
@@ -381,20 +399,6 @@ $array = [];
 $array[] =& $array;
 PHP
             ;;
-        unsupported_same_array_append_element_reference)
-            cat >"$path" <<'PHP'
-<?php
-$array = [1];
-$array[] =& $array[0];
-PHP
-            ;;
-        unsupported_same_array_element_reference_assignment)
-            cat >"$path" <<'PHP'
-<?php
-$array = [1, 2];
-$array[0] =& $array[1];
-PHP
-            ;;
         unsupported_recursive_array_literal_self)
             cat >"$path" <<'PHP'
 <?php
@@ -494,12 +498,6 @@ expected_diagnostic() {
             ;;
         unsupported_recursive_array_append_self)
             printf 'recursive array references are unsupported\n'
-            ;;
-        unsupported_same_array_append_element_reference)
-            printf 'same-array element references are unsupported\n'
-            ;;
-        unsupported_same_array_element_reference_assignment)
-            printf 'same-array element references are unsupported\n'
             ;;
         unsupported_recursive_array_literal_self)
             printf 'recursive array references are unsupported\n'

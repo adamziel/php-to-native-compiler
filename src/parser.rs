@@ -294,22 +294,10 @@ impl Parser {
                 && matches!(self.peek().kind, TokenKind::Ampersand)
             {
                 self.advance();
-                if target.dimensions.len() > 1 {
-                    return Err(Diagnostic::new(
-                        "nested array reference lvalues are unsupported",
-                        Some(target.span),
-                    ));
-                }
                 let source = self.parse_reference_source()?;
                 if reference_source_is_variable(&source, &target.array) {
                     return Err(Diagnostic::new(
                         "recursive array references are unsupported",
-                        Some(target.span),
-                    ));
-                }
-                if reference_source_is_array_dim_of(&source, &target.array) {
-                    return Err(Diagnostic::new(
-                        "same-array element references are unsupported",
                         Some(target.span),
                     ));
                 }
@@ -2302,40 +2290,52 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
     match source {
         Expr::Variable(_, _) | Expr::Call { .. } => Ok(()),
         Expr::Grouped { expr, .. } => validate_reference_source_expr(expr),
+        Expr::ArrayAccess { .. } => validate_variable_root_array_reference_expr(
+            source,
+            "append reference sources are unsupported",
+            "temporary array offset references are unsupported",
+        ),
+        _ => Err(Diagnostic::new(
+            "unsupported by-reference assignment target",
+            Some(source.span()),
+        )),
+    }
+}
+
+fn validate_variable_root_array_reference_expr(
+    expr: &Expr,
+    append_message: &str,
+    temporary_message: &str,
+) -> Result<()> {
+    match expr {
+        Expr::Variable(_, _) => Ok(()),
+        Expr::Grouped { expr, .. } => {
+            validate_variable_root_array_reference_expr(expr, append_message, temporary_message)
+        }
         Expr::ArrayAccess { array, index, span } => {
             if index.is_none() {
-                return Err(Diagnostic::new(
-                    "append reference sources are unsupported",
-                    Some(*span),
-                ));
+                return Err(Diagnostic::new(append_message, Some(*span)));
             }
             match array.as_ref() {
                 Expr::Variable(_, _) => Ok(()),
                 Expr::Grouped { expr, .. } => match expr.as_ref() {
                     Expr::Variable(_, _) => Ok(()),
-                    Expr::ArrayAccess { .. } => Err(Diagnostic::new(
-                        "nested array reference lvalues are unsupported",
-                        Some(*span),
-                    )),
-                    _ => Err(Diagnostic::new(
-                        "temporary array offset references are unsupported",
-                        Some(*span),
-                    )),
+                    Expr::ArrayAccess { .. } => validate_variable_root_array_reference_expr(
+                        expr.as_ref(),
+                        append_message,
+                        temporary_message,
+                    ),
+                    _ => Err(Diagnostic::new(temporary_message, Some(*span))),
                 },
-                Expr::ArrayAccess { .. } => Err(Diagnostic::new(
-                    "nested array reference lvalues are unsupported",
-                    Some(*span),
-                )),
-                _ => Err(Diagnostic::new(
-                    "temporary array offset references are unsupported",
-                    Some(*span),
-                )),
+                Expr::ArrayAccess { .. } => validate_variable_root_array_reference_expr(
+                    array.as_ref(),
+                    append_message,
+                    temporary_message,
+                ),
+                _ => Err(Diagnostic::new(temporary_message, Some(*span))),
             }
         }
-        _ => Err(Diagnostic::new(
-            "unsupported by-reference assignment target",
-            Some(source.span()),
-        )),
+        _ => Err(Diagnostic::new(temporary_message, Some(expr.span()))),
     }
 }
 
@@ -2473,35 +2473,22 @@ fn validate_by_reference_return_value(value: &Expr, function_name: &str) -> Resu
     match value {
         Expr::Variable(_, _) => Ok(()),
         Expr::Grouped { expr, .. } => validate_by_reference_return_value(expr, function_name),
-        Expr::ArrayAccess { array, index, span } => {
+        Expr::ArrayAccess {
+            array: _,
+            index,
+            span,
+        } => {
             if index.is_none() {
                 return Err(Diagnostic::new(
                     "by-reference return requires a variable or array element",
                     Some(*span),
                 ));
             }
-            match array.as_ref() {
-                Expr::Variable(_, _) => Ok(()),
-                Expr::Grouped { expr, .. } => match expr.as_ref() {
-                    Expr::Variable(_, _) => Ok(()),
-                    Expr::ArrayAccess { .. } => Err(Diagnostic::new(
-                        "nested array reference lvalues are unsupported",
-                        Some(*span),
-                    )),
-                    _ => Err(Diagnostic::new(
-                        "by-reference return requires a variable or array element",
-                        Some(*span),
-                    )),
-                },
-                Expr::ArrayAccess { .. } => Err(Diagnostic::new(
-                    "nested array reference lvalues are unsupported",
-                    Some(*span),
-                )),
-                _ => Err(Diagnostic::new(
-                    "by-reference return requires a variable or array element",
-                    Some(*span),
-                )),
-            }
+            validate_variable_root_array_reference_expr(
+                value,
+                "by-reference return requires a variable or array element",
+                "by-reference return requires a variable or array element",
+            )
         }
         Expr::Call { name, span, .. } if name.eq_ignore_ascii_case(function_name) => {
             Err(Diagnostic::new(
@@ -2944,12 +2931,6 @@ fn reference_array_dim_target_from_expr(
             }
             Expr::Variable(array, _) => {
                 dimensions.reverse();
-                if dimensions.len() > 1 {
-                    return Err(Diagnostic::new(
-                        "nested array reference lvalues are unsupported",
-                        Some(target_span),
-                    ));
-                }
                 return Ok(ArrayDimTarget {
                     array,
                     dimensions,
@@ -3046,21 +3027,9 @@ fn validate_reference_assignment_target_source(
             }
         }
         AssignmentTarget::ArrayDim(target) => {
-            if target.dimensions.len() > 1 {
-                return Err(Diagnostic::new(
-                    "nested reference lvalues are unsupported",
-                    Some(target.span),
-                ));
-            }
             if reference_source_is_variable(source, &target.array) {
                 return Err(Diagnostic::new(
                     "recursive array references are unsupported",
-                    Some(target.span),
-                ));
-            }
-            if reference_source_is_array_dim_of(source, &target.array) {
-                return Err(Diagnostic::new(
-                    "same-array element references are unsupported",
                     Some(target.span),
                 ));
             }

@@ -983,6 +983,110 @@ static PTN_UNUSED void ptn_array_path_emit_null_key_deprecation(
     }
 }
 
+static PTN_UNUSED PtnArray *ptn_array_descend_for_reference_write(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    const PtnArrayPathSegment *segment,
+    const char *path,
+    size_t line
+) {
+    PtnArrayKey key = ptn_array_path_segment_key(array, segment);
+    PtnArrayEntry *entry = segment->append ? NULL : ptn_array_entry_for_key(array, key);
+
+    if (entry == NULL) {
+        PtnValue child = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(array, key, child);
+        return array->entries[array->len - 1].value.as.array;
+    }
+
+    ptn_array_key_free(key);
+    PtnValue *entry_value = entry->value.type == PTN_REFERENCE
+        ? &entry->value.as.reference->value
+        : &entry->value;
+    if (entry_value->type == PTN_ARRAY) {
+        return ptn_array_detach_value(entry_value);
+    }
+    if (entry_value->type == PTN_NULL) {
+        return ptn_value_replace_with_empty_array(entry_value);
+    }
+    if (entry_value->type == PTN_STRING) {
+        ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
+        return NULL;
+    }
+
+    ptn_throw_exception(runtime, "Error", "Cannot use a scalar value as an array");
+    return NULL;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    const char *path,
+    size_t line
+) {
+    if (segment_count == 0) {
+        return ptn_runtime_reference_for_variable(runtime, name);
+    }
+
+    PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
+    if (array == NULL) {
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+
+    for (size_t i = 0; i + 1 < segment_count; i++) {
+        array = ptn_array_descend_for_reference_write(runtime, array, &segments[i], path, line);
+        if (array == NULL) {
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
+    }
+
+    const PtnArrayPathSegment *leaf = &segments[segment_count - 1];
+    PtnArrayEntry *entry = ptn_array_reference_entry(array, leaf->append ? NULL : &leaf->value);
+    if (entry->value.type != PTN_REFERENCE) {
+        PtnValue current = entry->value;
+        entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+    return ptn_value_clone(entry->value);
+}
+
+static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue reference,
+    const char *path,
+    size_t line
+) {
+    if (reference.type != PTN_REFERENCE) {
+        ptn_abort_out_of_memory();
+    }
+    if (segment_count == 0) {
+        ptn_runtime_bind_variable_reference(runtime, name, reference);
+        return;
+    }
+
+    PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
+    if (array == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i + 1 < segment_count; i++) {
+        array = ptn_array_descend_for_reference_write(runtime, array, &segments[i], path, line);
+        if (array == NULL) {
+            return;
+        }
+    }
+
+    const PtnArrayPathSegment *leaf = &segments[segment_count - 1];
+    PtnArrayKey key = leaf->append
+        ? ptn_array_int_key(array->next_auto_key)
+        : ptn_array_key_from_value(leaf->value);
+    ptn_array_set_entry(array, key, ptn_value_clone(reference));
+}
+
 static PTN_UNUSED PtnArray *ptn_array_descend_for_write(
     PtnRuntime *runtime,
     PtnArray *array,

@@ -1322,19 +1322,8 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "recursive array references are unsupported"
     );
 
-    let same_array_append =
-        parser::parse("<?php $array = [1]; $array[] =& $array[0];").unwrap_err();
-    assert_eq!(
-        same_array_append.message,
-        "same-array element references are unsupported"
-    );
-
-    let same_array_element =
-        parser::parse("<?php $array = [1, 2]; $array[0] =& $array[1];").unwrap_err();
-    assert_eq!(
-        same_array_element.message,
-        "same-array element references are unsupported"
-    );
+    parser::parse("<?php $array = [1]; $array[] =& $array[0];").unwrap();
+    parser::parse("<?php $array = [1, 2]; $array[0] =& $array[1];").unwrap();
 
     let recursive_array_literal = parser::parse("<?php $array = [&$array];").unwrap_err();
     assert_eq!(
@@ -1375,23 +1364,14 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "same-array element references are unsupported"
     );
 
-    let nested_forms = [
-        ("<?php $array[0][1] =& $value;", "$array[0][1]"),
-        ("<?php $alias =& $array[0][1];", "$array[0][1]"),
-        ("<?php $alias =& ($array[0][1]);", "$array[0][1]"),
-        ("<?php $alias =& ($array[0])[1];", "($array[0])[1]"),
-        ("<?php $alias =& (($array)[0])[1];", "(($array)[0])[1]"),
-        ("<?php $refs = [&$array[0][1]];", "$array[0][1]"),
-        ("<?php $refs = ['k' => &$array[0][1]];", "$array[0][1]"),
-        ("<?php $refs = [&($array[0])[1]];", "($array[0])[1]"),
-    ];
-    for (source, target) in nested_forms {
-        assert_reference_lvalue_diagnostic(
-            source,
-            "nested array reference lvalues are unsupported",
-            target,
-        );
-    }
+    parser::parse("<?php $array[0][1] =& $value;").unwrap();
+    parser::parse("<?php $alias =& $array[0][1];").unwrap();
+    parser::parse("<?php $alias =& ($array[0][1]);").unwrap();
+    parser::parse("<?php $alias =& ($array[0])[1];").unwrap();
+    parser::parse("<?php $alias =& (($array)[0])[1];").unwrap();
+    parser::parse("<?php $refs = [&$array[0][1]];").unwrap();
+    parser::parse("<?php $refs = ['k' => &$array[0][1]];").unwrap();
+    parser::parse("<?php $refs = [&($array[0])[1]];").unwrap();
 
     let temporary_offset_forms = [
         ("<?php $alias =& factory()[0];", "factory()[0]"),
@@ -6081,6 +6061,36 @@ var_dump($arr[0], $other, $elem);",
 }
 
 #[test]
+fn compile_nested_recursive_reference_lvalues_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-recursive-reference-lvalues");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-recursive-reference-lvalues.php");
+    let output = root.join("nested-recursive-reference-lvalues-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = array(array(1));\n\
+$a[0][] =& $a[0];\n\
+$a[0][] =& $a[0];\n\
+$a[0][0] = 2;\n\
+var_dump($a);\n\
+$a[0] = null;\n\
+$a = null;",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  &array(3) {\n    [0]=>\n    int(2)\n    [1]=>\n    *RECURSION*\n    [2]=>\n    *RECURSION*\n  }\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_grouped_reference_lvalues_to_native_binary() {
     let root = temp_dir("ptn-native-grouped-reference-lvalues");
     fs::create_dir_all(&root).unwrap();
@@ -9858,7 +9868,7 @@ echo $wrapped, \"|\", $wrapped_copy, \"\\n\";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"value\")"));
-    assert!(c_source.contains("ptn_runtime_reference_for_array_dim(&runtime, \"items\""));
+    assert!(c_source.contains("ptn_runtime_reference_for_array_path(&runtime, \"items\""));
     assert!(c_source.contains("ptn_reference_source_or_value"));
     assert!(c_source.contains("ptn_value_clone(ptn_value_deref("));
 }
