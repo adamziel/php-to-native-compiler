@@ -227,6 +227,7 @@ pub enum UnsetTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssignmentOp {
     Assign,
+    CoalesceAssign,
     AddAssign,
     SubtractAssign,
     MultiplyAssign,
@@ -258,6 +259,7 @@ pub enum Expr {
     Variable(String, SourceSpan),
     Assign {
         target: AssignmentTarget,
+        op: AssignmentOp,
         value: Box<Expr>,
         span: SourceSpan,
     },

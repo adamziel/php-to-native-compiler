@@ -271,6 +271,12 @@ impl Parser {
                 return self.parse_expression_statement();
             }
             let op = self.expect_assignment_op()?;
+            if matches!(op, AssignmentOp::CoalesceAssign) {
+                return Err(Diagnostic::new(
+                    "null coalescing assignment currently supports direct variables only",
+                    Some(target.span),
+                ));
+            }
             if matches!(op, AssignmentOp::Assign)
                 && matches!(self.peek().kind, TokenKind::Ampersand)
             {
@@ -997,23 +1003,30 @@ impl Parser {
 
     fn parse_assignment_expr(&mut self) -> Result<Expr> {
         let left = self.parse_binary_expr(0)?;
-        if !matches!(self.peek().kind, TokenKind::Equal) {
+        if !self.peek_is_expression_assignment_op() {
             reject_append_array_read(&left)?;
             return Ok(left);
         }
 
-        let equals = self.advance().clone();
+        let operator = self.advance().clone();
+        let op = match operator.kind {
+            TokenKind::Equal => AssignmentOp::Assign,
+            TokenKind::QuestionQuestionEqual => AssignmentOp::CoalesceAssign,
+            _ => unreachable!("peek_is_expression_assignment_op guards assignment token"),
+        };
         let value = self.parse_assignment_expr()?;
         let left_span = left.span();
         let target = assignment_target_from_expr(left).map_err(|_| {
             Diagnostic::new(
                 "assignment expression target must be a variable, array dimension, or list",
-                Some(equals.span),
+                Some(operator.span),
             )
         })?;
+        reject_unsupported_coalesce_assignment_target(op, &target, operator.span)?;
         let span = combine_spans(left_span, value.span());
         Ok(Expr::Assign {
             target,
+            op,
             value: Box::new(value),
             span,
         })
@@ -1021,19 +1034,26 @@ impl Parser {
 
     fn parse_assignment_value_expr(&mut self) -> Result<Expr> {
         let left = self.parse_binary_expr(SYMBOL_OR_PRECEDENCE)?;
-        let value = if matches!(self.peek().kind, TokenKind::Equal) {
-            let equals = self.advance().clone();
+        let value = if self.peek_is_expression_assignment_op() {
+            let operator = self.advance().clone();
+            let op = match operator.kind {
+                TokenKind::Equal => AssignmentOp::Assign,
+                TokenKind::QuestionQuestionEqual => AssignmentOp::CoalesceAssign,
+                _ => unreachable!("peek_is_expression_assignment_op guards assignment token"),
+            };
             let right = self.parse_assignment_expr()?;
             let left_span = left.span();
             let target = assignment_target_from_expr(left).map_err(|_| {
                 Diagnostic::new(
                     "assignment expression target must be a variable, array dimension, or list",
-                    Some(equals.span),
+                    Some(operator.span),
                 )
             })?;
+            reject_unsupported_coalesce_assignment_target(op, &target, operator.span)?;
             let span = combine_spans(left_span, right.span());
             Expr::Assign {
                 target,
+                op,
                 value: Box::new(right),
                 span,
             }
@@ -1728,6 +1748,7 @@ impl Parser {
         let token = self.advance();
         match token.kind {
             TokenKind::Equal => Ok(AssignmentOp::Assign),
+            TokenKind::QuestionQuestionEqual => Ok(AssignmentOp::CoalesceAssign),
             TokenKind::PlusEqual => Ok(AssignmentOp::AddAssign),
             TokenKind::MinusEqual => Ok(AssignmentOp::SubtractAssign),
             TokenKind::AsteriskEqual => Ok(AssignmentOp::MultiplyAssign),
@@ -1748,6 +1769,7 @@ impl Parser {
         matches!(
             self.peek().kind,
             TokenKind::Equal
+                | TokenKind::QuestionQuestionEqual
                 | TokenKind::PlusEqual
                 | TokenKind::MinusEqual
                 | TokenKind::AsteriskEqual
@@ -1760,6 +1782,13 @@ impl Parser {
                 | TokenKind::CaretEqual
                 | TokenKind::ShiftLeftEqual
                 | TokenKind::ShiftRightEqual
+        )
+    }
+
+    fn peek_is_expression_assignment_op(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Equal | TokenKind::QuestionQuestionEqual
         )
     }
 
@@ -1946,6 +1975,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Equal => "=",
         TokenKind::DoubleArrow => "=>",
         TokenKind::QuestionQuestion => "??",
+        TokenKind::QuestionQuestionEqual => "??=",
         TokenKind::EqualEqual => "==",
         TokenKind::EqualEqualEqual => "===",
         TokenKind::NotEqual => "!=",
@@ -2448,6 +2478,22 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             Some(other.span()),
         )),
     }
+}
+
+fn reject_unsupported_coalesce_assignment_target(
+    op: AssignmentOp,
+    target: &AssignmentTarget,
+    span: SourceSpan,
+) -> Result<()> {
+    if matches!(op, AssignmentOp::CoalesceAssign)
+        && !matches!(target, AssignmentTarget::Variable { .. })
+    {
+        return Err(Diagnostic::new(
+            "null coalescing assignment currently supports direct variables only",
+            Some(span),
+        ));
+    }
+    Ok(())
 }
 
 fn list_assignment_target_from_array_elements(

@@ -9,7 +9,7 @@ Measured branches: `ptn-4yt.9` then `ptn-4yt.7` rebased on `master`;
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 326 | 326 | 0 |
+| Native compiled PHP snippets | 327 | 327 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 146 | 54 |
 | PHPT Zend rows | 76 | 63 | 13 |
@@ -54,15 +54,14 @@ expressions, expression-level `@` suppression, `file_put_contents()`,
 reference-aware `array_sum()`/`strtr()` replacement maps and byte maps,
 `array_merge_recursive()`, `debug_zval_dump()` reference inspection, and
 string-valued dynamic calls with lvalue reference arguments through the
-fallback dispatcher, plus append/list assignment expressions for reference
-arrays.
+fallback dispatcher, append/list assignment expressions for reference arrays,
+and direct-variable assignment-form `??=`.
 
 ## Still Needed
 
 More PHPT COW rows, reference-aware internals, call-result references, broader
 by-reference returns, nested reference lvalues, recursive reference diagnostics,
-closure/callback call surfaces, and assignment-form `??=`. File API coverage
-remains narrow.
+closure/callback call surfaces, offset-form `??=`, and broader file APIs.
 
 ## Next Focus
 

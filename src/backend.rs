@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use crate::ast::AssignmentOp;
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
@@ -1507,7 +1508,7 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Load { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => {}
-        ValueExpr::Assign { target, value } => {
+        ValueExpr::Assign { target, value, .. } => {
             collect_assignment_target_runtime_requirements(target, functions, requirements);
             collect_value_runtime_requirements(value, functions, requirements);
         }
@@ -2070,8 +2071,16 @@ impl ValueEmitter {
         &mut self,
         out: &mut String,
         target: &AssignmentTarget,
+        op: AssignmentOp,
         value: &ValueExpr,
     ) -> String {
+        if matches!(op, AssignmentOp::CoalesceAssign) {
+            if let AssignmentTarget::Variable { name, .. } = target {
+                return self.emit_coalesce_assignment(out, name, value);
+            }
+            unreachable!("parser rejects null coalescing assignment for non-variable targets");
+        }
+
         if let AssignmentTarget::List(target) = target {
             return self.emit_list_assignment(out, target, value);
         }
@@ -2431,7 +2440,9 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &expr_temp);
                 result_temp
             }
-            ValueExpr::Assign { target, value } => self.emit_assignment(out, target, value),
+            ValueExpr::Assign { target, op, value } => {
+                self.emit_assignment(out, target, *op, value)
+            }
             ValueExpr::Cast { kind, expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
@@ -2791,6 +2802,51 @@ impl ValueEmitter {
         out.push_str(" = ");
         out.push_str(&right_temp);
         out.push_str(";\n");
+        out.push_str("    }\n");
+        result_temp
+    }
+
+    fn emit_coalesce_assignment(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        value: &ValueExpr,
+    ) -> String {
+        let lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists && ");
+        out.push_str(&lookup_temp);
+        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&lookup_temp);
+        out.push_str(".value;\n");
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        let value_temp = self.emit_materialized_value(out, value);
+        out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone_deref(");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &value_temp);
         out.push_str("    }\n");
         result_temp
     }

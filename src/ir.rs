@@ -171,6 +171,7 @@ pub enum ValueExpr {
     },
     Assign {
         target: AssignmentTarget,
+        op: AssignmentOp,
         value: Box<ValueExpr>,
     },
     Constant(String),
@@ -400,10 +401,21 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                 value,
                 span,
             } => {
-                instructions.push(Instruction::Store {
-                    name: name.clone(),
-                    value: lower_assignment_value(name, *op, value, span.line),
-                });
+                if matches!(op, AssignmentOp::CoalesceAssign) {
+                    instructions.push(Instruction::Expression(ValueExpr::Assign {
+                        target: AssignmentTarget::Variable {
+                            name: name.clone(),
+                            line: span.line,
+                        },
+                        op: *op,
+                        value: Box::new(lower_expr(value)),
+                    }));
+                } else {
+                    instructions.push(Instruction::Store {
+                        name: name.clone(),
+                        value: lower_assignment_value(name, *op, value, span.line),
+                    });
+                }
             }
             Statement::AssignRef { name, target, .. } => {
                 instructions.push(Instruction::StoreRef {
@@ -693,6 +705,9 @@ fn lower_unset_target(target: &AstUnsetTarget) -> Instruction {
 fn assignment_op_binary_op(op: AssignmentOp) -> Option<BinaryOp> {
     match op {
         AssignmentOp::Assign => None,
+        AssignmentOp::CoalesceAssign => {
+            unreachable!("parser rejects null coalescing assignment for array dimensions")
+        }
         AssignmentOp::AddAssign => Some(BinaryOp::Add),
         AssignmentOp::SubtractAssign => Some(BinaryOp::Subtract),
         AssignmentOp::MultiplyAssign => Some(BinaryOp::Multiply),
@@ -720,6 +735,9 @@ fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr, line: usiz
     let right = lower_expr(value);
     match op {
         AssignmentOp::Assign => right,
+        AssignmentOp::CoalesceAssign => {
+            unreachable!("direct null coalescing assignment lowers through ValueExpr::Assign")
+        }
         AssignmentOp::AddAssign => lower_compound_assignment(name, line, BinaryOp::Add, right),
         AssignmentOp::SubtractAssign => {
             lower_compound_assignment(name, line, BinaryOp::Subtract, right)
@@ -779,8 +797,11 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             name: name.clone(),
             line: span.line,
         },
-        Expr::Assign { target, value, .. } => ValueExpr::Assign {
+        Expr::Assign {
+            target, op, value, ..
+        } => ValueExpr::Assign {
             target: lower_assignment_target(target),
+            op: *op,
             value: Box::new(lower_expr(value)),
         },
         Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),

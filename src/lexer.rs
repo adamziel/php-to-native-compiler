@@ -38,6 +38,7 @@ pub enum TokenKind {
     Equal,
     DoubleArrow,
     QuestionQuestion,
+    QuestionQuestionEqual,
     EqualEqual,
     EqualEqualEqual,
     NotEqual,
@@ -172,6 +173,9 @@ impl<'a> Lexer<'a> {
 
             match ch {
                 '?' if self.rest().starts_with("?>") => self.push_close_tag(),
+                '?' if self.rest().starts_with("??=") => {
+                    self.push_fixed(TokenKind::QuestionQuestionEqual, 3)
+                }
                 '?' if self.rest().starts_with("??") => {
                     self.push_fixed(TokenKind::QuestionQuestion, 2)
                 }

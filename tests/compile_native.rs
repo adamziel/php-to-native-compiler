@@ -219,67 +219,72 @@ fn parser_accepts_print_as_statement() {
 #[test]
 fn parser_accepts_direct_variable_compound_assignments() {
     let program = parser::parse(
-        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value **= 2; $value /= 5; $value %= 6; $value .= \"7\"; $value &= \"8\"; $value |= \"9\"; $value ^= \"10\"; $value <<= 11; $value >>= 12;",
+        "<?php $value = 1; $value ??= 13; $value += 2; $value -= 3; $value *= 4; $value **= 2; $value /= 5; $value %= 6; $value .= \"7\"; $value &= \"8\"; $value |= \"9\"; $value ^= \"10\"; $value <<= 11; $value >>= 12;",
     )
     .unwrap();
-    assert_eq!(program.statements.len(), 13);
+    assert_eq!(program.statements.len(), 14);
 
     let Statement::Assign { op, .. } = &program.statements[1] else {
+        panic!("expected null coalescing assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::CoalesceAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[2] else {
         panic!("expected add assignment statement");
     };
     assert_eq!(*op, AssignmentOp::AddAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[2] else {
+    let Statement::Assign { op, .. } = &program.statements[3] else {
         panic!("expected subtract assignment statement");
     };
     assert_eq!(*op, AssignmentOp::SubtractAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[3] else {
+    let Statement::Assign { op, .. } = &program.statements[4] else {
         panic!("expected multiply assignment statement");
     };
     assert_eq!(*op, AssignmentOp::MultiplyAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[4] else {
+    let Statement::Assign { op, .. } = &program.statements[5] else {
         panic!("expected power assignment statement");
     };
     assert_eq!(*op, AssignmentOp::PowerAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[5] else {
+    let Statement::Assign { op, .. } = &program.statements[6] else {
         panic!("expected divide assignment statement");
     };
     assert_eq!(*op, AssignmentOp::DivideAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[6] else {
+    let Statement::Assign { op, .. } = &program.statements[7] else {
         panic!("expected modulo assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ModuloAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[7] else {
+    let Statement::Assign { op, .. } = &program.statements[8] else {
         panic!("expected concat assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ConcatAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[8] else {
+    let Statement::Assign { op, .. } = &program.statements[9] else {
         panic!("expected bitwise and assignment statement");
     };
     assert_eq!(*op, AssignmentOp::BitwiseAndAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[9] else {
+    let Statement::Assign { op, .. } = &program.statements[10] else {
         panic!("expected bitwise or assignment statement");
     };
     assert_eq!(*op, AssignmentOp::BitwiseOrAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[10] else {
+    let Statement::Assign { op, .. } = &program.statements[11] else {
         panic!("expected bitwise xor assignment statement");
     };
     assert_eq!(*op, AssignmentOp::BitwiseXorAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[11] else {
+    let Statement::Assign { op, .. } = &program.statements[12] else {
         panic!("expected shift left assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ShiftLeftAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[12] else {
+    let Statement::Assign { op, .. } = &program.statements[13] else {
         panic!("expected shift right assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ShiftRightAssign);
@@ -8621,6 +8626,50 @@ fn compile_direct_compound_assignments_to_native_binary() {
 }
 
 #[test]
+fn compile_direct_null_coalescing_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-null-coalescing-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("null-coalescing-assignment.php");
+    let output = root.join("null-coalescing-assignment-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function rhs($label) { echo \"rhs:$label\\n\"; return $label; }\n\
+var_dump($missing ??= rhs(\"missing\"));\n\
+$nullish = null; var_dump($nullish ??= rhs(\"null\"));\n\
+$falsey = false; var_dump($falsey ??= rhs(\"false\"));\n\
+$zero = 0; var_dump($zero ??= rhs(\"zero\"));\n\
+$existing = \"kept\"; var_dump($existing ??= rhs(\"existing\"));\n\
+$standalone = null; $standalone ??= rhs(\"standalone\"); var_dump($standalone);\n\
+var_dump($missing, $nullish, $falsey, $zero, $existing);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "rhs:missing\n\
+string(7) \"missing\"\n\
+rhs:null\n\
+string(4) \"null\"\n\
+bool(false)\n\
+int(0)\n\
+string(4) \"kept\"\n\
+rhs:standalone\n\
+string(10) \"standalone\"\n\
+string(7) \"missing\"\n\
+string(4) \"null\"\n\
+bool(false)\n\
+int(0)\n\
+string(4) \"kept\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_compound_assignments_with_grouping_and_casts_to_native_binary() {
     let root = temp_dir("ptn-native-compound-assignment-grouped");
     fs::create_dir_all(&root).unwrap();
@@ -9634,8 +9683,15 @@ fn compile_many_runtime_symbols_to_native_binary() {
 
 #[test]
 fn unsupported_constructs_fail_before_codegen() {
-    let unsupported_operator = parser::parse("<?php $name ??= 1;").unwrap_err();
-    assert!(unsupported_operator.message.contains("expected expression"));
+    let unsupported_operator = parser::parse("<?php $items[\"name\"] ??= 1;").unwrap_err();
+    assert!(unsupported_operator
+        .message
+        .contains("null coalescing assignment currently supports direct variables only"));
+
+    let unsupported_expression = parser::parse("<?php echo $items[\"name\"] ??= 1;").unwrap_err();
+    assert!(unsupported_expression
+        .message
+        .contains("null coalescing assignment currently supports direct variables only"));
 }
 
 #[test]
