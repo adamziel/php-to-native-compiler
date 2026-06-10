@@ -270,12 +270,15 @@ impl Parser {
                 self.index = start;
                 return self.parse_expression_statement();
             }
+            let op_span = self.peek().span;
             let op = self.expect_assignment_op()?;
             if matches!(op, AssignmentOp::CoalesceAssign) {
-                return Err(Diagnostic::new(
-                    "null coalescing assignment currently supports direct variables only",
-                    Some(target.span),
-                ));
+                reject_unsupported_coalesce_assignment_target(
+                    op,
+                    &AssignmentTarget::ArrayDim(target),
+                    op_span,
+                )?;
+                unreachable!("offset null coalescing assignment is rejected");
             }
             if matches!(op, AssignmentOp::Assign)
                 && matches!(self.peek().kind, TokenKind::Ampersand)
@@ -2488,10 +2491,16 @@ fn reject_unsupported_coalesce_assignment_target(
     if matches!(op, AssignmentOp::CoalesceAssign)
         && !matches!(target, AssignmentTarget::Variable { .. })
     {
-        return Err(Diagnostic::new(
-            "null coalescing assignment currently supports direct variables only",
-            Some(span),
-        ));
+        let message = match target {
+            AssignmentTarget::ArrayDim(_) => {
+                "null coalescing assignment for offset targets is unsupported; direct variables are supported"
+            }
+            AssignmentTarget::List(_) => {
+                "null coalescing assignment currently supports direct variables only"
+            }
+            AssignmentTarget::Variable { .. } => unreachable!(),
+        };
+        return Err(Diagnostic::new(message, Some(span)));
     }
     Ok(())
 }

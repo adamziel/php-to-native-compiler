@@ -9682,16 +9682,69 @@ fn compile_many_runtime_symbols_to_native_binary() {
 }
 
 #[test]
-fn unsupported_constructs_fail_before_codegen() {
-    let unsupported_operator = parser::parse("<?php $items[\"name\"] ??= 1;").unwrap_err();
-    assert!(unsupported_operator
-        .message
-        .contains("null coalescing assignment currently supports direct variables only"));
+fn parser_rejects_offset_null_coalescing_assignments_with_explicit_diagnostics() {
+    let cases = [
+        (
+            "array string key statement",
+            "<?php\n$items[\"name\"] ??= 1;",
+        ),
+        ("array integer key statement", "<?php\n$items[0] ??= 1;"),
+        (
+            "nested array statement",
+            "<?php\n$items[\"nested\"][\"leaf\"] ??= 1;",
+        ),
+        ("string offset statement", "<?php\n$string[1] ??= \"x\";"),
+        ("echo expression", "<?php\necho $items[\"name\"] ??= 1;"),
+        ("grouped expression", "<?php\n($items[\"name\"] ??= 1);"),
+    ];
+    assert_eq!(cases.len(), 6);
 
-    let unsupported_expression = parser::parse("<?php echo $items[\"name\"] ??= 1;").unwrap_err();
-    assert!(unsupported_expression
-        .message
-        .contains("null coalescing assignment currently supports direct variables only"));
+    for (name, source) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(
+            error.message,
+            "null coalescing assignment for offset targets is unsupported; direct variables are supported",
+            "{name}"
+        );
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
+        let span = error.span.unwrap();
+        let operator_offset = source.find("??=").unwrap();
+        let before_operator = &source[..operator_offset];
+        let expected_line = before_operator
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1;
+        let expected_column = before_operator.rsplit('\n').next().unwrap().chars().count() + 1;
+        assert_eq!(span.byte_start, operator_offset, "{name}");
+        assert_eq!(span.byte_end, operator_offset + 3, "{name}");
+        assert_eq!(span.line, expected_line, "{name}");
+        assert_eq!(span.column, expected_column, "{name}");
+    }
+}
+
+#[test]
+fn phpc_renders_offset_null_coalescing_assignment_diagnostic() {
+    let root = temp_dir("ptn-phpc-offset-null-coalescing-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("offset-null-coalescing-assignment.php");
+    fs::write(
+        &input,
+        "<?php\n$items = [];\n$items[\"name\"] ??= \"fallback\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: null coalescing assignment for offset targets is unsupported; direct variables are supported in {} on line 3\n",
+            input.display()
+        )
+    );
 }
 
 #[test]

@@ -53,15 +53,16 @@ expressions, expression-level `@` suppression, `file_put_contents()`,
 `sha1_file()`, `unlink()` byte-file slices, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()` replacement maps and byte maps,
 `array_merge_recursive()`, `debug_zval_dump()` reference inspection, and
-string-valued dynamic calls with lvalue reference arguments through the
-fallback dispatcher, append/list assignment expressions for reference arrays,
-and direct-variable assignment-form `??=`.
+string-valued dynamic calls with lvalue reference arguments through fallback
+dispatch, append/list assignment expressions for reference arrays,
+direct-variable assignment-form `??=`, and six offset-form `??=` diagnostics.
 
 ## Still Needed
 
 More PHPT COW rows, reference-aware internals, call-result references, broader
 by-reference returns, nested reference lvalues, recursive reference diagnostics,
-closure/callback call surfaces, offset-form `??=`, and broader file APIs.
+closure/callback call surfaces, offset-form `??=` runtime support, and broader
+file APIs.
 
 ## Next Focus
 
