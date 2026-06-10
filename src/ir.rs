@@ -2,9 +2,9 @@ use crate::ast::{
     ArrayDimTarget as AstArrayDimTarget, ArrayElement as AstArrayElement,
     ArrayElementValue as AstArrayElementValue, AssignmentOp,
     AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
-    CatchClause as AstCatchClause, Expr, FunctionDecl as AstFunctionDecl,
-    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
-    ListAssignmentElement as AstListAssignmentElement,
+    CatchClause as AstCatchClause, ClosureUse as AstClosureUse, Expr,
+    FunctionDecl as AstFunctionDecl, FunctionParameter as AstFunctionParameter,
+    IncDecOp as AstIncDecOp, ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
     Program, ReferenceTarget as AstReferenceTarget, Statement, StringPart as AstStringPart,
@@ -26,6 +26,8 @@ pub struct FunctionDecl {
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
     pub body: Vec<Instruction>,
+    pub captures: Vec<ClosureCapture>,
+    pub is_closure: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -33,6 +35,13 @@ pub struct FunctionParameter {
     pub name: String,
     pub type_hint: Option<TypeHint>,
     pub by_ref: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClosureCapture {
+    pub name: String,
+    pub by_ref: bool,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,6 +221,10 @@ pub enum ValueExpr {
         arguments: Vec<ValueExpr>,
         line: usize,
     },
+    Closure {
+        function_index: usize,
+        captures: Vec<ClosureCapture>,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<ValueExpr>,
@@ -360,21 +373,48 @@ pub fn lower(program: &Program) -> Module {
 }
 
 pub fn lower_with_source(program: &Program, source_file: String, source_dir: String) -> Module {
+    let mut context = LoweringContext {
+        functions: program
+            .functions
+            .iter()
+            .map(lower_function_signature)
+            .collect(),
+        closure_count: 0,
+    };
+    for (index, function) in program.functions.iter().enumerate() {
+        context.functions[index].body = context.lower_statements(&function.body);
+    }
+    let instructions = context.lower_statements(&program.statements);
     Module {
-        functions: program.functions.iter().map(lower_function).collect(),
-        instructions: lower_statements(&program.statements),
+        functions: context.functions,
+        instructions,
         source_file,
         source_dir,
     }
 }
 
-fn lower_function(function: &AstFunctionDecl) -> FunctionDecl {
+struct LoweringContext {
+    functions: Vec<FunctionDecl>,
+    closure_count: usize,
+}
+
+fn lower_function_signature(function: &AstFunctionDecl) -> FunctionDecl {
     FunctionDecl {
         name: function.name.clone(),
         parameters: function.parameters.iter().map(lower_parameter).collect(),
         return_type: function.return_type.map(lower_type_hint),
         return_by_ref: function.return_by_ref,
-        body: lower_statements(&function.body),
+        body: Vec::new(),
+        captures: Vec::new(),
+        is_closure: false,
+    }
+}
+
+fn lower_closure_capture(capture: &AstClosureUse) -> ClosureCapture {
+    ClosureCapture {
+        name: capture.name.clone(),
+        by_ref: capture.by_ref,
+        line: capture.span.line,
     }
 }
 
@@ -396,325 +436,363 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
     }
 }
 
-fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
-    let mut instructions = Vec::new();
-    for statement in statements {
-        match statement {
-            Statement::Assign {
-                name,
-                op,
-                value,
-                span,
-            } => {
-                if matches!(op, AssignmentOp::CoalesceAssign) {
-                    instructions.push(Instruction::Expression(ValueExpr::Assign {
-                        target: AssignmentTarget::Variable {
+impl LoweringContext {
+    fn lower_statements(&mut self, statements: &[Statement]) -> Vec<Instruction> {
+        let mut instructions = Vec::new();
+        for statement in statements {
+            match statement {
+                Statement::Assign {
+                    name,
+                    op,
+                    value,
+                    span,
+                } => {
+                    if matches!(op, AssignmentOp::CoalesceAssign) {
+                        instructions.push(Instruction::Expression(ValueExpr::Assign {
+                            target: AssignmentTarget::Variable {
+                                name: name.clone(),
+                                line: span.line,
+                            },
+                            op: *op,
+                            value: Box::new(self.lower_expr(value)),
+                        }));
+                    } else {
+                        instructions.push(Instruction::Store {
                             name: name.clone(),
-                            line: span.line,
-                        },
-                        op: *op,
-                        value: Box::new(lower_expr(value)),
-                    }));
-                } else {
-                    instructions.push(Instruction::Store {
+                            value: self.lower_assignment_value(name, *op, value, span.line),
+                        });
+                    }
+                }
+                Statement::AssignRef { name, source, span } => {
+                    instructions.push(Instruction::StoreRef {
                         name: name.clone(),
-                        value: lower_assignment_value(name, *op, value, span.line),
+                        source: self.lower_expr(source),
+                        line: span.line,
                     });
                 }
-            }
-            Statement::AssignRef { name, source, span } => {
-                instructions.push(Instruction::StoreRef {
-                    name: name.clone(),
-                    source: lower_expr(source),
-                    line: span.line,
-                });
-            }
-            Statement::ArrayAssign {
-                target, op, value, ..
-            } => {
-                if matches!(op, AssignmentOp::CoalesceAssign) {
-                    instructions.push(Instruction::Expression(ValueExpr::Assign {
-                        target: lower_assignment_target(&AstAssignmentTarget::ArrayDim(
-                            target.clone(),
-                        )),
-                        op: *op,
-                        value: Box::new(lower_expr(value)),
-                    }));
-                } else {
-                    instructions.push(lower_array_dim_store(target, *op, value));
+                Statement::ArrayAssign {
+                    target, op, value, ..
+                } => {
+                    if matches!(op, AssignmentOp::CoalesceAssign) {
+                        instructions.push(Instruction::Expression(ValueExpr::Assign {
+                            target: self.lower_assignment_target(&AstAssignmentTarget::ArrayDim(
+                                target.clone(),
+                            )),
+                            op: *op,
+                            value: Box::new(self.lower_expr(value)),
+                        }));
+                    } else {
+                        instructions.push(self.lower_array_dim_store(target, *op, value));
+                    }
                 }
-            }
-            Statement::ArrayAssignRef { target, source, .. } => {
-                instructions.push(Instruction::StoreArrayDimRef {
-                    target: lower_array_dim_target(target),
-                    source: lower_expr(source),
-                });
-            }
-            Statement::Increment { name, op, span } => {
-                instructions.push(Instruction::Increment {
-                    name: name.clone(),
-                    op: lower_inc_dec_op(*op),
-                    line: span.line,
-                });
-            }
-            Statement::Unset { targets, .. } => {
-                for target in targets {
-                    instructions.push(lower_unset_target(target));
-                }
-            }
-            Statement::Const { declarations, .. } => {
-                for declaration in declarations {
-                    instructions.push(Instruction::DefineConstant {
-                        name: declaration.name.clone(),
-                        value: lower_expr(&declaration.value),
-                        line: declaration.span.line,
+                Statement::ArrayAssignRef { target, source, .. } => {
+                    instructions.push(Instruction::StoreArrayDimRef {
+                        target: self.lower_array_dim_target(target),
+                        source: self.lower_expr(source),
                     });
                 }
-            }
-            Statement::Call {
-                name,
-                arguments,
-                span,
-            } => {
-                instructions.push(Instruction::InternalCall {
-                    name: name.clone(),
-                    arguments: arguments.iter().map(lower_expr).collect(),
-                    line: span.line,
-                });
-            }
-            Statement::Echo { expressions, .. } => {
-                for expression in expressions {
-                    instructions.push(Instruction::Echo(lower_expr(expression)));
+                Statement::Increment { name, op, span } => {
+                    instructions.push(Instruction::Increment {
+                        name: name.clone(),
+                        op: lower_inc_dec_op(*op),
+                        line: span.line,
+                    });
                 }
-            }
-            Statement::Print { expression, .. } => {
-                instructions.push(Instruction::Echo(lower_expr(expression)));
-            }
-            Statement::Expression { expression, .. } => {
-                instructions.push(Instruction::Expression(lower_expr(expression)));
-            }
-            Statement::InlineHtml { content, .. } => {
-                instructions.push(Instruction::Echo(ValueExpr::String(content.clone())));
-            }
-            Statement::If {
-                condition,
-                then_body,
-                else_body,
-                ..
-            } => {
-                instructions.push(Instruction::Branch {
-                    condition: lower_expr(condition),
-                    then_body: lower_statements(then_body),
-                    else_body: lower_statements(else_body),
-                });
-            }
-            Statement::Block { statements, .. } => {
-                instructions.extend(lower_statements(statements));
-            }
-            Statement::While {
-                condition, body, ..
-            } => {
-                instructions.push(Instruction::While {
-                    condition: lower_expr(condition),
-                    body: lower_statements(body),
-                });
-            }
-            Statement::DoWhile {
-                body, condition, ..
-            } => {
-                instructions.push(Instruction::DoWhile {
-                    body: lower_statements(body),
-                    condition: lower_expr(condition),
-                });
-            }
-            Statement::For {
-                initializers,
-                condition,
-                updates,
-                body,
-                ..
-            } => {
-                instructions.push(Instruction::For {
-                    initializers: lower_statements(initializers),
-                    condition: condition.as_ref().map(lower_expr),
-                    updates: lower_statements(updates),
-                    body: lower_statements(body),
-                });
-            }
-            Statement::Foreach {
-                iterable,
-                key,
-                value,
-                value_by_ref,
-                body,
-                span,
-            } => {
-                instructions.push(Instruction::Foreach {
-                    iterable: lower_expr(iterable),
-                    key: key.clone(),
-                    value: value.clone(),
-                    value_by_ref: *value_by_ref,
-                    body: lower_statements(body),
-                    line: span.line,
-                });
-            }
-            Statement::Switch {
-                expression, cases, ..
-            } => {
-                instructions.push(Instruction::Switch {
-                    expression: lower_expr(expression),
-                    cases: cases
+                Statement::Unset { targets, .. } => {
+                    for target in targets {
+                        instructions.push(self.lower_unset_target(target));
+                    }
+                }
+                Statement::Const { declarations, .. } => {
+                    for declaration in declarations {
+                        instructions.push(Instruction::DefineConstant {
+                            name: declaration.name.clone(),
+                            value: self.lower_expr(&declaration.value),
+                            line: declaration.span.line,
+                        });
+                    }
+                }
+                Statement::Call {
+                    name,
+                    arguments,
+                    span,
+                } => {
+                    instructions.push(Instruction::InternalCall {
+                        name: name.clone(),
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| self.lower_expr(argument))
+                            .collect(),
+                        line: span.line,
+                    });
+                }
+                Statement::Echo { expressions, .. } => {
+                    for expression in expressions {
+                        instructions.push(Instruction::Echo(self.lower_expr(expression)));
+                    }
+                }
+                Statement::Print { expression, .. } => {
+                    instructions.push(Instruction::Echo(self.lower_expr(expression)));
+                }
+                Statement::Expression { expression, .. } => {
+                    instructions.push(Instruction::Expression(self.lower_expr(expression)));
+                }
+                Statement::InlineHtml { content, .. } => {
+                    instructions.push(Instruction::Echo(ValueExpr::String(content.clone())));
+                }
+                Statement::If {
+                    condition,
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    instructions.push(Instruction::Branch {
+                        condition: self.lower_expr(condition),
+                        then_body: self.lower_statements(then_body),
+                        else_body: self.lower_statements(else_body),
+                    });
+                }
+                Statement::Block { statements, .. } => {
+                    instructions.extend(self.lower_statements(statements));
+                }
+                Statement::While {
+                    condition, body, ..
+                } => {
+                    instructions.push(Instruction::While {
+                        condition: self.lower_expr(condition),
+                        body: self.lower_statements(body),
+                    });
+                }
+                Statement::DoWhile {
+                    body, condition, ..
+                } => {
+                    instructions.push(Instruction::DoWhile {
+                        body: self.lower_statements(body),
+                        condition: self.lower_expr(condition),
+                    });
+                }
+                Statement::For {
+                    initializers,
+                    condition,
+                    updates,
+                    body,
+                    ..
+                } => {
+                    instructions.push(Instruction::For {
+                        initializers: self.lower_statements(initializers),
+                        condition: condition
+                            .as_ref()
+                            .map(|condition| self.lower_expr(condition)),
+                        updates: self.lower_statements(updates),
+                        body: self.lower_statements(body),
+                    });
+                }
+                Statement::Foreach {
+                    iterable,
+                    key,
+                    value,
+                    value_by_ref,
+                    body,
+                    span,
+                } => {
+                    instructions.push(Instruction::Foreach {
+                        iterable: self.lower_expr(iterable),
+                        key: key.clone(),
+                        value: value.clone(),
+                        value_by_ref: *value_by_ref,
+                        body: self.lower_statements(body),
+                        line: span.line,
+                    });
+                }
+                Statement::Switch {
+                    expression, cases, ..
+                } => {
+                    let mut lowered_cases = Vec::new();
+                    for case in cases {
+                        lowered_cases.push(SwitchCase {
+                            condition: case
+                                .condition
+                                .as_ref()
+                                .map(|condition| self.lower_expr(condition)),
+                            body: self.lower_statements(&case.body),
+                        });
+                    }
+                    instructions.push(Instruction::Switch {
+                        expression: self.lower_expr(expression),
+                        cases: lowered_cases,
+                    });
+                }
+                Statement::Break { level, span } => {
+                    instructions.push(Instruction::Break {
+                        level: *level,
+                        line: span.line,
+                    });
+                }
+                Statement::Continue { level, span } => {
+                    instructions.push(Instruction::Continue {
+                        level: *level,
+                        line: span.line,
+                    });
+                }
+                Statement::Return { value, span } => {
+                    instructions.push(Instruction::Return {
+                        value: value.as_ref().map(|value| self.lower_expr(value)),
+                        line: span.line,
+                    });
+                }
+                Statement::Try { body, catches, .. } => {
+                    let lowered_catches = catches
                         .iter()
-                        .map(|case| SwitchCase {
-                            condition: case.condition.as_ref().map(lower_expr),
-                            body: lower_statements(&case.body),
-                        })
-                        .collect(),
-                });
-            }
-            Statement::Break { level, span } => {
-                instructions.push(Instruction::Break {
-                    level: *level,
-                    line: span.line,
-                });
-            }
-            Statement::Continue { level, span } => {
-                instructions.push(Instruction::Continue {
-                    level: *level,
-                    line: span.line,
-                });
-            }
-            Statement::Return { value, span } => {
-                instructions.push(Instruction::Return {
-                    value: value.as_ref().map(lower_expr),
-                    line: span.line,
-                });
-            }
-            Statement::Try { body, catches, .. } => {
-                instructions.push(Instruction::Try {
-                    body: lower_statements(body),
-                    catches: catches.iter().map(lower_catch_clause).collect(),
-                });
-            }
-            Statement::Label { name, .. } => {
-                instructions.push(Instruction::Label { name: name.clone() });
-            }
-            Statement::Goto { label, .. } => {
-                instructions.push(Instruction::Goto {
-                    label: label.clone(),
-                });
+                        .map(|catch| self.lower_catch_clause(catch))
+                        .collect();
+                    instructions.push(Instruction::Try {
+                        body: self.lower_statements(body),
+                        catches: lowered_catches,
+                    });
+                }
+                Statement::Label { name, .. } => {
+                    instructions.push(Instruction::Label { name: name.clone() });
+                }
+                Statement::Goto { label, .. } => {
+                    instructions.push(Instruction::Goto {
+                        label: label.clone(),
+                    });
+                }
             }
         }
+        instructions
     }
-    instructions
-}
 
-fn lower_array_dim_store(
-    target: &AstArrayDimTarget,
-    op: AssignmentOp,
-    value: &Expr,
-) -> Instruction {
-    Instruction::StoreArrayDim {
-        array: target.array.clone(),
-        dimensions: target
-            .dimensions
-            .iter()
-            .map(|dimension| dimension.as_ref().map(lower_expr))
-            .collect(),
-        value: lower_expr(value),
-        compound_op: assignment_op_binary_op(op),
-        line: target.span.line,
-    }
-}
-
-fn lower_array_dim_target(target: &AstArrayDimTarget) -> ArrayDimTarget {
-    ArrayDimTarget {
-        array: target.array.clone(),
-        dimensions: target
-            .dimensions
-            .iter()
-            .map(|dimension| dimension.as_ref().map(lower_expr))
-            .collect(),
-        line: target.span.line,
-    }
-}
-
-fn lower_assignment_target(target: &AstAssignmentTarget) -> AssignmentTarget {
-    match target {
-        AstAssignmentTarget::Variable { name, span } => AssignmentTarget::Variable {
-            name: name.clone(),
-            line: span.line,
-        },
-        AstAssignmentTarget::ArrayDim(target) => AssignmentTarget::ArrayDim {
-            array: target.array.clone(),
-            dimensions: target
-                .dimensions
-                .iter()
-                .map(|dimension| dimension.as_ref().map(lower_expr))
-                .collect(),
-            line: target.span.line,
-        },
-        AstAssignmentTarget::List(target) => {
-            AssignmentTarget::List(lower_list_assignment_target(target))
-        }
-    }
-}
-
-fn lower_list_assignment_target(target: &AstListAssignmentTarget) -> ListAssignmentTarget {
-    ListAssignmentTarget {
-        elements: target
-            .elements
-            .iter()
-            .map(lower_list_assignment_element)
-            .collect(),
-        line: target.span.line,
-    }
-}
-
-fn lower_list_assignment_element(element: &AstListAssignmentElement) -> ListAssignmentElement {
-    ListAssignmentElement {
-        key: element.key.as_ref().map(lower_expr),
-        target: match &element.target {
-            AstListAssignmentElementTarget::Value(target) => {
-                ListAssignmentElementTarget::Value(Box::new(lower_assignment_target(target)))
-            }
-            AstListAssignmentElementTarget::Reference(target) => {
-                ListAssignmentElementTarget::Reference(lower_reference_target(target))
-            }
-        },
-    }
-}
-
-fn lower_reference_target(target: &AstReferenceTarget) -> ReferenceTarget {
-    match target {
-        AstReferenceTarget::Variable { name, span } => ReferenceTarget::Variable {
-            name: name.clone(),
-            line: span.line,
-        },
-        AstReferenceTarget::ArrayDim(target) => {
-            ReferenceTarget::ArrayDim(lower_array_dim_target(target))
-        }
-    }
-}
-
-fn lower_unset_target(target: &AstUnsetTarget) -> Instruction {
-    match target {
-        AstUnsetTarget::Variable { name, .. } => Instruction::UnsetVariable { name: name.clone() },
-        AstUnsetTarget::ArrayDim(target) => Instruction::UnsetArrayDim {
+    fn lower_array_dim_store(
+        &mut self,
+        target: &AstArrayDimTarget,
+        op: AssignmentOp,
+        value: &Expr,
+    ) -> Instruction {
+        Instruction::StoreArrayDim {
             array: target.array.clone(),
             dimensions: target
                 .dimensions
                 .iter()
                 .map(|dimension| {
-                    lower_expr(
-                        dimension
-                            .as_ref()
-                            .expect("parser rejects append syntax in unset targets"),
-                    )
+                    dimension
+                        .as_ref()
+                        .map(|dimension| self.lower_expr(dimension))
+                })
+                .collect(),
+            value: self.lower_expr(value),
+            compound_op: assignment_op_binary_op(op),
+            line: target.span.line,
+        }
+    }
+
+    fn lower_array_dim_target(&mut self, target: &AstArrayDimTarget) -> ArrayDimTarget {
+        ArrayDimTarget {
+            array: target.array.clone(),
+            dimensions: target
+                .dimensions
+                .iter()
+                .map(|dimension| {
+                    dimension
+                        .as_ref()
+                        .map(|dimension| self.lower_expr(dimension))
                 })
                 .collect(),
             line: target.span.line,
-        },
+        }
+    }
+
+    fn lower_assignment_target(&mut self, target: &AstAssignmentTarget) -> AssignmentTarget {
+        match target {
+            AstAssignmentTarget::Variable { name, span } => AssignmentTarget::Variable {
+                name: name.clone(),
+                line: span.line,
+            },
+            AstAssignmentTarget::ArrayDim(target) => AssignmentTarget::ArrayDim {
+                array: target.array.clone(),
+                dimensions: target
+                    .dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: target.span.line,
+            },
+            AstAssignmentTarget::List(target) => {
+                AssignmentTarget::List(self.lower_list_assignment_target(target))
+            }
+        }
+    }
+
+    fn lower_list_assignment_target(
+        &mut self,
+        target: &AstListAssignmentTarget,
+    ) -> ListAssignmentTarget {
+        ListAssignmentTarget {
+            elements: target
+                .elements
+                .iter()
+                .map(|element| self.lower_list_assignment_element(element))
+                .collect(),
+            line: target.span.line,
+        }
+    }
+
+    fn lower_list_assignment_element(
+        &mut self,
+        element: &AstListAssignmentElement,
+    ) -> ListAssignmentElement {
+        ListAssignmentElement {
+            key: element.key.as_ref().map(|key| self.lower_expr(key)),
+            target: match &element.target {
+                AstListAssignmentElementTarget::Value(target) => {
+                    ListAssignmentElementTarget::Value(Box::new(
+                        self.lower_assignment_target(target),
+                    ))
+                }
+                AstListAssignmentElementTarget::Reference(target) => {
+                    ListAssignmentElementTarget::Reference(self.lower_reference_target(target))
+                }
+            },
+        }
+    }
+
+    fn lower_reference_target(&mut self, target: &AstReferenceTarget) -> ReferenceTarget {
+        match target {
+            AstReferenceTarget::Variable { name, span } => ReferenceTarget::Variable {
+                name: name.clone(),
+                line: span.line,
+            },
+            AstReferenceTarget::ArrayDim(target) => {
+                ReferenceTarget::ArrayDim(self.lower_array_dim_target(target))
+            }
+        }
+    }
+
+    fn lower_unset_target(&mut self, target: &AstUnsetTarget) -> Instruction {
+        match target {
+            AstUnsetTarget::Variable { name, .. } => {
+                Instruction::UnsetVariable { name: name.clone() }
+            }
+            AstUnsetTarget::ArrayDim(target) => Instruction::UnsetArrayDim {
+                array: target.array.clone(),
+                dimensions: target
+                    .dimensions
+                    .iter()
+                    .map(|dimension| {
+                        self.lower_expr(
+                            dimension
+                                .as_ref()
+                                .expect("parser rejects append syntax in unset targets"),
+                        )
+                    })
+                    .collect(),
+                line: target.span.line,
+            },
+        }
     }
 }
 
@@ -739,52 +817,62 @@ fn assignment_op_binary_op(op: AssignmentOp) -> Option<BinaryOp> {
     }
 }
 
-fn lower_catch_clause(catch: &AstCatchClause) -> CatchClause {
-    CatchClause {
-        type_name: catch.type_name.clone(),
-        variable: catch.variable.clone(),
-        body: lower_statements(&catch.body),
+impl LoweringContext {
+    fn lower_catch_clause(&mut self, catch: &AstCatchClause) -> CatchClause {
+        CatchClause {
+            type_name: catch.type_name.clone(),
+            variable: catch.variable.clone(),
+            body: self.lower_statements(&catch.body),
+        }
     }
-}
 
-fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr, line: usize) -> ValueExpr {
-    let right = lower_expr(value);
-    match op {
-        AssignmentOp::Assign => right,
-        AssignmentOp::CoalesceAssign => {
-            unreachable!("direct null coalescing assignment lowers through ValueExpr::Assign")
-        }
-        AssignmentOp::AddAssign => lower_compound_assignment(name, line, BinaryOp::Add, right),
-        AssignmentOp::SubtractAssign => {
-            lower_compound_assignment(name, line, BinaryOp::Subtract, right)
-        }
-        AssignmentOp::MultiplyAssign => {
-            lower_compound_assignment(name, line, BinaryOp::Multiply, right)
-        }
-        AssignmentOp::PowerAssign => lower_compound_assignment(name, line, BinaryOp::Power, right),
-        AssignmentOp::DivideAssign => {
-            lower_compound_assignment(name, line, BinaryOp::Divide, right)
-        }
-        AssignmentOp::ModuloAssign => {
-            lower_compound_assignment(name, line, BinaryOp::Modulo, right)
-        }
-        AssignmentOp::ConcatAssign => {
-            lower_compound_assignment(name, line, BinaryOp::Concat, right)
-        }
-        AssignmentOp::BitwiseAndAssign => {
-            lower_compound_assignment(name, line, BinaryOp::BitwiseAnd, right)
-        }
-        AssignmentOp::BitwiseOrAssign => {
-            lower_compound_assignment(name, line, BinaryOp::BitwiseOr, right)
-        }
-        AssignmentOp::BitwiseXorAssign => {
-            lower_compound_assignment(name, line, BinaryOp::BitwiseXor, right)
-        }
-        AssignmentOp::ShiftLeftAssign => {
-            lower_compound_assignment(name, line, BinaryOp::ShiftLeft, right)
-        }
-        AssignmentOp::ShiftRightAssign => {
-            lower_compound_assignment(name, line, BinaryOp::ShiftRight, right)
+    fn lower_assignment_value(
+        &mut self,
+        name: &str,
+        op: AssignmentOp,
+        value: &Expr,
+        line: usize,
+    ) -> ValueExpr {
+        let right = self.lower_expr(value);
+        match op {
+            AssignmentOp::Assign => right,
+            AssignmentOp::CoalesceAssign => {
+                unreachable!("direct null coalescing assignment lowers through ValueExpr::Assign")
+            }
+            AssignmentOp::AddAssign => lower_compound_assignment(name, line, BinaryOp::Add, right),
+            AssignmentOp::SubtractAssign => {
+                lower_compound_assignment(name, line, BinaryOp::Subtract, right)
+            }
+            AssignmentOp::MultiplyAssign => {
+                lower_compound_assignment(name, line, BinaryOp::Multiply, right)
+            }
+            AssignmentOp::PowerAssign => {
+                lower_compound_assignment(name, line, BinaryOp::Power, right)
+            }
+            AssignmentOp::DivideAssign => {
+                lower_compound_assignment(name, line, BinaryOp::Divide, right)
+            }
+            AssignmentOp::ModuloAssign => {
+                lower_compound_assignment(name, line, BinaryOp::Modulo, right)
+            }
+            AssignmentOp::ConcatAssign => {
+                lower_compound_assignment(name, line, BinaryOp::Concat, right)
+            }
+            AssignmentOp::BitwiseAndAssign => {
+                lower_compound_assignment(name, line, BinaryOp::BitwiseAnd, right)
+            }
+            AssignmentOp::BitwiseOrAssign => {
+                lower_compound_assignment(name, line, BinaryOp::BitwiseOr, right)
+            }
+            AssignmentOp::BitwiseXorAssign => {
+                lower_compound_assignment(name, line, BinaryOp::BitwiseXor, right)
+            }
+            AssignmentOp::ShiftLeftAssign => {
+                lower_compound_assignment(name, line, BinaryOp::ShiftLeft, right)
+            }
+            AssignmentOp::ShiftRightAssign => {
+                lower_compound_assignment(name, line, BinaryOp::ShiftRight, right)
+            }
         }
     }
 }
@@ -801,118 +889,174 @@ fn lower_compound_assignment(name: &str, line: usize, op: BinaryOp, right: Value
     }
 }
 
-fn lower_expr(expr: &Expr) -> ValueExpr {
-    match expr {
-        Expr::String(value, _) => ValueExpr::String(value.clone()),
-        Expr::InterpolatedString(parts, span) => lower_interpolated_string(parts, span.line),
-        Expr::Int(value, _) => ValueExpr::Int(*value),
-        Expr::Float(value, _) => ValueExpr::Float(*value),
-        Expr::Bool(value, _) => ValueExpr::Bool(*value),
-        Expr::Null(_) => ValueExpr::Null,
-        Expr::Variable(name, span) => ValueExpr::Load {
-            name: name.clone(),
-            line: span.line,
-        },
-        Expr::Assign {
-            target, op, value, ..
-        } => ValueExpr::Assign {
-            target: lower_assignment_target(target),
-            op: *op,
-            value: Box::new(lower_expr(value)),
-        },
-        Expr::AssignRef { target, source, .. } => ValueExpr::AssignRef {
-            target: lower_assignment_target(target),
-            source: Box::new(lower_expr(source)),
-        },
-        Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),
-        Expr::MagicConstant(kind, span) => ValueExpr::MagicConstant {
-            kind: lower_magic_constant_kind(*kind),
-            line: span.line,
-        },
-        Expr::Array { elements, .. } => {
-            ValueExpr::Array(elements.iter().map(lower_array_element).collect())
+impl LoweringContext {
+    fn lower_expr(&mut self, expr: &Expr) -> ValueExpr {
+        match expr {
+            Expr::String(value, _) => ValueExpr::String(value.clone()),
+            Expr::InterpolatedString(parts, span) => lower_interpolated_string(parts, span.line),
+            Expr::Int(value, _) => ValueExpr::Int(*value),
+            Expr::Float(value, _) => ValueExpr::Float(*value),
+            Expr::Bool(value, _) => ValueExpr::Bool(*value),
+            Expr::Null(_) => ValueExpr::Null,
+            Expr::Variable(name, span) => ValueExpr::Load {
+                name: name.clone(),
+                line: span.line,
+            },
+            Expr::Assign {
+                target, op, value, ..
+            } => ValueExpr::Assign {
+                target: self.lower_assignment_target(target),
+                op: *op,
+                value: Box::new(self.lower_expr(value)),
+            },
+            Expr::AssignRef { target, source, .. } => ValueExpr::AssignRef {
+                target: self.lower_assignment_target(target),
+                source: Box::new(self.lower_expr(source)),
+            },
+            Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),
+            Expr::MagicConstant(kind, span) => ValueExpr::MagicConstant {
+                kind: lower_magic_constant_kind(*kind),
+                line: span.line,
+            },
+            Expr::Array { elements, .. } => ValueExpr::Array(
+                elements
+                    .iter()
+                    .map(|element| self.lower_array_element(element))
+                    .collect(),
+            ),
+            Expr::ArrayAccess { array, index, span } => {
+                ValueExpr::ArrayAccess {
+                    array: Box::new(self.lower_expr(array)),
+                    index: Box::new(
+                        self.lower_expr(index.as_ref().expect(
+                            "parser rejects append array reads outside assignment targets",
+                        )),
+                    ),
+                    line: span.line,
+                }
+            }
+            Expr::Isset { targets, .. } => ValueExpr::Isset {
+                targets: targets
+                    .iter()
+                    .map(|target| self.lower_expr(target))
+                    .collect(),
+            },
+            Expr::Empty { target, .. } => ValueExpr::Empty {
+                target: Box::new(self.lower_expr(target)),
+            },
+            Expr::Call {
+                name,
+                arguments,
+                span,
+            } => ValueExpr::InternalCall {
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.lower_expr(argument))
+                    .collect(),
+                line: span.line,
+            },
+            Expr::DynamicCall {
+                callee,
+                arguments,
+                span,
+            } => ValueExpr::DynamicCall {
+                callee: Box::new(self.lower_expr(callee)),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.lower_expr(argument))
+                    .collect(),
+                line: span.line,
+            },
+            Expr::MethodCall {
+                receiver,
+                name,
+                arguments,
+                span,
+            } => ValueExpr::MethodCall {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.lower_expr(argument))
+                    .collect(),
+                line: span.line,
+            },
+            Expr::Closure {
+                parameters,
+                uses,
+                return_type,
+                return_by_ref,
+                body,
+                ..
+            } => self.lower_closure_expr(parameters, uses, *return_type, *return_by_ref, body),
+            Expr::Unary { op, expr, span } => ValueExpr::Unary {
+                op: lower_unary_op(*op),
+                expr: Box::new(self.lower_expr(expr)),
+                line: span.line,
+            },
+            Expr::Cast { kind, expr, span } => ValueExpr::Cast {
+                kind: lower_cast_kind(*kind),
+                expr: Box::new(self.lower_expr(expr)),
+                line: span.line,
+            },
+            Expr::Binary {
+                op,
+                left,
+                right,
+                span,
+            } => ValueExpr::Binary {
+                op: lower_binary_op(*op),
+                left: Box::new(self.lower_expr(left)),
+                right: Box::new(self.lower_expr(right)),
+                line: span.line,
+            },
+            Expr::Grouped { expr, .. } => self.lower_expr(expr),
         }
-        Expr::ArrayAccess { array, index, span } => ValueExpr::ArrayAccess {
-            array: Box::new(lower_expr(array)),
-            index: Box::new(lower_expr(
-                index
-                    .as_ref()
-                    .expect("parser rejects append array reads outside assignment targets"),
-            )),
-            line: span.line,
-        },
-        Expr::Isset { targets, .. } => ValueExpr::Isset {
-            targets: targets.iter().map(lower_expr).collect(),
-        },
-        Expr::Empty { target, .. } => ValueExpr::Empty {
-            target: Box::new(lower_expr(target)),
-        },
-        Expr::Call {
-            name,
-            arguments,
-            span,
-        } => ValueExpr::InternalCall {
-            name: name.clone(),
-            arguments: arguments.iter().map(lower_expr).collect(),
-            line: span.line,
-        },
-        Expr::DynamicCall {
-            callee,
-            arguments,
-            span,
-        } => ValueExpr::DynamicCall {
-            callee: Box::new(lower_expr(callee)),
-            arguments: arguments.iter().map(lower_expr).collect(),
-            line: span.line,
-        },
-        Expr::MethodCall {
-            receiver,
-            name,
-            arguments,
-            span,
-        } => ValueExpr::MethodCall {
-            receiver: Box::new(lower_expr(receiver)),
-            name: name.clone(),
-            arguments: arguments.iter().map(lower_expr).collect(),
-            line: span.line,
-        },
-        Expr::Unary { op, expr, span } => ValueExpr::Unary {
-            op: lower_unary_op(*op),
-            expr: Box::new(lower_expr(expr)),
-            line: span.line,
-        },
-        Expr::Cast { kind, expr, span } => ValueExpr::Cast {
-            kind: lower_cast_kind(*kind),
-            expr: Box::new(lower_expr(expr)),
-            line: span.line,
-        },
-        Expr::Binary {
-            op,
-            left,
-            right,
-            span,
-        } => ValueExpr::Binary {
-            op: lower_binary_op(*op),
-            left: Box::new(lower_expr(left)),
-            right: Box::new(lower_expr(right)),
-            line: span.line,
-        },
-        Expr::Grouped { expr, .. } => lower_expr(expr),
     }
-}
 
-fn lower_array_element(element: &AstArrayElement) -> ArrayElement {
-    ArrayElement {
-        key: element.key.as_ref().map(lower_expr),
-        value: lower_array_element_value(&element.value),
+    fn lower_closure_expr(
+        &mut self,
+        parameters: &[AstFunctionParameter],
+        uses: &[AstClosureUse],
+        return_type: Option<AstTypeHint>,
+        return_by_ref: bool,
+        body: &[Statement],
+    ) -> ValueExpr {
+        let function_index = self.functions.len();
+        let closure_id = self.closure_count;
+        self.closure_count += 1;
+        let captures: Vec<ClosureCapture> = uses.iter().map(lower_closure_capture).collect();
+        self.functions.push(FunctionDecl {
+            name: format!("__ptn_closure_{closure_id}"),
+            parameters: parameters.iter().map(lower_parameter).collect(),
+            return_type: return_type.map(lower_type_hint),
+            return_by_ref,
+            body: Vec::new(),
+            captures: captures.clone(),
+            is_closure: true,
+        });
+        let lowered_body = self.lower_statements(body);
+        self.functions[function_index].body = lowered_body;
+        ValueExpr::Closure {
+            function_index,
+            captures,
+        }
     }
-}
 
-fn lower_array_element_value(value: &AstArrayElementValue) -> ArrayElementValue {
-    match value {
-        AstArrayElementValue::Value(value) => ArrayElementValue::Value(lower_expr(value)),
-        AstArrayElementValue::Reference(target) => {
-            ArrayElementValue::Reference(lower_reference_target(target))
+    fn lower_array_element(&mut self, element: &AstArrayElement) -> ArrayElement {
+        ArrayElement {
+            key: element.key.as_ref().map(|key| self.lower_expr(key)),
+            value: self.lower_array_element_value(&element.value),
+        }
+    }
+
+    fn lower_array_element_value(&mut self, value: &AstArrayElementValue) -> ArrayElementValue {
+        match value {
+            AstArrayElementValue::Value(value) => ArrayElementValue::Value(self.lower_expr(value)),
+            AstArrayElementValue::Reference(target) => {
+                ArrayElementValue::Reference(self.lower_reference_target(target))
+            }
         }
     }
 }

@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp,
-    CastKind, CatchClause, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
-    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    Program, ReferenceTarget, Statement, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    CastKind, CatchClause, ClosureUse, ConstDeclaration, Expr, FunctionDecl, FunctionParameter,
+    IncDecOp, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
+    MagicConstantKind, Program, ReferenceTarget, Statement, StringPart, SwitchCase, TypeHint,
+    UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -169,6 +170,83 @@ impl Parser {
             return_by_ref,
             body,
             span,
+        })
+    }
+
+    fn parse_closure_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        let parameters = self.parse_function_parameters()?;
+        let uses = if self.peek_is_identifier("use")
+            && matches!(
+                self.tokens.get(self.index + 1).map(|token| &token.kind),
+                Some(TokenKind::LeftParen)
+            ) {
+            self.advance();
+            self.parse_closure_uses()?
+        } else {
+            Vec::new()
+        };
+        let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            Some(self.parse_type_hint()?)
+        } else {
+            None
+        };
+        self.function_depth += 1;
+        let body = self.parse_block();
+        self.function_depth -= 1;
+        let body = body?;
+        let end_span = body.last().map(statement_span).unwrap_or(start_span);
+        Ok(Expr::Closure {
+            parameters,
+            uses,
+            return_type,
+            return_by_ref,
+            body,
+            span: combine_spans(start_span, end_span),
+        })
+    }
+
+    fn parse_closure_uses(&mut self) -> Result<Vec<ClosureUse>> {
+        self.expect_left_paren()?;
+        let mut uses = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RightParen) {
+            uses.push(self.parse_closure_use()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                if matches!(self.peek().kind, TokenKind::RightParen) {
+                    break;
+                }
+                uses.push(self.parse_closure_use()?);
+            }
+        }
+        self.expect_right_paren()?;
+        Ok(uses)
+    }
+
+    fn parse_closure_use(&mut self) -> Result<ClosureUse> {
+        let by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        let token = self.advance().clone();
+        let TokenKind::Variable(name) = token.kind else {
+            return Err(Diagnostic::new(
+                "expected closure use variable",
+                Some(token.span),
+            ));
+        };
+        Ok(ClosureUse {
+            name,
+            by_ref,
+            span: token.span,
         })
     }
 
@@ -1320,6 +1398,7 @@ impl Parser {
                     combine_spans(token.span, name_token.span),
                 ))
             }
+            TokenKind::Function => self.parse_closure_expr(token.span),
             TokenKind::LeftParen => {
                 let expr = self.parse_expr()?;
                 let right_span = self.expect_right_paren()?;
@@ -1649,7 +1728,15 @@ impl Parser {
                 | TokenKind::At
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
+                | TokenKind::Function
                 | TokenKind::Backslash
+        )
+    }
+
+    fn peek_is_identifier(&self, expected: &str) -> bool {
+        matches!(
+            &self.peek().kind,
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected)
         )
     }
 
@@ -2127,6 +2214,36 @@ fn escape_token_text(value: &str) -> String {
         .collect()
 }
 
+fn statement_span(statement: &Statement) -> SourceSpan {
+    match statement {
+        Statement::Assign { span, .. }
+        | Statement::AssignRef { span, .. }
+        | Statement::ArrayAssign { span, .. }
+        | Statement::ArrayAssignRef { span, .. }
+        | Statement::Increment { span, .. }
+        | Statement::Unset { span, .. }
+        | Statement::Call { span, .. }
+        | Statement::Echo { span, .. }
+        | Statement::Print { span, .. }
+        | Statement::Expression { span, .. }
+        | Statement::Const { span, .. }
+        | Statement::Block { span, .. }
+        | Statement::If { span, .. }
+        | Statement::While { span, .. }
+        | Statement::DoWhile { span, .. }
+        | Statement::For { span, .. }
+        | Statement::Foreach { span, .. }
+        | Statement::Switch { span, .. }
+        | Statement::Break { span, .. }
+        | Statement::Continue { span, .. }
+        | Statement::Return { span, .. }
+        | Statement::Try { span, .. }
+        | Statement::Label { span, .. }
+        | Statement::Goto { span, .. }
+        | Statement::InlineHtml { span, .. } => *span,
+    }
+}
+
 fn is_unsupported_class_like_declaration(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -2224,6 +2341,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
+        | Expr::Closure { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. }
@@ -2590,6 +2708,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_sum"
             | "array_unshift"
             | "array_values"
+            | "array_walk"
             | "current"
             | "end"
             | "key"
@@ -2611,7 +2730,7 @@ fn is_array_cursor_mutation_name(name: &str) -> bool {
 fn is_array_by_ref_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "array_pop" | "array_push" | "array_shift" | "array_unshift"
+        "array_pop" | "array_push" | "array_shift" | "array_unshift" | "array_walk"
     )
 }
 
@@ -3107,6 +3226,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
                 reject_append_array_read(argument)?;
             }
         }
+        Expr::Closure { .. } => {}
         Expr::Array { elements, .. } => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -3186,6 +3306,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
+        | Expr::Closure { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,

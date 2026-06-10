@@ -24,6 +24,13 @@ pub struct FunctionParameter {
     pub span: SourceSpan,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClosureUse {
+    pub name: String,
+    pub by_ref: bool,
+    pub span: SourceSpan,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeHint {
     Null,
@@ -286,6 +293,14 @@ pub enum Expr {
         arguments: Vec<Expr>,
         span: SourceSpan,
     },
+    Closure {
+        parameters: Vec<FunctionParameter>,
+        uses: Vec<ClosureUse>,
+        return_type: Option<TypeHint>,
+        return_by_ref: bool,
+        body: Vec<Statement>,
+        span: SourceSpan,
+    },
     Array {
         elements: Vec<ArrayElement>,
         span: SourceSpan,
@@ -408,7 +423,8 @@ impl Expr {
             Expr::Assign { span, .. } | Expr::AssignRef { span, .. } => *span,
             Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
-            | Expr::MethodCall { span, .. } => *span,
+            | Expr::MethodCall { span, .. }
+            | Expr::Closure { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,

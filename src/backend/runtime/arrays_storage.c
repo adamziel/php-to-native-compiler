@@ -27,6 +27,7 @@ static PTN_UNUSED void ptn_reference_assign(PtnReference *reference, PtnValue va
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_drop(PtnValue *value);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
+static PTN_UNUSED void ptn_closure_retain(PtnClosure *closure);
 
 static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
     PtnArrayKey key;
@@ -101,6 +102,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
             return ptn_array_string_key(string);
         }
         case PTN_ARRAY:
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
             ptn_abort_illegal_array_key();
@@ -446,6 +448,10 @@ static PTN_UNUSED PtnValue ptn_value_deep_clone(PtnValue value) {
             );
         case PTN_ARRAY:
             return ptn_array(ptn_array_clone(value.as.array));
+        case PTN_CLOSURE:
+            ptn_closure_retain(value.as.closure);
+            value.owned = 1;
+            return value;
         case PTN_EXCEPTION: {
             PtnException *exception = malloc(sizeof(PtnException));
             if (exception == NULL) {
@@ -481,6 +487,10 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
         case PTN_ARRAY:
             ptn_array_retain(value.as.array);
             return ptn_array(value.as.array);
+        case PTN_CLOSURE:
+            ptn_closure_retain(value.as.closure);
+            value.owned = 1;
+            return value;
         case PTN_EXCEPTION: {
             PtnException *exception = malloc(sizeof(PtnException));
             if (exception == NULL) {

@@ -58,6 +58,7 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right);
+static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value);
 static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
 static PTN_UNUSED PtnArray *ptn_runtime_array_detach_variable(PtnRuntime *runtime, const char *name);
@@ -83,6 +84,7 @@ static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
             return "string";
         case PTN_ARRAY:
             return "array";
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             return "object";
         case PTN_REFERENCE:
@@ -590,6 +592,7 @@ static PTN_UNUSED int ptn_string_offset_from_value(
             }
             ptn_throw_exception(runtime, "TypeError", "Cannot access offset of type array on string");
             return 0;
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             if (quiet) {
                 return 0;
@@ -1142,6 +1145,13 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
     int emit_null_key_deprecation
 ) {
     if (segment_count == 0) {
+        return;
+    }
+
+    if (strcmp(name, "GLOBALS") == 0 && segment_count == 1 && !segments[0].append) {
+        char *global_name = ptn_value_to_string(segments[0].value);
+        ptn_runtime_write_global_variable(runtime, global_name, value);
+        free(global_name);
         return;
     }
 

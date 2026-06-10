@@ -34,6 +34,7 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_ARRAY:
             fputs("Array", stdout);
             break;
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             fputs("Object", stdout);
             break;
@@ -94,6 +95,7 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
 
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
 
 static void ptn_var_dump_indent(size_t indent) {
     for (size_t i = 0; i < indent; i++) {
@@ -216,6 +218,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
+        case PTN_CLOSURE:
+            fputs("object(Closure)#1 (0) {\n", stdout);
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
         case PTN_REFERENCE:
             fputs("NULL\n", stdout);
             break;
@@ -301,6 +308,11 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             printf("string(%zu) \"", strlen(value.as.exception->message));
             fputs(value.as.exception->message, stdout);
             fputs("\"\n", stdout);
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
+        case PTN_CLOSURE:
+            fputs("object(Closure)#1 (0) {\n", stdout);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
@@ -423,6 +435,7 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
         case PTN_ARRAY:
             ptn_print_r_array(buffer, value.as.array, indent);
             break;
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             ptn_string_buffer_append(buffer, "Object");
             break;
@@ -648,6 +661,66 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
         }
     }
     return use_float ? ptn_float(float_sum) : ptn_int(integer_sum);
+}
+
+static PtnValue ptn_internal_array_walk(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (args[0].type != PTN_REFERENCE) {
+        ptn_abort_by_reference_argument_error("array_walk", 1, "array");
+    }
+
+    PtnValue *slot = &args[0].as.reference->value;
+    size_t index = 0;
+    for (;;) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        PtnArray *array = ptn_internal_expect_array_arg(
+            runtime,
+            "array_walk",
+            1,
+            "array",
+            *slot_value
+        );
+        array = ptn_value_detach_array(slot_value);
+        if (array == NULL || index >= array->len) {
+            break;
+        }
+
+        PtnArray *array_before_callback = array;
+        PtnArrayEntry *entry = &array->entries[index];
+        if (entry->value.type != PTN_REFERENCE) {
+            PtnValue current = entry->value;
+            entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+        }
+
+        PtnValue key = entry->key.type == PTN_ARRAY_KEY_INT
+            ? ptn_int(entry->key.as.integer)
+            : ptn_string(entry->key.as.string);
+        PtnValue callback_args[3] = {
+            ptn_value_clone(entry->value),
+            key,
+            argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_null()
+        };
+        size_t callback_argc = argc >= 3 ? 3 : 2;
+        PtnValue callback_result = ptn_call_callable(
+            runtime,
+            args[1],
+            callback_argc,
+            callback_args,
+            line
+        );
+        ptn_value_destroy(&callback_result);
+        for (size_t i = 0; i < callback_argc; i++) {
+            ptn_value_destroy(&callback_args[i]);
+        }
+
+        PtnValue *after_slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (after_slot_value->type == PTN_ARRAY && after_slot_value->as.array != array_before_callback) {
+            index = 0;
+        } else {
+            index++;
+        }
+    }
+
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -2670,6 +2743,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_sum", 1, 1, ptn_internal_array_sum },
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
+        { "array_walk", 2, 3, ptn_internal_array_walk },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "ceil", 1, 1, ptn_internal_ceil },

@@ -1,5 +1,6 @@
 static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnRuntime *caller_runtime) {
     ptn_symbols_init(&runtime->symbols);
+    runtime->global_symbols = caller_runtime->global_symbols;
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = caller_runtime->constants;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
@@ -42,6 +43,15 @@ static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const cha
         return;
     }
     ptn_symbols_set(&runtime->symbols, name, ptn_value_deref(value));
+}
+
+static PTN_UNUSED void ptn_runtime_write_global_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnValue current;
+    if (ptn_symbols_get(runtime->global_symbols, name, &current) && current.type == PTN_REFERENCE) {
+        ptn_reference_assign(current.as.reference, value);
+        return;
+    }
+    ptn_symbols_set(runtime->global_symbols, name, ptn_value_deref(value));
 }
 
 static PTN_UNUSED void ptn_runtime_bind_variable_reference(PtnRuntime *runtime, const char *name, PtnValue reference) {
@@ -372,6 +382,7 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
             return ptn_string_to_number((const char *)value.as.string.data);
         case PTN_ARRAY:
             return ptn_number_int(value.as.array->len == 0 ? 0 : 1);
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             return ptn_number_int(1);
         case PTN_REFERENCE:
@@ -395,6 +406,7 @@ static PTN_UNUSED int ptn_fast_integer_value(PtnValue value, int64_t *integer) {
         case PTN_FLOAT:
         case PTN_STRING:
         case PTN_ARRAY:
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
             return 0;
@@ -472,6 +484,7 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
                 !(value.as.string.len == 1 && value.as.string.data[0] == '0');
         case PTN_ARRAY:
             return value.as.array->len != 0;
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             return 1;
         case PTN_REFERENCE:
@@ -605,6 +618,7 @@ static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *numbe
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_ARRAY:
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
             return 0;
