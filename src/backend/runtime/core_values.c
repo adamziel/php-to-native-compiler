@@ -30,6 +30,11 @@
 #define PTN_PHP_SAPI_NAME "cli"
 #define PTN_ARRAY_INDEX_MIN_ENTRIES 16
 #define PTN_SYMBOL_INDEX_MIN_ENTRIES 16
+#define PTN_E_ERROR 1
+#define PTN_E_WARNING 2
+#define PTN_E_NOTICE 8
+#define PTN_E_DEPRECATED 8192
+#define PTN_E_ALL 32767
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnClosure PtnClosure;
@@ -233,6 +238,7 @@ typedef struct {
     int emitted_deprecation;
     int emitted_warning;
     int suppressed;
+    int64_t error_reporting_level;
 } PtnDiagnosticSink;
 
 typedef struct {

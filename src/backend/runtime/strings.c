@@ -124,6 +124,22 @@ static PTN_UNUSED PtnValue ptn_shift_right(PtnValue left, PtnValue right) {
     return ptn_int(left_integer >> (unsigned int)distance);
 }
 
+static PTN_UNUSED void ptn_normalize_float_exponent(char *buffer) {
+    for (char *cursor = buffer; *cursor != '\0'; cursor++) {
+        if (*cursor == 'e' || *cursor == 'E') {
+            *cursor = 'E';
+            cursor++;
+            if (*cursor == '+' || *cursor == '-') {
+                cursor++;
+            }
+            while (*cursor == '0' && isdigit((unsigned char)cursor[1])) {
+                memmove(cursor, cursor + 1, strlen(cursor));
+            }
+            return;
+        }
+    }
+}
+
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
     value = ptn_value_deref(value);
     char buffer[128];
@@ -139,6 +155,7 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             break;
         case PTN_FLOAT:
             written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
+            ptn_normalize_float_exponent(buffer);
             break;
         case PTN_STRING:
             return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
@@ -234,6 +251,7 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
             break;
         case PTN_FLOAT:
             written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
+            ptn_normalize_float_exponent(buffer);
             break;
         case PTN_STRING:
             return ptn_string_operand_borrowed_len((const char *)value.as.string.data, value.as.string.len);

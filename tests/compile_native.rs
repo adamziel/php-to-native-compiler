@@ -10886,6 +10886,45 @@ fn compile_bitwise_scalar_operations_to_native_binary() {
 }
 
 #[test]
+fn compile_binary_bitwise_respects_error_reporting_for_integer_conversion_diagnostics() {
+    let root = temp_dir("ptn-native-bitwise-error-reporting");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bitwise-error-reporting.php");
+    let output = root.join("bitwise-error-reporting-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$large = PHP_INT_MAX + 1;\n\
+var_dump(error_reporting(E_ERROR));\n\
+var_dump($large & 1);\n\
+var_dump($large | 1);\n\
+var_dump($large ^ 1);\n\
+var_dump(\"1.5abc\" | 0);\n\
+var_dump(error_reporting());\n\
+error_reporting(-1);\n\
+var_dump($large & 1);\n\
+var_dump(\"1.5abc\" | 0);\n\
+echo $large, \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(32767)\nint(0)\nint(-9223372036854775807)\nint(-9223372036854775807)\nint(1)\nint(1)\n\nDeprecated: Implicit conversion from float 9.2233720368548e+18 to int loses precision in ptn-generated-code on line 0\nint(0)\n\nWarning: A non-numeric value encountered in ptn-generated-code on line 0\n\nDeprecated: Implicit conversion from float-string \"1.5abc\" to int loses precision in ptn-generated-code on line 0\nint(1)\n9.2233720368548E+18\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_bitwise_and(&runtime,"));
+    assert!(c_source.contains("ptn_bitwise_or(&runtime,"));
+    assert!(c_source.contains("ptn_bitwise_xor(&runtime,"));
+}
+
+#[test]
 fn compile_unary_bitwise_not_to_native_binary() {
     let root = temp_dir("ptn-native-bitwise-not");
     fs::create_dir_all(&root).unwrap();

@@ -577,6 +577,9 @@ fn emit_instruction(
                 } else {
                     out.push_str(binary_runtime_function(*op));
                     out.push('(');
+                    if binary_runtime_function_needs_runtime(*op) {
+                        out.push_str("&runtime, ");
+                    }
                     out.push_str(&current_temp);
                     out.push_str(", ");
                     out.push_str(&value_temp);
@@ -1949,6 +1952,13 @@ fn binary_runtime_function(op: BinaryOp) -> &'static str {
     }
 }
 
+fn binary_runtime_function_needs_runtime(op: BinaryOp) -> bool {
+    matches!(
+        op,
+        BinaryOp::BitwiseAnd | BinaryOp::BitwiseXor | BinaryOp::BitwiseOr
+    )
+}
+
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     let c_path = output.with_extension("c");
     fs::write(&c_path, c_source).map_err(|error| {
@@ -3204,6 +3214,9 @@ impl ValueEmitter {
         out.push_str(" = ");
         out.push_str(binary_runtime_function(op));
         out.push('(');
+        if binary_runtime_function_needs_runtime(op) {
+            out.push_str("&runtime, ");
+        }
         out.push_str(&left_temp);
         out.push_str(", ");
         out.push_str(&right_temp);

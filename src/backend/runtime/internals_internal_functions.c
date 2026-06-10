@@ -25,9 +25,16 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_INT:
             printf("%lld", (long long)value.as.integer);
             break;
-        case PTN_FLOAT:
-            printf("%.14g", value.as.floating);
+        case PTN_FLOAT: {
+            char buffer[64];
+            int written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
+            if (written < 0 || (size_t)written >= sizeof(buffer)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_normalize_float_exponent(buffer);
+            fputs(buffer, stdout);
             break;
+        }
         case PTN_STRING:
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             break;
@@ -2886,8 +2893,8 @@ static PtnValue ptn_internal_intdiv(PtnRuntime *runtime, size_t argc, const PtnV
     (void)runtime;
     (void)argc;
     (void)line;
-    int64_t dividend = ptn_value_to_integer_with_precision_deprecation(args[0]);
-    int64_t divisor = ptn_value_to_integer_with_precision_deprecation(args[1]);
+    int64_t dividend = ptn_value_to_integer_with_precision_deprecation(NULL, args[0]);
+    int64_t divisor = ptn_value_to_integer_with_precision_deprecation(NULL, args[1]);
     if (divisor == 0) {
         ptn_abort_arithmetic_error("Division by zero");
     }
@@ -3170,11 +3177,12 @@ static PtnValue ptn_internal_count(PtnRuntime *runtime, size_t argc, const PtnVa
 }
 
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)argc;
-    (void)args;
     (void)line;
-    return ptn_int(0);
+    int64_t previous = runtime->diagnostics.error_reporting_level;
+    if (argc >= 1) {
+        runtime->diagnostics.error_reporting_level = ptn_value_to_integer(args[0]);
+    }
+    return ptn_int(previous);
 }
 
 static PtnCallFrame *ptn_current_call_frame(PtnRuntime *runtime, const char *function_name) {

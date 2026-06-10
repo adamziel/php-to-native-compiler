@@ -314,8 +314,10 @@ supports in generated native binaries.
 - `in_array()` over current boxed arrays, returning whether the needle matches
   any entry under loose or strict comparison. References are read through the
   same dereferencing path as other comparison internals.
-- `error_reporting()` currently accepts zero or one scalar argument and returns
-  a placeholder integer level. It does not configure diagnostic filtering yet.
+- `error_reporting()` accepts zero or one scalar argument, returns the previous
+  modeled level, and filters the currently modeled warnings, notices, and
+  deprecations, including integer-conversion diagnostics used by binary
+  bitwise operators.
 - `gettype()` over current boxed scalar values, returning `NULL`, `boolean`,
   `integer`, `double`, or `string`.
 - Scalar type predicates over current boxed scalar values: `is_null()`,
@@ -531,7 +533,9 @@ supports in generated native binaries.
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
-- PHP-exact `error_reporting()` configuration/filtering behavior.
+- PHP-exact `error_reporting()` configuration, custom error handlers, and
+  complete diagnostic routing beyond the currently modeled warning, notice,
+  and deprecation masks.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
 - PHP-exact version, SAPI, and extension metadata beyond the modeled CLI/core/
