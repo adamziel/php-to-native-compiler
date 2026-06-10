@@ -57,8 +57,9 @@ Current runtime/compiler slices:
   the runtime read boundary rather than adding a separate compound-assignment
   runtime path.
 - Statement-form `print expr;` lowers to the same boxed output IR instruction
-  used by echo, so generated native code routes print output through the
-  existing `ptn_echo` helper.
+  used by echo. Expression-form `print expr` lowers as a value expression that
+  materializes and emits the operand through `ptn_echo`, then returns boxed
+  integer `1`.
 - Parenthesized expressions are parsed as grouping, while unary `+`, unary `-`,
   unary `!`, unary bitwise `~`, scalar `(int)`, `(float)`, `(string)`, and
   `(bool)` casts, and deprecated non-canonical `(integer)`, `(double)`,

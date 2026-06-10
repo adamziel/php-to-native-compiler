@@ -465,12 +465,33 @@ fn parser_rejects_unsupported_foreach_bindings() {
 }
 
 #[test]
-fn parser_rejects_print_expression_contexts() {
-    let error = parser::parse("<?php $result = print \"hello\";").unwrap_err();
-    assert!(error.message.contains("expected expression"));
+fn parser_accepts_print_expression_contexts() {
+    let program = parser::parse(
+        "<?php $result = print \"hello\"; echo print(\"world\"); $sum = 40 + print \"!\";",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 3);
 
-    let error = parser::parse("<?php $result = print(\"hello\");").unwrap_err();
-    assert!(error.message.contains("expected expression"));
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment statement");
+    };
+    assert!(matches!(value, Expr::Print { .. }));
+
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(&expressions[0], Expr::Print { .. }));
+
+    let Statement::Assign { value, .. } = &program.statements[2] else {
+        panic!("expected assignment statement");
+    };
+    assert!(matches!(
+        value,
+        Expr::Binary {
+            op: BinaryOp::Add,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -2639,6 +2660,29 @@ fn compile_print_binary_expression_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Hello Ada 5\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_print_expression_contexts_to_native_binary() {
+    let root = temp_dir("ptn-native-print-expression-contexts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("print-expression-contexts.php");
+    let output = root.join("print-expression-contexts-bin");
+    fs::write(
+        &input,
+        "<?php $result = print \"A\"; echo \":$result\\n\"; echo print(\"B\"), \"\\n\"; $sum = 40 + print \"C\"; echo \":$sum\\n\"; echo (print \"D\") . \"E\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "A:1\nB1\nC:41\nD1E\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

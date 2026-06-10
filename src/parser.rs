@@ -15,6 +15,7 @@ const KEYWORD_XOR_PRECEDENCE: u8 = 2;
 const KEYWORD_AND_PRECEDENCE: u8 = 3;
 const SYMBOL_OR_PRECEDENCE: u8 = 4;
 const COALESCE_PRECEDENCE: u8 = 4;
+const PRINT_PRECEDENCE: u8 = SYMBOL_OR_PRECEDENCE;
 const SYMBOL_AND_PRECEDENCE: u8 = 5;
 const BITWISE_OR_PRECEDENCE: u8 = 6;
 const BITWISE_XOR_PRECEDENCE: u8 = 7;
@@ -1420,6 +1421,7 @@ impl Parser {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Function => self.parse_anonymous_function_expr(token.span),
+            TokenKind::Print => self.parse_print_expr(token.span),
             TokenKind::Identifier(name) => {
                 let lowercase = name.to_ascii_lowercase();
                 if lowercase == "new" {
@@ -1479,6 +1481,60 @@ impl Parser {
             TokenKind::LeftBracket => self.parse_array_literal(token.span),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
+    }
+
+    fn parse_print_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        let expression = self.parse_print_operand_expr()?;
+        let span = combine_spans(start_span, expression.span());
+        Ok(Expr::Print {
+            expression: Box::new(expression),
+            span,
+        })
+    }
+
+    fn parse_print_operand_expr(&mut self) -> Result<Expr> {
+        let left = self.parse_binary_expr(PRINT_PRECEDENCE)?;
+        if !self.peek_is_expression_assignment_op() {
+            reject_append_array_read(&left)?;
+            return Ok(left);
+        }
+
+        let operator = self.advance().clone();
+        let op = match operator.kind {
+            TokenKind::Equal => AssignmentOp::Assign,
+            TokenKind::QuestionQuestionEqual => AssignmentOp::CoalesceAssign,
+            _ => unreachable!("peek_is_expression_assignment_op guards assignment token"),
+        };
+        let left_span = left.span();
+        let target = assignment_target_from_expr(left).map_err(|_| {
+            Diagnostic::new(
+                "assignment expression target must be a variable, array dimension, or list",
+                Some(operator.span),
+            )
+        })?;
+        validate_coalesce_assignment_target(op, &target, operator.span)?;
+        if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            let source = self.parse_reference_source()?;
+            validate_reference_assignment_target_source(&target, &source, operator.span)?;
+            let span = combine_spans(left_span, source.span());
+            return Ok(Expr::AssignRef {
+                target,
+                source: Box::new(source),
+                span,
+            });
+        }
+        let value = self.parse_assignment_expr()?;
+        if matches!(op, AssignmentOp::Assign) {
+            validate_recursive_reference_assignment_value(&target, &value)?;
+        }
+        let span = combine_spans(left_span, value.span());
+        Ok(Expr::Assign {
+            target,
+            op,
+            value: Box::new(value),
+            span,
+        })
     }
 
     fn parse_static_member_expr(
@@ -1849,6 +1905,7 @@ impl Parser {
                 | TokenKind::Bang
                 | TokenKind::Tilde
                 | TokenKind::At
+                | TokenKind::Print
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
                 | TokenKind::Backslash
@@ -2448,6 +2505,9 @@ fn expr_array_literal_reference_to_variable(
             .find_map(|element| array_element_reference_to_variable(element, variable)),
         Expr::Assign { value, .. }
         | Expr::AssignRef { source: value, .. }
+        | Expr::Print {
+            expression: value, ..
+        }
         | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
@@ -2751,6 +2811,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         }
         Expr::Empty { target, .. } => {
             validate_anonymous_functions_in_expr(target, functions)?;
+        }
+        Expr::Print { expression, .. } => {
+            validate_anonymous_functions_in_expr(expression, functions)?;
         }
         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
             validate_anonymous_functions_in_expr(expr, functions)?;
@@ -3532,6 +3595,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         }
         Expr::Assign { value, .. } => reject_append_array_read(value)?,
         Expr::AssignRef { source, .. } => reject_append_array_read(source)?,
+        Expr::Print { expression, .. } => reject_append_array_read(expression)?,
         Expr::Call { arguments, .. } => {
             for argument in arguments {
                 reject_append_array_read(argument)?;
@@ -3640,6 +3704,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Variable(_, _)
         | Expr::Assign { .. }
         | Expr::AssignRef { .. }
+        | Expr::Print { .. }
         | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }

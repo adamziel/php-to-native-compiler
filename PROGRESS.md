@@ -1,17 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:28Z
-Measured: `ptn-107` rebased on `origin/master@51e3314d`; anonymous callback
-closures, static callables, string-callable callbacks, recursive directory
-APIs, bounded `stdClass` property evidence, and non-array `foreach`
-source-path diagnostics.
+Refresh: 2026-06-10T14:47Z
+Measured: `ptn-d1q` on `origin/master@df737c70`; anonymous callback closures,
+static callables, string-callable callbacks, recursive directory APIs, bounded
+`stdClass` property evidence, non-array `foreach` source-path diagnostics, and
+expression-form `print` contexts.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 368 | 368 | 0 |
+| Native compiled PHP snippets | 369 | 369 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -43,6 +43,8 @@ non-array `foreach` warnings, cursors, numeric keys, payload refcounts,
 array/string COW, references, by-reference params/foreach, array dimensions,
 temporaries, recursive/user functions, anonymous function values for direct
 dynamic calls and internal callbacks, magic constants, `func_*`, `print_r`,
+expression-form `print` returning `1` after output in assignment, echo operand,
+binary operand, and grouped contexts,
 binary strings, string offsets, scalar diagnostics, array literal references,
 array union `+`, scalar type hints, by-reference return boundaries, `count()`,
 `??`, assignment expressions, expression-level `@`, file APIs including
@@ -69,6 +71,7 @@ fatal parity, and broader file APIs.
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
+focused print-expression parser/native tests;
 anonymous/static/object callback native tests; focused non-array `foreach`
 native tests; `tools/run-native-smoke-matrix.sh`;
 `tools/run-post-merge-cow-gate.sh`.

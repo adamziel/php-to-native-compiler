@@ -218,10 +218,10 @@ unset.
 
 ## Lower-Priority Adjacent Work
 
-- Expression-form `print` is still unsupported: `target/debug/phpc -r 'echo print "x";'`
-  reports `expected expression`, while PHP outputs `x1`. Public `print_*`
-  rows are currently also blocked by complex interpolation and `@`, so this is
-  not as clean a PHPT cluster as `print_r()`.
+- Expression-form `print` was addressed by `ptn-d1q`:
+  `target/debug/phpc -r 'echo print "x";'` now matches PHP's `x1` output.
+  Public `print_*` rows may still be blocked by complex interpolation and `@`,
+  so this remains less clean as a PHPT cluster than `print_r()`.
 - Assignment expressions are still unsupported:
   `target/debug/phpc -r '$a = ($b = 3); var_dump($a, $b);'` reports an
   unexpected `=`, while PHP returns both `int(3)`. This is a useful future IR

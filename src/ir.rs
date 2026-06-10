@@ -200,6 +200,9 @@ pub enum ValueExpr {
     Empty {
         target: Box<ValueExpr>,
     },
+    Print {
+        expression: Box<ValueExpr>,
+    },
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
@@ -967,6 +970,9 @@ impl LoweringContext {
             },
             Expr::Empty { target, .. } => ValueExpr::Empty {
                 target: Box::new(self.lower_expr(target)),
+            },
+            Expr::Print { expression, .. } => ValueExpr::Print {
+                expression: Box::new(self.lower_expr(expression)),
             },
             Expr::Call {
                 name,
