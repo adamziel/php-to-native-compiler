@@ -101,6 +101,8 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
                 return ptn_compare_strings_loose(left.as.string, right.as.string) == PTN_COMPARE_EQUAL;
             case PTN_ARRAY:
                 return ptn_compare_arrays_equal(left.as.array, right.as.array);
+            case PTN_OBJECT:
+                return left.as.object == right.as.object;
             case PTN_EXCEPTION:
                 return left.as.exception == right.as.exception;
             case PTN_REFERENCE:
@@ -129,6 +131,8 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
                 return other.as.string.len == 0;
             case PTN_ARRAY:
                 return other.as.array->len == 0;
+            case PTN_OBJECT:
+                return 0;
             case PTN_EXCEPTION:
                 return 0;
             case PTN_REFERENCE:
@@ -179,6 +183,8 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
                 return 1;
             }
             return ptn_compare_arrays_identical(left.as.array, right.as.array);
+        case PTN_OBJECT:
+            return left.as.object == right.as.object;
         case PTN_EXCEPTION:
             return left.as.exception == right.as.exception;
         case PTN_REFERENCE:
@@ -209,6 +215,8 @@ static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right) {
                 return 0;
             }
             return !ptn_compare_arrays_identical(left.as.array, right.as.array);
+        case PTN_OBJECT:
+            return left.as.object != right.as.object;
         case PTN_EXCEPTION:
             return left.as.exception != right.as.exception;
         case PTN_REFERENCE:
@@ -239,6 +247,8 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
                 return ptn_compare_strings_loose(left.as.string, right.as.string);
             case PTN_ARRAY:
                 return ptn_compare_arrays_order(left.as.array, right.as.array);
+            case PTN_OBJECT:
+                return left.as.object == right.as.object ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
             case PTN_EXCEPTION:
                 return left.as.exception == right.as.exception ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
             case PTN_REFERENCE:

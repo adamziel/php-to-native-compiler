@@ -27,6 +27,7 @@ static PTN_UNUSED void ptn_reference_assign(PtnReference *reference, PtnValue va
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_drop(PtnValue *value);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
+static PTN_UNUSED void ptn_object_release(PtnObject *object);
 
 static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
     PtnArrayKey key;
@@ -101,6 +102,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
             return ptn_array_string_key(string);
         }
         case PTN_ARRAY:
+        case PTN_OBJECT:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
             ptn_abort_illegal_array_key();
@@ -354,6 +356,18 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
     return ptn_array(array);
 }
 
+static PTN_UNUSED PtnValue ptn_object_new_shell(const char *class_name) {
+    PtnObject *object = malloc(sizeof(PtnObject));
+    if (object == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    PtnValue properties = ptn_array_from_literal_entries(0, NULL);
+    object->refcount = 1;
+    object->class_name = ptn_duplicate_string(class_name);
+    object->properties = properties.as.array;
+    return ptn_object(object);
+}
+
 static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         return ptn_array_int_key(key.as.integer);
@@ -405,6 +419,32 @@ static PTN_UNUSED void ptn_array_retain(PtnArray *array) {
     array->refcount++;
 }
 
+static PTN_UNUSED void ptn_object_retain(PtnObject *object) {
+    if (object == NULL) {
+        return;
+    }
+    if (object->refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    object->refcount++;
+}
+
+static PTN_UNUSED void ptn_object_release(PtnObject *object) {
+    if (object == NULL) {
+        return;
+    }
+    if (object->refcount == 0) {
+        return;
+    }
+    object->refcount--;
+    if (object->refcount != 0) {
+        return;
+    }
+    free(object->class_name);
+    ptn_array_free(object->properties);
+    free(object);
+}
+
 static PTN_UNUSED void ptn_array_iterator_retain(PtnArray *array) {
     if (array == NULL) {
         return;
@@ -446,6 +486,9 @@ static PTN_UNUSED PtnValue ptn_value_deep_clone(PtnValue value) {
             );
         case PTN_ARRAY:
             return ptn_array(ptn_array_clone(value.as.array));
+        case PTN_OBJECT:
+            ptn_object_retain(value.as.object);
+            return ptn_object(value.as.object);
         case PTN_EXCEPTION: {
             PtnException *exception = malloc(sizeof(PtnException));
             if (exception == NULL) {
@@ -481,6 +524,9 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
         case PTN_ARRAY:
             ptn_array_retain(value.as.array);
             return ptn_array(value.as.array);
+        case PTN_OBJECT:
+            ptn_object_retain(value.as.object);
+            return ptn_object(value.as.object);
         case PTN_EXCEPTION: {
             PtnException *exception = malloc(sizeof(PtnException));
             if (exception == NULL) {
@@ -512,7 +558,7 @@ static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
 
 static PTN_UNUSED PtnValue ptn_value_snapshot_for_array_path_write(PtnValue value) {
     value = ptn_value_deref(value);
-    if (value.type == PTN_ARRAY) {
+    if (value.type == PTN_ARRAY || value.type == PTN_OBJECT) {
         return ptn_value_clone(value);
     }
     return value;

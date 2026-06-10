@@ -1327,15 +1327,17 @@ impl Parser {
                 TokenKind::ObjectOperator => {
                     let start_span = expr.span();
                     self.advance();
-                    let method = self.advance().clone();
-                    let TokenKind::Identifier(name) = method.kind else {
-                        return Err(Diagnostic::new("expected method name", Some(method.span)));
+                    let member = self.advance().clone();
+                    let TokenKind::Identifier(name) = member.kind else {
+                        return Err(Diagnostic::new("expected member name", Some(member.span)));
                     };
                     if !matches!(self.peek().kind, TokenKind::LeftParen) {
-                        return Err(Diagnostic::new(
-                            "object property reads are unsupported",
-                            Some(method.span),
-                        ));
+                        expr = Expr::PropertyFetch {
+                            receiver: Box::new(expr),
+                            name,
+                            span: combine_spans(start_span, member.span),
+                        };
+                        continue;
                     }
                     let (arguments, right_span) = self.parse_call_arguments()?;
                     expr = Expr::MethodCall {
@@ -1382,10 +1384,12 @@ impl Parser {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Identifier(name) => {
-                if matches!(self.peek().kind, TokenKind::DoubleColon) {
+                let lowercase = name.to_ascii_lowercase();
+                if lowercase == "new" {
+                    self.parse_new_object_expr(token.span)
+                } else if matches!(self.peek().kind, TokenKind::DoubleColon) {
                     self.parse_static_member_expr(name, token.span)
                 } else if matches!(self.peek().kind, TokenKind::LeftParen) {
-                    let lowercase = name.to_ascii_lowercase();
                     match lowercase.as_str() {
                         "array" => self.parse_long_array_literal(token.span),
                         "isset" => self.parse_isset_expr(token.span),
@@ -1465,6 +1469,40 @@ impl Parser {
             arguments,
             span: combine_spans(class_span, right_span),
         })
+    }
+
+    fn parse_new_object_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        let (class_name, class_span) = self.parse_new_object_class_name()?;
+        let mut span = combine_spans(start_span, class_span);
+        let arguments = if matches!(self.peek().kind, TokenKind::LeftParen) {
+            let (arguments, right_span) = self.parse_call_arguments()?;
+            span = combine_spans(start_span, right_span);
+            arguments
+        } else {
+            Vec::new()
+        };
+        Ok(Expr::NewObject {
+            class_name,
+            arguments,
+            span,
+        })
+    }
+
+    fn parse_new_object_class_name(&mut self) -> Result<(String, SourceSpan)> {
+        let leading_backslash = matches!(self.peek().kind, TokenKind::Backslash);
+        let start_span = if leading_backslash {
+            Some(self.advance().span)
+        } else {
+            None
+        };
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            return Err(Diagnostic::new("expected class name", Some(token.span)));
+        };
+        let span = start_span
+            .map(|span| combine_spans(span, token.span))
+            .unwrap_or(token.span);
+        Ok((name, span))
     }
 
     fn reject_unsupported_class_like_declaration(&mut self) -> Result<Statement> {
@@ -2303,6 +2341,7 @@ fn validate_recursive_reference_assignment_value(
     let variable = match target {
         AssignmentTarget::Variable { name, .. } => name,
         AssignmentTarget::ArrayDim(target) => &target.array,
+        AssignmentTarget::Property { .. } => return Ok(()),
         AssignmentTarget::List(_) => return Ok(()),
     };
     if let Some(diagnostic) = expr_array_literal_reference_to_variable(value, variable) {
@@ -2359,6 +2398,8 @@ fn expr_array_literal_reference_to_variable(
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
+        | Expr::NewObject { .. }
+        | Expr::PropertyFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. }
@@ -3094,6 +3135,15 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
         Expr::ArrayAccess { .. } => Ok(AssignmentTarget::ArrayDim(array_dim_target_from_expr(
             expr,
         )?)),
+        Expr::PropertyFetch {
+            receiver,
+            name,
+            span,
+        } => Ok(AssignmentTarget::Property {
+            receiver,
+            name,
+            span,
+        }),
         Expr::Array { elements, span } => Ok(AssignmentTarget::List(
             list_assignment_target_from_array_elements(elements, span)?,
         )),
@@ -3146,6 +3196,10 @@ fn validate_coalesce_assignment_target(
             }
             Ok(())
         }
+        AssignmentTarget::Property { .. } => Err(Diagnostic::new(
+            "null coalescing assignment currently supports variables and array/string offsets",
+            Some(span),
+        )),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables and array/string offsets",
             Some(span),
@@ -3174,6 +3228,12 @@ fn validate_reference_assignment_target_source(
                     Some(target.span),
                 ));
             }
+        }
+        AssignmentTarget::Property { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
         }
         AssignmentTarget::List(_) => {
             return Err(Diagnostic::new(
@@ -3246,6 +3306,14 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
             for argument in arguments {
                 reject_append_array_read(argument)?;
             }
+        }
+        Expr::NewObject { arguments, .. } => {
+            for argument in arguments {
+                reject_append_array_read(argument)?;
+            }
+        }
+        Expr::PropertyFetch { receiver, .. } => {
+            reject_append_array_read(receiver)?;
         }
         Expr::Array { elements, .. } => {
             for element in elements {
@@ -3326,6 +3394,8 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
+        | Expr::NewObject { .. }
+        | Expr::PropertyFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,

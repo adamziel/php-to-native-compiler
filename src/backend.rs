@@ -1448,6 +1448,9 @@ fn collect_assignment_target_runtime_requirements(
                 }
             }
         }
+        AssignmentTarget::Property { receiver, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+        }
         AssignmentTarget::List(target) => {
             for element in &target.elements {
                 if let Some(key) = &element.key {
@@ -1551,6 +1554,14 @@ fn collect_value_runtime_requirements(
             for argument in arguments {
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
+        }
+        ValueExpr::NewObject { arguments, .. } => {
+            for argument in arguments {
+                collect_value_runtime_requirements(argument, functions, requirements);
+            }
+        }
+        ValueExpr::PropertyFetch { receiver, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
         }
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             collect_value_runtime_requirements(expr, functions, requirements);
@@ -1987,6 +1998,7 @@ impl AssignmentTargetLine for AssignmentTarget {
             AssignmentTarget::Variable { line, .. } | AssignmentTarget::ArrayDim { line, .. } => {
                 *line
             }
+            AssignmentTarget::Property { line, .. } => *line,
             AssignmentTarget::List(target) => target.line,
         }
     }
@@ -2006,7 +2018,9 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
         ListAssignmentElementTarget::Reference(_) => true,
         ListAssignmentElementTarget::Value(target) => match target.as_ref() {
             AssignmentTarget::List(target) => list_assignment_has_reference(target),
-            AssignmentTarget::Variable { .. } | AssignmentTarget::ArrayDim { .. } => false,
+            AssignmentTarget::Variable { .. }
+            | AssignmentTarget::ArrayDim { .. }
+            | AssignmentTarget::Property { .. } => false,
         },
     })
 }
@@ -2026,6 +2040,7 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
     match target {
         AssignmentTarget::Variable { name: target, .. } => target == name,
         AssignmentTarget::ArrayDim { array, .. } => array == name,
+        AssignmentTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
         AssignmentTarget::List(target) => list_assignment_references_variable(target, name),
     }
 }
@@ -2034,6 +2049,76 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
     match target {
         ReferenceTarget::Variable { name: target, .. } => target == name,
         ReferenceTarget::ArrayDim(target) => target.array == name,
+    }
+}
+
+fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
+    match value {
+        ValueExpr::Load { name: target, .. } => target == name,
+        ValueExpr::Assign { target, value, .. } => {
+            assignment_target_mentions_variable(target, name)
+                || value_mentions_variable(value, name)
+        }
+        ValueExpr::AssignRef { target, source } => {
+            assignment_target_mentions_variable(target, name)
+                || value_mentions_variable(source, name)
+        }
+        ValueExpr::Array(elements) => elements.iter().any(|element| {
+            element
+                .key
+                .as_ref()
+                .is_some_and(|key| value_mentions_variable(key, name))
+                || match &element.value {
+                    IrArrayElementValue::Value(value) => value_mentions_variable(value, name),
+                    IrArrayElementValue::Reference(target) => {
+                        reference_target_mentions_variable(target, name)
+                    }
+                }
+        }),
+        ValueExpr::ArrayAccess { array, index, .. } => {
+            value_mentions_variable(array, name) || value_mentions_variable(index, name)
+        }
+        ValueExpr::Isset { targets } => targets
+            .iter()
+            .any(|target| value_mentions_variable(target, name)),
+        ValueExpr::Empty { target } => value_mentions_variable(target, name),
+        ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
+            arguments
+                .iter()
+                .any(|argument| value_mentions_variable(argument, name))
+        }
+        ValueExpr::DynamicCall {
+            callee, arguments, ..
+        } => {
+            value_mentions_variable(callee, name)
+                || arguments
+                    .iter()
+                    .any(|argument| value_mentions_variable(argument, name))
+        }
+        ValueExpr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            value_mentions_variable(receiver, name)
+                || arguments
+                    .iter()
+                    .any(|argument| value_mentions_variable(argument, name))
+        }
+        ValueExpr::PropertyFetch { receiver, .. } => value_mentions_variable(receiver, name),
+        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
+            value_mentions_variable(expr, name)
+        }
+        ValueExpr::Binary { left, right, .. } => {
+            value_mentions_variable(left, name) || value_mentions_variable(right, name)
+        }
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null
+        | ValueExpr::Constant(_)
+        | ValueExpr::MagicConstant { .. } => false,
     }
 }
 
@@ -2116,11 +2201,39 @@ impl ValueEmitter {
                 AssignmentTarget::List(_) => {
                     unreachable!("parser rejects null coalescing assignment for list targets");
                 }
+                AssignmentTarget::Property { .. } => {
+                    unreachable!("parser rejects null coalescing assignment for property targets");
+                }
             }
         }
 
         if let AssignmentTarget::List(target) = target {
             return self.emit_list_assignment(out, target, value);
+        }
+
+        if let AssignmentTarget::Property {
+            receiver,
+            name,
+            line,
+        } = target
+        {
+            let receiver_temp = self.emit_materialized_value(out, receiver);
+            let value_temp = self.emit_materialized_value(out, value);
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_object_write_property(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&value_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &value_temp);
+            emit_value_cleanup(out, "    ", &receiver_temp);
+            return result_temp;
         }
 
         let value_temp = self.emit_materialized_value(out, value);
@@ -2326,6 +2439,9 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
+            AssignmentTarget::Property { .. } => {
+                unreachable!("parser rejects by-reference assignment to property targets");
+            }
             AssignmentTarget::List(_) => {
                 unreachable!("parser rejects by-reference assignment to list targets");
             }
@@ -2386,6 +2502,27 @@ impl ValueEmitter {
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
+                result_temp
+            }
+            AssignmentTarget::Property {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_write_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(value_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
                 result_temp
             }
             AssignmentTarget::List(target) => {
@@ -2760,6 +2897,16 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &index_temp);
                 result_temp
             }
+            ValueExpr::NewObject {
+                class_name,
+                arguments,
+                line,
+            } => self.emit_new_object(out, class_name, arguments, *line),
+            ValueExpr::PropertyFetch {
+                receiver,
+                name,
+                line,
+            } => self.emit_property_fetch(out, receiver, name, *line),
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
             ValueExpr::Empty { target } => self.emit_empty(out, target),
             ValueExpr::Load { name, line } => format!(
@@ -2814,6 +2961,73 @@ impl ValueEmitter {
                 line,
             } => self.emit_method_call(out, receiver, name, arguments, *line),
         }
+    }
+
+    fn emit_new_object(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let mut argument_temps = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            argument_temps.push(self.emit_materialized_value(out, argument));
+        }
+        let result_temp = self.next_temp();
+        if argument_temps.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_new_object(&runtime, \"");
+            out.push_str(&c_string(class_name));
+            out.push_str("\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        } else {
+            let args_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ");
+            out.push_str(&argument_temps.join(", "));
+            out.push_str(" };\n");
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_new_object(&runtime, \"");
+            out.push_str(&c_string(class_name));
+            out.push_str("\", ");
+            out.push_str(&argument_temps.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
+        for argument_temp in argument_temps {
+            emit_value_cleanup(out, "    ", &argument_temp);
+        }
+        result_temp
+    }
+
+    fn emit_property_fetch(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
     }
 
     fn emit_condition(&mut self, out: &mut String, value: &ValueExpr) -> String {

@@ -1,15 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-10T13:31Z
-Measured: `ptn-zo6` rebased on `origin/master@3c11d09`; recursive `mkdir()`,
-string-callable `array_map()`, and static callable evidence.
+Refresh: 2026-06-10T13:45Z
+Measured: `ptn-zvc` rebased on `origin/master@579ea7e`; static callables,
+string-callable callbacks, recursive directory APIs, and bounded `stdClass`
+property evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 360 | 360 | 0 |
+| Native compiled PHP snippets | 364 | 364 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -28,9 +29,9 @@ string-callable `array_map()`, and static callable evidence.
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows: 26 passing, 3 failing.
-Named `array_walk()` callbacks observe `$GLOBALS` swaps. Closure-backed
-callback rows remain blocked by Closure/callable values (`ptn-dis`).
+`tools/phpt-cow-manifest.txt` has 29 rows: 26 passing, 3 failing. Named
+`array_walk()` callbacks observe `$GLOBALS` swaps. Closure-backed callback rows
+remain blocked by Closure/callable values (`ptn-dis`).
 
 ## Already Ported
 
@@ -47,20 +48,23 @@ snapshots, `array_sum()`/`strtr()`/`in_array()`, recursive array merge/replace,
 expressions, nested same-array reference lvalues, direct-variable and
 offset-form `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
-`array_walk()` global-array rebinding, and public static methods registered as
-`Class::method` callables for dynamic calls and internals.
+`array_walk()` global-array rebinding, public static methods registered as
+`Class::method` callables, and `new stdClass` boxed objects with public dynamic
+property reads/writes shared through object aliases.
 
 ## Still Needed
 
 Remaining COW PHPT gaps are Closure/callable `use` syntax, closure-backed
 callback by-reference returns, `array_reduce()` refcount behavior, and broader
-recursive by-reference return edges. Broader bounded-PHPT gaps are objects,
-non-static method callable values, unsupported array/string internals, 64-bit
-operator exactness, foreach diagnostics, object/property compound lvalues,
-scalar offset-lvalue fatal parity, and broader file APIs.
+recursive by-reference return edges. Broader bounded-PHPT gaps are full class
+declarations/metadata, instance methods, visibility/inheritance/static
+properties/magic methods, non-static method callable values, unsupported
+array/string internals, 64-bit operator exactness, foreach diagnostics,
+object/property compound lvalues, scalar offset-lvalue fatal parity, and
+broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; focused static/string callable and `array_walk()`
-native tests; `cargo test`; `cargo build --bin phpc`; focused callback PHPT
-rows; `tools/run-native-smoke-matrix.sh`; `tools/run-post-merge-cow-gate.sh`.
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
+focused callback/object native tests; `tools/run-native-smoke-matrix.sh`;
+`tools/run-post-merge-cow-gate.sh`.

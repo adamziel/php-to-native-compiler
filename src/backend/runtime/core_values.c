@@ -33,6 +33,7 @@
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnException PtnException;
+typedef struct PtnObject PtnObject;
 typedef struct PtnReference PtnReference;
 typedef struct PtnTryFrame PtnTryFrame;
 
@@ -43,6 +44,7 @@ typedef enum {
     PTN_FLOAT,
     PTN_STRING,
     PTN_ARRAY,
+    PTN_OBJECT,
     PTN_EXCEPTION,
     PTN_REFERENCE
 } PtnType;
@@ -81,6 +83,7 @@ typedef struct {
         double floating;
         PtnString string;
         PtnArray *array;
+        PtnObject *object;
         PtnException *exception;
         PtnReference *reference;
     } as;
@@ -130,6 +133,12 @@ struct PtnArray {
     size_t index_capacity;
     int64_t next_auto_key;
     size_t current_index;
+};
+
+struct PtnObject {
+    size_t refcount;
+    char *class_name;
+    PtnArray *properties;
 };
 
 typedef struct {
@@ -427,6 +436,14 @@ static PTN_UNUSED PtnValue ptn_array(PtnArray *array) {
     value.type = PTN_ARRAY;
     value.owned = 1;
     value.as.array = array;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_object(PtnObject *object) {
+    PtnValue value;
+    value.type = PTN_OBJECT;
+    value.owned = 1;
+    value.as.object = object;
     return value;
 }
 

@@ -130,6 +130,9 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
         case PTN_ARRAY:
             ptn_array_free(value->as.array);
             break;
+        case PTN_OBJECT:
+            ptn_object_release(value->as.object);
+            break;
         case PTN_EXCEPTION:
             ptn_exception_free(value->as.exception);
             break;

@@ -10165,6 +10165,108 @@ echo array_reduce([6], [1 => \"combine\", 0 => \"Reducer\"], 0), \"\\n\";
 }
 
 #[test]
+fn parser_accepts_stdclass_property_reads_and_writes() {
+    let program = parser::parse(
+        "<?php\n\
+$object = new stdClass;\n\
+$object->value = 7;\n\
+echo $object->value;\n",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 3);
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected property assignment expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::Property { name, .. },
+            ..
+        } if name == "value"
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[2] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::PropertyFetch { name, .. } if name == "value"
+    ));
+}
+
+#[test]
+fn compile_stdclass_property_reads_and_writes_to_native_binary() {
+    let root = temp_dir("ptn-native-stdclass-property-access");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stdclass-property-access.php");
+    let output = root.join("stdclass-property-access-bin");
+    fs::write(
+        &input,
+        "<?php
+$object = new stdClass;
+$object->value = 7;
+$alias = $object;
+$alias->value = $object->value + 5;
+var_dump($object->value);
+var_dump($alias->value = 21);
+var_dump($object->value);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(12)\nint(21)\nint(21)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_new_object(&runtime, \"stdClass\""));
+    assert!(c_source.contains("ptn_object_write_property(&runtime"));
+    assert!(c_source.contains("ptn_object_read_property(&runtime"));
+}
+
+#[test]
+fn compile_callback_shaped_object_property_read_to_native_binary() {
+    let root = temp_dir("ptn-native-callback-object-property-read");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("callback-object-property-read.php");
+    let output = root.join("callback-object-property-read-bin");
+    fs::write(
+        &input,
+        "<?php
+function read_member($object) {
+    return $object->value;
+}
+
+$object = new stdClass;
+$object->value = \"callback\";
+var_dump(call_user_func(\"read_member\", $object));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"callback\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_call_user_func"));
+    assert!(c_source.contains("ptn_object_read_property(&runtime"));
+}
+
+#[test]
 fn compile_typed_by_ref_return_separates_function_boundaries_to_native_binary() {
     let root = temp_dir("ptn-native-typed-by-ref-return-separation");
     fs::create_dir_all(&root).unwrap();
@@ -10970,15 +11072,38 @@ fn phpc_renders_append_null_coalescing_assignment_diagnostic() {
 
 #[test]
 fn var_dump_complex_edges_remain_unsupported_before_codegen() {
-    for source in [
-        "<?php var_dump(new stdClass);",
-        "<?php $array = []; $array[] = &$array; var_dump($array);",
-    ] {
-        assert!(
-            parser::parse(source).is_err(),
-            "expected unsupported var_dump edge to fail before codegen: {source}"
-        );
-    }
+    let source = "<?php $array = []; $array[] = &$array; var_dump($array);";
+    assert!(
+        parser::parse(source).is_err(),
+        "expected unsupported recursive array var_dump edge to fail before codegen"
+    );
+}
+
+#[test]
+fn compile_var_dump_stdclass_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-stdclass");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-stdclass.php");
+    let output = root.join("var-dump-stdclass-bin");
+    fs::write(
+        &input,
+        "<?php
+$object = new stdClass;
+$object->value = \"visible\";
+var_dump($object);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(stdClass)#1 (1) {\n  [\"value\"]=>\n  string(7) \"visible\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

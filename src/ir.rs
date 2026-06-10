@@ -212,6 +212,16 @@ pub enum ValueExpr {
         arguments: Vec<ValueExpr>,
         line: usize,
     },
+    NewObject {
+        class_name: String,
+        arguments: Vec<ValueExpr>,
+        line: usize,
+    },
+    PropertyFetch {
+        receiver: Box<ValueExpr>,
+        name: String,
+        line: usize,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<ValueExpr>,
@@ -258,6 +268,11 @@ pub enum AssignmentTarget {
     ArrayDim {
         array: String,
         dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
+    Property {
+        receiver: Box<ValueExpr>,
+        name: String,
         line: usize,
     },
     List(ListAssignmentTarget),
@@ -654,6 +669,15 @@ fn lower_assignment_target(target: &AstAssignmentTarget) -> AssignmentTarget {
                 .collect(),
             line: target.span.line,
         },
+        AstAssignmentTarget::Property {
+            receiver,
+            name,
+            span,
+        } => AssignmentTarget::Property {
+            receiver: Box::new(lower_expr(receiver)),
+            name: name.clone(),
+            line: span.line,
+        },
         AstAssignmentTarget::List(target) => {
             AssignmentTarget::List(lower_list_assignment_target(target))
         }
@@ -874,6 +898,24 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             receiver: Box::new(lower_expr(receiver)),
             name: name.clone(),
             arguments: arguments.iter().map(lower_expr).collect(),
+            line: span.line,
+        },
+        Expr::NewObject {
+            class_name,
+            arguments,
+            span,
+        } => ValueExpr::NewObject {
+            class_name: class_name.clone(),
+            arguments: arguments.iter().map(lower_expr).collect(),
+            line: span.line,
+        },
+        Expr::PropertyFetch {
+            receiver,
+            name,
+            span,
+        } => ValueExpr::PropertyFetch {
+            receiver: Box::new(lower_expr(receiver)),
+            name: name.clone(),
             line: span.line,
         },
         Expr::Unary { op, expr, span } => ValueExpr::Unary {

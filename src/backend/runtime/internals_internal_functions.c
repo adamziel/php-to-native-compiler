@@ -34,6 +34,9 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_ARRAY:
             fputs("Array", stdout);
             break;
+        case PTN_OBJECT:
+            fputs("Object", stdout);
+            break;
         case PTN_EXCEPTION:
             fputs("Object", stdout);
             break;
@@ -205,6 +208,24 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             fputs("}\n", stdout);
             break;
         }
+        case PTN_OBJECT: {
+            PtnObject *object = value.as.object;
+            PtnArray *properties = object->properties;
+            printf("object(%s)#1 (%zu) {\n", object->class_name, properties->len);
+            for (size_t i = 0; i < properties->len; i++) {
+                ptn_var_dump_indent(indent + 1);
+                PtnArrayKey key = properties->entries[i].key;
+                if (key.type == PTN_ARRAY_KEY_INT) {
+                    printf("[%lld]=>\n", (long long)key.as.integer);
+                } else {
+                    printf("[\"%s\"]=>\n", key.as.string);
+                }
+                ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
+            }
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
+        }
         case PTN_EXCEPTION:
             printf("object(%s)#1 (1) {\n", value.as.exception->class_name);
             ptn_var_dump_indent(indent + 1);
@@ -269,6 +290,29 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 ptn_debug_zval_dump_value_indented(array->entries[i].value, indent + 1, seen);
             }
             ptn_dump_seen_arrays_pop(seen);
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
+        }
+        case PTN_OBJECT: {
+            PtnObject *object = value.as.object;
+            PtnArray *properties = object->properties;
+            printf(
+                "object(%s)#1 (%zu) refcount(%zu){\n",
+                object->class_name,
+                properties->len,
+                object->refcount
+            );
+            for (size_t i = 0; i < properties->len; i++) {
+                ptn_var_dump_indent(indent + 1);
+                PtnArrayKey key = properties->entries[i].key;
+                if (key.type == PTN_ARRAY_KEY_INT) {
+                    printf("[%lld]=>\n", (long long)key.as.integer);
+                } else {
+                    printf("[\"%s\"]=>\n", key.as.string);
+                }
+                ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
+            }
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
@@ -422,6 +466,9 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
             break;
         case PTN_ARRAY:
             ptn_print_r_array(buffer, value.as.array, indent);
+            break;
+        case PTN_OBJECT:
+            ptn_string_buffer_append(buffer, "Object");
             break;
         case PTN_EXCEPTION:
             ptn_string_buffer_append(buffer, "Object");

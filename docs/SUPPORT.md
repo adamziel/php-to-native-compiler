@@ -385,6 +385,15 @@ supports in generated native binaries.
   `Class::method`, can be called directly with `Class::method(...)`, and can be
   used by dynamic calls or internal callbacks through `"Class::method"` and
   `["Class", "method"]` callable values.
+- `new stdClass` expressions, boxed object handles, and public dynamic property
+  reads/writes such as `$object->name` and `$object->name = expr`. Object
+  assignment shares the object handle, so property writes through an alias are
+  visible through the original variable. Property assignment expressions return
+  the assigned value, and property reads can flow through generated user
+  functions and string-callable `call_user_func()` dispatch. This is a bounded
+  public-property object-storage slice; PHP class declarations, visibility,
+  inheritance, methods, static properties, magic methods, destructors, and
+  reflection metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
@@ -449,18 +458,20 @@ supports in generated native binaries.
   `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
   `M_*` constants in `defined()`/`constant()`.
 - Function forms beyond top-level named declarations and the public-static
-  class-method callable slice, including default arguments, variadics, named
-  arguments, by-reference returns, nested or conditional declarations,
-  closures, instance methods, full class metadata, namespaces, globals, static
-  locals, and PHP-exact function/include return propagation.
+  class-method callable slice, plus the bounded `stdClass` public-property
+  storage slice, including default arguments, variadics, named arguments,
+  by-reference returns, nested or conditional declarations, closures, instance
+  methods, full class metadata, namespaces, globals, static locals, and
+  PHP-exact function/include return propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
-- Unsupported recursive arrays, objects, resources, complete reference identity,
-  copy-on-write, and `var_dump()` reference identity beyond the currently
-  modeled ordered-array and direct-reference behavior.
+- Unsupported recursive arrays, full class/object metadata, resources,
+  complete reference identity, copy-on-write, and `var_dump()` reference
+  identity beyond the currently modeled ordered-array, direct-reference, and
+  `stdClass` public-property behavior.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container
   types, object property checks, resources, references, and error-handler
   routing.
-- String-offset append, unset, compound assignment, object/property/reference
+- String-offset append, unset, compound assignment, property/reference
   `isset()`/`empty()` and null-coalescing semantics, and complete
   TypeError/exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string

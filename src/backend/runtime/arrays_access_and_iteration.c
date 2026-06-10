@@ -84,6 +84,8 @@ static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
             return "string";
         case PTN_ARRAY:
             return "array";
+        case PTN_OBJECT:
+            return "object";
         case PTN_EXCEPTION:
             return "object";
         case PTN_REFERENCE:
@@ -100,6 +102,135 @@ static PTN_UNUSED void ptn_emit_array_runtime_diagnostic(const char *kind, const
     fputs(" in ptn on line ", stdout);
     fprintf(stdout, "%zu", line);
     fputc('\n', stdout);
+}
+
+static PTN_UNUSED int ptn_class_name_is_stdclass(const char *class_name) {
+    const char *stdclass = "stdClass";
+    while (*class_name != '\0' && *stdclass != '\0') {
+        if (tolower((unsigned char)*class_name) != tolower((unsigned char)*stdclass)) {
+            return 0;
+        }
+        class_name++;
+        stdclass++;
+    }
+    return *class_name == '\0' && *stdclass == '\0';
+}
+
+static PTN_UNUSED PtnValue ptn_new_object(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (!ptn_class_name_is_stdclass(class_name)) {
+        char message[192];
+        int written = snprintf(message, sizeof(message), "Class \"%s\" not found", class_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return ptn_null();
+    }
+    if (argc != 0) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "stdClass constructor expects 0 arguments");
+        return ptn_null();
+    }
+    return ptn_object_new_shell("stdClass");
+}
+
+static PTN_UNUSED void ptn_emit_non_object_property_read_warning(
+    PtnRuntime *runtime,
+    const char *property,
+    PtnValue receiver,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Attempt to read property \"%s\" on %s",
+        property,
+        ptn_offset_container_type_name(receiver)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static PTN_UNUSED void ptn_emit_undefined_property_warning(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Undefined property: %s::$%s",
+        object->class_name,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static PTN_UNUSED PtnValue ptn_object_read_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
+        return ptn_null();
+    }
+    PtnArrayKey key = ptn_array_string_key(property);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(entry->value);
+}
+
+static PTN_UNUSED PtnValue ptn_object_write_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnValue value,
+    size_t line
+) {
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Attempt to assign property \"%s\" on %s",
+            property,
+            ptn_offset_container_type_name(receiver)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return ptn_null();
+    }
+    PtnValue stored = ptn_value_clone_deref(value);
+    PtnValue result = ptn_value_clone(stored);
+    PtnArrayKey key = ptn_array_string_key(property);
+    ptn_array_write_entry(receiver.as.object->properties, key, stored);
+    return result;
 }
 
 static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(size_t line) {
@@ -590,6 +721,12 @@ static PTN_UNUSED int ptn_string_offset_from_value(
                 return 0;
             }
             ptn_throw_exception(runtime, "TypeError", "Cannot access offset of type array on string");
+            return 0;
+        case PTN_OBJECT:
+            if (quiet) {
+                return 0;
+            }
+            ptn_throw_exception(runtime, "TypeError", "Cannot access offset of type object on string");
             return 0;
         case PTN_EXCEPTION:
             if (quiet) {

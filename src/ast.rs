@@ -189,8 +189,16 @@ pub struct ArrayDimTarget {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssignmentTarget {
-    Variable { name: String, span: SourceSpan },
+    Variable {
+        name: String,
+        span: SourceSpan,
+    },
     ArrayDim(ArrayDimTarget),
+    Property {
+        receiver: Box<Expr>,
+        name: String,
+        span: SourceSpan,
+    },
     List(ListAssignmentTarget),
 }
 
@@ -284,6 +292,16 @@ pub enum Expr {
         receiver: Box<Expr>,
         name: String,
         arguments: Vec<Expr>,
+        span: SourceSpan,
+    },
+    NewObject {
+        class_name: String,
+        arguments: Vec<Expr>,
+        span: SourceSpan,
+    },
+    PropertyFetch {
+        receiver: Box<Expr>,
+        name: String,
         span: SourceSpan,
     },
     Array {
@@ -408,7 +426,9 @@ impl Expr {
             Expr::Assign { span, .. } | Expr::AssignRef { span, .. } => *span,
             Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
-            | Expr::MethodCall { span, .. } => *span,
+            | Expr::MethodCall { span, .. }
+            | Expr::NewObject { span, .. }
+            | Expr::PropertyFetch { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,
