@@ -39,6 +39,7 @@ pub fn emit_c(module: &Module) -> String {
     );
     if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions);
+        emit_class_metadata_helpers(&mut out, &module.classes);
     }
     if needs_method_dispatch {
         emit_method_dispatch(&mut out, &module.classes);
@@ -454,6 +455,46 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
     out.push_str("        return result;\n");
     out.push_str("    }\n");
     out.push_str("    return ptn_call_internal(runtime, name, argc, args, line);\n");
+    out.push_str("}\n");
+}
+
+fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
+    out.push_str("\nstatic int ptn_declared_class_exists(const char *name) {\n");
+    out.push_str("    if (ptn_ascii_case_equal(name, \"stdClass\")) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic int ptn_declared_class_method_exists(const char *class_name, const char *method_name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)method_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for method in &class.methods {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
     out.push_str("}\n");
 }
 

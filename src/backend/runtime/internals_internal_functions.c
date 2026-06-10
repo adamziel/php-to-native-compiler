@@ -3603,8 +3603,12 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(const char *name);
+static int ptn_declared_class_exists(const char *name);
+static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
+static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
@@ -3638,6 +3642,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
+        { "class_exists", 1, 2, ptn_internal_class_exists },
         { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 1, ptn_internal_count },
         { "current", 1, 1, ptn_internal_current },
@@ -3680,6 +3685,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_string", 1, 1, ptn_internal_is_string },
         { "key", 1, 1, ptn_internal_key },
         { "md5", 1, 2, ptn_internal_md5 },
+        { "method_exists", 2, 2, ptn_internal_method_exists },
         { "mkdir", 1, 4, ptn_internal_mkdir },
         { "next", 1, 1, ptn_internal_next },
         { "octdec", 1, 1, ptn_internal_octdec },
@@ -3752,6 +3758,16 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
     return value;
 }
 
+static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *name = ptn_value_to_string(args[0]);
+    int exists = ptn_declared_class_exists(name);
+    free(name);
+    return ptn_bool(exists);
+}
+
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -3768,6 +3784,24 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     char *name = ptn_value_to_string(args[0]);
     int exists = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;
     free(name);
+    return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnValue target = ptn_value_deref(args[0]);
+    char *class_name = NULL;
+    if (target.type == PTN_OBJECT) {
+        class_name = ptn_duplicate_string(target.as.object->class_name);
+    } else {
+        class_name = ptn_value_to_string(target);
+    }
+    char *method_name = ptn_value_to_string(args[1]);
+    int exists = ptn_declared_class_method_exists(class_name, method_name);
+    free(method_name);
+    free(class_name);
     return ptn_bool(exists);
 }
 

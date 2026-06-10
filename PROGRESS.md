@@ -1,11 +1,12 @@
 # PTN Progress
 
 Refresh: 2026-06-11T00:59Z
-Measured: `ptn-ebb` rebased after `ptn-4n1` and `ptn-ock` on current
-`origin/master`; addslashes/stripslashes native PHPT-shape coverage, scalar
-offset-lvalue fatal/conversion reducers, object `foreach` reducers, cslashes
-PHPT shape, double-quoted ASCII octal/hex escapes, declared class/object method
-dispatch, and callback/COW/directory evidence.
+Measured: `ptn-beq` rebased after `ptn-4n1`, `ptn-ock`, `ptn-ebb`, and
+`ptn-jmq` on current `origin/master`; addslashes/stripslashes native PHPT-shape
+coverage, scalar offset-lvalue fatal/conversion reducers, object `foreach`
+reducers, declared class metadata intrinsics, cslashes PHPT shape,
+double-quoted ASCII octal/hex escapes, declared class/object method dispatch,
+and callback/COW/directory evidence.
 
 ## Test Dashboard
 
@@ -48,7 +49,8 @@ method metadata, `new DeclaredClass()` object shells, direct declared method
 calls, `$this` binding, object/static method callable arrays, and object
 `foreach` over public dynamic properties including live additions and
 by-reference value binding, plus scalar array-lvalue write/reference fatals
-for non-convertible scalars with false-to-array deprecation.
+for non-convertible scalars with false-to-array deprecation, and declared
+class/method metadata through `class_exists()` and `method_exists()`.
 
 ## Still Needed
 
@@ -63,6 +65,7 @@ sub-path scalar offset-lvalue parity, and broader file APIs.
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes,
-cslashes, object `foreach`, and scalar offset native tests/reducers; exact
-`add-and-stripcslashes.phpt`; `cargo test`. PHPT runners resolve php-src via
-`PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or `.runtime/php-src-phpt`.
+cslashes, object `foreach`, scalar offset, and declared class metadata native
+tests/reducers; exact `add-and-stripcslashes.phpt`; `cargo test`. PHPT runners
+resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
+`.runtime/php-src-phpt`.

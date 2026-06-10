@@ -398,19 +398,22 @@ supports in generated native binaries.
   generated main function, including source-spanned fatal diagnostics for
   undefined target labels, duplicate labels, and `goto` jumps into active loop
   or switch scopes.
-- Top-level class declarations with public static methods in the current
-  function subset. Static methods are registered in the callable table under
-  `Class::method`, can be called directly with `Class::method(...)`, and can be
-  used by dynamic calls or internal callbacks through `"Class::method"` and
-  `["Class", "method"]` callable values.
+- Top-level class declarations with public static and instance methods in the
+  current function subset. Static methods are registered in the callable table
+  under `Class::method`, can be called directly with `Class::method(...)`, and
+  can be used by dynamic calls or internal callbacks through `"Class::method"`
+  and `["Class", "method"]` callable values. Declared class names and declared
+  method names are exposed through bounded `class_exists()` and
+  `method_exists()` metadata, with case-insensitive lookup and `stdClass`
+  recognized as the current built-in object shell.
 - `new stdClass` expressions, boxed object handles, and public dynamic property
   reads/writes such as `$object->name` and `$object->name = expr`. Object
   assignment shares the object handle, so property writes through an alias are
   visible through the original variable. Property assignment expressions return
   the assigned value, and property reads can flow through generated user
   functions and string-callable `call_user_func()` dispatch. This is a bounded
-  public-property object-storage slice; PHP class declarations, visibility,
-  inheritance, methods, static properties, magic methods, destructors, and
+  public-property object-storage slice; declared properties, visibility,
+  inheritance, static properties, magic methods, destructors, and broader
   reflection metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
@@ -474,12 +477,11 @@ supports in generated native binaries.
   `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
   `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
   `M_*` constants in `defined()`/`constant()`.
-- Function forms beyond top-level named declarations and the public-static
-  class-method callable slice, plus the bounded `stdClass` public-property
-  storage slice, including default arguments, variadics, named arguments,
-  by-reference returns, nested or conditional declarations, closures, instance
-  methods, full class metadata, namespaces, globals, static locals, and
-  PHP-exact function/include return propagation.
+- Function forms beyond top-level named declarations and the public class-method
+  callable slice, plus the bounded `stdClass` public-property storage slice,
+  including default arguments, variadics, named arguments, by-reference returns,
+  nested or conditional declarations, closures, full class metadata, namespaces,
+  globals, static locals, and PHP-exact function/include return propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Unsupported recursive arrays, full class/object metadata, resources,
   complete reference identity, copy-on-write, and `var_dump()` reference

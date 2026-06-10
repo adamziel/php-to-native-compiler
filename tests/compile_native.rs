@@ -4621,6 +4621,65 @@ echo call_user_func([$greeter, \"via_this\"], 5), \"\\n\";
 }
 
 #[test]
+fn compile_declared_class_metadata_intrinsics_to_native_binary() {
+    let root = temp_dir("ptn-native-declared-class-metadata-intrinsics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("declared-class-metadata-intrinsics.php");
+    let output = root.join("declared-class-metadata-intrinsics-bin");
+    fs::write(
+        &input,
+        "<?php
+class Worker {
+    public function Run($value) {
+        return $value;
+    }
+
+    public static function StaticWork() {
+    }
+}
+
+$worker = new Worker();
+var_dump(class_exists(\"Worker\"));
+var_dump(class_exists(\"worker\"));
+var_dump(class_exists(\"Missing\", false));
+var_dump(class_exists(\"stdClass\"));
+var_dump(method_exists(\"Worker\", \"run\"));
+var_dump(method_exists($worker, \"RUN\"));
+var_dump(method_exists(\"Worker\", \"staticwork\"));
+var_dump(method_exists(\"Worker\", \"missing\"));
+var_dump(method_exists(\"stdClass\", \"anything\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static int ptn_declared_class_exists("));
+    assert!(c_source.contains("static int ptn_declared_class_method_exists("));
+    assert!(c_source.contains("ptn_internal_class_exists"));
+    assert!(c_source.contains("ptn_internal_method_exists"));
+}
+
+#[test]
 fn compile_user_function_reads_global_const_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-global-const");
     fs::create_dir_all(&root).unwrap();
