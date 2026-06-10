@@ -8960,6 +8960,41 @@ var_dump($str);",
 }
 
 #[test]
+fn compile_nested_string_offset_unset_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-string-offset-unset-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-string-offset-unset-errors.php");
+    let output = root.join("nested-string-offset-unset-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+$text = \"wxyz\";
+$items = [\"plain\" => \"abcd\", \"ref\" => &$text];
+try { unset($items[\"plain\"][1]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }
+try { unset($items[\"ref\"][2]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }
+var_dump($items[\"plain\"]);
+var_dump($items[\"ref\"]);
+var_dump($text);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot unset string offsets\nCannot unset string offsets\nstring(4) \"abcd\"\nstring(4) \"wxyz\"\nstring(4) \"wxyz\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_unset"));
+    assert!(c_source.contains("Cannot unset string offsets"));
+}
+
+#[test]
 fn compile_try_catches_string_offset_type_error_to_native_binary() {
     let root = temp_dir("ptn-native-try-catch-string-offset-type-error");
     fs::create_dir_all(&root).unwrap();

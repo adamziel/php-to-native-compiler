@@ -1,18 +1,18 @@
 # PTN Progress
 
 Refresh: 2026-06-11T00:59Z
-Measured: `ptn-3zk` rebased on current `origin/master` after prior queue
-merges; addslashes/stripslashes, braced interpolation, scalar offset-lvalue
-reducers, object `foreach`, declared class metadata, object-method callable
-dispatch, method-scope magic constants, cslashes, and callback/COW/directory
-evidence.
+Measured: `ptn-hhe` rebased on current `origin/master` after prior queue
+merges; nested string-offset unset exception parity, addslashes/stripslashes,
+braced interpolation, scalar offset-lvalue reducers, object `foreach`, declared
+class metadata, object-method callable dispatch, method-scope magic constants,
+cslashes, and callback/COW/directory evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 376 | 376 | 0 |
+| Native compiled PHP snippets | 377 | 377 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -52,7 +52,8 @@ by-reference value binding, plus scalar array-lvalue write/reference fatals
 for non-convertible scalars with false-to-array deprecation, and declared
 class/method metadata through `class_exists()` and `method_exists()`, plus
 callable-only object method dispatch through internal callbacks and
-method-scope `__FUNCTION__`/`__METHOD__`/`__CLASS__`.
+method-scope `__FUNCTION__`/`__METHOD__`/`__CLASS__`, and nested string-offset
+unset errors.
 
 ## Still Needed
 

@@ -1750,6 +1750,10 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
         PtnValue *entry_value = entry->value.type == PTN_REFERENCE
             ? &entry->value.as.reference->value
             : &entry->value;
+        if (entry_value->type == PTN_STRING) {
+            ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+            return;
+        }
         if (entry_value->type != PTN_ARRAY) {
             return;
         }
@@ -1819,6 +1823,10 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
         PtnValue *entry_value = entry->value.type == PTN_REFERENCE
             ? &entry->value.as.reference->value
             : &entry->value;
+        if (entry_value->type == PTN_STRING) {
+            ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+            return;
+        }
         if (entry_value->type != PTN_ARRAY) {
             return;
         }

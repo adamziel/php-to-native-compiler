@@ -116,7 +116,8 @@ supports in generated native binaries.
   modeled illegal-offset warning and leave the string unchanged. The assigned
   value is converted to a string, empty string results throw `Error`, and
   multi-byte results emit the modeled first-byte warning before writing the
-  first byte.
+  first byte. Direct and nested attempts to unset string offsets throw the
+  modeled PHP `Error` and leave the string unchanged.
 - Attempts to create references to/from string offsets in supported reference
   lvalue positions, including array literal reference elements, raise the
   modeled PHP `Error` through the runtime exception path.
@@ -496,9 +497,9 @@ supports in generated native binaries.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container
   types, object property checks, resources, references, and error-handler
   routing.
-- String-offset append, unset, compound assignment, property/reference
-  `isset()`/`empty()` and null-coalescing semantics, and complete
-  TypeError/exception parity for unsupported string offset key types.
+- String-offset append, compound assignment, property/reference `isset()`/
+  `empty()` and null-coalescing semantics, and complete TypeError/exception
+  parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
