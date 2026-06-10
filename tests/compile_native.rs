@@ -74,6 +74,37 @@ fn lexer_accepts_numeric_literal_separators_and_radices() {
 }
 
 #[test]
+fn lexer_promotes_oversized_integer_literals_to_php_float_boundaries() {
+    let tokens = lexer::lex(
+        "<?php 9223372036854775808 0x8000000000000000 0b1000000000000000000000000000000000000000000000000000000000000000 01000000000000000000000 0o1000000000000000000000",
+    )
+    .unwrap();
+    let two_to_63 = 2.0_f64.powi(63);
+    let binary_two_to_63 = f64::from_bits(two_to_63.to_bits() - 1);
+
+    assert!(matches!(
+        tokens[1].kind,
+        TokenKind::Float(value) if value.to_bits() == two_to_63.to_bits()
+    ));
+    assert!(matches!(
+        tokens[2].kind,
+        TokenKind::Float(value) if value.to_bits() == two_to_63.to_bits()
+    ));
+    assert!(matches!(
+        tokens[3].kind,
+        TokenKind::Float(value) if value.to_bits() == binary_two_to_63.to_bits()
+    ));
+    assert!(matches!(
+        tokens[4].kind,
+        TokenKind::Float(value) if value.to_bits() == two_to_63.to_bits()
+    ));
+    assert!(matches!(
+        tokens[5].kind,
+        TokenKind::Float(value) if value.to_bits() == two_to_63.to_bits()
+    ));
+}
+
+#[test]
 fn lexer_rejects_invalid_legacy_octal_integer_literals_as_parse_errors() {
     for source in ["<?php\n$x = 08;", "<?php\n$x = 0_8;", "<?php\n$x = 019;"] {
         let error = lexer::lex(source).unwrap_err();
@@ -10824,6 +10855,41 @@ var_dump(0_124 === 0124);
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\n".repeat(11)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_oversized_binary_literal_float_boundary_to_native_binary() {
+    let root = temp_dir("ptn-native-oversized-binary-literal-float-boundary");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("oversized-binary-literal-float-boundary.php");
+    let output = root.join("oversized-binary-literal-float-boundary-bin");
+    let binary_two_to_63 = format!("0b1{}", "0".repeat(63));
+    fs::write(
+        &input,
+        format!(
+            "<?php
+$binary = {binary_two_to_63};
+$hex = 0x8000000000000000;
+var_dump($binary == $hex);
+var_dump($binary - $hex);
+var_dump($binary);
+var_dump($hex);
+var_dump(9223372036854775808);
+var_dump(01000000000000000000000);
+"
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nfloat(-1024)\nfloat(9.223372036854775E+18)\nfloat(9.223372036854776E+18)\nfloat(9.223372036854776E+18)\nfloat(9.223372036854776E+18)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

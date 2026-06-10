@@ -473,13 +473,7 @@ impl<'a> Lexer<'a> {
             self.bump_char();
             self.bump_char();
             self.collect_digits(&mut text, |ch| ch.is_ascii_hexdigit());
-            let value = i64::from_str_radix(&text, 16)
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
-            self.tokens.push(Token {
-                kind: TokenKind::Int(value),
-                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
-            });
-            return Ok(());
+            return self.emit_radix_number(start, &text, 16);
         }
 
         if self.starts_radix_integer_prefix("0b", |ch| matches!(ch, '0' | '1'))
@@ -488,13 +482,7 @@ impl<'a> Lexer<'a> {
             self.bump_char();
             self.bump_char();
             self.collect_digits(&mut text, |ch| matches!(ch, '0' | '1'));
-            let value = i64::from_str_radix(&text, 2)
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
-            self.tokens.push(Token {
-                kind: TokenKind::Int(value),
-                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
-            });
-            return Ok(());
+            return self.emit_radix_number(start, &text, 2);
         }
 
         if self.starts_radix_integer_prefix("0o", |ch| matches!(ch, '0'..='7'))
@@ -503,13 +491,7 @@ impl<'a> Lexer<'a> {
             self.bump_char();
             self.bump_char();
             self.collect_digits(&mut text, |ch| matches!(ch, '0'..='7'));
-            let value = i64::from_str_radix(&text, 8)
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
-            self.tokens.push(Token {
-                kind: TokenKind::Int(value),
-                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
-            });
-            return Ok(());
+            return self.emit_radix_number(start, &text, 8);
         }
 
         self.collect_digits(&mut text, |ch| ch.is_ascii_digit());
@@ -542,24 +524,62 @@ impl<'a> Lexer<'a> {
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
         } else {
-            let value = if text.len() > 1 && text.starts_with('0') {
+            if text.len() > 1 && text.starts_with('0') {
                 if text.bytes().any(|digit| matches!(digit, b'8' | b'9')) {
                     return Err(Diagnostic::parse_error(
                         "Invalid numeric literal",
                         Some(start),
                     ));
                 }
-                i64::from_str_radix(&text, 8)
-            } else {
-                text.parse::<i64>()
+                return self.emit_radix_number(start, &text, 8);
             }
-            .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
-            self.tokens.push(Token {
-                kind: TokenKind::Int(value),
-                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
-            });
+            let kind = match text.parse::<i64>() {
+                Ok(value) => TokenKind::Int(value),
+                Err(_) => TokenKind::Float(
+                    text.parse::<f64>()
+                        .map_err(|_| Diagnostic::new("invalid float literal", Some(start)))?,
+                ),
+            };
+            self.push_number_token(start, kind);
         }
         Ok(())
+    }
+
+    fn emit_radix_number(&mut self, start: SourceSpan, digits: &str, radix: u32) -> Result<()> {
+        let significant = digits.trim_start_matches('0');
+        let kind = if significant.is_empty() {
+            TokenKind::Int(0)
+        } else {
+            match radix {
+                2 if significant.len() < 64 => TokenKind::Int(
+                    i64::from_str_radix(significant, radix)
+                        .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?,
+                ),
+                16 if significant.len() < 16
+                    || (significant.len() == 16 && significant.as_bytes()[0] <= b'7') =>
+                {
+                    TokenKind::Int(
+                        i64::from_str_radix(significant, radix)
+                            .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?,
+                    )
+                }
+                8 => match i64::from_str_radix(significant, radix) {
+                    Ok(value) => TokenKind::Int(value),
+                    Err(_) => TokenKind::Float(radix_digits_to_float(significant, radix)),
+                },
+                2 | 16 => TokenKind::Float(radix_digits_to_float(significant, radix)),
+                _ => unreachable!("unsupported integer literal radix"),
+            }
+        };
+        self.push_number_token(start, kind);
+        Ok(())
+    }
+
+    fn push_number_token(&mut self, start: SourceSpan, kind: TokenKind) {
+        self.tokens.push(Token {
+            kind,
+            span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+        });
     }
 
     fn starts_radix_integer_prefix<F>(&self, prefix: &str, is_digit: F) -> bool
@@ -760,6 +780,42 @@ impl<'a> Lexer<'a> {
                 self.column += 1;
             }
         }
+    }
+}
+
+fn radix_digits_to_float(significant: &str, radix: u32) -> f64 {
+    let mut value = 0.0;
+    let base = f64::from(radix);
+    for ch in significant.chars() {
+        let digit = ch
+            .to_digit(radix)
+            .expect("lexer only passes valid radix digits");
+        value = value * base + f64::from(digit);
+    }
+    // PHP's overflowed binary power-of-two literals land one representable
+    // double below the mathematical value, unlike equivalent hex/octal forms.
+    if radix == 2 && binary_overflow_power_of_two(significant) {
+        previous_positive_float(value)
+    } else {
+        value
+    }
+}
+
+fn binary_overflow_power_of_two(significant: &str) -> bool {
+    significant.len() >= 64
+        && significant.as_bytes()[0] == b'1'
+        && significant.as_bytes()[1..]
+            .iter()
+            .all(|digit| *digit == b'0')
+}
+
+fn previous_positive_float(value: f64) -> f64 {
+    if value.is_infinite() {
+        f64::MAX
+    } else if value > 0.0 {
+        f64::from_bits(value.to_bits() - 1)
+    } else {
+        value
     }
 }
 
