@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
-    AssignmentTarget, BinaryOp, CastKind, CatchClause, ConstDeclaration, Expr, FunctionDecl,
-    FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
+    AssignmentTarget, BinaryOp, CastKind, CatchClause, ClosureUse, ConstDeclaration, Expr,
+    FunctionDecl, FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, MagicConstantKind, Program, ReferenceTarget, Statement, StringPart,
     SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
@@ -287,12 +287,11 @@ impl Parser {
             false
         };
         let parameters = self.parse_function_parameters()?;
-        if self.peek_is_identifier("use") {
-            return Err(Diagnostic::new(
-                "closure use captures are unsupported",
-                Some(self.peek().span),
-            ));
-        }
+        let uses = if self.peek_is_identifier("use") {
+            self.parse_closure_uses()?
+        } else {
+            Vec::new()
+        };
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
             Some(self.parse_type_hint()?)
@@ -305,11 +304,46 @@ impl Parser {
         let body = body?;
         Ok(Expr::AnonymousFunction(AnonymousFunction {
             parameters,
+            uses,
             return_type,
             return_by_ref,
             body,
             span,
         }))
+    }
+
+    fn parse_closure_uses(&mut self) -> Result<Vec<ClosureUse>> {
+        self.advance();
+        self.expect_left_paren()?;
+        let mut uses = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RightParen) {
+            loop {
+                let by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+                    self.advance();
+                    true
+                } else {
+                    false
+                };
+                let token = self.advance();
+                let TokenKind::Variable(name) = &token.kind else {
+                    return Err(Diagnostic::new(
+                        "expected closure use variable",
+                        Some(token.span),
+                    ));
+                };
+                uses.push(ClosureUse {
+                    name: name.clone(),
+                    by_ref,
+                    span: token.span,
+                });
+                if !matches!(self.peek().kind, TokenKind::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+        }
+        self.expect_right_paren()?;
+        Ok(uses)
     }
 
     fn parse_function_parameters(&mut self) -> Result<Vec<FunctionParameter>> {

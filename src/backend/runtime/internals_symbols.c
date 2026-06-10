@@ -99,7 +99,58 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
     if (closure->refcount != 0) {
         return;
     }
+    for (size_t i = 0; i < closure->capture_count; i++) {
+        free(closure->captures[i].name);
+        ptn_value_destroy(&closure->captures[i].value);
+    }
+    free(closure->captures);
     free(closure);
+}
+
+static PTN_UNUSED void ptn_closure_set_capture(
+    PtnClosure *closure,
+    size_t index,
+    const char *name,
+    PtnValue value,
+    int by_ref
+) {
+    if (closure == NULL || index == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    if (index >= closure->capture_count) {
+        size_t new_count = index + 1;
+        PtnClosureCapture *captures = realloc(
+            closure->captures,
+            new_count * sizeof(PtnClosureCapture)
+        );
+        if (captures == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = closure->capture_count; i < new_count; i++) {
+            captures[i].name = NULL;
+            captures[i].value = ptn_null();
+        }
+        closure->captures = captures;
+        closure->capture_count = new_count;
+    }
+
+    PtnClosureCapture *capture = &closure->captures[index];
+    free(capture->name);
+    ptn_value_destroy(&capture->value);
+    capture->name = ptn_duplicate_string(name);
+    capture->value = by_ref ? ptn_value_clone(value) : ptn_value_clone_deref(value);
+}
+
+static PTN_UNUSED PtnValue ptn_closure_capture_value(PtnClosure *closure, const char *name) {
+    if (closure == NULL) {
+        return ptn_null();
+    }
+    for (size_t i = 0; i < closure->capture_count; i++) {
+        if (closure->captures[i].name != NULL && strcmp(closure->captures[i].name, name) == 0) {
+            return ptn_value_clone(closure->captures[i].value);
+        }
+    }
+    return ptn_null();
 }
 
 static PTN_UNUSED void ptn_array_destroy_storage(PtnArray *array) {

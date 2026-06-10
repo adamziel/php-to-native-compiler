@@ -8,9 +8,9 @@ use crate::ast::AssignmentOp;
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
-    BinaryOp, CastKind, CatchClause as IrCatchClause, FunctionDecl, IncDecOp, Instruction,
-    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
+    BinaryOp, CastKind, CatchClause as IrCatchClause, ClosureCapture, FunctionDecl, IncDecOp,
+    Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
+    MagicConstantKind, Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -151,12 +151,18 @@ fn emit_user_function_prototypes(
             "static PTN_UNUSED PtnValue ptn_call_dynamic_function_name(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
         );
     }
-    for (index, _) in functions.iter().enumerate() {
+    for (index, function) in functions.iter().enumerate() {
         out.push_str("static PTN_UNUSED PtnValue ");
         out.push_str(&user_function_c_name(index));
-        out.push_str(
-            "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line);\n",
-        );
+        if function.is_anonymous {
+            out.push_str(
+                "(PtnRuntime *caller_runtime, PtnClosure *closure, size_t argc, const PtnValue *args, size_t line);\n",
+            );
+        } else {
+            out.push_str(
+                "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line);\n",
+            );
+        }
     }
 }
 
@@ -170,10 +176,19 @@ fn emit_user_functions(
         let c_name = user_function_c_name(index);
         out.push_str("\nstatic PTN_UNUSED PtnValue ");
         out.push_str(&c_name);
-        out.push_str(
-            "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line) {\n",
-        );
+        if function.is_anonymous {
+            out.push_str(
+                "(PtnRuntime *caller_runtime, PtnClosure *closure, size_t argc, const PtnValue *args, size_t line) {\n",
+            );
+        } else {
+            out.push_str(
+                "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line) {\n",
+            );
+        }
         out.push_str("    (void)line;\n");
+        if function.is_anonymous && function.captures.is_empty() {
+            out.push_str("    (void)closure;\n");
+        }
         if !function.parameters.is_empty() {
             out.push_str("    if (argc < ");
             out.push_str(&function.parameters.len().to_string());
@@ -210,6 +225,32 @@ fn emit_user_functions(
             out.push_str(", ptn_parameter_names);\n");
         }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
+        if function.is_anonymous {
+            for (capture_index, capture) in function.captures.iter().enumerate() {
+                let capture_temp = format!("ptn_capture_{capture_index}");
+                out.push_str("    PtnValue ");
+                out.push_str(&capture_temp);
+                out.push_str(" = ptn_closure_capture_value(closure, \"");
+                out.push_str(&c_string(&capture.name));
+                out.push_str("\");\n");
+                out.push_str("    if (");
+                out.push_str(&capture_temp);
+                out.push_str(".type == PTN_REFERENCE) {\n");
+                out.push_str("        ptn_runtime_bind_variable_reference(&runtime, \"");
+                out.push_str(&c_string(&capture.name));
+                out.push_str("\", ");
+                out.push_str(&capture_temp);
+                out.push_str(");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+                out.push_str(&c_string(&capture.name));
+                out.push_str("\", ");
+                out.push_str(&capture_temp);
+                out.push_str(");\n");
+                out.push_str("    }\n");
+                emit_value_cleanup(out, "    ", &capture_temp);
+            }
+        }
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             if let Some(TypeHint::Null) = parameter.type_hint {
                 out.push_str("    if (args[");
@@ -485,7 +526,8 @@ fn emit_callable_dispatch(out: &mut String, functions: &[FunctionDecl]) {
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
-    out.push_str("        switch (resolved.as.closure->function_index) {\n");
+    out.push_str("        PtnClosure *closure = resolved.as.closure;\n");
+    out.push_str("        switch (closure->function_index) {\n");
     for (index, function) in functions.iter().enumerate() {
         if !function.is_anonymous {
             continue;
@@ -494,7 +536,7 @@ fn emit_callable_dispatch(out: &mut String, functions: &[FunctionDecl]) {
         out.push_str(&index.to_string());
         out.push_str(": return ");
         out.push_str(&user_function_c_name(index));
-        out.push_str("(runtime, argc, args, line);\n");
+        out.push_str("(runtime, closure, argc, args, line);\n");
     }
     out.push_str("            default:\n");
     out.push_str("                fputs(\"Fatal error: invalid closure\\n\", stderr);\n");
@@ -2231,6 +2273,55 @@ impl ValueEmitter {
         }
     }
 
+    fn emit_closure(
+        &mut self,
+        out: &mut String,
+        function_index: usize,
+        captures: &[ClosureCapture],
+    ) -> String {
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_closure(");
+        out.push_str(&function_index.to_string());
+        out.push_str(", \"{closure}\");\n");
+
+        for (capture_index, capture) in captures.iter().enumerate() {
+            let capture_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&capture_temp);
+            out.push_str(" = ");
+            if capture.by_ref {
+                out.push_str("ptn_runtime_reference_for_variable(&runtime, \"");
+                out.push_str(&c_string(&capture.name));
+                out.push_str("\")");
+            } else {
+                out.push_str("ptn_runtime_read_variable(&runtime, \"");
+                out.push_str(&c_string(&capture.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&capture.line.to_string());
+                out.push(')');
+            }
+            out.push_str(";\n");
+            out.push_str("    ptn_closure_set_capture(");
+            out.push_str(&result_temp);
+            out.push_str(".as.closure, ");
+            out.push_str(&capture_index.to_string());
+            out.push_str(", \"");
+            out.push_str(&c_string(&capture.name));
+            out.push_str("\", ");
+            out.push_str(&capture_temp);
+            out.push_str(", ");
+            out.push_str(if capture.by_ref { "1" } else { "0" });
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &capture_temp);
+        }
+
+        result_temp
+    }
+
     fn emit_assignment(
         &mut self,
         out: &mut String,
@@ -2932,9 +3023,11 @@ impl ValueEmitter {
             ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
             ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
             ValueExpr::Null => "ptn_null()".to_string(),
-            ValueExpr::Closure { function_index, .. } => {
-                format!("ptn_closure({function_index}, \"{{closure}}\")")
-            }
+            ValueExpr::Closure {
+                function_index,
+                captures,
+                ..
+            } => self.emit_closure(out, *function_index, captures),
             ValueExpr::Array(elements) => self.emit_array(out, elements),
             ValueExpr::ArrayAccess { array, index, line } => {
                 let array_temp = self.emit_materialized_value(out, array);
@@ -3892,6 +3985,7 @@ impl ValueEmitter {
                 | ValueExpr::DynamicCall { .. }
                 | ValueExpr::Unary { .. }
                 | ValueExpr::Cast { .. }
+                | ValueExpr::Closure { .. }
                 | ValueExpr::Array(_)
                 | ValueExpr::ArrayAccess { .. }
                 | ValueExpr::Isset { .. }

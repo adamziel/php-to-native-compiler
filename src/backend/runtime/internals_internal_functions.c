@@ -713,7 +713,7 @@ static PtnValue *ptn_array_walk_current_slot(
 
 static void ptn_array_walk_call_function(
     PtnRuntime *runtime,
-    const char *function_name,
+    PtnValue callback,
     PtnArray *array,
     size_t index,
     int has_userdata,
@@ -733,9 +733,9 @@ static void ptn_array_walk_call_function(
         key,
         has_userdata ? ptn_value_clone(userdata) : ptn_null()
     };
-    PtnValue callback_result = ptn_call_function(
+    PtnValue callback_result = ptn_call_callable(
         runtime,
-        function_name,
+        callback,
         has_userdata ? 3 : 2,
         callback_args,
         line
@@ -758,7 +758,6 @@ static PtnValue ptn_array_walk_slot(
     PtnValue userdata,
     size_t line
 ) {
-    char *function_name = ptn_value_to_string(callback);
     PtnArray *last_array = NULL;
     size_t index = 0;
 
@@ -775,7 +774,7 @@ static PtnValue ptn_array_walk_slot(
 
         ptn_array_walk_call_function(
             runtime,
-            function_name,
+            callback,
             array,
             index,
             has_userdata,
@@ -792,7 +791,6 @@ static PtnValue ptn_array_walk_slot(
         }
     }
 
-    free(function_name);
     return ptn_bool(1);
 }
 

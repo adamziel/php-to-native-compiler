@@ -2,8 +2,9 @@ use crate::ast::{
     AnonymousFunction as AstAnonymousFunction, ArrayDimTarget as AstArrayDimTarget,
     ArrayElement as AstArrayElement, ArrayElementValue as AstArrayElementValue, AssignmentOp,
     AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
-    CatchClause as AstCatchClause, Expr, FunctionParameter as AstFunctionParameter,
-    IncDecOp as AstIncDecOp, ListAssignmentElement as AstListAssignmentElement,
+    CatchClause as AstCatchClause, ClosureUse as AstClosureUse, Expr,
+    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
+    ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
     Program, ReferenceTarget as AstReferenceTarget, Statement, StringPart as AstStringPart,
@@ -25,6 +26,7 @@ pub struct FunctionDecl {
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
     pub is_anonymous: bool,
+    pub captures: Vec<ClosureCapture>,
     pub body: Vec<Instruction>,
 }
 
@@ -42,6 +44,13 @@ pub enum TypeHint {
     Float,
     String,
     Bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClosureCapture {
+    pub name: String,
+    pub by_ref: bool,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -168,6 +177,7 @@ pub enum ValueExpr {
     Null,
     Closure {
         function_index: usize,
+        captures: Vec<ClosureCapture>,
         line: usize,
     },
     Load {
@@ -409,6 +419,7 @@ impl LoweringContext {
                     return_type: function.return_type.map(lower_type_hint),
                     return_by_ref: function.return_by_ref,
                     is_anonymous: false,
+                    captures: Vec::new(),
                     body: Vec::new(),
                 })
                 .collect(),
@@ -417,18 +428,22 @@ impl LoweringContext {
 
     fn lower_anonymous_function(&mut self, function: &AstAnonymousFunction) -> ValueExpr {
         let function_index = self.functions.len();
+        let captures: Vec<ClosureCapture> =
+            function.uses.iter().map(lower_closure_capture).collect();
         self.functions.push(FunctionDecl {
             name: "{closure}".to_string(),
             parameters: function.parameters.iter().map(lower_parameter).collect(),
             return_type: function.return_type.map(lower_type_hint),
             return_by_ref: function.return_by_ref,
             is_anonymous: true,
+            captures: captures.clone(),
             body: Vec::new(),
         });
         let body = self.lower_statements(&function.body);
         self.functions[function_index].body = body;
         ValueExpr::Closure {
             function_index,
+            captures,
             line: function.span.line,
         }
     }
@@ -702,6 +717,14 @@ fn lower_parameter(parameter: &AstFunctionParameter) -> FunctionParameter {
         name: parameter.name.clone(),
         type_hint: parameter.type_hint.map(lower_type_hint),
         by_ref: parameter.by_ref,
+    }
+}
+
+fn lower_closure_capture(capture: &AstClosureUse) -> ClosureCapture {
+    ClosureCapture {
+        name: capture.name.clone(),
+        by_ref: capture.by_ref,
+        line: capture.span.line,
     }
 }
 

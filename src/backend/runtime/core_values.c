@@ -92,10 +92,17 @@ typedef struct {
     } as;
 } PtnValue;
 
+typedef struct {
+    char *name;
+    PtnValue value;
+} PtnClosureCapture;
+
 struct PtnClosure {
     size_t refcount;
     size_t function_index;
     const char *display_name;
+    size_t capture_count;
+    PtnClosureCapture *captures;
 };
 
 struct PtnReference {
@@ -464,6 +471,8 @@ static PTN_UNUSED PtnValue ptn_closure(size_t function_index, const char *displa
     closure->refcount = 1;
     closure->function_index = function_index;
     closure->display_name = display_name;
+    closure->capture_count = 0;
+    closure->captures = NULL;
     PtnValue value;
     value.type = PTN_CLOSURE;
     value.owned = 1;
