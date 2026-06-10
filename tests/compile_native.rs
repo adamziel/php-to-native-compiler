@@ -3103,6 +3103,78 @@ done\n"
 }
 
 #[test]
+fn compile_directory_status_file_apis_to_native_binary() {
+    let root = temp_dir("ptn-native-directory-status-apis");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("directory-status-apis.php");
+    let output = root.join("directory-status-apis-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$dirname = __DIR__ . \"/is_dir_variation1\";\n\
+$subdirname = $dirname . \"/is_dir_variation1_sub\";\n\
+$filename = __DIR__ . \"/status-file.dat\";\n\
+@unlink($filename);\n\
+@rmdir($subdirname);\n\
+@rmdir($dirname);\n\
+\n\
+echo \"-- Testing is_dir() with an empty dir --\\n\";\n\
+var_dump(mkdir($dirname));\n\
+var_dump(is_dir($dirname));\n\
+clearstatcache();\n\
+\n\
+echo \"-- Testing is_dir() with a subdir in base dir --\\n\";\n\
+var_dump(mkdir($subdirname, 0777));\n\
+var_dump(is_dir($subdirname));\n\
+var_dump(is_dir($dirname));\n\
+\n\
+echo \"-- Testing file status predicates --\\n\";\n\
+var_dump(file_exists($dirname));\n\
+var_dump(is_file($dirname));\n\
+var_dump(file_put_contents($filename, \"x\"));\n\
+var_dump(file_exists($filename));\n\
+var_dump(is_file($filename));\n\
+var_dump(is_dir($filename));\n\
+clearstatcache(false, $filename);\n\
+\n\
+var_dump(unlink($filename));\n\
+var_dump(rmdir($subdirname));\n\
+var_dump(rmdir($dirname));\n\
+var_dump(file_exists($filename));\n\
+echo \"*** Done ***\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "-- Testing is_dir() with an empty dir --\n\
+bool(true)\n\
+bool(true)\n\
+-- Testing is_dir() with a subdir in base dir --\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+-- Testing file status predicates --\n\
+bool(true)\n\
+bool(false)\n\
+int(1)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+*** Done ***\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_str_rot13_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-str-rot13-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

@@ -2689,6 +2689,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "octdec"
             | "intval"
             | "chr"
+            | "clearstatcache"
             | "ord"
             | "error_reporting"
             | "func_get_arg"

@@ -13,6 +13,8 @@
 #include <direct.h>
 #include <process.h>
 #else
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #endif
 

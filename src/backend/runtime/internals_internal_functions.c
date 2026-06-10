@@ -2276,6 +2276,14 @@ static PtnValue ptn_internal_rmdir(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_clearstatcache(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_null();
+}
+
 static size_t ptn_substr_clamped_positive(int64_t value, size_t limit) {
     if (value <= 0) {
         return 0;
@@ -3134,6 +3142,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
+        { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 1, ptn_internal_count },
         { "current", 1, 1, ptn_internal_current },

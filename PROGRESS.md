@@ -1,15 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-10T13:31Z
-Measured: `ptn-zo6` rebased on `origin/master@3c11d09`; recursive `mkdir()`,
-string-callable `array_map()`, and static callable evidence.
+Refresh: 2026-06-10T13:44Z
+Measured: `ptn-s1z` retry rebased on `origin/master@579ea7e777`; preserves
+recursive `mkdir()`, callback dispatch, and static callable work while adding
+directory/status file API evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 360 | 360 | 0 |
+| Native compiled PHP snippets | 361 | 361 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -29,8 +30,9 @@ string-callable `array_map()`, and static callable evidence.
 ## COW PHPT Buckets
 
 `tools/phpt-cow-manifest.txt` has 29 rows: 26 passing, 3 failing.
-Named `array_walk()` callbacks observe `$GLOBALS` swaps. Closure-backed
-callback rows remain blocked by Closure/callable values (`ptn-dis`).
+Named `array_walk()` callbacks observe `$GLOBALS` swaps of the walked variable.
+Closure-backed callback rows remain blocked by Closure/callable values
+(`ptn-dis`). Details: `docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
 
 ## Already Ported
 
@@ -41,14 +43,15 @@ array dimensions, temporaries, recursive/user functions, magic constants,
 `func_*`, `print_r`, binary strings, string offsets, scalar diagnostics, array
 literal references, array union `+`, scalar type hints, by-reference return
 boundaries, `count()`, `??`, assignment expressions, expression-level `@`, file
-APIs including recursive `mkdir()` plus directory predicates, array-path
-snapshots, `array_sum()`/`strtr()`/`in_array()`, recursive array merge/replace,
-`debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
-expressions, nested same-array reference lvalues, direct-variable and
-offset-form `??=`, grouped reference targets, `array_fill_keys()`,
-string-callable `call_user_func()`, string-callable/null `array_map()`, named
-`array_walk()` global-array rebinding, and public static methods registered as
-`Class::method` callables for dynamic calls and internals.
+APIs including `file_put_contents()`, `sha1_file()`, `unlink()`, recursive
+`mkdir()`, `rmdir()`, `file_exists()`, `is_dir()`, `is_file()`, and no-op
+`clearstatcache()`, array-path RHS snapshots, `array_sum()`/`strtr()`/`in_array()`,
+recursive array merge/replace, `debug_zval_dump()`, dynamic lvalue-reference
+calls, append/list assignment expressions, nested same-array reference lvalues,
+direct-variable and offset-form `??=`, grouped reference targets,
+`array_fill_keys()`, string-callable `call_user_func()`, string-callable/null
+`array_map()`, named `array_walk()` global-array rebinding, and public static
+methods registered as `Class::method` callables for dynamic calls and internals.
 
 ## Still Needed
 
@@ -57,10 +60,11 @@ callback by-reference returns, `array_reduce()` refcount behavior, and broader
 recursive by-reference return edges. Broader bounded-PHPT gaps are objects,
 non-static method callable values, unsupported array/string internals, 64-bit
 operator exactness, foreach diagnostics, object/property compound lvalues,
-scalar offset-lvalue fatal parity, and broader file APIs.
+scalar offset-lvalue fatal parity, stream contexts, symlink/stat-cache parity,
+and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; focused static/string callable and `array_walk()`
-native tests; `cargo test`; `cargo build --bin phpc`; focused callback PHPT
-rows; `tools/run-native-smoke-matrix.sh`; `tools/run-post-merge-cow-gate.sh`.
+Commands: `cargo fmt --check`; focused native directory/status and recursive
+`mkdir()` tests; `cargo test`; `cargo build --bin phpc`; focused PHPT rows
+`is_dir_variation1.phpt`, `mkdir-001.phpt`, and `mkdir-003.phpt`.
