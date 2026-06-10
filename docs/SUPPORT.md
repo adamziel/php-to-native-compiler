@@ -167,7 +167,8 @@ supports in generated native binaries.
   including the current float/float-string precision-loss deprecation boundary
   and leading-numeric-string warning boundary.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
-  `print_r(expr[, return]);`, `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
+  `print_r(expr[, return]);`, `strlen(expr);`, `addcslashes(expr, expr);`,
+  `stripcslashes(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
@@ -185,7 +186,8 @@ supports in generated native binaries.
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
-  including `print_r(expr[, return])`, `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
+  including `print_r(expr[, return])`, `strlen(expr)`, `addcslashes(expr, expr)`,
+  `stripcslashes(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
@@ -266,6 +268,10 @@ supports in generated native binaries.
 - `quoted_printable_decode()` over current boxed scalar values after scalar
   string conversion, decoding `=HH` byte escapes and soft line breaks through
   the current C-string-backed value path.
+- `addcslashes()` and `stripcslashes()` over current boxed scalar values after
+  scalar string conversion. `addcslashes()` supports literal character lists
+  and ascending `a..z` byte ranges; `stripcslashes()` decodes common C-style
+  escapes plus octal and one- or two-digit hexadecimal byte escapes.
 - `dirname()` over current boxed scalar values after scalar string conversion,
   returning the parent directory for the current C-string-backed path.
 - `soundex()` over current boxed scalar values after scalar string conversion,
@@ -482,8 +488,9 @@ supports in generated native binaries.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
-  `strip_tags()`, `quoted_printable_decode()`, `md5()`, `sha1()`, `substr()`,
-  `soundex()`, `ord()`, or bitwise string results.
+  `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
+  `stripcslashes()`, `md5()`, `sha1()`, `substr()`, `soundex()`, `ord()`, or
+  bitwise string results.
 - Exact `strcmp()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
 - Exact `str_contains()` binary-string behavior for embedded NUL bytes and
@@ -499,6 +506,11 @@ supports in generated native binaries.
   array/object/resource/reference operand diagnostics.
 - Exact `quoted_printable_decode()` embedded-NUL output behavior and
   unsupported array/object/resource/reference operand diagnostics.
+- Exact `addcslashes()` invalid-range warning parity, malformed charlist edge
+  cases, embedded-NUL/high-byte parity, and unsupported
+  array/object/resource/reference operand diagnostics.
+- Exact `stripcslashes()` embedded-NUL/high-byte parity and unsupported
+  array/object/resource/reference operand diagnostics.
 - `md5()`/`sha1()` raw binary output containing NUL bytes, embedded-NUL input
   parity, and unsupported array/object/resource/reference operand diagnostics.
 - Exact `substr()` binary-string behavior for embedded NUL bytes and

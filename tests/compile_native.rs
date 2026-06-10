@@ -103,6 +103,14 @@ fn lexer_preserves_unknown_string_escape_backslashes() {
 }
 
 #[test]
+fn lexer_decodes_ascii_double_quoted_octal_and_hex_escapes() {
+    let tokens = lexer::lex("<?php \"a\\145..\\160z\" \"\\x41\\x7a\" \"\\0\"").unwrap();
+    assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "ae..pz"));
+    assert!(matches!(&tokens[2].kind, TokenKind::String(value) if value == "Az"));
+    assert!(matches!(&tokens[3].kind, TokenKind::String(value) if value.as_bytes() == [0]));
+}
+
+#[test]
 fn lexer_accepts_keyword_boolean_operators() {
     let tokens = lexer::lex("<?php true and false or true xor false").unwrap();
     assert!(matches!(tokens[2].kind, TokenKind::KeywordAnd));
@@ -3966,6 +3974,69 @@ fn compile_quoted_printable_decode_registry_and_scalar_conversion_to_native_bina
         "string(12) \"Hello World!\"\nstring(1) \"1\"\nstring(3) \"123\"\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_addcslashes_stripcslashes_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-cslashes-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cslashes-phpt-shape.php");
+    let output = root.join("cslashes-phpt-shape-bin");
+    fs::write(
+        &input,
+        r#"<?php
+echo addcslashes("", "")."\n";
+echo addcslashes("", "burp")."\n";
+echo addcslashes("kaboemkara!", "")."\n";
+echo addcslashes("foobarbaz", 'bar')."\n";
+echo addcslashes('foo[ ]', 'A..z')."\n";
+echo @addcslashes("zoo['.']", 'z..A')."\n";
+echo addcslashes('abcdefghijklmnopqrstuvwxyz', "a\145..\160z")."\n";
+echo "\n\r" == stripcslashes('\n\r'),"\n";
+echo stripcslashes('\065\x64')."\n";
+echo stripcslashes('')."\n";
+var_dump(function_exists("addcslashes"), function_exists("ADDCSlASHES"), function_exists("stripcslashes"), function_exists("STRIPCSLASHES"));
+?>"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        r#"
+
+kaboemkara!
+foo\b\a\r\b\az
+\f\o\o\[ \]
+\zoo['\.']
+\abcd\e\f\g\h\i\j\k\l\m\n\o\pqrstuvwxy\z
+1
+5d
+
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+"#
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    for function in ["ptn_internal_addcslashes", "ptn_internal_stripcslashes"] {
+        let marker = format!("static PtnValue {function}(");
+        let body = generated_c_static_function_body(&c_source, &marker);
+        assert!(
+            body.contains("ptn_value_to_string_operand"),
+            "{function} should use the direct string operand helper"
+        );
+        assert!(
+            !body.contains("ptn_value_to_string(args"),
+            "{function} should not convert direct argument expressions unconditionally"
+        );
+    }
 }
 
 #[test]

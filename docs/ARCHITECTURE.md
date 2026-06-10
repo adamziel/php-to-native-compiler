@@ -104,7 +104,9 @@ Current runtime/compiler slices:
   `false` with a warning boundary for invalid input; `dirname` returns the
   parent directory from that same scalar
   string-conversion path; `soundex` returns a four-character ASCII soundex key
-  from the current scalar string conversion; `ceil` and `floor` return boxed
+  from the current scalar string conversion; `addcslashes` and `stripcslashes`
+  use length-aware scalar string operands for bounded byte escaping and
+  unescaping; `ceil` and `floor` return boxed
   floats after the current scalar numeric-conversion path; `sqrt` and `fdiv`
   return boxed floats after that same numeric conversion path, with `fdiv`
   preserving IEEE zero-divisor and non-finite results; `pi` returns the boxed

@@ -62,7 +62,8 @@ or use C library functions that stop at NUL:
 - String internals:
   `ptn_internal_strlen`, `ptn_internal_str_rot13`, `ptn_internal_strcmp`,
   `ptn_internal_str_contains`, `ptn_internal_str_starts_with`,
-  `ptn_internal_str_ends_with`, `ptn_internal_quotemeta`,
+  `ptn_internal_str_ends_with`, `ptn_internal_addcslashes`,
+  `ptn_internal_stripcslashes`, `ptn_internal_quotemeta`,
   `ptn_internal_chunk_split`, `ptn_internal_strip_tags`,
   `ptn_internal_md5`, `ptn_internal_sha1`, `ptn_internal_substr`,
   `ptn_internal_dirname`, `ptn_internal_bin2hex`, `ptn_internal_hex2bin`,

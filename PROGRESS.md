@@ -1,17 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-10T16:21Z
-Measured: `ptn-lkq` rebased on current `origin/master` with generic declared
-classes, boxed object shells, declared-method dispatch, `$this` receiver
-binding for instance methods, and callable dispatch for `[object, method]` plus
-`[class, staticMethod]` arrays through `call_user_func()` and `array_map()`.
+Refresh: 2026-06-10T16:39Z
+Measured: `ptn-yjo` rebased on current `origin/master`; cslashes PHPT shape,
+double-quoted ASCII octal/hex escapes, declared class/object method dispatch,
+and callback/COW/directory evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 372 | 372 | 0 |
+| Native compiled PHP snippets | 373 | 373 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -31,13 +30,14 @@ binding for instance methods, and callable dispatch for `[object, method]` plus
 ## Already Ported
 
 Lexer/parser, AST/IR/C backend, boxed values, variables/constants,
-string/math/type internals, ordered arrays, `foreach`, source-spanned
-non-array `foreach` warnings, array/string COW, references, by-reference
-params/foreach, array dimensions, temporaries, recursive/user functions,
-anonymous function values, magic constants, `func_*`, `print_r`, scalar
-diagnostics, array union `+`, scalar type hints, by-reference returns,
-`count()`, `??`, assignment expressions, expression-level `@`, directory/file
-predicates, array-path snapshots, selected array/string internals,
+double-quoted ASCII octal/hex escapes, string/math/type internals, ordered
+arrays, `foreach`, source-spanned non-array `foreach` warnings,
+array/string COW, references, by-reference params/foreach, array dimensions,
+temporaries, recursive/user functions, anonymous function values, magic
+constants, `func_*`, `print_r`, scalar diagnostics, array union `+`, scalar
+type hints, by-reference returns, `count()`, `??`, assignment expressions,
+expression-level `@`, directory/file predicates, array-path snapshots,
+selected array/string internals including `addcslashes()`/`stripcslashes()`,
 dynamic lvalue-reference calls, list/append assignment expressions,
 static method callable values, `array_reduce()` callback dispatch,
 `array_count_values()`, `new stdClass` dynamic properties, declared class
@@ -56,7 +56,5 @@ fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo check`; `cargo test`;
-`tools/run-native-smoke-matrix.sh`; `tools/run-post-merge-cow-gate.sh`;
-`cargo build --bin phpc`; focused PHPT
-`ext/standard/tests/general_functions/bug36011.phpt`.
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused cslashes
+native tests; exact `add-and-stripcslashes.phpt`; `cargo test`.

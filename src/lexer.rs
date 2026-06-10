@@ -412,9 +412,60 @@ impl<'a> Lexer<'a> {
                     'n' => literal.push('\n'),
                     'r' => literal.push('\r'),
                     't' => literal.push('\t'),
+                    'v' => literal.push('\u{0b}'),
+                    'f' => literal.push('\u{0c}'),
                     '\\' => literal.push('\\'),
                     '"' => literal.push('"'),
                     '$' => literal.push('$'),
+                    'x' => {
+                        self.bump_char();
+                        let mut digits = String::new();
+                        for _ in 0..2 {
+                            if let Some(hex) = self.peek_char() {
+                                if hex.is_ascii_hexdigit() {
+                                    digits.push(hex);
+                                    self.bump_char();
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                        if digits.is_empty() {
+                            literal.push('\\');
+                            literal.push('x');
+                        } else {
+                            let value = u8::from_str_radix(&digits, 16).unwrap();
+                            if value <= 0x7f {
+                                literal.push(value as char);
+                            } else {
+                                literal.push('\\');
+                                literal.push('x');
+                                literal.push_str(&digits);
+                            }
+                        }
+                        continue;
+                    }
+                    '0'..='7' => {
+                        let mut digits = String::new();
+                        for _ in 0..3 {
+                            if let Some(octal) = self.peek_char() {
+                                if matches!(octal, '0'..='7') {
+                                    digits.push(octal);
+                                    self.bump_char();
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                        let value = u16::from_str_radix(&digits, 8).unwrap();
+                        if value <= 0x7f {
+                            literal.push((value as u8) as char);
+                        } else {
+                            literal.push('\\');
+                            literal.push_str(&digits);
+                        }
+                        continue;
+                    }
                     other => {
                         literal.push('\\');
                         literal.push(other);

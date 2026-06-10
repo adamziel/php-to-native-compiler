@@ -2629,6 +2629,249 @@ static int ptn_hex_nibble(unsigned char byte) {
     return -1;
 }
 
+static int ptn_octal_nibble(unsigned char byte) {
+    if (byte >= '0' && byte <= '7') {
+        return (int)(byte - '0');
+    }
+    return -1;
+}
+
+static void ptn_cslashes_charlist_mask(const char *charlist, size_t len, unsigned char mask[256]) {
+    memset(mask, 0, 256);
+    for (size_t i = 0; i < len; i++) {
+        unsigned char start = (unsigned char)charlist[i];
+        if (i + 3 < len && charlist[i + 1] == '.' && charlist[i + 2] == '.') {
+            unsigned char end = (unsigned char)charlist[i + 3];
+            if (start <= end) {
+                for (unsigned int byte = start; byte <= end; byte++) {
+                    mask[byte] = 1;
+                }
+                i += 3;
+                continue;
+            }
+        }
+        mask[start] = 1;
+    }
+}
+
+static size_t ptn_addcslashes_escape_len(unsigned char byte) {
+    switch (byte) {
+        case '\0':
+            return 4;
+        case '\n':
+        case '\r':
+        case '\t':
+        case '\v':
+        case '\f':
+        case '\a':
+        case '\b':
+            return 2;
+        default:
+            if (byte < 32 || byte > 126) {
+                return 4;
+            }
+            return 2;
+    }
+}
+
+static void ptn_addcslashes_write_escape(char *output, size_t *out, unsigned char byte) {
+    output[(*out)++] = '\\';
+    switch (byte) {
+        case '\0':
+            output[(*out)++] = '0';
+            output[(*out)++] = '0';
+            output[(*out)++] = '0';
+            break;
+        case '\n':
+            output[(*out)++] = 'n';
+            break;
+        case '\r':
+            output[(*out)++] = 'r';
+            break;
+        case '\t':
+            output[(*out)++] = 't';
+            break;
+        case '\v':
+            output[(*out)++] = 'v';
+            break;
+        case '\f':
+            output[(*out)++] = 'f';
+            break;
+        case '\a':
+            output[(*out)++] = 'a';
+            break;
+        case '\b':
+            output[(*out)++] = 'b';
+            break;
+        default:
+            if (byte < 32 || byte > 126) {
+                static const char octal_digits[] = "01234567";
+                output[(*out)++] = octal_digits[(byte >> 6) & 0x07];
+                output[(*out)++] = octal_digits[(byte >> 3) & 0x07];
+                output[(*out)++] = octal_digits[byte & 0x07];
+            } else {
+                output[(*out)++] = (char)byte;
+            }
+            break;
+    }
+}
+
+static char *ptn_addcslashes_string(
+    const char *input,
+    size_t input_len,
+    const char *charlist,
+    size_t charlist_len,
+    size_t *output_len_out
+) {
+    unsigned char mask[256];
+    ptn_cslashes_charlist_mask(charlist, charlist_len, mask);
+
+    size_t output_len = 0;
+    for (size_t i = 0; i < input_len; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        size_t add_len = mask[byte] ? ptn_addcslashes_escape_len(byte) : 1;
+        if (add_len > SIZE_MAX - output_len - 1) {
+            ptn_abort_out_of_memory();
+        }
+        output_len += add_len;
+    }
+
+    char *output = malloc(output_len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t out = 0;
+    for (size_t i = 0; i < input_len; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        if (mask[byte]) {
+            ptn_addcslashes_write_escape(output, &out, byte);
+        } else {
+            output[out++] = (char)byte;
+        }
+    }
+    output[out] = '\0';
+    *output_len_out = out;
+    return output;
+}
+
+static PtnValue ptn_internal_addcslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand charlist = ptn_value_to_string_operand(args[1]);
+    size_t output_len = 0;
+    char *output = ptn_addcslashes_string(
+        input.data,
+        input.len,
+        charlist.data,
+        charlist.len,
+        &output_len
+    );
+    ptn_string_operand_free(input);
+    ptn_string_operand_free(charlist);
+    return ptn_owned_string_len(output, output_len);
+}
+
+static char *ptn_stripcslashes_string(const char *input, size_t len, size_t *output_len_out) {
+    char *output = malloc(len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t out = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        if (byte != '\\') {
+            output[out++] = (char)byte;
+            continue;
+        }
+        if (i + 1 >= len) {
+            output[out++] = '\\';
+            continue;
+        }
+
+        unsigned char escaped = (unsigned char)input[++i];
+        switch (escaped) {
+            case 'n':
+                output[out++] = '\n';
+                break;
+            case 'r':
+                output[out++] = '\r';
+                break;
+            case 't':
+                output[out++] = '\t';
+                break;
+            case 'v':
+                output[out++] = '\v';
+                break;
+            case 'f':
+                output[out++] = '\f';
+                break;
+            case 'a':
+                output[out++] = '\a';
+                break;
+            case 'b':
+                output[out++] = '\b';
+                break;
+            case '\\':
+                output[out++] = '\\';
+                break;
+            case 'x': {
+                unsigned int value = 0;
+                size_t digits = 0;
+                while (digits < 2 && i + 1 < len) {
+                    int nibble = ptn_hex_nibble((unsigned char)input[i + 1]);
+                    if (nibble < 0) {
+                        break;
+                    }
+                    value = (value << 4) | (unsigned int)nibble;
+                    digits++;
+                    i++;
+                }
+                output[out++] = digits == 0 ? 'x' : (char)(value & 0xff);
+                break;
+            }
+            default: {
+                int octal = ptn_octal_nibble(escaped);
+                if (octal < 0) {
+                    output[out++] = (char)escaped;
+                    break;
+                }
+                unsigned int value = (unsigned int)octal;
+                size_t digits = 1;
+                while (digits < 3 && i + 1 < len) {
+                    int next = ptn_octal_nibble((unsigned char)input[i + 1]);
+                    if (next < 0) {
+                        break;
+                    }
+                    value = (value << 3) | (unsigned int)next;
+                    digits++;
+                    i++;
+                }
+                output[out++] = (char)(value & 0xff);
+                break;
+            }
+        }
+    }
+
+    output[out] = '\0';
+    *output_len_out = out;
+    return output;
+}
+
+static PtnValue ptn_internal_stripcslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    size_t output_len = 0;
+    char *output = ptn_stripcslashes_string(input.data, input.len, &output_len);
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(output, output_len);
+}
+
 static PtnValue ptn_internal_hex2bin(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand hex = ptn_value_to_string_operand(args[0]);
@@ -3281,6 +3524,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "addcslashes", 2, 2, ptn_internal_addcslashes },
         { "array_count_values", 1, 1, ptn_internal_array_count_values },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
@@ -3367,6 +3611,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
+        { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "strtr", 2, 3, ptn_internal_strtr },
         { "substr", 2, 3, ptn_internal_substr },
