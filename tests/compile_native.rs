@@ -1325,24 +1325,9 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
     parser::parse("<?php $array = [1]; $array[] =& $array[0];").unwrap();
     parser::parse("<?php $array = [1, 2]; $array[0] =& $array[1];").unwrap();
 
-    let recursive_array_literal = parser::parse("<?php $array = [&$array];").unwrap_err();
-    assert_eq!(
-        recursive_array_literal.message,
-        "recursive array references are unsupported"
-    );
-
-    let keyed_recursive_array_literal =
-        parser::parse("<?php $array = ['self' => &$array];").unwrap_err();
-    assert_eq!(
-        keyed_recursive_array_literal.message,
-        "recursive array references are unsupported"
-    );
-
-    let nested_recursive_array_literal = parser::parse("<?php $array = [[&$array]];").unwrap_err();
-    assert_eq!(
-        nested_recursive_array_literal.message,
-        "recursive array references are unsupported"
-    );
+    parser::parse("<?php $array = [&$array];").unwrap();
+    parser::parse("<?php $array = ['self' => &$array];").unwrap();
+    parser::parse("<?php $array = [[&$array]];").unwrap();
 
     let recursive_array_element_literal =
         parser::parse("<?php $array = []; $array[] = [&$array];").unwrap_err();
@@ -7792,6 +7777,37 @@ echo _ptn_cow_debug_counter(\"array.detach\"), \":\", _ptn_cow_debug_counter(\"a
     assert!(c_source.contains("PtnCowDebugCounters"));
     assert!(c_source.contains("ptn_cow_debug_note_array_detach();"));
     assert!(c_source.contains("ptn_cow_debug_assert_balanced();"));
+}
+
+#[test]
+fn compile_recursive_array_literal_cycles_are_collected_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-array-literal-cycle-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-array-literal-cycle-cleanup.php");
+    let output = root.join("recursive-array-literal-cycle-cleanup-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+_ptn_cow_debug_reset();\n\
+for ($i = 0; $i < 6; $i++) {\n\
+    $array = [&$array];\n\
+    unset($array);\n\
+}\n\
+_ptn_cow_debug_assert_counter(\"array.live\", 0);\n\
+_ptn_cow_debug_assert_balanced();\n\
+echo _ptn_cow_debug_counter(\"array.live\"), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_break_reference_cycle"));
 }
 
 #[test]

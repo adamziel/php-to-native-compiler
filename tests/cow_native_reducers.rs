@@ -29,27 +29,6 @@ fn recursive_reference_diagnostic_reducers_fail_before_codegen() {
             expected_diagnostic: "recursive array references are unsupported",
         },
         CowDiagnosticReducerCase {
-            name: "recursive_array_literal_self",
-            oracle:
-                "PHP oracle: array literal value reference to assigned variable creates recursion",
-            source: "<?php\n$array = [&$array];",
-            expected_diagnostic: "recursive array references are unsupported",
-        },
-        CowDiagnosticReducerCase {
-            name: "recursive_array_literal_keyed_self",
-            oracle:
-                "PHP oracle: keyed array literal reference to assigned variable creates recursion",
-            source: "<?php\n$array = [\"self\" => &$array];",
-            expected_diagnostic: "recursive array references are unsupported",
-        },
-        CowDiagnosticReducerCase {
-            name: "recursive_array_literal_nested_self",
-            oracle:
-                "PHP oracle: nested array literal reference to assigned variable creates recursion",
-            source: "<?php\n$array = [[&$array]];",
-            expected_diagnostic: "recursive array references are unsupported",
-        },
-        CowDiagnosticReducerCase {
             name: "recursive_array_element_literal_self",
             oracle:
                 "PHP oracle: assigning a literal that references the target array creates recursion",
@@ -285,6 +264,35 @@ var_dump($items[\"slot\"]);",
             expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
         },
         CowReducerCase {
+            name: "recursive_array_literal_slot_replaced_by_call_result",
+            oracle: "Zend/tests/assign_by_val_function_by_ref_return_value.phpt",
+            source: "<?php\n\
+function returnsVal() {}\n\
+$array = [&$array];\n\
+var_dump($array[0] =& returnsVal());\n\
+var_dump($array);",
+            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
+        },
+        CowReducerCase {
+            name: "keyed_recursive_array_literal_slot_replaced_by_call_result",
+            oracle: "PHP oracle: keyed array literal reference to assigned variable creates recursion",
+            source: "<?php\n\
+function returnsVal() {}\n\
+$array = [\"self\" => &$array];\n\
+var_dump($array[\"self\"] =& returnsVal());\n\
+var_dump($array);",
+            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
+        },
+        CowReducerCase {
+            name: "nested_recursive_array_literal_value_write_replaces_self",
+            oracle: "PHP oracle: nested array literal reference to assigned variable creates recursion",
+            source: "<?php\n\
+$array = [[&$array]];\n\
+$array[0][0] = 7;\n\
+var_dump($array);",
+            expected_stdout: "int(7)\n",
+        },
+        CowReducerCase {
             name: "by_ref_assignment_from_copied_call_result_detaches",
             oracle: "Zend/tests/assign_by_val_function_by_ref_return_value.phpt",
             source: "<?php\n\
@@ -424,7 +432,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 25, "COW reducer pass count changed");
+    assert_eq!(passed, 28, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

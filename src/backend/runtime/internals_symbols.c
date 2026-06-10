@@ -22,12 +22,63 @@ static PTN_UNUSED void ptn_reference_assign(PtnReference *reference, PtnValue va
     reference->value = stored_value;
 }
 
+static PTN_UNUSED size_t ptn_array_count_reference(PtnArray *array, PtnReference *reference, size_t depth) {
+    if (array == NULL || reference == NULL || depth > 1024) {
+        return 0;
+    }
+
+    size_t count = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue *entry = &array->entries[i].value;
+        if (entry->type == PTN_REFERENCE) {
+            if (entry->as.reference == reference) {
+                count++;
+            }
+            continue;
+        }
+        if (entry->type == PTN_ARRAY) {
+            count += ptn_array_count_reference(entry->as.array, reference, depth + 1);
+        }
+    }
+    return count;
+}
+
+static PTN_UNUSED void ptn_array_break_reference_cycle(PtnArray *array, PtnReference *reference, size_t depth) {
+    if (array == NULL || reference == NULL || depth > 1024) {
+        return;
+    }
+
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue *entry = &array->entries[i].value;
+        if (entry->type == PTN_REFERENCE) {
+            if (entry->as.reference == reference) {
+                if (reference->refcount > 0) {
+                    reference->refcount--;
+                }
+                *entry = ptn_null();
+            }
+            continue;
+        }
+        if (entry->type == PTN_ARRAY) {
+            ptn_array_break_reference_cycle(entry->as.array, reference, depth + 1);
+        }
+    }
+}
+
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     if (reference == NULL) {
         return;
     }
     if (reference->refcount == 0) {
         return;
+    }
+    if (reference->value.type == PTN_ARRAY &&
+        reference->value.as.array != NULL &&
+        reference->value.as.array->refcount == 1) {
+        size_t internal_refs = ptn_array_count_reference(reference->value.as.array, reference, 0);
+        if (internal_refs > 0 && reference->refcount == internal_refs + 1) {
+            ptn_array_break_reference_cycle(reference->value.as.array, reference, 0);
+        }
     }
     reference->refcount--;
     if (reference->refcount != 0) {

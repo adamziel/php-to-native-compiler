@@ -41,10 +41,13 @@ oracle_cases=(
     same_array_element_reference_assignment
     typed_by_reference_return_separation
     by_reference_return_boundaries
+    nested_recursive_array_literal_value_write
 )
 
 notice_cases=(
     reference_assignment_from_call_result_value_fallback
+    recursive_array_literal_slot_replaced_by_call_result
+    keyed_recursive_array_literal_slot_replaced_by_call_result
 )
 
 diagnostic_cases=(
@@ -52,9 +55,6 @@ diagnostic_cases=(
     unsupported_foreach_destructuring
     unsupported_by_reference_return
     unsupported_recursive_array_append_self
-    unsupported_recursive_array_literal_self
-    unsupported_recursive_array_literal_keyed_self
-    unsupported_recursive_array_literal_nested_self
     unsupported_recursive_array_element_literal_self
     unsupported_same_array_literal_element_reference
     unsupported_same_array_element_literal_element_reference
@@ -104,8 +104,17 @@ coverage() {
         by_reference_return_boundaries)
             printf 'by-reference return aliases, separation, array slots, locals, and typed coercion\n'
             ;;
+        nested_recursive_array_literal_value_write)
+            printf 'nested recursive array literal slots update the referenced variable\n'
+            ;;
         reference_assignment_from_call_result_value_fallback)
             printf 'notice: non-reference call results assigned by reference fall back to value writes\n'
+            ;;
+        recursive_array_literal_slot_replaced_by_call_result)
+            printf 'notice: recursive array literal slot assigned by reference to a call result falls back to NULL\n'
+            ;;
+        keyed_recursive_array_literal_slot_replaced_by_call_result)
+            printf 'notice: keyed recursive array literal slot assigned by reference to a call result falls back to NULL\n'
             ;;
         unsupported_foreach_reference_key)
             printf 'diagnostic: foreach key binding cannot be by reference\n'
@@ -118,15 +127,6 @@ coverage() {
             ;;
         unsupported_recursive_array_append_self)
             printf 'diagnostic: array append by reference to itself remains explicit unsupported behavior\n'
-            ;;
-        unsupported_recursive_array_literal_self)
-            printf 'diagnostic: array literal reference to assigned variable remains explicit unsupported behavior\n'
-            ;;
-        unsupported_recursive_array_literal_keyed_self)
-            printf 'diagnostic: keyed array literal reference to assigned variable remains explicit unsupported behavior\n'
-            ;;
-        unsupported_recursive_array_literal_nested_self)
-            printf 'diagnostic: nested array literal reference to assigned variable remains explicit unsupported behavior\n'
             ;;
         unsupported_recursive_array_element_literal_self)
             printf 'diagnostic: array-element literal reference to containing array remains explicit unsupported behavior\n'
@@ -355,6 +355,14 @@ $wrapped_copy = 8;
 echo $wrapped, "|", $wrapped_copy, "\n";
 PHP
             ;;
+        nested_recursive_array_literal_value_write)
+            cat >"$path" <<'PHP'
+<?php
+$array = [[&$array]];
+$array[0][0] = 7;
+var_dump($array);
+PHP
+            ;;
         *)
             echo "unknown oracle case: $name" >&2
             return 1
@@ -397,24 +405,6 @@ PHP
 <?php
 $array = [];
 $array[] =& $array;
-PHP
-            ;;
-        unsupported_recursive_array_literal_self)
-            cat >"$path" <<'PHP'
-<?php
-$array = [&$array];
-PHP
-            ;;
-        unsupported_recursive_array_literal_keyed_self)
-            cat >"$path" <<'PHP'
-<?php
-$array = ["self" => &$array];
-PHP
-            ;;
-        unsupported_recursive_array_literal_nested_self)
-            cat >"$path" <<'PHP'
-<?php
-$array = [[&$array]];
 PHP
             ;;
         unsupported_recursive_array_element_literal_self)
@@ -462,6 +452,24 @@ $items["slot"] =& make_value();
 echo $items["slot"], "\n";
 PHP
             ;;
+        recursive_array_literal_slot_replaced_by_call_result)
+            cat >"$path" <<'PHP'
+<?php
+function returnsVal() {}
+$array = [&$array];
+var_dump($array[0] =& returnsVal());
+var_dump($array);
+PHP
+            ;;
+        keyed_recursive_array_literal_slot_replaced_by_call_result)
+            cat >"$path" <<'PHP'
+<?php
+function returnsVal() {}
+$array = ["self" => &$array];
+var_dump($array["self"] =& returnsVal());
+var_dump($array);
+PHP
+            ;;
         *)
             echo "unknown notice case: $name" >&2
             return 1
@@ -477,6 +485,20 @@ Notice: Only variables should be assigned by reference in ptn on line 5
 1
 Notice: Only variables should be assigned by reference in ptn on line 8
 1
+OUT
+            ;;
+        recursive_array_literal_slot_replaced_by_call_result)
+            cat <<'OUT'
+Notice: Only variables should be assigned by reference in ptn on line 4
+NULL
+NULL
+OUT
+            ;;
+        keyed_recursive_array_literal_slot_replaced_by_call_result)
+            cat <<'OUT'
+Notice: Only variables should be assigned by reference in ptn on line 4
+NULL
+NULL
 OUT
             ;;
         *)
@@ -497,15 +519,6 @@ expected_diagnostic() {
             printf 'by-reference return requires a variable or array element\n'
             ;;
         unsupported_recursive_array_append_self)
-            printf 'recursive array references are unsupported\n'
-            ;;
-        unsupported_recursive_array_literal_self)
-            printf 'recursive array references are unsupported\n'
-            ;;
-        unsupported_recursive_array_literal_keyed_self)
-            printf 'recursive array references are unsupported\n'
-            ;;
-        unsupported_recursive_array_literal_nested_self)
             printf 'recursive array references are unsupported\n'
             ;;
         unsupported_recursive_array_element_literal_self)

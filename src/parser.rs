@@ -2176,6 +2176,11 @@ fn validate_recursive_reference_assignment_value(
         AssignmentTarget::List(_) => return Ok(()),
     };
     if let Some(diagnostic) = expr_array_literal_reference_to_variable(value, variable) {
+        if matches!(target, AssignmentTarget::Variable { .. })
+            && matches!(diagnostic, RecursiveReferenceDiagnostic::RecursiveArray(_))
+        {
+            return Ok(());
+        }
         return Err(diagnostic.into_diagnostic());
     }
     Ok(())
