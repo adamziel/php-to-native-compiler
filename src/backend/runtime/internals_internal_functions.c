@@ -1005,7 +1005,7 @@ static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const P
     PtnArray **arrays = ptn_array_map_arrays(runtime, argc, args, &max_len);
     size_t array_count = argc - 1;
     int has_callback = ptn_value_deref(args[0]).type != PTN_NULL;
-    char *function_name = has_callback ? ptn_value_to_string(args[0]) : NULL;
+    PtnValue callback = has_callback ? ptn_value_clone_deref(args[0]) : ptn_null();
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
 
     for (size_t i = 0; i < max_len; i++) {
@@ -1019,7 +1019,7 @@ static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const P
                 callback_args[arg_index] = ptn_array_map_argument_at(arrays[arg_index], i);
             }
 
-            PtnValue callback_result = ptn_call_function(runtime, function_name, array_count, callback_args, line);
+            PtnValue callback_result = ptn_call_callable(runtime, callback, array_count, callback_args, line);
             for (size_t arg_index = 0; arg_index < array_count; arg_index++) {
                 ptn_value_destroy(&callback_args[arg_index]);
             }
@@ -1037,7 +1037,7 @@ static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const P
         );
     }
 
-    free(function_name);
+    ptn_value_destroy(&callback);
     free(arrays);
     return result;
 }
@@ -3257,16 +3257,13 @@ static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, con
 }
 
 static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    char *function_name = ptn_value_to_string(args[0]);
-    PtnValue result = ptn_call_function(
+    return ptn_call_callable(
         runtime,
-        function_name,
+        args[0],
         argc - 1,
         argc > 1 ? args + 1 : NULL,
         line
     );
-    free(function_name);
-    return result;
 }
 
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);

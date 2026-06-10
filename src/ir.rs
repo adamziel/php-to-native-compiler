@@ -2,8 +2,9 @@ use crate::ast::{
     AnonymousFunction as AstAnonymousFunction, ArrayDimTarget as AstArrayDimTarget,
     ArrayElement as AstArrayElement, ArrayElementValue as AstArrayElementValue, AssignmentOp,
     AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
-    CatchClause as AstCatchClause, Expr, FunctionParameter as AstFunctionParameter,
-    IncDecOp as AstIncDecOp, ListAssignmentElement as AstListAssignmentElement,
+    CatchClause as AstCatchClause, ClassDecl as AstClassDecl, Expr,
+    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
+    ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
     Program, ReferenceTarget as AstReferenceTarget, Statement, StringPart as AstStringPart,
@@ -12,6 +13,7 @@ use crate::ast::{
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
+    pub classes: Vec<ClassDecl>,
     pub functions: Vec<FunctionDecl>,
     pub instructions: Vec<Instruction>,
     pub source_file: String,
@@ -19,8 +21,24 @@ pub struct Module {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ClassDecl {
+    pub name: String,
+    pub methods: Vec<MethodDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MethodDecl {
+    pub name: String,
+    pub function_index: usize,
+    pub is_static: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
     pub name: String,
+    pub class_name: Option<String>,
+    pub method_name: Option<String>,
+    pub is_static: bool,
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
@@ -384,8 +402,14 @@ pub fn lower_with_source(program: &Program, source_file: String, source_dir: Str
         let body = context.lower_statements(&function.body);
         context.functions[index].body = body;
     }
+    let classes = program
+        .classes
+        .iter()
+        .map(|class| context.lower_class(class))
+        .collect();
     let instructions = context.lower_statements(&program.statements);
     Module {
+        classes,
         functions: context.functions,
         instructions,
         source_file,
@@ -405,6 +429,9 @@ impl LoweringContext {
                 .iter()
                 .map(|function| FunctionDecl {
                     name: function.name.clone(),
+                    class_name: None,
+                    method_name: None,
+                    is_static: false,
                     parameters: function.parameters.iter().map(lower_parameter).collect(),
                     return_type: function.return_type.map(lower_type_hint),
                     return_by_ref: function.return_by_ref,
@@ -419,6 +446,9 @@ impl LoweringContext {
         let function_index = self.functions.len();
         self.functions.push(FunctionDecl {
             name: "{closure}".to_string(),
+            class_name: None,
+            method_name: None,
+            is_static: false,
             parameters: function.parameters.iter().map(lower_parameter).collect(),
             return_type: function.return_type.map(lower_type_hint),
             return_by_ref: function.return_by_ref,
@@ -430,6 +460,38 @@ impl LoweringContext {
         ValueExpr::Closure {
             function_index,
             line: function.span.line,
+        }
+    }
+
+    fn lower_class(&mut self, class: &AstClassDecl) -> ClassDecl {
+        let methods = class
+            .methods
+            .iter()
+            .map(|method| {
+                let function_index = self.functions.len();
+                self.functions.push(FunctionDecl {
+                    name: format!("{}::{}", class.name, method.name),
+                    class_name: Some(class.name.clone()),
+                    method_name: Some(method.name.clone()),
+                    is_static: method.is_static,
+                    parameters: method.parameters.iter().map(lower_parameter).collect(),
+                    return_type: method.return_type.map(lower_type_hint),
+                    return_by_ref: method.return_by_ref,
+                    is_anonymous: false,
+                    body: Vec::new(),
+                });
+                let body = self.lower_statements(&method.body);
+                self.functions[function_index].body = body;
+                MethodDecl {
+                    name: method.name.clone(),
+                    function_index,
+                    is_static: method.is_static,
+                }
+            })
+            .collect();
+        ClassDecl {
+            name: class.name.clone(),
+            methods,
         }
     }
 

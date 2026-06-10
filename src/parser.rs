@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
-    AssignmentTarget, BinaryOp, CastKind, CatchClause, ConstDeclaration, Expr, FunctionDecl,
-    FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
-    ListAssignmentTarget, MagicConstantKind, Program, ReferenceTarget, Statement, StringPart,
-    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ConstDeclaration, Expr,
+    FunctionDecl, FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
+    ListAssignmentTarget, MagicConstantKind, MethodDecl, Program, ReferenceTarget, Statement,
+    StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -56,8 +56,8 @@ struct ForeachVariable {
 impl Parser {
     fn parse_program(&mut self) -> Result<Program> {
         self.expect_open_tag()?;
+        let mut classes = Vec::new();
         let mut functions = Vec::new();
-        let mut classes = HashSet::new();
         let mut statements = Vec::new();
         while !matches!(self.peek().kind, TokenKind::Eof) {
             if matches!(self.peek().kind, TokenKind::OpenTag | TokenKind::CloseTag) {
@@ -67,19 +67,24 @@ impl Parser {
             if self.peek_starts_function_decl() {
                 functions.push(self.parse_function_decl()?);
             } else if token_is_identifier_named(self.peek(), "class") {
-                let (class_name, class_span, methods) = self.parse_static_class_decl()?;
-                let lookup_name = class_name.to_ascii_lowercase();
-                if !classes.insert(lookup_name.clone()) {
-                    return Err(Diagnostic::new(
-                        format!(
-                            "Cannot declare class {lookup_name}, because the name is already in use"
-                        ),
-                        Some(class_span),
-                    ));
-                }
-                functions.extend(methods);
+                classes.push(self.parse_class_decl()?);
             } else {
                 statements.push(self.parse_statement()?);
+            }
+        }
+        validate_class_names(&classes)?;
+        for class in &classes {
+            validate_method_names(class)?;
+            for method in &class.methods {
+                if method.return_by_ref {
+                    validate_by_reference_returns_in_statements(
+                        &method.body,
+                        &format!("{}::{}", class.name, method.name),
+                    )?;
+                }
+                validate_anonymous_functions_in_statements(&method.body, &functions)?;
+                validate_reference_assignment_sources(&method.body, &functions)?;
+                validate_goto_labels(&method.body)?;
             }
         }
         validate_function_names(&functions)?;
@@ -93,12 +98,13 @@ impl Parser {
         }
         validate_goto_labels(&statements)?;
         Ok(Program {
+            classes,
             functions,
             statements,
         })
     }
 
-    fn parse_static_class_decl(&mut self) -> Result<(String, SourceSpan, Vec<FunctionDecl>)> {
+    fn parse_class_decl(&mut self) -> Result<ClassDecl> {
         let class_token = self.advance().clone();
         let TokenKind::Identifier(keyword) = &class_token.kind else {
             return Err(Diagnostic::new("expected class", Some(class_token.span)));
@@ -126,13 +132,17 @@ impl Parser {
         self.expect_left_brace()?;
         let mut methods = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
-            methods.push(self.parse_static_class_method(&class_name)?);
+            methods.push(self.parse_method_decl()?);
         }
         self.expect_right_brace()?;
-        Ok((class_name, class_token.span, methods))
+        Ok(ClassDecl {
+            name: class_name,
+            methods,
+            span: class_token.span,
+        })
     }
 
-    fn parse_static_class_method(&mut self, class_name: &str) -> Result<FunctionDecl> {
+    fn parse_method_decl(&mut self) -> Result<MethodDecl> {
         let mut is_static = false;
         loop {
             let TokenKind::Identifier(modifier) = &self.peek().kind else {
@@ -171,22 +181,53 @@ impl Parser {
                 Some(self.peek().span),
             ));
         }
+        if matches!(self.peek().kind, TokenKind::Variable(_)) {
+            return Err(Diagnostic::new(
+                "class properties are unsupported",
+                Some(self.peek().span),
+            ));
+        }
         if !matches!(self.peek().kind, TokenKind::Function) {
             return Err(Diagnostic::new(
                 "unsupported class member",
                 Some(self.peek().span),
             ));
         }
-        if !is_static {
-            return Err(Diagnostic::new(
-                "non-static class methods are unsupported",
-                Some(self.peek().span),
-            ));
-        }
 
-        let mut function = self.parse_function_decl()?;
-        function.name = format!("{}::{}", class_name, function.name);
-        Ok(function)
+        let span = self.expect_function()?;
+        let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        let name_token = self.advance().clone();
+        let TokenKind::Identifier(name) = name_token.kind else {
+            return Err(Diagnostic::new(
+                "expected method name",
+                Some(name_token.span),
+            ));
+        };
+        let parameters = self.parse_function_parameters()?;
+        let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            Some(self.parse_type_hint()?)
+        } else {
+            None
+        };
+        self.function_depth += 1;
+        let body = self.parse_block();
+        self.function_depth -= 1;
+        let body = body?;
+        Ok(MethodDecl {
+            name,
+            parameters,
+            return_type,
+            return_by_ref,
+            is_static,
+            body,
+            span,
+        })
     }
 
     fn parse_statement(&mut self) -> Result<Statement> {
@@ -1420,11 +1461,10 @@ impl Parser {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Function => self.parse_anonymous_function_expr(token.span),
+            TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Identifier(name) => {
                 let lowercase = name.to_ascii_lowercase();
-                if lowercase == "new" {
-                    self.parse_new_object_expr(token.span)
-                } else if matches!(self.peek().kind, TokenKind::DoubleColon) {
+                if matches!(self.peek().kind, TokenKind::DoubleColon) {
                     self.parse_static_member_expr(name, token.span)
                 } else if matches!(self.peek().kind, TokenKind::LeftParen) {
                     match lowercase.as_str() {
@@ -1843,6 +1883,7 @@ impl Parser {
                 | TokenKind::Null
                 | TokenKind::Variable(_)
                 | TokenKind::Function
+                | TokenKind::New
                 | TokenKind::Identifier(_)
                 | TokenKind::Plus
                 | TokenKind::Minus
@@ -2261,6 +2302,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Goto => "goto",
         TokenKind::Const => "const",
         TokenKind::Function => "function",
+        TokenKind::New => "new",
         TokenKind::Identifier(_) => "identifier",
         TokenKind::String(_) => "string",
         TokenKind::InterpolatedString(_) => "encapsed string",
@@ -2365,6 +2407,34 @@ fn is_unsupported_class_like_declaration(name: &str) -> bool {
 
 fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
+}
+
+fn validate_class_names(classes: &[ClassDecl]) -> Result<()> {
+    let mut names = HashSet::new();
+    for class in classes {
+        let lookup_name = class.name.to_ascii_lowercase();
+        if !names.insert(lookup_name.clone()) {
+            return Err(Diagnostic::new(
+                format!("Cannot declare class {lookup_name}, because the name is already in use"),
+                Some(class.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_method_names(class: &ClassDecl) -> Result<()> {
+    let mut names = HashSet::new();
+    for method in &class.methods {
+        let lookup_name = method.name.to_ascii_lowercase();
+        if !names.insert(lookup_name.clone()) {
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare {}::{}()", class.name, lookup_name),
+                Some(method.span),
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]

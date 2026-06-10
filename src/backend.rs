@@ -8,9 +8,9 @@ use crate::ast::AssignmentOp;
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
-    BinaryOp, CastKind, CatchClause as IrCatchClause, FunctionDecl, IncDecOp, Instruction,
-    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
+    BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, FunctionDecl, IncDecOp,
+    Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
+    MagicConstantKind, Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -20,15 +20,19 @@ pub fn emit_c(module: &Module) -> String {
     let runtime_requirements = module_runtime_requirements(module);
     let needs_callable_dispatch = runtime_requirements.internal_function_dispatch
         || runtime_requirements.dynamic_function_dispatch;
+    let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
+    let needs_method_dispatch = runtime_requirements.method_dispatch || has_declared_methods;
     emit_runtime(&mut out, &runtime_requirements);
     emit_user_function_prototypes(
         &mut out,
         &module.functions,
         runtime_requirements.internal_function_dispatch,
         needs_callable_dispatch,
+        needs_method_dispatch,
     );
     emit_user_functions(
         &mut out,
+        &module.classes,
         &module.functions,
         &module.source_file,
         &module.source_dir,
@@ -36,9 +40,12 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions);
     }
+    if needs_method_dispatch {
+        emit_method_dispatch(&mut out, &module.classes);
+    }
     if needs_callable_dispatch {
         emit_dynamic_function_dispatch(&mut out);
-        emit_callable_dispatch(&mut out, &module.functions);
+        emit_callable_dispatch(&mut out, &module.functions, needs_method_dispatch);
     }
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
@@ -54,7 +61,12 @@ pub fn emit_c(module: &Module) -> String {
             warning.line,
         );
     }
-    let mut values = ValueEmitter::new(&module.source_file, &module.source_dir, &module.functions);
+    let mut values = ValueEmitter::new(
+        &module.source_file,
+        &module.source_dir,
+        &module.functions,
+        &module.classes,
+    );
     let mut control_targets = Vec::new();
     for instruction in &module.instructions {
         emit_instruction(
@@ -75,6 +87,7 @@ pub fn emit_c(module: &Module) -> String {
 struct RuntimeRequirements {
     internal_function_dispatch: bool,
     dynamic_function_dispatch: bool,
+    method_dispatch: bool,
     direct_internal_helpers: bool,
 }
 
@@ -136,6 +149,7 @@ fn emit_user_function_prototypes(
     functions: &[FunctionDecl],
     needs_function_dispatch: bool,
     needs_dynamic_function_dispatch: bool,
+    needs_method_dispatch: bool,
 ) {
     if needs_function_dispatch {
         out.push_str(
@@ -151,17 +165,23 @@ fn emit_user_function_prototypes(
             "static PTN_UNUSED PtnValue ptn_call_dynamic_function_name(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
         );
     }
+    if needs_method_dispatch {
+        out.push_str(
+            "static PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line);\n",
+        );
+    }
     for (index, _) in functions.iter().enumerate() {
         out.push_str("static PTN_UNUSED PtnValue ");
         out.push_str(&user_function_c_name(index));
         out.push_str(
-            "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line);\n",
+            "(PtnRuntime *caller_runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line);\n",
         );
     }
 }
 
 fn emit_user_functions(
     out: &mut String,
+    classes: &[ClassDecl],
     functions: &[FunctionDecl],
     source_file: &str,
     source_dir: &str,
@@ -171,8 +191,11 @@ fn emit_user_functions(
         out.push_str("\nstatic PTN_UNUSED PtnValue ");
         out.push_str(&c_name);
         out.push_str(
-            "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line) {\n",
+            "(PtnRuntime *caller_runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {\n",
         );
+        if function.class_name.is_none() || function.is_static {
+            out.push_str("    (void)receiver;\n");
+        }
         out.push_str("    (void)line;\n");
         if !function.parameters.is_empty() {
             out.push_str("    if (argc < ");
@@ -208,6 +231,9 @@ fn emit_user_functions(
             out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, ");
             out.push_str(&function.parameters.len().to_string());
             out.push_str(", ptn_parameter_names);\n");
+        }
+        if function.class_name.is_some() && !function.is_static {
+            out.push_str("    ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");
         }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
@@ -288,6 +314,7 @@ fn emit_user_functions(
             source_file,
             source_dir,
             functions,
+            classes,
             &function.name,
             function.return_by_ref,
         );
@@ -369,11 +396,13 @@ fn type_hint_scalar_cast_helper(type_hint: Option<TypeHint>) -> Option<&'static 
 
 fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
     out.push_str("\nstatic int ptn_user_function_exists(const char *name) {\n");
-    if functions.iter().all(|function| function.is_anonymous) {
+    if functions.iter().all(|function| {
+        function.is_anonymous || (function.class_name.is_some() && !function.is_static)
+    }) {
         out.push_str("    (void)name;\n");
     }
     for function in functions {
-        if function.is_anonymous {
+        if function.is_anonymous || (function.class_name.is_some() && !function.is_static) {
             continue;
         }
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
@@ -388,7 +417,9 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
     out.push_str(
         "\nstatic PtnValue ptn_call_user_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line, int *found) {\n",
     );
-    if functions.iter().all(|function| function.is_anonymous) {
+    if functions.iter().all(|function| {
+        function.is_anonymous || (function.class_name.is_some() && !function.is_static)
+    }) {
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)name;\n");
         out.push_str("    (void)argc;\n");
@@ -396,7 +427,7 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
         out.push_str("    (void)line;\n");
     }
     for (index, function) in functions.iter().enumerate() {
-        if function.is_anonymous {
+        if function.is_anonymous || (function.class_name.is_some() && !function.is_static) {
             continue;
         }
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
@@ -405,7 +436,7 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
         out.push_str("        *found = 1;\n");
         out.push_str("        return ");
         out.push_str(&user_function_c_name(index));
-        out.push_str("(runtime, argc, args, line);\n");
+        out.push_str("(runtime, ptn_null(), argc, args, line);\n");
         out.push_str("    }\n");
     }
     out.push_str("    *found = 0;\n");
@@ -423,6 +454,45 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
     out.push_str("        return result;\n");
     out.push_str("    }\n");
     out.push_str("    return ptn_call_internal(runtime, name, argc, args, line);\n");
+    out.push_str("}\n");
+}
+
+fn emit_method_dispatch(out: &mut String, classes: &[ClassDecl]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    if (resolved.type == PTN_EXCEPTION) {\n");
+    out.push_str(
+        "        return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
+    out.push_str(
+        "        fputs(\"Fatal error: call to a member function on non-object\\n\", stderr);\n",
+    );
+    out.push_str("        exit(255);\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for method in &class.methods {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return ");
+            out.push_str(&user_function_c_name(method.function_index));
+            out.push_str("(runtime, resolved, argc, args, line);\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
     out.push_str("}\n");
 }
 
@@ -479,11 +549,35 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("}\n");
 }
 
-fn emit_callable_dispatch(out: &mut String, functions: &[FunctionDecl]) {
+fn emit_callable_dispatch(
+    out: &mut String,
+    functions: &[FunctionDecl],
+    needs_method_dispatch: bool,
+) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    if needs_method_dispatch {
+        out.push_str("    if (resolved.type == PTN_ARRAY && resolved.as.array->len == 2) {\n");
+        out.push_str("        PtnArrayKey receiver_key = ptn_array_int_key(0);\n");
+        out.push_str("        PtnArrayKey method_key = ptn_array_int_key(1);\n");
+        out.push_str("        PtnArrayEntry *receiver_entry = ptn_array_entry_for_key(resolved.as.array, receiver_key);\n");
+        out.push_str("        PtnArrayEntry *method_entry = ptn_array_entry_for_key(resolved.as.array, method_key);\n");
+        out.push_str("        ptn_array_key_free(receiver_key);\n");
+        out.push_str("        ptn_array_key_free(method_key);\n");
+        out.push_str("        if (receiver_entry != NULL && method_entry != NULL) {\n");
+        out.push_str("            PtnValue receiver = ptn_value_deref(receiver_entry->value);\n");
+        out.push_str("            PtnValue method = ptn_value_deref(method_entry->value);\n");
+        out.push_str("            if ((receiver.type == PTN_OBJECT || receiver.type == PTN_EXCEPTION) && method.type == PTN_STRING) {\n");
+        out.push_str("                char *method_name = ptn_value_to_string(method);\n");
+        out.push_str("                PtnValue result = ptn_call_declared_method(runtime, receiver, method_name, argc, args, line);\n");
+        out.push_str("                free(method_name);\n");
+        out.push_str("                return result;\n");
+        out.push_str("            }\n");
+        out.push_str("        }\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
     out.push_str("        switch (resolved.as.closure->function_index) {\n");
     for (index, function) in functions.iter().enumerate() {
@@ -494,7 +588,7 @@ fn emit_callable_dispatch(out: &mut String, functions: &[FunctionDecl]) {
         out.push_str(&index.to_string());
         out.push_str(": return ");
         out.push_str(&user_function_c_name(index));
-        out.push_str("(runtime, argc, args, line);\n");
+        out.push_str("(runtime, ptn_null(), argc, args, line);\n");
     }
     out.push_str("            default:\n");
     out.push_str("                fputs(\"Fatal error: invalid closure\\n\", stderr);\n");
@@ -1604,6 +1698,7 @@ fn collect_value_runtime_requirements(
             for argument in arguments {
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
+            requirements.method_dispatch = true;
         }
         ValueExpr::NewObject { arguments, .. } => {
             for argument in arguments {
@@ -1643,9 +1738,11 @@ fn collect_call_runtime_requirements(
 }
 
 fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bool {
-    functions
-        .iter()
-        .any(|function| !function.is_anonymous && function.name.eq_ignore_ascii_case(name))
+    functions.iter().any(|function| {
+        !function.is_anonymous
+            && (function.class_name.is_none() || function.is_static)
+            && function.name.eq_ignore_ascii_case(name)
+    })
 }
 
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
@@ -2031,6 +2128,7 @@ struct ValueEmitter {
     current_function_name: Option<String>,
     current_function_return_by_ref: bool,
     user_functions: Vec<FunctionDecl>,
+    classes: Vec<ClassDecl>,
 }
 
 struct ConcatOperand<'a> {
@@ -2174,14 +2272,20 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
 }
 
 impl ValueEmitter {
-    fn new(source_file: &str, source_dir: &str, functions: &[FunctionDecl]) -> Self {
-        Self::new_with_scope(source_file, source_dir, functions, None, false)
+    fn new(
+        source_file: &str,
+        source_dir: &str,
+        functions: &[FunctionDecl],
+        classes: &[ClassDecl],
+    ) -> Self {
+        Self::new_with_scope(source_file, source_dir, functions, classes, None, false)
     }
 
     fn new_for_function(
         source_file: &str,
         source_dir: &str,
         functions: &[FunctionDecl],
+        classes: &[ClassDecl],
         function_name: &str,
         return_by_ref: bool,
     ) -> Self {
@@ -2189,6 +2293,7 @@ impl ValueEmitter {
             source_file,
             source_dir,
             functions,
+            classes,
             Some(function_name),
             return_by_ref,
         )
@@ -2198,6 +2303,7 @@ impl ValueEmitter {
         source_file: &str,
         source_dir: &str,
         functions: &[FunctionDecl],
+        classes: &[ClassDecl],
         current_function_name: Option<&str>,
         current_function_return_by_ref: bool,
     ) -> Self {
@@ -2209,7 +2315,15 @@ impl ValueEmitter {
             current_function_name: current_function_name.map(str::to_string),
             current_function_return_by_ref,
             user_functions: functions.to_vec(),
+            classes: classes.to_vec(),
         }
+    }
+
+    fn declared_class_name(&self, class_name: &str) -> Option<&str> {
+        self.classes
+            .iter()
+            .find(|class| class.name.eq_ignore_ascii_case(class_name))
+            .map(|class| class.name.as_str())
     }
 
     fn direct_user_function(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
@@ -2217,7 +2331,9 @@ impl ValueEmitter {
             .iter()
             .enumerate()
             .find(|(_, function)| {
-                !function.is_anonymous && function.name.eq_ignore_ascii_case(name)
+                !function.is_anonymous
+                    && (function.class_name.is_none() || function.is_static)
+                    && function.name.eq_ignore_ascii_case(name)
             })
     }
 
@@ -3031,7 +3147,13 @@ impl ValueEmitter {
             argument_temps.push(self.emit_materialized_value(out, argument));
         }
         let result_temp = self.next_temp();
-        if argument_temps.is_empty() {
+        if let Some(declared_class_name) = self.declared_class_name(class_name) {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_object_new_shell(\"");
+            out.push_str(&c_string(declared_class_name));
+            out.push_str("\");\n");
+        } else if argument_temps.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_new_object(&runtime, \"");
@@ -4064,7 +4186,7 @@ impl ValueEmitter {
             out.push_str(" = ");
             if let Some((c_name, _)) = &direct_user {
                 out.push_str(&c_name);
-                out.push_str("(&runtime, 0, NULL, ");
+                out.push_str("(&runtime, ptn_null(), 0, NULL, ");
             } else {
                 out.push_str("ptn_call_function(&runtime, \"");
                 out.push_str(&c_string(name));
@@ -4112,7 +4234,7 @@ impl ValueEmitter {
         out.push_str(" = ");
         if let Some((c_name, _)) = &direct_user {
             out.push_str(&c_name);
-            out.push_str("(&runtime, ");
+            out.push_str("(&runtime, ptn_null(), ");
         } else {
             out.push_str("ptn_call_function(&runtime, \"");
             out.push_str(&c_string(name));
@@ -4385,13 +4507,14 @@ impl ValueEmitter {
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_method(&runtime, ");
+            out.push_str(" = ptn_call_declared_method(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", \"");
             out.push_str(&c_string(name));
             out.push_str("\", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
 
@@ -4414,7 +4537,7 @@ impl ValueEmitter {
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_call_method(&runtime, ");
+        out.push_str(" = ptn_call_declared_method(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -4431,6 +4554,7 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
+        emit_value_cleanup(out, "    ", &receiver_temp);
         result_temp
     }
 

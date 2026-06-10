@@ -1783,9 +1783,13 @@ class Reducer {
 echo Reducer::combine(1, 2);",
     )
     .unwrap();
-    assert_eq!(program.functions.len(), 1);
-    assert_eq!(program.functions[0].name, "Reducer::combine");
-    assert_eq!(program.functions[0].parameters.len(), 2);
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].name, "Reducer");
+    assert_eq!(program.classes[0].methods.len(), 1);
+    assert_eq!(program.classes[0].methods[0].name, "combine");
+    assert!(program.classes[0].methods[0].is_static);
+    assert_eq!(program.classes[0].methods[0].parameters.len(), 2);
+    assert_eq!(program.functions.len(), 0);
     assert_eq!(program.statements.len(), 1);
     assert!(matches!(
         &program.statements[0],
@@ -1799,17 +1803,48 @@ echo Reducer::combine(1, 2);",
 }
 
 #[test]
+fn parser_accepts_instance_class_methods_and_object_callables() {
+    let program = parser::parse(
+        "<?php
+class Worker {
+    public function run($value) { return $value + 1; }
+}
+$worker = new Worker();
+echo $worker->run(3);
+call_user_func([$worker, \"run\"], 4);",
+    )
+    .unwrap();
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].methods.len(), 1);
+    assert_eq!(program.classes[0].methods[0].name, "run");
+    assert!(!program.classes[0].methods[0].is_static);
+    assert_eq!(program.statements.len(), 3);
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Assign {
+            value: Expr::NewObject { class_name, .. },
+            ..
+        } if class_name == "Worker"
+    ));
+    assert!(matches!(
+        &program.statements[1],
+        Statement::Echo { expressions, .. }
+            if matches!(&expressions[0], Expr::MethodCall { name, .. } if name == "run")
+    ));
+    assert!(matches!(
+        &program.statements[2],
+        Statement::Call { name, arguments, .. }
+            if name == "call_user_func" && arguments.len() == 2
+    ));
+}
+
+#[test]
 fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
     let cases = [
         (
             "class constant",
             "<?php\nclass Sample { const A = 1; }",
             "class constant fetches are unsupported; class constants and enum cases require class metadata",
-        ),
-        (
-            "non-static class method",
-            "<?php\nclass Sample { public function run() {} }",
-            "non-static class methods are unsupported",
         ),
         (
             "enum",
@@ -4281,11 +4316,11 @@ fn compile_user_function_calls_use_direct_generated_path_to_native_binary() {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(!c_source.contains("ptn_runtime_import_constants"));
     assert!(c_source.contains("ptn_runtime_init_function_frame(&runtime, caller_runtime);"));
-    assert!(c_source.contains("ptn_user_function_0(&runtime, 1,"));
+    assert!(c_source.contains("ptn_user_function_0(&runtime, ptn_null(), 1,"));
 
     let main_start = c_source.find("\nint main(void)").unwrap();
     let main_body = &c_source[main_start..];
-    assert!(main_body.contains("ptn_user_function_1(&runtime, 1,"));
+    assert!(main_body.contains("ptn_user_function_1(&runtime, ptn_null(), 1,"));
     assert!(!main_body.contains("ptn_call_function(&runtime, \"apply\""));
     assert!(!c_source.contains("ptn_call_internal"));
     assert!(!c_source.contains("ptn_internal_var_dump"));
@@ -4322,7 +4357,7 @@ echo $call($items), \":\", count($items), \":\", $items[1], \"\\n\";",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dynamic_function_name("));
-    assert!(c_source.contains("ptn_call_callable(&runtime"));
+    assert!(c_source.contains("ptn_call_callable(runtime"));
     assert!(c_source.contains("ptn_call_dynamic_function_name(runtime"));
     assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"items\")"));
     assert!(c_source.contains("ptn_dynamic_call_detach_first_reference_argument"));
@@ -4361,8 +4396,52 @@ echo MathBox::pair(1, 2), \"\\n\";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_callable_function_name("));
-    assert!(c_source.contains("ptn_call_callable(&runtime"));
+    assert!(c_source.contains("ptn_call_callable(runtime"));
     assert!(c_source.contains("MathBox::pair"));
+}
+
+#[test]
+fn compile_instance_method_call_user_func_to_native_binary() {
+    let root = temp_dir("ptn-native-instance-method-call-user-func");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("instance-method-call-user-func.php");
+    let output = root.join("instance-method-call-user-func-bin");
+    fs::write(
+        &input,
+        "<?php
+class Greeter {
+    public function label($value) {
+        return \"item=\" . $value;
+    }
+
+    public function via_this($value) {
+        return $this->label($value + 1);
+    }
+}
+
+$greeter = new Greeter();
+echo $greeter->label(3), \"\\n\";
+echo call_user_func([$greeter, \"label\"], 4), \"\\n\";
+echo call_user_func([$greeter, \"via_this\"], 5), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "item=3\nitem=4\nitem=6\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_new_shell(\"Greeter\")"));
+    assert!(c_source.contains("ptn_call_declared_method(&runtime"));
+    assert!(c_source.contains("ptn_call_callable(runtime"));
+    assert!(c_source.contains("ptn_runtime_write_variable(&runtime, \"this\", receiver);"));
 }
 
 #[test]
@@ -10131,7 +10210,7 @@ var_dump(array_map(null, [\"x\" => 1, \"y\" => 2], [10]));
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_map"));
-    assert!(c_source.contains("ptn_call_function(runtime, function_name, array_count"));
+    assert!(c_source.contains("ptn_call_callable(runtime, callback, array_count"));
     assert!(c_source.contains("ptn_array_map_result_key"));
 }
 
@@ -10176,7 +10255,8 @@ var_dump(call_user_func(\"inspect_args\", \"one\", \"two\"));
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_call_user_func"));
-    assert!(c_source.contains("PtnValue result = ptn_call_function("));
+    assert!(c_source.contains("ptn_call_callable("));
+    assert!(c_source.contains("args[0]"));
     assert!(c_source.contains("argc - 1"));
 }
 
