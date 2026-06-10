@@ -2762,6 +2762,59 @@ static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string_len(result, 4);
 }
 
+static const char *ptn_internal_argument_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_ARRAY:
+        case PTN_REFERENCE:
+            return ptn_offset_container_type_name(value);
+    }
+    return "unknown";
+}
+
+static int ptn_internal_reject_math_unsupported_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    const char *expected_type,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY && value.type != PTN_OBJECT && value.type != PTN_CLOSURE &&
+        value.type != PTN_EXCEPTION) {
+        return 0;
+    }
+
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type %s, %s given",
+        function_name,
+        position,
+        argument_name,
+        expected_type,
+        ptn_internal_argument_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 1;
+}
+
 static double ptn_value_to_double(PtnValue value) {
     double fast_number = 0.0;
     if (ptn_fast_scalar_double(value, &fast_number)) {
@@ -2787,8 +2840,10 @@ static PtnValue ptn_internal_floor(PtnRuntime *runtime, size_t argc, const PtnVa
 }
 
 static PtnValue ptn_internal_abs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
+    if (ptn_internal_reject_math_unsupported_arg(runtime, "abs", 1, "num", "int|float", args[0])) {
+        return ptn_null();
+    }
     if (args[0].type == PTN_NULL) {
         ptn_emit_array_runtime_diagnostic(
             "Deprecated",
@@ -2811,16 +2866,21 @@ static PtnValue ptn_internal_abs(PtnRuntime *runtime, size_t argc, const PtnValu
 }
 
 static PtnValue ptn_internal_sqrt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
+    if (ptn_internal_reject_math_unsupported_arg(runtime, "sqrt", 1, "num", "float", args[0])) {
+        return ptn_null();
+    }
     return ptn_float(sqrt(ptn_value_to_double(args[0])));
 }
 
 static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
+    if (ptn_internal_reject_math_unsupported_arg(runtime, "fdiv", 1, "num1", "float", args[0]) ||
+        ptn_internal_reject_math_unsupported_arg(runtime, "fdiv", 2, "num2", "float", args[1])) {
+        return ptn_null();
+    }
     double dividend = ptn_value_to_double(args[0]);
     double divisor = ptn_value_to_double(args[1]);
     return ptn_float(dividend / divisor);

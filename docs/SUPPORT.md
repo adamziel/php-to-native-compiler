@@ -274,12 +274,13 @@ supports in generated native binaries.
   conversion, returning boxed floats.
 - `abs()` over current boxed scalar values after scalar numeric conversion,
   returning boxed integer or float magnitudes and emitting the modeled
-  PHP null-deprecation boundary.
+  PHP null-deprecation boundary. Array/object operands raise modeled TypeErrors.
 - `sqrt()` over current boxed scalar values after scalar numeric conversion,
-  returning a boxed float.
+  returning a boxed float. Array/object operands raise modeled TypeErrors.
 - `fdiv()` over current boxed scalar values after scalar numeric conversion,
   returning boxed floating-point division results, including zero divisors,
-  signed zeroes, infinities, and `NAN`.
+  signed zeroes, infinities, and `NAN`. Array/object operands raise modeled
+  TypeErrors.
 - `intdiv()` over current boxed scalar values after scalar integer conversion,
   returning a boxed integer quotient for supported non-zero divisors.
 - `pi()` returns the modeled boxed float value of the `M_PI` constant.
@@ -503,12 +504,13 @@ supports in generated native binaries.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
 - Exact `ceil()`/`floor()` null deprecations, string and unsupported-type
   diagnostics, and complete special-float parity.
-- Exact `abs()` diagnostics for unsupported array/object/resource/reference
-  operands and complete overflow parity beyond the current boxed numeric path.
+- Exact `abs()` diagnostics for unsupported resources/reference edge cases and
+  complete overflow parity beyond the current boxed numeric path.
 - `count()` support for `Countable` objects and exact non-array diagnostics.
-- Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
-- Exact `fdiv()` unsupported-type diagnostics for arrays, objects, resources,
-  and references.
+- Exact `sqrt()` diagnostics beyond current array/object TypeErrors and
+  complete negative/non-finite float parity.
+- Exact `fdiv()` unsupported-type diagnostics beyond current array/object
+  TypeErrors, including resources/reference edge cases.
 - Exact `intdiv()` catchable exception behavior for zero divisors,
   `PHP_INT_MIN / -1`, and unsupported array/object/resource/reference operands.
 - Exact diagnostics and full precision/range parity for `intval()`, `bindec()`,

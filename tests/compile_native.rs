@@ -3300,6 +3300,58 @@ fn compile_fdiv_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_scalar_math_unsupported_operand_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-math-unsupported-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-math-unsupported-operands.php");
+    let output = root.join("scalar-math-unsupported-operands-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$array = [];\n\
+$object = new stdClass;\n\
+$closure = function () {};\n\
+try {\n\
+    var_dump(fdiv($array, 2));\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump(fdiv(2, $object));\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump(sqrt($array));\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump(sqrt($closure));\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump(abs($object));\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "fdiv(): Argument #1 ($num1) must be of type float, array given\nfdiv(): Argument #2 ($num2) must be of type float, stdClass given\nsqrt(): Argument #1 ($num) must be of type float, array given\nsqrt(): Argument #1 ($num) must be of type float, Closure given\nabs(): Argument #1 ($num) must be of type int|float, stdClass given\nafter\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intdiv_internal_function_to_native_binary() {
     let root = temp_dir("ptn-native-intdiv-function");
     fs::create_dir_all(&root).unwrap();
