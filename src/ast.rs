@@ -280,6 +280,13 @@ pub enum Expr {
         arguments: Vec<Expr>,
         span: SourceSpan,
     },
+    Closure {
+        parameters: Vec<FunctionParameter>,
+        return_type: Option<TypeHint>,
+        return_by_ref: bool,
+        body: Vec<Statement>,
+        span: SourceSpan,
+    },
     MethodCall {
         receiver: Box<Expr>,
         name: String,
@@ -408,6 +415,7 @@ impl Expr {
             Expr::Assign { span, .. } | Expr::AssignRef { span, .. } => *span,
             Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
+            | Expr::Closure { span, .. }
             | Expr::MethodCall { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
