@@ -121,6 +121,11 @@ supports in generated native binaries.
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
   empty string.
+- `array_column()` over current ordered-array rows, including scalar
+  `column_key`/`index_key` coercions, whole-row extraction with `null`
+  `column_key`, missing-column skips, and result keys produced through the
+  shared PHP array-key canonicalization path. Object property extraction and
+  resource values remain outside this slice.
 - `in_array()` over current ordered-array values, using shared loose equality
   or strict identity comparison and dereferencing references in both the needle
   and haystack entries.
@@ -179,7 +184,8 @@ supports in generated native binaries.
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
-  `count(expr);`, `array_count_values(expr);`, `array_values(expr);`,
+  `count(expr);`, `array_column(expr, expr[, expr]);`,
+  `array_count_values(expr);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
@@ -197,7 +203,8 @@ supports in generated native binaries.
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_count_values(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
+  `count(expr)`, `array_column(expr, expr[, expr])`,
+  `array_count_values(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
   `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
@@ -306,6 +313,11 @@ supports in generated native binaries.
 - `array_count_values()` over current boxed arrays, counting dereferenced
   integer and string values with PHP array-key canonicalization. Unsupported
   value types emit the modeled PHP warning boundary and are skipped.
+- `array_column()` over current boxed arrays, reading array rows by scalar
+  column keys, preserving insertion order, reindexing by default, and using
+  scalar row `index_key` values as result keys when present. Non-array rows are
+  skipped for non-null column keys and included as whole rows for null column
+  keys; object property extraction remains unsupported.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `array_merge_recursive()` and `array_replace_recursive()` over current boxed
