@@ -79,6 +79,8 @@ supports in generated native binaries.
   parse error through `phpc`.
 - Removed `(unset)` cast syntax is rejected with a source-spanned PHP-style
   fatal error through `phpc`.
+- Invalid `(callable)` cast syntax is rejected with a source-spanned PHP-style
+  parse error through `phpc`.
 - Expression-context `(void)` cast syntax is rejected with a source-spanned
   PHP-style parse error through `phpc`.
 - Unterminated block comments are rejected with a source-spanned PHP-style
@@ -398,7 +400,7 @@ supports in generated native binaries.
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
   `goto` labels, invalid `goto` jumps into loop or switch scopes, removed
-  `(real)` and `(unset)` cast syntax,
+  `(real)` and `(unset)` cast syntax, invalid `(callable)` cast syntax,
   expression-context `(void)` cast syntax, unterminated block comments, and
   invalid legacy octal integer literals containing `8` or `9`, plus
   unparenthesized nested ternary fatal diagnostics and
@@ -531,8 +533,9 @@ supports in generated native binaries.
   platforms.
 - PHP-exact version, SAPI, and extension metadata beyond the modeled CLI/core/
   standard boundary.
-- Cast spelling diagnostics beyond the currently modeled non-canonical aliases
-  and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
+- Cast spelling diagnostics beyond the currently modeled non-canonical aliases,
+  invalid `(callable)`, removed `(real)`/`(unset)`, and expression-context
+  `(void)` boundaries.
 - Statement-form `(void) expr;` casts.
 - Scope-aware magic constants inside functions, methods, classes, traits,
   namespaces, includes, and eval contexts.

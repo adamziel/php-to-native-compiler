@@ -914,6 +914,14 @@ fn parser_rejects_removed_real_cast_with_parse_error_kind() {
 }
 
 #[test]
+fn parser_rejects_callable_cast_with_php_parse_error() {
+    let error = parser::parse("<?php $tmp = (callable) 42;").unwrap_err();
+    assert_eq!(error.message, "syntax error, unexpected token \"callable\"");
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
 fn parser_rejects_removed_unset_cast_with_php_message() {
     let error = parser::parse("<?php var_dump((unset) $x);").unwrap_err();
     assert_eq!(error.message, "The (unset) cast is no longer supported");
@@ -2337,6 +2345,26 @@ fn phpc_renders_removed_unset_cast_as_php_fatal() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Fatal error: The (unset) cast is no longer supported in {} on line 4\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_callable_cast_as_php_parse_error() {
+    let root = temp_dir("ptn-phpc-callable-cast-parse-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("callable-cast.php");
+    fs::write(&input, "<?php\n\n$tmp = (callable) 42;\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: syntax error, unexpected token \"callable\" in {} on line 3\n",
             input.display()
         )
     );
