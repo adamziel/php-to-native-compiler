@@ -230,6 +230,15 @@ static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const ch
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
+    if (diagnostics->suppressed > 0) {
+        return;
+    }
+    fputs("Notice: Only variables should be assigned by reference in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static PTN_UNUSED void ptn_emit_control_warning(const char *message, const char *path, size_t line) {
     fputc('\n', stdout);
     fputs("Warning: ", stdout);

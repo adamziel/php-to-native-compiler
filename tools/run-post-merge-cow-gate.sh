@@ -9,8 +9,9 @@ usage:
 
 Builds the PTN compiler, runs a compact post-merge copy-on-write gate, and
 prints numeric pass/fail counts. Supported cases compile to native binaries and
-must match PHP stdout/stderr exactly. Unsupported reference cases must fail with
-explicit compiler diagnostics.
+must match PHP stdout/stderr exactly. Notice cases compile to native binaries
+and match explicit PTN stdout/stderr expectations. Unsupported reference cases
+must fail with explicit compiler diagnostics.
 
 Options:
   --case NAME    Run one oracle or diagnostic case.
@@ -40,11 +41,14 @@ oracle_cases=(
     by_reference_return_boundaries
 )
 
+notice_cases=(
+    reference_assignment_from_call_result_value_fallback
+)
+
 diagnostic_cases=(
     unsupported_foreach_reference_key
     unsupported_foreach_destructuring
     unsupported_by_reference_return
-    unsupported_reference_assignment_from_call
     unsupported_recursive_array_append_self
     unsupported_same_array_append_element_reference
     unsupported_same_array_element_reference_assignment
@@ -94,6 +98,9 @@ coverage() {
         by_reference_return_boundaries)
             printf 'by-reference return aliases, separation, array slots, locals, and typed coercion\n'
             ;;
+        reference_assignment_from_call_result_value_fallback)
+            printf 'notice: non-reference call results assigned by reference fall back to value writes\n'
+            ;;
         unsupported_foreach_reference_key)
             printf 'diagnostic: foreach key binding cannot be by reference\n'
             ;;
@@ -102,9 +109,6 @@ coverage() {
             ;;
         unsupported_by_reference_return)
             printf 'diagnostic: non-lvalue by-reference returns remain explicit unsupported behavior\n'
-            ;;
-        unsupported_reference_assignment_from_call)
-            printf 'diagnostic: non-reference call results cannot be assigned by reference\n'
             ;;
         unsupported_recursive_array_append_self)
             printf 'diagnostic: array append by reference to itself remains explicit unsupported behavior\n'
@@ -370,15 +374,6 @@ function &make_ref() {
 }
 PHP
             ;;
-        unsupported_reference_assignment_from_call)
-            cat >"$path" <<'PHP'
-<?php
-function make_value() {
-    return 1;
-}
-$ref =& make_value();
-PHP
-            ;;
         unsupported_recursive_array_append_self)
             cat >"$path" <<'PHP'
 <?php
@@ -445,6 +440,47 @@ PHP
     esac
 }
 
+write_notice_case() {
+    local name="$1"
+    local path="$2"
+
+    case "$name" in
+        reference_assignment_from_call_result_value_fallback)
+            cat >"$path" <<'PHP'
+<?php
+function make_value() {
+    return 1;
+}
+$ref =& make_value();
+echo $ref, "\n";
+$items = [];
+$items["slot"] =& make_value();
+echo $items["slot"], "\n";
+PHP
+            ;;
+        *)
+            echo "unknown notice case: $name" >&2
+            return 1
+            ;;
+    esac
+}
+
+expected_notice_stdout() {
+    case "$1" in
+        reference_assignment_from_call_result_value_fallback)
+            cat <<'OUT'
+Notice: Only variables should be assigned by reference in ptn on line 5
+1
+Notice: Only variables should be assigned by reference in ptn on line 8
+1
+OUT
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 expected_diagnostic() {
     case "$1" in
         unsupported_foreach_reference_key)
@@ -455,9 +491,6 @@ expected_diagnostic() {
             ;;
         unsupported_by_reference_return)
             printf 'by-reference return requires a variable or array element\n'
-            ;;
-        unsupported_reference_assignment_from_call)
-            printf 'cannot assign non-reference function result by reference\n'
             ;;
         unsupported_recursive_array_append_self)
             printf 'recursive array references are unsupported\n'
@@ -564,6 +597,55 @@ run_oracle_case() {
     return 0
 }
 
+run_notice_case() {
+    local name="$1"
+    local source_file="$tmp/$name.php"
+    local native_file="$tmp/$name-bin"
+    local compile_stdout="$tmp/$name.compile.stdout"
+    local compile_stderr="$tmp/$name.compile.stderr"
+    local native_stdout="$tmp/$name.native.stdout"
+    local native_stderr="$tmp/$name.native.stderr"
+    local expected_stdout="$tmp/$name.expected.stdout"
+    local expected_stderr="$tmp/$name.expected.stderr"
+
+    write_notice_case "$name" "$source_file"
+    expected_notice_stdout "$name" >"$expected_stdout"
+    : >"$expected_stderr"
+
+    set +e
+    "$ptn_bin" compile "$source_file" -o "$native_file" >"$compile_stdout" 2>"$compile_stderr"
+    local compile_status=$?
+    set -e
+    if [ "$compile_status" -ne 0 ]; then
+        printf 'FAIL notice %-42s native compile exited with %s\n' "$name" "$compile_status" >&2
+        sed -n '1,40p' "$compile_stderr" >&2
+        return 1
+    fi
+
+    set +e
+    "$native_file" >"$native_stdout" 2>"$native_stderr"
+    local native_status=$?
+    set -e
+    if [ "$native_status" -ne 0 ]; then
+        printf 'FAIL notice %-42s native exited with %s\n' "$name" "$native_status" >&2
+        sed -n '1,40p' "$native_stderr" >&2
+        return 1
+    fi
+    if ! cmp -s "$expected_stdout" "$native_stdout"; then
+        printf 'FAIL notice %-42s stdout diverged from expectation\n' "$name" >&2
+        diff -u --label expected --label native "$expected_stdout" "$native_stdout" >&2 || true
+        return 1
+    fi
+    if ! cmp -s "$expected_stderr" "$native_stderr"; then
+        printf 'FAIL notice %-42s stderr diverged from expectation\n' "$name" >&2
+        diff -u --label expected --label native "$expected_stderr" "$native_stderr" >&2 || true
+        return 1
+    fi
+
+    printf 'PASS notice %-42s %s\n' "$name" "$(coverage "$name")"
+    return 0
+}
+
 run_diagnostic_case() {
     local name="$1"
     local source_file="$tmp/$name.php"
@@ -639,6 +721,9 @@ if [ "$list_only" -eq 1 ]; then
     for name in "${oracle_cases[@]}"; do
         printf 'oracle     %-42s %s\n' "$name" "$(coverage "$name")"
     done
+    for name in "${notice_cases[@]}"; do
+        printf 'notice     %-42s %s\n' "$name" "$(coverage "$name")"
+    done
     for name in "${diagnostic_cases[@]}"; do
         printf 'diagnostic %-42s %s\n' "$name" "$(coverage "$name")"
     done
@@ -646,10 +731,16 @@ if [ "$list_only" -eq 1 ]; then
 fi
 
 selected_oracle=()
+selected_notice=()
 selected_diagnostic=()
 for name in "${oracle_cases[@]}"; do
     if [ -z "$case_filter" ] || [ "$case_filter" = "$name" ]; then
         selected_oracle+=("$name")
+    fi
+done
+for name in "${notice_cases[@]}"; do
+    if [ -z "$case_filter" ] || [ "$case_filter" = "$name" ]; then
+        selected_notice+=("$name")
     fi
 done
 for name in "${diagnostic_cases[@]}"; do
@@ -660,10 +751,14 @@ done
 
 if [ -n "$case_filter" ] \
     && ! contains_case "$case_filter" "${oracle_cases[@]}" \
+    && ! contains_case "$case_filter" "${notice_cases[@]}" \
     && ! contains_case "$case_filter" "${diagnostic_cases[@]}"; then
     echo "unknown case: $case_filter" >&2
     echo "available cases:" >&2
     for name in "${oracle_cases[@]}"; do
+        echo "  $name" >&2
+    done
+    for name in "${notice_cases[@]}"; do
         echo "  $name" >&2
     done
     for name in "${diagnostic_cases[@]}"; do
@@ -700,11 +795,13 @@ if ! command -v "$php_bin" >/dev/null 2>&1; then
     exit 2
 fi
 
-printf 'PTN post-merge COW gate: oracle_cases=%s diagnostic_cases=%s compiler=%s php=%s\n' \
-    "${#selected_oracle[@]}" "${#selected_diagnostic[@]}" "$ptn_bin" "$php_bin"
+printf 'PTN post-merge COW gate: oracle_cases=%s notice_cases=%s diagnostic_cases=%s compiler=%s php=%s\n' \
+    "${#selected_oracle[@]}" "${#selected_notice[@]}" "${#selected_diagnostic[@]}" "$ptn_bin" "$php_bin"
 
 oracle_pass=0
 oracle_fail=0
+notice_pass=0
+notice_fail=0
 diagnostic_pass=0
 diagnostic_fail=0
 
@@ -716,6 +813,14 @@ for name in "${selected_oracle[@]}"; do
     fi
 done
 
+for name in "${selected_notice[@]}"; do
+    if run_notice_case "$name"; then
+        notice_pass=$((notice_pass + 1))
+    else
+        notice_fail=$((notice_fail + 1))
+    fi
+done
+
 for name in "${selected_diagnostic[@]}"; do
     if run_diagnostic_case "$name"; then
         diagnostic_pass=$((diagnostic_pass + 1))
@@ -724,9 +829,9 @@ for name in "${selected_diagnostic[@]}"; do
     fi
 done
 
-printf 'post-merge COW gate complete: oracle_pass=%s oracle_fail=%s diagnostics_pass=%s diagnostics_fail=%s\n' \
-    "$oracle_pass" "$oracle_fail" "$diagnostic_pass" "$diagnostic_fail"
+printf 'post-merge COW gate complete: oracle_pass=%s oracle_fail=%s notice_pass=%s notice_fail=%s diagnostics_pass=%s diagnostics_fail=%s\n' \
+    "$oracle_pass" "$oracle_fail" "$notice_pass" "$notice_fail" "$diagnostic_pass" "$diagnostic_fail"
 
-if [ "$oracle_fail" -ne 0 ] || [ "$diagnostic_fail" -ne 0 ]; then
+if [ "$oracle_fail" -ne 0 ] || [ "$notice_fail" -ne 0 ] || [ "$diagnostic_fail" -ne 0 ]; then
     exit 1
 fi

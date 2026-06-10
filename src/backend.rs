@@ -482,14 +482,8 @@ fn emit_instruction(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &emitted_value);
         }
-        Instruction::StoreRef { name, source } => {
-            let reference_temp = values.emit_reference_source(out, source);
-            out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", ");
-            out.push_str(&reference_temp);
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &reference_temp);
+        Instruction::StoreRef { name, source, line } => {
+            values.emit_store_reference_source_to_variable(out, name, source, *line);
         }
         Instruction::StoreArrayDim {
             array,
@@ -578,33 +572,7 @@ fn emit_instruction(
             }
         }
         Instruction::StoreArrayDimRef { target, source } => {
-            let source_temp = values.emit_reference_source(out, source);
-            let index_temp = target
-                .index
-                .as_ref()
-                .map(|index| values.emit_materialized_value(out, index));
-            out.push_str("    ptn_runtime_bind_array_dim_reference(&runtime, \"");
-            out.push_str(&c_string(&target.array));
-            out.push_str("\", ");
-            match &index_temp {
-                Some(index_temp) => {
-                    out.push('&');
-                    out.push_str(index_temp);
-                }
-                None => out.push_str("NULL"),
-            }
-            out.push_str(", ");
-            out.push_str(&source_temp);
-            out.push_str(", ");
-            out.push('"');
-            out.push_str(&c_string(source_path));
-            out.push_str("\", ");
-            out.push_str(&target.line.to_string());
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &source_temp);
-            if let Some(index_temp) = index_temp {
-                emit_value_cleanup(out, "    ", &index_temp);
-            }
+            values.emit_store_reference_source_to_array_dim(out, target, source, source_path);
         }
         Instruction::DefineConstant { name, value, line } => {
             let emitted_value = values.emit_materialized_value(out, value);
@@ -1517,6 +1485,10 @@ fn collect_value_runtime_requirements(
             collect_assignment_target_runtime_requirements(target, functions, requirements);
             collect_value_runtime_requirements(value, functions, requirements);
         }
+        ValueExpr::AssignRef { target, source } => {
+            collect_assignment_target_runtime_requirements(target, functions, requirements);
+            collect_value_runtime_requirements(source, functions, requirements);
+        }
         ValueExpr::Array(elements) => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -1716,6 +1688,13 @@ fn emit_control_warning(out: &mut String, message: &str, source_path: &str, line
     out.push_str("\", \"");
     out.push_str(&c_string(source_path));
     out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+}
+
+fn emit_only_variables_assigned_by_reference_notice(out: &mut String, indent: &str, line: usize) {
+    out.push_str(indent);
+    out.push_str("ptn_emit_only_variables_assigned_by_reference_notice(&runtime.diagnostics, ");
     out.push_str(&line.to_string());
     out.push_str(");\n");
 }
@@ -2096,6 +2075,211 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_reference_assignment(
+        &mut self,
+        out: &mut String,
+        target: &AssignmentTarget,
+        source: &ValueExpr,
+    ) -> String {
+        if let Some(source_target) = reference_target_from_value(source) {
+            let source_temp = self.emit_reference_target(out, &source_target);
+            self.emit_bind_assignment_target_reference(out, target, &source_temp);
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_value_clone(ptn_value_deref(");
+            out.push_str(&source_temp);
+            out.push_str("));\n");
+            emit_value_cleanup(out, "    ", &source_temp);
+            return result_temp;
+        }
+
+        let source_temp = self.emit_materialized_value(out, source);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (");
+        out.push_str(&source_temp);
+        out.push_str(".type == PTN_REFERENCE) {\n");
+        self.emit_bind_assignment_target_reference(out, target, &source_temp);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone(ptn_value_deref(");
+        out.push_str(&source_temp);
+        out.push_str("));\n");
+        out.push_str("    } else {\n");
+        emit_only_variables_assigned_by_reference_notice(out, "        ", target.line());
+        let stored_temp = self.emit_store_assignment_target_from_temp(out, target, &source_temp);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&stored_temp);
+        out.push_str(";\n");
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &source_temp);
+        result_temp
+    }
+
+    fn emit_store_reference_source_to_variable(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        source: &ValueExpr,
+        line: usize,
+    ) {
+        if let Some(target) = reference_target_from_value(source) {
+            let reference_temp = self.emit_reference_target(out, &target);
+            out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&reference_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &reference_temp);
+            return;
+        }
+
+        let source_temp = self.emit_materialized_value(out, source);
+        out.push_str("    if (");
+        out.push_str(&source_temp);
+        out.push_str(".type == PTN_REFERENCE) {\n");
+        out.push_str("        ptn_runtime_bind_variable_reference(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&source_temp);
+        out.push_str(");\n");
+        out.push_str("    } else {\n");
+        emit_only_variables_assigned_by_reference_notice(out, "        ", line);
+        out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&source_temp);
+        out.push_str(");\n");
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &source_temp);
+    }
+
+    fn emit_store_reference_source_to_array_dim(
+        &mut self,
+        out: &mut String,
+        target: &crate::ir::ArrayDimTarget,
+        source: &ValueExpr,
+        source_path: &str,
+    ) {
+        if let Some(source_target) = reference_target_from_value(source) {
+            let source_temp = self.emit_reference_target(out, &source_target);
+            let index_temp = target
+                .index
+                .as_ref()
+                .map(|index| self.emit_materialized_value(out, index));
+            out.push_str("    ptn_runtime_bind_array_dim_reference(&runtime, \"");
+            out.push_str(&c_string(&target.array));
+            out.push_str("\", ");
+            match &index_temp {
+                Some(index_temp) => {
+                    out.push('&');
+                    out.push_str(index_temp);
+                }
+                None => out.push_str("NULL"),
+            }
+            out.push_str(", ");
+            out.push_str(&source_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(source_path));
+            out.push_str("\", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &source_temp);
+            if let Some(index_temp) = index_temp {
+                emit_value_cleanup(out, "    ", &index_temp);
+            }
+            return;
+        }
+
+        let source_temp = self.emit_materialized_value(out, source);
+        let dimensions = vec![target.index.clone()];
+        let path = emit_array_path_segments(out, self, &dimensions);
+        out.push_str("    if (");
+        out.push_str(&source_temp);
+        out.push_str(".type == PTN_REFERENCE) {\n");
+        out.push_str("        ptn_runtime_bind_array_dim_reference(&runtime, \"");
+        out.push_str(&c_string(&target.array));
+        out.push_str("\", ");
+        out.push_str(&path.name);
+        out.push_str("[0].append ? NULL : &");
+        out.push_str(&path.name);
+        out.push_str("[0].value, ");
+        out.push_str(&source_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&target.line.to_string());
+        out.push_str(");\n");
+        out.push_str("    } else {\n");
+        emit_only_variables_assigned_by_reference_notice(out, "        ", target.line);
+        let snapshot_temp = self.next_temp();
+        out.push_str("        PtnValue ");
+        out.push_str(&snapshot_temp);
+        out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+        out.push_str(&source_temp);
+        out.push_str(");\n");
+        out.push_str("        ptn_runtime_array_path_set(&runtime, \"");
+        out.push_str(&c_string(&target.array));
+        out.push_str("\", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&snapshot_temp);
+        out.push_str(", ");
+        out.push_str(&target.line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &snapshot_temp);
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &source_temp);
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+    }
+
+    fn emit_bind_assignment_target_reference(
+        &mut self,
+        out: &mut String,
+        target: &AssignmentTarget,
+        reference_temp: &str,
+    ) {
+        match target {
+            AssignmentTarget::Variable { name, line } => {
+                self.emit_bind_reference_target(
+                    out,
+                    &ReferenceTarget::Variable {
+                        name: name.clone(),
+                        line: *line,
+                    },
+                    reference_temp,
+                );
+            }
+            AssignmentTarget::ArrayDim {
+                array,
+                dimensions,
+                line,
+            } => {
+                self.emit_bind_reference_target(
+                    out,
+                    &ReferenceTarget::ArrayDim(crate::ir::ArrayDimTarget {
+                        array: array.clone(),
+                        index: dimensions.first().cloned().flatten(),
+                        line: *line,
+                    }),
+                    reference_temp,
+                );
+            }
+            AssignmentTarget::List(_) => {
+                unreachable!("parser rejects by-reference assignment to list targets");
+            }
+        }
+    }
+
     fn emit_store_assignment_target_from_temp(
         &mut self,
         out: &mut String,
@@ -2447,6 +2631,9 @@ impl ValueEmitter {
             }
             ValueExpr::Assign { target, op, value } => {
                 self.emit_assignment(out, target, *op, value)
+            }
+            ValueExpr::AssignRef { target, source } => {
+                self.emit_reference_assignment(out, target, source)
             }
             ValueExpr::Cast { kind, expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
@@ -3292,6 +3479,7 @@ impl ValueEmitter {
             value,
             ValueExpr::Binary { .. }
                 | ValueExpr::Assign { .. }
+                | ValueExpr::AssignRef { .. }
                 | ValueExpr::InternalCall { .. }
                 | ValueExpr::DynamicCall { .. }
                 | ValueExpr::Unary { .. }

@@ -1315,13 +1315,6 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "recursive by-reference returns are unsupported"
     );
 
-    let non_reference_call_assignment =
-        parser::parse("<?php function factory() { return 1; } $alias =& factory();").unwrap_err();
-    assert_eq!(
-        non_reference_call_assignment.message,
-        "cannot assign non-reference function result by reference"
-    );
-
     let recursive_array = parser::parse("<?php $array = []; $array[] =& $array;").unwrap_err();
     assert_eq!(
         recursive_array.message,
@@ -1471,15 +1464,39 @@ fn parser_accepts_grouped_direct_and_single_dim_reference_targets() {
 
 #[test]
 fn parser_accepts_by_reference_return_call_assignment_sources() {
-    let program =
-        parser::parse("<?php function &id(&$value) { return $value; } $alias =& id($value);")
-            .unwrap();
+    let program = parser::parse(
+        "<?php function &id(&$value) { return $value; } $alias =& id($value); $value_alias =& factory(); var_dump($items[0] =& returnsVal());",
+    )
+    .unwrap();
     assert!(program.functions[0].return_by_ref);
     let Statement::AssignRef { name, source, .. } = &program.statements[0] else {
         panic!("expected by-reference assignment");
     };
     assert_eq!(name, "alias");
     assert!(matches!(source, Expr::Call { name, .. } if name == "id"));
+
+    let Statement::AssignRef { name, source, .. } = &program.statements[1] else {
+        panic!("expected value-returning call by-reference assignment");
+    };
+    assert_eq!(name, "value_alias");
+    assert!(matches!(source, Expr::Call { name, .. } if name == "factory"));
+
+    let Statement::Call {
+        name, arguments, ..
+    } = &program.statements[2]
+    else {
+        panic!("expected var_dump call");
+    };
+    assert_eq!(name, "var_dump");
+    assert!(matches!(
+        &arguments[0],
+        Expr::AssignRef {
+            target: AssignmentTarget::ArrayDim(target),
+            source,
+            ..
+        } if target.array == "items"
+            && matches!(source.as_ref(), Expr::Call { name, .. } if name == "returnsval")
+    ));
 }
 
 #[test]
@@ -6452,23 +6469,29 @@ fn compile_by_reference_argument_diagnostic_to_native_binary() {
 }
 
 #[test]
-fn compile_by_reference_assignment_call_result_diagnostic_to_native_binary() {
-    let root = temp_dir("ptn-native-by-reference-assignment-call-result-diagnostic");
+fn compile_by_reference_assignment_call_result_value_fallback_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-assignment-call-result-value-fallback");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("by-reference-assignment-call-result-diagnostic.php");
-    let output = root.join("by-reference-assignment-call-result-diagnostic-bin");
+    let input = root.join("by-reference-assignment-call-result-value-fallback.php");
+    let output = root.join("by-reference-assignment-call-result-value-fallback-bin");
     fs::write(
         &input,
-        "<?php function value() { return 1; } $alias =& value();",
+        "<?php\n\
+function value() { return 1; }\n\
+$alias =& value();\n\
+echo $alias, \"\\n\";\n",
     )
     .unwrap();
 
-    let error = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap_err();
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
     assert_eq!(
-        error.message,
-        "cannot assign non-reference function result by reference"
+        String::from_utf8(execution.stdout).unwrap(),
+        "Notice: Only variables should be assigned by reference in ptn on line 3\n1\n"
     );
-    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -10269,7 +10292,6 @@ fn var_dump_complex_edges_remain_unsupported_before_codegen() {
     for source in [
         "<?php var_dump(new stdClass);",
         "<?php $array = []; $array[] = &$array; var_dump($array);",
-        "<?php function call() { return 1; } $ref =& call();",
     ] {
         assert!(
             parser::parse(source).is_err(),

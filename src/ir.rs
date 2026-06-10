@@ -53,6 +53,7 @@ pub enum Instruction {
     StoreRef {
         name: String,
         source: ValueExpr,
+        line: usize,
     },
     StoreArrayDim {
         array: String,
@@ -173,6 +174,10 @@ pub enum ValueExpr {
         target: AssignmentTarget,
         op: AssignmentOp,
         value: Box<ValueExpr>,
+    },
+    AssignRef {
+        target: AssignmentTarget,
+        source: Box<ValueExpr>,
     },
     Constant(String),
     MagicConstant {
@@ -417,10 +422,11 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     });
                 }
             }
-            Statement::AssignRef { name, source, .. } => {
+            Statement::AssignRef { name, source, span } => {
                 instructions.push(Instruction::StoreRef {
                     name: name.clone(),
                     source: lower_expr(source),
+                    line: span.line,
                 });
             }
             Statement::ArrayAssign {
@@ -803,6 +809,10 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             target: lower_assignment_target(target),
             op: *op,
             value: Box::new(lower_expr(value)),
+        },
+        Expr::AssignRef { target, source, .. } => ValueExpr::AssignRef {
+            target: lower_assignment_target(target),
+            source: Box::new(lower_expr(source)),
         },
         Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),
         Expr::MagicConstant(kind, span) => ValueExpr::MagicConstant {

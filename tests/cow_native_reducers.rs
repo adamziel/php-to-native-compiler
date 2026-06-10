@@ -239,6 +239,49 @@ echo $a[\"v\"], \":\", $b[\"v\"], \"\\n\";",
             expected_stdout: "1:2\n",
         },
         CowReducerCase {
+            name: "by_ref_assignment_from_call_result_assigns_value",
+            oracle: "Zend/tests/assign_by_val_function_by_ref_return_value.phpt",
+            source: "<?php\n\
+function make_array() { return [\"v\" => 1]; }\n\
+$value =& make_array();\n\
+$value[\"v\"] = 2;\n\
+echo $value[\"v\"], \"\\n\";",
+            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 3\n2\n",
+        },
+        CowReducerCase {
+            name: "array_slot_by_ref_assignment_from_call_result_assigns_value",
+            oracle: "Zend/tests/assign_by_val_function_by_ref_return_value.phpt",
+            source: "<?php\n\
+function make_array() { return [\"v\" => 1]; }\n\
+$items = [[\"v\" => 0]];\n\
+$items[0] =& make_array();\n\
+$items[0][\"v\"] = 2;\n\
+echo $items[0][\"v\"], \"\\n\";",
+            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 4\n2\n",
+        },
+        CowReducerCase {
+            name: "array_slot_by_ref_assignment_from_null_call_result",
+            oracle: "Zend/tests/assign_by_val_function_by_ref_return_value.phpt",
+            source: "<?php\n\
+function returnsVal() {}\n\
+$items = [\"slot\" => \"before\"];\n\
+var_dump($items[\"slot\"] =& returnsVal());\n\
+var_dump($items[\"slot\"]);",
+            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
+        },
+        CowReducerCase {
+            name: "by_ref_assignment_from_copied_call_result_detaches",
+            oracle: "Zend/tests/assign_by_val_function_by_ref_return_value.phpt",
+            source: "<?php\n\
+function make_copy($x) { return $x; }\n\
+$base = [\"v\" => 1];\n\
+$alias = $base;\n\
+$slot =& make_copy($base);\n\
+$slot[\"v\"] = 9;\n\
+echo $base[\"v\"], \":\", $alias[\"v\"], \":\", $slot[\"v\"], \"\\n\";",
+            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 5\n1:1:9\n",
+        },
+        CowReducerCase {
             name: "cursor_mutation_shared_alias",
             oracle: "PHP oracle: array cursor mutation must detach shared aliases",
             source: "<?php\n\
@@ -366,7 +409,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 18, "COW reducer pass count changed");
+    assert_eq!(passed, 22, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

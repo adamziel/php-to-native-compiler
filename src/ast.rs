@@ -263,6 +263,11 @@ pub enum Expr {
         value: Box<Expr>,
         span: SourceSpan,
     },
+    AssignRef {
+        target: AssignmentTarget,
+        source: Box<Expr>,
+        span: SourceSpan,
+    },
     Constant(String, SourceSpan),
     MagicConstant(MagicConstantKind, SourceSpan),
     Call {
@@ -400,7 +405,7 @@ impl Expr {
             | Expr::Variable(_, span)
             | Expr::Constant(_, span)
             | Expr::MagicConstant(_, span) => *span,
-            Expr::Assign { span, .. } => *span,
+            Expr::Assign { span, .. } | Expr::AssignRef { span, .. } => *span,
             Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::MethodCall { span, .. } => *span,

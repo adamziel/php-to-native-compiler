@@ -1027,7 +1027,6 @@ impl Parser {
             TokenKind::QuestionQuestionEqual => AssignmentOp::CoalesceAssign,
             _ => unreachable!("peek_is_expression_assignment_op guards assignment token"),
         };
-        let value = self.parse_assignment_expr()?;
         let left_span = left.span();
         let target = assignment_target_from_expr(left).map_err(|_| {
             Diagnostic::new(
@@ -1036,6 +1035,18 @@ impl Parser {
             )
         })?;
         reject_unsupported_coalesce_assignment_target(op, &target, operator.span)?;
+        if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            let source = self.parse_reference_source()?;
+            validate_reference_assignment_target_source(&target, &source, operator.span)?;
+            let span = combine_spans(left_span, source.span());
+            return Ok(Expr::AssignRef {
+                target,
+                source: Box::new(source),
+                span,
+            });
+        }
+        let value = self.parse_assignment_expr()?;
         if matches!(op, AssignmentOp::Assign) {
             validate_recursive_reference_assignment_value(&target, &value)?;
         }
@@ -1057,7 +1068,6 @@ impl Parser {
                 TokenKind::QuestionQuestionEqual => AssignmentOp::CoalesceAssign,
                 _ => unreachable!("peek_is_expression_assignment_op guards assignment token"),
             };
-            let right = self.parse_assignment_expr()?;
             let left_span = left.span();
             let target = assignment_target_from_expr(left).map_err(|_| {
                 Diagnostic::new(
@@ -1066,6 +1076,20 @@ impl Parser {
                 )
             })?;
             reject_unsupported_coalesce_assignment_target(op, &target, operator.span)?;
+            if matches!(op, AssignmentOp::Assign)
+                && matches!(self.peek().kind, TokenKind::Ampersand)
+            {
+                self.advance();
+                let source = self.parse_reference_source()?;
+                validate_reference_assignment_target_source(&target, &source, operator.span)?;
+                let span = combine_spans(left_span, source.span());
+                return Ok(Expr::AssignRef {
+                    target,
+                    source: Box::new(source),
+                    span,
+                });
+            }
+            let right = self.parse_assignment_expr()?;
             if matches!(op, AssignmentOp::Assign) {
                 validate_recursive_reference_assignment_value(&target, &right)?;
             }
@@ -2188,7 +2212,9 @@ fn expr_array_literal_reference_to_variable(
         Expr::Array { elements, .. } => elements
             .iter()
             .find_map(|element| array_element_reference_to_variable(element, variable)),
-        Expr::Assign { value, .. } | Expr::Grouped { expr: value, .. } => {
+        Expr::Assign { value, .. }
+        | Expr::AssignRef { source: value, .. }
+        | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
         Expr::String(_, _)
@@ -2431,33 +2457,9 @@ fn validate_reference_assignment_source_expr(
 ) -> Result<()> {
     match source {
         Expr::Grouped { expr, .. } => validate_reference_assignment_source_expr(expr, functions),
-        Expr::Call { name, span, .. } => {
-            if let Some(return_by_ref) = user_function_returns_by_reference(functions, name) {
-                if return_by_ref {
-                    return Ok(());
-                }
-                return Err(Diagnostic::new(
-                    "cannot assign non-reference function result by reference",
-                    Some(*span),
-                ));
-            }
-            if is_modeled_internal_function_name(name) {
-                return Err(Diagnostic::new(
-                    "cannot assign non-reference function result by reference",
-                    Some(*span),
-                ));
-            }
-            Ok(())
-        }
+        Expr::Call { .. } => Ok(()),
         _ => Ok(()),
     }
-}
-
-fn user_function_returns_by_reference(functions: &[FunctionDecl], name: &str) -> Option<bool> {
-    functions
-        .iter()
-        .find(|function| function.name.eq_ignore_ascii_case(name))
-        .map(|function| function.return_by_ref)
 }
 
 fn validate_by_reference_return_value(value: &Expr, function_name: &str) -> Result<()> {
@@ -3018,6 +3020,50 @@ fn reject_unsupported_coalesce_assignment_target(
     Ok(())
 }
 
+fn validate_reference_assignment_target_source(
+    target: &AssignmentTarget,
+    source: &Expr,
+    span: SourceSpan,
+) -> Result<()> {
+    match target {
+        AssignmentTarget::Variable { name, span } => {
+            if reference_source_is_array_dim_of(source, name) {
+                return Err(Diagnostic::new(
+                    "self-referential array-element aliases are unsupported",
+                    Some(*span),
+                ));
+            }
+        }
+        AssignmentTarget::ArrayDim(target) => {
+            if target.dimensions.len() > 1 {
+                return Err(Diagnostic::new(
+                    "nested reference lvalues are unsupported",
+                    Some(target.span),
+                ));
+            }
+            if reference_source_is_variable(source, &target.array) {
+                return Err(Diagnostic::new(
+                    "recursive array references are unsupported",
+                    Some(target.span),
+                ));
+            }
+            if reference_source_is_array_dim_of(source, &target.array) {
+                return Err(Diagnostic::new(
+                    "same-array element references are unsupported",
+                    Some(target.span),
+                ));
+            }
+        }
+        AssignmentTarget::List(_) => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn list_assignment_target_from_array_elements(
     elements: Vec<ArrayElement>,
     span: SourceSpan,
@@ -3056,6 +3102,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
             }
         }
         Expr::Assign { value, .. } => reject_append_array_read(value)?,
+        Expr::AssignRef { source, .. } => reject_append_array_read(source)?,
         Expr::Call { arguments, .. } => {
             for argument in arguments {
                 reject_append_array_read(argument)?;
@@ -3154,6 +3201,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         Expr::InterpolatedString(_, _)
         | Expr::Variable(_, _)
         | Expr::Assign { .. }
+        | Expr::AssignRef { .. }
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
