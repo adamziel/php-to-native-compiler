@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
-    ListAssignmentElementTarget, MagicConstantKind, ReferenceTarget, Statement, StringPart,
-    TypeHint, UnaryOp, UnsetTarget,
+    ListAssignmentElementTarget, MagicConstantKind, ReferenceTarget, Statement,
+    StringInterpolationIndex, StringPart, TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -2231,6 +2231,50 @@ fn parser_accepts_direct_variable_interpolated_strings() {
         ]
     );
     assert!(matches!(&expressions[1], Expr::String(value, _) if value == "literal$value\n"));
+}
+
+#[test]
+fn parser_accepts_braced_array_interpolated_strings() {
+    let program = parser::parse(
+        "<?php echo \"name={$name} item={$items['name']} dynamic={$items[$key]} zero={$items[0]}\\n\";",
+    )
+    .unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            StringPart::Literal("name=".to_string()),
+            StringPart::Variable("name".to_string()),
+            StringPart::Literal(" item=".to_string()),
+            StringPart::ArrayAccess {
+                array: "items".to_string(),
+                indices: vec![StringInterpolationIndex::String("name".to_string())],
+            },
+            StringPart::Literal(" dynamic=".to_string()),
+            StringPart::ArrayAccess {
+                array: "items".to_string(),
+                indices: vec![StringInterpolationIndex::Variable("key".to_string())],
+            },
+            StringPart::Literal(" zero=".to_string()),
+            StringPart::ArrayAccess {
+                array: "items".to_string(),
+                indices: vec![StringInterpolationIndex::Int(0)],
+            },
+            StringPart::Literal("\n".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn parser_rejects_unsupported_braced_property_interpolation() {
+    let error = parser::parse("<?php echo \"name={$object->name}\\n\";").unwrap_err();
+    assert_eq!(error.message, "complex string interpolation is unsupported");
+    assert_eq!(error.span.unwrap().line, 1);
 }
 
 #[test]
@@ -9815,6 +9859,40 @@ fn compile_direct_variable_interpolation_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "name=Ada count=3\nliteral$name\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_braced_array_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-braced-array-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("braced-array-interpolation.php");
+    let output = root.join("braced-array-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$name = \"Ada\";\n\
+$items = [\"name\" => \"compiler\", 0 => \"zero\", \"later\" => \"after\"];\n\
+$key = \"later\";\n\
+echo \"name={$name} item={$items['name']} first={$items[0]} dynamic={$items[$key]}\\n\";\n\
+$empty = [];\n\
+echo \"a={$empty['one']}b={$items[0]}c={$empty['two']}d\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "name=Ada item=compiler first=zero dynamic=after\n\
+\n\
+Warning: Undefined array key \"one\" in ptn on line 7\n\
+\n\
+Warning: Undefined array key \"two\" in ptn on line 7\n\
+a=b=zeroc=d\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

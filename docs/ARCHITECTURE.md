@@ -71,10 +71,11 @@ Current runtime/compiler slices:
   They do not lower as runtime casts; the parser returns source-spanned
   diagnostics that `phpc` renders with PHP-style parse-error or fatal prefixes
   as appropriate for the syntax.
-- Double-quoted strings with direct `$name` interpolation lower to ordinary
-  value-expression concatenation: literal string segments, runtime variable
-  reads, scalar string casts, and the existing boxed concat helper. Complex and
-  braced interpolation remain outside this slice.
+- Double-quoted strings with direct `$name`, braced `{$name}`, and braced
+  variable-root array offsets lower to ordinary value-expression concatenation:
+  literal string segments, runtime variable/array reads, scalar string casts,
+  and the existing boxed concat helper. Object/property interpolation,
+  variable variables, and arbitrary expressions remain outside this slice.
 - Increment/decrement expression contexts are rejected while full PHP
   pre/post-increment value semantics are unsupported, so statement-form direct
   variable support is not confused with expression result behavior.

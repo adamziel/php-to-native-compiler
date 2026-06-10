@@ -388,6 +388,17 @@ pub enum ArrayElementValue {
 pub enum StringPart {
     Literal(String),
     Variable(String),
+    ArrayAccess {
+        array: String,
+        indices: Vec<StringInterpolationIndex>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringInterpolationIndex {
+    String(String),
+    Int(i64),
+    Variable(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

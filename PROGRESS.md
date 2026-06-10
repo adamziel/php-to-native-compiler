@@ -33,7 +33,8 @@ callable-only object method dispatch, and callback/COW/directory evidence.
 ## Already Ported
 
 Lexer/parser, AST/IR/C backend, boxed values, variables/constants,
-double-quoted ASCII octal/hex escapes, string/math/type internals, ordered
+double-quoted ASCII octal/hex escapes, direct/braced variable interpolation,
+braced array-offset interpolation, string/math/type internals, ordered
 arrays, `foreach`, source-spanned non-array `foreach` warnings,
 array/string COW, references, by-reference params/foreach, array dimensions,
 temporaries, recursive/user functions, anonymous function values, magic
@@ -68,6 +69,6 @@ sub-path scalar offset-lvalue parity, and broader file APIs.
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes,
 cslashes, object `foreach`, scalar offset, and declared class metadata native
 tests/reducers; `cargo test callable`; focused catchable exception-message
-tests; exact `add-and-stripcslashes.phpt`; `cargo test`. PHPT runners resolve
-php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
-`.runtime/php-src-phpt`.
+tests; focused `cargo test interpolation`; exact `add-and-stripcslashes.phpt`;
+`cargo test`. PHPT runners resolve php-src via `PHP_SRC_PHPT`,
+`/home/claude/php-src-phpt`, or `.runtime/php-src-phpt`.

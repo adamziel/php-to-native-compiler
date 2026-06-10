@@ -5,10 +5,13 @@ use crate::ast::{
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ConstDeclaration, Expr,
     FunctionDecl, FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, MagicConstantKind, MethodDecl, Program, ReferenceTarget, Statement,
-    StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
-use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
+use crate::lexer::{
+    lex, StringInterpolationIndex as TokenStringInterpolationIndex, StringPart as TokenStringPart,
+    Token, TokenKind,
+};
 
 const KEYWORD_OR_PRECEDENCE: u8 = 1;
 const KEYWORD_XOR_PRECEDENCE: u8 = 2;
@@ -3683,6 +3686,23 @@ fn lower_string_part(part: TokenStringPart) -> StringPart {
     match part {
         TokenStringPart::Literal(value) => StringPart::Literal(value),
         TokenStringPart::Variable(name) => StringPart::Variable(name),
+        TokenStringPart::ArrayAccess { array, indices } => StringPart::ArrayAccess {
+            array,
+            indices: indices
+                .into_iter()
+                .map(lower_string_interpolation_index)
+                .collect(),
+        },
+    }
+}
+
+fn lower_string_interpolation_index(
+    index: TokenStringInterpolationIndex,
+) -> StringInterpolationIndex {
+    match index {
+        TokenStringInterpolationIndex::String(value) => StringInterpolationIndex::String(value),
+        TokenStringInterpolationIndex::Int(value) => StringInterpolationIndex::Int(value),
+        TokenStringInterpolationIndex::Variable(name) => StringInterpolationIndex::Variable(name),
     }
 }
 

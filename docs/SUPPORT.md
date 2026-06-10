@@ -26,9 +26,10 @@ supports in generated native binaries.
   `0x`/`0X` forms.
 - Invalid legacy octal integer literals containing `8` or `9` are rejected with
   source-spanned PHP-style parse errors through `phpc`.
-- Double-quoted strings with direct `$name` variable interpolation. Interpolated
-  variables use the same runtime variable read, scalar string cast, and
-  concatenation paths as ordinary expressions.
+- Double-quoted strings with direct `$name`, braced `{$name}`, and braced
+  variable-root array offset interpolation such as `{$items['key']}` and
+  `{$items[$key]}`. Interpolated values use the same runtime variable/array
+  reads, scalar string casts, and concatenation paths as ordinary expressions.
 - Direct variable assignment and scalar reads through the generated runtime
   symbol table.
 - Assignment expressions for direct variables, array dimension/append lvalues,
@@ -469,8 +470,9 @@ supports in generated native binaries.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,
   objects, references, copy-on-write, overflow edge cases, and diagnostics.
 - Inline HTML before `<?php` or between PHP blocks.
-- Complex/braced string interpolation and interpolation of arrays, objects,
-  offsets, properties, variable variables, or other non-direct-variable forms.
+- Remaining complex string interpolation forms, including object/property
+  interpolation, variable variables, arbitrary expressions/calls, append
+  offsets, and non-variable-root offsets.
 - Internal functions outside the registered internal-function subset.
 - Exact undefined-constant and unsupported-expression-statement diagnostics.
 - Namespace/class constants, global `const` duplicate diagnostics and ordering

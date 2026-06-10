@@ -7,7 +7,8 @@ use crate::ast::{
     ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
-    Program, ReferenceTarget as AstReferenceTarget, Statement, StringPart as AstStringPart,
+    Program, ReferenceTarget as AstReferenceTarget, Statement,
+    StringInterpolationIndex as AstStringInterpolationIndex, StringPart as AstStringPart,
     TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
 };
 
@@ -1143,6 +1144,11 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
             }),
             line,
         }),
+        AstStringPart::ArrayAccess { array, indices } => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(lower_interpolated_array_access(array, indices, line)),
+            line,
+        }),
     });
 
     let Some(mut expr) = values.next() else {
@@ -1158,6 +1164,36 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
         };
     }
     expr
+}
+
+fn lower_interpolated_array_access(
+    array: &str,
+    indices: &[AstStringInterpolationIndex],
+    line: usize,
+) -> ValueExpr {
+    let mut expr = ValueExpr::Load {
+        name: array.to_string(),
+        line,
+    };
+    for index in indices {
+        expr = ValueExpr::ArrayAccess {
+            array: Box::new(expr),
+            index: Box::new(lower_interpolated_array_index(index, line)),
+            line,
+        };
+    }
+    expr
+}
+
+fn lower_interpolated_array_index(index: &AstStringInterpolationIndex, line: usize) -> ValueExpr {
+    match index {
+        AstStringInterpolationIndex::String(value) => ValueExpr::String(value.clone()),
+        AstStringInterpolationIndex::Int(value) => ValueExpr::Int(*value),
+        AstStringInterpolationIndex::Variable(name) => ValueExpr::Load {
+            name: name.clone(),
+            line,
+        },
+    }
 }
 
 fn lower_unary_op(op: AstUnaryOp) -> UnaryOp {

@@ -14,6 +14,8 @@ expected rows, or one-off outputs.
 - Boxed C runtime for PHP-like values.
 - Native execution tests for parser, IR, backend, runtime, and selected PHP
   behavior.
+- Double-quoted interpolation covers direct `$name`, braced `{$name}`, and
+  braced variable-root array offsets such as `{$items['key']}`.
 - Top-level user functions include scoped `__FUNCTION__` and `__METHOD__`
   magic-constant coverage plus `func_num_args()`, `func_get_arg()`, and
   `func_get_args()` call-frame introspection, scalar type hints, and

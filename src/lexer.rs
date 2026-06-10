@@ -111,6 +111,17 @@ pub enum TokenKind {
 pub enum StringPart {
     Literal(String),
     Variable(String),
+    ArrayAccess {
+        array: String,
+        indices: Vec<StringInterpolationIndex>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringInterpolationIndex {
+    String(String),
+    Int(i64),
+    Variable(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -475,16 +486,20 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
+            if ch == '{' && self.rest().starts_with("{$") {
+                if !literal.is_empty() {
+                    parts.push(StringPart::Literal(literal));
+                    literal = String::new();
+                }
+                parts.push(self.lex_braced_interpolation_part()?);
+                has_variable = true;
+                continue;
+            }
+
             if ch == '$' {
                 self.bump_char();
                 if let Some(first) = self.peek_char() {
                     if is_ident_start(first) {
-                        if literal.ends_with('{') {
-                            return Err(Diagnostic::new(
-                                "complex string interpolation is unsupported",
-                                Some(self.current_span(1)),
-                            ));
-                        }
                         if !literal.is_empty() {
                             parts.push(StringPart::Literal(literal));
                             literal = String::new();
@@ -512,6 +527,176 @@ impl<'a> Lexer<'a> {
         }
 
         Err(Diagnostic::new("unterminated string literal", Some(start)))
+    }
+
+    fn lex_braced_interpolation_part(&mut self) -> Result<StringPart> {
+        let start = self.current_span(1);
+        self.bump_char();
+        debug_assert_eq!(self.peek_char(), Some('$'));
+        self.bump_char();
+        let array = self.read_interpolation_variable_name(start)?;
+        let mut indices = Vec::new();
+
+        loop {
+            self.skip_interpolation_whitespace();
+            match self.peek_char() {
+                Some('}') => {
+                    self.bump_char();
+                    break;
+                }
+                Some('[') => {
+                    self.bump_char();
+                    self.skip_interpolation_whitespace();
+                    if matches!(self.peek_char(), Some(']')) {
+                        return Err(Diagnostic::new(
+                            "array append interpolation is unsupported",
+                            Some(self.current_char_span()),
+                        ));
+                    }
+                    let index = self.lex_interpolation_index()?;
+                    self.skip_interpolation_whitespace();
+                    if !matches!(self.peek_char(), Some(']')) {
+                        return Err(Diagnostic::new(
+                            "expected interpolation array index close bracket",
+                            Some(self.current_char_span()),
+                        ));
+                    }
+                    self.bump_char();
+                    indices.push(index);
+                }
+                Some(_) => {
+                    return Err(Diagnostic::new(
+                        "complex string interpolation is unsupported",
+                        Some(self.current_char_span()),
+                    ));
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "unterminated string interpolation",
+                        Some(start),
+                    ));
+                }
+            }
+        }
+
+        if indices.is_empty() {
+            Ok(StringPart::Variable(array))
+        } else {
+            Ok(StringPart::ArrayAccess { array, indices })
+        }
+    }
+
+    fn lex_interpolation_index(&mut self) -> Result<StringInterpolationIndex> {
+        self.skip_interpolation_whitespace();
+        match self.peek_char() {
+            Some('\'') | Some('"') => Ok(StringInterpolationIndex::String(
+                self.lex_interpolation_index_string()?,
+            )),
+            Some('$') => {
+                let span = self.current_span(1);
+                self.bump_char();
+                Ok(StringInterpolationIndex::Variable(
+                    self.read_interpolation_variable_name(span)?,
+                ))
+            }
+            Some('-') | Some('0'..='9') => self.lex_interpolation_index_int(),
+            Some(_) => Err(Diagnostic::new(
+                "complex string interpolation is unsupported",
+                Some(self.current_char_span()),
+            )),
+            None => Err(Diagnostic::new(
+                "unterminated string interpolation",
+                Some(self.current_span(0)),
+            )),
+        }
+    }
+
+    fn lex_interpolation_index_string(&mut self) -> Result<String> {
+        let start = self.current_span(1);
+        let quote = self.peek_char().expect("string index starts with quote");
+        self.bump_char();
+        let mut value = String::new();
+
+        while let Some(ch) = self.peek_char() {
+            if ch == quote {
+                self.bump_char();
+                return Ok(value);
+            }
+
+            if ch == '\\' {
+                self.bump_char();
+                let escaped = self.peek_char().ok_or_else(|| {
+                    Diagnostic::new("unterminated string escape", Some(self.current_span(0)))
+                })?;
+                match escaped {
+                    'n' if quote == '"' => value.push('\n'),
+                    'r' if quote == '"' => value.push('\r'),
+                    't' if quote == '"' => value.push('\t'),
+                    '\\' => value.push('\\'),
+                    '\'' if quote == '\'' => value.push('\''),
+                    '"' if quote == '"' => value.push('"'),
+                    '$' if quote == '"' => value.push('$'),
+                    other => {
+                        value.push('\\');
+                        value.push(other);
+                    }
+                }
+                self.bump_char();
+            } else {
+                value.push(ch);
+                self.bump_char();
+            }
+        }
+
+        Err(Diagnostic::new("unterminated string literal", Some(start)))
+    }
+
+    fn lex_interpolation_index_int(&mut self) -> Result<StringInterpolationIndex> {
+        let start = self.current_span(1);
+        let mut text = String::new();
+        if matches!(self.peek_char(), Some('-')) {
+            text.push('-');
+            self.bump_char();
+        }
+        let saw_digits = self.collect_digits(&mut text, |ch| ch.is_ascii_digit());
+        if !saw_digits || text == "-" {
+            return Err(Diagnostic::new("invalid integer literal", Some(start)));
+        }
+        let value = text
+            .parse::<i64>()
+            .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
+        Ok(StringInterpolationIndex::Int(value))
+    }
+
+    fn read_interpolation_variable_name(&mut self, span: SourceSpan) -> Result<String> {
+        let Some(first) = self.peek_char() else {
+            return Err(Diagnostic::new(
+                "expected variable name after `$`",
+                Some(span),
+            ));
+        };
+        if !is_ident_start(first) {
+            return Err(Diagnostic::new(
+                "expected variable name after `$`",
+                Some(self.current_char_span()),
+            ));
+        }
+        let mut name = String::new();
+        while let Some(ch) = self.peek_char() {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                name.push(ch);
+                self.bump_char();
+            } else {
+                break;
+            }
+        }
+        Ok(name)
+    }
+
+    fn skip_interpolation_whitespace(&mut self) {
+        while self.peek_char().is_some_and(char::is_whitespace) {
+            self.bump_char();
+        }
     }
 
     fn lex_number(&mut self) -> Result<()> {
