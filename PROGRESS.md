@@ -1,10 +1,11 @@
 # PTN Progress
 
-Refresh: 2026-06-10T23:14Z
-Measured: `ptn-ock` rebased after `ptn-4n1` on current `origin/master`;
-addslashes/stripslashes native PHPT-shape coverage, cslashes PHPT shape,
-double-quoted ASCII octal/hex escapes, declared class/object method dispatch,
-object `foreach` reducers, and callback/COW/directory evidence.
+Refresh: 2026-06-11T00:59Z
+Measured: `ptn-ebb` rebased after `ptn-4n1` and `ptn-ock` on current
+`origin/master`; addslashes/stripslashes native PHPT-shape coverage, scalar
+offset-lvalue fatal/conversion reducers, object `foreach` reducers, cslashes
+PHPT shape, double-quoted ASCII octal/hex escapes, declared class/object method
+dispatch, and callback/COW/directory evidence.
 
 ## Test Dashboard
 
@@ -46,7 +47,8 @@ static method callable values, `array_reduce()` callback dispatch,
 method metadata, `new DeclaredClass()` object shells, direct declared method
 calls, `$this` binding, object/static method callable arrays, and object
 `foreach` over public dynamic properties including live additions and
-by-reference value binding.
+by-reference value binding, plus scalar array-lvalue write/reference fatals
+for non-convertible scalars with false-to-array deprecation.
 
 ## Still Needed
 
@@ -55,12 +57,12 @@ The remaining focused COW PHPT gap is Closure `use` captures for the
 declared properties, visibility/inheritance/interfaces/traits, static
 properties, magic methods, object/property compound lvalues, destructors,
 exceptions, reflection, unsupported array/string internals, 64-bit operator
-exactness, destructuring `foreach` diagnostics/semantics, scalar offset-lvalue
-fatal parity, and broader file APIs.
+exactness, destructuring `foreach` diagnostics/semantics, remaining string
+sub-path scalar offset-lvalue parity, and broader file APIs.
 
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes,
-cslashes, and object `foreach` native tests/reducers; `cargo test`. Exact
-addslashes PHPT rows are blocked locally by missing
-`/home/claude/php-src-phpt/run-tests.php` (`ptn-jmq`).
+cslashes, object `foreach`, and scalar offset native tests/reducers; exact
+`add-and-stripcslashes.phpt`; `cargo test`. Exact addslashes PHPT rows are
+blocked locally by missing `/home/claude/php-src-phpt/run-tests.php` (`ptn-jmq`).

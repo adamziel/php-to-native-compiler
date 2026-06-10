@@ -6389,6 +6389,47 @@ var_dump($int_alias);",
 }
 
 #[test]
+fn compile_scalar_offset_lvalue_write_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-offset-lvalue-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-offset-lvalue-boundaries.php");
+    let output = root.join("scalar-offset-lvalue-boundaries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$int = 7;\n\
+try { $int[0] = \"x\"; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($int);\n\
+$num = 3;\n\
+try { $num[0] += 2; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($num);\n\
+$refTarget = \"x\";\n\
+$truth = true;\n\
+try { $truth[0] =& $refTarget; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($truth);\n\
+$false = false;\n\
+$false[0] = \"ok\";\n\
+var_dump($false);\n\
+$nested = [false, null, 1];\n\
+$nested[0][1] = \"converted\";\n\
+$nested[1][2] = \"null-converted\";\n\
+try { $nested[2][3] = \"bad\"; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($nested);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot use a scalar value as an array\nint(7)\nCannot use a scalar value as an array\nint(3)\nCannot use a scalar value as an array\nbool(true)\n\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 13\narray(1) {\n  [0]=>\n  string(2) \"ok\"\n}\n\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 16\nCannot use a scalar value as an array\narray(3) {\n  [0]=>\n  array(1) {\n    [1]=>\n    string(9) \"converted\"\n  }\n  [1]=>\n  array(1) {\n    [2]=>\n    string(14) \"null-converted\"\n  }\n  [2]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_offset_assignment_and_unset_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-assignment-unset");
     fs::create_dir_all(&root).unwrap();
