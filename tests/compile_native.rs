@@ -4692,6 +4692,37 @@ fn compile_base_conversion_variation2_phpt_shapes_to_native_binary() {
 }
 
 #[test]
+fn compile_intval_base_conversion_range_and_prefix_to_native_binary() {
+    let root = temp_dir("ptn-native-intval-base-conversion-range");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intval-base-conversion-range.php");
+    let output = root.join("intval-base-conversion-range-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(intval(\"8000000000000000\", 16));
+var_dump(intval(\"ffffffffffffffff\", 16));
+var_dump(intval(\"-8000000000000000\", 16));
+var_dump(intval(\"0b101\", 0));
+var_dump(intval(\"0B101\", 2));
+var_dump(intval(\"10\", 1));
+var_dump(intval(\"zz\", 36));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(9223372036854775807)\nint(9223372036854775807)\nint(-9223372036854775808)\nint(5)\nint(5)\nint(0)\nint(1295)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_floorceil_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-floorceil-phpt-shape");
     fs::create_dir_all(&root).unwrap();

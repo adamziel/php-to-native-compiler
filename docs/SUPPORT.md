@@ -295,7 +295,8 @@ supports in generated native binaries.
   returns integers until the parsed value exceeds native integer range, then
   floats.
 - `intval()` over current boxed scalar values after scalar integer conversion,
-  with bounded string/base conversion for supported bases.
+  with bounded string/base conversion for supported bases, including PHP-style
+  `0x`/`0b` prefix handling and integer-range saturation.
 - `chr()` over current boxed scalar values after scalar integer conversion,
   returning a one-byte string with byte values constrained modulo 256.
 - `ord()` over current boxed scalar values after scalar string conversion,
@@ -513,7 +514,7 @@ supports in generated native binaries.
 - Exact `intdiv()` catchable exception behavior for zero divisors,
   `PHP_INT_MIN / -1`, and unsupported array/object/resource/reference operands.
 - Exact diagnostics and full precision/range parity for `intval()`, `bindec()`,
-  `hexdec()`, and `octdec()` on very large or unsupported values.
+  `hexdec()`, and `octdec()` on remaining very large or unsupported values.
 - Exact `hex2bin()` warning text/file-name parity and unsupported
   array/object/resource/reference diagnostics.
 - Exact `dirname()` edge parity for unusual paths, embedded NULs, and

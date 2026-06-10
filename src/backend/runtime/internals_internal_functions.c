@@ -2910,9 +2910,9 @@ static int ptn_digit_value_for_base(unsigned char byte, int base) {
     int value = -1;
     if (byte >= '0' && byte <= '9') {
         value = (int)(byte - '0');
-    } else if (byte >= 'a' && byte <= 'f') {
+    } else if (byte >= 'a' && byte <= 'z') {
         value = 10 + (int)(byte - 'a');
-    } else if (byte >= 'A' && byte <= 'F') {
+    } else if (byte >= 'A' && byte <= 'Z') {
         value = 10 + (int)(byte - 'A');
     }
     return value >= 0 && value < base ? value : -1;
@@ -2976,6 +2976,66 @@ static PtnValue ptn_base_string_to_number(
     return fits_integer ? ptn_int(integer) : ptn_float(floating);
 }
 
+static int64_t ptn_intval_string_to_integer(const char *string, size_t string_len, int base) {
+    if (base != 0 && (base < 2 || base > 36)) {
+        return 0;
+    }
+
+    const char *cursor = string;
+    const char *end = string + string_len;
+    while (cursor < end && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+
+    int negative = 0;
+    if (cursor < end && (*cursor == '+' || *cursor == '-')) {
+        negative = *cursor == '-';
+        cursor++;
+    }
+
+    if (base == 0) {
+        if ((end - cursor) >= 2 && cursor[0] == '0' && (cursor[1] == 'x' || cursor[1] == 'X')) {
+            base = 16;
+            cursor += 2;
+        } else if ((end - cursor) >= 2 && cursor[0] == '0' && (cursor[1] == 'b' || cursor[1] == 'B')) {
+            base = 2;
+            cursor += 2;
+        } else if (cursor < end && cursor[0] == '0') {
+            base = 8;
+        } else {
+            base = 10;
+        }
+    } else if (base == 16 && (end - cursor) >= 2 && cursor[0] == '0' && (cursor[1] == 'x' || cursor[1] == 'X')) {
+        cursor += 2;
+    } else if (base == 2 && (end - cursor) >= 2 && cursor[0] == '0' && (cursor[1] == 'b' || cursor[1] == 'B')) {
+        cursor += 2;
+    }
+
+    uint64_t limit = negative ? ((uint64_t)INT64_MAX + 1u) : (uint64_t)INT64_MAX;
+    uint64_t magnitude = 0;
+    int saw_digit = 0;
+    for (; cursor < end; cursor++) {
+        int digit = ptn_digit_value_for_base((unsigned char)*cursor, base);
+        if (digit < 0) {
+            break;
+        }
+        saw_digit = 1;
+        if (magnitude > (limit - (uint64_t)digit) / (uint64_t)base) {
+            return negative ? INT64_MIN : INT64_MAX;
+        }
+        magnitude = (magnitude * (uint64_t)base) + (uint64_t)digit;
+    }
+
+    if (!saw_digit) {
+        return 0;
+    }
+    if (negative && magnitude == limit) {
+        return INT64_MIN;
+    }
+    int64_t value = (int64_t)magnitude;
+    return negative ? -value : value;
+}
+
 static PtnValue ptn_internal_bindec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_value_to_string_operand(args[0]);
@@ -3005,17 +3065,11 @@ static PtnValue ptn_internal_intval(PtnRuntime *runtime, size_t argc, const PtnV
     (void)line;
     if (argc >= 2 && args[0].type == PTN_STRING) {
         int64_t base = ptn_number_to_integer(ptn_to_number(args[1]));
-        if (base == 0 || (base >= 2 && base <= 36)) {
-            const char *start = (const char *)args[0].as.string.data;
-            while (isspace((unsigned char)*start)) {
-                start++;
-            }
-            errno = 0;
-            long long integer = strtoll(start, NULL, (int)base);
-            if (errno != ERANGE) {
-                return ptn_int((int64_t)integer);
-            }
-        }
+        return ptn_int(ptn_intval_string_to_integer(
+            (const char *)args[0].as.string.data,
+            args[0].as.string.len,
+            (int)base
+        ));
     }
     return ptn_cast_int(args[0]);
 }

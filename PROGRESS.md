@@ -50,7 +50,8 @@ recursive `mkdir()` plus directory predicates, array-path snapshots,
 `debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
 expressions, nested same-array reference lvalues, direct-variable and
 offset-form `??=`, grouped reference targets, `array_fill_keys()`,
-string-callable `call_user_func()`, string-callable/null `array_map()`, named
+string-callable `call_user_func()`, string-callable/null `array_map()`,
+`intval()` base-prefix and range-saturating string conversion, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, generic `array_reduce()` callback dispatch with
 accumulator debug refcounts, and `new stdClass` boxed objects with public
