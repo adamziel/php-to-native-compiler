@@ -197,7 +197,8 @@ supports in generated native binaries.
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_count_values(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
+  `count(expr)`, `array_count_values(expr)`, `array_values(expr)`,
+  `array_flip(expr)`, `array_merge_recursive(expr, ...)`,
   `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
@@ -308,6 +309,10 @@ supports in generated native binaries.
   value types emit the modeled PHP warning boundary and are skipped.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
+- `array_flip()` over current boxed arrays for string and integer values,
+  using shared array-key canonicalization for flipped keys, preserving duplicate
+  key insertion slots with last-write-wins values, and skipping unsupported
+  value types with the modeled PHP warning.
 - `array_merge_recursive()` and `array_replace_recursive()` over current boxed
   arrays, preserving ordered-map key behavior while cloning dereferenced values
   across COW boundaries.

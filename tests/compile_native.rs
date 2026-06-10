@@ -7059,6 +7059,44 @@ var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'))
 }
 
 #[test]
+fn compile_array_flip_to_native_binary() {
+    let root = temp_dir("ptn-native-array-flip");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-flip.php");
+    let output = root.join("array-flip-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\n\
+    'one' => 1,\n\
+    'two' => '2',\n\
+    'lead' => '02',\n\
+    'dup1' => 'x',\n\
+    'dup2' => 'x',\n\
+    10 => -3,\n\
+    'skip_float' => 1.5,\n\
+    'skip_true' => true,\n\
+    'skip_null' => null,\n\
+    'skip_array' => [1],\n\
+];\n\
+var_dump(array_flip($items));\n\
+var_dump(array_flip([]));\n\
+var_dump(function_exists('array_flip'), function_exists('ARRAY_FLIP'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 14\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 14\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 14\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 14\narray(5) {\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [\"02\"]=>\n  string(4) \"lead\"\n  [\"x\"]=>\n  string(4) \"dup2\"\n  [-3]=>\n  int(10)\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_predicates_use_generated_fast_paths() {
     let root = temp_dir("ptn-native-array-predicate-fast-paths");
     fs::create_dir_all(&root).unwrap();

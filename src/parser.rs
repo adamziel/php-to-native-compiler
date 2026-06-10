@@ -3008,6 +3008,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "count"
             | "array_count_values"
             | "array_fill_keys"
+            | "array_flip"
             | "array_key_exists"
             | "array_merge_recursive"
             | "array_pop"

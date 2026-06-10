@@ -1081,6 +1081,48 @@ static PtnValue ptn_internal_array_fill_keys(PtnRuntime *runtime, size_t argc, c
     return result;
 }
 
+static void ptn_array_flip_emit_skipped_value_warning(PtnRuntime *runtime, size_t line) {
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "array_flip(): Can only flip string and integer values, entry skipped",
+        line
+    );
+}
+
+static int ptn_array_flip_key_from_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnArrayKey *key
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_INT) {
+        *key = ptn_array_int_key(value.as.integer);
+        return 1;
+    }
+    if (value.type == PTN_STRING) {
+        *key = ptn_array_key_from_value(value);
+        return 1;
+    }
+
+    ptn_array_flip_emit_skipped_value_warning(runtime, line);
+    return 0;
+}
+
+static PtnValue ptn_internal_array_flip(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_flip", 1, "array", args[0]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayKey flipped_key;
+        if (!ptn_array_flip_key_from_value(runtime, array->entries[i].value, line, &flipped_key)) {
+            continue;
+        }
+        ptn_array_set_entry(result.as.array, flipped_key, ptn_array_key_value(array->entries[i].key));
+    }
+    return result;
+}
+
 static PtnValue ptn_internal_array_unshift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unshift", 1, "array", args[0]);
@@ -3286,6 +3328,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "abs", 1, 1, ptn_internal_abs },
         { "array_count_values", 1, 1, ptn_internal_array_count_values },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
+        { "array_flip", 1, 1, ptn_internal_array_flip },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
