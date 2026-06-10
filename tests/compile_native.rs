@@ -1720,6 +1720,78 @@ fn parser_accepts_global_const_declarations() {
 }
 
 #[test]
+fn parser_rejects_class_constant_fetches_with_explicit_diagnostics() {
+    let cases = [
+        ("array value", "<?php\n$haystack = [Sample::A];"),
+        ("fully qualified", "<?php\nvar_dump(\\Sample::A);"),
+        ("array key", "<?php\n$map = [Sample::A => true];"),
+        ("self fetch", "<?php\nreturn self::VALUE;"),
+    ];
+
+    for (name, source) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(
+            error.message,
+            "class constant fetches are unsupported; class constants and enum cases require class metadata",
+            "{name}"
+        );
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
+        let span = error.span.unwrap();
+        let scope_offset = source.find("::").unwrap();
+        assert_eq!(span.byte_start, scope_offset, "{name}");
+        assert_eq!(span.byte_end, scope_offset + 2, "{name}");
+    }
+}
+
+#[test]
+fn parser_maps_in_array_enum_reducer_past_class_constant_syntax() {
+    let source = "<?php
+$haystack = [Sample::A];
+$needle = Sample::B;
+var_dump(in_array($needle, $haystack, true));";
+    let error = parser::parse(source).unwrap_err();
+    assert_eq!(
+        error.message,
+        "class constant fetches are unsupported; class constants and enum cases require class metadata"
+    );
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.span.unwrap().line, 2);
+}
+
+#[test]
+fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
+    let cases = [
+        (
+            "class",
+            "<?php\nclass Sample { const A = 1; }",
+            "class declarations are unsupported",
+        ),
+        (
+            "enum",
+            "<?php\nenum Sample { case A; }",
+            "enum declarations are unsupported",
+        ),
+        (
+            "interface",
+            "<?php\ninterface Sample {}",
+            "interface declarations are unsupported",
+        ),
+        (
+            "trait",
+            "<?php\ntrait Sample {}",
+            "trait declarations are unsupported",
+        ),
+    ];
+
+    for (name, source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{name}");
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
+        assert_eq!(error.span.unwrap().line, 2, "{name}");
+    }
+}
+
+#[test]
 fn parser_rejects_dynamic_global_const_initializer() {
     let error = parser::parse("<?php const C = $value;").unwrap_err();
     assert!(error

@@ -25,6 +25,8 @@ const SHIFT_PRECEDENCE: u8 = 18;
 const ADDITIVE_PRECEDENCE: u8 = 23;
 const MULTIPLICATIVE_PRECEDENCE: u8 = 33;
 const POWER_PRECEDENCE: u8 = 40;
+const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
+    "class constant fetches are unsupported; class constants and enum cases require class metadata";
 
 pub fn parse(source: &str) -> Result<Program> {
     let tokens = lex(source)?;
@@ -98,6 +100,9 @@ impl Parser {
             TokenKind::Const => self.parse_const(),
             TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
+            TokenKind::Identifier(ref name) if is_unsupported_class_like_declaration(name) => {
+                self.reject_unsupported_class_like_declaration()
+            }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
                 self.parse_label()
             }
@@ -1226,6 +1231,13 @@ impl Parser {
                         span: combine_spans(start_span, right_span),
                     };
                 }
+                TokenKind::DoubleColon => {
+                    let scope_span = self.advance().span;
+                    return Err(Diagnostic::new(
+                        CLASS_CONSTANT_FETCH_UNSUPPORTED,
+                        Some(scope_span),
+                    ));
+                }
                 _ => break,
             }
         }
@@ -1248,7 +1260,9 @@ impl Parser {
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Identifier(name) => {
                 let lowercase = name.to_ascii_lowercase();
-                if matches!(self.peek().kind, TokenKind::LeftParen) {
+                if matches!(self.peek().kind, TokenKind::DoubleColon) {
+                    self.reject_unsupported_class_constant_fetch()
+                } else if matches!(self.peek().kind, TokenKind::LeftParen) {
                     match lowercase.as_str() {
                         "array" => self.parse_long_array_literal(token.span),
                         "isset" => self.parse_isset_expr(token.span),
@@ -1279,6 +1293,9 @@ impl Parser {
                         Some(name_token.span),
                     ));
                 };
+                if matches!(self.peek().kind, TokenKind::DoubleColon) {
+                    return self.reject_unsupported_class_constant_fetch();
+                }
                 Ok(Expr::Constant(
                     name,
                     combine_spans(token.span, name_token.span),
@@ -1295,6 +1312,25 @@ impl Parser {
             TokenKind::LeftBracket => self.parse_array_literal(token.span),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
+    }
+
+    fn reject_unsupported_class_like_declaration(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            unreachable!("caller guards unsupported class-like declaration identifiers")
+        };
+        Err(Diagnostic::new(
+            format!("{} declarations are unsupported", name.to_ascii_lowercase()),
+            Some(token.span),
+        ))
+    }
+
+    fn reject_unsupported_class_constant_fetch(&mut self) -> Result<Expr> {
+        let scope_span = self.advance().span;
+        Err(Diagnostic::new(
+            CLASS_CONSTANT_FETCH_UNSUPPORTED,
+            Some(scope_span),
+        ))
     }
 
     fn parse_array_literal(&mut self, left_span: SourceSpan) -> Result<Expr> {
@@ -1988,6 +2024,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Variable(_) => "variable",
         TokenKind::Equal => "=",
         TokenKind::DoubleArrow => "=>",
+        TokenKind::DoubleColon => "::",
         TokenKind::QuestionQuestion => "??",
         TokenKind::QuestionQuestionEqual => "??=",
         TokenKind::EqualEqual => "==",
@@ -2069,6 +2106,13 @@ fn escape_token_text(value: &str) -> String {
             other => vec![other],
         })
         .collect()
+}
+
+fn is_unsupported_class_like_declaration(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "class" | "enum" | "interface" | "trait"
+    )
 }
 
 #[derive(Debug, Clone)]

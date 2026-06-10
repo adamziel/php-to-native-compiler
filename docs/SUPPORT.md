@@ -386,7 +386,9 @@ supports in generated native binaries.
   unparenthesized nested ternary fatal diagnostics and
   unexpected-token parse errors at modeled statement terminators and right
   parentheses. Global `const` declaration terminators report the
-  const-specific `"," or ";"` expected-token set.
+  const-specific `"," or ";"` expected-token set. Class-like declarations and
+  class-constant fetch syntax are recognized and reported as unsupported class
+  metadata boundaries.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 

@@ -9,7 +9,7 @@ boundary tests and post-merge COW gate.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 341 | 341 | 0 |
+| Native compiled PHP snippets | 344 | 344 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 146 | 54 |
 | PHPT Zend rows | 76 | 63 | 13 |
@@ -54,7 +54,7 @@ reference-aware `array_sum()`/`strtr()`/`in_array()`, `array_merge_recursive()`/
 calls through fallback dispatch, append/list assignment expressions for
 reference arrays, direct-variable assignment-form `??=`, six offset-form `??=`
 diagnostics, grouped reference targets, and recursive/same-array/nested
-reference diagnostics.
+reference and class-syntax diagnostics.
 
 ## Still Needed
 
