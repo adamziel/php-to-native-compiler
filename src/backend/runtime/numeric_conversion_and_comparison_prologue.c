@@ -257,35 +257,44 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
     }
 }
 
-static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
+static PTN_UNUSED void ptn_emit_uncaught_exception_to_stream(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    FILE *stream
+) {
     if (exception->path == NULL || exception->line == 0) {
-        fputs("Fatal error: ", stderr);
-        fputs(exception->message, stderr);
-        fputc('\n', stderr);
+        fputs("Fatal error: ", stream);
+        fputs(exception->message, stream);
+        fputc('\n', stream);
         return;
     }
 
+    fputc('\n', stream);
     fprintf(
-        stderr,
+        stream,
         "Fatal error: Uncaught %s: %s in %s:%zu\n",
         exception->class_name,
         exception->message,
         exception->path,
         exception->line
     );
-    fputs("Stack trace:\n", stderr);
+    fputs("Stack trace:\n", stream);
     if (runtime->current_function_name != NULL && runtime->call_site_line != 0) {
         fprintf(
-            stderr,
+            stream,
             "#0 %s(%zu): %s()\n#1 {main}\n",
             runtime->source_path != NULL ? runtime->source_path : exception->path,
             runtime->call_site_line,
             runtime->current_function_name
         );
     } else {
-        fputs("#0 {main}\n", stderr);
+        fputs("#0 {main}\n", stream);
     }
-    fprintf(stderr, "  thrown in %s on line %zu\n", exception->path, exception->line);
+    fprintf(stream, "  thrown in %s on line %zu\n", exception->path, exception->line);
+}
+
+static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
+    ptn_emit_uncaught_exception_to_stream(runtime, exception, stderr);
 }
 
 static PTN_UNUSED void ptn_throw_exception_at(
@@ -300,7 +309,11 @@ static PTN_UNUSED void ptn_throw_exception_at(
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
-    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_emit_uncaught_exception_to_stream(
+        runtime,
+        runtime->exceptions->active_exception,
+        path != NULL && line != 0 ? stdout : stderr
+    );
     exit(255);
 }
 
