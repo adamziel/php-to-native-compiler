@@ -1,20 +1,20 @@
 # PTN Progress
 
-Refresh: 2026-06-10T10:18Z
-Measured: `polecat/117/ptn-hto@mq7v7ud2` after `ptn-4dv`/`ptn-c7b`; native
-boundary tests and post-merge COW gate.
+Refresh: 2026-06-10T10:46Z
+Measured: `origin/master` `e7d39874`; latest complete bounded PHPT summary
+`summary-20260610T100242Z.txt`.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
-| Source unit tests | 4 | 4 | 0 |
+| Source unit tests | 3 | 3 | 0 |
 | Native compiled PHP snippets | 344 | 344 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 146 | 54 |
-| PHPT Zend rows | 76 | 63 | 13 |
-| PHPT ext/standard rows | 77 | 48 | 29 |
-| PHPT tests/basic+func+lang | 45 | 33 | 12 |
+| PHPT bounded manifest | 200 | 150 | 50 |
+| PHPT Zend rows | 76 | 67 | 9 |
+| PHPT ext/standard rows | 77 | 47 | 30 |
+| PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
 | COW-focused native tests | 16 | 16 | 0 |
@@ -34,8 +34,8 @@ boundary tests and post-merge COW gate.
 5 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
 array-writes-appends-unset 4/4, nested-arrays 3/4, foreach-mutation 3/4,
 function-boundaries 1/4, reference-interaction 5/5. Native COW reducers are
-34/34, recursive reference diagnostics are 9/9, mutating-internal matrix is
-14/14 plus six unsupported diagnostics, and the post-merge COW gate is 25/25.
+34/34, recursive diagnostics 9/9, mutating-internal matrix 14/14 plus six
+unsupported diagnostics, and post-merge COW gate 25/25.
 
 ## Already Ported
 
@@ -58,9 +58,11 @@ reference and class-syntax diagnostics.
 
 ## Still Needed
 
-More PHPT COW rows, reference-aware internals, recursive/call-result
-by-reference return chaining, closure/callback by-reference returns, nested
-reference lvalues, offset-form `??=` runtime support, and broader file APIs.
+Five focused PHPT COW rows remain: nested recursive reference lvalues,
+`array_walk()` closure/global swaps, recursive/call-result by-reference return
+chaining, `array_reduce()` callback refcounts, and callback returns by
+reference. Broader gaps include offset-form `??=` runtime support,
+closure/callback surfaces, and file APIs.
 
 ## Next Focus
 
