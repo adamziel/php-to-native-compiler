@@ -228,6 +228,15 @@ echo $a[\"v\"], \":\", $b[\"v\"], \":\", count($a), \":\", count($b), \"\\n\";",
             expected_stdout: "base:changed:1:2\n",
         },
         CowReducerCase {
+            name: "array_reduce_named_callback_accumulator_refcount",
+            oracle: "ext/standard/tests/array/array_reduce_accumulator_refcount.phpt",
+            source: "<?php\n\
+function reduce_accumulator($acc, $val) { debug_zval_dump($acc); $acc[] = $val; return $acc; }\n\
+$result = array_reduce([1, 2, 3], \"reduce_accumulator\", []);\n\
+debug_zval_dump($result);",
+            expected_stdout: "array(0) interned {\n}\narray(1) packed refcount(2){\n  [0]=>\n  int(1)\n}\narray(2) packed refcount(2){\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\narray(3) packed refcount(2){\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n}\n",
+        },
+        CowReducerCase {
             name: "array_reduce_named_callback_by_ref_return",
             oracle: "ext/standard/tests/array/array_reduce_return_by_ref.phpt",
             source: "<?php\n\
@@ -447,7 +456,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 29, "COW reducer pass count changed");
+    assert_eq!(passed, 30, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

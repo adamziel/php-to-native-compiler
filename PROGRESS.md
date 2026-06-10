@@ -1,15 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-10T12:58Z
-Measured: `ptn-7h1` rebased on `origin/master@bb82827d`; recursive `mkdir()`
-and directory predicate evidence on the native path.
+Refresh: 2026-06-10T13:20Z
+Measured: `ptn-ept` on `origin/master@1cbcfe1`; focused
+`array_reduce()` accumulator evidence plus current recursive `mkdir()`,
+named `array_walk()`, recursive literal, and string-callable gates.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 355 | 355 | 0 |
+| Native PHP snippets | 355 | 355 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -17,7 +18,7 @@ and directory predicate evidence on the native path.
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
-| Focused COW reducer snippets | 45 | 45 | 0 |
+| Focused COW reducer snippets | 46 | 46 | 0 |
 | Recursive reference diagnostics | 4 | 4 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
@@ -29,9 +30,11 @@ and directory predicate evidence on the native path.
 ## COW PHPT Buckets
 
 `tools/phpt-cow-manifest.txt` has 29 rows: 26 passing, 3 failing.
-`bug35163.phpt` and `assign_by_val_function_by_ref_return_value.phpt` now pass.
-Named `array_walk()` callbacks observe `$GLOBALS` swaps; closure-backed
-callback rows remain blocked by Closure/callable values (`ptn-dis`).
+`bug35163.phpt` and `assign_by_val_function_by_ref_return_value.phpt` pass.
+Named `array_walk()` callbacks observe `$GLOBALS` swaps, and named
+`array_reduce()` callbacks preserve by-reference returns plus accumulator debug
+refcounts. Exact closure-backed rows remain blocked by Closure/callable values
+(`ptn-dis`).
 
 ## Already Ported
 
@@ -48,27 +51,25 @@ expression-level `@`, selected file APIs including recursive `mkdir()`,
 reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
 replace, `debug_zval_dump()`, dynamic lvalue-reference calls, append/list
 assignment expressions for reference arrays, nested same-array reference
-lvalues with recursive `var_dump()`, direct-variable `??=`, keyed array/string
-offset-form `??=`, append-form `??=` diagnostics, grouped reference targets,
-named `array_reduce()` callback dispatch with by-reference returns,
-non-reference call-result by-reference fallback notices, call-result
-by-reference return chains, `array_fill_keys()`, string-callable
-`call_user_func()` dispatch, and variable-assigned recursive array literals
-with slot replacement and cleanup, top-level `$GLOBALS[...]` callback writes,
-and named `array_walk()` callbacks that rebind the walked global array.
+lvalues, direct-variable and keyed offset-form `??=`, append-form `??=`
+diagnostics, grouped reference targets, recursive array literal cleanup, named
+`array_reduce()` callback dispatch with by-reference returns and accumulator
+debug refcounts, non-reference call-result by-reference fallback notices,
+call-result by-reference return chains, `array_fill_keys()`, string-callable
+`call_user_func()` dispatch, top-level `$GLOBALS[...]` callback writes, and
+named `array_walk()` callbacks that rebind the walked global array.
 
 ## Still Needed
 
-Remaining COW PHPT gaps are Closure/callable `use` syntax for the
-`array_walk()`/`$GLOBALS` row, closure-backed callback by-reference returns,
-`array_reduce()` callback/refcount behavior, and broader recursive
-by-reference return edges. Broader bounded-PHPT gaps are objects, unsupported
-array/string internals, 64-bit operator exactness, foreach diagnostics,
-object/property compound lvalues, scalar offset-lvalue fatal parity, and
-broader file APIs beyond the current local filesystem subset.
+Remaining COW PHPT gaps are Closure/callable `use` syntax for exact
+`array_walk()`/`$GLOBALS` and `array_reduce()` rows, closure-backed callback
+by-reference returns, and broader recursive by-reference return edges. Broader
+bounded-PHPT gaps are objects, unsupported array/string internals, 64-bit
+operator exactness, foreach diagnostics, object/property compound lvalues,
+scalar offset-lvalue fatal parity, and file APIs beyond the current subset.
 
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`; focused callback, recursive literal,
-`array_walk()`, and `mkdir-003.phpt` evidence.
+`tools/run-post-merge-cow-gate.sh`; `tools/run-bounded-phpt.sh
+tools/phpt-cow-manifest.txt`; callback manifest.

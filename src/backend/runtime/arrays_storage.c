@@ -329,6 +329,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
     }
     ptn_cow_debug_note_array_alloc();
     array->refcount = 1;
+    array->debug_hidden_refcount = 0;
     array->iterator_refcount = 0;
     array->len = 0;
     array->capacity = entry_count;
@@ -369,6 +370,7 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     ptn_cow_debug_note_array_alloc();
     ptn_cow_debug_note_array_clone();
     array->refcount = 1;
+    array->debug_hidden_refcount = 0;
     array->iterator_refcount = 0;
     array->len = 0;
     array->capacity = source->len;
@@ -403,6 +405,47 @@ static PTN_UNUSED void ptn_array_retain(PtnArray *array) {
     }
     ptn_cow_debug_note_array_retain();
     array->refcount++;
+}
+
+static PTN_UNUSED void ptn_array_debug_hide_ref(PtnArray *array) {
+    if (array == NULL) {
+        return;
+    }
+    if (array->debug_hidden_refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    array->debug_hidden_refcount++;
+}
+
+static PTN_UNUSED void ptn_array_debug_unhide_ref(PtnArray *array) {
+    if (array == NULL || array->debug_hidden_refcount == 0) {
+        return;
+    }
+    array->debug_hidden_refcount--;
+}
+
+static PTN_UNUSED void ptn_value_debug_hide_ref(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        ptn_array_debug_hide_ref(value.as.array);
+    }
+}
+
+static PTN_UNUSED void ptn_value_debug_unhide_ref(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        ptn_array_debug_unhide_ref(value.as.array);
+    }
+}
+
+static PTN_UNUSED size_t ptn_array_debug_visible_refcount(PtnArray *array) {
+    if (array == NULL) {
+        return 0;
+    }
+    if (array->debug_hidden_refcount >= array->refcount) {
+        return 1;
+    }
+    return array->refcount - array->debug_hidden_refcount;
 }
 
 static PTN_UNUSED void ptn_array_iterator_retain(PtnArray *array) {
