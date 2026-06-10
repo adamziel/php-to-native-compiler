@@ -1,17 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-10T16:21Z
-Measured: `ptn-lkq` rebased on current `origin/master` with generic declared
-classes, boxed object shells, declared-method dispatch, `$this` receiver
-binding for instance methods, and callable dispatch for `[object, method]` plus
-`[class, staticMethod]` arrays through `call_user_func()` and `array_map()`.
+Refresh: 2026-06-10T16:42Z
+Measured: `ptn-vh7` rebased on current `origin/master` with generic declared
+classes, boxed object shells, object/static method callable arrays, and exact
+PHP float promotion for oversized decimal/hex/octal/binary integer literals,
+including the binary `2^63` one-ULP boundary.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 372 | 372 | 0 |
+| Native compiled PHP snippets | 373 | 373 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -40,9 +40,10 @@ diagnostics, array union `+`, scalar type hints, by-reference returns,
 predicates, array-path snapshots, selected array/string internals,
 dynamic lvalue-reference calls, list/append assignment expressions,
 static method callable values, `array_reduce()` callback dispatch,
-`array_count_values()`, `new stdClass` dynamic properties, declared class
-method metadata, `new DeclaredClass()` object shells, direct declared method
-calls, `$this` binding, and object/static method callable arrays.
+`array_count_values()`, oversized integer literal promotion to PHP floats,
+`new stdClass` dynamic properties, declared class method metadata,
+`new DeclaredClass()` object shells, direct declared method calls, `$this`
+binding, and object/static method callable arrays.
 
 ## Still Needed
 
@@ -56,7 +57,6 @@ fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo check`; `cargo test`;
-`tools/run-native-smoke-matrix.sh`; `tools/run-post-merge-cow-gate.sh`;
-`cargo build --bin phpc`; focused PHPT
-`ext/standard/tests/general_functions/bug36011.phpt`.
+Commands: `cargo fmt --check`; `cargo check`; focused lexer/native numeric
+literal tests; `cargo test`; `tools/run-native-smoke-matrix.sh`;
+`tools/run-post-merge-cow-gate.sh`; `cargo build --bin phpc`.
