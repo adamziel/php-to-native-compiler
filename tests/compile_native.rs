@@ -1774,12 +1774,42 @@ var_dump(in_array($needle, $haystack, true));";
 }
 
 #[test]
+fn parser_accepts_static_class_methods_as_callable_functions() {
+    let program = parser::parse(
+        "<?php
+class Reducer {
+    public static function combine($carry, $value) { return $carry + $value; }
+}
+echo Reducer::combine(1, 2);",
+    )
+    .unwrap();
+    assert_eq!(program.functions.len(), 1);
+    assert_eq!(program.functions[0].name, "Reducer::combine");
+    assert_eq!(program.functions[0].parameters.len(), 2);
+    assert_eq!(program.statements.len(), 1);
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Echo { expressions, .. }
+            if matches!(
+                &expressions[0],
+                Expr::Call { name, arguments, .. }
+                    if name == "Reducer::combine" && arguments.len() == 2
+            )
+    ));
+}
+
+#[test]
 fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
     let cases = [
         (
-            "class",
+            "class constant",
             "<?php\nclass Sample { const A = 1; }",
-            "class declarations are unsupported",
+            "class constant fetches are unsupported; class constants and enum cases require class metadata",
+        ),
+        (
+            "non-static class method",
+            "<?php\nclass Sample { public function run() {} }",
+            "non-static class methods are unsupported",
         ),
         (
             "enum",
@@ -4295,6 +4325,43 @@ echo $call($items), \":\", count($items), \":\", $items[1], \"\\n\";",
     assert!(c_source.contains("ptn_call_dynamic_function_name(&runtime"));
     assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"items\")"));
     assert!(c_source.contains("ptn_dynamic_call_detach_first_reference_argument"));
+}
+
+#[test]
+fn compile_static_method_callable_value_call_to_native_binary() {
+    let root = temp_dir("ptn-native-static-method-callable-value-call");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-method-callable-value-call.php");
+    let output = root.join("static-method-callable-value-call-bin");
+    fs::write(
+        &input,
+        "<?php
+class MathBox {
+    public static function pair($left, $right) {
+        return $left * 10 + $right;
+    }
+}
+
+$call = [\"MathBox\", \"pair\"];
+echo $call(3, 4), \"\\n\";
+$keyed = [1 => \"pair\", 0 => \"MathBox\"];
+echo $keyed(5, 6), \"\\n\";
+echo MathBox::pair(1, 2), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "34\n56\n12\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_callable_function_name("));
+    assert!(c_source.contains("ptn_call_dynamic_function_name(&runtime"));
+    assert!(c_source.contains("MathBox::pair"));
 }
 
 #[test]
@@ -9867,6 +9934,120 @@ var_dump(array_reduce($array, \"pick_reduce_value\", 0));
 }
 
 #[test]
+fn compile_array_map_callable_values_to_native_binary() {
+    let root = temp_dir("ptn-native-array-map-callable-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-map-callable-values.php");
+    let output = root.join("array-map-callable-values-bin");
+    fs::write(
+        &input,
+        "<?php
+class Mapper {
+    public static function square($value) {
+        return $value * $value;
+    }
+
+    public static function pair($left, $right) {
+        return [$left, $right];
+    }
+}
+
+function decorate($value) {
+    return \"v=\" . $value;
+}
+
+$callback = \"decorate\";
+var_dump(array_map($callback, [\"a\" => 1, \"b\" => 2]));
+var_dump(array_map([\"Mapper\", \"pair\"], [1, 2, 3], [10]));
+var_dump(array_map(\"Mapper::square\", [2, 3]));
+var_dump(array_map([1 => \"square\", 0 => \"Mapper\"], [\"x\" => 4]));
+var_dump(array_map(null, [\"x\" => \"left\", \"y\" => \"right\"]));
+var_dump(array_map(null, [\"x\" => 1, \"y\" => 2], [10]));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  string(3) \"v=1\"\n",
+            "  [\"b\"]=>\n",
+            "  string(3) \"v=2\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    int(1)\n",
+            "    [1]=>\n",
+            "    int(10)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    int(2)\n",
+            "    [1]=>\n",
+            "    NULL\n",
+            "  }\n",
+            "  [2]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    int(3)\n",
+            "    [1]=>\n",
+            "    NULL\n",
+            "  }\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(4)\n",
+            "  [1]=>\n",
+            "  int(9)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"x\"]=>\n",
+            "  int(16)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"x\"]=>\n",
+            "  string(4) \"left\"\n",
+            "  [\"y\"]=>\n",
+            "  string(5) \"right\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    int(1)\n",
+            "    [1]=>\n",
+            "    int(10)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    int(2)\n",
+            "    [1]=>\n",
+            "    NULL\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_map"));
+    assert!(c_source.contains("ptn_callable_function_name(args[0])"));
+    assert!(c_source.contains("ptn_call_function(runtime, function_name, array_count"));
+    assert!(c_source.contains("Mapper::square"));
+    assert!(c_source.contains("Mapper::pair"));
+}
+
+#[test]
 fn compile_call_user_func_string_callable_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-string-callable");
     fs::create_dir_all(&root).unwrap();
@@ -9966,6 +10147,41 @@ var_dump($array, $array2);
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_walk_variable(&runtime, \"array\""));
     assert!(c_source.contains("ptn_runtime_globals_array_path_set_impl"));
+}
+
+#[test]
+fn compile_array_reduce_static_method_callables_to_native_binary() {
+    let root = temp_dir("ptn-native-array-reduce-static-method-callables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-reduce-static-method-callables.php");
+    let output = root.join("array-reduce-static-method-callables-bin");
+    fs::write(
+        &input,
+        "<?php
+class Reducer {
+    public static function combine($carry, $value) {
+        return $carry + $value;
+    }
+}
+
+echo array_reduce([1, 2, 3], [\"Reducer\", \"combine\"], 0), \"\\n\";
+echo array_reduce([4, 5], \"Reducer::combine\", 1), \"\\n\";
+echo array_reduce([6], [1 => \"combine\", 0 => \"Reducer\"], 0), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "6\n10\n6\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_reduce"));
+    assert!(c_source.contains("ptn_callable_function_name(args[1])"));
+    assert!(c_source.contains("Reducer::combine"));
 }
 
 #[test]

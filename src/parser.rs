@@ -56,6 +56,7 @@ impl Parser {
     fn parse_program(&mut self) -> Result<Program> {
         self.expect_open_tag()?;
         let mut functions = Vec::new();
+        let mut classes = HashSet::new();
         let mut statements = Vec::new();
         while !matches!(self.peek().kind, TokenKind::Eof) {
             if matches!(self.peek().kind, TokenKind::OpenTag | TokenKind::CloseTag) {
@@ -64,6 +65,18 @@ impl Parser {
             }
             if matches!(self.peek().kind, TokenKind::Function) {
                 functions.push(self.parse_function_decl()?);
+            } else if token_is_identifier_named(self.peek(), "class") {
+                let (class_name, class_span, methods) = self.parse_static_class_decl()?;
+                let lookup_name = class_name.to_ascii_lowercase();
+                if !classes.insert(lookup_name.clone()) {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot declare class {lookup_name}, because the name is already in use"
+                        ),
+                        Some(class_span),
+                    ));
+                }
+                functions.extend(methods);
             } else {
                 statements.push(self.parse_statement()?);
             }
@@ -80,6 +93,97 @@ impl Parser {
             functions,
             statements,
         })
+    }
+
+    fn parse_static_class_decl(&mut self) -> Result<(String, SourceSpan, Vec<FunctionDecl>)> {
+        let class_token = self.advance().clone();
+        let TokenKind::Identifier(keyword) = &class_token.kind else {
+            return Err(Diagnostic::new("expected class", Some(class_token.span)));
+        };
+        if !keyword.eq_ignore_ascii_case("class") {
+            return Err(Diagnostic::new("expected class", Some(class_token.span)));
+        }
+
+        let name_token = self.advance().clone();
+        let TokenKind::Identifier(class_name) = name_token.kind else {
+            return Err(Diagnostic::new(
+                "expected class name",
+                Some(name_token.span),
+            ));
+        };
+        if token_is_identifier_named(self.peek(), "extends")
+            || token_is_identifier_named(self.peek(), "implements")
+        {
+            return Err(Diagnostic::new(
+                "class inheritance and interfaces are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+
+        self.expect_left_brace()?;
+        let mut methods = Vec::new();
+        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            methods.push(self.parse_static_class_method(&class_name)?);
+        }
+        self.expect_right_brace()?;
+        Ok((class_name, class_token.span, methods))
+    }
+
+    fn parse_static_class_method(&mut self, class_name: &str) -> Result<FunctionDecl> {
+        let mut is_static = false;
+        loop {
+            let TokenKind::Identifier(modifier) = &self.peek().kind else {
+                break;
+            };
+            match modifier.to_ascii_lowercase().as_str() {
+                "public" => {
+                    self.advance();
+                }
+                "static" => {
+                    is_static = true;
+                    self.advance();
+                }
+                "private" | "protected" => {
+                    return Err(Diagnostic::new(
+                        "non-public class methods are unsupported",
+                        Some(self.peek().span),
+                    ));
+                }
+                "abstract" => {
+                    return Err(Diagnostic::new(
+                        "abstract class methods are unsupported",
+                        Some(self.peek().span),
+                    ));
+                }
+                "final" => {
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+
+        if matches!(self.peek().kind, TokenKind::Const) {
+            return Err(Diagnostic::new(
+                CLASS_CONSTANT_FETCH_UNSUPPORTED,
+                Some(self.peek().span),
+            ));
+        }
+        if !matches!(self.peek().kind, TokenKind::Function) {
+            return Err(Diagnostic::new(
+                "unsupported class member",
+                Some(self.peek().span),
+            ));
+        }
+        if !is_static {
+            return Err(Diagnostic::new(
+                "non-static class methods are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+
+        let mut function = self.parse_function_decl()?;
+        function.name = format!("{}::{}", class_name, function.name);
+        Ok(function)
     }
 
     fn parse_statement(&mut self) -> Result<Statement> {
@@ -1278,10 +1382,10 @@ impl Parser {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Identifier(name) => {
-                let lowercase = name.to_ascii_lowercase();
                 if matches!(self.peek().kind, TokenKind::DoubleColon) {
-                    self.reject_unsupported_class_constant_fetch()
+                    self.parse_static_member_expr(name, token.span)
                 } else if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    let lowercase = name.to_ascii_lowercase();
                     match lowercase.as_str() {
                         "array" => self.parse_long_array_literal(token.span),
                         "isset" => self.parse_isset_expr(token.span),
@@ -1313,7 +1417,10 @@ impl Parser {
                     ));
                 };
                 if matches!(self.peek().kind, TokenKind::DoubleColon) {
-                    return self.reject_unsupported_class_constant_fetch();
+                    return self.parse_static_member_expr(
+                        name,
+                        combine_spans(token.span, name_token.span),
+                    );
                 }
                 Ok(Expr::Constant(
                     name,
@@ -1333,6 +1440,33 @@ impl Parser {
         }
     }
 
+    fn parse_static_member_expr(
+        &mut self,
+        class_name: String,
+        class_span: SourceSpan,
+    ) -> Result<Expr> {
+        let scope_span = self.advance().span;
+        let member = self.advance().clone();
+        let TokenKind::Identifier(member_name) = member.kind else {
+            return Err(Diagnostic::new(
+                CLASS_CONSTANT_FETCH_UNSUPPORTED,
+                Some(scope_span),
+            ));
+        };
+        if !matches!(self.peek().kind, TokenKind::LeftParen) {
+            return Err(Diagnostic::new(
+                CLASS_CONSTANT_FETCH_UNSUPPORTED,
+                Some(scope_span),
+            ));
+        }
+        let (arguments, right_span) = self.parse_call_arguments()?;
+        Ok(Expr::Call {
+            name: format!("{}::{}", class_name, member_name),
+            arguments,
+            span: combine_spans(class_span, right_span),
+        })
+    }
+
     fn reject_unsupported_class_like_declaration(&mut self) -> Result<Statement> {
         let token = self.advance().clone();
         let TokenKind::Identifier(name) = token.kind else {
@@ -1341,14 +1475,6 @@ impl Parser {
         Err(Diagnostic::new(
             format!("{} declarations are unsupported", name.to_ascii_lowercase()),
             Some(token.span),
-        ))
-    }
-
-    fn reject_unsupported_class_constant_fetch(&mut self) -> Result<Expr> {
-        let scope_span = self.advance().span;
-        Err(Diagnostic::new(
-            CLASS_CONSTANT_FETCH_UNSUPPORTED,
-            Some(scope_span),
         ))
     }
 
@@ -2132,6 +2258,10 @@ fn is_unsupported_class_like_declaration(name: &str) -> bool {
         name.to_ascii_lowercase().as_str(),
         "class" | "enum" | "interface" | "trait"
     )
+}
+
+fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
+    matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
 }
 
 #[derive(Debug, Clone)]
