@@ -852,6 +852,54 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
     return use_float ? ptn_float(float_sum) : ptn_int(integer_sum);
 }
 
+static void ptn_array_chunk_append_entry(
+    PtnArray *chunk,
+    PtnArrayEntry *source,
+    int preserve_keys
+) {
+    PtnArrayKey key = preserve_keys
+        ? ptn_array_key_clone(source->key)
+        : ptn_array_int_key(chunk->next_auto_key);
+    PtnValue value = ptn_value_clone(ptn_array_reindexing_internal_value(source->value));
+    ptn_array_set_entry(chunk, key, value);
+}
+
+static PtnValue ptn_internal_array_chunk(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_chunk", 1, "array", args[0]);
+    int64_t length = ptn_value_to_integer(args[1]);
+    if (length < 1) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_chunk(): Argument #2 ($length) must be greater than 0"
+        );
+    }
+
+    int preserve_keys = argc >= 3 && ptn_is_truthy(args[2]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *current_chunk = NULL;
+    int64_t chunk_index = 0;
+
+    for (size_t i = 0; i < array->len; i++) {
+        if (current_chunk == NULL || chunk_index == length) {
+            PtnValue chunk = ptn_array_from_literal_entries(0, NULL);
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key(result.as.array->next_auto_key),
+                chunk
+            );
+            current_chunk = chunk.as.array;
+            chunk_index = 0;
+        }
+
+        ptn_array_chunk_append_entry(current_chunk, &array->entries[i], preserve_keys);
+        chunk_index++;
+    }
+
+    (void)line;
+    return result;
+}
+
 static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_reduce", 1, "array", args[0]);
     PtnValue callback = ptn_value_clone_deref(args[1]);
@@ -3174,6 +3222,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "array_chunk", 2, 3, ptn_internal_array_chunk },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },

@@ -1,21 +1,21 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:28Z
-Measured: `ptn-107` rebased on `origin/master@51e3314d`; anonymous callback
+Refresh: 2026-06-10T15:01Z
+Measured: `ptn-boe` rebased on `origin/master@df737c70`; anonymous callback
 closures, static callables, string-callable callbacks, recursive directory
-APIs, bounded `stdClass` property evidence, and non-array `foreach`
-source-path diagnostics.
+APIs, bounded `stdClass` property evidence, non-array `foreach` source-path
+diagnostics, and bounded `array_chunk()` support.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 368 | 368 | 0 |
+| Native compiled PHP snippets | 369 | 369 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 152 | 48 |
+| PHPT bounded manifest | 200 | 154 | 46 |
 | PHPT Zend rows | 76 | 68 | 8 |
-| PHPT ext/standard rows | 77 | 48 | 29 |
+| PHPT ext/standard rows | 77 | 50 | 27 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -47,7 +47,8 @@ binary strings, string offsets, scalar diagnostics, array literal references,
 array union `+`, scalar type hints, by-reference return boundaries, `count()`,
 `??`, assignment expressions, expression-level `@`, file APIs including
 recursive `mkdir()` plus directory predicates, array-path snapshots,
-`array_sum()`/`strtr()`/`in_array()`, recursive array merge/replace,
+`array_sum()`/`strtr()`/`in_array()`, `array_chunk()`,
+recursive array merge/replace,
 `debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
 expressions, nested same-array reference lvalues, direct-variable and
 offset-form `??=`, grouped reference targets, `array_fill_keys()`,
@@ -71,4 +72,5 @@ fatal parity, and broader file APIs.
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
 anonymous/static/object callback native tests; focused non-array `foreach`
 native tests; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`.
+`tools/run-post-merge-cow-gate.sh`; focused `array_chunk` native and bounded
+PHPT rows; `tools/run-bounded-phpt.sh tools/phpt-cow-manifest.txt`.

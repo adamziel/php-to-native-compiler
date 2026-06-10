@@ -757,6 +757,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function Count($value) { return 0; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function count()");
 
+    let error = parser::parse("<?php function ARRAY_CHUNK($array, $length) { return array(); }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_chunk()");
+
     let error = parser::parse("<?php function IntDiv($a, $b) { return $a; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function intdiv()");
 
@@ -6994,6 +6998,38 @@ var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'))
         "array(0) {\n}\narray(2) {\n  [\"foo\"]=>\n  NULL\n  [\"bar\"]=>\n  NULL\n}\narray(7) {\n  [5]=>\n  int(123)\n  [\"foo\"]=>\n  int(123)\n  [10]=>\n  int(123)\n  [\"1.23\"]=>\n  int(123)\n  [\"\"]=>\n  int(123)\n  [1]=>\n  int(123)\n  [\"02\"]=>\n  int(123)\n}\narray(2) {\n  [\"x\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [\"y\"]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_chunk_to_native_binary() {
+    let root = temp_dir("ptn-native-array-chunk");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-chunk.php");
+    let output = root.join("array-chunk-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [10 => 'ten', 'name' => 'Ada', 12 => 'twelve', 'tail'];\n\
+var_dump(array_chunk($items, 2));\n\
+var_dump(array_chunk($items, '2', true));\n\
+var_dump(array_chunk([], 3));\n\
+var_dump(function_exists('array_chunk'), function_exists('ARRAY_CHUNK'));\n\
+try { array_chunk($items, 0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    string(3) \"ten\"\n    [1]=>\n    string(3) \"Ada\"\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    string(6) \"twelve\"\n    [1]=>\n    string(4) \"tail\"\n  }\n}\narray(2) {\n  [0]=>\n  array(2) {\n    [10]=>\n    string(3) \"ten\"\n    [\"name\"]=>\n    string(3) \"Ada\"\n  }\n  [1]=>\n  array(2) {\n    [12]=>\n    string(6) \"twelve\"\n    [13]=>\n    string(4) \"tail\"\n  }\n}\narray(0) {\n}\nbool(true)\nbool(true)\narray_chunk(): Argument #2 ($length) must be greater than 0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_chunk"));
 }
 
 #[test]
