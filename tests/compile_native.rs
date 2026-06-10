@@ -8312,6 +8312,54 @@ var_dump($str);",
 }
 
 #[test]
+fn compile_scalar_offset_lvalue_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-offset-lvalue-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-offset-lvalue-boundaries.php");
+    let output = root.join("scalar-offset-lvalue-boundaries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$false = false;\n\
+$false[0] = \"write\";\n\
+var_dump($false);\n\
+$nested = [false];\n\
+$nested[0][\"child\"] = \"nested\";\n\
+var_dump($nested);\n\
+$refbase = false;\n\
+$ref =& $refbase[0];\n\
+$ref = \"ref\";\n\
+var_dump($refbase);\n\
+$falseUnset = false;\n\
+unset($falseUnset[0]);\n\
+var_dump($falseUnset);\n\
+echo \"--true-write--\\n\";\n\
+try { $value = true; $value[0] = 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"--int-write--\\n\";\n\
+try { $value = 4; $value[0] = 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"--float-write--\\n\";\n\
+try { $value = 5.5; $value[0] = 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"--true-ref--\\n\";\n\
+try { $value = true; $ref =& $value[0]; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"--int-unset--\\n\";\n\
+try { $value = 4; unset($value[0]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"--nested-unset--\\n\";\n\
+try { $value = [true]; unset($value[0][0]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 3\narray(1) {\n  [0]=>\n  string(5) \"write\"\n}\n\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 6\narray(1) {\n  [0]=>\n  array(1) {\n    [\"child\"]=>\n    string(6) \"nested\"\n  }\n}\n\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 9\narray(1) {\n  [0]=>\n  &string(3) \"ref\"\n}\n\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 13\nbool(false)\n--true-write--\nCannot use a scalar value as an array\n--int-write--\nCannot use a scalar value as an array\n--float-write--\nCannot use a scalar value as an array\n--true-ref--\nCannot use a scalar value as an array\n--int-unset--\nCannot unset offset in a non-array variable\n--nested-unset--\nCannot unset offset in a non-array variable\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_try_catches_string_offset_type_error_to_native_binary() {
     let root = temp_dir("ptn-native-try-catch-string-offset-type-error");
     fs::create_dir_all(&root).unwrap();
