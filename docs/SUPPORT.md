@@ -121,6 +121,9 @@ supports in generated native binaries.
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
   empty string.
+- `array_column()` over current ordered-array rows, using the shared PHP array-key
+  canonicalization path for integer/string column keys and returning a reindexed
+  result. Missing columns and non-array rows are skipped.
 - `in_array()` over current ordered-array values, using shared loose equality
   or strict identity comparison and dereferencing references in both the needle
   and haystack entries.
@@ -179,7 +182,7 @@ supports in generated native binaries.
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
-  `count(expr);`, `array_values(expr);`,
+  `count(expr);`, `array_column(expr, expr[, expr]);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
@@ -197,8 +200,8 @@ supports in generated native binaries.
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
-  `array_replace_recursive(expr, ...)`,
+  `count(expr)`, `array_column(expr, expr[, expr])`, `array_values(expr)`,
+  `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates, and
@@ -304,6 +307,9 @@ supports in generated native binaries.
 - `count()` over current boxed arrays, returning their length as an integer.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
+- `array_column()` over current boxed arrays, reading array rows by integer,
+  string, or null column keys. Non-null `index_key` and object rows remain
+  outside the supported slice.
 - `array_merge_recursive()` and `array_replace_recursive()` over current boxed
   arrays, preserving ordered-map key behavior while cloning dereferenced values
   across COW boundaries.

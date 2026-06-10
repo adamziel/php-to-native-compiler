@@ -767,6 +767,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         "Cannot redeclare function array_key_exists()"
     );
 
+    let error = parser::parse("<?php function Array_Column($array, $column_key) { return null; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_column()");
+
     let error = parser::parse("<?php function End($array) { return $array; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function end()");
 
@@ -6934,6 +6938,42 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
         "bool(true)\nbool(false)\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_column_numeric_string_key_to_native_binary() {
+    let root = temp_dir("ptn-native-array-column-numeric-string-key");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-column-numeric-string-key.php");
+    let output = root.join("array-column-numeric-string-key-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$rows = [[42 => 'a'], ['42' => 'b'], ['042' => 'zero'], ['name' => 'missing'], 'not-row'];\n\
+var_dump(array_column($rows, 42));\n\
+var_dump(array_column($rows, '42'));\n\
+try {\n\
+    array_column($rows, 42, 'id');\n\
+} catch (\\Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(function_exists('array_column'), function_exists('ARRAY_COLUMN'));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n}\narray(2) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n}\narray_column(): index_key is unsupported\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_column"));
+    assert!(c_source.contains("ptn_array_key_from_value"));
 }
 
 #[test]

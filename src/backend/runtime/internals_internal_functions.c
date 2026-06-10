@@ -1035,6 +1035,42 @@ static PtnValue ptn_internal_array_fill_keys(PtnRuntime *runtime, size_t argc, c
     return result;
 }
 
+static PtnValue ptn_internal_array_column(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_column", 1, "array", args[0]);
+    PtnValue column_key = ptn_value_deref(args[1]);
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        ptn_throw_exception(runtime, "Error", "array_column(): index_key is unsupported");
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int whole_row = column_key.type == PTN_NULL;
+    PtnArrayKey key = whole_row ? ptn_array_int_key(0) : ptn_array_key_from_value(column_key);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue row = ptn_value_deref(array->entries[i].value);
+        if (row.type != PTN_ARRAY) {
+            continue;
+        }
+
+        PtnValue column_value;
+        if (whole_row) {
+            column_value = ptn_value_clone(row);
+        } else {
+            PtnArrayEntry *entry = ptn_array_entry_for_key(row.as.array, key);
+            if (entry == NULL) {
+                continue;
+            }
+            column_value = ptn_value_clone_deref(entry->value);
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(result.as.array->next_auto_key), column_value);
+    }
+    if (!whole_row) {
+        ptn_array_key_free(key);
+    }
+    return result;
+}
+
 static PtnValue ptn_internal_array_unshift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unshift", 1, "array", args[0]);
@@ -3184,6 +3220,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "array_column", 2, 3, ptn_internal_array_column },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
