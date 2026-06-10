@@ -1,15 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-10T12:20Z
-Measured: `ptn-ss3` on `origin/master@8f0f5216`; focused string-callable
-`call_user_func()` native and PHPT evidence.
+Refresh: 2026-06-10T12:23Z
+Measured: `polecat/58-mq81a2ss` rebased on `origin/master@8f0f52165`;
+focused directory/status file API native+PHPT evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 350 | 350 | 0 |
+| Native compiled PHP snippets | 347 | 347 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 151 | 49 |
 | PHPT Zend rows | 76 | 67 | 9 |
@@ -24,17 +24,14 @@ Measured: `ptn-ss3` on `origin/master@8f0f5216`; focused string-callable
 | Mutating-internal COW matrix | 14 | 14 | 0 |
 | Post-merge COW gate | 25 | 25 | 0 |
 | PHPT COW manifest | 29 | 25 | 4 |
-| PHPT callback manifest | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows. Focused evidence: 25 passing, 4
-failing: assignment-aliasing 4/4, string-offsets 4/4,
-array-writes-appends-unset 4/4, nested-arrays 4/4, foreach-mutation 3/4,
-function-boundaries 1/4, reference-interaction 5/5. Named `array_reduce()`
-callbacks preserve by-reference returns; closure-backed row remains blocked by
-Closure/callable values (`ptn-dis`). Offset-form `??=` has keyed array/string
-native coverage.
+`tools/phpt-cow-manifest.txt` has 29 rows: 25 passing, 4 failing. Named
+`array_reduce()` callbacks preserve by-reference
+callback returns; the exact closure-backed PHPT row remains blocked by
+Closure/callable values (`ptn-dis`). Details live in
+`docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
 
 ## Already Ported
 
@@ -46,18 +43,19 @@ temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
 binary strings, string offsets, scalar offset diagnostics, array literal
 reference elements, array union `+`, scalar type hints, by-reference return
 alias/separation boundaries, `count()`, `??`, assignment expressions,
-expression-level `@`, selected file APIs, array-path RHS snapshots,
+expression-level `@`, selected file APIs (`file_put_contents()`,
+`sha1_file()`, `unlink()`, `mkdir()`, `rmdir()`, `file_exists()`,
+`is_dir()`, `is_file()`, and no-op `clearstatcache()`), array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
 replace, `debug_zval_dump()`, dynamic lvalue-reference calls, append/list
 assignment expressions for reference arrays, nested same-array reference
-lvalues, direct-variable `??=`, keyed array/string
+lvalues with recursive `var_dump()`, direct-variable `??=`, keyed array/string
 offset-form `??=`, append-form `??=` diagnostics, grouped reference targets,
 recursive/same-array/nested reference and class-syntax diagnostics, named
 `array_reduce()` callback dispatch with by-reference returns, value fallback
-with PHP notice when non-reference call results are assigned by reference,
-call-result by-reference return chains, `array_fill_keys()` over current boxed
-arrays with scalar key coercion, and string-callable `call_user_func()`
-dispatch through the shared user/internal dispatcher.
+with PHP notice when non-reference call results are assigned by reference, and
+call-result by-reference return chains, and `array_fill_keys()` over current
+boxed arrays with scalar key coercion.
 
 ## Still Needed
 
@@ -67,10 +65,12 @@ closure-backed callback by-reference returns, and `array_reduce()`
 callback/refcount behavior. Broader bounded-PHPT gaps are still objects,
 unsupported array/string internals, 64-bit operator exactness, foreach edge
 diagnostics, object/property compound lvalues, scalar offset-lvalue fatal
-parity, and broader file APIs.
+parity, recursive mkdir/stream context/stat-cache filesystem parity, and
+broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`; focused
-`array_fill_keys()` and callback PHPT manifests.
+Commands: `cargo fmt --check`; `cargo test`; focused native `cargo test
+compile_directory_status_file_apis_to_native_binary --test compile_native`;
+focused PHPT `is_dir_variation1.phpt` and `mkdir-001.phpt`. Prior broad
+manifest remains 150/200; smoke/COW gates unchanged.

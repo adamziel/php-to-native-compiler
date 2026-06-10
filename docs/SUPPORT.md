@@ -182,6 +182,10 @@ supports in generated native binaries.
   `count(expr);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
+  `file_put_contents(expr, expr);`, `sha1_file(expr[, raw_output]);`,
+  `unlink(expr);`, `mkdir(expr[, mode]);`, `rmdir(expr);`,
+  `file_exists(expr);`, `is_dir(expr);`, `is_file(expr);`,
+  `clearstatcache([clear_realpath_cache[, filename]]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
@@ -200,6 +204,10 @@ supports in generated native binaries.
   `count(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
   `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
+  `file_put_contents(expr, expr)`, `sha1_file(expr[, raw_output])`,
+  `unlink(expr)`, `mkdir(expr[, mode])`, `rmdir(expr)`,
+  `file_exists(expr)`, `is_dir(expr)`, `is_file(expr)`,
+  `clearstatcache([clear_realpath_cache[, filename]])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates, and
   `array_key_exists(expr, expr)` in echo operands, assignments, binary
@@ -268,6 +276,10 @@ supports in generated native binaries.
   the current C-string-backed value path.
 - `dirname()` over current boxed scalar values after scalar string conversion,
   returning the parent directory for the current C-string-backed path.
+- Local filesystem internals for direct path strings: `file_put_contents()`,
+  `sha1_file()`, `unlink()`, `mkdir()`, `rmdir()`, `file_exists()`,
+  `is_dir()`, and `is_file()`. `clearstatcache()` accepts the PHP argument
+  shape as a no-op because the generated runtime does not cache stat results.
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
 - `ceil()` and `floor()` over current boxed scalar values after scalar numeric

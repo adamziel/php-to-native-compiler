@@ -8,8 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 #if defined(_WIN32)
+#include <direct.h>
 #include <process.h>
 #else
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #endif
 
