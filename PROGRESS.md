@@ -1,9 +1,9 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:28Z
-Measured: `ptn-107` rebased on `origin/master@51e3314d`; anonymous callback
-closures, static callables, string-callable callbacks, recursive directory
-APIs, bounded `stdClass` property evidence, and non-array `foreach`
+Refresh: 2026-06-10T14:44Z
+Measured: `ptn-ept` rebased on `origin/master@df737c70`; generic
+`array_reduce()` accumulator ownership/debug refcount behavior is integrated
+with the current callable-value dispatcher and non-array `foreach`
 source-path diagnostics.
 
 ## Test Dashboard
@@ -19,21 +19,20 @@ source-path diagnostics.
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
-| Focused COW reducer snippets | 45 | 45 | 0 |
+| Focused COW reducer snippets | 46 | 46 | 0 |
 | Recursive reference diagnostics | 4 | 4 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
 | Post-merge COW gate | 25 | 25 | 0 |
-| PHPT COW manifest | 29 | 27 | 2 |
+| PHPT COW manifest | 29 | 28 | 1 |
 | PHPT callback manifest | 2 | 2 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows: 27 passing, 2 failing.
-Anonymous callbacks now cover the closure callback row. The documented
-remaining failures are `bug69068_2.phpt` and
-`array_reduce_accumulator_refcount.phpt`.
+`tools/phpt-cow-manifest.txt` has 29 rows: 28 passing, 1 failing.
+The `array_reduce_accumulator_refcount.phpt` row now passes; the documented
+remaining COW PHPT failure is `bug69068_2.phpt`.
 
 ## Already Ported
 
@@ -53,13 +52,14 @@ expressions, nested same-array reference lvalues, direct-variable and
 offset-form `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, public static methods registered as
-`Class::method` callables, and `new stdClass` boxed objects with public dynamic
-property reads/writes shared through object aliases.
+`Class::method` callables, generic `array_reduce()` callback dispatch with
+accumulator debug refcounts, and `new stdClass` boxed objects with public
+dynamic property reads/writes shared through object aliases.
 
 ## Still Needed
 
-Remaining COW PHPT gaps are Closure `use` captures and `array_reduce()`
-accumulator/refcount behavior. Broader bounded-PHPT gaps are full class
+The remaining focused COW PHPT gap is Closure `use` captures for the
+`array_walk()`/`$GLOBALS` row. Broader bounded-PHPT gaps are full class
 declarations/metadata, instance methods, visibility/inheritance/static
 properties/magic methods, non-static method callable values, unsupported
 array/string internals, 64-bit operator exactness, object/destructuring
@@ -68,7 +68,8 @@ fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-anonymous/static/object callback native tests; focused non-array `foreach`
-native tests; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`.
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`
+through compile/native reducer suites, with the disk-interrupted oracle suite
+rerun under `TMPDIR=target/tmp`; focused non-array `foreach` native tests; exact
+`array_reduce_accumulator_refcount.phpt`; `tools/run-bounded-phpt.sh
+tools/phpt-cow-manifest.txt`.

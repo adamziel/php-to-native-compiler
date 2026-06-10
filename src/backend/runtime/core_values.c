@@ -134,6 +134,7 @@ typedef struct {
 
 struct PtnArray {
     size_t refcount;
+    size_t debug_hidden_refcount;
     size_t iterator_refcount;
     size_t len;
     size_t capacity;
