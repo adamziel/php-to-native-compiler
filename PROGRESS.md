@@ -1,10 +1,9 @@
 # PTN Progress
 
-Refresh: 2026-06-10T15:06Z
-Measured: `ptn-wk3` on `origin/master@d2d51779`; callback closures,
-static/string callables, array_reduce COW, directory APIs, `stdClass`,
-non-array `foreach` diagnostics, and
-`array_count_values()` PHPT evidence.
+Refresh: 2026-06-10T16:16Z
+Measured: `ptn-a1c` on `origin/master@35eb930d`; focused
+`tests/func/001.phpt` and `tests/func/004.phpt` pass, so they expose no
+current function-declaration delta. Broader dashboard remains from `ptn-wk3`.
 
 ## Test Dashboard
 
@@ -30,9 +29,8 @@ non-array `foreach` diagnostics, and
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows: 28 passing, 1 failing.
-The `array_reduce_accumulator_refcount.phpt` row now passes; the documented
-remaining COW PHPT failure is `bug69068_2.phpt`.
+`tools/phpt-cow-manifest.txt` has 29 rows: 28 passing, 1 failing. The remaining
+COW PHPT failure is `bug69068_2.phpt`.
 
 ## Already Ported
 
@@ -40,24 +38,19 @@ Lexer/parser, AST/IR/C backend, boxed values, variables/constants,
 string/math/type internals, ordered arrays, `foreach`, source-spanned
 non-array `foreach` warnings, cursors, numeric keys, payload refcounts,
 array/string COW, references, by-reference params/foreach, array dimensions,
-temporaries, recursive/user functions, anonymous function values for direct
-dynamic calls and internal callbacks, magic constants, `func_*`, `print_r`,
-binary strings, string offsets, scalar diagnostics, array literal references,
-array union `+`, scalar type hints, by-reference return boundaries, `count()`,
-`??`, assignment expressions, expression-level `@`, file APIs including
-recursive `mkdir()` plus directory predicates, array-path snapshots,
-`array_sum()`/`strtr()`/`in_array()`, recursive array merge/replace,
-`debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
-expressions, nested same-array reference lvalues, direct-variable and
-offset-form `??=`, grouped reference targets, `array_fill_keys()`,
+temporaries, recursive/user functions, anonymous functions for direct dynamic
+calls and internal callbacks, magic constants, `func_*`, `print_r`, binary
+strings, string offsets, scalar diagnostics, array literal references, array
+union `+`, scalar type hints, by-reference return boundaries, `count()`, `??`,
+assignment expressions, expression-level `@`, recursive `mkdir()` plus
+directory predicates, array-path snapshots, `array_sum()`/`strtr()`/
+`in_array()`, recursive array merge/replace, `debug_zval_dump()`, dynamic
+lvalue-reference calls, append/list assignment expressions, nested same-array
+reference lvalues, `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`,
-`intval()` base-prefix and range-saturating string conversion, named
-`array_walk()` global-array rebinding, public static methods registered as
-`Class::method` callables, `array_reduce()` callback dispatch with debug
-refcounts, and `new stdClass` boxed objects with public
-dynamic property reads/writes shared through object aliases, plus
-`array_count_values()` over integer/string boxed array values with unsupported
-entries skipped after modeled warnings.
+`intval()`, named `array_walk()` global-array rebinding, public static
+`Class::method` callables, `array_reduce()` callback dispatch, `stdClass`
+public properties, and `array_count_values()`.
 
 ## Still Needed
 
@@ -71,7 +64,7 @@ fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-focused non-array `foreach` native tests; exact
-`array_reduce_accumulator_refcount.phpt`; `tools/run-bounded-phpt.sh
+Commands: `cargo build --bin phpc`; exact PHPT rows `tests/func/001.phpt` and
+`tests/func/004.phpt`. Latest full gate baseline remains `cargo fmt --check`;
+`cargo build --bin phpc`; `cargo test`; `tools/run-bounded-phpt.sh
 tools/phpt-cow-manifest.txt`.
