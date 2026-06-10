@@ -1,18 +1,18 @@
 # PTN Progress
 
-Refresh: 2026-06-11T00:59Z
-Measured: `ptn-hhe` rebased on current `origin/master` after prior queue
-merges; nested string-offset unset exception parity, addslashes/stripslashes,
-braced interpolation, scalar offset-lvalue reducers, object `foreach`, declared
-class metadata, object-method callable dispatch, method-scope magic constants,
-cslashes, and callback/COW/directory evidence.
+Refresh: 2026-06-11T00:18Z
+Measured: `ptn-2kw` rebased on current `origin/master` after prior queue
+merges; public property `??=`, nested string-offset unset exception parity,
+addslashes/stripslashes, braced interpolation, scalar offset-lvalue reducers,
+object `foreach`, declared class metadata, object-method callable dispatch,
+method-scope magic constants, cslashes, and callback/COW/directory evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 377 | 377 | 0 |
+| Native compiled PHP snippets | 378 | 378 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -51,26 +51,28 @@ calls, `$this` binding, object/static method callable arrays, and object
 by-reference value binding, plus scalar array-lvalue write/reference fatals
 for non-convertible scalars with false-to-array deprecation, and declared
 class/method metadata through `class_exists()` and `method_exists()`, plus
-callable-only object method dispatch through internal callbacks and
-method-scope `__FUNCTION__`/`__METHOD__`/`__CLASS__`, and nested string-offset
-unset errors.
+callable-only object method dispatch through internal callbacks,
+method-scope `__FUNCTION__`/`__METHOD__`/`__CLASS__`, nested string-offset
+unset errors, and public property `??=` with quiet lookup, lazy RHS
+evaluation, and PHP receiver re-evaluation order.
 
 ## Still Needed
 
 The remaining focused COW PHPT gap is Closure `use` captures for the
 `array_walk()`/`$GLOBALS` row. Broader bounded-PHPT gaps are constructors,
 declared properties, visibility/inheritance/interfaces/traits, static
-properties, magic methods, object/property compound lvalues, destructors,
-exceptions, broader magic constants for traits/namespaces/includes/eval,
-reflection, unsupported array/string internals, 64-bit operator exactness,
-destructuring `foreach` diagnostics/semantics, remaining string sub-path scalar
-offset-lvalue parity, and broader file APIs.
+properties, magic methods, property compound operators beyond `??=`,
+destructors, exceptions, broader magic constants for
+traits/namespaces/includes/eval, reflection, unsupported array/string
+internals, 64-bit operator exactness, destructuring `foreach`
+diagnostics/semantics, remaining string sub-path scalar offset-lvalue parity,
+and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes,
-cslashes, object `foreach`, scalar offset, and declared class metadata native
-tests/reducers; `cargo test callable`; focused catchable exception-message
-tests; focused `cargo test interpolation`; exact `add-and-stripcslashes.phpt`;
-`cargo test`. PHPT runners resolve php-src via `PHP_SRC_PHPT`,
-`/home/claude/php-src-phpt`, or `.runtime/php-src-phpt`.
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused property
+`??=`, addslashes, cslashes, object `foreach`, scalar offset, and declared
+class metadata native tests/reducers; `cargo test callable`; focused catchable
+exception-message tests; focused `cargo test interpolation`; exact
+`add-and-stripcslashes.phpt`; `cargo test`. PHPT runners resolve php-src via
+`PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or `.runtime/php-src-phpt`.

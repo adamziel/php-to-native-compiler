@@ -417,10 +417,13 @@ supports in generated native binaries.
   assignment shares the object handle, so property writes through an alias are
   visible through the original variable. Property assignment expressions return
   the assigned value, and property reads can flow through generated user
-  functions and string-callable `call_user_func()` dispatch. This is a bounded
-  public-property object-storage slice; declared properties, visibility,
-  inheritance, static properties, magic methods, destructors, and broader
-  reflection metadata remain outside this support boundary.
+  functions and string-callable `call_user_func()` dispatch. Public property
+  null coalescing assignment `$object->name ??= expr` quiet-reads the property,
+  lazily evaluates the right-hand expression only for missing or `null`
+  properties, and re-evaluates the receiver for the write side. This is a
+  bounded public-property object-storage slice; declared properties,
+  visibility, inheritance, static properties, magic methods, destructors, and
+  broader reflection metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
@@ -573,9 +576,9 @@ supports in generated native binaries.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for integer-only operator conversion diagnostics, including bitwise,
   shift, and modulo diagnostics.
-- Object, property, static-property, variable-variable, append-form
-  null-coalescing, and remaining non-direct-variable compound-assignment
-  lvalues outside modeled keyed array/string offsets.
+- Object, static-property, variable-variable, append-form null-coalescing,
+  property null-coalescing expressions/`isset()`/`empty()`, and property
+  compound-assignment operators outside modeled public-property `??=`.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.

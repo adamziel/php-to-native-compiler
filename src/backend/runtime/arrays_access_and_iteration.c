@@ -214,6 +214,27 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     return ptn_value_clone_deref(entry->value);
 }
 
+static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+) {
+    (void)runtime;
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return ptn_lookup_missing();
+    }
+    PtnArrayKey key = ptn_array_string_key(property);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return ptn_lookup_missing();
+    }
+    return ptn_lookup_found(ptn_value_clone_deref(entry->value));
+}
+
 static PTN_UNUSED PtnValue ptn_object_write_property(
     PtnRuntime *runtime,
     PtnValue receiver,

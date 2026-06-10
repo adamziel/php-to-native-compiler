@@ -2436,8 +2436,13 @@ impl ValueEmitter {
                 AssignmentTarget::List(_) => {
                     unreachable!("parser rejects null coalescing assignment for list targets");
                 }
-                AssignmentTarget::Property { .. } => {
-                    unreachable!("parser rejects null coalescing assignment for property targets");
+                AssignmentTarget::Property {
+                    receiver,
+                    name,
+                    line,
+                } => {
+                    return self
+                        .emit_property_coalesce_assignment(out, receiver, name, *line, value);
                 }
             }
         }
@@ -3648,6 +3653,62 @@ impl ValueEmitter {
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
+        result_temp
+    }
+
+    fn emit_property_coalesce_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+        value: &ValueExpr,
+    ) -> String {
+        let lookup_receiver_temp = self.emit_materialized_value(out, receiver);
+        let lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_object_property_lookup_quiet(&runtime, ");
+        out.push_str(&lookup_receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &lookup_receiver_temp);
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists && ");
+        out.push_str(&lookup_temp);
+        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&lookup_temp);
+        out.push_str(".value;\n");
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        let value_temp = self.emit_materialized_value(out, value);
+        let write_receiver_temp = self.emit_materialized_value(out, receiver);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_object_write_property(&runtime, ");
+        out.push_str(&write_receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &write_receiver_temp);
+        emit_value_cleanup(out, "        ", &value_temp);
+        out.push_str("    }\n");
         result_temp
     }
 

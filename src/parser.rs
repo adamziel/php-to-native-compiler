@@ -3522,10 +3522,7 @@ fn validate_coalesce_assignment_target(
             }
             Ok(())
         }
-        AssignmentTarget::Property { .. } => Err(Diagnostic::new(
-            "null coalescing assignment currently supports variables and array/string offsets",
-            Some(span),
-        )),
+        AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables and array/string offsets",
             Some(span),

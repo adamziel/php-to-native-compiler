@@ -11026,10 +11026,11 @@ fn parser_accepts_stdclass_property_reads_and_writes() {
         "<?php\n\
 $object = new stdClass;\n\
 $object->value = 7;\n\
-echo $object->value;\n",
+echo $object->value;\n\
+$object->missing ??= 8;\n",
     )
     .unwrap();
-    assert_eq!(program.statements.len(), 3);
+    assert_eq!(program.statements.len(), 4);
 
     let Statement::Expression { expression, .. } = &program.statements[1] else {
         panic!("expected property assignment expression statement");
@@ -11048,6 +11049,18 @@ echo $object->value;\n",
     assert!(matches!(
         &expressions[0],
         Expr::PropertyFetch { name, .. } if name == "value"
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[3] else {
+        panic!("expected property null coalescing assignment expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::Property { name, .. },
+            op: AssignmentOp::CoalesceAssign,
+            ..
+        } if name == "missing"
     ));
 }
 
@@ -11085,6 +11098,71 @@ var_dump($object->value);
     assert!(c_source.contains("ptn_new_object(&runtime, \"stdClass\""));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_object_read_property(&runtime"));
+}
+
+#[test]
+fn compile_stdclass_property_null_coalescing_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-stdclass-property-coalesce-assign");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stdclass-property-coalesce-assign.php");
+    let output = root.join("stdclass-property-coalesce-assign-bin");
+    fs::write(
+        &input,
+        "<?php
+function receiver($object, $label) {
+    echo \"receiver:$label\\n\";
+    return $object;
+}
+function rhs($label) {
+    echo \"rhs:$label\\n\";
+    return $label;
+}
+
+$object = new stdClass;
+var_dump(receiver($object, \"missing\")->missing ??= rhs(\"missing\"));
+$object->nullish = null;
+var_dump(receiver($object, \"nullish\")->nullish ??= rhs(\"nullish\"));
+$object->hit = \"kept\";
+var_dump(receiver($object, \"hit\")->hit ??= rhs(\"hit\"));
+var_dump($object->missing, $object->nullish, $object->hit);
+
+$scalar = 3;
+try {
+    var_dump($scalar->bad ??= rhs(\"bad\"));
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "receiver:missing\n\
+rhs:missing\n\
+receiver:missing\n\
+string(7) \"missing\"\n\
+receiver:nullish\n\
+rhs:nullish\n\
+receiver:nullish\n\
+string(7) \"nullish\"\n\
+receiver:hit\n\
+string(4) \"kept\"\n\
+string(7) \"missing\"\n\
+string(7) \"nullish\"\n\
+string(4) \"kept\"\n\
+rhs:bad\n\
+Attempt to assign property \"bad\" on int\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_property_lookup_quiet(&runtime"));
+    assert!(c_source.contains("ptn_object_write_property(&runtime"));
 }
 
 #[test]
