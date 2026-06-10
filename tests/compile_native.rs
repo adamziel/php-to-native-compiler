@@ -5232,6 +5232,60 @@ mixedcase();\n\
 }
 
 #[test]
+fn compile_class_method_magic_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-class-method-magic-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-method-magic-constants.php");
+    let output = root.join("class-method-magic-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+class MixedCase {
+    public function Run() {
+        var_dump(__FUNCTION__, __METHOD__, __CLASS__, __TRAIT__, __NAMESPACE__);
+    }
+
+    public static function StaticRun() {
+        var_dump(__FUNCTION__, __METHOD__, __CLASS__, __TRAIT__, __NAMESPACE__);
+    }
+}
+
+$object = new MixedCase();
+$object->Run();
+MixedCase::StaticRun();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"Run\"\n",
+            "string(14) \"MixedCase::Run\"\n",
+            "string(9) \"MixedCase\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(9) \"StaticRun\"\n",
+            "string(20) \"MixedCase::StaticRun\"\n",
+            "string(9) \"MixedCase\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_string(\"Run\")"));
+    assert!(c_source.contains("ptn_string(\"MixedCase::Run\")"));
+    assert!(c_source.contains("ptn_string(\"StaticRun\")"));
+    assert!(c_source.contains("ptn_string(\"MixedCase::StaticRun\")"));
+}
+
+#[test]
 fn compile_sqrt_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-sqrt-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

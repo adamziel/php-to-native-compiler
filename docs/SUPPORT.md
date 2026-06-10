@@ -87,10 +87,12 @@ supports in generated native binaries.
 - Unparenthesized nested ternary expression statements are rejected with
   PHP-style source-spanned fatal diagnostics for the currently modeled
   forbidden associativity forms.
-- Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
+- Magic constants `__LINE__`, `__FILE__`, and `__DIR__`, plus global-scope
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
-  `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
-  global scope.
+  `__NAMESPACE__` empty-string behavior. Top-level functions expose
+  `__FUNCTION__` and `__METHOD__`; declared class methods expose
+  `__FUNCTION__`, `__METHOD__`, and `__CLASS__` for the current method scope.
+  Traits, namespaces, includes, and eval remain outside this boundary.
 - Short array literals `[...]` and long-form `array(...)` literals with
   optional scalar keys, automatic integer keys, integer-string key
   canonicalization, insertion order, and duplicate-key replacement in the

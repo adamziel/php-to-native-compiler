@@ -16,11 +16,11 @@ expected rows, or one-off outputs.
   behavior.
 - Double-quoted interpolation covers direct `$name`, braced `{$name}`, and
   braced variable-root array offsets such as `{$items['key']}`.
-- Top-level user functions include scoped `__FUNCTION__` and `__METHOD__`
-  magic-constant coverage plus `func_num_args()`, `func_get_arg()`, and
-  `func_get_args()` call-frame introspection, scalar type hints, and
-  by-reference return aliases for variables, one-level array elements, local
-  lifetimes, typed coercion, and plain-assignment separation.
+- Top-level user functions and declared class methods include scoped magic
+  constant coverage for their current supported scope plus `func_num_args()`,
+  `func_get_arg()`, and `func_get_args()` call-frame introspection, scalar type
+  hints, and by-reference return aliases for variables, one-level array
+  elements, local lifetimes, typed coercion, and plain-assignment separation.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for

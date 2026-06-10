@@ -311,14 +311,8 @@ fn emit_user_functions(
                 }
             }
         }
-        let mut values = ValueEmitter::new_for_function(
-            source_file,
-            source_dir,
-            functions,
-            classes,
-            &function.name,
-            function.return_by_ref,
-        );
+        let mut values =
+            ValueEmitter::new_for_function(source_file, source_dir, functions, classes, function);
         let mut break_targets = Vec::new();
         let return_label = values.next_label("ptn_function_return");
         for instruction in &function.body {
@@ -2178,6 +2172,8 @@ struct ValueEmitter {
     source_file: String,
     source_dir: String,
     current_function_name: Option<String>,
+    current_method_name: Option<String>,
+    current_class_name: Option<String>,
     current_function_return_by_ref: bool,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
@@ -2330,7 +2326,16 @@ impl ValueEmitter {
         functions: &[FunctionDecl],
         classes: &[ClassDecl],
     ) -> Self {
-        Self::new_with_scope(source_file, source_dir, functions, classes, None, false)
+        Self::new_with_scope(
+            source_file,
+            source_dir,
+            functions,
+            classes,
+            None,
+            None,
+            None,
+            false,
+        )
     }
 
     fn new_for_function(
@@ -2338,16 +2343,21 @@ impl ValueEmitter {
         source_dir: &str,
         functions: &[FunctionDecl],
         classes: &[ClassDecl],
-        function_name: &str,
-        return_by_ref: bool,
+        function: &FunctionDecl,
     ) -> Self {
+        let function_magic_name = function
+            .method_name
+            .as_deref()
+            .unwrap_or(function.name.as_str());
         Self::new_with_scope(
             source_file,
             source_dir,
             functions,
             classes,
-            Some(function_name),
-            return_by_ref,
+            Some(function_magic_name),
+            Some(function.name.as_str()),
+            function.class_name.as_deref(),
+            function.return_by_ref,
         )
     }
 
@@ -2357,6 +2367,8 @@ impl ValueEmitter {
         functions: &[FunctionDecl],
         classes: &[ClassDecl],
         current_function_name: Option<&str>,
+        current_method_name: Option<&str>,
+        current_class_name: Option<&str>,
         current_function_return_by_ref: bool,
     ) -> Self {
         Self {
@@ -2365,6 +2377,8 @@ impl ValueEmitter {
             source_file: source_file.to_string(),
             source_dir: source_dir.to_string(),
             current_function_name: current_function_name.map(str::to_string),
+            current_method_name: current_method_name.map(str::to_string),
+            current_class_name: current_class_name.map(str::to_string),
             current_function_return_by_ref,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
@@ -3158,15 +3172,27 @@ impl ValueEmitter {
                         self.source_dir.len()
                     )
                 }
-                MagicConstantKind::Function | MagicConstantKind::Method => {
+                MagicConstantKind::Function => {
                     format!(
                         "ptn_string(\"{}\")",
                         c_string(self.current_function_name.as_deref().unwrap_or(""))
                     )
                 }
-                MagicConstantKind::Class
-                | MagicConstantKind::Trait
-                | MagicConstantKind::Namespace => "ptn_string(\"\")".to_string(),
+                MagicConstantKind::Method => {
+                    format!(
+                        "ptn_string(\"{}\")",
+                        c_string(self.current_method_name.as_deref().unwrap_or(""))
+                    )
+                }
+                MagicConstantKind::Class => {
+                    format!(
+                        "ptn_string(\"{}\")",
+                        c_string(self.current_class_name.as_deref().unwrap_or(""))
+                    )
+                }
+                MagicConstantKind::Trait | MagicConstantKind::Namespace => {
+                    "ptn_string(\"\")".to_string()
+                }
             },
             ValueExpr::InternalCall {
                 name,

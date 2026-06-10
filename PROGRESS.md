@@ -1,19 +1,18 @@
 # PTN Progress
 
 Refresh: 2026-06-11T00:59Z
-Measured: `ptn-co3` rebased after `ptn-4n1`, `ptn-ock`, `ptn-ebb`, `ptn-jmq`,
-and `ptn-beq` on current `origin/master`; addslashes/stripslashes native
-PHPT-shape coverage, scalar offset-lvalue fatal/conversion reducers, object
-`foreach` reducers, declared class metadata intrinsics, cslashes PHPT shape,
-double-quoted ASCII octal/hex escapes, declared class/object method dispatch,
-callable-only object method dispatch, and callback/COW/directory evidence.
+Measured: `ptn-3zk` rebased on current `origin/master` after prior queue
+merges; addslashes/stripslashes, braced interpolation, scalar offset-lvalue
+reducers, object `foreach`, declared class metadata, object-method callable
+dispatch, method-scope magic constants, cslashes, and callback/COW/directory
+evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 375 | 375 | 0 |
+| Native compiled PHP snippets | 376 | 376 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -52,7 +51,8 @@ calls, `$this` binding, object/static method callable arrays, and object
 by-reference value binding, plus scalar array-lvalue write/reference fatals
 for non-convertible scalars with false-to-array deprecation, and declared
 class/method metadata through `class_exists()` and `method_exists()`, plus
-callable-only object method dispatch through internal callbacks.
+callable-only object method dispatch through internal callbacks and
+method-scope `__FUNCTION__`/`__METHOD__`/`__CLASS__`.
 
 ## Still Needed
 
@@ -60,9 +60,10 @@ The remaining focused COW PHPT gap is Closure `use` captures for the
 `array_walk()`/`$GLOBALS` row. Broader bounded-PHPT gaps are constructors,
 declared properties, visibility/inheritance/interfaces/traits, static
 properties, magic methods, object/property compound lvalues, destructors,
-exceptions, reflection, unsupported array/string internals, 64-bit operator
-exactness, destructuring `foreach` diagnostics/semantics, remaining string
-sub-path scalar offset-lvalue parity, and broader file APIs.
+exceptions, broader magic constants for traits/namespaces/includes/eval,
+reflection, unsupported array/string internals, 64-bit operator exactness,
+destructuring `foreach` diagnostics/semantics, remaining string sub-path scalar
+offset-lvalue parity, and broader file APIs.
 
 ## Verification
 
