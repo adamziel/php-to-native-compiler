@@ -1,8 +1,9 @@
 # PTN Progress
 
-Refresh: 2026-06-10T12:36Z
-Measured: `ptn-wvv` rebased on `origin/master@316fbe019` after `ptn-ss3`;
-focused string-callable callback and recursive array-literal evidence.
+Refresh: 2026-06-10T12:45Z
+Measured: `ptn-ept` on `origin/master@1c445f8`; focused `array_reduce()`
+accumulator evidence plus prior recursive array-literal, string-callable,
+nested-reference, and `array_fill_keys()` gates.
 
 ## Test Dashboard
 
@@ -17,7 +18,7 @@ focused string-callable callback and recursive array-literal evidence.
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
-| Focused COW reducer snippets | 44 | 44 | 0 |
+| Focused COW reducer snippets | 45 | 45 | 0 |
 | Recursive reference diagnostics | 4 | 4 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
@@ -28,12 +29,13 @@ focused string-callable callback and recursive array-literal evidence.
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows. Focused evidence is 26 passing,
-3 failing: assignment-aliasing 4/4, string-offsets 4/4,
+`tools/phpt-cow-manifest.txt` has 29 rows: 26 passing, 3 failing.
+Buckets: assignment-aliasing 4/4, string-offsets 4/4,
 array-writes-appends-unset 4/4, nested-arrays 4/4, foreach-mutation 3/4,
-function-boundaries 2/4, reference-interaction 5/5. `bug35163.phpt` and
-`assign_by_val_function_by_ref_return_value.phpt` now pass. Closure-backed
-callback rows remain blocked by Closure/callable values (`ptn-dis`).
+function-boundaries 2/4, reference-interaction 5/5. Named `array_reduce()`
+callbacks preserve by-reference returns and callback-visible accumulator
+refcounts; exact closure-backed PHPT rows remain blocked by Closure/callable
+values (`ptn-dis`).
 
 ## Already Ported
 
@@ -49,26 +51,25 @@ expression-level `@`, selected file APIs, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
 replace, `debug_zval_dump()`, dynamic lvalue-reference calls, append/list
 assignment expressions for reference arrays, nested same-array reference
-lvalues with recursive `var_dump()`, direct-variable `??=`, keyed array/string
-offset-form `??=`, append-form `??=` diagnostics, grouped reference targets,
-named `array_reduce()` callback dispatch with by-reference returns,
-non-reference call-result by-reference fallback notices, call-result
-by-reference return chains, `array_fill_keys()`, string-callable
-`call_user_func()` dispatch, and variable-assigned recursive array literals
-with slot replacement and cleanup.
+lvalues, direct-variable and keyed offset-form `??=`, append-form `??=`
+diagnostics, grouped reference targets, recursive array literal cleanup, named
+`array_reduce()` callback dispatch with by-reference returns and accumulator
+debug refcounts, non-reference call-result by-reference fallback notices,
+call-result by-reference return chains, `array_fill_keys()`, and
+string-callable `call_user_func()` dispatch.
 
 ## Still Needed
 
 Remaining COW PHPT gaps are closure callback mutation through
 `array_walk()`/`$GLOBALS`, closure-backed callback by-reference returns,
-`array_reduce()` callback/refcount behavior, and broader recursive
+closure-backed `array_reduce()` accumulator rows, and broader recursive
 by-reference return edges. Broader bounded-PHPT gaps are objects, unsupported
 array/string internals, 64-bit operator exactness, foreach diagnostics,
-object/property compound lvalues, scalar offset-lvalue fatal parity, and
-broader file APIs.
+object/property compound lvalues, scalar offset-lvalue fatal parity, and file
+APIs.
 
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`; focused callback and
-`assign_by_val_function_by_ref_return_value.phpt` evidence.
+`tools/run-post-merge-cow-gate.sh`; `tools/run-bounded-phpt.sh
+tools/phpt-cow-manifest.txt`; callback manifest.

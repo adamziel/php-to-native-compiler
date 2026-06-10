@@ -256,7 +256,15 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 fputs("*RECURSION*\n", stdout);
                 break;
             }
-            printf("array(%zu) packed refcount(%zu){\n", array->len, array->refcount);
+            if (array->len == 0) {
+                fputs("array(0) interned {\n", stdout);
+            } else {
+                printf(
+                    "array(%zu) packed refcount(%zu){\n",
+                    array->len,
+                    ptn_array_debug_visible_refcount(array)
+                );
+            }
             ptn_dump_seen_arrays_push(seen, array);
             for (size_t i = 0; i < array->len; i++) {
                 ptn_var_dump_indent(indent + 1);
@@ -657,13 +665,15 @@ static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, cons
 
     for (size_t i = 0; i < array->len; i++) {
         PtnValue callback_args[2] = {
-            ptn_value_clone(carry),
+            carry,
             ptn_value_clone_deref(array->entries[i].value)
         };
+        carry = ptn_null();
+        ptn_value_debug_hide_ref(callback_args[0]);
         PtnValue callback_result = ptn_call_function(runtime, function_name, 2, callback_args, line);
+        ptn_value_debug_unhide_ref(callback_args[0]);
         ptn_value_destroy(&callback_args[0]);
         ptn_value_destroy(&callback_args[1]);
-        ptn_value_destroy(&carry);
         carry = ptn_value_clone_deref(callback_result);
         ptn_value_destroy(&callback_result);
     }
