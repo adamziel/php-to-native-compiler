@@ -167,6 +167,10 @@ pub enum Statement {
         value: Option<Expr>,
         span: SourceSpan,
     },
+    StaticLocal {
+        declarations: Vec<StaticLocalDeclaration>,
+        span: SourceSpan,
+    },
     Try {
         body: Vec<Statement>,
         catches: Vec<CatchClause>,
@@ -205,6 +209,13 @@ pub struct SwitchCase {
 pub struct ConstDeclaration {
     pub name: String,
     pub value: Expr,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaticLocalDeclaration {
+    pub name: String,
+    pub value: Option<Expr>,
     pub span: SourceSpan,
 }
 

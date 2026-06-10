@@ -103,6 +103,11 @@ pub enum Instruction {
         value: ValueExpr,
         line: usize,
     },
+    StaticLocal {
+        name: String,
+        value: ValueExpr,
+        line: usize,
+    },
     Expression(ValueExpr),
     Echo(ValueExpr),
     InternalCall {
@@ -567,6 +572,18 @@ impl LoweringContext {
                         instructions.push(Instruction::DefineConstant {
                             name: declaration.name.clone(),
                             value: self.lower_expr(&declaration.value),
+                            line: declaration.span.line,
+                        });
+                    }
+                }
+                Statement::StaticLocal { declarations, .. } => {
+                    for declaration in declarations {
+                        instructions.push(Instruction::StaticLocal {
+                            name: declaration.name.clone(),
+                            value: declaration
+                                .value
+                                .as_ref()
+                                .map_or(ValueExpr::Null, |value| self.lower_expr(value)),
                             line: declaration.span.line,
                         });
                     }

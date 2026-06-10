@@ -674,6 +674,37 @@ fn parser_accepts_user_function_declarations_and_returns() {
 }
 
 #[test]
+fn parser_accepts_static_local_declarations() {
+    let program = parser::parse(
+        "<?php function counter() { static $count = 1, $label = \"hit\", $unset; $count++; }",
+    )
+    .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(function.body.len(), 2);
+    let Statement::StaticLocal { declarations, .. } = &function.body[0] else {
+        panic!("expected static local declaration");
+    };
+    assert_eq!(declarations.len(), 3);
+    assert_eq!(declarations[0].name, "count");
+    assert!(matches!(&declarations[0].value, Some(Expr::Int(1, _))));
+    assert_eq!(declarations[1].name, "label");
+    assert!(matches!(&declarations[1].value, Some(Expr::String(value, _)) if value == "hit"));
+    assert_eq!(declarations[2].name, "unset");
+    assert!(declarations[2].value.is_none());
+}
+
+#[test]
+fn parser_rejects_dynamic_static_local_initializers() {
+    let error =
+        parser::parse("<?php function counter($seed) { static $count = $seed; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "static local initializers must be constant expressions"
+    );
+}
+
+#[test]
 fn parser_preserves_user_function_declared_name_case() {
     let program =
         parser::parse("<?php function MixedCase() { return null; } mixedcase();").unwrap();
@@ -4467,6 +4498,60 @@ fn compile_user_function_locals_do_not_overwrite_top_level_variables() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "arg-local global\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_static_local_variables_to_native_binary() {
+    let root = temp_dir("ptn-native-static-local-variables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-local-variables.php");
+    let output = root.join("static-local-variables-bin");
+    fs::write(
+        &input,
+        "<?php
+function counter() {
+    $count = \"ordinary\";
+    static $count = 1, $label = \"hit\", $unset;
+    echo $label, \":\", $count, \":\";
+    var_dump($unset);
+    $count++;
+    $unset = \"set\";
+}
+counter();
+counter();
+
+function rebinding() {
+    for ($i = 0; $i < 2; $i++) {
+        static $again = 1;
+        echo \"again=\", $again, \"\\n\";
+        $again++;
+        unset($again);
+    }
+}
+rebinding();
+rebinding();
+
+function shadow() {
+    $value = \"local\";
+    static $value = 10;
+    echo \"shadow=\", $value, \"\\n\";
+    $value += 5;
+}
+shadow();
+shadow();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "hit:1:NULL\nhit:2:string(3) \"set\"\nagain=1\nagain=2\nagain=3\nagain=4\nshadow=10\nshadow=15\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

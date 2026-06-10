@@ -36,7 +36,7 @@ double-quoted ASCII octal/hex escapes, direct/braced variable interpolation,
 braced array-offset interpolation, string/math/type internals, ordered
 arrays, `foreach`, source-spanned non-array `foreach` warnings,
 array/string COW, references, by-reference params/foreach, array dimensions,
-temporaries, recursive/user functions, anonymous function values, magic
+temporaries, recursive/user functions, static locals, anonymous function values, magic
 constants, `func_*`, `print_r`, scalar diagnostics, array union `+`, scalar
 type hints, by-reference returns, `count()`, `??`, assignment expressions,
 expression-level `@`, directory/file predicates, array-path snapshots,
@@ -61,16 +61,14 @@ The remaining focused COW PHPT gap is Closure `use` captures for the
 `array_walk()`/`$GLOBALS` row. Broader bounded-PHPT gaps are constructors,
 declared properties, visibility/inheritance/interfaces/traits, static
 properties, magic methods, object/property compound lvalues, destructors,
-exceptions, broader magic constants for traits/namespaces/includes/eval,
-reflection, unsupported array/string internals, 64-bit operator exactness,
-destructuring `foreach` diagnostics/semantics, remaining string sub-path scalar
-offset-lvalue parity, and broader file APIs.
+exceptions, magic constants beyond methods, reflection, unsupported
+array/string internals, 64-bit operator exactness, destructuring `foreach`
+diagnostics/semantics, remaining string sub-path scalar offset-lvalue parity,
+and file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes,
-cslashes, object `foreach`, scalar offset, and declared class metadata native
-tests/reducers; `cargo test callable`; focused catchable exception-message
-tests; focused `cargo test interpolation`; exact `add-and-stripcslashes.phpt`;
-`cargo test`. PHPT runners resolve php-src via `PHP_SRC_PHPT`,
-`/home/claude/php-src-phpt`, or `.runtime/php-src-phpt`.
+Commands: `cargo fmt --check`; static-local/interpolation tests; `cargo build --bin phpc`;
+addslashes/cslashes, object `foreach`, scalar offset, declared metadata
+reducers; `cargo test callable`; catchable exception tests;
+`add-and-stripcslashes.phpt`; `cargo test`.

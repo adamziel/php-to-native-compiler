@@ -760,6 +760,38 @@ fn emit_instruction(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &emitted_value);
         }
+        Instruction::StaticLocal {
+            name,
+            value,
+            line: _,
+        } => {
+            let storage_temp = values.next_temp();
+            out.push_str("    static PtnReference *");
+            out.push_str(&storage_temp);
+            out.push_str(" = NULL;\n");
+            out.push_str("    if (");
+            out.push_str(&storage_temp);
+            out.push_str(" == NULL) {\n");
+            let initializer_temp = values.emit_materialized_value(out, value);
+            out.push_str("        ");
+            out.push_str(&storage_temp);
+            out.push_str(" = ptn_reference_new_owned(ptn_value_clone_deref(");
+            out.push_str(&initializer_temp);
+            out.push_str("));\n");
+            emit_value_cleanup(out, "        ", &initializer_temp);
+            out.push_str("    }\n");
+            let reference_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&reference_temp);
+            out.push_str(" = ptn_value_borrow(ptn_reference_value(");
+            out.push_str(&storage_temp);
+            out.push_str("));\n");
+            out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&reference_temp);
+            out.push_str(");\n");
+        }
         Instruction::Expression(value) => {
             let emitted_value = values.emit_materialized_value(out, value);
             out.push_str("    (void)");
@@ -1501,6 +1533,7 @@ fn collect_instruction_runtime_requirements(
     match instruction {
         Instruction::Store { value, .. }
         | Instruction::DefineConstant { value, .. }
+        | Instruction::StaticLocal { value, .. }
         | Instruction::Expression(value)
         | Instruction::Echo(value) => {
             collect_value_runtime_requirements(value, functions, requirements);

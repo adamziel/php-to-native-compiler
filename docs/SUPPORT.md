@@ -219,8 +219,10 @@ supports in generated native binaries.
   `return` statements, implicit `null` returns, recursive calls, call-frame
   argument introspection, and minimal `null` parameter and return type
   declarations over the currently supported expression and statement subset.
-  Calls may pass extra arguments. Duplicate declarations and declarations that
-  collide with currently modeled internal function names are rejected.
+  Static local variables initialize once, persist across repeated calls, and
+  rebind the local variable when their declaration executes. Calls may pass
+  extra arguments. Duplicate declarations and declarations that collide with
+  currently modeled internal function names are rejected.
 - Direct variable reference aliases, grouped direct-variable aliases,
   single-dimension array element references, grouped single-dimension array
   element references, array literal reference elements, and by-value copies near
@@ -488,7 +490,7 @@ supports in generated native binaries.
   callable slice, plus the bounded `stdClass` public-property storage slice,
   including default arguments, variadics, named arguments, by-reference returns,
   nested or conditional declarations, closures, full class metadata, namespaces,
-  globals, static locals, and PHP-exact function/include return propagation.
+  globals, and PHP-exact function/include return propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Unsupported recursive arrays, full class/object metadata, resources,
   complete reference identity, copy-on-write, and `var_dump()` reference

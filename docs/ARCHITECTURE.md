@@ -37,6 +37,11 @@ Current runtime/compiler slices:
   calls.
 - Direct variable reads pass through a runtime helper that emits a generic
   undefined-variable warning before yielding `null`.
+- Static local declarations lower to IR static-local instructions. The C
+  backend emits one persistent `PtnReference *` per declaration site, initializes
+  it on first execution from the constant-expression initializer, and binds the
+  current function frame's local symbol to that reference whenever the
+  declaration runs.
 - Scalar binary `+`, `-`, `*`, `/`, `%`, `.`, `&`, `^`, `|`, `<<`, and `>>` expressions lower
   to IR value-expression operation nodes. The C backend materializes operands
   into `PtnValue` temporaries in source order before calling boxed runtime

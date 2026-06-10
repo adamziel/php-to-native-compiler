@@ -19,8 +19,9 @@ expected rows, or one-off outputs.
 - Top-level user functions and declared class methods include scoped magic
   constant coverage for their current supported scope plus `func_num_args()`,
   `func_get_arg()`, and `func_get_args()` call-frame introspection, scalar type
-  hints, and by-reference return aliases for variables, one-level array
-  elements, local lifetimes, typed coercion, and plain-assignment separation.
+  hints, static local variables with init-once persistence, and by-reference
+  return aliases for variables, one-level array elements, local lifetimes,
+  typed coercion, and plain-assignment separation.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for

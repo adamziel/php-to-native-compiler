@@ -5,7 +5,8 @@ use crate::ast::{
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ConstDeclaration, Expr,
     FunctionDecl, FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, MagicConstantKind, MethodDecl, Program, ReferenceTarget, Statement,
-    StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    StaticLocalDeclaration, StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp,
+    UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -251,6 +252,13 @@ impl Parser {
             TokenKind::Const => self.parse_const(),
             TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
+            TokenKind::Identifier(ref name)
+                if self.function_depth > 0
+                    && name.eq_ignore_ascii_case("static")
+                    && matches!(self.peek_next().kind, TokenKind::Variable(_)) =>
+            {
+                self.parse_static_local()
+            }
             TokenKind::Identifier(ref name) if is_unsupported_class_like_declaration(name) => {
                 self.reject_unsupported_class_like_declaration()
             }
@@ -666,6 +674,55 @@ impl Parser {
             ));
         }
         Ok(ConstDeclaration {
+            name,
+            value,
+            span: token.span,
+        })
+    }
+
+    fn parse_static_local(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let TokenKind::Identifier(keyword) = &token.kind else {
+            return Err(Diagnostic::new("expected static", Some(token.span)));
+        };
+        if !keyword.eq_ignore_ascii_case("static") {
+            return Err(Diagnostic::new("expected static", Some(token.span)));
+        }
+
+        let mut declarations = vec![self.parse_static_local_declaration()?];
+        while matches!(self.peek().kind, TokenKind::Comma) {
+            self.advance();
+            declarations.push(self.parse_static_local_declaration()?);
+        }
+        self.expect_statement_terminator()?;
+        Ok(Statement::StaticLocal {
+            declarations,
+            span: token.span,
+        })
+    }
+
+    fn parse_static_local_declaration(&mut self) -> Result<StaticLocalDeclaration> {
+        let token = self.advance().clone();
+        let TokenKind::Variable(name) = token.kind else {
+            return Err(Diagnostic::new(
+                "expected static local variable",
+                Some(token.span),
+            ));
+        };
+        let value = if matches!(self.peek().kind, TokenKind::Equal) {
+            self.advance();
+            let value = self.parse_expr()?;
+            if !is_supported_global_const_expr(&value) {
+                return Err(Diagnostic::new(
+                    "static local initializers must be constant expressions",
+                    Some(value.span()),
+                ));
+            }
+            Some(value)
+        } else {
+            None
+        };
+        Ok(StaticLocalDeclaration {
             name,
             value,
             span: token.span,
@@ -2696,6 +2753,13 @@ fn validate_anonymous_functions_in_statements(
             Statement::Const { declarations, .. } => {
                 for declaration in declarations {
                     validate_anonymous_functions_in_expr(&declaration.value, functions)?;
+                }
+            }
+            Statement::StaticLocal { declarations, .. } => {
+                for declaration in declarations {
+                    if let Some(value) = &declaration.value {
+                        validate_anonymous_functions_in_expr(value, functions)?;
+                    }
                 }
             }
             Statement::If {
