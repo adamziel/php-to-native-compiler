@@ -1,21 +1,21 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:28Z
-Measured: `ptn-107` rebased on `origin/master@51e3314d`; anonymous callback
-closures, static callables, string-callable callbacks, recursive directory
-APIs, bounded `stdClass` property evidence, and non-array `foreach`
-source-path diagnostics.
+Refresh: 2026-06-10T14:56Z
+Measured: `ptn-pxe` rebased on `origin/master@df737c70`; `array_combine()`
+native coverage and focused PHPT row, plus anonymous callback closures, static
+callables, string-callable callbacks, recursive directory APIs, bounded
+`stdClass` property evidence, and non-array `foreach` source-path diagnostics.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 368 | 368 | 0 |
+| Native compiled PHP snippets | 369 | 369 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 152 | 48 |
+| PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
-| PHPT ext/standard rows | 77 | 48 | 29 |
+| PHPT ext/standard rows | 77 | 49 | 28 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -51,6 +51,7 @@ recursive `mkdir()` plus directory predicates, array-path snapshots,
 `debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
 expressions, nested same-array reference lvalues, direct-variable and
 offset-form `??=`, grouped reference targets, `array_fill_keys()`,
+`array_combine()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, and `new stdClass` boxed objects with public dynamic
