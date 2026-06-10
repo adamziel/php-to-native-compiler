@@ -1,0 +1,5 @@
+# Focused callback/callable PHPT evidence.
+#
+# Paths are relative to /home/claude/php-src-phpt.
+
+Zend/tests/call_user_functions/bug43426.phpt

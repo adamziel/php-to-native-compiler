@@ -1,15 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-10T11:48Z
-Measured: `ptn-bff` rebased on `origin/master@4015917b`; focused
-`array_fill_keys()` native and PHPT evidence plus prior nested-reference gates.
+Refresh: 2026-06-10T12:20Z
+Measured: `ptn-ss3` on `origin/master@8f0f5216`; focused string-callable
+`call_user_func()` native and PHPT evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 346 | 346 | 0 |
+| Native compiled PHP snippets | 350 | 350 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 151 | 49 |
 | PHPT Zend rows | 76 | 67 | 9 |
@@ -24,17 +24,17 @@ Measured: `ptn-bff` rebased on `origin/master@4015917b`; focused
 | Mutating-internal COW matrix | 14 | 14 | 0 |
 | Post-merge COW gate | 25 | 25 | 0 |
 | PHPT COW manifest | 29 | 25 | 4 |
+| PHPT callback manifest | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows. Current focused evidence is 25
-passing, 4 failing: assignment-aliasing 4/4, string-offsets 4/4,
+`tools/phpt-cow-manifest.txt` has 29 rows. Focused evidence: 25 passing, 4
+failing: assignment-aliasing 4/4, string-offsets 4/4,
 array-writes-appends-unset 4/4, nested-arrays 4/4, foreach-mutation 3/4,
 function-boundaries 1/4, reference-interaction 5/5. Named `array_reduce()`
-callbacks now preserve by-reference callback returns; the exact closure-backed
-PHPT row remains blocked by Closure/callable values (`ptn-dis`). Offset-form
-`??=` now has keyed array/string native coverage. Details live in
-`docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
+callbacks preserve by-reference returns; closure-backed row remains blocked by
+Closure/callable values (`ptn-dis`). Offset-form `??=` has keyed array/string
+native coverage.
 
 ## Already Ported
 
@@ -50,13 +50,14 @@ expression-level `@`, selected file APIs, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
 replace, `debug_zval_dump()`, dynamic lvalue-reference calls, append/list
 assignment expressions for reference arrays, nested same-array reference
-lvalues with recursive `var_dump()`, direct-variable `??=`, keyed array/string
+lvalues, direct-variable `??=`, keyed array/string
 offset-form `??=`, append-form `??=` diagnostics, grouped reference targets,
 recursive/same-array/nested reference and class-syntax diagnostics, named
 `array_reduce()` callback dispatch with by-reference returns, value fallback
-with PHP notice when non-reference call results are assigned by reference, and
-call-result by-reference return chains, and `array_fill_keys()` over current
-boxed arrays with scalar key coercion.
+with PHP notice when non-reference call results are assigned by reference,
+call-result by-reference return chains, `array_fill_keys()` over current boxed
+arrays with scalar key coercion, and string-callable `call_user_func()`
+dispatch through the shared user/internal dispatcher.
 
 ## Still Needed
 
@@ -71,7 +72,5 @@ parity, and broader file APIs.
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`; `tools/run-bounded-phpt.sh
-tools/phpt-cow-manifest.txt`. Prior broad manifest remains 150/200; it does not
-include `Zend/tests/bug35163.phpt`. Focused `array_fill_keys()` PHPT evidence
-was also run on the source branch.
+`tools/run-post-merge-cow-gate.sh`; focused
+`array_fill_keys()` and callback PHPT manifests.

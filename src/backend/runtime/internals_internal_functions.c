@@ -2643,6 +2643,19 @@ static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, con
     return result;
 }
 
+static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    char *function_name = ptn_value_to_string(args[0]);
+    PtnValue result = ptn_call_function(
+        runtime,
+        function_name,
+        argc - 1,
+        argc > 1 ? args + 1 : NULL,
+        line
+    );
+    free(function_name);
+    return result;
+}
+
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(const char *name);
@@ -2672,6 +2685,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_values", 1, 1, ptn_internal_array_values },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
+        { "call_user_func", 1, PTN_VARIADIC_ARGS, ptn_internal_call_user_func },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },

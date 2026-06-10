@@ -9754,6 +9754,51 @@ var_dump(array_reduce($array, \"pick_reduce_value\", 0));
 }
 
 #[test]
+fn compile_call_user_func_string_callable_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-string-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-string-callable.php");
+    let output = root.join("call-user-func-string-callable-bin");
+    fs::write(
+        &input,
+        "<?php
+function join_pair($left, $right) {
+    echo $left, \":\", $right, \"\\n\";
+    return $left . \"-\" . $right;
+}
+
+function wrapper($callable, $value) {
+    return call_user_func($callable, $value, \"tail\");
+}
+
+function inspect_args($first) {
+    return func_num_args() . \":\" . func_get_arg(1);
+}
+
+var_dump(wrapper(\"join_pair\", \"head\"));
+var_dump(call_user_func(\"strlen\", \"abcd\"));
+var_dump(call_user_func(\"inspect_args\", \"one\", \"two\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "head:tail\nstring(9) \"head-tail\"\nint(4)\nstring(5) \"2:two\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_call_user_func"));
+    assert!(c_source.contains("PtnValue result = ptn_call_function("));
+    assert!(c_source.contains("argc - 1"));
+}
+
+#[test]
 fn compile_typed_by_ref_return_separates_function_boundaries_to_native_binary() {
     let root = temp_dir("ptn-native-typed-by-ref-return-separation");
     fs::create_dir_all(&root).unwrap();
