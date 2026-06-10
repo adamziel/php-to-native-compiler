@@ -2509,9 +2509,8 @@ fn validate_by_reference_return_value(value: &Expr, function_name: &str) -> Resu
                 Some(*span),
             ))
         }
-        Expr::Call { span, .. }
-        | Expr::DynamicCall { span, .. }
-        | Expr::MethodCall { span, .. } => Err(Diagnostic::new(
+        Expr::Call { .. } => Ok(()),
+        Expr::DynamicCall { span, .. } | Expr::MethodCall { span, .. } => Err(Diagnostic::new(
             "by-reference call-result returns are unsupported",
             Some(*span),
         )),

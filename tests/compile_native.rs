@@ -1301,10 +1301,11 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "unsupported by-reference assignment target"
     );
 
-    let call_result_return =
-        parser::parse("<?php function &factory(&$value) { return id($value); }").unwrap_err();
+    let dynamic_call_result_return =
+        parser::parse("<?php function &factory(&$value) { $fn = 'id'; return $fn($value); }")
+            .unwrap_err();
     assert_eq!(
-        call_result_return.message,
+        dynamic_call_result_return.message,
         "by-reference call-result returns are unsupported"
     );
 
@@ -1497,6 +1498,38 @@ fn parser_accepts_by_reference_return_call_assignment_sources() {
         } if target.array == "items"
             && matches!(source.as_ref(), Expr::Call { name, .. } if name == "returnsval")
     ));
+}
+
+#[test]
+fn parser_accepts_by_reference_return_call_result_chains() {
+    let program = parser::parse(
+        "<?php function &id(&$value) { return $value; } function &chain(&$value) { return id($value); } function &fallback() { return make_value(); }",
+    )
+    .unwrap();
+
+    assert_eq!(program.functions.len(), 3);
+    assert!(program
+        .functions
+        .iter()
+        .all(|function| function.return_by_ref));
+
+    let Statement::Return {
+        value: Some(Expr::Call { name, .. }),
+        ..
+    } = &program.functions[1].body[0]
+    else {
+        panic!("expected chained call return");
+    };
+    assert_eq!(name, "id");
+
+    let Statement::Return {
+        value: Some(Expr::Call { name, .. }),
+        ..
+    } = &program.functions[2].body[0]
+    else {
+        panic!("expected value call return");
+    };
+    assert_eq!(name, "make_value");
 }
 
 #[test]
@@ -6495,6 +6528,63 @@ echo $alias, \"\\n\";\n",
 }
 
 #[test]
+fn compile_by_reference_return_call_result_chains_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-return-call-result-chains");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-return-call-result-chains.php");
+    let output = root.join("by-reference-return-call-result-chains-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function &id(&$value) {\n\
+    return $value;\n\
+}\n\
+function &chain(&$value) {\n\
+    return id($value);\n\
+}\n\
+function make_value() {\n\
+    return 9;\n\
+}\n\
+function &value_chain() {\n\
+    return make_value();\n\
+}\n\
+function &typed_value_chain(): string {\n\
+    return make_value();\n\
+}\n\
+$value = 1;\n\
+$alias =& chain($value);\n\
+$alias = 2;\n\
+echo $value, \"|\", $alias, \"\\n\";\n\
+$copy = chain($value);\n\
+$copy = 3;\n\
+echo $value, \"|\", $copy, \"\\n\";\n\
+$fallback =& value_chain();\n\
+echo $fallback, \"\\n\";\n\
+$typed =& typed_value_chain();\n\
+echo gettype($typed), \":\", $typed, \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2|2\n\
+2|3\n\
+Notice: Only variable references should be returned by reference in ptn on line 12\n\
+9\n\
+Notice: Only variable references should be returned by reference in ptn on line 15\n\
+string:9\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reference_source_or_value(&runtime, "));
+}
+
+#[test]
 fn compile_array_offset_compound_assignment_undef_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-compound-undef");
     fs::create_dir_all(&root).unwrap();
@@ -9769,7 +9859,7 @@ echo $wrapped, \"|\", $wrapped_copy, \"\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"value\")"));
     assert!(c_source.contains("ptn_runtime_reference_for_array_dim(&runtime, \"items\""));
-    assert!(c_source.contains("ptn_reference_source_or_error("));
+    assert!(c_source.contains("ptn_reference_source_or_value"));
     assert!(c_source.contains("ptn_value_clone(ptn_value_deref("));
 }
 

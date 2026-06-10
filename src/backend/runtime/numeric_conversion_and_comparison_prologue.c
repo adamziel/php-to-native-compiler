@@ -75,16 +75,12 @@ static PTN_UNUSED void ptn_abort_by_reference_return_error(void) {
     exit(255);
 }
 
-static PTN_UNUSED PtnValue ptn_reference_source_or_error(PtnValue value, const char *function_name) {
+static PTN_UNUSED PtnValue ptn_reference_source_or_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     if (value.type == PTN_REFERENCE) {
         return ptn_value_clone(value);
     }
-    fprintf(
-        stderr,
-        "Fatal error: %s() did not return a reference\n",
-        function_name
-    );
-    exit(255);
+    ptn_emit_only_variable_references_returned_by_reference_notice(&runtime->diagnostics, line);
+    return ptn_value_clone(value);
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_read_variable(

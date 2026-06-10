@@ -1,8 +1,8 @@
 # PTN Progress
 
-Refresh: 2026-06-10T11:18Z
-Measured: `ptn-w7c` rebased on `origin/master@79a707f`; focused
-`array_reduce()` native evidence plus prior gates and manifests.
+Refresh: 2026-06-10T11:41Z
+Measured: `ptn-4p5` rebased on `origin/master@7e7d75df8`; focused
+call-result by-reference return-chain evidence plus prior gates and manifests.
 
 ## Test Dashboard
 
@@ -53,14 +53,14 @@ assignment expressions for reference arrays, direct-variable `??=`, keyed
 array/string offset-form `??=`, append-form `??=` diagnostics, grouped
 reference targets, recursive/same-array/nested reference and class-syntax
 diagnostics, named `array_reduce()` callback dispatch with by-reference
-returns, and value fallback with PHP notice when non-reference call results are
-assigned by reference.
+returns, value fallback with PHP notice when non-reference call results are
+assigned by reference, and call-result by-reference return chains.
 
 ## Still Needed
 
 Remaining COW PHPT gaps are recursive reference lvalue implementation, closure
-callback mutation through `array_walk()`/`$GLOBALS`, recursive/call-result
-by-reference return chaining, closure-backed callback by-reference returns, and
+callback mutation through `array_walk()`/`$GLOBALS`, recursive by-reference
+return chaining, closure-backed callback by-reference returns, and
 `array_reduce()` callback/refcount behavior. Broader bounded-PHPT gaps are still
 objects, unsupported array/string internals, 64-bit operator exactness, foreach
 edge diagnostics, object/property compound lvalues, scalar offset-lvalue fatal

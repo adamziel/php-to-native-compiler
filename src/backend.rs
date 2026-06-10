@@ -330,14 +330,16 @@ fn emit_return_type_boundary(
             let cast_helper = type_hint_scalar_cast_helper(Some(return_type))
                 .expect("scalar return type should map to cast helper");
             if return_by_ref {
-                out.push_str("    if (ptn_return_value.type != PTN_REFERENCE) {\n");
-                out.push_str("        ptn_abort_by_reference_return_error();\n");
-                out.push_str("    }\n");
                 out.push_str("    PtnValue ptn_typed_return_value = ");
                 out.push_str(cast_helper);
                 out.push_str("(ptn_return_value);\n");
-                out.push_str("    ptn_reference_assign(ptn_return_value.as.reference, ptn_typed_return_value);\n");
-                out.push_str("    ptn_value_drop(&ptn_typed_return_value);\n");
+                out.push_str("    if (ptn_return_value.type == PTN_REFERENCE) {\n");
+                out.push_str("        ptn_reference_assign(ptn_return_value.as.reference, ptn_typed_return_value);\n");
+                out.push_str("        ptn_value_drop(&ptn_typed_return_value);\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ptn_value_drop(&ptn_return_value);\n");
+                out.push_str("        ptn_return_value = ptn_typed_return_value;\n");
+                out.push_str("    }\n");
             } else {
                 out.push_str("    PtnValue ptn_typed_return_value = ");
                 out.push_str(cast_helper);
@@ -2051,6 +2053,16 @@ impl ValueEmitter {
             .find(|(_, function)| function.name.eq_ignore_ascii_case(name))
     }
 
+    fn source_is_declared_by_ref_call(&self, source: &ValueExpr) -> bool {
+        match source {
+            ValueExpr::InternalCall { name, .. } => self
+                .direct_user_function(name)
+                .map(|(_, function)| function.return_by_ref)
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+
     fn emit_assignment(
         &mut self,
         out: &mut String,
@@ -2121,7 +2133,9 @@ impl ValueEmitter {
         out.push_str(&source_temp);
         out.push_str("));\n");
         out.push_str("    } else {\n");
-        emit_only_variables_assigned_by_reference_notice(out, "        ", target.line());
+        if !self.source_is_declared_by_ref_call(source) {
+            emit_only_variables_assigned_by_reference_notice(out, "        ", target.line());
+        }
         let stored_temp = self.emit_store_assignment_target_from_temp(out, target, &source_temp);
         out.push_str("        ");
         out.push_str(&result_temp);
@@ -2161,7 +2175,9 @@ impl ValueEmitter {
         out.push_str(&source_temp);
         out.push_str(");\n");
         out.push_str("    } else {\n");
-        emit_only_variables_assigned_by_reference_notice(out, "        ", line);
+        if !self.source_is_declared_by_ref_call(source) {
+            emit_only_variables_assigned_by_reference_notice(out, "        ", line);
+        }
         out.push_str("        ptn_runtime_write_variable(&runtime, \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
@@ -2228,7 +2244,9 @@ impl ValueEmitter {
         out.push_str(&target.line.to_string());
         out.push_str(");\n");
         out.push_str("    } else {\n");
-        emit_only_variables_assigned_by_reference_notice(out, "        ", target.line);
+        if !self.source_is_declared_by_ref_call(source) {
+            emit_only_variables_assigned_by_reference_notice(out, "        ", target.line);
+        }
         let snapshot_temp = self.next_temp();
         out.push_str("        PtnValue ");
         out.push_str(&snapshot_temp);
@@ -3656,11 +3674,11 @@ impl ValueEmitter {
             let reference_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&reference_temp);
-            out.push_str(" = ptn_reference_source_or_error(");
+            out.push_str(" = ptn_reference_source_or_value(&runtime, ");
             out.push_str(&result_temp);
-            out.push_str(", \"");
-            out.push_str(&c_string(name));
-            out.push_str("\");\n");
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
             emit_value_cleanup(out, "    ", &result_temp);
             return reference_temp;
         }
