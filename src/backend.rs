@@ -2215,6 +2215,24 @@ impl ValueEmitter {
             })
     }
 
+    fn magic_function_name(&self) -> &str {
+        let name = self.current_function_name.as_deref().unwrap_or("");
+        name.rsplit_once("::")
+            .map(|(_, method_name)| method_name)
+            .unwrap_or(name)
+    }
+
+    fn magic_method_name(&self) -> &str {
+        self.current_function_name.as_deref().unwrap_or("")
+    }
+
+    fn magic_class_name(&self) -> &str {
+        self.current_function_name
+            .as_deref()
+            .and_then(|name| name.rsplit_once("::").map(|(class_name, _)| class_name))
+            .unwrap_or("")
+    }
+
     fn source_is_declared_by_ref_call(&self, source: &ValueExpr) -> bool {
         match source {
             ValueExpr::InternalCall { name, .. } => self
@@ -2984,15 +3002,18 @@ impl ValueEmitter {
                         self.source_dir.len()
                     )
                 }
-                MagicConstantKind::Function | MagicConstantKind::Method => {
-                    format!(
-                        "ptn_string(\"{}\")",
-                        c_string(self.current_function_name.as_deref().unwrap_or(""))
-                    )
+                MagicConstantKind::Function => {
+                    format!("ptn_string(\"{}\")", c_string(self.magic_function_name()))
                 }
-                MagicConstantKind::Class
-                | MagicConstantKind::Trait
-                | MagicConstantKind::Namespace => "ptn_string(\"\")".to_string(),
+                MagicConstantKind::Method => {
+                    format!("ptn_string(\"{}\")", c_string(self.magic_method_name()))
+                }
+                MagicConstantKind::Class => {
+                    format!("ptn_string(\"{}\")", c_string(self.magic_class_name()))
+                }
+                MagicConstantKind::Trait | MagicConstantKind::Namespace => {
+                    "ptn_string(\"\")".to_string()
+                }
             },
             ValueExpr::InternalCall {
                 name,

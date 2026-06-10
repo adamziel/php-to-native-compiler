@@ -128,10 +128,11 @@ Current runtime/compiler slices:
   constant-expression subset, lower to IR `DefineConstant` instructions, and
   populate a runtime constant table used by bare constant reads and `defined()`
   before falling back to modeled built-in constants.
-- Global-scope magic constants lower to dedicated IR value expressions with
-  source line and compile-file path metadata. The backend emits `__LINE__`,
-  `__FILE__`, and `__DIR__` directly and resolves scope-dependent names to the
-  global-scope empty string until functions/classes/namespaces exist.
+- Magic constants lower to dedicated IR value expressions with source line and
+  compile-file path metadata. The backend emits `__LINE__`, `__FILE__`, and
+  `__DIR__` directly, resolves function-scope names from the current generated
+  function, and splits flattened public static method symbols so `__FUNCTION__`,
+  `__METHOD__`, and `__CLASS__` match the supported method subset.
 - Short array literals lower to ordered boxed array values with integer or
   string keys. The generated runtime canonicalizes integer-string keys, assigns
   automatic integer keys, replaces duplicate keys in insertion order, and uses
@@ -214,8 +215,8 @@ Near-term architecture targets:
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants,
   namespaced symbols, autoloading, and
   disabled-functions behavior in symbol-existence predicates.
-- Scope-aware magic constants in functions, methods, classes, traits,
-  namespaces, includes, and eval contexts.
+- Scope-aware magic constants in traits, namespaces, includes, eval, and class
+  contexts outside the current public static method subset.
 - Broader control flow: alternate syntax, unbraced switch bodies,
   by-reference/destructuring/object `foreach`, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics, and

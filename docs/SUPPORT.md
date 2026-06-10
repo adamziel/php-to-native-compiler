@@ -211,8 +211,10 @@ supports in generated native binaries.
   `return` statements, implicit `null` returns, recursive calls, call-frame
   argument introspection, and minimal `null` parameter and return type
   declarations over the currently supported expression and statement subset.
-  Calls may pass extra arguments. Duplicate declarations and declarations that
-  collide with currently modeled internal function names are rejected.
+  Function-scope `__FUNCTION__` and `__METHOD__` resolve to the declared
+  function name. Calls may pass extra arguments. Duplicate declarations and
+  declarations that collide with currently modeled internal function names are
+  rejected.
 - Direct variable reference aliases, grouped direct-variable aliases,
   single-dimension array element references, grouped single-dimension array
   element references, array literal reference elements, and by-value copies near
@@ -384,7 +386,9 @@ supports in generated native binaries.
   function subset. Static methods are registered in the callable table under
   `Class::method`, can be called directly with `Class::method(...)`, and can be
   used by dynamic calls or internal callbacks through `"Class::method"` and
-  `["Class", "method"]` callable values.
+  `["Class", "method"]` callable values. Inside static methods,
+  `__FUNCTION__` resolves to the method name, `__METHOD__` to `Class::method`,
+  and `__CLASS__` to the declaring class name.
 - `new stdClass` expressions, boxed object handles, and public dynamic property
   reads/writes such as `$object->name` and `$object->name = expr`. Object
   assignment shares the object handle, so property writes through an alias are
@@ -534,8 +538,8 @@ supports in generated native binaries.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
 - Statement-form `(void) expr;` casts.
-- Scope-aware magic constants inside functions, methods, classes, traits,
-  namespaces, includes, and eval contexts.
+- Scope-aware magic constants for traits, namespaces, includes, eval, and class
+  contexts outside the current public static method subset.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for integer-only operator conversion diagnostics, including bitwise,
   shift, and modulo diagnostics.

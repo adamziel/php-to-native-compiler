@@ -18,7 +18,9 @@ expected rows, or one-off outputs.
   magic-constant coverage plus `func_num_args()`, `func_get_arg()`, and
   `func_get_args()` call-frame introspection, scalar type hints, and
   by-reference return aliases for variables, one-level array elements, local
-  lifetimes, typed coercion, and plain-assignment separation.
+  lifetimes, typed coercion, and plain-assignment separation. Bounded public
+  static methods also expose scoped `__FUNCTION__`, `__METHOD__`, and
+  `__CLASS__` magic constants.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for

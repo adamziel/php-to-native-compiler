@@ -4366,6 +4366,37 @@ echo MathBox::pair(1, 2), \"\\n\";
 }
 
 #[test]
+fn compile_static_method_magic_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-static-method-magic-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-method-magic-constants.php");
+    let output = root.join("static-method-magic-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicBox {
+    public static function MixedCase() {
+        var_dump(__FUNCTION__, __METHOD__, __CLASS__, __TRAIT__, __NAMESPACE__);
+    }
+}
+
+MagicBox::MixedCase();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(9) \"MixedCase\"\nstring(19) \"MagicBox::MixedCase\"\nstring(8) \"MagicBox\"\nstring(0) \"\"\nstring(0) \"\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_user_function_reads_global_const_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-global-const");
     fs::create_dir_all(&root).unwrap();
