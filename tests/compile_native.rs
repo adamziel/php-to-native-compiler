@@ -645,6 +645,30 @@ fn parser_accepts_dynamic_function_value_calls() {
 }
 
 #[test]
+fn parser_accepts_anonymous_function_callables() {
+    let program =
+        parser::parse("<?php $fn = function &($carry, $value) { return $value; }; echo $fn(0, 1);")
+            .unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected closure assignment");
+    };
+    let Expr::Closure {
+        parameters,
+        return_by_ref,
+        body,
+        ..
+    } = value
+    else {
+        panic!("expected closure expression");
+    };
+    assert!(*return_by_ref);
+    assert_eq!(parameters.len(), 2);
+    assert_eq!(parameters[0].name, "carry");
+    assert_eq!(parameters[1].name, "value");
+    assert!(matches!(body[0], Statement::Return { .. }));
+}
+
+#[test]
 fn parser_accepts_user_function_declarations_and_returns() {
     let program = parser::parse(
         "<?php function add($left, $right) { $sum = $left + $right; return $sum; } echo add(2, 3);",
@@ -4362,6 +4386,33 @@ echo MathBox::pair(1, 2), \"\\n\";
     assert!(c_source.contains("ptn_callable_function_name("));
     assert!(c_source.contains("ptn_call_dynamic_function_name(&runtime"));
     assert!(c_source.contains("MathBox::pair"));
+}
+
+#[test]
+fn compile_anonymous_function_value_call_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-function-value-call");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-function-value-call.php");
+    let output = root.join("anonymous-function-value-call-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$call = function ($value) { return $value + 1; };\n\
+echo $call(6), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "7\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("__ptn_closure_0"));
+    assert!(c_source.contains("ptn_dynamic_function_name("));
+    assert!(c_source.contains("ptn_call_dynamic_function_name(&runtime"));
 }
 
 #[test]
@@ -10025,6 +10076,37 @@ var_dump(array_map(null, [\"x\" => 1, \"y\" => 2], [10]));
     assert!(c_source.contains("ptn_internal_array_map"));
     assert!(c_source.contains("ptn_call_function(runtime, function_name, array_count"));
     assert!(c_source.contains("ptn_array_map_result_key"));
+}
+
+#[test]
+fn compile_array_reduce_closure_by_ref_return_to_native_binary() {
+    let root = temp_dir("ptn-native-array-reduce-closure-by-ref-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-reduce-closure-by-ref-callback.php");
+    let output = root.join("array-reduce-closure-by-ref-callback-bin");
+    fs::write(
+        &input,
+        "<?php
+$array = [1, 2];
+var_dump(array_reduce($array, function &($carry, $value) {
+    return $value;
+}, 0));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(2)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("__ptn_closure_0"));
+    assert!(c_source.contains("ptn_internal_array_reduce"));
+    assert!(c_source.contains("ptn_return_value = ptn_value_share("));
+    assert!(c_source.contains("carry = ptn_value_clone_deref(callback_result);"));
 }
 
 #[test]

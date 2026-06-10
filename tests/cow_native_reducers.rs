@@ -237,6 +237,14 @@ var_dump(array_reduce($array, \"pick_reduce_value\", 0));",
             expected_stdout: "int(2)\n",
         },
         CowReducerCase {
+            name: "array_reduce_closure_callback_by_ref_return",
+            oracle: "ext/standard/tests/array/array_reduce_return_by_ref.phpt",
+            source: "<?php\n\
+$array = [1, 2];\n\
+var_dump(array_reduce($array, function &($carry, $value) { return $value; }, 0));",
+            expected_stdout: "int(2)\n",
+        },
+        CowReducerCase {
             name: "function_return_array_then_write",
             oracle: "Zend/tests/assign_by_val_function_by_ref_return_value.phpt",
             source: "<?php\n\
@@ -447,7 +455,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 29, "COW reducer pass count changed");
+    assert_eq!(passed, 30, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

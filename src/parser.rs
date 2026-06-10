@@ -1383,6 +1383,7 @@ impl Parser {
             TokenKind::False => Ok(Expr::Bool(false, token.span)),
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::Function => self.parse_closure_expr(token.span),
             TokenKind::Identifier(name) => {
                 let lowercase = name.to_ascii_lowercase();
                 if lowercase == "new" {
@@ -1503,6 +1504,36 @@ impl Parser {
             .map(|span| combine_spans(span, token.span))
             .unwrap_or(token.span);
         Ok((name, span))
+    }
+
+    fn parse_closure_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        let parameters = self.parse_function_parameters()?;
+        let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            Some(self.parse_type_hint()?)
+        } else {
+            None
+        };
+        self.function_depth += 1;
+        let body = self.parse_block();
+        self.function_depth -= 1;
+        let body = body?;
+        if return_by_ref {
+            validate_by_reference_returns_in_statements(&body, "{closure}")?;
+        }
+        Ok(Expr::Closure {
+            parameters,
+            return_type,
+            return_by_ref,
+            body,
+            span: start_span,
+        })
     }
 
     fn reject_unsupported_class_like_declaration(&mut self) -> Result<Statement> {
@@ -2397,6 +2428,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::MagicConstant(_, _)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
+        | Expr::Closure { .. }
         | Expr::MethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::PropertyFetch { .. }
@@ -3297,6 +3329,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
                 reject_append_array_read(argument)?;
             }
         }
+        Expr::Closure { .. } => {}
         Expr::MethodCall {
             receiver,
             arguments,
@@ -3393,6 +3426,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::AssignRef { .. }
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
+        | Expr::Closure { .. }
         | Expr::MethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::PropertyFetch { .. }
