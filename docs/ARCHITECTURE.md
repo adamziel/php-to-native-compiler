@@ -75,9 +75,10 @@ Current runtime/compiler slices:
   value-expression concatenation: literal string segments, runtime variable
   reads, scalar string casts, and the existing boxed concat helper. Complex and
   braced interpolation remain outside this slice.
-- Increment/decrement expression contexts are rejected while full PHP
-  pre/post-increment value semantics are unsupported, so statement-form direct
-  variable support is not confused with expression result behavior.
+- Direct-variable increment/decrement supports both statement form and
+  expression result values for the current boxed numeric scalar path. Broader
+  lvalue targets and exact string/boolean/reference/COW increment semantics
+  remain outside this slice.
 - Scalar comparison and boolean expressions share the same AST/IR binary node
   shape. Comparisons emit boxed booleans through runtime helpers, while `&&`
   and `||` emit native C branches that short-circuit over boxed PHP truthiness.
@@ -177,9 +178,10 @@ Current runtime/compiler slices:
   statement tree and reports source-spanned fatals for `goto` targets that are
   not defined or labels that are repeated before the backend emits generated
   labels.
-- Statement-form direct variable increment/decrement lowers to a runtime read,
-  boxed numeric increment/decrement helper, and runtime write. Expression-value
-  semantics for pre/post increment remain outside this slice.
+- Direct variable increment/decrement lowers to a runtime read, boxed numeric
+  increment/decrement helper, and runtime write. Expression-form pre/post
+  increment additionally clones either the mutated or original value for the
+  expression result.
 
 Near-term architecture targets:
 
@@ -220,7 +222,7 @@ Near-term architecture targets:
   by-reference/destructuring/object `foreach`, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics, and
   exception/finally edges.
-- Full PHP increment/decrement semantics, including expression result values,
-  strings, booleans, arrays/objects, references, and copy-on-write behavior.
+- Full PHP increment/decrement semantics for strings, booleans, arrays/objects,
+  references, non-direct-variable lvalues, and copy-on-write behavior.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
   symbol mutation.

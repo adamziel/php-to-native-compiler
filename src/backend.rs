@@ -1549,6 +1549,7 @@ fn collect_value_runtime_requirements(
             collect_assignment_target_runtime_requirements(target, functions, requirements);
             collect_value_runtime_requirements(source, functions, requirements);
         }
+        ValueExpr::IncDec { .. } => {}
         ValueExpr::Array(elements) => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -2113,6 +2114,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
             assignment_target_mentions_variable(target, name)
                 || value_mentions_variable(source, name)
         }
+        ValueExpr::IncDec { name: target, .. } => target == name,
         ValueExpr::Array(elements) => elements.iter().any(|element| {
             element
                 .key
@@ -2292,6 +2294,54 @@ impl ValueEmitter {
         let value_temp = self.emit_materialized_value(out, value);
         let result_temp = self.emit_store_assignment_target_from_temp(out, target, &value_temp);
         emit_value_cleanup(out, "    ", &value_temp);
+        result_temp
+    }
+
+    fn emit_inc_dec_expression(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        op: IncDecOp,
+        prefix: bool,
+        line: usize,
+    ) -> String {
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let mutated_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&mutated_temp);
+        out.push_str(" = ");
+        out.push_str(match op {
+            IncDecOp::Increment => "ptn_increment",
+            IncDecOp::Decrement => "ptn_decrement",
+        });
+        out.push('(');
+        out.push_str(&current_temp);
+        out.push_str(");\n");
+        out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&mutated_temp);
+        out.push_str(");\n");
+
+        let result_source = if prefix { &mutated_temp } else { &current_temp };
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone(ptn_value_deref(");
+        out.push_str(result_source);
+        out.push_str("));\n");
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &mutated_temp);
         result_temp
     }
 
@@ -2870,6 +2920,12 @@ impl ValueEmitter {
             ValueExpr::AssignRef { target, source } => {
                 self.emit_reference_assignment(out, target, source)
             }
+            ValueExpr::IncDec {
+                name,
+                op,
+                prefix,
+                line,
+            } => self.emit_inc_dec_expression(out, name, *op, *prefix, *line),
             ValueExpr::Cast { kind, expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
@@ -3888,6 +3944,7 @@ impl ValueEmitter {
             ValueExpr::Binary { .. }
                 | ValueExpr::Assign { .. }
                 | ValueExpr::AssignRef { .. }
+                | ValueExpr::IncDec { .. }
                 | ValueExpr::InternalCall { .. }
                 | ValueExpr::DynamicCall { .. }
                 | ValueExpr::Unary { .. }

@@ -1,17 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:28Z
-Measured: `ptn-107` rebased on `origin/master@51e3314d`; anonymous callback
+Refresh: 2026-06-10T14:39Z
+Measured: `ptn-cd4` rebased on `origin/master@df737c70`; anonymous callback
 closures, static callables, string-callable callbacks, recursive directory
-APIs, bounded `stdClass` property evidence, and non-array `foreach`
-source-path diagnostics.
+APIs, bounded `stdClass` property evidence, non-array `foreach` source-path
+diagnostics, and direct-variable increment/decrement expression result values.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 368 | 368 | 0 |
+| Native compiled PHP snippets | 369 | 369 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -54,7 +54,8 @@ offset-form `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, and `new stdClass` boxed objects with public dynamic
-property reads/writes shared through object aliases.
+property reads/writes shared through object aliases, plus direct-variable
+pre/post increment/decrement expression results on the boxed numeric path.
 
 ## Still Needed
 
@@ -64,7 +65,8 @@ declarations/metadata, instance methods, visibility/inheritance/static
 properties/magic methods, non-static method callable values, unsupported
 array/string internals, 64-bit operator exactness, object/destructuring
 foreach diagnostics, object/property compound lvalues, scalar offset-lvalue
-fatal parity, and broader file APIs.
+fatal parity, and broader file APIs. Increment/decrement still needs
+non-direct-variable lvalues and exact string/boolean/reference/COW semantics.
 
 ## Verification
 

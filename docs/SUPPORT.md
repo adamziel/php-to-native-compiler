@@ -409,8 +409,10 @@ supports in generated native binaries.
   const-specific `"," or ";"` expected-token set. Unsupported class members and
   class-constant fetch syntax are recognized and reported as class metadata
   boundaries.
-- Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
-  `$name--;`, and `--$name;`.
+- Direct variable increment/decrement: statement-form `$name++;`, `++$name;`,
+  `$name--;`, and `--$name;`, plus expression-form direct-variable pre/post
+  results in echo operands, assignment RHS values, binary operands, function
+  arguments, and branch conditions for the current boxed numeric scalar path.
 
 ## Not Yet Supported
 
@@ -423,8 +425,6 @@ supports in generated native binaries.
   invalid numeric-separator/radix diagnostic parity beyond invalid legacy
   octal integers, unsupported grammar-site parse-error wording, and exact
   scalar cast overflow behavior.
-- Prefix and postfix increment/decrement operators such as `++$value` and
-  `--$value`.
 - `print` as an expression returning `1`, including contexts such as assignment,
   echo operands, binary operands, and the parenthesized spelling `print(...)`.
 - Keyword boolean tails after direct assignment statements, ternary expressions
@@ -443,8 +443,8 @@ supports in generated native binaries.
   inside unsupported function/class contexts.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
-- Increment/decrement as expressions, including pre/post result values in echo,
-  assignment, binary operands, function arguments, or branch conditions.
+- Increment/decrement expressions for array offsets, object/static properties,
+  variable variables, temporaries, and other non-direct-variable lvalues.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,
   objects, references, copy-on-write, overflow edge cases, and diagnostics.
 - Inline HTML before `<?php` or between PHP blocks.

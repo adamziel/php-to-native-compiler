@@ -286,6 +286,12 @@ pub enum Expr {
         source: Box<Expr>,
         span: SourceSpan,
     },
+    IncDec {
+        name: String,
+        op: IncDecOp,
+        prefix: bool,
+        span: SourceSpan,
+    },
     Constant(String, SourceSpan),
     MagicConstant(MagicConstantKind, SourceSpan),
     Call {
@@ -435,6 +441,7 @@ impl Expr {
             | Expr::MagicConstant(_, span) => *span,
             Expr::AnonymousFunction(function) => function.span,
             Expr::Assign { span, .. } | Expr::AssignRef { span, .. } => *span,
+            Expr::IncDec { span, .. } => *span,
             Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::MethodCall { span, .. }

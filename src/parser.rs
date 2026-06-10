@@ -1325,6 +1325,7 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_inc_dec_expr(),
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
                     let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
@@ -1399,10 +1400,46 @@ impl Parser {
                         Some(scope_span),
                     ));
                 }
+                TokenKind::PlusPlus | TokenKind::MinusMinus => {
+                    let op_token = self.advance().clone();
+                    let op = inc_dec_op_from_token(&op_token)?;
+                    let span = combine_spans(expr.span(), op_token.span);
+                    let Expr::Variable(name, _) = expr else {
+                        return Err(Diagnostic::new(
+                            "increment/decrement expression target must be a variable",
+                            Some(op_token.span),
+                        ));
+                    };
+                    expr = Expr::IncDec {
+                        name,
+                        op,
+                        prefix: false,
+                        span,
+                    };
+                }
                 _ => break,
             }
         }
         Ok(expr)
+    }
+
+    fn parse_prefix_inc_dec_expr(&mut self) -> Result<Expr> {
+        let op_token = self.advance().clone();
+        let op = inc_dec_op_from_token(&op_token)?;
+        let target = self.parse_postfix_expr()?;
+        let span = combine_spans(op_token.span, target.span());
+        let Expr::Variable(name, _) = target else {
+            return Err(Diagnostic::new(
+                "increment/decrement expression target must be a variable",
+                Some(op_token.span),
+            ));
+        };
+        Ok(Expr::IncDec {
+            name,
+            op,
+            prefix: true,
+            span,
+        })
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr> {
@@ -2222,6 +2259,14 @@ fn syntax_error_unexpected(token: &Token, expecting: Option<&str>) -> Diagnostic
     Diagnostic::parse_error(message, Some(token.span))
 }
 
+fn inc_dec_op_from_token(token: &Token) -> Result<IncDecOp> {
+    match token.kind {
+        TokenKind::PlusPlus => Ok(IncDecOp::Increment),
+        TokenKind::MinusMinus => Ok(IncDecOp::Decrement),
+        _ => Err(Diagnostic::new("expected increment", Some(token.span))),
+    }
+}
+
 fn describe_unexpected_token(token: &Token) -> String {
     match &token.kind {
         TokenKind::Identifier(name) => format!("identifier \"{name}\""),
@@ -2459,6 +2504,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::Null(_)
         | Expr::Variable(_, _)
         | Expr::AnonymousFunction(_)
+        | Expr::IncDec { .. }
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _)
         | Expr::Call { .. }
@@ -2766,6 +2812,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         | Expr::Bool(_, _)
         | Expr::Null(_)
         | Expr::Variable(_, _)
+        | Expr::IncDec { .. }
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _) => {}
     }
@@ -3594,6 +3641,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::Bool(_, _)
         | Expr::Null(_)
         | Expr::Variable(_, _)
+        | Expr::IncDec { .. }
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _) => {}
     }
@@ -3640,6 +3688,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Variable(_, _)
         | Expr::Assign { .. }
         | Expr::AssignRef { .. }
+        | Expr::IncDec { .. }
         | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }

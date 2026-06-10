@@ -474,16 +474,49 @@ fn parser_rejects_print_expression_contexts() {
 }
 
 #[test]
-fn parser_rejects_increment_and_decrement_expression_contexts() {
-    let increment = parser::parse("<?php echo ++$value;").unwrap_err();
-    assert!(increment.message.contains("expected expression"));
+fn parser_accepts_direct_variable_increment_and_decrement_expressions() {
+    let program = parser::parse("<?php echo ++$value, $value--;").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::IncDec {
+            name,
+            op: IncDecOp::Increment,
+            prefix: true,
+            ..
+        } if name == "value"
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::IncDec {
+            name,
+            op: IncDecOp::Decrement,
+            prefix: false,
+            ..
+        } if name == "value"
+    ));
+}
 
-    let decrement = parser::parse("<?php echo $value--;").unwrap_err();
-    assert_eq!(decrement.message, "syntax error, unexpected token \"--\"");
-    assert_eq!(decrement.kind, DiagnosticKind::ParseError);
+#[test]
+fn parser_rejects_increment_and_decrement_expression_non_variable_targets() {
+    let invalid_prefix = parser::parse("<?php echo ++1;").unwrap_err();
+    assert_eq!(
+        invalid_prefix.message,
+        "increment/decrement expression target must be a variable"
+    );
 
-    let invalid_prefix = parser::parse("<?php ++1;").unwrap_err();
-    assert!(invalid_prefix.message.contains("expected variable"));
+    let invalid_postfix = parser::parse("<?php echo $items[0]++;").unwrap_err();
+    assert_eq!(
+        invalid_postfix.message,
+        "increment/decrement expression target must be a variable"
+    );
+
+    let invalid_statement_prefix = parser::parse("<?php ++1;").unwrap_err();
+    assert!(invalid_statement_prefix
+        .message
+        .contains("expected variable"));
 }
 
 #[test]
@@ -8943,6 +8976,41 @@ fn compile_prefix_increment_and_decrement_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2 3 2 1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_increment_decrement_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-increment-decrement-expressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("increment-decrement-expressions.php");
+    let output = root.join("increment-decrement-expressions-bin");
+    fs::write(
+        &input,
+        "<?php
+function show($value) { echo $value, \"|\"; }
+$x = 1;
+echo $x++, \":\", $x, \"\\n\";
+echo ++$x, \":\", $x, \"\\n\";
+$y = 5;
+echo $y-- + $y, \":\", $y, \"\\n\";
+$z = 5;
+echo --$z + $z, \":\", $z, \"\\n\";
+show($z++);
+show(++$z);
+if ($z++ == 6) { echo \"branch:\", $z, \"\\n\"; }
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1:2\n3:3\n9:4\n8:4\n4|6|branch:7\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
