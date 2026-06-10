@@ -733,6 +733,36 @@ static PTN_UNUSED void ptn_runtime_string_offset_set(
     ptn_string_value_refresh(target);
 }
 
+static PTN_UNUSED int ptn_runtime_raise_nested_string_offset_lvalue(
+    PtnRuntime *runtime,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    if (segment_count <= 1) {
+        return 0;
+    }
+    if (segments[0].append) {
+        ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+        return 1;
+    }
+
+    int64_t offset = 0;
+    if (!ptn_string_offset_from_value(runtime, segments[0].value, line, 0, &offset)) {
+        return 1;
+    }
+    (void)offset;
+
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Cannot use string offset as an array",
+        runtime->source_path,
+        line
+    );
+    return 1;
+}
+
 static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {
     container = ptn_value_deref(container);
     key_value = ptn_value_deref(key_value);
@@ -1244,14 +1274,20 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
         return;
     }
 
-    if (segment_count == 2) {
+    if (segment_count >= 2) {
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
-            if (segments[1].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            if (ptn_runtime_raise_nested_string_offset_lvalue(
+                runtime,
+                segments + 1,
+                segment_count - 1,
+                line
+            )) {
                 return;
             }
-            ptn_runtime_string_offset_set(runtime, slot_value, segments[1].value, value, line);
+            if (segment_count == 2) {
+                ptn_runtime_string_offset_set(runtime, slot_value, segments[1].value, value, line);
+            }
             return;
         }
     }
@@ -1308,17 +1344,28 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
     }
 
     PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
-    if (slot != NULL && segment_count == 1) {
+    if (slot != NULL) {
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type != PTN_STRING) {
             slot_value = NULL;
         }
         if (slot_value != NULL) {
-            if (segments[0].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            if (ptn_runtime_raise_nested_string_offset_lvalue(
+                runtime,
+                segments,
+                segment_count,
+                line
+            )) {
                 return;
             }
-            ptn_runtime_string_offset_set(runtime, slot_value, segments[0].value, value, line);
+            if (segment_count == 1) {
+                if (segments[0].append) {
+                    ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                    return;
+                }
+                ptn_runtime_string_offset_set(runtime, slot_value, segments[0].value, value, line);
+                return;
+            }
             return;
         }
     }
@@ -1394,6 +1441,9 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
     if (slot_value.type == PTN_STRING) {
         if (segments[0].append) {
             ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            return ptn_null();
+        }
+        if (ptn_runtime_raise_nested_string_offset_lvalue(runtime, segments, segment_count, line)) {
             return ptn_null();
         }
         ptn_throw_exception(runtime, "Error", "Cannot use assign-op operators with string offsets");
