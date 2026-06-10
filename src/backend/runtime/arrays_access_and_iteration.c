@@ -923,6 +923,56 @@ static PTN_UNUSED PtnArrayKey ptn_array_path_segment_key(
     return ptn_array_key_from_value(segment->value);
 }
 
+static PTN_UNUSED PtnLookupResult ptn_runtime_array_path_lookup_quiet(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    if (segment_count == 0) {
+        return ptn_lookup_missing();
+    }
+
+    PtnLookupResult root = ptn_runtime_read_variable_quiet(runtime, name);
+    if (!root.exists) {
+        return ptn_lookup_missing();
+    }
+
+    PtnValue container = ptn_value_deref(root.value);
+    PtnValue owned_container = ptn_null();
+    int has_owned_container = 0;
+    for (size_t i = 0; i < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return ptn_lookup_missing();
+        }
+
+        PtnLookupResult result = ptn_offset_lookup(runtime, container, segment->value, line, 1);
+        if (!result.exists || i + 1 == segment_count) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return result;
+        }
+
+        if (has_owned_container) {
+            ptn_value_destroy(&owned_container);
+        }
+        owned_container = result.value;
+        has_owned_container = 1;
+        container = ptn_value_deref(owned_container);
+    }
+
+    if (has_owned_container) {
+        ptn_value_destroy(&owned_container);
+    }
+    return ptn_lookup_missing();
+}
+
 static PTN_UNUSED void ptn_array_path_emit_null_key_deprecation(
     const PtnArrayPathSegment *segment,
     size_t line,

@@ -9,7 +9,7 @@ Measured: `ptn-w7c` rebased on `origin/master@79a707f`; focused
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 345 | 345 | 0 |
+| Native compiled PHP snippets | 346 | 346 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 150 | 50 |
 | PHPT Zend rows | 76 | 67 | 9 |
@@ -32,7 +32,8 @@ passing, 5 failing: assignment-aliasing 4/4, string-offsets 4/4,
 array-writes-appends-unset 4/4, nested-arrays 3/4, foreach-mutation 3/4,
 function-boundaries 1/4, reference-interaction 5/5. Named `array_reduce()`
 callbacks now preserve by-reference callback returns; the exact closure-backed
-PHPT row remains blocked by Closure/callable values (`ptn-dis`). Details live in
+PHPT row remains blocked by Closure/callable values (`ptn-dis`). Offset-form
+`??=` now has keyed array/string native coverage. Details live in
 `docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
 
 ## Already Ported
@@ -48,11 +49,12 @@ alias/separation boundaries, `count()`, `??`, assignment expressions,
 expression-level `@`, selected file APIs, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
 replace, `debug_zval_dump()`, dynamic lvalue-reference calls, append/list
-assignment expressions for reference arrays, direct-variable `??=`, offset-form
-`??=` diagnostics, grouped reference targets, recursive/same-array/nested
-reference and class-syntax diagnostics, named `array_reduce()` callback dispatch
-with by-reference returns, and value fallback with PHP notice when non-reference
-call results are assigned by reference.
+assignment expressions for reference arrays, direct-variable `??=`, keyed
+array/string offset-form `??=`, append-form `??=` diagnostics, grouped
+reference targets, recursive/same-array/nested reference and class-syntax
+diagnostics, named `array_reduce()` callback dispatch with by-reference
+returns, and value fallback with PHP notice when non-reference call results are
+assigned by reference.
 
 ## Still Needed
 
@@ -61,7 +63,8 @@ callback mutation through `array_walk()`/`$GLOBALS`, recursive/call-result
 by-reference return chaining, closure-backed callback by-reference returns, and
 `array_reduce()` callback/refcount behavior. Broader bounded-PHPT gaps are still
 objects, unsupported array/string internals, 64-bit operator exactness, foreach
-edge diagnostics, offset-form `??=` runtime support, and broader file APIs.
+edge diagnostics, object/property compound lvalues, scalar offset-lvalue fatal
+parity, and broader file APIs.
 
 ## Verification
 

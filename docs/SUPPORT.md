@@ -56,6 +56,10 @@ supports in generated native binaries.
 - Direct named-variable null coalescing assignment `??=`. The compiler uses the
   same quiet lookup path as expression-form `??`, writes only when the variable
   is missing or `null`, and evaluates the right-hand expression lazily.
+- Keyed array and string offset null coalescing assignment `??=`. Offset keys are
+  evaluated once, the read side is quiet like `??`, and existing array/string
+  write helpers perform the conditional store. Append-form `$a[] ??= ...` is
+  rejected because PHP must read the target before assigning.
 - Print statements use the same generated boxed output path as echo.
 - Parenthesized expressions for grouping supported scalar expressions,
   including nested grouping.
@@ -518,9 +522,9 @@ supports in generated native binaries.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for integer-only operator conversion diagnostics, including bitwise,
   shift, and modulo diagnostics.
-- Array, object, string-offset, property, static-property, variable-variable,
-  reference, and other non-direct-variable compound-assignment lvalues,
-  including offset-form `??=`.
+- Object, property, static-property, variable-variable, append-form
+  null-coalescing, and remaining non-direct-variable compound-assignment
+  lvalues outside modeled keyed array/string offsets.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.

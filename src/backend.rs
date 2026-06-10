@@ -2068,13 +2068,8 @@ impl ValueEmitter {
                     dimensions,
                     line,
                 } => {
-                    return self.emit_offset_coalesce_assignment(
-                        out,
-                        array,
-                        dimensions,
-                        *line,
-                        value,
-                    );
+                    return self
+                        .emit_offset_coalesce_assignment(out, array, dimensions, *line, value);
                 }
                 AssignmentTarget::List(_) => {
                     unreachable!("parser rejects null coalescing assignment for list targets");
@@ -3116,11 +3111,34 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        out.push_str("        ");
+        let stored_lookup_temp = self.next_temp();
+        out.push_str("        PtnLookupResult ");
+        out.push_str(&stored_lookup_temp);
+        out.push_str(" = ptn_runtime_array_path_lookup_quiet(&runtime, \"");
+        out.push_str(&c_string(array));
+        out.push_str("\", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        if (");
+        out.push_str(&stored_lookup_temp);
+        out.push_str(".exists) {\n");
+        out.push_str("            ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&stored_lookup_temp);
+        out.push_str(".value;\n");
+        out.push_str("        } else {\n");
+        emit_value_cleanup(out, "            ", &format!("{stored_lookup_temp}.value"));
+        out.push_str("            ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_value_clone(");
         out.push_str(&snapshot_temp);
         out.push_str(");\n");
+        out.push_str("        }\n");
         emit_value_cleanup(out, "        ", &snapshot_temp);
         emit_value_cleanup(out, "        ", &value_temp);
         out.push_str("    }\n");

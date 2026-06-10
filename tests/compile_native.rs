@@ -9125,6 +9125,73 @@ string(4) \"kept\"\n"
 }
 
 #[test]
+fn compile_offset_null_coalescing_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-offset-null-coalescing-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("offset-null-coalescing-assignment.php");
+    let output = root.join("offset-null-coalescing-assignment-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function rhs($label) { echo \"rhs:$label\\n\"; return $label; }\n\
+$items = [\"hit\" => \"kept\", \"nullish\" => null, \"nested\" => [\"leaf\" => null]];\n\
+var_dump($items[\"hit\"] ??= rhs(\"hit\"));\n\
+var_dump($items[\"nullish\"] ??= rhs(\"nullish\"));\n\
+var_dump($items[\"missing\"] ??= rhs(\"missing\"));\n\
+var_dump($items[\"nested\"][\"leaf\"] ??= rhs(\"nested\"));\n\
+$items[\"standalone\"] ??= rhs(\"standalone\");\n\
+var_dump($items[\"standalone\"]);\n\
+var_dump($undef[\"key\"] ??= rhs(\"undef\"));\n\
+$nullbase = null;\n\
+var_dump($nullbase[\"key\"] ??= rhs(\"nullbase\"));\n\
+$string = \"abc\";\n\
+var_dump($string[1] ??= rhs(\"string-hit\"));\n\
+var_dump($string[5] ??= rhs(\"string-missing\"));\n\
+var_dump($string);\n\
+var_dump($items[\"hit\"], $items[\"nullish\"], $items[\"missing\"], $items[\"nested\"][\"leaf\"], $undef[\"key\"], $nullbase[\"key\"]);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"kept\"\n\
+rhs:nullish\n\
+string(7) \"nullish\"\n\
+rhs:missing\n\
+string(7) \"missing\"\n\
+rhs:nested\n\
+string(6) \"nested\"\n\
+rhs:standalone\n\
+string(10) \"standalone\"\n\
+rhs:undef\n\
+string(5) \"undef\"\n\
+rhs:nullbase\n\
+string(8) \"nullbase\"\n\
+string(1) \"b\"\n\
+rhs:string-missing\n\
+\n\
+Warning: Only the first byte will be assigned to the string offset in ptn on line 15\n\
+string(1) \"s\"\n\
+string(6) \"abc  s\"\n\
+string(4) \"kept\"\n\
+string(7) \"nullish\"\n\
+string(7) \"missing\"\n\
+string(6) \"nested\"\n\
+string(5) \"undef\"\n\
+string(8) \"nullbase\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_lookup_quiet(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime"));
+}
+
+#[test]
 fn compile_compound_assignments_with_grouping_and_casts_to_native_binary() {
     let root = temp_dir("ptn-native-compound-assignment-grouped");
     fs::create_dir_all(&root).unwrap();
@@ -10254,28 +10321,72 @@ fn compile_many_runtime_symbols_to_native_binary() {
 }
 
 #[test]
-fn parser_rejects_offset_null_coalescing_assignments_with_explicit_diagnostics() {
+fn parser_accepts_offset_null_coalescing_assignments() {
+    let program = parser::parse(
+        "<?php\n\
+$items[\"name\"] ??= 1;\n\
+$items[\"nested\"][\"leaf\"] ??= 2;\n\
+echo $items[\"expr\"] ??= 3;\n\
+($items[\"grouped\"] ??= 4);\n",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 4);
+
+    let Statement::ArrayAssign { target, op, .. } = &program.statements[0] else {
+        panic!("expected array null coalescing assignment statement");
+    };
+    assert_eq!(target.array, "items");
+    assert_eq!(*op, AssignmentOp::CoalesceAssign);
+    assert_eq!(target.dimensions.len(), 1);
+
+    let Statement::ArrayAssign { target, op, .. } = &program.statements[1] else {
+        panic!("expected nested array null coalescing assignment statement");
+    };
+    assert_eq!(target.array, "items");
+    assert_eq!(*op, AssignmentOp::CoalesceAssign);
+    assert_eq!(target.dimensions.len(), 2);
+
+    let Statement::Echo { expressions, .. } = &program.statements[2] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Assign {
+            target: AssignmentTarget::ArrayDim(target),
+            op: AssignmentOp::CoalesceAssign,
+            ..
+        } if target.array == "items"
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[3] else {
+        panic!("expected grouped expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Grouped { expr, .. }
+            if matches!(
+                expr.as_ref(),
+                Expr::Assign {
+                    target: AssignmentTarget::ArrayDim(target),
+                    op: AssignmentOp::CoalesceAssign,
+                    ..
+                } if target.array == "items"
+            )
+    ));
+}
+
+#[test]
+fn parser_rejects_append_null_coalescing_assignment_with_explicit_diagnostics() {
     let cases = [
-        (
-            "array string key statement",
-            "<?php\n$items[\"name\"] ??= 1;",
-        ),
-        ("array integer key statement", "<?php\n$items[0] ??= 1;"),
-        (
-            "nested array statement",
-            "<?php\n$items[\"nested\"][\"leaf\"] ??= 1;",
-        ),
-        ("string offset statement", "<?php\n$string[1] ??= \"x\";"),
-        ("echo expression", "<?php\necho $items[\"name\"] ??= 1;"),
-        ("grouped expression", "<?php\n($items[\"name\"] ??= 1);"),
+        ("statement", "<?php\n$items[] ??= 1;"),
+        ("echo expression", "<?php\necho $items[] ??= 1;"),
+        ("grouped expression", "<?php\n($items[] ??= 1);"),
     ];
-    assert_eq!(cases.len(), 6);
 
     for (name, source) in cases {
         let error = parser::parse(source).unwrap_err();
         assert_eq!(
-            error.message,
-            "null coalescing assignment for offset targets is unsupported; direct variables are supported",
+            error.message, "null coalescing assignment cannot use append array access",
             "{name}"
         );
         assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
@@ -10296,15 +10407,11 @@ fn parser_rejects_offset_null_coalescing_assignments_with_explicit_diagnostics()
 }
 
 #[test]
-fn phpc_renders_offset_null_coalescing_assignment_diagnostic() {
-    let root = temp_dir("ptn-phpc-offset-null-coalescing-assignment");
+fn phpc_renders_append_null_coalescing_assignment_diagnostic() {
+    let root = temp_dir("ptn-phpc-append-null-coalescing-assignment");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("offset-null-coalescing-assignment.php");
-    fs::write(
-        &input,
-        "<?php\n$items = [];\n$items[\"name\"] ??= \"fallback\";\n",
-    )
-    .unwrap();
+    let input = root.join("append-null-coalescing-assignment.php");
+    fs::write(&input, "<?php\n$items[] ??= \"fallback\";\n").unwrap();
 
     let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
     assert!(!execution.status.success());
@@ -10313,7 +10420,7 @@ fn phpc_renders_offset_null_coalescing_assignment_diagnostic() {
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "Fatal error: null coalescing assignment for offset targets is unsupported; direct variables are supported in {} on line 3\n",
+            "Fatal error: null coalescing assignment cannot use append array access in {} on line 2\n",
             input.display()
         )
     );
