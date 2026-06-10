@@ -20,10 +20,11 @@ supports in generated native binaries.
 - Statement-form expressions over the currently supported expression subset.
   Generated native code evaluates the boxed value for side effects and
   discards the result.
-- String, integer, float, boolean, and null literals. Numeric literals accept
-  PHP digit separators between digits; integer literals include decimal,
-  legacy octal, explicit octal `0o`/`0O`, binary `0b`/`0B`, and hexadecimal
-  `0x`/`0X` forms.
+- String, integer, float, boolean, and null literals. Simple heredoc/nowdoc
+  literals are accepted as string literals without interpolation. Numeric
+  literals accept PHP digit separators between digits; integer literals include
+  decimal, legacy octal, explicit octal `0o`/`0O`, binary `0b`/`0B`, and
+  hexadecimal `0x`/`0X` forms.
 - Invalid legacy octal integer literals containing `8` or `9` are rejected with
   source-spanned PHP-style parse errors through `phpc`.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
@@ -179,7 +180,7 @@ supports in generated native binaries.
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
-  `count(expr);`, `array_values(expr);`,
+  `count(expr);`, `array_fill(start, count, value);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
@@ -197,7 +198,7 @@ supports in generated native binaries.
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
+  `count(expr)`, `array_fill(start, count, value)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
   `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
@@ -302,6 +303,9 @@ supports in generated native binaries.
   returning the first byte as an integer. Empty and multi-byte strings emit
   PHP-like deprecation diagnostics with the internal-call source line.
 - `count()` over current boxed arrays, returning their length as an integer.
+- `array_fill()` with scalar integer-compatible start/count arguments,
+  PHP-style integer key progression, non-negative count validation, and cloned
+  boxed values for each populated entry.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `array_merge_recursive()` and `array_replace_recursive()` over current boxed

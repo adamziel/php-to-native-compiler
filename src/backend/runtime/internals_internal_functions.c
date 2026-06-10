@@ -544,6 +544,77 @@ static PtnArray *ptn_internal_expect_array_arg(
     return NULL;
 }
 
+static int ptn_internal_string_is_numeric_integer_arg(PtnString string) {
+    if (ptn_string_has_embedded_nul(string)) {
+        return 0;
+    }
+
+    char *copy = ptn_duplicate_string_len((const char *)string.data, string.len);
+    const char *start = copy;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (*start == '\0') {
+        free(copy);
+        return 0;
+    }
+
+    char *end = NULL;
+    (void)strtod(start, &end);
+    if (end == start) {
+        free(copy);
+        return 0;
+    }
+    while (isspace((unsigned char)*end)) {
+        end++;
+    }
+    int valid = *end == '\0';
+    free(copy);
+    return valid;
+}
+
+static void ptn_internal_throw_integer_arg_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type int, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_STRING && !ptn_internal_string_is_numeric_integer_arg(value.as.string)) {
+        ptn_internal_throw_integer_arg_type_error(runtime, function_name, position, argument_name, value);
+        return 0;
+    }
+    if (value.type == PTN_ARRAY || value.type == PTN_OBJECT || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
+        ptn_internal_throw_integer_arg_type_error(runtime, function_name, position, argument_name, value);
+        return 0;
+    }
+    return ptn_value_to_integer(value);
+}
+
 static PtnArray *ptn_internal_expect_mutable_array_variable_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -1031,6 +1102,31 @@ static PtnValue ptn_internal_array_fill_keys(PtnRuntime *runtime, size_t argc, c
     for (size_t i = 0; i < keys->len; i++) {
         PtnArrayKey key = ptn_array_fill_keys_key_from_value(runtime, keys->entries[i].value, line);
         ptn_array_set_entry(result.as.array, key, ptn_value_clone(args[1]));
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_array_fill(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    int64_t start_index = ptn_internal_expect_integer_arg(runtime, "array_fill", 1, "start_index", args[0]);
+    int64_t count = ptn_internal_expect_integer_arg(runtime, "array_fill", 2, "count", args[1]);
+    if (count < 0) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_fill(): Argument #2 ($count) must be greater than or equal to 0"
+        );
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (int64_t i = 0; i < count; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(start_index + i),
+            ptn_value_clone(args[2])
+        );
     }
     return result;
 }
@@ -3184,6 +3280,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "array_fill", 3, 3, ptn_internal_array_fill },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },

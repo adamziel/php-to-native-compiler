@@ -103,6 +103,13 @@ fn lexer_preserves_unknown_string_escape_backslashes() {
 }
 
 #[test]
+fn lexer_accepts_simple_heredoc_string_literals() {
+    let tokens = lexer::lex("<?php $x = <<<TXT\nHello\nTXT;\necho $x;").unwrap();
+    assert!(matches!(&tokens[3].kind, TokenKind::String(value) if value == "Hello"));
+    assert!(matches!(tokens[4].kind, TokenKind::Semicolon));
+}
+
+#[test]
 fn lexer_accepts_keyword_boolean_operators() {
     let tokens = lexer::lex("<?php true and false or true xor false").unwrap();
     assert!(matches!(tokens[2].kind, TokenKind::KeywordAnd));
@@ -778,6 +785,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
 
     let error = parser::parse("<?php function array_values($array) { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_values()");
+
+    let error = parser::parse("<?php function ARRAY_FILL($start, $count, $value) { return null; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_fill()");
 
     let error =
         parser::parse("<?php function IN_ARRAY($needle, $haystack) { return true; }").unwrap_err();
@@ -6961,6 +6972,41 @@ var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));"
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "array(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [3]=>\n  int(3)\n  [4]=>\n  string(3) \"ten\"\n}\narray(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [\"three\"]=>\n  int(3)\n  [10]=>\n  string(3) \"ten\"\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_fill_to_native_binary() {
+    let root = temp_dir("ptn-native-array-fill");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-fill.php");
+    let output = root.join("array-fill-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_fill(2, 3, \"x\"));\n\
+var_dump(array_fill(-2, 4, 7));\n\
+var_dump(array_fill(0.0, 2, \"z\"));\n\
+$value = array(\"seed\");\n\
+$filled = array_fill(-1, 3, $value);\n\
+$filled[-1][] = \"copy\";\n\
+var_dump($filled);\n\
+var_dump(array_fill(0, 0, \"empty\"));\n\
+var_dump(function_exists(\"array_fill\"), function_exists(\"ARRAY_FILL\"));\n\
+try { array_fill(array(), 1, \"bad\"); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_fill(0, \"2bad\", \"bad\"); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_fill(0, -1, \"bad\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n  [2]=>\n  string(1) \"x\"\n  [3]=>\n  string(1) \"x\"\n  [4]=>\n  string(1) \"x\"\n}\narray(4) {\n  [-2]=>\n  int(7)\n  [-1]=>\n  int(7)\n  [0]=>\n  int(7)\n  [1]=>\n  int(7)\n}\narray(2) {\n  [0]=>\n  string(1) \"z\"\n  [1]=>\n  string(1) \"z\"\n}\narray(3) {\n  [-1]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [0]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n  [1]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\narray(0) {\n}\nbool(true)\nbool(true)\narray_fill(): Argument #1 ($start_index) must be of type int, array given\narray_fill(): Argument #2 ($count) must be of type int, string given\narray_fill(): Argument #2 ($count) must be greater than or equal to 0\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -3006,6 +3006,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "isset"
             | "empty"
             | "count"
+            | "array_fill"
             | "array_fill_keys"
             | "array_key_exists"
             | "array_merge_recursive"

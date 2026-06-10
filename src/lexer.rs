@@ -204,6 +204,7 @@ impl<'a> Lexer<'a> {
                 }
                 '!' if self.rest().starts_with("!=") => self.push_fixed(TokenKind::NotEqual, 2),
                 '<' if self.rest().starts_with("<=>") => self.push_fixed(TokenKind::Spaceship, 3),
+                '<' if self.rest().starts_with("<<<") => self.lex_heredoc()?,
                 '<' if self.rest().starts_with("<<=") => {
                     self.push_fixed(TokenKind::ShiftLeftEqual, 3)
                 }
@@ -460,6 +461,132 @@ impl<'a> Lexer<'a> {
         }
 
         Err(Diagnostic::new("unterminated string literal", Some(start)))
+    }
+
+    fn lex_heredoc(&mut self) -> Result<()> {
+        let start = self.current_span(0);
+        self.bump_char();
+        self.bump_char();
+        self.bump_char();
+        while matches!(self.peek_char(), Some(' ' | '\t')) {
+            self.bump_char();
+        }
+
+        let label = self.lex_heredoc_label(start)?;
+        while matches!(self.peek_char(), Some(' ' | '\t')) {
+            self.bump_char();
+        }
+        if self.rest().starts_with("\r\n") {
+            self.bump_char();
+            self.bump_char();
+        } else if self.peek_char() == Some('\n') {
+            self.bump_char();
+        } else {
+            return Err(Diagnostic::new(
+                "expected newline after heredoc label",
+                Some(self.current_char_span()),
+            ));
+        }
+
+        let mut value = String::new();
+        loop {
+            if self.at_heredoc_closing_label(&label) {
+                for _ in label.chars() {
+                    self.bump_char();
+                }
+                self.tokens.push(Token {
+                    kind: TokenKind::String(value),
+                    span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+                });
+                return Ok(());
+            }
+
+            if self.peek_char().is_none() {
+                return Err(Diagnostic::new("unterminated heredoc literal", Some(start)));
+            }
+
+            let mut line = String::new();
+            while let Some(ch) = self.peek_char() {
+                if matches!(ch, '\r' | '\n') {
+                    break;
+                }
+                line.push(ch);
+                self.bump_char();
+            }
+
+            if self.rest().starts_with("\r\n") {
+                self.bump_char();
+                self.bump_char();
+                value.push_str(&line);
+                if !self.at_heredoc_closing_label(&label) {
+                    value.push_str("\r\n");
+                }
+            } else if self.peek_char() == Some('\n') {
+                self.bump_char();
+                value.push_str(&line);
+                if !self.at_heredoc_closing_label(&label) {
+                    value.push('\n');
+                }
+            } else {
+                value.push_str(&line);
+            }
+        }
+    }
+
+    fn lex_heredoc_label(&mut self, start: SourceSpan) -> Result<String> {
+        if matches!(self.peek_char(), Some('\'' | '"')) {
+            let quote = self.peek_char().expect("peeked quote");
+            self.bump_char();
+            let mut label = String::new();
+            while let Some(ch) = self.peek_char() {
+                if ch == quote {
+                    self.bump_char();
+                    if label.is_empty() {
+                        return Err(Diagnostic::new("empty heredoc label", Some(start)));
+                    }
+                    return Ok(label);
+                }
+                if !(ch.is_ascii_alphanumeric() || ch == '_') {
+                    return Err(Diagnostic::new(
+                        "invalid heredoc label",
+                        Some(self.current_char_span()),
+                    ));
+                }
+                label.push(ch);
+                self.bump_char();
+            }
+            return Err(Diagnostic::new("unterminated heredoc label", Some(start)));
+        }
+
+        let Some(first) = self.peek_char() else {
+            return Err(Diagnostic::new("expected heredoc label", Some(start)));
+        };
+        if !is_ident_start(first) {
+            return Err(Diagnostic::new(
+                "expected heredoc label",
+                Some(self.current_char_span()),
+            ));
+        }
+        let mut label = String::new();
+        while let Some(ch) = self.peek_char() {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                label.push(ch);
+                self.bump_char();
+            } else {
+                break;
+            }
+        }
+        Ok(label)
+    }
+
+    fn at_heredoc_closing_label(&self, label: &str) -> bool {
+        if !self.rest().starts_with(label) {
+            return false;
+        }
+        matches!(
+            self.rest()[label.len()..].chars().next(),
+            None | Some(';') | Some('\r') | Some('\n')
+        )
     }
 
     fn lex_number(&mut self) -> Result<()> {
