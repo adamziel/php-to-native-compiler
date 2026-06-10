@@ -1024,6 +1024,61 @@ static PtnArrayKey ptn_array_fill_keys_key_from_value(PtnRuntime *runtime, PtnVa
     return key;
 }
 
+static unsigned char ptn_array_change_key_case_byte(unsigned char byte, int uppercase) {
+    if (uppercase) {
+        if (byte >= 'a' && byte <= 'z') {
+            return (unsigned char)(byte - ('a' - 'A'));
+        }
+        return byte;
+    }
+    if (byte >= 'A' && byte <= 'Z') {
+        return (unsigned char)(byte + ('a' - 'A'));
+    }
+    return byte;
+}
+
+static PtnArrayKey ptn_array_change_key_case_key(PtnArrayKey source, int uppercase) {
+    if (source.type == PTN_ARRAY_KEY_INT) {
+        return ptn_array_int_key(source.as.integer);
+    }
+
+    size_t len = strlen(source.as.string);
+    char *changed = malloc(len + 1);
+    if (changed == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        changed[i] = (char)ptn_array_change_key_case_byte(
+            (unsigned char)source.as.string[i],
+            uppercase
+        );
+    }
+    changed[len] = '\0';
+
+    PtnArrayKey key;
+    key.type = PTN_ARRAY_KEY_STRING;
+    key.as.string = changed;
+    return key;
+}
+
+static PtnValue ptn_internal_array_change_key_case(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_change_key_case", 1, "array", args[0]);
+    int uppercase = argc >= 2 && ptn_value_to_integer(args[1]) != 0;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        PtnArrayKey key = ptn_array_change_key_case_key(entry->key, uppercase);
+        ptn_array_set_entry(result.as.array, key, ptn_value_clone(entry->value));
+    }
+    return result;
+}
+
 static PtnValue ptn_internal_array_fill_keys(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnArray *keys = ptn_internal_expect_array_arg(runtime, "array_fill_keys", 1, "keys", args[0]);
@@ -3184,6 +3239,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "array_change_key_case", 1, 2, ptn_internal_array_change_key_case },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },

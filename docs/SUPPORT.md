@@ -121,6 +121,10 @@ supports in generated native binaries.
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
   empty string.
+- `array_change_key_case()` over current ordered-array values, preserving
+  insertion order and values while ASCII-lower/upper-casing string keys for the
+  default, `CASE_LOWER`, and `CASE_UPPER` modes. Integer keys are unchanged;
+  duplicate converted keys replace the value at the first converted position.
 - `in_array()` over current ordered-array values, using shared loose equality
   or strict identity comparison and dereferencing references in both the needle
   and haystack entries.
@@ -179,7 +183,7 @@ supports in generated native binaries.
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
-  `count(expr);`, `array_values(expr);`,
+  `count(expr);`, `array_change_key_case(expr[, expr]);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
@@ -197,7 +201,8 @@ supports in generated native binaries.
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
+  `count(expr)`, `array_change_key_case(expr[, expr])`, `array_values(expr)`,
+  `array_merge_recursive(expr, ...)`,
   `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
@@ -302,6 +307,9 @@ supports in generated native binaries.
   returning the first byte as an integer. Empty and multi-byte strings emit
   PHP-like deprecation diagnostics with the internal-call source line.
 - `count()` over current boxed arrays, returning their length as an integer.
+- `array_change_key_case()` over current boxed arrays, preserving insertion
+  order and values while changing string-key ASCII case; integer keys stay
+  unchanged and duplicate converted keys follow ordered-array replacement.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `array_merge_recursive()` and `array_replace_recursive()` over current boxed
@@ -472,6 +480,9 @@ supports in generated native binaries.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container
   types, object property checks, resources, references, and error-handler
   routing.
+- Exact `array_change_key_case()` weak-int `$case` diagnostics for non-numeric
+  strings, arrays, objects, and error-handler routing beyond the supported
+  integer/constant mode path.
 - String-offset append, unset, compound assignment, property/reference
   `isset()`/`empty()` and null-coalescing semantics, and complete
   TypeError/exception parity for unsupported string offset key types.

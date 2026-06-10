@@ -425,6 +425,14 @@ static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right) 
 }
 
 static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out) {
+    if (strcmp(name, "CASE_LOWER") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "CASE_UPPER") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
     if (strcmp(name, "E_ERROR") == 0) {
         *out = ptn_int(1);
         return 1;

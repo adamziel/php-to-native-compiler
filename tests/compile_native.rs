@@ -767,6 +767,13 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         "Cannot redeclare function array_key_exists()"
     );
 
+    let error =
+        parser::parse("<?php function ARRAY_CHANGE_KEY_CASE($array) { return null; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot redeclare function array_change_key_case()"
+    );
+
     let error = parser::parse("<?php function End($array) { return $array; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function end()");
 
@@ -6932,6 +6939,36 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(false)\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_change_key_case_to_native_binary() {
+    let root = temp_dir("ptn-native-array-change-key-case");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-change-key-case.php");
+    let output = root.join("array-change-key-case-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"One\" => 1, \"TWO\" => 2, 3 => \"three\", \"04\" => \"leading\", \"A\" => 1, \"a\" => 2];\n\
+var_dump(array_change_key_case($items));\n\
+var_dump(array_change_key_case($items, CASE_UPPER));\n\
+var_dump(array_change_key_case($items, CASE_LOWER));\n\
+var_dump($items);\n\
+var_dump(CASE_LOWER, CASE_UPPER);\n\
+var_dump(function_exists(\"array_change_key_case\"), function_exists(\"ARRAY_CHANGE_KEY_CASE\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(5) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n  [3]=>\n  string(5) \"three\"\n  [\"04\"]=>\n  string(7) \"leading\"\n  [\"a\"]=>\n  int(2)\n}\narray(5) {\n  [\"ONE\"]=>\n  int(1)\n  [\"TWO\"]=>\n  int(2)\n  [3]=>\n  string(5) \"three\"\n  [\"04\"]=>\n  string(7) \"leading\"\n  [\"A\"]=>\n  int(2)\n}\narray(5) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n  [3]=>\n  string(5) \"three\"\n  [\"04\"]=>\n  string(7) \"leading\"\n  [\"a\"]=>\n  int(2)\n}\narray(6) {\n  [\"One\"]=>\n  int(1)\n  [\"TWO\"]=>\n  int(2)\n  [3]=>\n  string(5) \"three\"\n  [\"04\"]=>\n  string(7) \"leading\"\n  [\"A\"]=>\n  int(1)\n  [\"a\"]=>\n  int(2)\n}\nint(0)\nint(1)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

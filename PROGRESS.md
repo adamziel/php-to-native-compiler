@@ -1,21 +1,19 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:44Z
-Measured: `ptn-ept` rebased on `origin/master@df737c70`; generic
-`array_reduce()` accumulator ownership/debug refcount behavior is integrated
-with the current callable-value dispatcher and non-array `foreach`
-source-path diagnostics.
+Refresh: 2026-06-10T15:10Z
+Measured: `ptn-gd5` on `origin/master@d2d51779`; keeps `array_reduce()` COW
+evidence and adds bounded `array_change_key_case()` PHPT evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 368 | 368 | 0 |
+| Native compiled PHP snippets | 369 | 369 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 152 | 48 |
+| PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
-| PHPT ext/standard rows | 77 | 48 | 29 |
+| PHPT ext/standard rows | 77 | 49 | 28 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -50,6 +48,7 @@ recursive `mkdir()` plus directory predicates, array-path snapshots,
 `debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
 expressions, nested same-array reference lvalues, direct-variable and
 offset-form `??=`, grouped reference targets, `array_fill_keys()`,
+`array_change_key_case()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, generic `array_reduce()` callback dispatch with
@@ -62,14 +61,15 @@ The remaining focused COW PHPT gap is Closure `use` captures for the
 `array_walk()`/`$GLOBALS` row. Broader bounded-PHPT gaps are full class
 declarations/metadata, instance methods, visibility/inheritance/static
 properties/magic methods, non-static method callable values, unsupported
-array/string internals, 64-bit operator exactness, object/destructuring
+array/string internals plus exact `array_change_key_case()` `$case`
+diagnostics, 64-bit operator exactness, object/destructuring
 foreach diagnostics, object/property compound lvalues, scalar offset-lvalue
 fatal parity, and broader file APIs.
 
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`
-through compile/native reducer suites, with the disk-interrupted oracle suite
-rerun under `TMPDIR=target/tmp`; focused non-array `foreach` native tests; exact
-`array_reduce_accumulator_refcount.phpt`; `tools/run-bounded-phpt.sh
+through compile/native reducer suites; focused non-array `foreach`,
+`array_reduce_accumulator_refcount.phpt`, and `array_change_key_case`
+native/parser/PHPT rows; `tools/run-bounded-phpt.sh
 tools/phpt-cow-manifest.txt`.
