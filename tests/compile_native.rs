@@ -2976,6 +2976,103 @@ echo \"done\\n\";\n",
 }
 
 #[test]
+fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-mkdir");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-mkdir.php");
+    let output = root.join("recursive-mkdir-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$base = __DIR__ . \"/fs-tree\";\n\
+$nested = $base . \"/one//two/three\";\n\
+$file = $nested . \"/leaf.txt\";\n\
+var_dump(file_exists($base));\n\
+var_dump(mkdir($nested, 0777, true));\n\
+var_dump(is_dir($base));\n\
+var_dump(is_dir($base . \"/one/two/three\"));\n\
+var_dump(file_exists($nested));\n\
+var_dump(is_file($nested));\n\
+var_dump(file_put_contents($file, \"x\"));\n\
+var_dump(is_file($file));\n\
+var_dump(file_exists($file));\n\
+@unlink($file);\n\
+var_dump(rmdir($base . \"/one/two/three\"));\n\
+var_dump(rmdir($base . \"/one/two\"));\n\
+var_dump(rmdir($base . \"/one\"));\n\
+var_dump(rmdir($base));\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+int(1)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mkdir_existing_directory_and_nonrecursive_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-mkdir-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mkdir-diagnostics.php");
+    let output = root.join("mkdir-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$dir = __DIR__ . \"/exists\";\n\
+$nested = $dir . \"/child/grand\";\n\
+var_dump(mkdir($dir));\n\
+var_dump(mkdir($dir));\n\
+var_dump(mkdir($nested, 0777, false));\n\
+var_dump(mkdir($nested, 0777, true));\n\
+var_dump(mkdir($nested, 0777, true));\n\
+var_dump(is_dir($nested));\n\
+var_dump(rmdir($nested));\n\
+var_dump(rmdir($dir . \"/child\"));\n\
+var_dump(rmdir($dir));\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\n\nWarning: mkdir("));
+    assert!(stdout.contains("): File exists in ptn on line 5\nbool(false)\n"));
+    assert!(stdout.contains("): No such file or directory in ptn on line 6\nbool(false)\n"));
+    assert!(stdout.contains("): File exists in ptn on line 8\nbool(false)\n"));
+    assert!(stdout.ends_with(
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+done\n"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_str_rot13_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-str-rot13-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

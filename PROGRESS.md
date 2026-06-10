@@ -1,15 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-10T12:36Z
-Measured: `ptn-foj` rebased on `origin/master`; string-callable callbacks,
-recursive array-literal evidence, and named `array_walk()` evidence.
+Refresh: 2026-06-10T12:58Z
+Measured: `ptn-7h1` rebased on `origin/master@bb82827d`; recursive `mkdir()`
+and directory predicate evidence on the native path.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 354 | 354 | 0 |
+| Native compiled PHP snippets | 355 | 355 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -30,9 +30,8 @@ recursive array-literal evidence, and named `array_walk()` evidence.
 
 `tools/phpt-cow-manifest.txt` has 29 rows: 26 passing, 3 failing.
 `bug35163.phpt` and `assign_by_val_function_by_ref_return_value.phpt` now pass.
-Named `array_walk()` callbacks observe `$GLOBALS` swaps of the walked variable.
-Exact closure-backed callback rows remain blocked by Closure/callable values
-(`ptn-dis`). Details: `docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
+Named `array_walk()` callbacks observe `$GLOBALS` swaps; closure-backed
+callback rows remain blocked by Closure/callable values (`ptn-dis`).
 
 ## Already Ported
 
@@ -44,7 +43,8 @@ temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
 binary strings, string offsets, scalar offset diagnostics, array literal
 references, array union `+`, scalar type hints, by-reference return
 alias/separation boundaries, `count()`, `??`, assignment expressions,
-expression-level `@`, selected file APIs, array-path RHS snapshots,
+expression-level `@`, selected file APIs including recursive `mkdir()`,
+`rmdir()`, `is_dir()`, `is_file()`, and `file_exists()`, array-path snapshots,
 reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
 replace, `debug_zval_dump()`, dynamic lvalue-reference calls, append/list
 assignment expressions for reference arrays, nested same-array reference
@@ -59,17 +59,16 @@ and named `array_walk()` callbacks that rebind the walked global array.
 
 ## Still Needed
 
-Remaining COW PHPT gaps are Closure/callable `use` syntax for the exact
+Remaining COW PHPT gaps are Closure/callable `use` syntax for the
 `array_walk()`/`$GLOBALS` row, closure-backed callback by-reference returns,
 `array_reduce()` callback/refcount behavior, and broader recursive
 by-reference return edges. Broader bounded-PHPT gaps are objects, unsupported
 array/string internals, 64-bit operator exactness, foreach diagnostics,
 object/property compound lvalues, scalar offset-lvalue fatal parity, and
-broader file APIs.
+broader file APIs beyond the current local filesystem subset.
 
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`; focused callback and
-`assign_by_val_function_by_ref_return_value.phpt` evidence; focused
-`array_walk()` native reducer evidence.
+`tools/run-post-merge-cow-gate.sh`; focused callback, recursive literal,
+`array_walk()`, and `mkdir-003.phpt` evidence.

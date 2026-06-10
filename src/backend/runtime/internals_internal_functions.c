@@ -1991,6 +1991,195 @@ static PtnValue ptn_internal_unlink(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_bool(0);
 }
 
+static int ptn_path_is_separator(char byte) {
+    if (byte == '/') {
+        return 1;
+    }
+#if defined(_WIN32)
+    if (byte == '\\') {
+        return 1;
+    }
+#endif
+    return 0;
+}
+
+static int ptn_stat_path(const char *path, struct stat *info) {
+    return stat(path, info);
+}
+
+static int ptn_path_exists_c(const char *path) {
+    struct stat info;
+    return ptn_stat_path(path, &info) == 0;
+}
+
+static int ptn_path_is_directory_c(const char *path) {
+    struct stat info;
+    return ptn_stat_path(path, &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+static int ptn_path_is_regular_file_c(const char *path) {
+    struct stat info;
+    return ptn_stat_path(path, &info) == 0 && S_ISREG(info.st_mode);
+}
+
+static int ptn_platform_mkdir(const char *path, int64_t mode) {
+#if defined(_WIN32)
+    (void)mode;
+    return _mkdir(path);
+#else
+    return mkdir(path, (mode_t)mode);
+#endif
+}
+
+static int64_t ptn_mkdir_mode_from_args(size_t argc, const PtnValue *args) {
+    if (argc < 2) {
+        return 0777;
+    }
+    return ptn_value_to_integer(args[1]);
+}
+
+static int ptn_mkdir_existing_parent_ok(const char *path, int64_t mode) {
+    if (ptn_platform_mkdir(path, mode) == 0) {
+        return 1;
+    }
+    int saved_errno = errno;
+    if (saved_errno == EEXIST && ptn_path_is_directory_c(path)) {
+        return 1;
+    }
+    errno = saved_errno;
+    return 0;
+}
+
+static void ptn_trim_trailing_path_separators(char *path) {
+    size_t len = strlen(path);
+    while (len > 1 && ptn_path_is_separator(path[len - 1])) {
+        path[len - 1] = '\0';
+        len--;
+    }
+}
+
+static int ptn_mkdir_recursive(const char *path, int64_t mode) {
+    char *work = ptn_duplicate_string(path);
+    ptn_trim_trailing_path_separators(work);
+    size_t len = strlen(work);
+    size_t index = 0;
+
+#if defined(_WIN32)
+    if (len >= 2 && work[1] == ':') {
+        index = 2;
+    }
+#endif
+    while (index < len && ptn_path_is_separator(work[index])) {
+        index++;
+    }
+
+    for (; index < len; index++) {
+        if (!ptn_path_is_separator(work[index])) {
+            continue;
+        }
+        char separator = work[index];
+        work[index] = '\0';
+        if (work[0] != '\0' && !ptn_mkdir_existing_parent_ok(work, mode)) {
+            int saved_errno = errno;
+            free(work);
+            errno = saved_errno;
+            return 0;
+        }
+        work[index] = separator;
+        while (index + 1 < len && ptn_path_is_separator(work[index + 1])) {
+            index++;
+        }
+    }
+
+    int result = ptn_platform_mkdir(work, mode) == 0;
+    int saved_errno = errno;
+    free(work);
+    errno = saved_errno;
+    return result;
+}
+
+static PtnValue ptn_path_predicate(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue path_value,
+    size_t line,
+    int (*predicate)(const char *)
+) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(path_value);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        char message[96];
+        int written = snprintf(message, sizeof(message), "%s(): Filename contains null byte", function_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_bool(0);
+    }
+
+    int result = predicate(path);
+    free(path);
+    return ptn_bool(result);
+}
+
+static PtnValue ptn_internal_file_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_path_predicate(runtime, "file_exists", args[0], line, ptn_path_exists_c);
+}
+
+static PtnValue ptn_internal_is_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_path_predicate(runtime, "is_dir", args[0], line, ptn_path_is_directory_c);
+}
+
+static PtnValue ptn_internal_is_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_path_predicate(runtime, "is_file", args[0], line, ptn_path_is_regular_file_c);
+}
+
+static PtnValue ptn_internal_mkdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "mkdir(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    int64_t mode = ptn_mkdir_mode_from_args(argc, args);
+    int recursive = argc >= 3 && ptn_is_truthy(args[2]);
+    int created = recursive ? ptn_mkdir_recursive(path, mode) : ptn_platform_mkdir(path, mode) == 0;
+    if (created) {
+        free(path);
+        return ptn_bool(1);
+    }
+
+    ptn_emit_file_warning(runtime, "mkdir", path, strerror(errno), line);
+    free(path);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_rmdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "rmdir(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    if (rmdir(path) == 0) {
+        free(path);
+        return ptn_bool(1);
+    }
+
+    ptn_emit_file_warning(runtime, "rmdir", path, strerror(errno), line);
+    free(path);
+    return ptn_bool(0);
+}
+
 static size_t ptn_substr_clamped_positive(int64_t value, size_t limit) {
     if (value <= 0) {
         return 0;
@@ -2858,6 +3047,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "fdiv", 2, 2, ptn_internal_fdiv },
+        { "file_exists", 1, 1, ptn_internal_file_exists },
         { "file_put_contents", 2, 2, ptn_internal_file_put_contents },
         { "floor", 1, 1, ptn_internal_floor },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
@@ -2874,7 +3064,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intval", 1, 2, ptn_internal_intval },
         { "is_array", 1, 1, ptn_internal_is_array },
         { "is_bool", 1, 1, ptn_internal_is_bool },
+        { "is_dir", 1, 1, ptn_internal_is_dir },
         { "is_double", 1, 1, ptn_internal_is_float },
+        { "is_file", 1, 1, ptn_internal_is_file },
         { "is_finite", 1, 1, ptn_internal_is_finite },
         { "is_float", 1, 1, ptn_internal_is_float },
         { "is_infinite", 1, 1, ptn_internal_is_infinite },
@@ -2887,6 +3079,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_string", 1, 1, ptn_internal_is_string },
         { "key", 1, 1, ptn_internal_key },
         { "md5", 1, 2, ptn_internal_md5 },
+        { "mkdir", 1, 4, ptn_internal_mkdir },
         { "next", 1, 1, ptn_internal_next },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "ord", 1, 1, ptn_internal_ord },
@@ -2898,6 +3091,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "reset", 1, 1, ptn_internal_reset },
+        { "rmdir", 1, 2, ptn_internal_rmdir },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "soundex", 1, 1, ptn_internal_soundex },
