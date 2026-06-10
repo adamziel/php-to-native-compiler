@@ -52,10 +52,11 @@ by-reference return separation, `count()`, `??`, COW gates/oracles, assignment
 expressions, expression-level `@` suppression, `file_put_contents()`,
 `sha1_file()`, `unlink()` byte-file slices, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()` replacement maps and byte maps,
-`array_merge_recursive()`, `debug_zval_dump()` reference inspection, and
+`array_merge_recursive()`, `debug_zval_dump()` reference inspection,
 string-valued dynamic calls with lvalue reference arguments through fallback
-dispatch, append/list assignment expressions for reference arrays,
-direct-variable assignment-form `??=`, and six offset-form `??=` diagnostics.
+dispatch, append/list reference-array assignment expressions, direct-variable
+assignment-form `??=`, six offset-form `??=` diagnostics, grouped reference
+targets, and nested-lvalue diagnostics.
 
 ## Still Needed
 

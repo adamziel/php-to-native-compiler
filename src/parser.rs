@@ -286,7 +286,7 @@ impl Parser {
                 self.advance();
                 if target.dimensions.len() > 1 {
                     return Err(Diagnostic::new(
-                        "nested reference lvalues are unsupported",
+                        "nested array reference lvalues are unsupported",
                         Some(target.span),
                     ));
                 }
@@ -369,27 +369,7 @@ impl Parser {
     }
 
     fn parse_reference_target(&mut self) -> Result<ReferenceTarget> {
-        let token = self.advance().clone();
-        let TokenKind::Variable(name) = token.kind else {
-            return Err(Diagnostic::new(
-                "unsupported by-reference assignment target",
-                Some(token.span),
-            ));
-        };
-        if matches!(self.peek().kind, TokenKind::LeftBracket) {
-            let target = self.parse_array_dim_target(name, token.span)?;
-            if target.dimensions.len() > 1 {
-                return Err(Diagnostic::new(
-                    "nested reference lvalues are unsupported",
-                    Some(target.span),
-                ));
-            }
-            return Ok(ReferenceTarget::ArrayDim(target));
-        }
-        Ok(ReferenceTarget::Variable {
-            name,
-            span: token.span,
-        })
+        reference_target_from_expr(self.parse_expr()?)
     }
 
     fn parse_prefix_increment_statement(&mut self) -> Result<Statement> {
@@ -2439,6 +2419,60 @@ fn array_dim_target_from_expr(expr: Expr) -> Result<ArrayDimTarget> {
                 return Err(Diagnostic::new(
                     "unsupported unset target",
                     Some(current.span()),
+                ));
+            }
+        }
+    }
+}
+
+fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
+    let span = expr.span();
+    match expr {
+        Expr::Variable(name, span) => Ok(ReferenceTarget::Variable { name, span }),
+        Expr::Grouped { expr, .. } => reference_target_from_expr(*expr),
+        array_expr @ Expr::ArrayAccess { .. } => Ok(ReferenceTarget::ArrayDim(
+            reference_array_dim_target_from_expr(array_expr, span)?,
+        )),
+        other => Err(Diagnostic::new(
+            "unsupported by-reference assignment target",
+            Some(other.span()),
+        )),
+    }
+}
+
+fn reference_array_dim_target_from_expr(
+    expr: Expr,
+    target_span: SourceSpan,
+) -> Result<ArrayDimTarget> {
+    let mut dimensions = Vec::new();
+    let mut current = expr;
+    loop {
+        match current {
+            Expr::ArrayAccess { array, index, .. } => {
+                dimensions.push(index.map(|index| *index));
+                current = *array;
+            }
+            Expr::Grouped { expr, .. } => {
+                current = *expr;
+            }
+            Expr::Variable(array, _) => {
+                dimensions.reverse();
+                if dimensions.len() > 1 {
+                    return Err(Diagnostic::new(
+                        "nested array reference lvalues are unsupported",
+                        Some(target_span),
+                    ));
+                }
+                return Ok(ArrayDimTarget {
+                    array,
+                    dimensions,
+                    span: target_span,
+                });
+            }
+            _ => {
+                return Err(Diagnostic::new(
+                    "temporary array offset references are unsupported",
+                    Some(target_span),
                 ));
             }
         }
