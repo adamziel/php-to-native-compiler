@@ -6963,6 +6963,92 @@ var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'))
 }
 
 #[test]
+fn compile_array_chunk_to_native_binary() {
+    let root = temp_dir("ptn-native-array-chunk");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-chunk.php");
+    let output = root.join("array-chunk-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [1 => \"one\", \"two\", 3 => \"three\", 4, \"five\" => 5];\n\
+var_dump(array_chunk($items, 2));\n\
+var_dump(array_chunk($items, 2, true));\n\
+$source = [[\"v\" => 1], [\"v\" => 2], [\"v\" => 3]];\n\
+$chunks = array_chunk($source, 2);\n\
+$chunks[0][0][\"v\"] = 99;\n\
+var_dump($source[0][\"v\"], $chunks[0][0][\"v\"]);\n\
+var_dump(array_chunk([], 3));\n\
+try { array_chunk($items, 0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"array_chunk\"), function_exists(\"ARRAY_CHUNK\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(3) \"one\"\n",
+            "    [1]=>\n",
+            "    string(3) \"two\"\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(5) \"three\"\n",
+            "    [1]=>\n",
+            "    int(4)\n",
+            "  }\n",
+            "  [2]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(5)\n",
+            "  }\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [1]=>\n",
+            "    string(3) \"one\"\n",
+            "    [2]=>\n",
+            "    string(3) \"two\"\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [3]=>\n",
+            "    string(5) \"three\"\n",
+            "    [4]=>\n",
+            "    int(4)\n",
+            "  }\n",
+            "  [2]=>\n",
+            "  array(1) {\n",
+            "    [\"five\"]=>\n",
+            "    int(5)\n",
+            "  }\n",
+            "}\n",
+            "int(1)\n",
+            "int(99)\n",
+            "array(0) {\n",
+            "}\n",
+            "array_chunk(): Argument #2 ($length) must be greater than 0\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_chunk"));
+}
+
+#[test]
 fn compile_array_predicates_use_generated_fast_paths() {
     let root = temp_dir("ptn-native-array-predicate-fast-paths");
     fs::create_dir_all(&root).unwrap();
