@@ -427,6 +427,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "array_push",
         "array_shift",
         "array_unshift",
+        "array_walk",
         "end",
         "next",
         "prev",
@@ -1849,6 +1850,7 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
             | "array_push"
             | "array_shift"
             | "array_unshift"
+            | "array_walk"
             | "end"
             | "next"
             | "prev"
@@ -3777,7 +3779,8 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        if let Some(result_temp) = self.emit_variable_array_mutator_call(out, name, arguments) {
+        if let Some(result_temp) = self.emit_variable_array_mutator_call(out, name, arguments, line)
+        {
             return result_temp;
         }
 
@@ -3937,6 +3940,7 @@ impl ValueEmitter {
         out: &mut String,
         name: &str,
         arguments: &[ValueExpr],
+        line: usize,
     ) -> Option<String> {
         let ValueExpr::Load {
             name: variable_name,
@@ -3945,6 +3949,41 @@ impl ValueEmitter {
         else {
             return None;
         };
+
+        if name.eq_ignore_ascii_case("array_walk") && (arguments.len() == 2 || arguments.len() == 3)
+        {
+            let array_temp = self.emit_materialized_value(out, &arguments[0]);
+            let callback_temp = self.emit_materialized_value(out, &arguments[1]);
+            let userdata_temp = arguments
+                .get(2)
+                .map(|argument| self.emit_materialized_value(out, argument));
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_array_walk_variable(&runtime, \"");
+            out.push_str(&c_string(variable_name));
+            out.push_str("\", ");
+            out.push_str(&array_temp);
+            out.push_str(", ");
+            out.push_str(&callback_temp);
+            out.push_str(", ");
+            out.push_str(if userdata_temp.is_some() { "1" } else { "0" });
+            out.push_str(", ");
+            if let Some(userdata_temp) = &userdata_temp {
+                out.push_str(userdata_temp);
+            } else {
+                out.push_str("ptn_null()");
+            }
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            if let Some(userdata_temp) = &userdata_temp {
+                emit_value_cleanup(out, "    ", userdata_temp);
+            }
+            emit_value_cleanup(out, "    ", &callback_temp);
+            emit_value_cleanup(out, "    ", &array_temp);
+            return Some(result_temp);
+        }
 
         let helper = if arguments.len() == 1 {
             if name.eq_ignore_ascii_case("array_pop") {

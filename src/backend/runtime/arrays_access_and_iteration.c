@@ -58,6 +58,7 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right);
+static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value);
 static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
 static PTN_UNUSED PtnArray *ptn_runtime_array_detach_variable(PtnRuntime *runtime, const char *name);
@@ -884,6 +885,26 @@ static PTN_UNUSED PtnArray *ptn_value_replace_with_empty_array(PtnValue *value) 
     return value->as.array;
 }
 
+static PTN_UNUSED PtnArray *ptn_array_root_slot_for_write(
+    PtnRuntime *runtime,
+    PtnValue *slot,
+    size_t line
+) {
+    if (slot == NULL) {
+        return NULL;
+    }
+    PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    if (value->type == PTN_ARRAY) {
+        return ptn_array_detach_value(value);
+    }
+    if (value->type == PTN_NULL) {
+        return ptn_value_replace_with_empty_array(value);
+    }
+    ptn_emit_array_runtime_diagnostic("Warning", "Cannot use a scalar value as an array", line);
+    (void)runtime;
+    return NULL;
+}
+
 static PTN_UNUSED PtnArray *ptn_runtime_array_root_for_write(
     PtnRuntime *runtime,
     const char *name,
@@ -891,15 +912,7 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_root_for_write(
 ) {
     PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
     if (slot != NULL) {
-        PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
-        if (value->type == PTN_ARRAY) {
-            return ptn_array_detach_value(value);
-        }
-        if (value->type == PTN_NULL) {
-            return ptn_value_replace_with_empty_array(value);
-        }
-        ptn_emit_array_runtime_diagnostic("Warning", "Cannot use a scalar value as an array", line);
-        return NULL;
+        return ptn_array_root_slot_for_write(runtime, slot, line);
     }
 
     PtnValue array = ptn_array_from_literal_entries(0, NULL);
@@ -909,8 +922,7 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_root_for_write(
     if (slot == NULL) {
         return NULL;
     }
-    PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
-    return value->type == PTN_ARRAY ? value->as.array : NULL;
+    return ptn_array_root_slot_for_write(runtime, slot, line);
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_path_segment_key(
@@ -923,6 +935,74 @@ static PTN_UNUSED PtnArrayKey ptn_array_path_segment_key(
     return ptn_array_key_from_value(segment->value);
 }
 
+static PTN_UNUSED int ptn_runtime_is_globals_name(const char *name) {
+    return strcmp(name, "GLOBALS") == 0;
+}
+
+static PTN_UNUSED char *ptn_runtime_global_name_from_segment(
+    const PtnArrayPathSegment *segment
+) {
+    if (segment->append) {
+        return NULL;
+    }
+    return ptn_value_to_string(segment->value);
+}
+
+static PTN_UNUSED PtnLookupResult ptn_runtime_globals_array_path_lookup_quiet(
+    PtnRuntime *runtime,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    if (segment_count == 0) {
+        return ptn_lookup_found(ptn_runtime_globals_snapshot(runtime));
+    }
+
+    char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+    if (global_name == NULL) {
+        return ptn_lookup_missing();
+    }
+
+    PtnLookupResult root = ptn_runtime_read_global_variable_quiet(runtime, global_name);
+    free(global_name);
+    if (!root.exists || segment_count == 1) {
+        return root;
+    }
+
+    PtnValue container = ptn_value_deref(root.value);
+    PtnValue owned_container = ptn_null();
+    int has_owned_container = 0;
+    for (size_t i = 1; i < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return ptn_lookup_missing();
+        }
+
+        PtnLookupResult result = ptn_offset_lookup(runtime, container, segment->value, line, 1);
+        if (!result.exists || i + 1 == segment_count) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return result;
+        }
+
+        if (has_owned_container) {
+            ptn_value_destroy(&owned_container);
+        }
+        owned_container = result.value;
+        has_owned_container = 1;
+        container = ptn_value_deref(owned_container);
+    }
+
+    if (has_owned_container) {
+        ptn_value_destroy(&owned_container);
+    }
+    return ptn_lookup_missing();
+}
+
 static PTN_UNUSED PtnLookupResult ptn_runtime_array_path_lookup_quiet(
     PtnRuntime *runtime,
     const char *name,
@@ -930,6 +1010,9 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_array_path_lookup_quiet(
     size_t segment_count,
     size_t line
 ) {
+    if (ptn_runtime_is_globals_name(name)) {
+        return ptn_runtime_globals_array_path_lookup_quiet(runtime, segments, segment_count, line);
+    }
     if (segment_count == 0) {
         return ptn_lookup_missing();
     }
@@ -1132,6 +1215,74 @@ static PTN_UNUSED void ptn_array_set_path_leaf(
     ptn_array_write_entry(array, key, ptn_value_clone(ptn_value_deref(value)));
 }
 
+static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
+    PtnRuntime *runtime,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line,
+    int emit_null_key_deprecation
+) {
+    if (segment_count == 0) {
+        return;
+    }
+
+    char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+    if (global_name == NULL) {
+        return;
+    }
+
+    if (segment_count == 1) {
+        ptn_runtime_write_global_variable(runtime, global_name, value);
+        free(global_name);
+        return;
+    }
+
+    PtnValue *slot = ptn_runtime_global_variable_slot_for_write(runtime, global_name);
+    free(global_name);
+    if (slot == NULL) {
+        return;
+    }
+
+    if (segment_count == 2) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (slot_value->type == PTN_STRING) {
+            if (segments[1].append) {
+                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                return;
+            }
+            ptn_runtime_string_offset_set(runtime, slot_value, segments[1].value, value, line);
+            return;
+        }
+    }
+
+    PtnArray *array = ptn_array_root_slot_for_write(runtime, slot, line);
+    if (array == NULL) {
+        return;
+    }
+
+    for (size_t i = 1; i + 1 < segment_count; i++) {
+        array = ptn_array_descend_for_write(
+            runtime,
+            array,
+            &segments[i],
+            line,
+            emit_null_key_deprecation
+        );
+        if (array == NULL) {
+            return;
+        }
+    }
+
+    ptn_array_set_path_leaf(
+        array,
+        &segments[segment_count - 1],
+        value,
+        line,
+        emit_null_key_deprecation
+    );
+}
+
 static PTN_UNUSED void ptn_runtime_array_path_set_impl(
     PtnRuntime *runtime,
     const char *name,
@@ -1141,6 +1292,17 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
     size_t line,
     int emit_null_key_deprecation
 ) {
+    if (ptn_runtime_is_globals_name(name)) {
+        ptn_runtime_globals_array_path_set_impl(
+            runtime,
+            segments,
+            segment_count,
+            value,
+            line,
+            emit_null_key_deprecation
+        );
+        return;
+    }
     if (segment_count == 0) {
         return;
     }
@@ -1338,6 +1500,72 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
     size_t line
 );
 
+static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
+    PtnRuntime *runtime,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    (void)line;
+    if (segment_count == 0) {
+        return;
+    }
+
+    char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+    if (global_name == NULL) {
+        return;
+    }
+
+    if (segment_count == 1) {
+        ptn_runtime_unset_global_variable(runtime, global_name);
+        free(global_name);
+        return;
+    }
+
+    PtnValue *slot = ptn_runtime_global_variable_slot(runtime, global_name);
+    free(global_name);
+    if (slot == NULL) {
+        return;
+    }
+
+    PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    if (value->type == PTN_STRING) {
+        ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        return;
+    }
+    if (value->type != PTN_ARRAY) {
+        return;
+    }
+
+    PtnArray *array = ptn_array_detach_value(value);
+    for (size_t i = 1; i + 1 < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            return;
+        }
+        PtnArrayKey key = ptn_array_key_from_value(segment->value);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+        ptn_array_key_free(key);
+        if (entry == NULL) {
+            return;
+        }
+        PtnValue *entry_value = entry->value.type == PTN_REFERENCE
+            ? &entry->value.as.reference->value
+            : &entry->value;
+        if (entry_value->type != PTN_ARRAY) {
+            return;
+        }
+        array = ptn_array_detach_value(entry_value);
+    }
+
+    const PtnArrayPathSegment *leaf = &segments[segment_count - 1];
+    if (leaf->append) {
+        return;
+    }
+    PtnArrayKey key = ptn_array_key_from_value(leaf->value);
+    (void)ptn_array_unset_entry(array, key);
+}
+
 static PTN_UNUSED void ptn_runtime_array_unset(
     PtnRuntime *runtime,
     const char *name,
@@ -1356,6 +1584,10 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
     size_t segment_count,
     size_t line
 ) {
+    if (ptn_runtime_is_globals_name(name)) {
+        ptn_runtime_globals_array_path_unset(runtime, segments, segment_count, line);
+        return;
+    }
     (void)line;
     if (segment_count == 0) {
         return;

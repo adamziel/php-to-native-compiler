@@ -1,15 +1,15 @@
 # PTN Progress
 
 Refresh: 2026-06-10T12:36Z
-Measured: `ptn-wvv` rebased on `origin/master@316fbe019` after `ptn-ss3`;
-focused string-callable callback and recursive array-literal evidence.
+Measured: `ptn-foj` rebased on `origin/master`; string-callable callbacks,
+recursive array-literal evidence, and named `array_walk()` evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 353 | 353 | 0 |
+| Native compiled PHP snippets | 354 | 354 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -17,7 +17,7 @@ focused string-callable callback and recursive array-literal evidence.
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
-| Focused COW reducer snippets | 44 | 44 | 0 |
+| Focused COW reducer snippets | 45 | 45 | 0 |
 | Recursive reference diagnostics | 4 | 4 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
@@ -28,12 +28,11 @@ focused string-callable callback and recursive array-literal evidence.
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows. Focused evidence is 26 passing,
-3 failing: assignment-aliasing 4/4, string-offsets 4/4,
-array-writes-appends-unset 4/4, nested-arrays 4/4, foreach-mutation 3/4,
-function-boundaries 2/4, reference-interaction 5/5. `bug35163.phpt` and
-`assign_by_val_function_by_ref_return_value.phpt` now pass. Closure-backed
-callback rows remain blocked by Closure/callable values (`ptn-dis`).
+`tools/phpt-cow-manifest.txt` has 29 rows: 26 passing, 3 failing.
+`bug35163.phpt` and `assign_by_val_function_by_ref_return_value.phpt` now pass.
+Named `array_walk()` callbacks observe `$GLOBALS` swaps of the walked variable.
+Exact closure-backed callback rows remain blocked by Closure/callable values
+(`ptn-dis`). Details: `docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
 
 ## Already Ported
 
@@ -43,7 +42,7 @@ string/math/type internals, ordered arrays, `foreach`, cursors,
 references, by-reference parameters and `foreach`, array dimensions,
 temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
 binary strings, string offsets, scalar offset diagnostics, array literal
-reference elements, array union `+`, scalar type hints, by-reference return
+references, array union `+`, scalar type hints, by-reference return
 alias/separation boundaries, `count()`, `??`, assignment expressions,
 expression-level `@`, selected file APIs, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
@@ -55,12 +54,13 @@ named `array_reduce()` callback dispatch with by-reference returns,
 non-reference call-result by-reference fallback notices, call-result
 by-reference return chains, `array_fill_keys()`, string-callable
 `call_user_func()` dispatch, and variable-assigned recursive array literals
-with slot replacement and cleanup.
+with slot replacement and cleanup, top-level `$GLOBALS[...]` callback writes,
+and named `array_walk()` callbacks that rebind the walked global array.
 
 ## Still Needed
 
-Remaining COW PHPT gaps are closure callback mutation through
-`array_walk()`/`$GLOBALS`, closure-backed callback by-reference returns,
+Remaining COW PHPT gaps are Closure/callable `use` syntax for the exact
+`array_walk()`/`$GLOBALS` row, closure-backed callback by-reference returns,
 `array_reduce()` callback/refcount behavior, and broader recursive
 by-reference return edges. Broader bounded-PHPT gaps are objects, unsupported
 array/string internals, 64-bit operator exactness, foreach diagnostics,
@@ -71,4 +71,5 @@ broader file APIs.
 
 Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
 `tools/run-post-merge-cow-gate.sh`; focused callback and
-`assign_by_val_function_by_ref_return_value.phpt` evidence.
+`assign_by_val_function_by_ref_return_value.phpt` evidence; focused
+`array_walk()` native reducer evidence.

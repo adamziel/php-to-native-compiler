@@ -9815,6 +9815,63 @@ var_dump(call_user_func(\"inspect_args\", \"one\", \"two\"));
 }
 
 #[test]
+fn compile_array_walk_callback_global_swap_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-global-swap");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-global-swap.php");
+    let output = root.join("array-walk-global-swap-bin");
+    fs::write(
+        &input,
+        "<?php
+function walk_swap(&$value, $key) {
+    var_dump($value);
+    if ($value == 2) {
+        $GLOBALS[\"array\"] = $GLOBALS[\"array2\"];
+    }
+    $value *= 10;
+}
+
+$array = [1, 2, 3];
+$array2 = [4, 5];
+array_walk($array, \"walk_swap\");
+var_dump($array, $array2);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "int(2)\n",
+            "int(4)\n",
+            "int(5)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(40)\n",
+            "  [1]=>\n",
+            "  int(50)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(4)\n",
+            "  [1]=>\n",
+            "  int(5)\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_walk_variable(&runtime, \"array\""));
+    assert!(c_source.contains("ptn_runtime_globals_array_path_set_impl"));
+}
+
+#[test]
 fn compile_typed_by_ref_return_separates_function_boundaries_to_native_binary() {
     let root = temp_dir("ptn-native-typed-by-ref-return-separation");
     fs::create_dir_all(&root).unwrap();

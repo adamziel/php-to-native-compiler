@@ -606,6 +606,148 @@ static PTN_UNUSED PtnValue ptn_runtime_array_reset_variable(PtnRuntime *runtime,
     return ptn_array_reset_value(array);
 }
 
+static PtnArray *ptn_array_walk_slot_array_for_write(
+    PtnRuntime *runtime,
+    PtnValue *slot,
+    PtnValue value
+) {
+    PtnValue current_value = slot == NULL ? value : *slot;
+    PtnArray *array = ptn_internal_expect_array_arg(
+        runtime,
+        "array_walk",
+        1,
+        "array",
+        current_value
+    );
+    if (slot == NULL) {
+        return array;
+    }
+
+    PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    if (slot_value->type != PTN_ARRAY) {
+        return array;
+    }
+
+    PtnArray *detached = ptn_array_detach_value(slot_value);
+    return detached == NULL ? slot_value->as.array : detached;
+}
+
+static PtnArray *ptn_array_walk_slot_current_array(PtnValue *slot) {
+    if (slot == NULL) {
+        return NULL;
+    }
+    PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    return slot_value->type == PTN_ARRAY ? slot_value->as.array : NULL;
+}
+
+static PtnValue *ptn_array_walk_current_slot(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue *local_slot
+) {
+    if (name == NULL) {
+        return local_slot;
+    }
+    return ptn_symbols_value_slot(&runtime->symbols, name);
+}
+
+static void ptn_array_walk_call_function(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnArray *array,
+    size_t index,
+    int has_userdata,
+    PtnValue userdata,
+    size_t line
+) {
+    PtnArrayEntry *entry = &array->entries[index];
+    if (entry->value.type != PTN_REFERENCE) {
+        PtnValue current = entry->value;
+        entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+
+    PtnValue value_reference = ptn_value_clone(entry->value);
+    PtnValue key = ptn_array_key_value(entry->key);
+    PtnValue callback_args[3] = {
+        value_reference,
+        key,
+        has_userdata ? ptn_value_clone(userdata) : ptn_null()
+    };
+    PtnValue callback_result = ptn_call_function(
+        runtime,
+        function_name,
+        has_userdata ? 3 : 2,
+        callback_args,
+        line
+    );
+    ptn_value_destroy(&callback_args[0]);
+    ptn_value_destroy(&callback_args[1]);
+    if (has_userdata) {
+        ptn_value_destroy(&callback_args[2]);
+    }
+    ptn_value_destroy(&callback_result);
+}
+
+static PtnValue ptn_array_walk_slot(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue *local_slot,
+    PtnValue value,
+    PtnValue callback,
+    int has_userdata,
+    PtnValue userdata,
+    size_t line
+) {
+    char *function_name = ptn_value_to_string(callback);
+    PtnArray *last_array = NULL;
+    size_t index = 0;
+
+    for (;;) {
+        PtnValue *slot = ptn_array_walk_current_slot(runtime, name, local_slot);
+        PtnArray *array = ptn_array_walk_slot_array_for_write(runtime, slot, value);
+        if (array != last_array) {
+            last_array = array;
+            index = 0;
+        }
+        if (index >= array->len) {
+            break;
+        }
+
+        ptn_array_walk_call_function(
+            runtime,
+            function_name,
+            array,
+            index,
+            has_userdata,
+            userdata,
+            line
+        );
+
+        PtnValue *after_slot = ptn_array_walk_current_slot(runtime, name, local_slot);
+        PtnArray *after_array = ptn_array_walk_slot_current_array(after_slot);
+        if (after_array == array || after_slot == NULL) {
+            index++;
+        } else {
+            last_array = NULL;
+        }
+    }
+
+    free(function_name);
+    return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_walk_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue callback,
+    int has_userdata,
+    PtnValue userdata,
+    size_t line
+) {
+    return ptn_array_walk_slot(runtime, name, NULL, value, callback, has_userdata, userdata, line);
+}
+
 static PtnValue ptn_internal_array_pop(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -670,6 +812,22 @@ static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, cons
 
     free(function_name);
     return carry;
+}
+
+static PtnValue ptn_internal_array_walk(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue value = ptn_value_clone(args[0]);
+    PtnValue result = ptn_array_walk_slot(
+        runtime,
+        NULL,
+        &value,
+        value,
+        args[1],
+        argc >= 3,
+        argc >= 3 ? args[2] : ptn_null(),
+        line
+    );
+    ptn_value_destroy(&value);
+    return result;
 }
 
 static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -2683,6 +2841,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_sum", 1, 1, ptn_internal_array_sum },
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
+        { "array_walk", 2, 3, ptn_internal_array_walk },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "call_user_func", 1, PTN_VARIADIC_ARGS, ptn_internal_call_user_func },

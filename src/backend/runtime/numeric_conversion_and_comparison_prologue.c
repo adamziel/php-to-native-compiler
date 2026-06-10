@@ -1,5 +1,6 @@
 static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnRuntime *caller_runtime) {
     ptn_symbols_init(&runtime->symbols);
+    runtime->global_symbols = caller_runtime->global_symbols;
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = caller_runtime->constants;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
@@ -35,6 +36,36 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free(&runtime->symbols);
 }
 
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_global_symbol_table(PtnRuntime *runtime) {
+    return runtime->global_symbols == NULL ? &runtime->symbols : runtime->global_symbols;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_globals_snapshot(PtnRuntime *runtime) {
+    PtnSymbolTable *globals = ptn_runtime_global_symbol_table(runtime);
+    PtnArrayLiteralEntry *entries = NULL;
+    if (globals->len != 0) {
+        entries = malloc(globals->len * sizeof(PtnArrayLiteralEntry));
+        if (entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+    }
+
+    size_t entry_count = 0;
+    for (size_t i = 0; i < globals->len; i++) {
+        if (strcmp(globals->items[i].name, "GLOBALS") == 0) {
+            continue;
+        }
+        entries[entry_count].has_key = 1;
+        entries[entry_count].key = ptn_string(globals->items[i].name);
+        entries[entry_count].value = ptn_value_deref(globals->items[i].value);
+        entry_count++;
+    }
+
+    PtnValue snapshot = ptn_array_from_literal_entries(entry_count, entries);
+    free(entries);
+    return snapshot;
+}
+
 static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnValue current;
     if (ptn_symbols_get(&runtime->symbols, name, &current) && current.type == PTN_REFERENCE) {
@@ -42,6 +73,16 @@ static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const cha
         return;
     }
     ptn_symbols_set(&runtime->symbols, name, ptn_value_deref(value));
+}
+
+static PTN_UNUSED void ptn_runtime_write_global_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnSymbolTable *globals = ptn_runtime_global_symbol_table(runtime);
+    PtnValue current;
+    if (ptn_symbols_get(globals, name, &current) && current.type == PTN_REFERENCE) {
+        ptn_reference_assign(current.as.reference, value);
+        return;
+    }
+    ptn_symbols_set(globals, name, ptn_value_deref(value));
 }
 
 static PTN_UNUSED void ptn_runtime_bind_variable_reference(PtnRuntime *runtime, const char *name, PtnValue reference) {
@@ -53,6 +94,26 @@ static PTN_UNUSED void ptn_runtime_bind_variable_reference(PtnRuntime *runtime, 
 
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_variable(PtnRuntime *runtime, const char *name) {
     return ptn_symbols_reference_for_variable(&runtime->symbols, name);
+}
+
+static PTN_UNUSED PtnValue *ptn_runtime_global_variable_slot(PtnRuntime *runtime, const char *name) {
+    return ptn_symbols_value_slot(ptn_runtime_global_symbol_table(runtime), name);
+}
+
+static PTN_UNUSED PtnValue *ptn_runtime_global_variable_slot_for_write(PtnRuntime *runtime, const char *name) {
+    return &ptn_symbols_slot_for_write(ptn_runtime_global_symbol_table(runtime), name)->value;
+}
+
+static PTN_UNUSED PtnLookupResult ptn_runtime_read_global_variable_quiet(PtnRuntime *runtime, const char *name) {
+    PtnValue value;
+    if (ptn_symbols_get(ptn_runtime_global_symbol_table(runtime), name, &value)) {
+        return ptn_lookup_found(ptn_value_deref(value));
+    }
+    return ptn_lookup_missing();
+}
+
+static PTN_UNUSED void ptn_runtime_unset_global_variable(PtnRuntime *runtime, const char *name) {
+    ptn_symbols_unset(ptn_runtime_global_symbol_table(runtime), name);
 }
 
 static PTN_UNUSED void ptn_abort_by_reference_argument_error(
@@ -89,6 +150,9 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(
     const char *path,
     size_t line
 ) {
+    if (strcmp(name, "GLOBALS") == 0) {
+        return ptn_runtime_globals_snapshot(runtime);
+    }
     PtnValue value;
     if (ptn_symbols_get(&runtime->symbols, name, &value)) {
         return ptn_value_deref(value);
@@ -115,6 +179,9 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_array_mutation(
 }
 
 static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *runtime, const char *name) {
+    if (strcmp(name, "GLOBALS") == 0) {
+        return ptn_lookup_found(ptn_runtime_globals_snapshot(runtime));
+    }
     PtnValue value;
     if (ptn_symbols_get(&runtime->symbols, name, &value)) {
         return ptn_lookup_found(ptn_value_deref(value));

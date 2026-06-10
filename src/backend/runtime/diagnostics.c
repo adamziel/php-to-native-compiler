@@ -276,6 +276,7 @@ static void ptn_emit_constant_already_defined_warning(
 
 static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->symbols);
+    runtime->global_symbols = &runtime->symbols;
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = &runtime->owned_constants;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);

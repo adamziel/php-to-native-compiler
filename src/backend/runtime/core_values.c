@@ -215,6 +215,7 @@ typedef struct {
 
 typedef struct {
     PtnSymbolTable symbols;
+    PtnSymbolTable *global_symbols;
     PtnSymbolTable owned_constants;
     PtnSymbolTable *constants;
     PtnDiagnosticSink diagnostics;

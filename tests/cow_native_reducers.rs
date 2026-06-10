@@ -203,6 +203,21 @@ echo count($a), \":\", count($b), \":\", $b[\"w\"], \"\\n\";",
             expected_stdout: "3:4:4\n",
         },
         CowReducerCase {
+            name: "array_walk_callback_global_swap",
+            oracle: "ext/standard/tests/array/array_walk/bug69068_2.phpt",
+            source: "<?php\n\
+function walk_swap(&$value, $key) {\n\
+    var_dump($value);\n\
+    if ($value == 2) { $GLOBALS[\"array\"] = $GLOBALS[\"array2\"]; }\n\
+    $value *= 10;\n\
+}\n\
+$array = [1, 2, 3];\n\
+$array2 = [4, 5];\n\
+array_walk($array, \"walk_swap\");\n\
+var_dump($array, $array2);",
+            expected_stdout: "int(1)\nint(2)\nint(4)\nint(5)\narray(2) {\n  [0]=>\n  int(40)\n  [1]=>\n  int(50)\n}\narray(2) {\n  [0]=>\n  int(4)\n  [1]=>\n  int(5)\n}\n",
+        },
+        CowReducerCase {
             name: "function_argument_array_mutation",
             oracle: "ext/standard/tests/array/array_reduce_accumulator_refcount.phpt",
             source: "<?php\n\
@@ -432,7 +447,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 28, "COW reducer pass count changed");
+    assert_eq!(passed, 29, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 
