@@ -1729,6 +1729,7 @@ fn collect_value_runtime_requirements(
             }
             requirements.internal_function_dispatch = true;
             requirements.dynamic_function_dispatch = true;
+            requirements.method_dispatch = true;
         }
         ValueExpr::MethodCall {
             receiver,
@@ -1776,6 +1777,9 @@ fn collect_call_runtime_requirements(
         return;
     }
     requirements.internal_function_dispatch = true;
+    if internal_call_may_invoke_callable(name) {
+        requirements.method_dispatch = true;
+    }
 }
 
 fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bool {
@@ -1789,6 +1793,13 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
         || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+}
+
+fn internal_call_may_invoke_callable(name: &str) -> bool {
+    name.eq_ignore_ascii_case("array_map")
+        || name.eq_ignore_ascii_case("array_reduce")
+        || name.eq_ignore_ascii_case("array_walk")
+        || name.eq_ignore_ascii_case("call_user_func")
 }
 
 fn collect_control_warnings_in(

@@ -517,6 +517,18 @@ static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
     return detached;
 }
 
+static PTN_UNUSED PtnValue ptn_exception_clone_value(PtnException *source) {
+    PtnException *exception = malloc(sizeof(PtnException));
+    if (exception == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    exception->class_name = source->class_name;
+    exception->message = ptn_duplicate_string(source->message);
+    exception->path = source->path;
+    exception->line = source->line;
+    return ptn_exception_value(exception);
+}
+
 static PTN_UNUSED PtnValue ptn_value_deep_clone(PtnValue value) {
     switch (value.type) {
         case PTN_REFERENCE:
@@ -537,15 +549,8 @@ static PTN_UNUSED PtnValue ptn_value_deep_clone(PtnValue value) {
             value.as.closure->refcount++;
             value.owned = 1;
             return value;
-        case PTN_EXCEPTION: {
-            PtnException *exception = malloc(sizeof(PtnException));
-            if (exception == NULL) {
-                ptn_abort_out_of_memory();
-            }
-            exception->class_name = value.as.exception->class_name;
-            exception->message = ptn_duplicate_string(value.as.exception->message);
-            return ptn_exception_value(exception);
-        }
+        case PTN_EXCEPTION:
+            return ptn_exception_clone_value(value.as.exception);
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_INT:
@@ -579,15 +584,8 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
             value.as.closure->refcount++;
             value.owned = 1;
             return value;
-        case PTN_EXCEPTION: {
-            PtnException *exception = malloc(sizeof(PtnException));
-            if (exception == NULL) {
-                ptn_abort_out_of_memory();
-            }
-            exception->class_name = value.as.exception->class_name;
-            exception->message = ptn_duplicate_string(value.as.exception->message);
-            return ptn_exception_value(exception);
-        }
+        case PTN_EXCEPTION:
+            return ptn_exception_clone_value(value.as.exception);
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_INT:

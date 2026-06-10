@@ -405,7 +405,9 @@ supports in generated native binaries.
   and `["Class", "method"]` callable values. Declared class names and declared
   method names are exposed through bounded `class_exists()` and
   `method_exists()` metadata, with case-insensitive lookup and `stdClass`
-  recognized as the current built-in object shell.
+  recognized as the current built-in object shell. Declared instance methods
+  can be called directly through object receivers and through
+  `[$object, "method"]` callable values, including internal callback dispatch.
 - `new stdClass` expressions, boxed object handles, and public dynamic property
   reads/writes such as `$object->name` and `$object->name = expr`. Object
   assignment shares the object handle, so property writes through an alias are

@@ -1,12 +1,12 @@
 # PTN Progress
 
 Refresh: 2026-06-11T00:59Z
-Measured: `ptn-beq` rebased after `ptn-4n1`, `ptn-ock`, `ptn-ebb`, and
-`ptn-jmq` on current `origin/master`; addslashes/stripslashes native PHPT-shape
-coverage, scalar offset-lvalue fatal/conversion reducers, object `foreach`
-reducers, declared class metadata intrinsics, cslashes PHPT shape,
+Measured: `ptn-co3` rebased after `ptn-4n1`, `ptn-ock`, `ptn-ebb`, `ptn-jmq`,
+and `ptn-beq` on current `origin/master`; addslashes/stripslashes native
+PHPT-shape coverage, scalar offset-lvalue fatal/conversion reducers, object
+`foreach` reducers, declared class metadata intrinsics, cslashes PHPT shape,
 double-quoted ASCII octal/hex escapes, declared class/object method dispatch,
-and callback/COW/directory evidence.
+callable-only object method dispatch, and callback/COW/directory evidence.
 
 ## Test Dashboard
 
@@ -50,7 +50,8 @@ calls, `$this` binding, object/static method callable arrays, and object
 `foreach` over public dynamic properties including live additions and
 by-reference value binding, plus scalar array-lvalue write/reference fatals
 for non-convertible scalars with false-to-array deprecation, and declared
-class/method metadata through `class_exists()` and `method_exists()`.
+class/method metadata through `class_exists()` and `method_exists()`, plus
+callable-only object method dispatch through internal callbacks.
 
 ## Still Needed
 
@@ -66,6 +67,7 @@ sub-path scalar offset-lvalue parity, and broader file APIs.
 
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes,
 cslashes, object `foreach`, scalar offset, and declared class metadata native
-tests/reducers; exact `add-and-stripcslashes.phpt`; `cargo test`. PHPT runners
-resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
+tests/reducers; `cargo test callable`; focused catchable exception-message
+tests; exact `add-and-stripcslashes.phpt`; `cargo test`. PHPT runners resolve
+php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
 `.runtime/php-src-phpt`.

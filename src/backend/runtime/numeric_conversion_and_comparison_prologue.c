@@ -355,7 +355,7 @@ static PTN_UNUSED PtnValue ptn_call_method(
                 "Too many arguments to exception method getMessage()"
             );
         }
-        return ptn_string(receiver.as.exception->message);
+        return ptn_owned_string(ptn_duplicate_string(receiver.as.exception->message));
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();

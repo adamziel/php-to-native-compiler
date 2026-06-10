@@ -6013,6 +6013,40 @@ echo \"after\\n\";",
 }
 
 #[test]
+fn compile_object_method_callable_without_declared_methods_to_native_binary() {
+    let root = temp_dir("ptn-native-object-method-callable-no-declared-methods");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-method-callable-no-declared-methods.php");
+    let output = root.join("object-method-callable-no-declared-methods-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    count(null);
+} catch (\\TypeError $e) {
+    echo call_user_func([$e, \"getMessage\"]), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "count(): Argument #1 ($value) must be of type Countable|array, null given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_call_user_func"));
+    assert!(c_source.contains("ptn_call_declared_method(runtime, receiver"));
+    assert!(c_source.contains("ptn_call_method(runtime, resolved, method_name"));
+}
+
+#[test]
 fn compile_uncaught_count_type_error_fatals() {
     let root = temp_dir("ptn-native-uncaught-count-type-error");
     fs::create_dir_all(&root).unwrap();
@@ -10691,6 +10725,41 @@ echo array_reduce([6], [1 => \"combine\", 0 => \"Reducer\"], 0), \"\\n\";
     assert!(c_source.contains("ptn_internal_array_reduce"));
     assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("Reducer::combine"));
+}
+
+#[test]
+fn compile_array_reduce_instance_method_callable_to_native_binary() {
+    let root = temp_dir("ptn-native-array-reduce-instance-method-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-reduce-instance-method-callable.php");
+    let output = root.join("array-reduce-instance-method-callable-bin");
+    fs::write(
+        &input,
+        "<?php
+class Reducer {
+    public function combine($carry, $value) {
+        return $carry . \":\" . $value;
+    }
+}
+
+$reducer = new Reducer();
+echo array_reduce([\"a\", \"b\"], [$reducer, \"combine\"], \"seed\"), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "seed:a:b\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_reduce"));
+    assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
+    assert!(c_source.contains("receiver.type == PTN_OBJECT || receiver.type == PTN_EXCEPTION"));
+    assert!(c_source.contains("ptn_call_declared_method(runtime, receiver"));
 }
 
 #[test]
