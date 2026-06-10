@@ -1292,13 +1292,34 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
     let by_ref_return = parser::parse("<?php function &factory() { return null; }").unwrap_err();
     assert_eq!(
         by_ref_return.message,
-        "by-reference returns are unsupported"
+        "by-reference return requires a variable or array element"
     );
 
-    let temporary_assignment = parser::parse("<?php $alias =& factory();").unwrap_err();
+    let temporary_assignment = parser::parse("<?php $alias =& 1;").unwrap_err();
     assert_eq!(
         temporary_assignment.message,
         "unsupported by-reference assignment target"
+    );
+
+    let call_result_return =
+        parser::parse("<?php function &factory(&$value) { return id($value); }").unwrap_err();
+    assert_eq!(
+        call_result_return.message,
+        "by-reference call-result returns are unsupported"
+    );
+
+    let recursive_return =
+        parser::parse("<?php function &factory(&$value) { return factory($value); }").unwrap_err();
+    assert_eq!(
+        recursive_return.message,
+        "recursive by-reference returns are unsupported"
+    );
+
+    let non_reference_call_assignment =
+        parser::parse("<?php function factory() { return 1; } $alias =& factory();").unwrap_err();
+    assert_eq!(
+        non_reference_call_assignment.message,
+        "cannot assign non-reference function result by reference"
     );
 
     let recursive_array = parser::parse("<?php $array = []; $array[] =& $array;").unwrap_err();
@@ -1365,6 +1386,19 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         nested_array_reference.message,
         "nested reference lvalues are unsupported"
     );
+}
+
+#[test]
+fn parser_accepts_by_reference_return_call_assignment_sources() {
+    let program =
+        parser::parse("<?php function &id(&$value) { return $value; } $alias =& id($value);")
+            .unwrap();
+    assert!(program.functions[0].return_by_ref);
+    let Statement::AssignRef { name, source, .. } = &program.statements[0] else {
+        panic!("expected by-reference assignment");
+    };
+    assert_eq!(name, "alias");
+    assert!(matches!(source, Expr::Call { name, .. } if name == "id"));
 }
 
 #[test]
@@ -6235,6 +6269,26 @@ fn compile_by_reference_argument_diagnostic_to_native_binary() {
 }
 
 #[test]
+fn compile_by_reference_assignment_call_result_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-assignment-call-result-diagnostic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-assignment-call-result-diagnostic.php");
+    let output = root.join("by-reference-assignment-call-result-diagnostic-bin");
+    fs::write(
+        &input,
+        "<?php function value() { return 1; } $alias =& value();",
+    )
+    .unwrap();
+
+    let error = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap_err();
+    assert_eq!(
+        error.message,
+        "cannot assign non-reference function result by reference"
+    );
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+}
+
+#[test]
 fn compile_array_offset_compound_assignment_undef_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-compound-undef");
     fs::create_dir_all(&root).unwrap();
@@ -9255,7 +9309,7 @@ var_dump($recursive_seed, $recursive);
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_set_call_frame"));
-    assert!(c_source.contains("ptn_return_value = ptn_value_share("));
+    assert!(c_source.contains("ptn_return_value = ptn_value_clone(ptn_value_deref("));
     assert!(c_source.contains("ptn_runtime_write_variable(&runtime, \"arr\", args[0]);"));
     assert!(c_source.contains("ptn_runtime_write_variable(&runtime, \"str\", args[1]);"));
     assert!(
@@ -9320,13 +9374,98 @@ var_dump($a);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("const char *ptn_return_reference_name = NULL;"));
     assert!(
         c_source.contains("PtnValue ptn_typed_return_value = ptn_cast_string(ptn_return_value);")
     );
-    assert!(c_source.contains(
-        "ptn_runtime_write_variable(&runtime, ptn_return_reference_name, ptn_return_value);"
-    ));
+    assert!(c_source
+        .contains("ptn_reference_assign(ptn_return_value.as.reference, ptn_typed_return_value);"));
+}
+
+#[test]
+fn compile_by_ref_return_boundary_cases_to_native_binary() {
+    let root = temp_dir("ptn-native-by-ref-return-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-ref-return-boundaries.php");
+    let output = root.join("by-ref-return-boundaries-bin");
+    fs::write(
+        &input,
+        "<?php
+function &id(&$value) {
+    return $value;
+}
+
+function &slot(&$items) {
+    return $items[\"k\"];
+}
+
+function &local_box() {
+    $local = 41;
+    return $local;
+}
+
+function &as_string(&$value): string {
+    return $value;
+}
+
+function wrap_copy(&$value) {
+    return id($value);
+}
+
+$value = 1;
+$alias =& id($value);
+$alias = 2;
+echo $value, \"|\", $alias, \"\\n\";
+
+$copy = id($value);
+$copy = 3;
+echo $value, \"|\", $copy, \"\\n\";
+
+$items = [\"k\" => 4];
+$slot =& slot($items);
+$slot = 5;
+echo $items[\"k\"], \"|\", $slot, \"\\n\";
+
+$local =& local_box();
+$local = 42;
+echo $local, \"\\n\";
+
+$typed = 123;
+$typed_alias =& as_string($typed);
+echo gettype($typed), \":\", $typed, \"|\", gettype($typed_alias), \":\", $typed_alias, \"\\n\";
+$typed_alias = \"abc\";
+echo gettype($typed), \":\", $typed, \"\\n\";
+
+$wrapped = 7;
+$wrapped_copy = wrap_copy($wrapped);
+$wrapped_copy = 8;
+echo $wrapped, \"|\", $wrapped_copy, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2|2\n",
+            "2|3\n",
+            "5|5\n",
+            "42\n",
+            "string:123|string:123\n",
+            "string:abc\n",
+            "7|8\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"value\")"));
+    assert!(c_source.contains("ptn_runtime_reference_for_array_dim(&runtime, \"items\""));
+    assert!(c_source.contains("ptn_reference_source_or_error("));
+    assert!(c_source.contains("ptn_value_clone(ptn_value_deref("));
 }
 
 #[test]
@@ -9947,7 +10086,7 @@ fn var_dump_complex_edges_remain_unsupported_before_codegen() {
     for source in [
         "<?php var_dump(new stdClass);",
         "<?php $array = []; $array[] = &$array; var_dump($array);",
-        "<?php $ref =& call();",
+        "<?php function call() { return 1; } $ref =& call();",
     ] {
         assert!(
             parser::parse(source).is_err(),

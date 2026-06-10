@@ -67,7 +67,10 @@ impl Parser {
             }
         }
         validate_function_names(&functions)?;
+        validate_by_reference_returns(&functions)?;
+        validate_reference_assignment_sources(&statements, &functions)?;
         for function in &functions {
+            validate_reference_assignment_sources(&function.body, &functions)?;
             validate_goto_labels(&function.body)?;
         }
         validate_goto_labels(&statements)?;
@@ -149,12 +152,7 @@ impl Parser {
         } else {
             None
         };
-        if return_by_ref && return_type.is_none() {
-            return Err(Diagnostic::new(
-                "by-reference returns are unsupported",
-                return_by_ref_span,
-            ));
-        }
+        let _ = return_by_ref_span;
         self.function_depth += 1;
         let body = self.parse_block();
         self.function_depth -= 1;
@@ -290,14 +288,14 @@ impl Parser {
                         Some(target.span),
                     ));
                 }
-                let source = self.parse_reference_target()?;
-                if reference_target_is_variable(&source, &target.array) {
+                let source = self.parse_reference_source()?;
+                if reference_source_is_variable(&source, &target.array) {
                     return Err(Diagnostic::new(
                         "recursive array references are unsupported",
                         Some(target.span),
                     ));
                 }
-                if reference_target_is_array_dim_of(&source, &target.array) {
+                if reference_source_is_array_dim_of(&source, &target.array) {
                     return Err(Diagnostic::new(
                         "same-array element references are unsupported",
                         Some(target.span),
@@ -332,8 +330,8 @@ impl Parser {
         let op = self.expect_assignment_op()?;
         if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
-            let target = self.parse_reference_target()?;
-            if reference_target_is_array_dim_of(&target, &name) {
+            let source = self.parse_reference_source()?;
+            if reference_source_is_array_dim_of(&source, &name) {
                 return Err(Diagnostic::new(
                     "self-referential array-element aliases are unsupported",
                     Some(token.span),
@@ -342,7 +340,7 @@ impl Parser {
             self.expect_statement_terminator()?;
             return Ok(Statement::AssignRef {
                 name,
-                target,
+                source,
                 span: token.span,
             });
         }
@@ -411,6 +409,12 @@ impl Parser {
             name,
             span: token.span,
         })
+    }
+
+    fn parse_reference_source(&mut self) -> Result<Expr> {
+        let source = self.parse_postfix_expr()?;
+        validate_reference_source_expr(&source)?;
+        Ok(source)
     }
 
     fn parse_prefix_increment_statement(&mut self) -> Result<Statement> {
@@ -2099,12 +2103,24 @@ fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
     validate_gotos(statements, &labels, &mut control_path)
 }
 
-fn reference_target_is_variable(target: &ReferenceTarget, variable: &str) -> bool {
-    matches!(target, ReferenceTarget::Variable { name, .. } if name == variable)
+fn reference_source_is_variable(source: &Expr, variable: &str) -> bool {
+    match source {
+        Expr::Variable(name, _) => name == variable,
+        Expr::Grouped { expr, .. } => reference_source_is_variable(expr, variable),
+        _ => false,
+    }
 }
 
-fn reference_target_is_array_dim_of(target: &ReferenceTarget, variable: &str) -> bool {
-    matches!(target, ReferenceTarget::ArrayDim(target) if target.array == variable)
+fn reference_source_is_array_dim_of(source: &Expr, variable: &str) -> bool {
+    match source {
+        Expr::ArrayAccess { array, .. } => match array.as_ref() {
+            Expr::Variable(name, _) => name == variable,
+            Expr::Grouped { expr, .. } => reference_source_is_array_dim_of(expr, variable),
+            _ => false,
+        },
+        Expr::Grouped { expr, .. } => reference_source_is_array_dim_of(expr, variable),
+        _ => false,
+    }
 }
 
 fn validate_recursive_reference_assignment_value(
@@ -2223,6 +2239,254 @@ fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn validate_reference_source_expr(source: &Expr) -> Result<()> {
+    match source {
+        Expr::Variable(_, _) | Expr::Call { .. } => Ok(()),
+        Expr::Grouped { expr, .. } => validate_reference_source_expr(expr),
+        Expr::ArrayAccess { array, index, span } => {
+            if index.is_none() {
+                return Err(Diagnostic::new(
+                    "append reference sources are unsupported",
+                    Some(*span),
+                ));
+            }
+            match array.as_ref() {
+                Expr::Variable(_, _) => Ok(()),
+                Expr::Grouped { expr, .. } => match expr.as_ref() {
+                    Expr::Variable(_, _) => Ok(()),
+                    Expr::ArrayAccess { .. } => Err(Diagnostic::new(
+                        "nested reference lvalues are unsupported",
+                        Some(*span),
+                    )),
+                    _ => Err(Diagnostic::new(
+                        "unsupported by-reference assignment target",
+                        Some(*span),
+                    )),
+                },
+                Expr::ArrayAccess { .. } => Err(Diagnostic::new(
+                    "nested reference lvalues are unsupported",
+                    Some(*span),
+                )),
+                _ => Err(Diagnostic::new(
+                    "unsupported by-reference assignment target",
+                    Some(*span),
+                )),
+            }
+        }
+        _ => Err(Diagnostic::new(
+            "unsupported by-reference assignment target",
+            Some(source.span()),
+        )),
+    }
+}
+
+fn validate_by_reference_returns(functions: &[FunctionDecl]) -> Result<()> {
+    for function in functions {
+        if function.return_by_ref {
+            validate_by_reference_returns_in_statements(&function.body, &function.name)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_by_reference_returns_in_statements(
+    statements: &[Statement],
+    function_name: &str,
+) -> Result<()> {
+    for statement in statements {
+        match statement {
+            Statement::Return { value, span } => {
+                let Some(value) = value else {
+                    return Err(Diagnostic::new(
+                        "by-reference return requires a variable or array element",
+                        Some(*span),
+                    ));
+                };
+                validate_by_reference_return_value(value, function_name)?;
+            }
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                validate_by_reference_returns_in_statements(then_body, function_name)?;
+                validate_by_reference_returns_in_statements(else_body, function_name)?;
+            }
+            Statement::Block { statements, .. } => {
+                validate_by_reference_returns_in_statements(statements, function_name)?;
+            }
+            Statement::While { body, .. }
+            | Statement::DoWhile { body, .. }
+            | Statement::Foreach { body, .. } => {
+                validate_by_reference_returns_in_statements(body, function_name)?;
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                validate_by_reference_returns_in_statements(initializers, function_name)?;
+                validate_by_reference_returns_in_statements(updates, function_name)?;
+                validate_by_reference_returns_in_statements(body, function_name)?;
+            }
+            Statement::Try { body, catches, .. } => {
+                validate_by_reference_returns_in_statements(body, function_name)?;
+                for catch in catches {
+                    validate_by_reference_returns_in_statements(&catch.body, function_name)?;
+                }
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    validate_by_reference_returns_in_statements(&case.body, function_name)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_reference_assignment_sources(
+    statements: &[Statement],
+    functions: &[FunctionDecl],
+) -> Result<()> {
+    for statement in statements {
+        match statement {
+            Statement::AssignRef { source, .. } | Statement::ArrayAssignRef { source, .. } => {
+                validate_reference_assignment_source_expr(source, functions)?;
+            }
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                validate_reference_assignment_sources(then_body, functions)?;
+                validate_reference_assignment_sources(else_body, functions)?;
+            }
+            Statement::Block { statements, .. } => {
+                validate_reference_assignment_sources(statements, functions)?;
+            }
+            Statement::While { body, .. }
+            | Statement::DoWhile { body, .. }
+            | Statement::Foreach { body, .. } => {
+                validate_reference_assignment_sources(body, functions)?;
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                validate_reference_assignment_sources(initializers, functions)?;
+                validate_reference_assignment_sources(updates, functions)?;
+                validate_reference_assignment_sources(body, functions)?;
+            }
+            Statement::Try { body, catches, .. } => {
+                validate_reference_assignment_sources(body, functions)?;
+                for catch in catches {
+                    validate_reference_assignment_sources(&catch.body, functions)?;
+                }
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    validate_reference_assignment_sources(&case.body, functions)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_reference_assignment_source_expr(
+    source: &Expr,
+    functions: &[FunctionDecl],
+) -> Result<()> {
+    match source {
+        Expr::Grouped { expr, .. } => validate_reference_assignment_source_expr(expr, functions),
+        Expr::Call { name, span, .. } => {
+            if let Some(return_by_ref) = user_function_returns_by_reference(functions, name) {
+                if return_by_ref {
+                    return Ok(());
+                }
+                return Err(Diagnostic::new(
+                    "cannot assign non-reference function result by reference",
+                    Some(*span),
+                ));
+            }
+            if is_modeled_internal_function_name(name) {
+                return Err(Diagnostic::new(
+                    "cannot assign non-reference function result by reference",
+                    Some(*span),
+                ));
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn user_function_returns_by_reference(functions: &[FunctionDecl], name: &str) -> Option<bool> {
+    functions
+        .iter()
+        .find(|function| function.name.eq_ignore_ascii_case(name))
+        .map(|function| function.return_by_ref)
+}
+
+fn validate_by_reference_return_value(value: &Expr, function_name: &str) -> Result<()> {
+    match value {
+        Expr::Variable(_, _) => Ok(()),
+        Expr::Grouped { expr, .. } => validate_by_reference_return_value(expr, function_name),
+        Expr::ArrayAccess { array, index, span } => {
+            if index.is_none() {
+                return Err(Diagnostic::new(
+                    "by-reference return requires a variable or array element",
+                    Some(*span),
+                ));
+            }
+            match array.as_ref() {
+                Expr::Variable(_, _) => Ok(()),
+                Expr::Grouped { expr, .. } => match expr.as_ref() {
+                    Expr::Variable(_, _) => Ok(()),
+                    Expr::ArrayAccess { .. } => Err(Diagnostic::new(
+                        "nested reference lvalues are unsupported",
+                        Some(*span),
+                    )),
+                    _ => Err(Diagnostic::new(
+                        "by-reference return requires a variable or array element",
+                        Some(*span),
+                    )),
+                },
+                Expr::ArrayAccess { .. } => Err(Diagnostic::new(
+                    "nested reference lvalues are unsupported",
+                    Some(*span),
+                )),
+                _ => Err(Diagnostic::new(
+                    "by-reference return requires a variable or array element",
+                    Some(*span),
+                )),
+            }
+        }
+        Expr::Call { name, span, .. } if name.eq_ignore_ascii_case(function_name) => {
+            Err(Diagnostic::new(
+                "recursive by-reference returns are unsupported",
+                Some(*span),
+            ))
+        }
+        Expr::Call { span, .. }
+        | Expr::DynamicCall { span, .. }
+        | Expr::MethodCall { span, .. } => Err(Diagnostic::new(
+            "by-reference call-result returns are unsupported",
+            Some(*span),
+        )),
+        _ => Err(Diagnostic::new(
+            "by-reference return requires a variable or array element",
+            Some(value.span()),
+        )),
+    }
 }
 
 fn is_modeled_internal_function_name(name: &str) -> bool {

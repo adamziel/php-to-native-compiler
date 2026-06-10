@@ -164,6 +164,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
 }
 
 static void ptn_var_dump_value(PtnValue value) {
+    if (value.type == PTN_REFERENCE) {
+        value = ptn_value_deref(value);
+    }
     ptn_var_dump_value_indented(value, 0);
 }
 

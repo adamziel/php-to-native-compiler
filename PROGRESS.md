@@ -1,15 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-10T10:02Z
-Measured: `polecat/118/ptn-c7b@mq7vaa27` after `ptn-kia`/`ptn-4dv`; COW
-manifest and post-merge gate.
+Refresh: 2026-06-10T10:18Z
+Measured: `polecat/117/ptn-hto@mq7v7ud2` after `ptn-4dv`/`ptn-c7b`; native
+boundary tests and post-merge COW gate.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 336 | 336 | 0 |
+| Native compiled PHP snippets | 339 | 339 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 146 | 54 |
 | PHPT Zend rows | 76 | 63 | 13 |
@@ -21,7 +21,7 @@ manifest and post-merge gate.
 | Focused COW reducer snippets | 34 | 34 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
-| Post-merge COW gate | 24 | 24 | 0 |
+| Post-merge COW gate | 25 | 25 | 0 |
 | COW/reference-focused native tests | 12 | 12 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
 | PHPT COW manifest | 29 | 24 | 5 |
@@ -30,15 +30,12 @@ manifest and post-merge gate.
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows. Focused evidence is 24
-passing, 5 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets
-4/4, array-writes-appends-unset 4/4, nested-arrays 3/4, foreach-mutation 3/4,
-function-boundaries 1/4, reference-interaction 5/5. Nested rows now pass
-`bug38469`, `array_merge_recursive_basic1`, and
-`array_merge_replace_recursive_refs`; `bug35163` still needs recursive
-reference lvalues. Native COW reducers are 34/34, recursive reference
-diagnostics are 9/9, mutating-internal matrix is 14/14 plus six unsupported
-diagnostics, and the post-merge COW gate is 24/24.
+`tools/phpt-cow-manifest.txt` has 29 rows. Focused evidence remains 24 passing,
+5 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
+array-writes-appends-unset 4/4, nested-arrays 3/4, foreach-mutation 3/4,
+function-boundaries 1/4, reference-interaction 5/5. Native COW reducers are
+34/34, recursive reference diagnostics are 9/9, mutating-internal matrix is
+14/14 plus six unsupported diagnostics, and the post-merge COW gate is 25/25.
 
 ## Already Ported
 
@@ -48,9 +45,9 @@ string/math/type internals, ordered arrays, `foreach`, cursors,
 references, by-reference parameters and `foreach`, array dimensions,
 temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
 binary strings, string offsets, corpus-style scalar offset diagnostics, array
-literal reference elements, array union `+`, scalar type hints, typed
-by-reference return separation, `count()`, `??`, COW gates/oracles, assignment
-expressions, expression-level `@` suppression, `file_put_contents()`,
+literal reference elements, array union `+`, scalar type hints, by-reference
+return alias/separation boundaries, `count()`, `??`, COW gates/oracles,
+assignment expressions, expression-level `@` suppression, `file_put_contents()`,
 `sha1_file()`, `unlink()` byte-file slices, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()` replacement maps and byte maps,
 reference-aware `in_array()`, `array_merge_recursive()`/
@@ -62,10 +59,9 @@ diagnostics.
 
 ## Still Needed
 
-More PHPT COW rows, reference-aware internals, call-result references, broader
-by-reference returns, nested reference lvalues, recursive reference
-implementation beyond diagnostics, closure/callback call surfaces, offset-form
-`??=` runtime support, and broader file APIs.
+More PHPT COW rows, reference-aware internals, recursive/call-result
+by-reference return chaining, closure/callback by-reference returns, nested
+reference lvalues, offset-form `??=` runtime support, and broader file APIs.
 
 ## Next Focus
 

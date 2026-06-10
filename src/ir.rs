@@ -52,7 +52,7 @@ pub enum Instruction {
     },
     StoreRef {
         name: String,
-        target: ReferenceTarget,
+        source: ValueExpr,
     },
     StoreArrayDim {
         array: String,
@@ -63,7 +63,7 @@ pub enum Instruction {
     },
     StoreArrayDimRef {
         target: ArrayDimTarget,
-        source: ReferenceTarget,
+        source: ValueExpr,
     },
     Increment {
         name: String,
@@ -417,10 +417,10 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     });
                 }
             }
-            Statement::AssignRef { name, target, .. } => {
+            Statement::AssignRef { name, source, .. } => {
                 instructions.push(Instruction::StoreRef {
                     name: name.clone(),
-                    target: lower_reference_target(target),
+                    source: lower_expr(source),
                 });
             }
             Statement::ArrayAssign {
@@ -431,7 +431,7 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
             Statement::ArrayAssignRef { target, source, .. } => {
                 instructions.push(Instruction::StoreArrayDimRef {
                     target: lower_array_dim_target(target),
-                    source: lower_reference_target(source),
+                    source: lower_expr(source),
                 });
             }
             Statement::Increment { name, op, span } => {

@@ -70,6 +70,23 @@ static PTN_UNUSED void ptn_abort_by_reference_argument_error(
     exit(255);
 }
 
+static PTN_UNUSED void ptn_abort_by_reference_return_error(void) {
+    fputs("Fatal error: by-reference return did not produce a reference\n", stderr);
+    exit(255);
+}
+
+static PTN_UNUSED PtnValue ptn_reference_source_or_error(PtnValue value, const char *function_name) {
+    if (value.type == PTN_REFERENCE) {
+        return ptn_value_clone(value);
+    }
+    fprintf(
+        stderr,
+        "Fatal error: %s() did not return a reference\n",
+        function_name
+    );
+    exit(255);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_read_variable(
     PtnRuntime *runtime,
     const char *name,

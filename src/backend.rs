@@ -204,9 +204,6 @@ fn emit_user_functions(
             out.push_str(", ptn_parameter_names);\n");
         }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
-        if function.return_by_ref {
-            out.push_str("    const char *ptn_return_reference_name = NULL;\n");
-        }
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             if let Some(TypeHint::Null) = parameter.type_hint {
                 out.push_str("    if (args[");
@@ -305,14 +302,7 @@ fn emit_user_functions(
         out.push_str(&return_label);
         out.push_str(":\n");
         if let Some(return_type) = function.return_type {
-            emit_return_type_boundary(out, return_type, &function.name);
-            if function.return_by_ref {
-                out.push_str("    if (ptn_return_reference_name != NULL) {\n");
-                out.push_str(
-                    "        ptn_runtime_write_variable(&runtime, ptn_return_reference_name, ptn_return_value);\n",
-                );
-                out.push_str("    }\n");
-            }
+            emit_return_type_boundary(out, return_type, &function.name, function.return_by_ref);
         }
         out.push_str("    ptn_runtime_free(&runtime);\n");
         out.push_str("    return ptn_return_value;\n");
@@ -320,10 +310,15 @@ fn emit_user_functions(
     }
 }
 
-fn emit_return_type_boundary(out: &mut String, return_type: TypeHint, function_name: &str) {
+fn emit_return_type_boundary(
+    out: &mut String,
+    return_type: TypeHint,
+    function_name: &str,
+    return_by_ref: bool,
+) {
     match return_type {
         TypeHint::Null => {
-            out.push_str("    if (ptn_return_value.type != PTN_NULL) {\n");
+            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL) {\n");
             out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
             out.push_str(&c_string(function_name));
             out.push_str("() return value must be of type null\");\n");
@@ -334,11 +329,22 @@ fn emit_return_type_boundary(out: &mut String, return_type: TypeHint, function_n
         TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool => {
             let cast_helper = type_hint_scalar_cast_helper(Some(return_type))
                 .expect("scalar return type should map to cast helper");
-            out.push_str("    PtnValue ptn_typed_return_value = ");
-            out.push_str(cast_helper);
-            out.push_str("(ptn_return_value);\n");
-            out.push_str("    ptn_value_drop(&ptn_return_value);\n");
-            out.push_str("    ptn_return_value = ptn_typed_return_value;\n");
+            if return_by_ref {
+                out.push_str("    if (ptn_return_value.type != PTN_REFERENCE) {\n");
+                out.push_str("        ptn_abort_by_reference_return_error();\n");
+                out.push_str("    }\n");
+                out.push_str("    PtnValue ptn_typed_return_value = ");
+                out.push_str(cast_helper);
+                out.push_str("(ptn_return_value);\n");
+                out.push_str("    ptn_reference_assign(ptn_return_value.as.reference, ptn_typed_return_value);\n");
+                out.push_str("    ptn_value_drop(&ptn_typed_return_value);\n");
+            } else {
+                out.push_str("    PtnValue ptn_typed_return_value = ");
+                out.push_str(cast_helper);
+                out.push_str("(ptn_return_value);\n");
+                out.push_str("    ptn_value_drop(&ptn_return_value);\n");
+                out.push_str("    ptn_return_value = ptn_typed_return_value;\n");
+            }
         }
     }
 }
@@ -476,8 +482,8 @@ fn emit_instruction(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &emitted_value);
         }
-        Instruction::StoreRef { name, target } => {
-            let reference_temp = values.emit_reference_target(out, target);
+        Instruction::StoreRef { name, source } => {
+            let reference_temp = values.emit_reference_source(out, source);
             out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
@@ -572,7 +578,7 @@ fn emit_instruction(
             }
         }
         Instruction::StoreArrayDimRef { target, source } => {
-            let source_temp = values.emit_reference_target(out, source);
+            let source_temp = values.emit_reference_source(out, source);
             let index_temp = target
                 .index
                 .as_ref()
@@ -694,19 +700,18 @@ fn emit_instruction(
             Some(target) => {
                 if let Some(value) = value {
                     if values.current_function_return_by_ref {
-                        if let ValueExpr::Load { name, .. } = value {
-                            out.push_str("    ptn_return_reference_name = \"");
-                            out.push_str(&c_string(name));
-                            out.push_str("\";\n");
-                        } else {
-                            out.push_str("    ptn_return_reference_name = NULL;\n");
-                        }
+                        let reference_value = values.emit_reference_source(out, value);
+                        out.push_str("    ptn_return_value = ptn_value_share(");
+                        out.push_str(&reference_value);
+                        out.push_str(");\n");
+                        emit_value_cleanup(out, "    ", &reference_value);
+                    } else {
+                        let result_value = values.emit_materialized_value(out, value);
+                        out.push_str("    ptn_return_value = ptn_value_clone(ptn_value_deref(");
+                        out.push_str(&result_value);
+                        out.push_str("));\n");
+                        emit_value_cleanup(out, "    ", &result_value);
                     }
-                    let result_value = values.emit_materialized_value(out, value);
-                    out.push_str("    ptn_return_value = ptn_value_share(");
-                    out.push_str(&result_value);
-                    out.push_str(");\n");
-                    emit_value_cleanup(out, "    ", &result_value);
                 } else {
                     out.push_str("    ptn_return_value = ptn_null();\n");
                 }
@@ -1361,14 +1366,14 @@ fn collect_instruction_runtime_requirements(
             }
             collect_value_runtime_requirements(value, functions, requirements);
         }
-        Instruction::StoreRef { target, .. } => {
-            collect_reference_target_runtime_requirements(target, functions, requirements);
+        Instruction::StoreRef { source, .. } => {
+            collect_value_runtime_requirements(source, functions, requirements);
         }
         Instruction::StoreArrayDimRef { target, source } => {
             if let Some(index) = &target.index {
                 collect_value_runtime_requirements(index, functions, requirements);
             }
-            collect_reference_target_runtime_requirements(source, functions, requirements);
+            collect_value_runtime_requirements(source, functions, requirements);
         }
         Instruction::Increment { .. } => {}
         Instruction::UnsetVariable { .. } => {}
@@ -3341,6 +3346,38 @@ impl ValueEmitter {
             Some(target) => self.emit_reference_target(out, &target),
             None => self.emit_materialized_value(out, argument),
         }
+    }
+
+    fn emit_reference_source(&mut self, out: &mut String, source: &ValueExpr) -> String {
+        if let Some(target) = reference_target_from_value(source) {
+            return self.emit_reference_target(out, &target);
+        }
+
+        if let ValueExpr::InternalCall {
+            name,
+            arguments,
+            line,
+        } = source
+        {
+            let result_temp = self.emit_internal_call(out, name, arguments, *line);
+            let reference_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&reference_temp);
+            out.push_str(" = ptn_reference_source_or_error(");
+            out.push_str(&result_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\");\n");
+            emit_value_cleanup(out, "    ", &result_temp);
+            return reference_temp;
+        }
+
+        let temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    ptn_abort_by_reference_return_error();\n");
+        temp
     }
 
     fn emit_reference_target(&mut self, out: &mut String, target: &ReferenceTarget) -> String {

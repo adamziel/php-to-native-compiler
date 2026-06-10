@@ -37,6 +37,7 @@ oracle_cases=(
     function_return_string_offset
     array_element_reference_after_copy
     typed_by_reference_return_separation
+    by_reference_return_boundaries
 )
 
 diagnostic_cases=(
@@ -90,6 +91,9 @@ coverage() {
         typed_by_reference_return_separation)
             printf 'typed by-reference returns separate reference-bound values\n'
             ;;
+        by_reference_return_boundaries)
+            printf 'by-reference return aliases, separation, array slots, locals, and typed coercion\n'
+            ;;
         unsupported_foreach_reference_key)
             printf 'diagnostic: foreach key binding cannot be by reference\n'
             ;;
@@ -97,10 +101,10 @@ coverage() {
             printf 'diagnostic: foreach destructuring remains explicit unsupported behavior\n'
             ;;
         unsupported_by_reference_return)
-            printf 'diagnostic: untyped by-reference returns remain explicit unsupported behavior\n'
+            printf 'diagnostic: non-lvalue by-reference returns remain explicit unsupported behavior\n'
             ;;
         unsupported_reference_assignment_from_call)
-            printf 'diagnostic: by-reference assignment from call results remains explicit unsupported behavior\n'
+            printf 'diagnostic: non-reference call results cannot be assigned by reference\n'
             ;;
         unsupported_recursive_array_append_self)
             printf 'diagnostic: array append by reference to itself remains explicit unsupported behavior\n'
@@ -275,6 +279,60 @@ echo test_value($value), ":", gettype($value), "\n";
 echo test_reference($value), ":", gettype($value), ":", $value, "\n";
 PHP
             ;;
+        by_reference_return_boundaries)
+            cat >"$path" <<'PHP'
+<?php
+function &id(&$value) {
+    return $value;
+}
+
+function &slot(&$items) {
+    return $items["k"];
+}
+
+function &local_box() {
+    $local = 41;
+    return $local;
+}
+
+function &as_string(&$value): string {
+    return $value;
+}
+
+function wrap_copy(&$value) {
+    return id($value);
+}
+
+$value = 1;
+$alias =& id($value);
+$alias = 2;
+echo $value, "|", $alias, "\n";
+
+$copy = id($value);
+$copy = 3;
+echo $value, "|", $copy, "\n";
+
+$items = ["k" => 4];
+$slot =& slot($items);
+$slot = 5;
+echo $items["k"], "|", $slot, "\n";
+
+$local =& local_box();
+$local = 42;
+echo $local, "\n";
+
+$typed = 123;
+$typed_alias =& as_string($typed);
+echo gettype($typed), ":", $typed, "|", gettype($typed_alias), ":", $typed_alias, "\n";
+$typed_alias = "abc";
+echo gettype($typed), ":", $typed, "\n";
+
+$wrapped = 7;
+$wrapped_copy = wrap_copy($wrapped);
+$wrapped_copy = 8;
+echo $wrapped, "|", $wrapped_copy, "\n";
+PHP
+            ;;
         *)
             echo "unknown oracle case: $name" >&2
             return 1
@@ -308,8 +366,7 @@ PHP
             cat >"$path" <<'PHP'
 <?php
 function &make_ref() {
-    $value = 1;
-    return $value;
+    return 1;
 }
 PHP
             ;;
@@ -397,10 +454,10 @@ expected_diagnostic() {
             printf 'foreach destructuring is unsupported\n'
             ;;
         unsupported_by_reference_return)
-            printf 'by-reference returns are unsupported\n'
+            printf 'by-reference return requires a variable or array element\n'
             ;;
         unsupported_reference_assignment_from_call)
-            printf 'unsupported by-reference assignment target\n'
+            printf 'cannot assign non-reference function result by reference\n'
             ;;
         unsupported_recursive_array_append_self)
             printf 'recursive array references are unsupported\n'

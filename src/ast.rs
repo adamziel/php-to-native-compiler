@@ -43,7 +43,7 @@ pub enum Statement {
     },
     AssignRef {
         name: String,
-        target: ReferenceTarget,
+        source: Expr,
         span: SourceSpan,
     },
     ArrayAssign {
@@ -54,7 +54,7 @@ pub enum Statement {
     },
     ArrayAssignRef {
         target: ArrayDimTarget,
-        source: ReferenceTarget,
+        source: Expr,
         span: SourceSpan,
     },
     Increment {
