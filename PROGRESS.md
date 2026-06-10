@@ -9,7 +9,7 @@ boundary tests and post-merge COW gate.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 339 | 339 | 0 |
+| Native compiled PHP snippets | 341 | 341 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 146 | 54 |
 | PHPT Zend rows | 76 | 63 | 13 |
@@ -49,13 +49,12 @@ literal reference elements, array union `+`, scalar type hints, by-reference
 return alias/separation boundaries, `count()`, `??`, COW gates/oracles,
 assignment expressions, expression-level `@` suppression, `file_put_contents()`,
 `sha1_file()`, `unlink()` byte-file slices, array-path RHS snapshots,
-reference-aware `array_sum()`/`strtr()` replacement maps and byte maps,
-reference-aware `in_array()`, `array_merge_recursive()`/
-`array_replace_recursive()`, `debug_zval_dump()`, string-valued dynamic calls
-with lvalue reference arguments through fallback dispatch, append/list
-assignment expressions for reference arrays, direct-variable assignment-form
-`??=`, six offset-form `??=` diagnostics, and recursive/same-array reference
-diagnostics.
+reference-aware `array_sum()`/`strtr()`/`in_array()`, `array_merge_recursive()`/
+`array_replace_recursive()`, `debug_zval_dump()`, dynamic lvalue-reference
+calls through fallback dispatch, append/list assignment expressions for
+reference arrays, direct-variable assignment-form `??=`, six offset-form `??=`
+diagnostics, grouped reference targets, and recursive/same-array/nested
+reference diagnostics.
 
 ## Still Needed
 

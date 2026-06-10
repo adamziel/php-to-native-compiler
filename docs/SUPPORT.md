@@ -209,12 +209,11 @@ supports in generated native binaries.
   declarations over the currently supported expression and statement subset.
   Calls may pass extra arguments. Duplicate declarations and declarations that
   collide with currently modeled internal function names are rejected.
-- Direct variable reference aliases, single-dimension array element references,
-  array literal reference elements, and by-value copies near references, with
-  unsupported recursive/non-lvalue reference forms rejected explicitly.
-  Recursive array-literal references to the assigned array and same-array
-  element reference aliases are still unsupported and fail before code
-  generation with explicit diagnostics.
+- Direct variable reference aliases, grouped direct-variable aliases,
+  single-dimension array element references, grouped single-dimension array
+  element references, array literal reference elements, and by-value copies near
+  references. Unsupported recursive, nested array, temporary offset, and other
+  non-lvalue reference forms are rejected explicitly with source spans.
 - `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, `string(length) "value"`, and ordered literal
   arrays. Finite floats use the shortest decimal spelling that round-trips to

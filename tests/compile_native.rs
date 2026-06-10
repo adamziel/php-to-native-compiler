@@ -1381,11 +1381,92 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "same-array element references are unsupported"
     );
 
-    let nested_array_reference = parser::parse("<?php $array[0][1] =& $value;").unwrap_err();
+    let nested_forms = [
+        ("<?php $array[0][1] =& $value;", "$array[0][1]"),
+        ("<?php $alias =& $array[0][1];", "$array[0][1]"),
+        ("<?php $alias =& ($array[0][1]);", "$array[0][1]"),
+        ("<?php $alias =& ($array[0])[1];", "($array[0])[1]"),
+        ("<?php $alias =& (($array)[0])[1];", "(($array)[0])[1]"),
+        ("<?php $refs = [&$array[0][1]];", "$array[0][1]"),
+        ("<?php $refs = ['k' => &$array[0][1]];", "$array[0][1]"),
+        ("<?php $refs = [&($array[0])[1]];", "($array[0])[1]"),
+    ];
+    for (source, target) in nested_forms {
+        assert_reference_lvalue_diagnostic(
+            source,
+            "nested array reference lvalues are unsupported",
+            target,
+        );
+    }
+
+    let temporary_offset_forms = [
+        ("<?php $alias =& factory()[0];", "factory()[0]"),
+        ("<?php $alias =& [1][0];", "[1][0]"),
+        ("<?php $alias =& ($value + 1)[0];", "($value + 1)[0]"),
+        ("<?php $refs = [&factory()[0]];", "factory()[0]"),
+        ("<?php $refs = [&[1][0]];", "[1][0]"),
+    ];
+    for (source, target) in temporary_offset_forms {
+        assert_reference_lvalue_diagnostic(
+            source,
+            "temporary array offset references are unsupported",
+            target,
+        );
+    }
+}
+
+fn assert_reference_lvalue_diagnostic(source: &str, message: &str, target: &str) {
+    let error = parser::parse(source).unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, message);
+    let span = error
+        .span
+        .expect("reference diagnostic should be source-spanned");
+    let byte_start = source
+        .find(target)
+        .unwrap_or_else(|| panic!("test source should contain target {target}"));
+    let byte_end = byte_start + target.len();
+    assert_eq!(span.byte_start, byte_start);
+    assert_eq!(span.byte_end, byte_end);
+    assert_eq!(&source[span.byte_start..span.byte_end], target);
     assert_eq!(
-        nested_array_reference.message,
-        "nested reference lvalues are unsupported"
+        span.line,
+        source[..byte_start]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1
     );
+    assert_eq!(
+        span.column,
+        source[..byte_start]
+            .rsplit('\n')
+            .next()
+            .expect("source prefix should have a final line")
+            .chars()
+            .count()
+            + 1
+    );
+}
+
+#[test]
+fn parser_accepts_grouped_direct_and_single_dim_reference_targets() {
+    let program =
+        parser::parse("<?php $alias =& ($value); $slot =& ($items)[0]; $same =& ($items[1]);")
+            .unwrap();
+
+    assert!(matches!(
+        &program.statements[0],
+        Statement::AssignRef { name, .. } if name == "alias"
+    ));
+    assert!(matches!(
+        &program.statements[1],
+        Statement::AssignRef { name, .. } if name == "slot"
+    ));
+    assert!(matches!(
+        &program.statements[2],
+        Statement::AssignRef { name, .. } if name == "same"
+    ));
 }
 
 #[test]
@@ -5874,6 +5955,36 @@ var_dump($arr[0], $other, $elem);",
         String::from_utf8(execution.stdout).unwrap(),
         "int(2)\nint(1)\nint(2)\nint(3)\nint(3)\nint(5)\nint(5)\nint(6)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_grouped_reference_lvalues_to_native_binary() {
+    let root = temp_dir("ptn-native-grouped-reference-lvalues");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("grouped-reference-lvalues.php");
+    let output = root.join("grouped-reference-lvalues-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$value = 1;\n\
+$alias =& ($value);\n\
+$alias = 2;\n\
+echo $value, ':', $alias, \"\\n\";\n\
+$items = [10, 20];\n\
+$first =& ($items)[0];\n\
+$second =& ($items[1]);\n\
+$first = 30;\n\
+$second = 40;\n\
+echo $items[0], ':', $items[1], \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2:2\n30:40\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
