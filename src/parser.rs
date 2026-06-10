@@ -76,6 +76,7 @@ impl Parser {
             }
         }
         validate_class_names(&classes)?;
+        validate_parent_class_names(&classes)?;
         for class in &classes {
             validate_method_names(class)?;
             for method in &class.methods {
@@ -123,11 +124,22 @@ impl Parser {
                 Some(name_token.span),
             ));
         };
-        if token_is_identifier_named(self.peek(), "extends")
-            || token_is_identifier_named(self.peek(), "implements")
-        {
+        let parent_name = if token_is_identifier_named(self.peek(), "extends") {
+            self.advance();
+            let parent_token = self.advance().clone();
+            let TokenKind::Identifier(parent_name) = parent_token.kind else {
+                return Err(Diagnostic::new(
+                    "expected parent class name",
+                    Some(parent_token.span),
+                ));
+            };
+            Some(parent_name)
+        } else {
+            None
+        };
+        if token_is_identifier_named(self.peek(), "implements") {
             return Err(Diagnostic::new(
-                "class inheritance and interfaces are unsupported",
+                "interfaces are unsupported",
                 Some(self.peek().span),
             ));
         }
@@ -140,6 +152,7 @@ impl Parser {
         self.expect_right_brace()?;
         Ok(ClassDecl {
             name: class_name,
+            parent_name,
             methods,
             span: class_token.span,
         })
@@ -2419,6 +2432,28 @@ fn validate_class_names(classes: &[ClassDecl]) -> Result<()> {
         if !names.insert(lookup_name.clone()) {
             return Err(Diagnostic::new(
                 format!("Cannot declare class {lookup_name}, because the name is already in use"),
+                Some(class.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
+    let names = classes
+        .iter()
+        .map(|class| class.name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    for class in classes {
+        let Some(parent_name) = &class.parent_name else {
+            continue;
+        };
+        if parent_name.eq_ignore_ascii_case("stdClass") {
+            continue;
+        }
+        if !names.contains(&parent_name.to_ascii_lowercase()) {
+            return Err(Diagnostic::new(
+                format!("Class \"{parent_name}\" not found"),
                 Some(class.span),
             ));
         }

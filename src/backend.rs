@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -478,7 +479,7 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        for method in &class.methods {
+        for method in class_method_lookup_chain(class, classes) {
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
@@ -490,6 +491,54 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
+}
+
+fn class_by_name<'a>(classes: &'a [ClassDecl], name: &str) -> Option<&'a ClassDecl> {
+    classes
+        .iter()
+        .find(|class| class.name.eq_ignore_ascii_case(name))
+}
+
+fn class_method_lookup_chain<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Vec<&'a crate::ir::MethodDecl> {
+    fn collect<'a>(
+        class: &'a ClassDecl,
+        classes: &'a [ClassDecl],
+        seen_classes: &mut HashSet<String>,
+        seen_methods: &mut HashSet<String>,
+        methods: &mut Vec<&'a crate::ir::MethodDecl>,
+    ) {
+        for method in &class.methods {
+            if seen_methods.insert(method.name.to_ascii_lowercase()) {
+                methods.push(method);
+            }
+        }
+
+        let Some(parent_name) = &class.parent_name else {
+            return;
+        };
+        let lookup_name = parent_name.to_ascii_lowercase();
+        if !seen_classes.insert(lookup_name) {
+            return;
+        }
+        if let Some(parent) = class_by_name(classes, parent_name) {
+            collect(parent, classes, seen_classes, seen_methods, methods);
+        }
+    }
+
+    let mut methods = Vec::new();
+    let mut seen_classes = HashSet::from([class.name.to_ascii_lowercase()]);
+    let mut seen_methods = HashSet::new();
+    collect(
+        class,
+        classes,
+        &mut seen_classes,
+        &mut seen_methods,
+        &mut methods,
+    );
+    methods
 }
 
 fn emit_method_dispatch(out: &mut String, classes: &[ClassDecl]) {
@@ -516,7 +565,7 @@ fn emit_method_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        for method in &class.methods {
+        for method in class_method_lookup_chain(class, classes) {
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");

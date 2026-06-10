@@ -10,6 +10,7 @@ pub struct Program {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDecl {
     pub name: String,
+    pub parent_name: Option<String>,
     pub methods: Vec<MethodDecl>,
     pub span: SourceSpan,
 }

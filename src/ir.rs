@@ -24,6 +24,7 @@ pub struct Module {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDecl {
     pub name: String,
+    pub parent_name: Option<String>,
     pub methods: Vec<MethodDecl>,
 }
 
@@ -492,6 +493,7 @@ impl LoweringContext {
             .collect();
         ClassDecl {
             name: class.name.clone(),
+            parent_name: class.parent_name.clone(),
             methods,
         }
     }

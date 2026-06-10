@@ -1847,6 +1847,28 @@ call_user_func([$worker, \"run\"], 4);",
 }
 
 #[test]
+fn parser_accepts_simple_class_inheritance_metadata() {
+    let program = parser::parse(
+        "<?php
+class Base {
+    public function label($value) { return $value; }
+}
+
+class Child extends Base {
+    public function own($value) { return $this->label($value); }
+}",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes.len(), 2);
+    assert_eq!(program.classes[0].name, "Base");
+    assert_eq!(program.classes[0].parent_name, None);
+    assert_eq!(program.classes[1].name, "Child");
+    assert_eq!(program.classes[1].parent_name.as_deref(), Some("Base"));
+    assert_eq!(program.classes[1].methods.len(), 1);
+}
+
+#[test]
 fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
     let cases = [
         (
@@ -4721,6 +4743,61 @@ var_dump(method_exists(\"stdClass\", \"anything\"));
     assert!(c_source.contains("static int ptn_declared_class_method_exists("));
     assert!(c_source.contains("ptn_internal_class_exists"));
     assert!(c_source.contains("ptn_internal_method_exists"));
+}
+
+#[test]
+fn compile_inherited_public_instance_methods_to_native_binary() {
+    let root = temp_dir("ptn-native-inherited-public-instance-methods");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inherited-public-instance-methods.php");
+    let output = root.join("inherited-public-instance-methods-bin");
+    fs::write(
+        &input,
+        "<?php
+class BaseLabeler {
+    public function label($value) {
+        return \"base=\" . $value;
+    }
+
+    public function same() {
+        return \"base\";
+    }
+}
+
+class ChildLabeler extends BaseLabeler {
+    public function own($value) {
+        return $this->label($value + 1);
+    }
+
+    public function same() {
+        return \"child\";
+    }
+}
+
+$child = new ChildLabeler();
+echo $child->label(3), \"\\n\";
+echo call_user_func([$child, \"label\"], 4), \"\\n\";
+echo $child->own(5), \"\\n\";
+echo $child->same(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "base=3\nbase=4\nbase=6\nchild\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_new_shell(\"ChildLabeler\")"));
+    assert!(c_source.contains("ptn_call_declared_method(&runtime"));
+    assert!(c_source.contains("BaseLabeler::label"));
+    assert!(c_source.contains("ChildLabeler::same"));
 }
 
 #[test]
