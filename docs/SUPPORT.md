@@ -121,6 +121,10 @@ supports in generated native binaries.
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
   empty string.
+- `array_combine()` over current ordered arrays, pairing insertion-order key
+  values with insertion-order values. Key values use the same stringified
+  canonicalization path as `array_fill_keys()`, duplicate keys replace earlier
+  values, and mismatched lengths throw `ValueError`.
 - `in_array()` over current ordered-array values, using shared loose equality
   or strict identity comparison and dereferencing references in both the needle
   and haystack entries.
@@ -179,7 +183,7 @@ supports in generated native binaries.
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
-  `count(expr);`, `array_values(expr);`,
+  `count(expr);`, `array_combine(expr, expr);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
@@ -197,8 +201,8 @@ supports in generated native binaries.
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
-  `array_replace_recursive(expr, ...)`,
+  `count(expr)`, `array_combine(expr, expr)`, `array_values(expr)`,
+  `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates, and

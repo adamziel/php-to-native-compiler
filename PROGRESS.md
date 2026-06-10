@@ -1,19 +1,19 @@
 # PTN Progress
 
-Refresh: 2026-06-10T13:31Z
-Measured: `ptn-zo6` rebased on `origin/master@3c11d09`; recursive `mkdir()`,
-string-callable `array_map()`, and static callable evidence.
+Refresh: 2026-06-10T13:47Z
+Measured: `ptn-pxe` rebased on `origin/master@579ea7e`; `array_combine()`
+native coverage and focused PHPT row.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 360 | 360 | 0 |
+| Native compiled PHP snippets | 361 | 361 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 152 | 48 |
+| PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
-| PHPT ext/standard rows | 77 | 48 | 29 |
+| PHPT ext/standard rows | 77 | 49 | 28 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -46,6 +46,7 @@ snapshots, `array_sum()`/`strtr()`/`in_array()`, recursive array merge/replace,
 `debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
 expressions, nested same-array reference lvalues, direct-variable and
 offset-form `??=`, grouped reference targets, `array_fill_keys()`,
+`array_combine()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, and public static methods registered as
 `Class::method` callables for dynamic calls and internals.
@@ -61,6 +62,7 @@ scalar offset-lvalue fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; focused static/string callable and `array_walk()`
-native tests; `cargo test`; `cargo build --bin phpc`; focused callback PHPT
-rows; `tools/run-native-smoke-matrix.sh`; `tools/run-post-merge-cow-gate.sh`.
+Commands: `cargo fmt --check`; focused `array_combine()` native test and parser
+registry test; `cargo build --bin phpc`; focused `array_combine_basic.phpt`;
+prior full `cargo test`; `tools/run-native-smoke-matrix.sh`;
+`tools/run-post-merge-cow-gate.sh`.

@@ -780,6 +780,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     assert_eq!(error.message, "Cannot redeclare function array_values()");
 
     let error =
+        parser::parse("<?php function Array_Combine($keys, $values) { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_combine()");
+
+    let error =
         parser::parse("<?php function IN_ARRAY($needle, $haystack) { return true; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function in_array()");
 }
@@ -6929,6 +6933,41 @@ var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));"
         "array(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [3]=>\n  int(3)\n  [4]=>\n  string(3) \"ten\"\n}\narray(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [\"three\"]=>\n  int(3)\n  [10]=>\n  string(3) \"ten\"\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_combine_to_native_binary() {
+    let root = temp_dir("ptn-native-array-combine");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-combine.php");
+    let output = root.join("array-combine-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_combine([1, \"2\", \"02\", false, true, null, \"x\", \"x\"], [\"one\", \"two\", \"zero-two\", \"false\", \"true\", \"null\", \"first\", \"last\"]));\n\
+var_dump(array_combine([], []));\n\
+try {\n\
+    array_combine([\"a\"], [1, 2]);\n\
+} catch (\\ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(function_exists(\"array_combine\"), function_exists(\"ARRAY_COMBINE\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(5) {\n  [1]=>\n  string(4) \"true\"\n  [2]=>\n  string(3) \"two\"\n  [\"02\"]=>\n  string(8) \"zero-two\"\n  [\"\"]=>\n  string(4) \"null\"\n  [\"x\"]=>\n  string(4) \"last\"\n}\narray(0) {\n}\narray_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_combine"));
+    assert!(c_source.contains("ptn_array_stringified_key_from_value"));
 }
 
 #[test]

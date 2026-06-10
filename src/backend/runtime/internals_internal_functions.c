@@ -941,7 +941,7 @@ static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_bool(0);
 }
 
-static PtnArrayKey ptn_array_fill_keys_key_from_value(PtnRuntime *runtime, PtnValue value, size_t line) {
+static PtnArrayKey ptn_array_stringified_key_from_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
         ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
@@ -954,12 +954,33 @@ static PtnArrayKey ptn_array_fill_keys_key_from_value(PtnRuntime *runtime, PtnVa
     return key;
 }
 
+static PtnValue ptn_internal_array_combine(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *keys = ptn_internal_expect_array_arg(runtime, "array_combine", 1, "keys", args[0]);
+    PtnArray *values = ptn_internal_expect_array_arg(runtime, "array_combine", 2, "values", args[1]);
+    if (keys->len != values->len) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements"
+        );
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < keys->len; i++) {
+        PtnArrayKey key = ptn_array_stringified_key_from_value(runtime, keys->entries[i].value, line);
+        ptn_array_set_entry(result.as.array, key, ptn_value_clone_deref(values->entries[i].value));
+    }
+    return result;
+}
+
 static PtnValue ptn_internal_array_fill_keys(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnArray *keys = ptn_internal_expect_array_arg(runtime, "array_fill_keys", 1, "keys", args[0]);
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < keys->len; i++) {
-        PtnArrayKey key = ptn_array_fill_keys_key_from_value(runtime, keys->entries[i].value, line);
+        PtnArrayKey key = ptn_array_stringified_key_from_value(runtime, keys->entries[i].value, line);
         ptn_array_set_entry(result.as.array, key, ptn_value_clone(args[1]));
     }
     return result;
@@ -3114,6 +3135,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "array_combine", 2, 2, ptn_internal_array_combine },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
