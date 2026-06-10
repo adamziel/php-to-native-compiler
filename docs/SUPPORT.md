@@ -290,10 +290,11 @@ supports in generated native binaries.
   extension argument returns the same version for `core`, `standard`, and an
   empty extension name, and `false` for unmodeled extension names.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
-  scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
-  prefixes, ignores invalid base digits with a deprecation boundary, and
-  returns integers until the parsed value exceeds native integer range, then
-  floats.
+  scalar string conversion. Array and current object-like operands throw
+  catchable `TypeError`s before conversion. The runtime accepts matching `0b`,
+  `0x`, and `0o` prefixes, ignores invalid base digits with a deprecation
+  boundary, and returns integers until the parsed value exceeds native integer
+  range, then floats.
 - `intval()` over current boxed scalar values after scalar integer conversion,
   with bounded string/base conversion for supported bases, including PHP-style
   `0x`/`0b` prefix handling and integer-range saturation.
@@ -517,7 +518,8 @@ supports in generated native binaries.
 - Exact `intdiv()` catchable exception behavior for zero divisors,
   `PHP_INT_MIN / -1`, and unsupported array/object/resource/reference operands.
 - Exact diagnostics and full precision/range parity for `intval()`, `bindec()`,
-  `hexdec()`, and `octdec()` on remaining very large or unsupported values.
+  `hexdec()`, and `octdec()` on remaining very large values, null deprecations,
+  resources, and unmodeled reference edges.
 - Exact `hex2bin()` warning text/file-name parity and unsupported
   array/object/resource/reference diagnostics.
 - Exact `dirname()` edge parity for unusual paths, embedded NULs, and

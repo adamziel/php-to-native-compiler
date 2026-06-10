@@ -544,6 +544,54 @@ static PtnArray *ptn_internal_expect_array_arg(
     return NULL;
 }
 
+static const char *ptn_internal_argument_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        default:
+            return ptn_offset_container_type_name(value);
+    }
+}
+
+static PtnStringOperand ptn_internal_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION: {
+            char message[224];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #%zu ($%s) must be of type string, %s given",
+                function_name,
+                position,
+                argument_name,
+                ptn_internal_argument_type_name(value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_string_operand_borrowed("");
+        }
+        default:
+            return ptn_value_to_string_operand(value);
+    }
+}
+
 static PtnArray *ptn_internal_expect_mutable_array_variable_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -3084,7 +3132,7 @@ static int64_t ptn_intval_string_to_integer(const char *string, size_t string_le
 
 static PtnValue ptn_internal_bindec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "bindec", 1, "binary_string", args[0]);
     PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line);
     ptn_string_operand_free(string);
     return value;
@@ -3092,7 +3140,7 @@ static PtnValue ptn_internal_bindec(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "hexdec", 1, "hex_string", args[0]);
     PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 16, 'x', line);
     ptn_string_operand_free(string);
     return value;
@@ -3100,7 +3148,7 @@ static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_octdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "octdec", 1, "octal_string", args[0]);
     PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 8, 'o', line);
     ptn_string_operand_free(string);
     return value;

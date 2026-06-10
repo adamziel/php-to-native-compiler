@@ -4692,6 +4692,46 @@ fn compile_base_conversion_variation2_phpt_shapes_to_native_binary() {
 }
 
 #[test]
+fn compile_base_conversion_rejects_unsupported_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-base-conversion-unsupported-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("base-conversion-unsupported-operands.php");
+    let output = root.join("base-conversion-unsupported-operands-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([\"bindec\", \"hexdec\", \"octdec\"] as $function) {\n\
+    try {\n\
+        var_dump($function([]));\n\
+    } catch (\\TypeError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+try {\n\
+    var_dump(bindec(new stdClass));\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(bindec(false), hexdec(255), octdec(\"10\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bindec(): Argument #1 ($binary_string) must be of type string, array given\n\
+hexdec(): Argument #1 ($hex_string) must be of type string, array given\n\
+octdec(): Argument #1 ($octal_string) must be of type string, array given\n\
+bindec(): Argument #1 ($binary_string) must be of type string, stdClass given\n\
+int(0)\nint(597)\nint(8)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intval_base_conversion_range_and_prefix_to_native_binary() {
     let root = temp_dir("ptn-native-intval-base-conversion-range");
     fs::create_dir_all(&root).unwrap();

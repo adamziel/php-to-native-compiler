@@ -1,17 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-10T15:06Z
-Measured: `ptn-wk3` on `origin/master@d2d51779`; callback closures,
-static/string callables, array_reduce COW, directory APIs, `stdClass`,
-non-array `foreach` diagnostics, and
-`array_count_values()` PHPT evidence.
+Refresh: 2026-06-10T16:16Z
+Measured: `ptn-ddk` on `origin/master@8a659986f`; callbacks, static/string
+callables, array_reduce COW, directory APIs, `stdClass`, non-array `foreach`,
+`array_count_values()`, and catchable base-conversion operand TypeErrors.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 369 | 369 | 0 |
+| Native compiled PHP snippets | 370 | 370 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -51,7 +50,8 @@ recursive `mkdir()` plus directory predicates, array-path snapshots,
 expressions, nested same-array reference lvalues, direct-variable and
 offset-form `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`,
-`intval()` base-prefix and range-saturating string conversion, named
+`intval()` base-prefix and range-saturating string conversion,
+base-conversion array/object TypeErrors, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, `array_reduce()` callback dispatch with debug
 refcounts, and `new stdClass` boxed objects with public
@@ -71,7 +71,6 @@ fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-focused non-array `foreach` native tests; exact
-`array_reduce_accumulator_refcount.phpt`; `tools/run-bounded-phpt.sh
-tools/phpt-cow-manifest.txt`.
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test
+base_conversion`; PHP-vs-native reducer; exact base-conversion variation2 PHPT
+rows.
