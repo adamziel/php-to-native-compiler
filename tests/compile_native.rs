@@ -5793,6 +5793,39 @@ fn compile_foreach_break_and_continue_to_native_binary() {
 }
 
 #[test]
+fn compile_foreach_non_array_diagnostics_include_source_path_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-non-array-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-non-array-diagnostics.php");
+    let output = root.join("foreach-non-array-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach (false as $value) { echo \"bad\"; }\n\
+$scalar = \"x\";\n\
+foreach ($scalar as &$value) { echo \"bad\"; }\n\
+echo \"done\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: foreach() argument must be of type array|object, bool given in {} on line 2\n\
+\nWarning: foreach() argument must be of type array|object, string given in {} on line 4\n\
+done\n",
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_by_value_snapshots_iteration_set_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-cow-snapshot");
     fs::create_dir_all(&root).unwrap();

@@ -970,7 +970,9 @@ fn emit_instruction(
                             out.push_str(&iterator_temp);
                             out.push_str(" = ptn_array_iterator_by_ref_from_reference(&runtime, ");
                             out.push_str(&reference_temp);
-                            out.push_str(", ");
+                            out.push_str(", \"");
+                            out.push_str(&c_string(source_path));
+                            out.push_str("\", ");
                             out.push_str(&line.to_string());
                             out.push_str(");\n");
                             emit_value_cleanup(out, "    ", &reference_temp);
@@ -981,7 +983,9 @@ fn emit_instruction(
                             out.push_str(&iterator_temp);
                             out.push_str(" = ptn_array_iterator_by_ref_from_value(&runtime, &");
                             out.push_str(&iterable_temp);
-                            out.push_str(", ");
+                            out.push_str(", \"");
+                            out.push_str(&c_string(source_path));
+                            out.push_str("\", ");
                             out.push_str(&line.to_string());
                             out.push_str(");\n");
                             Some(iterable_temp)
@@ -994,7 +998,9 @@ fn emit_instruction(
                 out.push_str(&iterator_temp);
                 out.push_str(" = ptn_array_iterator_from_value(&runtime, ");
                 out.push_str(&iterable_temp);
-                out.push_str(", ");
+                out.push_str(", \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 Some(iterable_temp)
