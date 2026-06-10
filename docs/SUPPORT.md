@@ -120,7 +120,8 @@ supports in generated native binaries.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
-  empty string.
+  empty string; array/object key operands and non-array containers throw
+  catchable `TypeError`s in the current boxed value domain.
 - `in_array()` over current ordered-array values, using shared loose equality
   or strict identity comparison and dereferencing references in both the needle
   and haystack entries.
@@ -470,9 +471,9 @@ supports in generated native binaries.
   complete reference identity, copy-on-write, and `var_dump()` reference
   identity beyond the currently modeled ordered-array, direct-reference, and
   `stdClass` public-property behavior.
-- Exact `array_key_exists()` TypeError parity for unsupported key/container
-  types, object property checks, resources, references, and error-handler
-  routing.
+- Complete `array_key_exists()` resource-key warning parity, object property
+  checks outside PHP's current array-only contract, full user-defined class
+  breadth, references, and error-handler routing.
 - String-offset append, unset, compound assignment, property/reference
   `isset()`/`empty()` and null-coalescing semantics, and complete
   TypeError/exception parity for unsupported string offset key types.

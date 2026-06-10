@@ -75,12 +75,73 @@ static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime, PtnValue value) 
     return ptn_null();
 }
 
+static PTN_UNUSED const char *ptn_array_key_exists_operand_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        default:
+            return ptn_offset_container_type_name(value);
+    }
+}
+
+static PTN_UNUSED int ptn_array_key_exists_key_from_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnArrayKey *key
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION: {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot access offset of type %s on array",
+                ptn_array_key_exists_operand_type_name(value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+            *key = ptn_array_key_from_value(value);
+            return 1;
+        case PTN_REFERENCE:
+            break;
+    }
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnValue key_value, PtnValue array_value, size_t line) {
     key_value = ptn_value_deref(key_value);
     array_value = ptn_value_deref(array_value);
     if (array_value.type != PTN_ARRAY) {
-        fputs("Fatal error: array_key_exists(): Argument #2 ($array) must be of type array\n", stderr);
-        exit(255);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "array_key_exists(): Argument #2 ($array) must be of type array, %s given",
+            ptn_array_key_exists_operand_type_name(array_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
     }
     if (key_value.type == PTN_NULL) {
         ptn_emit_deprecation(
@@ -89,7 +150,10 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
             line
         );
     }
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayKey key;
+    if (!ptn_array_key_exists_key_from_value(runtime, key_value, &key)) {
+        return ptn_null();
+    }
     int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
     ptn_array_key_free(key);
     return ptn_bool(exists);

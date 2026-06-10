@@ -6968,6 +6968,40 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
 }
 
 #[test]
+fn compile_array_key_exists_key_and_container_type_parity_to_native_binary() {
+    let root = temp_dir("ptn-native-array-key-exists-type-parity");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-key-exists-type-parity.php");
+    let output = root.join("array-key-exists-type-parity-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"\" => \"empty\", 0 => \"zero\", 1 => null, \"01\" => \"leading\"];\n\
+var_dump(array_key_exists(false, $items));\n\
+var_dump(array_key_exists(true, $items));\n\
+var_dump(array_key_exists(\"1\", $items));\n\
+var_dump(array_key_exists(\"01\", $items));\n\
+try { array_key_exists([], $items); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$object = new stdClass;\n\
+try { array_key_exists($object, $items); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_key_exists(\"x\", $object); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_key_exists(\"x\", null); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nCannot access offset of type array on array\nCannot access offset of type stdClass on array\narray_key_exists(): Argument #2 ($array) must be of type array, stdClass given\narray_key_exists(): Argument #2 ($array) must be of type array, null given\nafter\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_values_to_native_binary() {
     let root = temp_dir("ptn-native-array-values");
     fs::create_dir_all(&root).unwrap();
