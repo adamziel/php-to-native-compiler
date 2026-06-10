@@ -1,9 +1,10 @@
 # PTN Progress
 
-Refresh: 2026-06-10T13:58Z
-Measured: `ptn-j8p` rebased on `origin/master@be9cc35`; anonymous callback
+Refresh: 2026-06-10T14:19Z
+Measured: `ptn-41e` branched from `origin/master@51e3314d`; anonymous callback
 closures, static callables, string-callable callbacks, recursive directory
-APIs, and bounded `stdClass` property evidence.
+APIs, bounded `stdClass` property evidence, and chained comparison parser
+diagnostics.
 
 ## Test Dashboard
 
@@ -52,7 +53,8 @@ offset-form `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, and `new stdClass` boxed objects with public dynamic
-property reads/writes shared through object aliases.
+property reads/writes shared through object aliases, plus PHP-style parse errors
+for unparenthesized chained comparison operators.
 
 ## Still Needed
 

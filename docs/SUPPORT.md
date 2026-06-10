@@ -401,7 +401,8 @@ supports in generated native binaries.
   `(real)` and `(unset)` cast syntax,
   expression-context `(void)` cast syntax, unterminated block comments, and
   invalid legacy octal integer literals containing `8` or `9`, plus
-  unparenthesized nested ternary fatal diagnostics and
+  unparenthesized nested ternary fatal diagnostics, unparenthesized chained
+  comparison parse errors, and
   unexpected-token parse errors at modeled statement terminators and right
   parentheses. Global `const` declaration terminators report the
   const-specific `"," or ";"` expected-token set. Unsupported class members and
@@ -426,9 +427,8 @@ supports in generated native binaries.
 - `print` as an expression returning `1`, including contexts such as assignment,
   echo operands, binary operands, and the parenthesized spelling `print(...)`.
 - Keyword boolean tails after direct assignment statements, ternary expressions
-  beyond the modeled nested associativity diagnostics, PHP-exact chained
-  comparison parse errors, and complete comparison parity for unsupported value
-  types.
+  beyond the modeled nested associativity diagnostics, and complete comparison
+  parity for unsupported value types.
 - Unbraced switch bodies, alternate control-flow syntax,
   branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics

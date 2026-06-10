@@ -1060,6 +1060,25 @@ fn parser_accepts_keyword_boolean_precedence() {
 }
 
 #[test]
+fn parser_rejects_unparenthesized_chained_comparisons() {
+    for (source, unexpected) in [
+        ("<?php\nvar_dump(1 < 2 < 3);", "<"),
+        ("<?php\nvar_dump(1 == 1 !== false);", "!=="),
+        ("<?php\nvar_dump(1 <=> 1 == 0);", "=="),
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(
+            error.message,
+            format!("syntax error, unexpected token \"{unexpected}\"")
+        );
+        assert_eq!(error.kind, DiagnosticKind::ParseError);
+        assert_eq!(error.span.unwrap().line, 2);
+    }
+
+    parser::parse("<?php var_dump((1 < 2) < 3, 1 < (2 < 3), 1 < 2 == true, 1 < 2 <=> 0);").unwrap();
+}
+
+#[test]
 fn parser_rejects_keyword_boolean_after_direct_assignment() {
     let error = parser::parse("<?php $result = true and false;").unwrap_err();
     assert!(error
@@ -2357,6 +2376,26 @@ fn phpc_renders_void_cast_expression_context_as_php_parse_error() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Parse error: syntax error, unexpected token \"(void)\" in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_chained_comparison_as_php_parse_error() {
+    let root = temp_dir("ptn-phpc-chained-comparison-parse-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chained-comparison.php");
+    fs::write(&input, "<?php\n\nvar_dump(1 < 2 < 3);\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: syntax error, unexpected token \"<\" in {} on line 3\n",
             input.display()
         )
     );

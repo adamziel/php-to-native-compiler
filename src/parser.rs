@@ -1255,6 +1255,10 @@ impl Parser {
                 break;
             }
 
+            if has_unparenthesized_non_associative_comparison_left(&left, op) {
+                return Err(syntax_error_unexpected(self.peek(), None));
+            }
+
             self.advance();
             let next_min_precedence = if right_associative {
                 precedence
@@ -2220,6 +2224,33 @@ fn syntax_error_unexpected(token: &Token, expecting: Option<&str>) -> Diagnostic
         None => format!("syntax error, unexpected {unexpected}"),
     };
     Diagnostic::parse_error(message, Some(token.span))
+}
+
+fn has_unparenthesized_non_associative_comparison_left(left: &Expr, op: BinaryOp) -> bool {
+    let Some(precedence) = non_associative_comparison_precedence(op) else {
+        return false;
+    };
+    matches!(
+        left,
+        Expr::Binary {
+            op: left_op,
+            ..
+        } if non_associative_comparison_precedence(*left_op) == Some(precedence)
+    )
+}
+
+fn non_associative_comparison_precedence(op: BinaryOp) -> Option<u8> {
+    match op {
+        BinaryOp::Equal
+        | BinaryOp::NotEqual
+        | BinaryOp::Spaceship
+        | BinaryOp::Identical
+        | BinaryOp::NotIdentical => Some(EQUALITY_PRECEDENCE),
+        BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
+            Some(COMPARISON_PRECEDENCE)
+        }
+        _ => None,
+    }
 }
 
 fn describe_unexpected_token(token: &Token) -> String {
