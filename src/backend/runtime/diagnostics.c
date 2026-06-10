@@ -98,6 +98,37 @@ static PTN_UNUSED void ptn_symbols_bind_reference(PtnSymbolTable *symbols, const
     symbol->value = ptn_value_clone(reference);
 }
 
+static PTN_UNUSED PtnClosure *ptn_closure_from_value(PtnValue closure) {
+    PtnValue resolved = ptn_value_deref(closure);
+    if (resolved.type != PTN_CLOSURE) {
+        fputs("Fatal error: invalid closure capture target\n", stderr);
+        exit(255);
+    }
+    return resolved.as.closure;
+}
+
+static PTN_UNUSED void ptn_closure_set_capture(PtnValue closure, const char *name, PtnValue value) {
+    PtnClosure *resolved = ptn_closure_from_value(closure);
+    ptn_symbols_set(&resolved->captures, name, ptn_value_deref(value));
+}
+
+static PTN_UNUSED void ptn_closure_bind_capture_reference(PtnValue closure, const char *name, PtnValue reference) {
+    PtnClosure *resolved = ptn_closure_from_value(closure);
+    ptn_symbols_bind_reference(&resolved->captures, name, reference);
+}
+
+static PTN_UNUSED void ptn_runtime_import_closure_captures(PtnRuntime *runtime, PtnValue closure) {
+    PtnClosure *resolved = ptn_closure_from_value(closure);
+    for (size_t i = 0; i < resolved->captures.len; i++) {
+        PtnSymbol *capture = &resolved->captures.items[i];
+        if (capture->value.type == PTN_REFERENCE) {
+            ptn_symbols_bind_reference(&runtime->symbols, capture->name, capture->value);
+        } else {
+            ptn_symbols_set(&runtime->symbols, capture->name, capture->value);
+        }
+    }
+}
+
 static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *name) {
     size_t index = ptn_symbols_find(symbols, name);
     if (index >= symbols->len) {

@@ -99,6 +99,7 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
     if (closure->refcount != 0) {
         return;
     }
+    ptn_symbols_free(&closure->captures);
     free(closure);
 }
 

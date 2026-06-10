@@ -11219,6 +11219,110 @@ var_dump(array_reduce($array, function &($carry, $value) {
 }
 
 #[test]
+fn compile_anonymous_function_use_value_capture_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-function-use-value-capture");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-function-use-value-capture.php");
+    let output = root.join("anonymous-function-use-value-capture-bin");
+    fs::write(
+        &input,
+        "<?php
+$x = 2;
+$callback = function ($value) use ($x) {
+    $x++;
+    return $value + $x;
+};
+$x = 10;
+echo $callback(3), \"\\n\";
+echo $callback(4), \"\\n\";
+echo $x, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "6\n7\n10\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure_set_capture("));
+    assert!(c_source.contains("ptn_runtime_import_closure_captures(&runtime, receiver);"));
+}
+
+#[test]
+fn compile_anonymous_function_use_reference_capture_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-function-use-reference-capture");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-function-use-reference-capture.php");
+    let output = root.join("anonymous-function-use-reference-capture-bin");
+    fs::write(
+        &input,
+        "<?php
+$x = 1;
+$callback = function () use (&$x) {
+    $x++;
+    return $x;
+};
+echo $callback(), \"\\n\";
+echo $callback(), \"\\n\";
+echo $x, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2\n3\n3\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure_bind_capture_reference("));
+    assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"x\")"));
+}
+
+#[test]
+fn compile_array_walk_closure_use_capture_global_swap_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-closure-use-global-swap");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-closure-use-global-swap.php");
+    let output = root.join("array-walk-closure-use-global-swap-bin");
+    fs::write(
+        &input,
+        "<?php
+$array = [1, 2, 3];
+$array2 = [4, 5];
+array_walk($array, function (&$value, $key) use ($array2) {
+    var_dump($value);
+    if ($value == 2) { $GLOBALS[\"array\"] = $array2; }
+    $value *= 10;
+});
+var_dump($array, $array2);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\nint(4)\nint(5)\narray(2) {\n  [0]=>\n  int(40)\n  [1]=>\n  int(50)\n}\narray(2) {\n  [0]=>\n  int(4)\n  [1]=>\n  int(5)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_walk_variable(&runtime, \"array\""));
+    assert!(c_source.contains("ptn_call_callable("));
+    assert!(c_source.contains("ptn_closure_set_capture("));
+}
+
+#[test]
 fn parser_accepts_stdclass_property_reads_and_writes() {
     let program = parser::parse(
         "<?php\n\

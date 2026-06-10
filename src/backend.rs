@@ -9,9 +9,9 @@ use crate::ast::AssignmentOp;
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
-    BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, FunctionDecl, IncDecOp,
-    Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
-    MagicConstantKind, Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
+    BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
+    IncDecOp, Instruction, ListAssignmentElement, ListAssignmentElementTarget,
+    ListAssignmentTarget, MagicConstantKind, Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -196,7 +196,7 @@ fn emit_user_functions(
         out.push_str(
             "(PtnRuntime *caller_runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {\n",
         );
-        if function.class_name.is_none() || function.is_static {
+        if (function.class_name.is_none() && !function.is_anonymous) || function.is_static {
             out.push_str("    (void)receiver;\n");
         }
         out.push_str("    (void)line;\n");
@@ -237,6 +237,9 @@ fn emit_user_functions(
         }
         if function.class_name.is_some() && !function.is_static {
             out.push_str("    ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");
+        }
+        if function.is_anonymous {
+            out.push_str("    ptn_runtime_import_closure_captures(&runtime, receiver);\n");
         }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
@@ -702,7 +705,7 @@ fn emit_callable_dispatch(
         out.push_str(&index.to_string());
         out.push_str(": return ");
         out.push_str(&user_function_c_name(index));
-        out.push_str("(runtime, ptn_null(), argc, args, line);\n");
+        out.push_str("(runtime, resolved, argc, args, line);\n");
     }
     out.push_str("            default:\n");
     out.push_str("                fputs(\"Fatal error: invalid closure\\n\", stderr);\n");
@@ -3254,9 +3257,11 @@ impl ValueEmitter {
             ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
             ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
             ValueExpr::Null => "ptn_null()".to_string(),
-            ValueExpr::Closure { function_index, .. } => {
-                format!("ptn_closure({function_index}, \"{{closure}}\")")
-            }
+            ValueExpr::Closure {
+                function_index,
+                captures,
+                ..
+            } => self.emit_closure(out, *function_index, captures),
             ValueExpr::Array(elements) => self.emit_array(out, elements),
             ValueExpr::ArrayAccess { array, index, line } => {
                 let array_temp = self.emit_materialized_value(out, array);
@@ -3357,6 +3362,50 @@ impl ValueEmitter {
                 line,
             } => self.emit_method_call(out, receiver, name, arguments, *line),
         }
+    }
+
+    fn emit_closure(
+        &mut self,
+        out: &mut String,
+        function_index: usize,
+        captures: &[ClosureCapture],
+    ) -> String {
+        let closure_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&closure_temp);
+        out.push_str(" = ptn_closure(");
+        out.push_str(&function_index.to_string());
+        out.push_str(", \"{closure}\");\n");
+
+        for capture in captures {
+            let capture_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&capture_temp);
+            if capture.by_ref {
+                out.push_str(" = ptn_runtime_reference_for_variable(&runtime, \"");
+                out.push_str(&c_string(&capture.name));
+                out.push_str("\");\n");
+                out.push_str("    ptn_closure_bind_capture_reference(");
+            } else {
+                out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+                out.push_str(&c_string(&capture.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&capture.line.to_string());
+                out.push_str(");\n");
+                out.push_str("    ptn_closure_set_capture(");
+            }
+            out.push_str(&closure_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(&capture.name));
+            out.push_str("\", ");
+            out.push_str(&capture_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &capture_temp);
+        }
+
+        closure_temp
     }
 
     fn emit_new_object(
@@ -4325,6 +4374,7 @@ impl ValueEmitter {
                 | ValueExpr::Unary { .. }
                 | ValueExpr::Cast { .. }
                 | ValueExpr::Array(_)
+                | ValueExpr::Closure { .. }
                 | ValueExpr::ArrayAccess { .. }
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }

@@ -2,11 +2,11 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
-    AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ConstDeclaration, Expr,
-    FunctionDecl, FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
-    ListAssignmentTarget, MagicConstantKind, MethodDecl, Program, ReferenceTarget, Statement,
-    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp,
-    UnsetTarget,
+    AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClosureUseCapture,
+    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, ListAssignmentElement,
+    ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind, MethodDecl, Program,
+    ReferenceTarget, Statement, StaticPropertyDecl, StringInterpolationIndex, StringPart,
+    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -417,12 +417,7 @@ impl Parser {
             false
         };
         let parameters = self.parse_function_parameters()?;
-        if self.peek_is_identifier("use") {
-            return Err(Diagnostic::new(
-                "closure use captures are unsupported",
-                Some(self.peek().span),
-            ));
-        }
+        let captures = self.parse_closure_use_captures()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
             Some(self.parse_type_hint()?)
@@ -435,11 +430,46 @@ impl Parser {
         let body = body?;
         Ok(Expr::AnonymousFunction(AnonymousFunction {
             parameters,
+            captures,
             return_type,
             return_by_ref,
             body,
             span,
         }))
+    }
+
+    fn parse_closure_use_captures(&mut self) -> Result<Vec<ClosureUseCapture>> {
+        if !self.peek_is_identifier("use") {
+            return Ok(Vec::new());
+        }
+
+        self.advance();
+        self.expect_left_paren()?;
+        let mut captures = Vec::new();
+        loop {
+            let by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+                self.advance();
+                true
+            } else {
+                false
+            };
+            let token = self.advance();
+            let TokenKind::Variable(name) = &token.kind else {
+                return Err(syntax_error_unexpected(token, Some("variable")));
+            };
+            captures.push(ClosureUseCapture {
+                name: name.clone(),
+                by_ref,
+                span: token.span,
+            });
+
+            if !matches!(self.peek().kind, TokenKind::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        self.expect_right_paren()?;
+        Ok(captures)
     }
 
     fn parse_function_parameters(&mut self) -> Result<Vec<FunctionParameter>> {

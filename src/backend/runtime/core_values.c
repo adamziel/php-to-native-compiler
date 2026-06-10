@@ -92,10 +92,30 @@ typedef struct {
     } as;
 } PtnValue;
 
+typedef struct {
+    char *name;
+    PtnValue value;
+} PtnSymbol;
+
+typedef struct {
+    int occupied;
+    uint64_t hash;
+    size_t symbol_index;
+} PtnSymbolIndexSlot;
+
+typedef struct {
+    PtnSymbol *items;
+    size_t len;
+    size_t capacity;
+    PtnSymbolIndexSlot *index_slots;
+    size_t index_capacity;
+} PtnSymbolTable;
+
 struct PtnClosure {
     size_t refcount;
     size_t function_index;
     const char *display_name;
+    PtnSymbolTable captures;
 };
 
 struct PtnReference {
@@ -210,25 +230,6 @@ struct PtnTryFrame {
 };
 
 typedef struct {
-    char *name;
-    PtnValue value;
-} PtnSymbol;
-
-typedef struct {
-    int occupied;
-    uint64_t hash;
-    size_t symbol_index;
-} PtnSymbolIndexSlot;
-
-typedef struct {
-    PtnSymbol *items;
-    size_t len;
-    size_t capacity;
-    PtnSymbolIndexSlot *index_slots;
-    size_t index_capacity;
-} PtnSymbolTable;
-
-typedef struct {
     FILE *stream;
     int emitted_deprecation;
     int emitted_warning;
@@ -272,6 +273,7 @@ static PtnCowDebugCounters ptn_cow_debug_counters;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
 static void ptn_abort_out_of_memory(void);
+static void ptn_symbols_free(PtnSymbolTable *symbols);
 static PTN_UNUSED void ptn_cow_debug_note_string_alloc(void);
 static PTN_UNUSED void ptn_cow_debug_note_string_free(void);
 static PTN_UNUSED void ptn_cow_debug_note_string_clone(void);
@@ -467,6 +469,11 @@ static PTN_UNUSED PtnValue ptn_closure(size_t function_index, const char *displa
     closure->refcount = 1;
     closure->function_index = function_index;
     closure->display_name = display_name;
+    closure->captures.items = NULL;
+    closure->captures.len = 0;
+    closure->captures.capacity = 0;
+    closure->captures.index_slots = NULL;
+    closure->captures.index_capacity = 0;
     PtnValue value;
     value.type = PTN_CLOSURE;
     value.owned = 1;

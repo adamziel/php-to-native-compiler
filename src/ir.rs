@@ -2,9 +2,9 @@ use crate::ast::{
     AnonymousFunction as AstAnonymousFunction, ArrayDimTarget as AstArrayDimTarget,
     ArrayElement as AstArrayElement, ArrayElementValue as AstArrayElementValue, AssignmentOp,
     AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
-    CatchClause as AstCatchClause, ClassDecl as AstClassDecl, Expr,
-    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
-    ListAssignmentElement as AstListAssignmentElement,
+    CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
+    ClosureUseCapture as AstClosureUseCapture, Expr, FunctionParameter as AstFunctionParameter,
+    IncDecOp as AstIncDecOp, ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
     Program, ReferenceTarget as AstReferenceTarget, Statement,
@@ -195,6 +195,7 @@ pub enum ValueExpr {
     Null,
     Closure {
         function_index: usize,
+        captures: Vec<ClosureCapture>,
         line: usize,
     },
     Load {
@@ -277,6 +278,13 @@ pub enum ValueExpr {
         right: Box<ValueExpr>,
         line: usize,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClosureCapture {
+    pub name: String,
+    pub by_ref: bool,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -481,6 +489,11 @@ impl LoweringContext {
         self.functions[function_index].body = body;
         ValueExpr::Closure {
             function_index,
+            captures: function
+                .captures
+                .iter()
+                .map(lower_closure_capture)
+                .collect(),
             line: function.span.line,
         }
     }
@@ -798,6 +811,14 @@ fn lower_parameter(parameter: &AstFunctionParameter) -> FunctionParameter {
         name: parameter.name.clone(),
         type_hint: parameter.type_hint.map(lower_type_hint),
         by_ref: parameter.by_ref,
+    }
+}
+
+fn lower_closure_capture(capture: &AstClosureUseCapture) -> ClosureCapture {
+    ClosureCapture {
+        name: capture.name.clone(),
+        by_ref: capture.by_ref,
+        line: capture.span.line,
     }
 }
 

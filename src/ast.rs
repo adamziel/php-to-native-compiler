@@ -55,9 +55,17 @@ pub struct FunctionParameter {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnonymousFunction {
     pub parameters: Vec<FunctionParameter>,
+    pub captures: Vec<ClosureUseCapture>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
     pub body: Vec<Statement>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClosureUseCapture {
+    pub name: String,
+    pub by_ref: bool,
     pub span: SourceSpan,
 }
 
