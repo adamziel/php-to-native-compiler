@@ -1,8 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-10T10:56Z
-Measured: `ptn-14r` rebased on `master@d2b551b31`; native tests, smoke,
-post-merge COW gate, and PHPT manifests.
+Refresh: 2026-06-10T11:04Z
+Measured: `origin/master` at `567c84106`.
 
 ## Test Dashboard
 
@@ -17,26 +16,22 @@ post-merge COW gate, and PHPT manifests.
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
-| COW-focused native tests | 16 | 16 | 0 |
 | Focused COW reducer snippets | 38 | 38 | 0 |
+| Recursive reference diagnostics | 9 | 9 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
-| Post-merge COW gate | 25 | 25 | 0 |
-| COW/reference-focused native tests | 12 | 12 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
+| Post-merge COW gate | 25 | 25 | 0 |
 | PHPT COW manifest | 29 | 24 | 5 |
-| Recursive reference diagnostic reducers | 9 | 9 | 0 |
-| Focused PHPT foreach COW row | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows. Focused evidence remains 24 passing,
-5 failing: assignment-aliasing 4/4, string-offsets 4/4,
+`tools/phpt-cow-manifest.txt` has 29 rows. Current focused evidence is 24
+passing, 5 failing: assignment-aliasing 4/4, string-offsets 4/4,
 array-writes-appends-unset 4/4, nested-arrays 3/4, foreach-mutation 3/4,
-function-boundaries 1/4, reference-interaction 5/5. Native COW reducers are
-38/38, recursive diagnostics 9/9, mutating-internal matrix 14/14 plus six
-unsupported diagnostics, and post-merge COW gate 25/25: 12 oracle, 1 notice,
-and 12 diagnostic cases.
+function-boundaries 1/4, reference-interaction 5/5. `ptn-4yt` and all children
+are closed; this dashboard tracks remaining semantic gaps. Details live in
+`docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
 
 ## Already Ported
 
@@ -58,9 +53,17 @@ non-reference call results are assigned by reference.
 
 ## Still Needed
 
-Five focused PHPT COW rows remain: nested recursive reference lvalues,
-`array_walk()` closure/global swaps, recursive/call-result by-reference return
-chaining, `array_reduce()` callback refcounts, and callback returns by
-reference. Broader gaps include offset-form `??=` runtime support,
-closure/callback surfaces, objects, unsupported array/string internals, and
-64-bit operator exactness.
+Remaining COW PHPT gaps are recursive reference lvalue implementation, closure
+callback mutation through `array_walk()`/`$GLOBALS`, recursive/call-result
+by-reference return chaining, closure/callback by-reference returns, and
+`array_reduce()` callback/refcount behavior. Broader bounded-PHPT gaps are
+still objects, unsupported array/string internals, 64-bit operator exactness,
+foreach edge diagnostics, offset-form `??=` runtime support, and broader file
+APIs.
+
+## Verification
+
+Commands: `cargo test`; `tools/run-native-smoke-matrix.sh`;
+`tools/run-post-merge-cow-gate.sh`; `tools/run-bounded-phpt.sh
+tools/phpt-cow-manifest.txt`; `tools/run-phpt-manifest.sh
+tools/phpt-manifest-200.txt`.

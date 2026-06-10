@@ -1,7 +1,7 @@
 # COW PHPT Blockers: 2026-06-10 Refresh
 
-Evidence base: `ptn-14r` rebased on `master@d2b551b31`, refreshed at
-2026-06-10T10:56Z. The focused COW manifest remains 24/29; the branch adds
+Evidence base: `origin/master` at `567c84106`, refreshed at
+2026-06-10T11:04Z. The focused COW manifest remains 24/29; current master adds
 native value-fallback coverage for non-reference call results assigned by
 reference.
 
@@ -37,5 +37,5 @@ reference.
 - `tools/run-post-merge-cow-gate.sh`: 25/25, split as 12 oracle, 1 notice,
   and 12 diagnostic cases.
 - `tools/run-bounded-phpt.sh tools/phpt-cow-manifest.txt`: 24/29.
-- `tools/run-bounded-phpt.sh tools/phpt-bounded-manifest.txt`: 150/200; Zend
+- `tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`: 150/200; Zend
   67/76, ext/standard 47/77, tests/basic+func+lang 34/45, other 2/2.
