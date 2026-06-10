@@ -267,7 +267,8 @@ supports in generated native binaries.
   string conversion, decoding `=HH` byte escapes and soft line breaks through
   the current C-string-backed value path.
 - `dirname()` over current boxed scalar values after scalar string conversion,
-  returning the parent directory for the current C-string-backed path.
+  returning the parent directory for length-aware path strings, including empty
+  paths, repeated separators, roots, relative paths, and embedded NUL bytes.
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
 - `ceil()` and `floor()` over current boxed scalar values after scalar numeric
@@ -520,8 +521,8 @@ supports in generated native binaries.
   `hexdec()`, and `octdec()` on remaining very large or unsupported values.
 - Exact `hex2bin()` warning text/file-name parity and unsupported
   array/object/resource/reference diagnostics.
-- Exact `dirname()` edge parity for unusual paths, embedded NULs, and
-  unsupported array/object/resource/reference operands.
+- Exact `dirname()` optional-levels behavior and unsupported
+  array/object/resource/reference operand diagnostics.
 - Exact `soundex()` locale/non-ASCII behavior and unsupported
   array/object/resource/reference operand diagnostics.
 - Exact non-finite formatting outside current scalar `var_dump()` output and

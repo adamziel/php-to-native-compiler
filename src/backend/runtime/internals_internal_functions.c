@@ -2474,9 +2474,10 @@ static int ptn_is_path_separator(char byte) {
     return byte == '/' || byte == '\\';
 }
 
-static char *ptn_dirname_string(const char *path, size_t len) {
+static char *ptn_dirname_string(const char *path, size_t len, size_t *output_len_out) {
     if (len == 0) {
-        return ptn_duplicate_string(".");
+        *output_len_out = 0;
+        return ptn_duplicate_string("");
     }
     while (len > 1 && ptn_is_path_separator(path[len - 1])) {
         len--;
@@ -2487,6 +2488,7 @@ static char *ptn_dirname_string(const char *path, size_t len) {
         end--;
     }
     if (end == 0) {
+        *output_len_out = 1;
         return ptn_duplicate_string(".");
     }
     while (end > 1 && ptn_is_path_separator(path[end - 1])) {
@@ -2499,6 +2501,7 @@ static char *ptn_dirname_string(const char *path, size_t len) {
     }
     memcpy(dirname, path, end);
     dirname[end] = '\0';
+    *output_len_out = end;
     return dirname;
 }
 
@@ -2507,9 +2510,10 @@ static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const Ptn
     (void)argc;
     (void)line;
     PtnStringOperand path = ptn_value_to_string_operand(args[0]);
-    char *dirname = ptn_dirname_string(path.data, path.len);
+    size_t dirname_len = 0;
+    char *dirname = ptn_dirname_string(path.data, path.len, &dirname_len);
     ptn_string_operand_free(path);
-    return ptn_owned_string(dirname);
+    return ptn_owned_string_len(dirname, dirname_len);
 }
 
 static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

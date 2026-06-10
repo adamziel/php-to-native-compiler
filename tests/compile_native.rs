@@ -2865,7 +2865,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
         "ptn_rot13_string(string.data, string.len)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
-        "ptn_dirname_string(path.data, path.len)",
+        "ptn_dirname_string(path.data, path.len, &dirname_len)",
         "ptn_quoted_printable_decode_string(input.data, input.len, &output_len)",
         "ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line)",
         "ptn_base_string_to_number(runtime, string.data, string.len, 16, 'x', line)",
@@ -3957,6 +3957,49 @@ var_dump(function_exists(\"dirname\"), function_exists(\"DIRNAME\"));\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!("{expected_dir}\n{expected_dir}\nbool(true)\nbool(true)\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dirname_edge_paths_to_native_binary() {
+    let root = temp_dir("ptn-native-dirname-edge-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dirname-edge-paths.php");
+    let output = root.join("dirname-edge-paths-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$paths = [\"\", \"/\", \"//\", \"///\", \".\", \"..\", \"foo\", \"foo/bar\", \"foo//bar///\", \"./foo\", \"../foo\", \"/foo//bar//baz\", \"foo\" . chr(0) . \"bar\", \"/foo\" . chr(0) . \"bar/\", \"/foo\" . chr(0) . \"bar/t.gz\"];\n\
+foreach ($paths as $path) {\n\
+    $dirname = dirname($path);\n\
+    var_dump($dirname);\n\
+    echo bin2hex($dirname), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(0) \"\"\n\n\
+string(1) \"/\"\n2f\n\
+string(1) \"/\"\n2f\n\
+string(1) \"/\"\n2f\n\
+string(1) \".\"\n2e\n\
+string(1) \".\"\n2e\n\
+string(1) \".\"\n2e\n\
+string(3) \"foo\"\n666f6f\n\
+string(3) \"foo\"\n666f6f\n\
+string(1) \".\"\n2e\n\
+string(2) \"..\"\n2e2e\n\
+string(9) \"/foo//bar\"\n2f666f6f2f2f626172\n\
+string(1) \".\"\n2e\n\
+string(1) \"/\"\n2f\n\
+string(8) \"/foo\0bar\"\n2f666f6f00626172\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

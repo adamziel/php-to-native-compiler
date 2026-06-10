@@ -1,21 +1,21 @@
 # PTN Progress
 
-Refresh: 2026-06-10T15:06Z
-Measured: `ptn-wk3` on `origin/master@d2d51779`; callback closures,
+Refresh: 2026-06-10T16:05Z
+Measured: `ptn-eua` on `origin/master@8a659986f`; callback closures,
 static/string callables, array_reduce COW, directory APIs, `stdClass`,
-non-array `foreach` diagnostics, and
-`array_count_values()` PHPT evidence.
+non-array `foreach` diagnostics, `array_count_values()`, and length-aware
+`dirname()` PHPT evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 369 | 369 | 0 |
+| Native compiled PHP snippets | 370 | 370 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 153 | 47 |
+| PHPT bounded manifest | 200 | 154 | 46 |
 | PHPT Zend rows | 76 | 68 | 8 |
-| PHPT ext/standard rows | 77 | 49 | 28 |
+| PHPT ext/standard rows | 77 | 50 | 27 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -45,7 +45,8 @@ dynamic calls and internal callbacks, magic constants, `func_*`, `print_r`,
 binary strings, string offsets, scalar diagnostics, array literal references,
 array union `+`, scalar type hints, by-reference return boundaries, `count()`,
 `??`, assignment expressions, expression-level `@`, file APIs including
-recursive `mkdir()` plus directory predicates, array-path snapshots,
+recursive `mkdir()`, directory predicates, and length-aware `dirname()` edges,
+array-path snapshots,
 `array_sum()`/`strtr()`/`in_array()`, recursive array merge/replace,
 `debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
 expressions, nested same-array reference lvalues, direct-variable and
@@ -71,7 +72,5 @@ fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-focused non-array `foreach` native tests; exact
-`array_reduce_accumulator_refcount.phpt`; `tools/run-bounded-phpt.sh
-tools/phpt-cow-manifest.txt`.
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused native
+`dirname` and string-internal tests; exact `dirname_basic.phpt`.
