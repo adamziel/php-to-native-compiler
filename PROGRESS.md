@@ -1,6 +1,6 @@
 # PTN Progress
 
-Refresh: 2026-06-10T00:12Z
+Refresh: 2026-06-10T00:31Z
 Measured branches: `ptn-4yt.9` then `ptn-4yt.3` rebased on `master`;
 `ptn-4yt.2` adds array-path RHS snapshots and `array_merge_recursive()`.
 
@@ -9,7 +9,7 @@ Measured branches: `ptn-4yt.9` then `ptn-4yt.3` rebased on `master`;
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 322 | 322 | 0 |
+| Native compiled PHP snippets | 324 | 324 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 146 | 54 |
 | PHPT Zend rows | 76 | 63 | 13 |
@@ -52,9 +52,10 @@ literal reference elements, array union `+`, scalar type hints, typed
 by-reference return separation, `count()`, `??`, COW gates/oracles, assignment
 expressions, expression-level `@` suppression, `file_put_contents()`,
 `sha1_file()`, `unlink()` byte-file slices, array-path RHS snapshots,
-reference-aware `array_sum()`/`strtr()`, `array_merge_recursive()`,
-`debug_zval_dump()` reference inspection, and string-valued dynamic calls with
-lvalue reference arguments through the fallback dispatcher.
+reference-aware `array_sum()`/`strtr()` replacement maps and byte maps,
+`array_merge_recursive()`, `debug_zval_dump()` reference inspection, and
+string-valued dynamic calls with lvalue reference arguments through the
+fallback dispatcher.
 
 ## Still Needed
 
@@ -67,4 +68,4 @@ remains narrow.
 
 1. Prove remaining function and reference boundaries.
 2. Carry COW through remaining callback/internal call paths.
-3. Keep dashboard cells numeric and status files under 500 words.
+3. Keep status files under 500 words.

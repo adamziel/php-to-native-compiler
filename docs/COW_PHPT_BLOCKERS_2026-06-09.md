@@ -56,7 +56,7 @@ Evidence base:
 | --- | --- | --- | --- |
 | nested-arrays | `Zend/tests/bug35163.phpt` | Nested recursive reference lvalue is rejected. | `ptn-4yt.2` |
 | nested-arrays | `Zend/tests/bug38469.phpt` | Recursive copied value exhausts PHPT diff memory. | `ptn-4yt.2` |
-| nested-arrays | `ext/standard/tests/array/array_merge_recursive_basic1.phpt` | `array_merge_recursive()` is not registered. | `ptn-4yt.2` |
+| nested-arrays | `ext/standard/tests/array/array_merge_recursive_basic1.phpt` | PHPT-level recursive merge semantics remain incomplete. | `ptn-4yt.2` |
 | nested-arrays | `ext/standard/tests/array/array_merge_replace_recursive_refs.phpt` | Recursive merge/replace reference semantics remain unsupported. | `ptn-4yt.2` |
 | foreach-mutation | `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` | By-reference foreach packed-to-hash repacking semantics remain incomplete. | `ptn-4yt.7` |
 | foreach-mutation | `ext/standard/tests/array/array_walk/bug69068_2.phpt` | Closure with by-reference callback and global swap is unsupported. | `ptn-4yt.7`, `ptn-4yt.3` |

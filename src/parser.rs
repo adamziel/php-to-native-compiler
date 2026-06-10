@@ -2104,6 +2104,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_push"
             | "array_reverse"
             | "array_shift"
+            | "array_sum"
             | "array_unshift"
             | "array_values"
             | "current"
@@ -2112,6 +2113,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "next"
             | "prev"
             | "reset"
+            | "strtr"
             | "unlink"
     )
 }

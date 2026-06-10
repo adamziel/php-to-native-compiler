@@ -857,49 +857,146 @@ static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, con
     return ptn_bool(ends);
 }
 
-static PtnValue ptn_internal_strtr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
-    PtnArray *replacements = ptn_internal_expect_array_arg(runtime, "strtr", 2, "replace_pairs", args[1]);
+typedef struct {
+    PtnStringOperand from;
+    PtnStringOperand to;
+    size_t order;
+} PtnStrtrReplacement;
+
+static PtnStringOperand ptn_array_key_string_operand(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_STRING) {
+        return ptn_string_operand_borrowed(key.as.string);
+    }
+
+    char buffer[64];
+    int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)key.as.integer);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_string_operand_owned_len(
+        ptn_duplicate_string_len(buffer, (size_t)written),
+        (size_t)written
+    );
+}
+
+static void ptn_strtr_replacements_free(PtnStrtrReplacement *replacements, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        ptn_string_operand_free(replacements[i].from);
+        ptn_string_operand_free(replacements[i].to);
+    }
+    free(replacements);
+}
+
+static void ptn_strtr_replacements_sort(PtnStrtrReplacement *replacements, size_t count) {
+    for (size_t i = 1; i < count; i++) {
+        PtnStrtrReplacement current = replacements[i];
+        size_t j = i;
+        while (j > 0 &&
+            (replacements[j - 1].from.len < current.from.len ||
+                (replacements[j - 1].from.len == current.from.len &&
+                    replacements[j - 1].order > current.order))) {
+            replacements[j] = replacements[j - 1];
+            j--;
+        }
+        replacements[j] = current;
+    }
+}
+
+static PtnValue ptn_strtr_array(PtnStringOperand input, PtnArray *map) {
+    PtnStrtrReplacement *replacements = NULL;
+    if (map->len != 0) {
+        replacements = malloc(map->len * sizeof(PtnStrtrReplacement));
+        if (replacements == NULL) {
+            ptn_abort_out_of_memory();
+        }
+    }
+
+    size_t replacement_count = 0;
+    for (size_t i = 0; i < map->len; i++) {
+        PtnStringOperand from = ptn_array_key_string_operand(map->entries[i].key);
+        if (from.len == 0) {
+            ptn_string_operand_free(from);
+            continue;
+        }
+        replacements[replacement_count].from = from;
+        replacements[replacement_count].to = ptn_value_to_string_operand(map->entries[i].value);
+        replacements[replacement_count].order = i;
+        replacement_count++;
+    }
+    ptn_strtr_replacements_sort(replacements, replacement_count);
+
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
-
     size_t offset = 0;
     while (offset < input.len) {
-        size_t best_index = replacements->len;
-        size_t best_len = 0;
-        for (size_t i = 0; i < replacements->len; i++) {
-            PtnValue key_value = ptn_array_key_value(replacements->entries[i].key);
-            PtnStringOperand key = ptn_value_to_string_operand(key_value);
-            int matches = key.len != 0 &&
-                key.len <= input.len - offset &&
-                memcmp(input.data + offset, key.data, key.len) == 0 &&
-                key.len > best_len;
-            size_t key_len = key.len;
-            ptn_string_operand_free(key);
-            ptn_value_destroy(&key_value);
-            if (matches) {
-                best_index = i;
-                best_len = key_len;
+        const PtnStrtrReplacement *matched = NULL;
+        for (size_t i = 0; i < replacement_count; i++) {
+            if (replacements[i].from.len <= input.len - offset &&
+                memcmp(input.data + offset, replacements[i].from.data, replacements[i].from.len) == 0) {
+                matched = &replacements[i];
+                break;
             }
         }
 
-        if (best_index < replacements->len) {
-            PtnStringOperand replacement = ptn_value_to_string_operand(
-                replacements->entries[best_index].value
-            );
-            ptn_string_buffer_append_len(&output, replacement.data, replacement.len);
-            ptn_string_operand_free(replacement);
-            offset += best_len;
+        if (matched != NULL) {
+            ptn_string_buffer_append_len(&output, matched->to.data, matched->to.len);
+            offset += matched->from.len;
         } else {
-            ptn_string_buffer_append_len(&output, input.data + offset, 1);
+            ptn_string_buffer_append_char(&output, input.data[offset]);
             offset++;
         }
     }
 
-    ptn_string_operand_free(input);
+    ptn_strtr_replacements_free(replacements, replacement_count);
     return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_strtr_byte_map(PtnStringOperand input, PtnStringOperand from, PtnStringOperand to) {
+    unsigned char map[256];
+    for (size_t i = 0; i < sizeof(map); i++) {
+        map[i] = (unsigned char)i;
+    }
+    size_t count = from.len < to.len ? from.len : to.len;
+    for (size_t i = 0; i < count; i++) {
+        map[(unsigned char)from.data[i]] = (unsigned char)to.data[i];
+    }
+
+    char *output = malloc(input.len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < input.len; i++) {
+        output[i] = (char)map[(unsigned char)input.data[i]];
+    }
+    output[input.len] = '\0';
+    return ptn_owned_string_len(output, input.len);
+}
+
+static PtnValue ptn_internal_strtr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    if (argc == 2) {
+        PtnValue map_value = ptn_value_deref(args[1]);
+        if (map_value.type != PTN_ARRAY) {
+            ptn_string_operand_free(input);
+            ptn_throw_exception(
+                runtime,
+                "TypeError",
+                "strtr(): Argument #2 ($from) must be of type array when argument #3 ($to) is not provided"
+            );
+        }
+        PtnValue result = ptn_strtr_array(input, map_value.as.array);
+        ptn_string_operand_free(input);
+        return result;
+    }
+
+    PtnStringOperand from = ptn_value_to_string_operand(args[1]);
+    PtnStringOperand to = ptn_value_to_string_operand(args[2]);
+    PtnValue result = ptn_strtr_byte_map(input, from, to);
+    ptn_string_operand_free(input);
+    ptn_string_operand_free(from);
+    ptn_string_operand_free(to);
+    return result;
 }
 
 static int ptn_quotemeta_needs_escape(unsigned char byte) {
@@ -2458,7 +2555,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
         { "strlen", 1, 1, ptn_internal_strlen },
-        { "strtr", 2, 2, ptn_internal_strtr },
+        { "strtr", 2, 3, ptn_internal_strtr },
         { "substr", 2, 3, ptn_internal_substr },
         { "unlink", 1, 1, ptn_internal_unlink },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },

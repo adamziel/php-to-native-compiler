@@ -5688,6 +5688,66 @@ var_dump($arr[0], $other, $elem);",
 }
 
 #[test]
+fn compile_array_sum_dereferences_array_entries_to_native_binary() {
+    let root = temp_dir("ptn-native-array-sum-reference-entries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-sum-reference-entries.php");
+    let output = root.join("array-sum-reference-entries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$n = \"10\";\n\
+$n .= \"0\";\n\
+$nums = [&$n, 100];\n\
+var_dump(array_sum($nums));\n\
+var_dump($n);\n\
+$f = \"1.5\";\n\
+$mix = [&$f, 2];\n\
+var_dump(array_sum($mix));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(200)\nstring(3) \"100\"\nfloat(3.5)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_strtr_dereferences_replacement_array_entries_to_native_binary() {
+    let root = temp_dir("ptn-native-strtr-reference-map");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strtr-reference-map.php");
+    let output = root.join("strtr-reference-map-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$foo = \"foo\";\n\
+$arr = [\"bar\" => &$foo, \"foobar\" => \"whole\"];\n\
+var_dump(strtr(\"foobarbar\", $arr));\n\
+$foo = \"baz\";\n\
+var_dump(strtr(\"bar\", $arr));\n\
+var_dump(strtr(\"abc\", \"ab\", \"xy\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"wholefoo\"\nstring(3) \"baz\"\nstring(3) \"xyc\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_literal_reference_elements_to_native_binary() {
     let root = temp_dir("ptn-native-array-literal-reference-elements");
     fs::create_dir_all(&root).unwrap();
