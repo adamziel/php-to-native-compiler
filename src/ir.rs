@@ -1,11 +1,14 @@
 use crate::ast::{
     ArrayDimTarget as AstArrayDimTarget, ArrayElement as AstArrayElement,
-    ArrayElementValue as AstArrayElementValue, AssignmentOp, BinaryOp as AstBinaryOp,
-    CastKind as AstCastKind, CatchClause as AstCatchClause, Expr, FunctionDecl as AstFunctionDecl,
+    ArrayElementValue as AstArrayElementValue, AssignmentOp,
+    AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
+    CatchClause as AstCatchClause, Expr, FunctionDecl as AstFunctionDecl,
     FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
-    MagicConstantKind as AstMagicConstantKind, Program, ReferenceTarget as AstReferenceTarget,
-    Statement, StringPart as AstStringPart, TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
-    UnsetTarget as AstUnsetTarget,
+    ListAssignmentElement as AstListAssignmentElement,
+    ListAssignmentElementTarget as AstListAssignmentElementTarget,
+    ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
+    Program, ReferenceTarget as AstReferenceTarget, Statement, StringPart as AstStringPart,
+    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -167,7 +170,7 @@ pub enum ValueExpr {
         line: usize,
     },
     Assign {
-        name: String,
+        target: AssignmentTarget,
         value: Box<ValueExpr>,
     },
     Constant(String),
@@ -241,8 +244,40 @@ pub struct ArrayDimTarget {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum AssignmentTarget {
+    Variable {
+        name: String,
+        line: usize,
+    },
+    ArrayDim {
+        array: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
+    List(ListAssignmentTarget),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListAssignmentTarget {
+    pub elements: Vec<ListAssignmentElement>,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListAssignmentElement {
+    pub key: Option<ValueExpr>,
+    pub target: ListAssignmentElementTarget,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListAssignmentElementTarget {
+    Value(Box<AssignmentTarget>),
+    Reference(ReferenceTarget),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum ReferenceTarget {
-    Variable { name: String },
+    Variable { name: String, line: usize },
     ArrayDim(ArrayDimTarget),
 }
 
@@ -576,11 +611,58 @@ fn lower_array_dim_target(target: &AstArrayDimTarget) -> ArrayDimTarget {
     }
 }
 
+fn lower_assignment_target(target: &AstAssignmentTarget) -> AssignmentTarget {
+    match target {
+        AstAssignmentTarget::Variable { name, span } => AssignmentTarget::Variable {
+            name: name.clone(),
+            line: span.line,
+        },
+        AstAssignmentTarget::ArrayDim(target) => AssignmentTarget::ArrayDim {
+            array: target.array.clone(),
+            dimensions: target
+                .dimensions
+                .iter()
+                .map(|dimension| dimension.as_ref().map(lower_expr))
+                .collect(),
+            line: target.span.line,
+        },
+        AstAssignmentTarget::List(target) => {
+            AssignmentTarget::List(lower_list_assignment_target(target))
+        }
+    }
+}
+
+fn lower_list_assignment_target(target: &AstListAssignmentTarget) -> ListAssignmentTarget {
+    ListAssignmentTarget {
+        elements: target
+            .elements
+            .iter()
+            .map(lower_list_assignment_element)
+            .collect(),
+        line: target.span.line,
+    }
+}
+
+fn lower_list_assignment_element(element: &AstListAssignmentElement) -> ListAssignmentElement {
+    ListAssignmentElement {
+        key: element.key.as_ref().map(lower_expr),
+        target: match &element.target {
+            AstListAssignmentElementTarget::Value(target) => {
+                ListAssignmentElementTarget::Value(Box::new(lower_assignment_target(target)))
+            }
+            AstListAssignmentElementTarget::Reference(target) => {
+                ListAssignmentElementTarget::Reference(lower_reference_target(target))
+            }
+        },
+    }
+}
+
 fn lower_reference_target(target: &AstReferenceTarget) -> ReferenceTarget {
     match target {
-        AstReferenceTarget::Variable { name, .. } => {
-            ReferenceTarget::Variable { name: name.clone() }
-        }
+        AstReferenceTarget::Variable { name, span } => ReferenceTarget::Variable {
+            name: name.clone(),
+            line: span.line,
+        },
         AstReferenceTarget::ArrayDim(target) => {
             ReferenceTarget::ArrayDim(lower_array_dim_target(target))
         }
@@ -697,8 +779,8 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             name: name.clone(),
             line: span.line,
         },
-        Expr::Assign { name, value, .. } => ValueExpr::Assign {
-            name: name.clone(),
+        Expr::Assign { target, value, .. } => ValueExpr::Assign {
+            target: lower_assignment_target(target),
             value: Box::new(lower_expr(value)),
         },
         Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),
@@ -711,7 +793,11 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         }
         Expr::ArrayAccess { array, index, span } => ValueExpr::ArrayAccess {
             array: Box::new(lower_expr(array)),
-            index: Box::new(lower_expr(index)),
+            index: Box::new(lower_expr(
+                index
+                    .as_ref()
+                    .expect("parser rejects append array reads outside assignment targets"),
+            )),
             line: span.line,
         },
         Expr::Isset { targets, .. } => ValueExpr::Isset {

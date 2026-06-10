@@ -1,6 +1,6 @@
 # PTN Progress
 
-Refresh: 2026-06-10T00:31Z
+Refresh: 2026-06-10T01:15Z
 Measured branches: `ptn-4yt.9` then `ptn-4yt.7` rebased on `master`;
 `ptn-4yt.2` adds array-path RHS snapshots and `array_merge_recursive()`.
 
@@ -24,15 +24,15 @@ Measured branches: `ptn-4yt.9` then `ptn-4yt.7` rebased on `master`;
 | Post-merge COW gate | 15 | 15 | 0 |
 | COW/reference-focused native tests | 12 | 12 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
-| PHPT COW manifest | 29 | 21 | 8 |
+| PHPT COW manifest | 29 | 22 | 7 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` still has 29 rows. Current evidence is 21 passing,
-8 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
+`tools/phpt-cow-manifest.txt` still has 29 rows. Current evidence is 22 passing,
+7 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
 array-writes-appends-unset 4/4, nested-arrays 1/4, foreach-mutation 3/4,
-function-boundaries 1/4, reference-interaction 4/5. The full bounded runner
+function-boundaries 1/4, reference-interaction 5/5. The full bounded runner
 still stops at `Zend/tests/bug38469.phpt`; that row is counted failing.
 Remaining blockers are tracked in `docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
 Native COW reducers are 30/30, by-reference foreach oracle is 11/11,
@@ -54,7 +54,8 @@ expressions, expression-level `@` suppression, `file_put_contents()`,
 reference-aware `array_sum()`/`strtr()` replacement maps and byte maps,
 `array_merge_recursive()`, `debug_zval_dump()` reference inspection, and
 string-valued dynamic calls with lvalue reference arguments through the
-fallback dispatcher.
+fallback dispatcher, plus append/list assignment expressions for reference
+arrays.
 
 ## Still Needed
 

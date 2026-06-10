@@ -6,9 +6,10 @@ use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
-    ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, BinaryOp, CastKind,
-    CatchClause as IrCatchClause, FunctionDecl, IncDecOp, Instruction, MagicConstantKind, Module,
-    ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
+    ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
+    BinaryOp, CastKind, CatchClause as IrCatchClause, FunctionDecl, IncDecOp, Instruction,
+    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
+    Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -1452,6 +1453,46 @@ fn collect_reference_target_runtime_requirements(
     }
 }
 
+fn collect_assignment_target_runtime_requirements(
+    target: &AssignmentTarget,
+    functions: &[FunctionDecl],
+    requirements: &mut RuntimeRequirements,
+) {
+    match target {
+        AssignmentTarget::Variable { .. } => {}
+        AssignmentTarget::ArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
+            }
+        }
+        AssignmentTarget::List(target) => {
+            for element in &target.elements {
+                if let Some(key) = &element.key {
+                    collect_value_runtime_requirements(key, functions, requirements);
+                }
+                match &element.target {
+                    ListAssignmentElementTarget::Value(target) => {
+                        collect_assignment_target_runtime_requirements(
+                            target,
+                            functions,
+                            requirements,
+                        );
+                    }
+                    ListAssignmentElementTarget::Reference(target) => {
+                        collect_reference_target_runtime_requirements(
+                            target,
+                            functions,
+                            requirements,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn collect_value_runtime_requirements(
     value: &ValueExpr,
     functions: &[FunctionDecl],
@@ -1466,7 +1507,8 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Load { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => {}
-        ValueExpr::Assign { value, .. } => {
+        ValueExpr::Assign { target, value } => {
+            collect_assignment_target_runtime_requirements(target, functions, requirements);
             collect_value_runtime_requirements(value, functions, requirements);
         }
         ValueExpr::Array(elements) => {
@@ -1674,7 +1716,10 @@ fn emit_control_warning(out: &mut String, message: &str, source_path: &str, line
 
 fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
     match value {
-        ValueExpr::Load { name, .. } => Some(ReferenceTarget::Variable { name: name.clone() }),
+        ValueExpr::Load { name, line } => Some(ReferenceTarget::Variable {
+            name: name.clone(),
+            line: *line,
+        }),
         ValueExpr::ArrayAccess { array, index, line } => match array.as_ref() {
             ValueExpr::Load { name, .. } => {
                 Some(ReferenceTarget::ArrayDim(crate::ir::ArrayDimTarget {
@@ -1915,6 +1960,66 @@ struct ConcatOperand<'a> {
     line: usize,
 }
 
+trait AssignmentTargetLine {
+    fn line(&self) -> usize;
+}
+
+impl AssignmentTargetLine for AssignmentTarget {
+    fn line(&self) -> usize {
+        match self {
+            AssignmentTarget::Variable { line, .. } | AssignmentTarget::ArrayDim { line, .. } => {
+                *line
+            }
+            AssignmentTarget::List(target) => target.line,
+        }
+    }
+}
+
+impl AssignmentTargetLine for ReferenceTarget {
+    fn line(&self) -> usize {
+        match self {
+            ReferenceTarget::Variable { line, .. } => *line,
+            ReferenceTarget::ArrayDim(target) => target.line,
+        }
+    }
+}
+
+fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
+    target.elements.iter().any(|element| match &element.target {
+        ListAssignmentElementTarget::Reference(_) => true,
+        ListAssignmentElementTarget::Value(target) => match target.as_ref() {
+            AssignmentTarget::List(target) => list_assignment_has_reference(target),
+            AssignmentTarget::Variable { .. } | AssignmentTarget::ArrayDim { .. } => false,
+        },
+    })
+}
+
+fn list_assignment_references_variable(target: &ListAssignmentTarget, name: &str) -> bool {
+    target.elements.iter().any(|element| match &element.target {
+        ListAssignmentElementTarget::Reference(target) => {
+            reference_target_mentions_variable(target, name)
+        }
+        ListAssignmentElementTarget::Value(target) => {
+            assignment_target_mentions_variable(target, name)
+        }
+    })
+}
+
+fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) -> bool {
+    match target {
+        AssignmentTarget::Variable { name: target, .. } => target == name,
+        AssignmentTarget::ArrayDim { array, .. } => array == name,
+        AssignmentTarget::List(target) => list_assignment_references_variable(target, name),
+    }
+}
+
+fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> bool {
+    match target {
+        ReferenceTarget::Variable { name: target, .. } => target == name,
+        ReferenceTarget::ArrayDim(target) => target.array == name,
+    }
+}
+
 impl ValueEmitter {
     fn new(source_file: &str, source_dir: &str, functions: &[FunctionDecl]) -> Self {
         Self::new_with_scope(source_file, source_dir, functions, None, false)
@@ -1959,6 +2064,326 @@ impl ValueEmitter {
             .iter()
             .enumerate()
             .find(|(_, function)| function.name.eq_ignore_ascii_case(name))
+    }
+
+    fn emit_assignment(
+        &mut self,
+        out: &mut String,
+        target: &AssignmentTarget,
+        value: &ValueExpr,
+    ) -> String {
+        if let AssignmentTarget::List(target) = target {
+            return self.emit_list_assignment(out, target, value);
+        }
+
+        let value_temp = self.emit_materialized_value(out, value);
+        let result_temp = self.emit_store_assignment_target_from_temp(out, target, &value_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        result_temp
+    }
+
+    fn emit_store_assignment_target_from_temp(
+        &mut self,
+        out: &mut String,
+        target: &AssignmentTarget,
+        value_temp: &str,
+    ) -> String {
+        match target {
+            AssignmentTarget::Variable { name, .. } => {
+                out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(value_temp);
+                out.push_str(");\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                out.push_str(value_temp);
+                out.push_str("));\n");
+                result_temp
+            }
+            AssignmentTarget::ArrayDim {
+                array,
+                dimensions,
+                line,
+            } => {
+                let path = emit_array_path_segments(out, self, dimensions);
+                let snapshot_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&snapshot_temp);
+                out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+                out.push_str(value_temp);
+                out.push_str(");\n");
+                out.push_str("    ptn_runtime_array_path_set(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&snapshot_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone(");
+                out.push_str(&snapshot_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &snapshot_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                result_temp
+            }
+            AssignmentTarget::List(target) => {
+                self.emit_list_assignment_from_temp(out, target, value_temp)
+            }
+        }
+    }
+
+    fn emit_list_assignment(
+        &mut self,
+        out: &mut String,
+        target: &ListAssignmentTarget,
+        value: &ValueExpr,
+    ) -> String {
+        if list_assignment_has_reference(target) {
+            if let ValueExpr::Load { name, .. } = value {
+                return self.emit_reference_list_assignment_from_variable(out, target, name);
+            }
+        }
+
+        let value_temp = self.emit_materialized_value(out, value);
+        let result_temp = self.emit_list_assignment_from_temp(out, target, &value_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        result_temp
+    }
+
+    fn emit_list_assignment_from_temp(
+        &mut self,
+        out: &mut String,
+        target: &ListAssignmentTarget,
+        value_temp: &str,
+    ) -> String {
+        for (index, element) in target.elements.iter().enumerate() {
+            let key_temp = self.emit_list_key(out, element, index);
+            match &element.target {
+                ListAssignmentElementTarget::Value(target) => {
+                    let element_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&element_temp);
+                    out.push_str(" = ptn_array_read(&runtime, ");
+                    out.push_str(value_temp);
+                    out.push_str(", ");
+                    out.push_str(&key_temp);
+                    out.push_str(", ");
+                    out.push_str(&target.line().to_string());
+                    out.push_str(");\n");
+                    let stored_temp =
+                        self.emit_store_assignment_target_from_temp(out, target, &element_temp);
+                    emit_value_cleanup(out, "    ", &stored_temp);
+                    emit_value_cleanup(out, "    ", &element_temp);
+                }
+                ListAssignmentElementTarget::Reference(target) => {
+                    let source_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&source_temp);
+                    out.push_str(" = ptn_runtime_reference_for_array_value_dim(&runtime, &");
+                    out.push_str(value_temp);
+                    out.push_str(", &");
+                    out.push_str(&key_temp);
+                    out.push_str(", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&target.line().to_string());
+                    out.push_str(");\n");
+                    self.emit_bind_reference_target(out, target, &source_temp);
+                    emit_value_cleanup(out, "    ", &source_temp);
+                }
+            }
+            emit_value_cleanup(out, "    ", &key_temp);
+        }
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone(");
+        out.push_str(value_temp);
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_reference_list_assignment_from_variable(
+        &mut self,
+        out: &mut String,
+        target: &ListAssignmentTarget,
+        source_name: &str,
+    ) -> String {
+        let self_referential = list_assignment_references_variable(target, source_name);
+        let mut entries = Vec::with_capacity(target.elements.len());
+        let mut cleanup_temps = Vec::new();
+
+        for (index, element) in target.elements.iter().enumerate() {
+            let key_temp = self.emit_list_key(out, element, index);
+            cleanup_temps.push(key_temp.clone());
+            let value_temp = match &element.target {
+                ListAssignmentElementTarget::Value(target) => {
+                    let source_value_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&source_value_temp);
+                    out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+                    out.push_str(&c_string(source_name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&target.line().to_string());
+                    out.push_str(");\n");
+                    cleanup_temps.push(source_value_temp.clone());
+                    let element_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&element_temp);
+                    out.push_str(" = ptn_array_read(&runtime, ");
+                    out.push_str(&source_value_temp);
+                    out.push_str(", ");
+                    out.push_str(&key_temp);
+                    out.push_str(", ");
+                    out.push_str(&target.line().to_string());
+                    out.push_str(");\n");
+                    let stored_temp =
+                        self.emit_store_assignment_target_from_temp(out, target, &element_temp);
+                    emit_value_cleanup(out, "    ", &stored_temp);
+                    cleanup_temps.push(element_temp.clone());
+                    element_temp
+                }
+                ListAssignmentElementTarget::Reference(target) => {
+                    let source_temp = if self_referential {
+                        self.emit_reference_target(out, target)
+                    } else {
+                        let temp = self.next_temp();
+                        out.push_str("    PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(" = ptn_runtime_reference_for_array_dim(&runtime, \"");
+                        out.push_str(&c_string(source_name));
+                        out.push_str("\", &");
+                        out.push_str(&key_temp);
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&self.source_file));
+                        out.push_str("\", ");
+                        out.push_str(&target.line().to_string());
+                        out.push_str(");\n");
+                        temp
+                    };
+                    self.emit_bind_reference_target(out, target, &source_temp);
+                    cleanup_temps.push(source_temp.clone());
+                    source_temp
+                }
+            };
+            entries.push(format!("{{ 0, {key_temp}, {value_temp} }}"));
+        }
+
+        let result_temp = self.next_temp();
+        if self_referential {
+            if entries.is_empty() {
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+            } else {
+                let entries_temp = self.next_temp();
+                out.push_str("    PtnArrayLiteralEntry ");
+                out.push_str(&entries_temp);
+                out.push_str("[] = { ");
+                out.push_str(&entries.join(", "));
+                out.push_str(" };\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_array_from_literal_entries(");
+                out.push_str(&entries.len().to_string());
+                out.push_str(", ");
+                out.push_str(&entries_temp);
+                out.push_str(");\n");
+            }
+        } else {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+            out.push_str(&c_string(source_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(");\n");
+        }
+
+        for temp in cleanup_temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
+    fn emit_list_key(
+        &mut self,
+        out: &mut String,
+        element: &ListAssignmentElement,
+        index: usize,
+    ) -> String {
+        match &element.key {
+            Some(key) => self.emit_materialized_value(out, key),
+            None => {
+                let key_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&key_temp);
+                out.push_str(" = ptn_int(");
+                out.push_str(&index.to_string());
+                out.push_str(");\n");
+                key_temp
+            }
+        }
+    }
+
+    fn emit_bind_reference_target(
+        &mut self,
+        out: &mut String,
+        target: &ReferenceTarget,
+        reference_temp: &str,
+    ) {
+        match target {
+            ReferenceTarget::Variable { name, .. } => {
+                out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(reference_temp);
+                out.push_str(");\n");
+            }
+            ReferenceTarget::ArrayDim(target) => {
+                let index_temp = target
+                    .index
+                    .as_ref()
+                    .map(|index| self.emit_materialized_value(out, index));
+                out.push_str("    ptn_runtime_bind_array_dim_reference(&runtime, \"");
+                out.push_str(&c_string(&target.array));
+                out.push_str("\", ");
+                match &index_temp {
+                    Some(index_temp) => {
+                        out.push('&');
+                        out.push_str(index_temp);
+                    }
+                    None => out.push_str("NULL"),
+                }
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&target.line.to_string());
+                out.push_str(");\n");
+                if let Some(index_temp) = index_temp {
+                    emit_value_cleanup(out, "    ", &index_temp);
+                }
+            }
+        }
     }
 
     fn emit_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
@@ -2006,22 +2431,7 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &expr_temp);
                 result_temp
             }
-            ValueExpr::Assign { name, value } => {
-                let value_temp = self.emit_materialized_value(out, value);
-                out.push_str("    ptn_symbols_set(&runtime.symbols, \"");
-                out.push_str(&c_string(name));
-                out.push_str("\", ");
-                out.push_str(&value_temp);
-                out.push_str(");\n");
-                let result_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_value_clone(");
-                out.push_str(&value_temp);
-                out.push_str(");\n");
-                emit_value_cleanup(out, "    ", &value_temp);
-                result_temp
-            }
+            ValueExpr::Assign { target, value } => self.emit_assignment(out, target, value),
             ValueExpr::Cast { kind, expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
@@ -2879,7 +3289,7 @@ impl ValueEmitter {
 
     fn emit_reference_target(&mut self, out: &mut String, target: &ReferenceTarget) -> String {
         match target {
-            ReferenceTarget::Variable { name } => {
+            ReferenceTarget::Variable { name, .. } => {
                 let temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&temp);

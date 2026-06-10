@@ -4,8 +4,9 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
-    ArrayElementValue, AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind,
-    ReferenceTarget, Statement, StringPart, TypeHint, UnaryOp, UnsetTarget,
+    ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
+    ListAssignmentElementTarget, MagicConstantKind, ReferenceTarget, Statement, StringPart,
+    TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -1158,7 +1159,7 @@ fn parser_accepts_array_read_expressions() {
             index,
             ..
         } if matches!(array.as_ref(), Expr::Variable(name, _) if name == "items")
-            && matches!(index.as_ref(), Expr::String(value, _) if value == "7")
+            && matches!(index.as_deref(), Some(Expr::String(value, _)) if value == "7")
     ));
     assert!(matches!(
         &expressions[1],
@@ -1175,6 +1176,45 @@ fn parser_accepts_array_read_expressions() {
         Expr::ArrayAccess { array, .. }
             if matches!(array.as_ref(), Expr::Array { .. })
     ));
+}
+
+#[test]
+fn parser_accepts_append_and_list_assignment_expressions() {
+    let program = parser::parse("<?php var_dump($ary[] = [&$x] = $x);").unwrap();
+    let Statement::Call {
+        name, arguments, ..
+    } = &program.statements[0]
+    else {
+        panic!("expected var_dump call");
+    };
+    assert_eq!(name, "var_dump");
+    let Expr::Assign {
+        target,
+        value: inner,
+        ..
+    } = &arguments[0]
+    else {
+        panic!("expected outer assignment expression");
+    };
+    let AssignmentTarget::ArrayDim(target) = target else {
+        panic!("expected append array assignment target");
+    };
+    assert_eq!(target.array, "ary");
+    assert_eq!(target.dimensions, vec![None]);
+
+    let Expr::Assign { target, value, .. } = inner.as_ref() else {
+        panic!("expected inner list assignment expression");
+    };
+    let AssignmentTarget::List(target) = target else {
+        panic!("expected list assignment target");
+    };
+    assert_eq!(target.elements.len(), 1);
+    assert!(matches!(
+        &target.elements[0].target,
+        ListAssignmentElementTarget::Reference(ReferenceTarget::Variable { name, .. })
+            if name == "x"
+    ));
+    assert!(matches!(value.as_ref(), Expr::Variable(name, _) if name == "x"));
 }
 
 #[test]
@@ -5828,6 +5868,106 @@ echo $items[0], \":\", $keyed[\"k\"], \"\\n\";",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "two:two\nb:b\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_append_expression_with_reference_list_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-append-reference-list-assignment-expression");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("append-reference-list-assignment-expression.php");
+    let output = root.join("append-reference-list-assignment-expression-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump($ary[] = [&$x] = $x);\n\
+var_dump($x);\n\
+var_dump($ary);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  &NULL\n}\nNULL\narray(1) {\n  [0]=>\n  array(1) {\n    [0]=>\n    &NULL\n  }\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_list_assignment_expression_result_appends_to_native_binary() {
+    let root = temp_dir("ptn-native-list-assignment-expression-result-append");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("list-assignment-expression-result-append.php");
+    let output = root.join("list-assignment-expression-result-append-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$rhs = [1, 2];\n\
+$ary[] = [$a, $b] = $rhs;\n\
+echo $a, \":\", $b, \":\", $ary[0][1], \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1:2:2\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_long_list_assignment_statement_to_native_binary() {
+    let root = temp_dir("ptn-native-long-list-assignment-statement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("long-list-assignment-statement.php");
+    let output = root.join("long-list-assignment-statement-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$rhs = [\"left\", \"right\"];\n\
+list($a, $b) = $rhs;\n\
+echo $a, \":\", $b, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "left:right\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reference_list_assignment_binds_rhs_array_slot_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-list-assignment-slot");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-list-assignment-slot.php");
+    let output = root.join("reference-list-assignment-slot-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$x = \"one\";\n\
+$rhs = [&$x, \"extra\"];\n\
+$result = [&$alias] = $rhs;\n\
+$x = \"two\";\n\
+echo $alias, \":\", $result[0], \":\", $result[1], \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "two:two:extra\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

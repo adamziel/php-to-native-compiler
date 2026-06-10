@@ -61,6 +61,7 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right);
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value);
 static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
 static PTN_UNUSED PtnArray *ptn_runtime_array_detach_variable(PtnRuntime *runtime, const char *name);
+static PTN_UNUSED PtnArray *ptn_value_replace_with_empty_array(PtnValue *value);
 
 static PTN_UNUSED PtnArrayEntry *ptn_array_entry_for_key(PtnArray *array, PtnArrayKey key) {
     size_t index = ptn_array_find_key(array, key);
@@ -177,6 +178,45 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
     size_t line
 ) {
     PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
+    if (array == NULL) {
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+
+    PtnArrayEntry *entry = ptn_array_reference_entry(array, key_value);
+    if (entry->value.type != PTN_REFERENCE) {
+        PtnValue current = entry->value;
+        entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+    return ptn_value_clone(entry->value);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
+    PtnRuntime *runtime,
+    PtnValue *container,
+    const PtnValue *key_value,
+    const char *path,
+    size_t line
+) {
+    if (container == NULL) {
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+
+    PtnValue *value = container->type == PTN_REFERENCE
+        ? &container->as.reference->value
+        : container;
+    PtnArray *array = NULL;
+    if (value->type == PTN_ARRAY) {
+        array = ptn_array_detach_value(value);
+    } else if (value->type == PTN_NULL) {
+        array = ptn_value_replace_with_empty_array(value);
+    } else if (value->type == PTN_STRING) {
+        ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    } else {
+        ptn_throw_exception(runtime, "Error", "Cannot use a scalar value as an array");
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+
     if (array == NULL) {
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }

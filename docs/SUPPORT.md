@@ -31,6 +31,9 @@ supports in generated native binaries.
   concatenation paths as ordinary expressions.
 - Direct variable assignment and scalar reads through the generated runtime
   symbol table.
+- Assignment expressions for direct variables, array dimension/append lvalues,
+  and list/short-array destructuring targets, including by-reference
+  destructuring entries in the modeled reference-array subset.
 - Undefined direct variable reads emit a runtime warning with generated source
   path and line, then yield `null`.
 - Boxed scalar `+`, `-`, `*`, `**`, `/`, and `%` numeric arithmetic and `.`
@@ -382,10 +385,10 @@ supports in generated native binaries.
   `--$value`.
 - `print` as an expression returning `1`, including contexts such as assignment,
   echo operands, binary operands, and the parenthesized spelling `print(...)`.
-- Keyword boolean tails after direct assignment statements until assignment
-  expressions are modeled, ternary expressions beyond the modeled nested
-  associativity diagnostics, PHP-exact chained comparison parse errors, and
-  complete comparison parity for unsupported value types.
+- Keyword boolean tails after direct assignment statements, ternary expressions
+  beyond the modeled nested associativity diagnostics, PHP-exact chained
+  comparison parse errors, and complete comparison parity for unsupported value
+  types.
 - Unbraced switch bodies, alternate control-flow syntax,
   branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics

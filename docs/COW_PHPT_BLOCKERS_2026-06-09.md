@@ -2,7 +2,7 @@
 
 Evidence base:
 
-- Refreshed on `ptn-4yt.7` replayed on `master` at 2026-06-10T00:26Z.
+- Refreshed on `ptn-6vg` replayed on `master` at 2026-06-10T01:15Z.
 - `tools/phpt-cow-manifest.txt` still has 29 rows in seven buckets.
 - Focused foreach rerun is 3/4 after whitespace-only prelude before `<?php`
   is accepted. Safe nested rerun excluding `Zend/tests/bug38469.phpt` is 1/3.
@@ -19,8 +19,8 @@ Evidence base:
 | nested-arrays | 4 | 1 | 3 |
 | foreach-mutation | 4 | 3 | 1 |
 | function-boundaries | 4 | 1 | 3 |
-| reference-interaction | 5 | 4 | 1 |
-| **Total** | **29** | **21** | **8** |
+| reference-interaction | 5 | 5 | 0 |
+| **Total** | **29** | **22** | **7** |
 
 ## Linked Generic Blocker Beads
 
@@ -29,7 +29,6 @@ Evidence base:
 | Nested recursive reference lvalues, recursive array internals, cycle-safe dumps, and recursive merge reference semantics | 3 | `ptn-4yt.2` |
 | Closure callback mutation through `array_walk()` and `$GLOBALS` | 1 | `ptn-4yt.7`, `ptn-4yt.3` |
 | Call-result references and callback return references | 3 | `ptn-4yt.8`, `ptn-4yt.3` |
-| Chained assignment expressions with reference append lvalues | 1 | `ptn-6wg` |
 
 ## Fixed Rows
 
@@ -49,6 +48,7 @@ Evidence base:
 | reference-interaction | `ext/standard/tests/array/array_sum_on_reference.phpt` | `array_sum()` unwraps reference entries through numeric conversion. | `compile_reference_array_literals_and_internals_to_native_binary` |
 | reference-interaction | `ext/standard/tests/strings/strtr_with_reference.phpt` | Two-argument `strtr()` reads replacement maps through normal value conversion. | `compile_reference_array_literals_and_internals_to_native_binary` |
 | reference-interaction | `ext/standard/tests/general_functions/debug_zval_dump_refs.phpt` | `debug_zval_dump()` prints reference/refcount structure for arrays and references. | `compile_reference_array_literals_and_internals_to_native_binary` |
+| reference-interaction | `Zend/tests/assign_dim_ref_free.phpt` | Append assignment expressions and by-reference list assignment expressions lower through generic reference-array assignment targets. | `compile_append_expression_with_reference_list_assignment_to_native_binary` |
 
 ## Remaining Blocker Rows
 
@@ -63,4 +63,3 @@ Evidence base:
 | function-boundaries | `Zend/tests/assign_by_val_function_by_ref_return_value.phpt` | Assignment by reference from a function result is rejected. | `ptn-4yt.8`, `ptn-4yt.3` |
 | function-boundaries | `ext/standard/tests/array/array_reduce_accumulator_refcount.phpt` | `array_reduce()` callback/refcount behavior is unsupported. | `ptn-4yt.8`, `ptn-4yt.3` |
 | function-boundaries | `ext/standard/tests/array/array_reduce_return_by_ref.phpt` | `array_reduce()` callback returning by reference is unsupported. | `ptn-4yt.8`, `ptn-4yt.3` |
-| reference-interaction | `Zend/tests/assign_dim_ref_free.phpt` | Chained assignment expressions with append/reference lvalues are rejected. | `ptn-6wg` |

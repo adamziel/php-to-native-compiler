@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp, BinaryOp, CastKind, CatchClause,
-    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, MagicConstantKind, Program,
-    ReferenceTarget, Statement, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp,
+    CastKind, CatchClause, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
+    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
+    Program, ReferenceTarget, Statement, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -102,6 +103,12 @@ impl Parser {
                     && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
             {
                 self.parse_unset_statement()
+            }
+            TokenKind::Identifier(ref name)
+                if name.eq_ignore_ascii_case("list")
+                    && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
+            {
+                self.parse_expression_statement()
             }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LeftParen) => {
                 self.parse_call_statement()
@@ -926,7 +933,14 @@ impl Parser {
         match target {
             Expr::Variable(name, span) => Ok(UnsetTarget::Variable { name, span }),
             Expr::ArrayAccess { .. } => {
-                array_dim_target_from_expr(target).map(UnsetTarget::ArrayDim)
+                let target = array_dim_target_from_expr(target)?;
+                if target.dimensions.iter().any(Option::is_none) {
+                    return Err(Diagnostic::new(
+                        "append array access is unsupported in unset targets",
+                        Some(target.span),
+                    ));
+                }
+                Ok(UnsetTarget::ArrayDim(target))
             }
             _ => Err(Diagnostic::new(
                 "unsupported unset target",
@@ -984,28 +998,49 @@ impl Parser {
     fn parse_assignment_expr(&mut self) -> Result<Expr> {
         let left = self.parse_binary_expr(0)?;
         if !matches!(self.peek().kind, TokenKind::Equal) {
+            reject_append_array_read(&left)?;
             return Ok(left);
         }
 
         let equals = self.advance().clone();
         let value = self.parse_assignment_expr()?;
         let left_span = left.span();
-        let Expr::Variable(name, _) = left else {
-            return Err(Diagnostic::new(
-                "assignment expression target must be a variable",
+        let target = assignment_target_from_expr(left).map_err(|_| {
+            Diagnostic::new(
+                "assignment expression target must be a variable, array dimension, or list",
                 Some(equals.span),
-            ));
-        };
+            )
+        })?;
         let span = combine_spans(left_span, value.span());
         Ok(Expr::Assign {
-            name,
+            target,
             value: Box::new(value),
             span,
         })
     }
 
     fn parse_assignment_value_expr(&mut self) -> Result<Expr> {
-        let value = self.parse_binary_expr(SYMBOL_OR_PRECEDENCE)?;
+        let left = self.parse_binary_expr(SYMBOL_OR_PRECEDENCE)?;
+        let value = if matches!(self.peek().kind, TokenKind::Equal) {
+            let equals = self.advance().clone();
+            let right = self.parse_assignment_expr()?;
+            let left_span = left.span();
+            let target = assignment_target_from_expr(left).map_err(|_| {
+                Diagnostic::new(
+                    "assignment expression target must be a variable, array dimension, or list",
+                    Some(equals.span),
+                )
+            })?;
+            let span = combine_spans(left_span, right.span());
+            Expr::Assign {
+                target,
+                value: Box::new(right),
+                span,
+            }
+        } else {
+            reject_append_array_read(&left)?;
+            left
+        };
         if self.peek_is_keyword_boolean_operator() {
             return Err(Diagnostic::new(
                 "assignment expressions with keyword boolean operators are unsupported",
@@ -1115,12 +1150,16 @@ impl Parser {
             match self.peek().kind {
                 TokenKind::LeftBracket => {
                     self.advance();
-                    let index = self.parse_expr()?;
+                    let index = if matches!(self.peek().kind, TokenKind::RightBracket) {
+                        None
+                    } else {
+                        Some(Box::new(self.parse_expr()?))
+                    };
                     let right_span = self.expect_right_bracket()?;
                     expr = Expr::ArrayAccess {
                         span: combine_spans(expr.span(), right_span),
                         array: Box::new(expr),
-                        index: Box::new(index),
+                        index,
                     };
                 }
                 TokenKind::ObjectOperator => {
@@ -2352,7 +2391,7 @@ fn array_dim_target_from_expr(expr: Expr) -> Result<ArrayDimTarget> {
     loop {
         match current {
             Expr::ArrayAccess { array, index, .. } => {
-                dimensions.push(Some(*index));
+                dimensions.push(index.map(|index| *index));
                 current = *array;
             }
             Expr::Variable(array, variable_span) => {
@@ -2371,6 +2410,141 @@ fn array_dim_target_from_expr(expr: Expr) -> Result<ArrayDimTarget> {
             }
         }
     }
+}
+
+fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
+    match expr {
+        Expr::Variable(name, span) => Ok(AssignmentTarget::Variable { name, span }),
+        Expr::ArrayAccess { .. } => Ok(AssignmentTarget::ArrayDim(array_dim_target_from_expr(
+            expr,
+        )?)),
+        Expr::Array { elements, span } => Ok(AssignmentTarget::List(
+            list_assignment_target_from_array_elements(elements, span)?,
+        )),
+        Expr::Call {
+            name,
+            arguments,
+            span,
+        } if name.eq_ignore_ascii_case("list") => {
+            let elements = arguments
+                .into_iter()
+                .map(|argument| {
+                    Ok(ListAssignmentElement {
+                        key: None,
+                        target: ListAssignmentElementTarget::Value(Box::new(
+                            assignment_target_from_expr(argument)?,
+                        )),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(AssignmentTarget::List(ListAssignmentTarget {
+                elements,
+                span,
+            }))
+        }
+        Expr::Grouped { expr, .. } => assignment_target_from_expr(*expr),
+        other => Err(Diagnostic::new(
+            "unsupported assignment target",
+            Some(other.span()),
+        )),
+    }
+}
+
+fn list_assignment_target_from_array_elements(
+    elements: Vec<ArrayElement>,
+    span: SourceSpan,
+) -> Result<ListAssignmentTarget> {
+    let mut lowered = Vec::with_capacity(elements.len());
+    for element in elements {
+        let target = match element.value {
+            ArrayElementValue::Value(value) => {
+                ListAssignmentElementTarget::Value(Box::new(assignment_target_from_expr(value)?))
+            }
+            ArrayElementValue::Reference(target) => ListAssignmentElementTarget::Reference(target),
+        };
+        lowered.push(ListAssignmentElement {
+            key: element.key,
+            target,
+        });
+    }
+    Ok(ListAssignmentTarget {
+        elements: lowered,
+        span,
+    })
+}
+
+fn reject_append_array_read(expr: &Expr) -> Result<()> {
+    match expr {
+        Expr::ArrayAccess { array, index, span } => {
+            if index.is_none() {
+                return Err(Diagnostic::new(
+                    "append array access is only valid as an assignment target",
+                    Some(*span),
+                ));
+            }
+            reject_append_array_read(array)?;
+            if let Some(index) = index {
+                reject_append_array_read(index)?;
+            }
+        }
+        Expr::Assign { value, .. } => reject_append_array_read(value)?,
+        Expr::Call { arguments, .. } => {
+            for argument in arguments {
+                reject_append_array_read(argument)?;
+            }
+        }
+        Expr::DynamicCall {
+            callee, arguments, ..
+        } => {
+            reject_append_array_read(callee)?;
+            for argument in arguments {
+                reject_append_array_read(argument)?;
+            }
+        }
+        Expr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            reject_append_array_read(receiver)?;
+            for argument in arguments {
+                reject_append_array_read(argument)?;
+            }
+        }
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    reject_append_array_read(key)?;
+                }
+                if let ArrayElementValue::Value(value) = &element.value {
+                    reject_append_array_read(value)?;
+                }
+            }
+        }
+        Expr::Isset { targets, .. } => {
+            for target in targets {
+                reject_append_array_read(target)?;
+            }
+        }
+        Expr::Empty { target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::Cast { expr: target, .. }
+        | Expr::Grouped { expr: target, .. } => reject_append_array_read(target)?,
+        Expr::Binary { left, right, .. } => {
+            reject_append_array_read(left)?;
+            reject_append_array_read(right)?;
+        }
+        Expr::InterpolatedString(_, _)
+        | Expr::String(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _) => {}
+    }
+    Ok(())
 }
 
 fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {

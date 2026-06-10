@@ -188,6 +188,31 @@ pub struct ArrayDimTarget {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum AssignmentTarget {
+    Variable { name: String, span: SourceSpan },
+    ArrayDim(ArrayDimTarget),
+    List(ListAssignmentTarget),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListAssignmentTarget {
+    pub elements: Vec<ListAssignmentElement>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListAssignmentElement {
+    pub key: Option<Expr>,
+    pub target: ListAssignmentElementTarget,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListAssignmentElementTarget {
+    Value(Box<AssignmentTarget>),
+    Reference(ReferenceTarget),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum ReferenceTarget {
     Variable { name: String, span: SourceSpan },
     ArrayDim(ArrayDimTarget),
@@ -232,7 +257,7 @@ pub enum Expr {
     Null(SourceSpan),
     Variable(String, SourceSpan),
     Assign {
-        name: String,
+        target: AssignmentTarget,
         value: Box<Expr>,
         span: SourceSpan,
     },
@@ -260,7 +285,7 @@ pub enum Expr {
     },
     ArrayAccess {
         array: Box<Expr>,
-        index: Box<Expr>,
+        index: Option<Box<Expr>>,
         span: SourceSpan,
     },
     Isset {
