@@ -1,9 +1,8 @@
 # PTN Progress
 
 Refresh: 2026-06-10T11:48Z
-Measured: `ptn-2p4` rebased on `origin/master@206a98c5`; focused
-`bug35163` nested recursive reference lvalue evidence plus prior gates and
-manifests.
+Measured: `ptn-bff` rebased on `origin/master@4015917b`; focused
+`array_fill_keys()` native and PHPT evidence plus prior nested-reference gates.
 
 ## Test Dashboard
 
@@ -12,9 +11,9 @@ manifests.
 | Source unit tests | 3 | 3 | 0 |
 | Native compiled PHP snippets | 346 | 346 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 150 | 50 |
+| PHPT bounded manifest | 200 | 151 | 49 |
 | PHPT Zend rows | 76 | 67 | 9 |
-| PHPT ext/standard rows | 77 | 47 | 30 |
+| PHPT ext/standard rows | 77 | 48 | 29 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -56,7 +55,8 @@ offset-form `??=`, append-form `??=` diagnostics, grouped reference targets,
 recursive/same-array/nested reference and class-syntax diagnostics, named
 `array_reduce()` callback dispatch with by-reference returns, value fallback
 with PHP notice when non-reference call results are assigned by reference, and
-call-result by-reference return chains.
+call-result by-reference return chains, and `array_fill_keys()` over current
+boxed arrays with scalar key coercion.
 
 ## Still Needed
 
@@ -73,4 +73,5 @@ parity, and broader file APIs.
 Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
 `tools/run-post-merge-cow-gate.sh`; `tools/run-bounded-phpt.sh
 tools/phpt-cow-manifest.txt`. Prior broad manifest remains 150/200; it does not
-include `Zend/tests/bug35163.phpt`.
+include `Zend/tests/bug35163.phpt`. Focused `array_fill_keys()` PHPT evidence
+was also run on the source branch.

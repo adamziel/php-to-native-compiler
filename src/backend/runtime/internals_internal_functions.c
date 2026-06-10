@@ -687,6 +687,30 @@ static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_bool(0);
 }
 
+static PtnArrayKey ptn_array_fill_keys_key_from_value(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+
+    PtnStringOperand string = ptn_value_to_string_operand(value);
+    PtnValue key_value = ptn_string_literal(string.data, string.len);
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    ptn_string_operand_free(string);
+    return key;
+}
+
+static PtnValue ptn_internal_array_fill_keys(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *keys = ptn_internal_expect_array_arg(runtime, "array_fill_keys", 1, "keys", args[0]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < keys->len; i++) {
+        PtnArrayKey key = ptn_array_fill_keys_key_from_value(runtime, keys->entries[i].value, line);
+        ptn_array_set_entry(result.as.array, key, ptn_value_clone(args[1]));
+    }
+    return result;
+}
+
 static PtnValue ptn_internal_array_unshift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unshift", 1, "array", args[0]);
@@ -2634,6 +2658,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
         { "array_pop", 1, 1, ptn_internal_array_pop },

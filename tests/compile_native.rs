@@ -6783,6 +6783,37 @@ var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));"
 }
 
 #[test]
+fn compile_array_fill_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-array-fill-keys");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-fill-keys.php");
+    let output = root.join("array-fill-keys-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_fill_keys(array(), 1));\n\
+var_dump(array_fill_keys(array('foo', 'bar'), NULL));\n\
+var_dump(array_fill_keys(array('5', 'foo', 10, 1.23, false, true, null, '02'), 123));\n\
+$value = array('seed');\n\
+$filled = array_fill_keys(array('x', 'y', 'x'), $value);\n\
+$filled['x'][] = 'copy';\n\
+var_dump($filled);\n\
+var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(0) {\n}\narray(2) {\n  [\"foo\"]=>\n  NULL\n  [\"bar\"]=>\n  NULL\n}\narray(7) {\n  [5]=>\n  int(123)\n  [\"foo\"]=>\n  int(123)\n  [10]=>\n  int(123)\n  [\"1.23\"]=>\n  int(123)\n  [\"\"]=>\n  int(123)\n  [1]=>\n  int(123)\n  [\"02\"]=>\n  int(123)\n}\narray(2) {\n  [\"x\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [\"y\"]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_predicates_use_generated_fast_paths() {
     let root = temp_dir("ptn-native-array-predicate-fast-paths");
     fs::create_dir_all(&root).unwrap();
