@@ -1,7 +1,7 @@
 # PTN Progress
 
 Refresh: 2026-06-10T11:41Z
-Measured: `ptn-4p5` rebased on `origin/master@7e7d75df8`; focused
+Measured: `ptn-4p5` rebased on `origin/master@b6446c197`; focused
 call-result by-reference return-chain evidence plus prior gates and manifests.
 
 ## Test Dashboard
