@@ -1455,6 +1455,7 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::Print => self.parse_print_expr(),
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
                     let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
@@ -1470,6 +1471,27 @@ impl Parser {
             }
             _ => self.parse_postfix_expr(),
         }
+    }
+
+    fn parse_print_expr(&mut self) -> Result<Expr> {
+        let token = self.advance().clone();
+        let expression = if matches!(self.peek().kind, TokenKind::LeftParen) {
+            self.advance();
+            let expression = self.parse_expr()?;
+            let right_span = self.expect_right_paren()?;
+            let span = combine_spans(token.span, right_span);
+            return Ok(Expr::Print {
+                expression: Box::new(expression),
+                span,
+            });
+        } else {
+            self.parse_assignment_expr()?
+        };
+        let span = combine_spans(token.span, expression.span());
+        Ok(Expr::Print {
+            expression: Box::new(expression),
+            span,
+        })
     }
 
     fn parse_postfix_expr(&mut self) -> Result<Expr> {
@@ -1986,6 +2008,7 @@ impl Parser {
                 | TokenKind::Bang
                 | TokenKind::Tilde
                 | TokenKind::At
+                | TokenKind::Print
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
                 | TokenKind::Backslash
@@ -2637,6 +2660,9 @@ fn expr_array_literal_reference_to_variable(
             .find_map(|element| array_element_reference_to_variable(element, variable)),
         Expr::Assign { value, .. }
         | Expr::AssignRef { source: value, .. }
+        | Expr::Print {
+            expression: value, ..
+        }
         | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
@@ -2943,9 +2969,12 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         Expr::Empty { target, .. } => {
             validate_anonymous_functions_in_expr(target, functions)?;
         }
-        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
-            validate_anonymous_functions_in_expr(expr, functions)?;
+        Expr::Print {
+            expression: expr, ..
         }
+        | Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::Grouped { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
         Expr::Binary { left, right, .. } => {
             validate_anonymous_functions_in_expr(left, functions)?;
             validate_anonymous_functions_in_expr(right, functions)?;
@@ -3079,6 +3108,9 @@ fn validate_reference_assignment_source_expr(
 ) -> Result<()> {
     match source {
         Expr::Grouped { expr, .. } => validate_reference_assignment_source_expr(expr, functions),
+        Expr::Print { expression, .. } => {
+            validate_reference_assignment_source_expr(expression, functions)
+        }
         Expr::Call { .. } => Ok(()),
         _ => Ok(()),
     }
@@ -3792,6 +3824,9 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
             }
         }
         Expr::Empty { target, .. }
+        | Expr::Print {
+            expression: target, ..
+        }
         | Expr::Unary { expr: target, .. }
         | Expr::Cast { expr: target, .. }
         | Expr::Grouped { expr: target, .. } => reject_append_array_read(target)?,
@@ -3870,6 +3905,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Variable(_, _)
         | Expr::Assign { .. }
         | Expr::AssignRef { .. }
+        | Expr::Print { .. }
         | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }

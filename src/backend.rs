@@ -1796,6 +1796,9 @@ fn collect_value_runtime_requirements(
         ValueExpr::Empty { target } => {
             collect_value_runtime_requirements(target, functions, requirements);
         }
+        ValueExpr::Print { expression } => {
+            collect_value_runtime_requirements(expression, functions, requirements);
+        }
         ValueExpr::InternalCall {
             name, arguments, ..
         } => {
@@ -2369,6 +2372,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
             .iter()
             .any(|target| value_mentions_variable(target, name)),
         ValueExpr::Empty { target } => value_mentions_variable(target, name),
+        ValueExpr::Print { expression } => value_mentions_variable(expression, name),
         ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
             arguments
                 .iter()
@@ -3288,6 +3292,7 @@ impl ValueEmitter {
             } => self.emit_static_property_fetch(out, class_name, name, *line),
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
             ValueExpr::Empty { target } => self.emit_empty(out, target),
+            ValueExpr::Print { expression } => self.emit_print(out, expression),
             ValueExpr::Load { name, line } => format!(
                 "ptn_runtime_read_variable(&runtime, \"{}\", \"{}\", {})",
                 c_string(name),
@@ -3403,6 +3408,15 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &argument_temp);
         }
         result_temp
+    }
+
+    fn emit_print(&mut self, out: &mut String, expression: &ValueExpr) -> String {
+        let expression_temp = self.emit_materialized_value(out, expression);
+        out.push_str("    ptn_echo(");
+        out.push_str(&expression_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &expression_temp);
+        "ptn_int(1)".to_string()
     }
 
     fn emit_property_fetch(

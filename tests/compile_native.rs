@@ -473,12 +473,39 @@ fn parser_rejects_unsupported_foreach_bindings() {
 }
 
 #[test]
-fn parser_rejects_print_expression_contexts() {
-    let error = parser::parse("<?php $result = print \"hello\";").unwrap_err();
-    assert!(error.message.contains("expected expression"));
+fn parser_accepts_print_expression_contexts() {
+    let program = parser::parse(
+        "<?php $result = print \"hello\"; echo print \"x\"; $sum = 2 + print \"y\"; $paren = print(\"z\");",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 4);
 
-    let error = parser::parse("<?php $result = print(\"hello\");").unwrap_err();
-    assert!(error.message.contains("expected expression"));
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment from print expression");
+    };
+    assert!(matches!(value, Expr::Print { .. }));
+
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected echo with print operand");
+    };
+    assert!(matches!(&expressions[0], Expr::Print { .. }));
+
+    let Statement::Assign { value, .. } = &program.statements[2] else {
+        panic!("expected assignment from binary expression");
+    };
+    assert!(matches!(
+        value,
+        Expr::Binary {
+            op: BinaryOp::Add,
+            right,
+            ..
+        } if matches!(right.as_ref(), Expr::Print { .. })
+    ));
+
+    let Statement::Assign { value, .. } = &program.statements[3] else {
+        panic!("expected parenthesized print assignment");
+    };
+    assert!(matches!(value, Expr::Print { .. }));
 }
 
 #[test]
@@ -2839,6 +2866,50 @@ fn compile_var_dump_null_phpt_shape_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\nDONE\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_print_expression_contexts_to_native_binary() {
+    let root = temp_dir("ptn-native-print-expression-contexts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("print-expression-contexts.php");
+    let output = root.join("print-expression-contexts-bin");
+    fs::write(
+        &input,
+        "<?php
+$result = print \"A\";
+echo \"|result=\", $result, \"\\n\";
+echo \"echo:\", print \"B\", \"|\\n\";
+$right = 2 + print \"C\";
+echo \"|right=\", $right, \"\\n\";
+$left = (print \"D\") + 2;
+echo \"|left=\", $left, \"\\n\";
+$paren = print(\"E\");
+echo \"|paren=\", $paren, \"\\n\";
+print \"F\" . \"G\";
+echo \"|\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "A|result=1\n\
+echo:B1|\n\
+C|right=3\n\
+D|left=3\n\
+E|paren=1\n\
+FG|\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_echo("));
+    assert!(c_source.contains("ptn_int(1)"));
 }
 
 #[test]

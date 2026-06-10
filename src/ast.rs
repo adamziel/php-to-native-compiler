@@ -369,6 +369,10 @@ pub enum Expr {
         target: Box<Expr>,
         span: SourceSpan,
     },
+    Print {
+        expression: Box<Expr>,
+        span: SourceSpan,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -494,6 +498,7 @@ impl Expr {
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,
             Expr::Empty { span, .. } => *span,
+            Expr::Print { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,
         }

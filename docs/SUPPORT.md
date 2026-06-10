@@ -61,7 +61,10 @@ supports in generated native binaries.
   evaluated once, the read side is quiet like `??`, and existing array/string
   write helpers perform the conditional store. Append-form `$a[] ??= ...` is
   rejected because PHP must read the target before assigning.
-- Print statements use the same generated boxed output path as echo.
+- Print statements and expression-form `print` use the same generated boxed
+  output path as echo. Expression-form `print` returns `1` after evaluating and
+  printing its operand, including assignment values, echo operands, binary
+  operands, and parenthesized `print(...)` operands.
 - Parenthesized expressions for grouping supported scalar expressions,
   including nested grouping.
 - Unary `+` over boxed scalar numeric values.
@@ -459,8 +462,6 @@ supports in generated native binaries.
   scalar cast overflow behavior.
 - Prefix and postfix increment/decrement operators such as `++$value` and
   `--$value`.
-- `print` as an expression returning `1`, including contexts such as assignment,
-  echo operands, binary operands, and the parenthesized spelling `print(...)`.
 - Keyword boolean tails after direct assignment statements, ternary expressions
   beyond the modeled nested associativity diagnostics, PHP-exact chained
   comparison parse errors, and complete comparison parity for unsupported value
