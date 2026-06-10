@@ -1,21 +1,21 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:44Z
-Measured: `ptn-ept` rebased on `origin/master@df737c70`; generic
-`array_reduce()` accumulator ownership/debug refcount behavior is integrated
-with the current callable-value dispatcher and non-array `foreach`
-source-path diagnostics.
+Refresh: 2026-06-10T15:06Z
+Measured: `ptn-wk3` on `origin/master@d2d51779`; callback closures,
+static/string callables, array_reduce COW, directory APIs, `stdClass`,
+non-array `foreach` diagnostics, and
+`array_count_values()` PHPT evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 368 | 368 | 0 |
+| Native compiled PHP snippets | 369 | 369 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 152 | 48 |
+| PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
-| PHPT ext/standard rows | 77 | 48 | 29 |
+| PHPT ext/standard rows | 77 | 49 | 28 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -53,9 +53,11 @@ offset-form `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`,
 `intval()` base-prefix and range-saturating string conversion, named
 `array_walk()` global-array rebinding, public static methods registered as
-`Class::method` callables, generic `array_reduce()` callback dispatch with
-accumulator debug refcounts, and `new stdClass` boxed objects with public
-dynamic property reads/writes shared through object aliases.
+`Class::method` callables, `array_reduce()` callback dispatch with debug
+refcounts, and `new stdClass` boxed objects with public
+dynamic property reads/writes shared through object aliases, plus
+`array_count_values()` over integer/string boxed array values with unsupported
+entries skipped after modeled warnings.
 
 ## Still Needed
 
@@ -69,8 +71,7 @@ fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`
-through compile/native reducer suites, with the disk-interrupted oracle suite
-rerun under `TMPDIR=target/tmp`; focused non-array `foreach` native tests; exact
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
+focused non-array `foreach` native tests; exact
 `array_reduce_accumulator_refcount.phpt`; `tools/run-bounded-phpt.sh
 tools/phpt-cow-manifest.txt`.

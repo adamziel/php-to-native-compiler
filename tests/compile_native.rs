@@ -6997,6 +6997,37 @@ var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));"
 }
 
 #[test]
+fn compile_array_count_values_to_native_binary() {
+    let root = temp_dir("ptn-native-array-count-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-count-values.php");
+    let output = root.join("array-count-values-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$value = \"hello\";\n\
+$ref =& $value;\n\
+var_dump(array_count_values([]));\n\
+var_dump(array_count_values([1, \"hello\", 1, \"world\", \"hello\", \"1\", -1, \"02\", \"\"]));\n\
+var_dump(array_count_values([$ref, \"hello\"]));\n\
+var_dump(@array_count_values([0, [1, 2], 0, true, null, 1.5]));\n\
+var_dump(array_count_values([[], false, \"kept\"]));\n\
+var_dump(function_exists(\"array_count_values\"), function_exists(\"ARRAY_COUNT_VALUES\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(0) {\n}\narray(6) {\n  [1]=>\n  int(3)\n  [\"hello\"]=>\n  int(2)\n  [\"world\"]=>\n  int(1)\n  [-1]=>\n  int(1)\n  [\"02\"]=>\n  int(1)\n  [\"\"]=>\n  int(1)\n}\narray(1) {\n  [\"hello\"]=>\n  int(2)\n}\narray(1) {\n  [0]=>\n  int(2)\n}\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 8\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 8\narray(1) {\n  [\"kept\"]=>\n  int(1)\n}\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_fill_keys_to_native_binary() {
     let root = temp_dir("ptn-native-array-fill-keys");
     fs::create_dir_all(&root).unwrap();
