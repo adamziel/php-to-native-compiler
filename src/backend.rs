@@ -416,7 +416,7 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
 
 fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("\nstatic PTN_UNUSED char *ptn_dynamic_function_name(PtnValue callable) {\n");
-    out.push_str("    return ptn_value_to_string(callable);\n");
+    out.push_str("    return ptn_callable_function_name(callable);\n");
     out.push_str("}\n");
 
     out.push_str(

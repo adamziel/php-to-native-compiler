@@ -380,6 +380,11 @@ supports in generated native binaries.
   generated main function, including source-spanned fatal diagnostics for
   undefined target labels, duplicate labels, and `goto` jumps into active loop
   or switch scopes.
+- Top-level class declarations with public static methods in the current
+  function subset. Static methods are registered in the callable table under
+  `Class::method`, can be called directly with `Class::method(...)`, and can be
+  used by dynamic calls or internal callbacks through `"Class::method"` and
+  `["Class", "method"]` callable values.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
@@ -390,9 +395,9 @@ supports in generated native binaries.
   unparenthesized nested ternary fatal diagnostics and
   unexpected-token parse errors at modeled statement terminators and right
   parentheses. Global `const` declaration terminators report the
-  const-specific `"," or ";"` expected-token set. Class-like declarations and
-  class-constant fetch syntax are recognized and reported as unsupported class
-  metadata boundaries.
+  const-specific `"," or ";"` expected-token set. Unsupported class members and
+  class-constant fetch syntax are recognized and reported as class metadata
+  boundaries.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 
@@ -443,10 +448,11 @@ supports in generated native binaries.
   `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
   `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
   `M_*` constants in `defined()`/`constant()`.
-- Function forms beyond top-level named declarations, including default
-  arguments, variadics, named arguments, by-reference returns, nested or
-  conditional declarations, closures, methods, dynamic calls, namespaces,
-  globals, static locals, and PHP-exact function/include return propagation.
+- Function forms beyond top-level named declarations and the public-static
+  class-method callable slice, including default arguments, variadics, named
+  arguments, by-reference returns, nested or conditional declarations,
+  closures, instance methods, full class metadata, namespaces, globals, static
+  locals, and PHP-exact function/include return propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Unsupported recursive arrays, objects, resources, complete reference identity,
   copy-on-write, and `var_dump()` reference identity beyond the currently

@@ -794,7 +794,7 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
 
 static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_reduce", 1, "array", args[0]);
-    char *function_name = ptn_value_to_string(args[1]);
+    char *function_name = ptn_callable_function_name(args[1]);
     PtnValue carry = argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_null();
 
     for (size_t i = 0; i < array->len; i++) {
