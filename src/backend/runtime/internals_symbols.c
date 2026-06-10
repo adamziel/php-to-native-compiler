@@ -88,6 +88,81 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     free(reference);
 }
 
+static PTN_UNUSED PtnClosure *ptn_closure_new(size_t function_index, size_t capture_count) {
+    PtnClosure *closure = malloc(sizeof(PtnClosure));
+    if (closure == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    closure->refcount = 1;
+    closure->function_index = function_index;
+    closure->capture_count = capture_count;
+    closure->captures = NULL;
+    if (capture_count == 0) {
+        return closure;
+    }
+    closure->captures = calloc(capture_count, sizeof(PtnClosureCapture));
+    if (closure->captures == NULL) {
+        free(closure);
+        ptn_abort_out_of_memory();
+    }
+    return closure;
+}
+
+static PTN_UNUSED void ptn_closure_set_capture(
+    PtnClosure *closure,
+    size_t index,
+    const char *name,
+    PtnValue value,
+    int by_ref
+) {
+    if (closure == NULL || index >= closure->capture_count) {
+        ptn_abort_out_of_memory();
+    }
+    PtnClosureCapture *capture = &closure->captures[index];
+    free(capture->name);
+    ptn_value_destroy(&capture->value);
+    capture->name = ptn_duplicate_string(name);
+    capture->value = by_ref ? ptn_value_clone(value) : ptn_value_clone_deref(value);
+}
+
+static PTN_UNUSED PtnValue ptn_closure_capture_value(PtnClosure *closure, const char *name) {
+    if (closure == NULL) {
+        return ptn_null();
+    }
+    for (size_t i = 0; i < closure->capture_count; i++) {
+        if (closure->captures[i].name != NULL && strcmp(closure->captures[i].name, name) == 0) {
+            return ptn_value_clone(closure->captures[i].value);
+        }
+    }
+    return ptn_null();
+}
+
+static PTN_UNUSED void ptn_closure_retain(PtnClosure *closure) {
+    if (closure == NULL) {
+        return;
+    }
+    if (closure->refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    closure->refcount++;
+}
+
+static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
+    if (closure == NULL || closure->refcount == 0) {
+        return;
+    }
+    closure->refcount--;
+    if (closure->refcount != 0) {
+        return;
+    }
+    for (size_t i = 0; i < closure->capture_count; i++) {
+        free(closure->captures[i].name);
+        ptn_value_destroy(&closure->captures[i].value);
+    }
+    free(closure->captures);
+    free(closure);
+}
+
 static PTN_UNUSED void ptn_array_destroy_storage(PtnArray *array) {
     if (array == NULL) {
         return;
@@ -132,6 +207,9 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
             break;
         case PTN_OBJECT:
             ptn_object_release(value->as.object);
+            break;
+        case PTN_CLOSURE:
+            ptn_closure_release(value->as.closure);
             break;
         case PTN_EXCEPTION:
             ptn_exception_free(value->as.exception);

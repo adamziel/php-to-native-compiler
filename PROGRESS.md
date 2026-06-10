@@ -1,16 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-10T13:45Z
-Measured: `ptn-zvc` rebased on `origin/master@579ea7e`; static callables,
-string-callable callbacks, recursive directory APIs, and bounded `stdClass`
-property evidence.
+Refresh: 2026-06-10T14:20Z
+Measured: `ptn-nvs` retry rebased on `origin/master@be9cc3570`; focused
+`array_walk()` closure global-swap COW evidence plus current callback, static
+callable, recursive directory API, and bounded `stdClass` property evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 364 | 364 | 0 |
+| Native compiled PHP snippets | 365 | 365 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -24,47 +24,53 @@ property evidence.
 | By-reference foreach COW oracle | 11 | 11 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
 | Post-merge COW gate | 25 | 25 | 0 |
-| PHPT COW manifest | 29 | 26 | 3 |
+| PHPT COW manifest | 29 | 27 | 2 |
 | PHPT callback manifest | 2 | 2 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows: 26 passing, 3 failing. Named
-`array_walk()` callbacks observe `$GLOBALS` swaps. Closure-backed callback rows
-remain blocked by Closure/callable values (`ptn-dis`).
+`tools/phpt-cow-manifest.txt` has 29 rows: 27 passing, 2 failing.
+Buckets: assignment-aliasing 4/4, string-offsets 4/4,
+array-writes-appends-unset 4/4, nested-arrays 4/4, foreach-mutation 4/4,
+function-boundaries 2/4, reference-interaction 5/5. `array_walk()` supports
+string/named callables and anonymous closures with `use` captures that swap
+the walked global through `$GLOBALS`.
 
 ## Already Ported
 
-Lexer/parser, AST/IR/C backend, boxed values, variables/constants,
-string/math/type internals, ordered arrays, `foreach`, cursors, numeric keys,
-payload refcounts, array/string COW, references, by-reference params/foreach,
-array dimensions, temporaries, recursive/user functions, magic constants,
-`func_*`, `print_r`, binary strings, string offsets, scalar diagnostics, array
-literal references, array union `+`, scalar type hints, by-reference return
-boundaries, `count()`, `??`, assignment expressions, expression-level `@`, file
-APIs including recursive `mkdir()` plus directory predicates, array-path
-snapshots, `array_sum()`/`strtr()`/`in_array()`, recursive array merge/replace,
+Lexer/parser, AST, IR, C backend, boxed values, variables, constants,
+string/math/type internals, ordered arrays, `foreach`, cursors,
+`array_values()`, numeric-string keys, payload refcounts, array/string COW,
+references, by-reference parameters and `foreach`, array dimensions,
+temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
+binary strings, string offsets, scalar offset diagnostics, array literal
+references, array union `+`, scalar type hints, by-reference return
+alias/separation boundaries, `count()`, `??`, assignment expressions,
+expression-level `@`, selected file APIs including recursive `mkdir()`,
+`rmdir()`, `is_dir()`, `is_file()`, and `file_exists()`, array-path snapshots,
+reference-aware internals, closure values/captures, `array_walk()` closure
+callbacks with `$GLOBALS` swaps, recursive array merge/replace,
 `debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
-expressions, nested same-array reference lvalues, direct-variable and
-offset-form `??=`, grouped reference targets, `array_fill_keys()`,
-string-callable `call_user_func()`, string-callable/null `array_map()`, named
-`array_walk()` global-array rebinding, public static methods registered as
-`Class::method` callables, and `new stdClass` boxed objects with public dynamic
-property reads/writes shared through object aliases.
+expressions for reference arrays, nested same-array reference lvalues,
+`??=`, grouped reference targets, named/static `array_reduce()` callbacks,
+string-callable and null-callback `array_map()`, public static methods as
+`Class::method` callables, `new stdClass` boxed objects with public dynamic
+property reads/writes shared through aliases, non-reference call-result
+by-reference fallback notices, `array_fill_keys()`, and string-callable
+`call_user_func()`.
 
 ## Still Needed
 
-Remaining COW PHPT gaps are Closure/callable `use` syntax, closure-backed
-callback by-reference returns, `array_reduce()` refcount behavior, and broader
-recursive by-reference return edges. Broader bounded-PHPT gaps are full class
-declarations/metadata, instance methods, visibility/inheritance/static
+Remaining COW PHPT gaps are closure-backed `array_reduce()` accumulator
+refcount and by-reference return rows. Broader bounded-PHPT gaps are full
+class declarations/metadata, instance methods, visibility/inheritance/static
 properties/magic methods, non-static method callable values, unsupported
 array/string internals, 64-bit operator exactness, foreach diagnostics,
-object/property compound lvalues, scalar offset-lvalue fatal parity, and
-broader file APIs.
+object/property compound lvalues, scalar offset-lvalue fatal parity, and file
+APIs beyond the current local filesystem subset.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-focused callback/object native tests; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`.
+Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
+`tools/run-post-merge-cow-gate.sh`; `tools/run-bounded-phpt.sh
+tools/phpt-cow-manifest.txt`; callback manifest.

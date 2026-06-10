@@ -32,6 +32,7 @@
 #define PTN_SYMBOL_INDEX_MIN_ENTRIES 16
 
 typedef struct PtnArray PtnArray;
+typedef struct PtnClosure PtnClosure;
 typedef struct PtnException PtnException;
 typedef struct PtnObject PtnObject;
 typedef struct PtnReference PtnReference;
@@ -45,6 +46,7 @@ typedef enum {
     PTN_STRING,
     PTN_ARRAY,
     PTN_OBJECT,
+    PTN_CLOSURE,
     PTN_EXCEPTION,
     PTN_REFERENCE
 } PtnType;
@@ -84,6 +86,7 @@ typedef struct {
         PtnString string;
         PtnArray *array;
         PtnObject *object;
+        PtnClosure *closure;
         PtnException *exception;
         PtnReference *reference;
     } as;
@@ -92,6 +95,18 @@ typedef struct {
 struct PtnReference {
     size_t refcount;
     PtnValue value;
+};
+
+typedef struct {
+    char *name;
+    PtnValue value;
+} PtnClosureCapture;
+
+struct PtnClosure {
+    size_t refcount;
+    size_t function_index;
+    size_t capture_count;
+    PtnClosureCapture *captures;
 };
 
 typedef struct {
@@ -444,6 +459,14 @@ static PTN_UNUSED PtnValue ptn_object(PtnObject *object) {
     value.type = PTN_OBJECT;
     value.owned = 1;
     value.as.object = object;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_closure_value(PtnClosure *closure) {
+    PtnValue value;
+    value.type = PTN_CLOSURE;
+    value.owned = 1;
+    value.as.closure = closure;
     return value;
 }
 

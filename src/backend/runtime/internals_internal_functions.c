@@ -37,6 +37,7 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_OBJECT:
             fputs("Object", stdout);
             break;
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             fputs("Object", stdout);
             break;
@@ -97,6 +98,7 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
 
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
 
 static void ptn_var_dump_indent(size_t indent) {
     for (size_t i = 0; i < indent; i++) {
@@ -237,6 +239,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
+        case PTN_CLOSURE:
+            fputs("object(Closure)#1 (0) {\n", stdout);
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
         case PTN_REFERENCE:
             fputs("NULL\n", stdout);
             break;
@@ -345,6 +352,11 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             printf("string(%zu) \"", strlen(value.as.exception->message));
             fputs(value.as.exception->message, stdout);
             fputs("\"\n", stdout);
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
+        case PTN_CLOSURE:
+            fputs("object(Closure)#1 (0) {\n", stdout);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
@@ -470,6 +482,7 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
         case PTN_OBJECT:
             ptn_string_buffer_append(buffer, "Object");
             break;
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             ptn_string_buffer_append(buffer, "Object");
             break;
@@ -698,9 +711,9 @@ static PtnValue *ptn_array_walk_current_slot(
     return ptn_symbols_value_slot(&runtime->symbols, name);
 }
 
-static void ptn_array_walk_call_function(
+static void ptn_array_walk_call_callable(
     PtnRuntime *runtime,
-    const char *function_name,
+    PtnValue callback,
     PtnArray *array,
     size_t index,
     int has_userdata,
@@ -718,11 +731,11 @@ static void ptn_array_walk_call_function(
     PtnValue callback_args[3] = {
         value_reference,
         key,
-        has_userdata ? ptn_value_clone(userdata) : ptn_null()
+        has_userdata ? ptn_value_clone_deref(userdata) : ptn_null()
     };
-    PtnValue callback_result = ptn_call_function(
+    PtnValue callback_result = ptn_call_callable(
         runtime,
-        function_name,
+        callback,
         has_userdata ? 3 : 2,
         callback_args,
         line
@@ -745,7 +758,6 @@ static PtnValue ptn_array_walk_slot(
     PtnValue userdata,
     size_t line
 ) {
-    char *function_name = ptn_value_to_string(callback);
     PtnArray *last_array = NULL;
     size_t index = 0;
 
@@ -760,9 +772,9 @@ static PtnValue ptn_array_walk_slot(
             break;
         }
 
-        ptn_array_walk_call_function(
+        ptn_array_walk_call_callable(
             runtime,
-            function_name,
+            callback,
             array,
             index,
             has_userdata,
@@ -779,7 +791,6 @@ static PtnValue ptn_array_walk_slot(
         }
     }
 
-    free(function_name);
     return ptn_bool(1);
 }
 
@@ -862,18 +873,21 @@ static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, cons
 }
 
 static PtnValue ptn_internal_array_walk(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnValue value = ptn_value_clone(args[0]);
+    if (args[0].type != PTN_REFERENCE) {
+        ptn_abort_by_reference_argument_error("array_walk", 1, "array");
+    }
+
+    PtnValue *slot = &args[0].as.reference->value;
     PtnValue result = ptn_array_walk_slot(
         runtime,
         NULL,
-        &value,
-        value,
+        slot,
+        *slot,
         args[1],
         argc >= 3,
         argc >= 3 ? args[2] : ptn_null(),
         line
     );
-    ptn_value_destroy(&value);
     return result;
 }
 

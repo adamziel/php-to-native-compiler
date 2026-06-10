@@ -86,6 +86,7 @@ static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
             return "array";
         case PTN_OBJECT:
             return "object";
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             return "object";
         case PTN_REFERENCE:
@@ -728,6 +729,7 @@ static PTN_UNUSED int ptn_string_offset_from_value(
             }
             ptn_throw_exception(runtime, "TypeError", "Cannot access offset of type object on string");
             return 0;
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             if (quiet) {
                 return 0;
@@ -1441,6 +1443,13 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
         return;
     }
     if (segment_count == 0) {
+        return;
+    }
+
+    if (strcmp(name, "GLOBALS") == 0 && segment_count == 1 && !segments[0].append) {
+        char *global_name = ptn_value_to_string(segments[0].value);
+        ptn_runtime_write_global_variable(runtime, global_name, value);
+        free(global_name);
         return;
     }
 

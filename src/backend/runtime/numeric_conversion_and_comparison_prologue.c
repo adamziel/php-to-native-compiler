@@ -441,6 +441,7 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
             return ptn_number_int(value.as.array->len == 0 ? 0 : 1);
         case PTN_OBJECT:
             return ptn_number_int(1);
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             return ptn_number_int(1);
         case PTN_REFERENCE:
@@ -465,6 +466,7 @@ static PTN_UNUSED int ptn_fast_integer_value(PtnValue value, int64_t *integer) {
         case PTN_STRING:
         case PTN_ARRAY:
         case PTN_OBJECT:
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
             return 0;
@@ -544,6 +546,7 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
             return value.as.array->len != 0;
         case PTN_OBJECT:
             return 1;
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             return 1;
         case PTN_REFERENCE:
@@ -678,6 +681,7 @@ static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *numbe
         case PTN_BOOL:
         case PTN_ARRAY:
         case PTN_OBJECT:
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
             return 0;
