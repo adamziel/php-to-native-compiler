@@ -3153,6 +3153,23 @@ static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const Ptn
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
+static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnValue assertion = ptn_value_deref(args[0]);
+    if (ptn_is_truthy(assertion)) {
+        return ptn_bool(1);
+    }
+
+    const char *fallback = "assertion failed";
+    if (argc >= 2) {
+        char *message = ptn_value_to_string(args[1]);
+        ptn_throw_exception_from_allocated_message(runtime, "AssertionError", message);
+    }
+
+    ptn_throw_exception(runtime, "AssertionError", fallback);
+    return ptn_null();
+}
+
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     /* Keep sorted by ASCII case-insensitive name for ptn_find_internal_function. */
     static const PtnInternalFunction functions[] = {
@@ -3175,6 +3192,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
         { "array_walk", 2, 3, ptn_internal_array_walk },
+        { "assert", 1, 2, ptn_internal_assert },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "call_user_func", 1, PTN_VARIADIC_ARGS, ptn_internal_call_user_func },

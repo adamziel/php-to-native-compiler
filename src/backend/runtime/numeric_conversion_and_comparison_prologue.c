@@ -308,6 +308,21 @@ static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *clas
     ptn_throw_exception_at(runtime, class_name, message, NULL, 0);
 }
 
+static PTN_UNUSED void ptn_throw_exception_from_allocated_message(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message
+) {
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = ptn_exception_new(class_name, message, NULL, 0);
+    free(message);
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+}
+
 static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *type_name) {
     return runtime->exceptions->active_exception != NULL &&
         ptn_exception_type_matches_name(runtime->exceptions->active_exception->class_name, type_name);

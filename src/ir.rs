@@ -489,11 +489,12 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
             Statement::Call {
                 name,
                 arguments,
+                source,
                 span,
             } => {
                 instructions.push(Instruction::InternalCall {
                     name: name.clone(),
-                    arguments: arguments.iter().map(lower_expr).collect(),
+                    arguments: lower_call_arguments(name, arguments, source),
                     line: span.line,
                 });
             }
@@ -825,6 +826,14 @@ fn lower_compound_assignment(name: &str, line: usize, op: BinaryOp, right: Value
     }
 }
 
+fn lower_call_arguments(name: &str, arguments: &[Expr], source: &str) -> Vec<ValueExpr> {
+    let mut lowered = arguments.iter().map(lower_expr).collect::<Vec<_>>();
+    if name.eq_ignore_ascii_case("assert") && lowered.len() == 1 {
+        lowered.push(ValueExpr::String(source.to_string()));
+    }
+    lowered
+}
+
 fn lower_expr(expr: &Expr) -> ValueExpr {
     match expr {
         Expr::String(value, _) => ValueExpr::String(value.clone()),
@@ -874,10 +883,11 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         Expr::Call {
             name,
             arguments,
+            source,
             span,
         } => ValueExpr::InternalCall {
             name: name.clone(),
-            arguments: arguments.iter().map(lower_expr).collect(),
+            arguments: lower_call_arguments(name, arguments, source),
             line: span.line,
         },
         Expr::DynamicCall {

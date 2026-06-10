@@ -69,6 +69,7 @@ pub enum Statement {
     Call {
         name: String,
         arguments: Vec<Expr>,
+        source: String,
         span: SourceSpan,
     },
     Echo {
@@ -281,6 +282,7 @@ pub enum Expr {
     Call {
         name: String,
         arguments: Vec<Expr>,
+        source: String,
         span: SourceSpan,
     },
     DynamicCall {

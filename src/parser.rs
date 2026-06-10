@@ -31,6 +31,7 @@ const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
 pub fn parse(source: &str) -> Result<Program> {
     let tokens = lex(source)?;
     Parser {
+        source,
         tokens,
         index: 0,
         block_depth: 0,
@@ -39,7 +40,8 @@ pub fn parse(source: &str) -> Result<Program> {
     .parse_program()
 }
 
-struct Parser {
+struct Parser<'a> {
+    source: &'a str,
     tokens: Vec<Token>,
     index: usize,
     block_depth: usize,
@@ -52,7 +54,34 @@ struct ForeachVariable {
     span: SourceSpan,
 }
 
-impl Parser {
+fn assignment_op_from_token(kind: &TokenKind) -> Option<AssignmentOp> {
+    match kind {
+        TokenKind::Equal => Some(AssignmentOp::Assign),
+        TokenKind::QuestionQuestionEqual => Some(AssignmentOp::CoalesceAssign),
+        TokenKind::PlusEqual => Some(AssignmentOp::AddAssign),
+        TokenKind::MinusEqual => Some(AssignmentOp::SubtractAssign),
+        TokenKind::AsteriskEqual => Some(AssignmentOp::MultiplyAssign),
+        TokenKind::AsteriskAsteriskEqual => Some(AssignmentOp::PowerAssign),
+        TokenKind::SlashEqual => Some(AssignmentOp::DivideAssign),
+        TokenKind::PercentEqual => Some(AssignmentOp::ModuloAssign),
+        TokenKind::DotEqual => Some(AssignmentOp::ConcatAssign),
+        TokenKind::AmpersandEqual => Some(AssignmentOp::BitwiseAndAssign),
+        TokenKind::PipeEqual => Some(AssignmentOp::BitwiseOrAssign),
+        TokenKind::CaretEqual => Some(AssignmentOp::BitwiseXorAssign),
+        TokenKind::ShiftLeftEqual => Some(AssignmentOp::ShiftLeftAssign),
+        TokenKind::ShiftRightEqual => Some(AssignmentOp::ShiftRightAssign),
+        _ => None,
+    }
+}
+
+impl Parser<'_> {
+    fn source_for_span(&self, span: SourceSpan) -> String {
+        self.source
+            .get(span.byte_start..span.byte_end)
+            .unwrap_or_default()
+            .to_string()
+    }
+
     fn parse_program(&mut self) -> Result<Program> {
         self.expect_open_tag()?;
         let mut functions = Vec::new();
@@ -810,12 +839,14 @@ impl Parser {
         let TokenKind::Identifier(name) = token.kind else {
             return Err(Diagnostic::new("expected function name", Some(token.span)));
         };
-        let (arguments, _) = self.parse_call_arguments()?;
+        let (arguments, right_span) = self.parse_call_arguments()?;
+        let span = combine_spans(token.span, right_span);
         validate_mutating_array_internal_call(&name, &arguments, token.span)?;
         Ok(Statement::Call {
             name: name.to_ascii_lowercase(),
             arguments,
-            span: token.span,
+            source: self.source_for_span(span),
+            span,
         })
     }
 
@@ -1005,13 +1036,15 @@ impl Parser {
         let TokenKind::Identifier(name) = token.kind else {
             return Err(Diagnostic::new("expected function name", Some(token.span)));
         };
-        let (arguments, _) = self.parse_call_arguments()?;
+        let (arguments, right_span) = self.parse_call_arguments()?;
+        let span = combine_spans(token.span, right_span);
         validate_mutating_array_internal_call(&name, &arguments, token.span)?;
         self.expect_statement_terminator()?;
         Ok(Statement::Call {
             name: name.to_ascii_lowercase(),
             arguments,
-            span: token.span,
+            source: self.source_for_span(span),
+            span,
         })
     }
 
@@ -1121,11 +1154,8 @@ impl Parser {
         }
 
         let operator = self.advance().clone();
-        let op = match operator.kind {
-            TokenKind::Equal => AssignmentOp::Assign,
-            TokenKind::QuestionQuestionEqual => AssignmentOp::CoalesceAssign,
-            _ => unreachable!("peek_is_expression_assignment_op guards assignment token"),
-        };
+        let op = assignment_op_from_token(&operator.kind)
+            .expect("peek_is_expression_assignment_op guards assignment token");
         let left_span = left.span();
         let target = assignment_target_from_expr(left).map_err(|_| {
             Diagnostic::new(
@@ -1162,11 +1192,8 @@ impl Parser {
         let left = self.parse_binary_expr(SYMBOL_OR_PRECEDENCE)?;
         let value = if self.peek_is_expression_assignment_op() {
             let operator = self.advance().clone();
-            let op = match operator.kind {
-                TokenKind::Equal => AssignmentOp::Assign,
-                TokenKind::QuestionQuestionEqual => AssignmentOp::CoalesceAssign,
-                _ => unreachable!("peek_is_expression_assignment_op guards assignment token"),
-            };
+            let op = assignment_op_from_token(&operator.kind)
+                .expect("peek_is_expression_assignment_op guards assignment token");
             let left_span = left.span();
             let target = assignment_target_from_expr(left).map_err(|_| {
                 Diagnostic::new(
@@ -1402,6 +1429,7 @@ impl Parser {
                             Ok(Expr::Call {
                                 name: lowercase,
                                 arguments,
+                                source: self.source_for_span(combine_spans(token.span, right_span)),
                                 span: combine_spans(token.span, right_span),
                             })
                         }
@@ -1464,10 +1492,12 @@ impl Parser {
             ));
         }
         let (arguments, right_span) = self.parse_call_arguments()?;
+        let span = combine_spans(class_span, right_span);
         Ok(Expr::Call {
             name: format!("{}::{}", class_name, member_name),
             arguments,
-            span: combine_spans(class_span, right_span),
+            source: self.source_for_span(span),
+            span,
         })
     }
 
@@ -1979,50 +2009,16 @@ impl Parser {
 
     fn expect_assignment_op(&mut self) -> Result<AssignmentOp> {
         let token = self.advance();
-        match token.kind {
-            TokenKind::Equal => Ok(AssignmentOp::Assign),
-            TokenKind::QuestionQuestionEqual => Ok(AssignmentOp::CoalesceAssign),
-            TokenKind::PlusEqual => Ok(AssignmentOp::AddAssign),
-            TokenKind::MinusEqual => Ok(AssignmentOp::SubtractAssign),
-            TokenKind::AsteriskEqual => Ok(AssignmentOp::MultiplyAssign),
-            TokenKind::AsteriskAsteriskEqual => Ok(AssignmentOp::PowerAssign),
-            TokenKind::SlashEqual => Ok(AssignmentOp::DivideAssign),
-            TokenKind::PercentEqual => Ok(AssignmentOp::ModuloAssign),
-            TokenKind::DotEqual => Ok(AssignmentOp::ConcatAssign),
-            TokenKind::AmpersandEqual => Ok(AssignmentOp::BitwiseAndAssign),
-            TokenKind::PipeEqual => Ok(AssignmentOp::BitwiseOrAssign),
-            TokenKind::CaretEqual => Ok(AssignmentOp::BitwiseXorAssign),
-            TokenKind::ShiftLeftEqual => Ok(AssignmentOp::ShiftLeftAssign),
-            TokenKind::ShiftRightEqual => Ok(AssignmentOp::ShiftRightAssign),
-            _ => Err(Diagnostic::new("expected assignment", Some(token.span))),
-        }
+        assignment_op_from_token(&token.kind)
+            .ok_or_else(|| Diagnostic::new("expected assignment", Some(token.span)))
     }
 
     fn peek_is_assignment_op(&self) -> bool {
-        matches!(
-            self.peek().kind,
-            TokenKind::Equal
-                | TokenKind::QuestionQuestionEqual
-                | TokenKind::PlusEqual
-                | TokenKind::MinusEqual
-                | TokenKind::AsteriskEqual
-                | TokenKind::AsteriskAsteriskEqual
-                | TokenKind::SlashEqual
-                | TokenKind::PercentEqual
-                | TokenKind::DotEqual
-                | TokenKind::AmpersandEqual
-                | TokenKind::PipeEqual
-                | TokenKind::CaretEqual
-                | TokenKind::ShiftLeftEqual
-                | TokenKind::ShiftRightEqual
-        )
+        assignment_op_from_token(&self.peek().kind).is_some()
     }
 
     fn peek_is_expression_assignment_op(&self) -> bool {
-        matches!(
-            self.peek().kind,
-            TokenKind::Equal | TokenKind::QuestionQuestionEqual
-        )
+        self.peek_is_assignment_op()
     }
 
     fn expect_equal(&mut self) -> Result<SourceSpan> {
@@ -2692,6 +2688,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "_ptn_cow_debug_counter"
             | "_ptn_cow_debug_reset"
             | "var_dump"
+            | "assert"
             | "strlen"
             | "str_rot13"
             | "strcmp"
@@ -3151,6 +3148,7 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             name,
             arguments,
             span,
+            ..
         } if name.eq_ignore_ascii_case("list") => {
             let elements = arguments
                 .into_iter()
