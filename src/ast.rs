@@ -314,6 +314,11 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    Include {
+        path: Box<Expr>,
+        body: Vec<Statement>,
+        span: SourceSpan,
+    },
     Array {
         elements: Vec<ArrayElement>,
         span: SourceSpan,
@@ -439,7 +444,8 @@ impl Expr {
             | Expr::DynamicCall { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::NewObject { span, .. }
-            | Expr::PropertyFetch { span, .. } => *span,
+            | Expr::PropertyFetch { span, .. }
+            | Expr::Include { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,

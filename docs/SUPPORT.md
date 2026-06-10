@@ -346,6 +346,11 @@ supports in generated native binaries.
 - Script-level `return;` and `return expr;` statements. Optional return
   expressions are evaluated through the current boxed expression path, then the
   generated native program frees runtime state and exits successfully.
+- Literal `include "path"` and `include("path")` expressions are expanded at
+  compile time for PHP files relative to the including file. Included statements
+  execute in the current runtime variable scope; fallthrough returns `1`, bare
+  `return;` returns `null`, and `return expr;` returns the boxed expression to
+  the include expression while the caller continues.
 - `while (expr) statement` loops where the condition and braced or
   single-statement body use the currently supported scalar expression and
   statement subset.
@@ -439,8 +444,9 @@ supports in generated native binaries.
   constructs, and exception/finally control-flow edges.
 - Object `Traversable`, destructuring foreach targets, and PHP-exact
   `foreach` diagnostics outside the current array/non-array warning lane.
-- PHP-exact `return` value propagation for includes/functions and return
-  inside unsupported function/class contexts.
+- PHP-exact `return` value propagation for dynamic includes, require/
+  include-once forms, functions beyond the modeled direct-call/closure slices,
+  and return inside unsupported function/class contexts.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
 - Increment/decrement as expressions, including pre/post result values in echo,
@@ -463,7 +469,8 @@ supports in generated native binaries.
   storage slice, including default arguments, variadics, named arguments,
   by-reference returns, nested or conditional declarations, closures, instance
   methods, full class metadata, namespaces, globals, static locals, and
-  PHP-exact function/include return propagation.
+  PHP-exact function return propagation outside modeled slices plus dynamic
+  include/require return propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Unsupported recursive arrays, full class/object metadata, resources,
   complete reference identity, copy-on-write, and `var_dump()` reference

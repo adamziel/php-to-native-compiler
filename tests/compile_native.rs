@@ -8793,6 +8793,80 @@ fn compile_return_statement_exits_script_to_native_binary() {
 }
 
 #[test]
+fn compile_literal_include_expression_return_values_to_native_binary() {
+    let root = temp_dir("ptn-native-literal-include-return-values");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("inc-return.php"),
+        "<?php\n\
+echo \"inc-return\\n\";\n\
+$fromInclude = $fromMain . \"-seen\";\n\
+return \"ret\";\n\
+echo \"unreached\\n\";\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("inc-fallthrough.php"),
+        "<?php echo \"inc-fallthrough\\n\";\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("inc-null.php"),
+        "<?php echo \"inc-null\\n\"; return; echo \"unreached\\n\";\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("inc-closure.php"),
+        "<?php echo \"inc-closure\\n\"; return 42;\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("inc-index.php"),
+        "<?php echo \"inc-index\\n\"; return 5;\n",
+    )
+    .unwrap();
+    let input = root.join("main.php");
+    let output = root.join("include-return-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$fromMain = \"main\";\n\
+var_dump(include \"inc-return.php\");\n\
+var_dump($fromInclude);\n\
+var_dump(include(\"inc-fallthrough.php\"));\n\
+var_dump(include \"inc-null.php\");\n\
+$bucket = [];\n\
+$bucket[include \"inc-index.php\"] = \"indexed\";\n\
+var_dump($bucket[5]);\n\
+$loader = function () { return include \"inc-closure.php\"; };\n\
+var_dump($loader());\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "inc-return\n\
+string(3) \"ret\"\n\
+string(9) \"main-seen\"\n\
+inc-fallthrough\n\
+int(1)\n\
+inc-null\n\
+NULL\n\
+inc-index\n\
+string(7) \"indexed\"\n\
+inc-closure\n\
+int(42)\n\
+after\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_expression_statements_evaluate_and_discard_to_native_binary() {
     let root = temp_dir("ptn-native-expression-statements");
     fs::create_dir_all(&root).unwrap();

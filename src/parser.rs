@@ -312,6 +312,24 @@ impl Parser {
         }))
     }
 
+    fn parse_include_expr(&mut self, span: SourceSpan) -> Result<Expr> {
+        let (path, right_span) = if matches!(self.peek().kind, TokenKind::LeftParen) {
+            self.advance();
+            let path = self.parse_expr()?;
+            let right_span = self.expect_right_paren()?;
+            (path, right_span)
+        } else {
+            let path = self.parse_expr()?;
+            let right_span = path.span();
+            (path, right_span)
+        };
+        Ok(Expr::Include {
+            path: Box::new(path),
+            body: Vec::new(),
+            span: combine_spans(span, right_span),
+        })
+    }
+
     fn parse_function_parameters(&mut self) -> Result<Vec<FunctionParameter>> {
         self.expect_left_paren()?;
         let mut parameters = Vec::new();
@@ -1422,7 +1440,9 @@ impl Parser {
             TokenKind::Function => self.parse_anonymous_function_expr(token.span),
             TokenKind::Identifier(name) => {
                 let lowercase = name.to_ascii_lowercase();
-                if lowercase == "new" {
+                if lowercase == "include" {
+                    self.parse_include_expr(token.span)
+                } else if lowercase == "new" {
                     self.parse_new_object_expr(token.span)
                 } else if matches!(self.peek().kind, TokenKind::DoubleColon) {
                     self.parse_static_member_expr(name, token.span)
@@ -2466,6 +2486,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::MethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::PropertyFetch { .. }
+        | Expr::Include { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. }
@@ -2727,6 +2748,10 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         }
         Expr::PropertyFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
+        }
+        Expr::Include { path, body, .. } => {
+            validate_anonymous_functions_in_expr(path, functions)?;
+            validate_anonymous_functions_in_statements(body, functions)?;
         }
         Expr::Array { elements, .. } => {
             for element in elements {
@@ -3563,6 +3588,9 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::PropertyFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
+        Expr::Include { path, .. } => {
+            reject_append_array_read(path)?;
+        }
         Expr::Array { elements, .. } => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -3646,6 +3674,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::MethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::PropertyFetch { .. }
+        | Expr::Include { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,

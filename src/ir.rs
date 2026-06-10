@@ -226,6 +226,10 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    Include {
+        body: Vec<Instruction>,
+        line: usize,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<ValueExpr>,
@@ -1025,6 +1029,10 @@ impl LoweringContext {
             } => ValueExpr::PropertyFetch {
                 receiver: Box::new(self.lower_expr(receiver)),
                 name: name.clone(),
+                line: span.line,
+            },
+            Expr::Include { body, span, .. } => ValueExpr::Include {
+                body: self.lower_statements(body),
                 line: span.line,
             },
             Expr::Unary { op, expr, span } => ValueExpr::Unary {

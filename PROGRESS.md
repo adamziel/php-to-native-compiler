@@ -1,17 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:28Z
-Measured: `ptn-107` rebased on `origin/master@51e3314d`; anonymous callback
-closures, static callables, string-callable callbacks, recursive directory
-APIs, bounded `stdClass` property evidence, and non-array `foreach`
-source-path diagnostics.
+Refresh: 2026-06-10T14:49Z
+Measured: `ptn-5k9` on `origin/master@df737c70`; callback closures,
+static/string callables, recursive directory APIs, `stdClass`
+properties, non-array `foreach` diagnostics, and literal include
+return propagation.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 368 | 368 | 0 |
+| Native compiled PHP snippets | 369 | 369 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -54,7 +54,9 @@ offset-form `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, and `new stdClass` boxed objects with public dynamic
-property reads/writes shared through object aliases.
+property reads/writes shared through object aliases, plus compile-time literal
+`include` expressions whose bodies share runtime variables and return `1`,
+`null`, or returned expressions while the caller continues.
 
 ## Still Needed
 
@@ -62,9 +64,9 @@ Remaining COW PHPT gaps are Closure `use` captures and `array_reduce()`
 accumulator/refcount behavior. Broader bounded-PHPT gaps are full class
 declarations/metadata, instance methods, visibility/inheritance/static
 properties/magic methods, non-static method callable values, unsupported
-array/string internals, 64-bit operator exactness, object/destructuring
-foreach diagnostics, object/property compound lvalues, scalar offset-lvalue
-fatal parity, and broader file APIs.
+array/string internals, dynamic/once/require include forms, 64-bit operator
+exactness, object/destructuring foreach diagnostics, object/property compound
+lvalues, scalar offset-lvalue fatal parity, and broader file APIs.
 
 ## Verification
 

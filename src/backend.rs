@@ -1613,6 +1613,9 @@ fn collect_value_runtime_requirements(
         ValueExpr::PropertyFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
+        ValueExpr::Include { body, .. } => {
+            collect_instructions_runtime_requirements(body, functions, requirements);
+        }
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             collect_value_runtime_requirements(expr, functions, requirements);
         }
@@ -2156,6 +2159,9 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .any(|argument| value_mentions_variable(argument, name))
         }
         ValueExpr::PropertyFetch { receiver, .. } => value_mentions_variable(receiver, name),
+        ValueExpr::Include { body, .. } => body
+            .iter()
+            .any(|instruction| instruction_mentions_variable(instruction, name)),
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             value_mentions_variable(expr, name)
         }
@@ -2170,6 +2176,125 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::Closure { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => false,
+    }
+}
+
+fn instruction_mentions_variable(instruction: &Instruction, name: &str) -> bool {
+    match instruction {
+        Instruction::Store {
+            name: target,
+            value,
+        } => target == name || value_mentions_variable(value, name),
+        Instruction::StoreRef {
+            name: target,
+            source,
+            ..
+        } => target == name || value_mentions_variable(source, name),
+        Instruction::StoreArrayDim {
+            array,
+            dimensions,
+            value,
+            ..
+        } => {
+            array == name
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+                || value_mentions_variable(value, name)
+        }
+        Instruction::StoreArrayDimRef { target, source } => {
+            target.array == name || value_mentions_variable(source, name)
+        }
+        Instruction::DefineConstant { value, .. }
+        | Instruction::Expression(value)
+        | Instruction::Echo(value) => value_mentions_variable(value, name),
+        Instruction::Increment { name: target, .. }
+        | Instruction::UnsetVariable { name: target } => target == name,
+        Instruction::UnsetArrayDim {
+            array, dimensions, ..
+        } => {
+            array == name
+                || dimensions
+                    .iter()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
+        Instruction::InternalCall { arguments, .. } => arguments
+            .iter()
+            .any(|argument| value_mentions_variable(argument, name)),
+        Instruction::Return { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| value_mentions_variable(value, name)),
+        Instruction::Try { body, catches } => {
+            body.iter()
+                .any(|instruction| instruction_mentions_variable(instruction, name))
+                || catches.iter().any(|catch| {
+                    catch
+                        .body
+                        .iter()
+                        .any(|instruction| instruction_mentions_variable(instruction, name))
+                })
+        }
+        Instruction::Branch {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            value_mentions_variable(condition, name)
+                || then_body
+                    .iter()
+                    .any(|instruction| instruction_mentions_variable(instruction, name))
+                || else_body
+                    .iter()
+                    .any(|instruction| instruction_mentions_variable(instruction, name))
+        }
+        Instruction::While { condition, body } | Instruction::DoWhile { body, condition } => {
+            value_mentions_variable(condition, name)
+                || body
+                    .iter()
+                    .any(|instruction| instruction_mentions_variable(instruction, name))
+        }
+        Instruction::For {
+            initializers,
+            condition,
+            updates,
+            body,
+        } => {
+            initializers
+                .iter()
+                .any(|instruction| instruction_mentions_variable(instruction, name))
+                || condition
+                    .as_ref()
+                    .is_some_and(|condition| value_mentions_variable(condition, name))
+                || updates
+                    .iter()
+                    .any(|instruction| instruction_mentions_variable(instruction, name))
+                || body
+                    .iter()
+                    .any(|instruction| instruction_mentions_variable(instruction, name))
+        }
+        Instruction::Foreach { iterable, body, .. } => {
+            value_mentions_variable(iterable, name)
+                || body
+                    .iter()
+                    .any(|instruction| instruction_mentions_variable(instruction, name))
+        }
+        Instruction::Switch { expression, cases } => {
+            value_mentions_variable(expression, name)
+                || cases.iter().any(|case| {
+                    case.condition
+                        .as_ref()
+                        .is_some_and(|condition| value_mentions_variable(condition, name))
+                        || case
+                            .body
+                            .iter()
+                            .any(|instruction| instruction_mentions_variable(instruction, name))
+                })
+        }
+        Instruction::Break { .. }
+        | Instruction::Continue { .. }
+        | Instruction::Label { .. }
+        | Instruction::Goto { .. } => false,
     }
 }
 
@@ -2963,6 +3088,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_property_fetch(out, receiver, name, *line),
+            ValueExpr::Include { body, line } => self.emit_include(out, body, *line),
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
             ValueExpr::Empty { target } => self.emit_empty(out, target),
             ValueExpr::Load { name, line } => format!(
@@ -3017,6 +3143,44 @@ impl ValueEmitter {
                 line,
             } => self.emit_method_call(out, receiver, name, arguments, *line),
         }
+    }
+
+    fn emit_include(&mut self, out: &mut String, body: &[Instruction], _line: usize) -> String {
+        let result_temp = self.next_temp();
+        let return_label = self.next_label("ptn_include_return");
+        let source_path = self.source_file.clone();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    {\n");
+        out.push_str("        PtnValue ptn_return_value = ptn_int(1);\n");
+        let mut control_targets = Vec::new();
+        let outer_return_by_ref = self.current_function_return_by_ref;
+        self.current_function_return_by_ref = false;
+        for instruction in body {
+            emit_instruction(
+                out,
+                self,
+                instruction,
+                &mut control_targets,
+                &source_path,
+                Some(&return_label),
+            );
+        }
+        self.current_function_return_by_ref = outer_return_by_ref;
+        out.push_str("        if (0) { goto ");
+        out.push_str(&return_label);
+        out.push_str("; }\n");
+        out.push_str("        ");
+        out.push_str(&return_label);
+        out.push_str(":\n");
+        out.push_str("        ;\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone(ptn_value_deref(ptn_return_value));\n");
+        out.push_str("        ptn_value_drop(&ptn_return_value);\n");
+        out.push_str("    }\n");
+        result_temp
     }
 
     fn emit_new_object(
@@ -3897,6 +4061,7 @@ impl ValueEmitter {
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }
                 | ValueExpr::MethodCall { .. }
+                | ValueExpr::Include { .. }
         ) {
             return self.emit_value(out, value);
         }
