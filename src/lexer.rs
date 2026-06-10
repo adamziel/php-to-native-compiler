@@ -155,6 +155,10 @@ impl<'a> Lexer<'a> {
                     self.skip_line();
                     continue;
                 }
+                if ch.is_whitespace() {
+                    self.bump_char();
+                    continue;
+                }
                 if self.rest().starts_with("<?php") {
                     self.push_open_tag();
                     continue;

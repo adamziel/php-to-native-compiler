@@ -1287,6 +1287,31 @@ fn parser_accepts_reference_array_literal_values() {
 }
 
 #[test]
+fn parser_accepts_whitespace_prelude_and_reference_array_entries() {
+    let program = parser::parse("\n\t <?php $items = [&$a, \"k\" => &$b];").unwrap();
+    let Statement::Assign {
+        name,
+        value: Expr::Array { elements, .. },
+        ..
+    } = &program.statements[0]
+    else {
+        panic!("expected array assignment");
+    };
+
+    assert_eq!(name, "items");
+    assert_eq!(elements.len(), 2);
+    assert!(matches!(
+        &elements[0].value,
+        ArrayElementValue::Reference(ReferenceTarget::Variable { name, .. }) if name == "a"
+    ));
+    assert!(matches!(&elements[1].key, Some(Expr::String(key, _)) if key == "k"));
+    assert!(matches!(
+        &elements[1].value,
+        ArrayElementValue::Reference(ReferenceTarget::Variable { name, .. }) if name == "b"
+    ));
+}
+
+#[test]
 fn parser_accepts_long_array_literals_and_isset_empty_constructs() {
     let program = parser::parse(
         "<?php var_dump(isset($items[0], array('k' => 1)['k']), empty($items['missing']));",
@@ -5416,6 +5441,35 @@ var_dump($post);",
             "  int(4)\n",
             "}\n"
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_temporary_reference_array_literal_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-temp-reference-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-temp-reference-array.php");
+    let output = root.join("foreach-temp-reference-array-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = 'a';\n\
+$b = 'b';\n\
+foreach ([&$a, &$b] as &$value) {\n\
+    $value .= '-foo';\n\
+}\n\
+var_dump($a, $b);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"a-foo\"\nstring(5) \"b-foo\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
