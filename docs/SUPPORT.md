@@ -204,6 +204,9 @@ supports in generated native binaries.
 - Direct variable reference aliases, single-dimension array element references,
   array literal reference elements, and by-value copies near references, with
   unsupported recursive/non-lvalue reference forms rejected explicitly.
+  Recursive array-literal references to the assigned array and same-array
+  element reference aliases are still unsupported and fail before code
+  generation with explicit diagnostics.
 - `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, `string(length) "value"`, and ordered literal
   arrays. Finite floats use the shortest decimal spelling that round-trips to

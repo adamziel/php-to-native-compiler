@@ -297,6 +297,12 @@ impl Parser {
                         Some(target.span),
                     ));
                 }
+                if reference_target_is_array_dim_of(&source, &target.array) {
+                    return Err(Diagnostic::new(
+                        "same-array element references are unsupported",
+                        Some(target.span),
+                    ));
+                }
                 self.expect_statement_terminator()?;
                 return Ok(Statement::ArrayAssignRef {
                     target,
@@ -305,6 +311,12 @@ impl Parser {
                 });
             }
             let value = self.parse_assignment_value_expr()?;
+            if matches!(op, AssignmentOp::Assign) {
+                validate_recursive_reference_assignment_value(
+                    &AssignmentTarget::ArrayDim(target.clone()),
+                    &value,
+                )?;
+            }
             self.expect_statement_terminator()?;
             return Ok(Statement::ArrayAssign {
                 target,
@@ -335,6 +347,15 @@ impl Parser {
             });
         }
         let value = self.parse_assignment_value_expr()?;
+        if matches!(op, AssignmentOp::Assign) {
+            validate_recursive_reference_assignment_value(
+                &AssignmentTarget::Variable {
+                    name: name.clone(),
+                    span: token.span,
+                },
+                &value,
+            )?;
+        }
         self.expect_statement_terminator()?;
         Ok(Statement::Assign {
             name,
@@ -1026,6 +1047,9 @@ impl Parser {
             )
         })?;
         reject_unsupported_coalesce_assignment_target(op, &target, operator.span)?;
+        if matches!(op, AssignmentOp::Assign) {
+            validate_recursive_reference_assignment_value(&target, &value)?;
+        }
         let span = combine_spans(left_span, value.span());
         Ok(Expr::Assign {
             target,
@@ -1053,6 +1077,9 @@ impl Parser {
                 )
             })?;
             reject_unsupported_coalesce_assignment_target(op, &target, operator.span)?;
+            if matches!(op, AssignmentOp::Assign) {
+                validate_recursive_reference_assignment_value(&target, &right)?;
+            }
             let span = combine_spans(left_span, right.span());
             Expr::Assign {
                 target,
@@ -2078,6 +2105,104 @@ fn reference_target_is_variable(target: &ReferenceTarget, variable: &str) -> boo
 
 fn reference_target_is_array_dim_of(target: &ReferenceTarget, variable: &str) -> bool {
     matches!(target, ReferenceTarget::ArrayDim(target) if target.array == variable)
+}
+
+fn validate_recursive_reference_assignment_value(
+    target: &AssignmentTarget,
+    value: &Expr,
+) -> Result<()> {
+    let variable = match target {
+        AssignmentTarget::Variable { name, .. } => name,
+        AssignmentTarget::ArrayDim(target) => &target.array,
+        AssignmentTarget::List(_) => return Ok(()),
+    };
+    if let Some(diagnostic) = expr_array_literal_reference_to_variable(value, variable) {
+        return Err(diagnostic.into_diagnostic());
+    }
+    Ok(())
+}
+
+enum RecursiveReferenceDiagnostic {
+    RecursiveArray(SourceSpan),
+    SameArrayElement(SourceSpan),
+}
+
+impl RecursiveReferenceDiagnostic {
+    fn into_diagnostic(self) -> Diagnostic {
+        match self {
+            RecursiveReferenceDiagnostic::RecursiveArray(span) => {
+                Diagnostic::new("recursive array references are unsupported", Some(span))
+            }
+            RecursiveReferenceDiagnostic::SameArrayElement(span) => {
+                Diagnostic::new("same-array element references are unsupported", Some(span))
+            }
+        }
+    }
+}
+
+fn expr_array_literal_reference_to_variable(
+    expr: &Expr,
+    variable: &str,
+) -> Option<RecursiveReferenceDiagnostic> {
+    match expr {
+        Expr::Array { elements, .. } => elements
+            .iter()
+            .find_map(|element| array_element_reference_to_variable(element, variable)),
+        Expr::Assign { value, .. } | Expr::Grouped { expr: value, .. } => {
+            expr_array_literal_reference_to_variable(value, variable)
+        }
+        Expr::String(_, _)
+        | Expr::InterpolatedString(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _)
+        | Expr::Call { .. }
+        | Expr::DynamicCall { .. }
+        | Expr::MethodCall { .. }
+        | Expr::ArrayAccess { .. }
+        | Expr::Isset { .. }
+        | Expr::Empty { .. }
+        | Expr::Unary { .. }
+        | Expr::Cast { .. }
+        | Expr::Binary { .. } => None,
+    }
+}
+
+fn array_element_reference_to_variable(
+    element: &ArrayElement,
+    variable: &str,
+) -> Option<RecursiveReferenceDiagnostic> {
+    element
+        .key
+        .as_ref()
+        .and_then(|key| expr_array_literal_reference_to_variable(key, variable))
+        .or_else(|| match &element.value {
+            ArrayElementValue::Reference(target) => {
+                reference_target_reference_to_variable(target, variable)
+            }
+            ArrayElementValue::Value(value) => {
+                expr_array_literal_reference_to_variable(value, variable)
+            }
+        })
+}
+
+fn reference_target_reference_to_variable(
+    target: &ReferenceTarget,
+    variable: &str,
+) -> Option<RecursiveReferenceDiagnostic> {
+    match target {
+        ReferenceTarget::Variable { name, span } if name == variable => {
+            Some(RecursiveReferenceDiagnostic::RecursiveArray(*span))
+        }
+        ReferenceTarget::ArrayDim(target) if target.array == variable => {
+            Some(RecursiveReferenceDiagnostic::SameArrayElement(target.span))
+        }
+        _ => None,
+    }
 }
 
 fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {

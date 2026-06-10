@@ -12,6 +12,127 @@ struct CowReducerCase {
     expected_stdout: &'static str,
 }
 
+struct CowDiagnosticReducerCase {
+    name: &'static str,
+    oracle: &'static str,
+    source: &'static str,
+    expected_diagnostic: &'static str,
+}
+
+#[test]
+fn recursive_reference_diagnostic_reducers_fail_before_codegen() {
+    let cases = [
+        CowDiagnosticReducerCase {
+            name: "recursive_array_append_self",
+            oracle: "PHP oracle: array append by reference to itself creates recursion",
+            source: "<?php\n$array = [];\n$array[] =& $array;",
+            expected_diagnostic: "recursive array references are unsupported",
+        },
+        CowDiagnosticReducerCase {
+            name: "same_array_append_element_reference",
+            oracle:
+                "PHP oracle: appending a reference to an existing slot aliases same-array entries",
+            source: "<?php\n$array = [1];\n$array[] =& $array[0];",
+            expected_diagnostic: "same-array element references are unsupported",
+        },
+        CowDiagnosticReducerCase {
+            name: "same_array_element_reference_assignment",
+            oracle:
+                "PHP oracle: assigning one slot by reference to another aliases same-array entries",
+            source: "<?php\n$array = [1, 2];\n$array[0] =& $array[1];",
+            expected_diagnostic: "same-array element references are unsupported",
+        },
+        CowDiagnosticReducerCase {
+            name: "recursive_array_literal_self",
+            oracle:
+                "PHP oracle: array literal value reference to assigned variable creates recursion",
+            source: "<?php\n$array = [&$array];",
+            expected_diagnostic: "recursive array references are unsupported",
+        },
+        CowDiagnosticReducerCase {
+            name: "recursive_array_literal_keyed_self",
+            oracle:
+                "PHP oracle: keyed array literal reference to assigned variable creates recursion",
+            source: "<?php\n$array = [\"self\" => &$array];",
+            expected_diagnostic: "recursive array references are unsupported",
+        },
+        CowDiagnosticReducerCase {
+            name: "recursive_array_literal_nested_self",
+            oracle:
+                "PHP oracle: nested array literal reference to assigned variable creates recursion",
+            source: "<?php\n$array = [[&$array]];",
+            expected_diagnostic: "recursive array references are unsupported",
+        },
+        CowDiagnosticReducerCase {
+            name: "recursive_array_element_literal_self",
+            oracle:
+                "PHP oracle: assigning a literal that references the target array creates recursion",
+            source: "<?php\n$array = [];\n$array[] = [&$array];",
+            expected_diagnostic: "recursive array references are unsupported",
+        },
+        CowDiagnosticReducerCase {
+            name: "same_array_literal_element_reference",
+            oracle:
+                "PHP oracle: array literal value reference to an assigned array element aliases same-array state",
+            source: "<?php\n$array = [&$array[0]];",
+            expected_diagnostic: "same-array element references are unsupported",
+        },
+        CowDiagnosticReducerCase {
+            name: "same_array_element_literal_element_reference",
+            oracle:
+                "PHP oracle: assigning a literal with a same-array element reference aliases same-array state",
+            source: "<?php\n$array = [];\n$array[] = [&$array[0]];",
+            expected_diagnostic: "same-array element references are unsupported",
+        },
+    ];
+
+    let root = temp_dir("ptn-native-recursive-reference-diagnostic-reducers");
+    fs::create_dir_all(&root).unwrap();
+
+    let expected = cases.len();
+    let mut passed = 0usize;
+    for case in cases {
+        let input = root.join(format!("{}.php", case.name));
+        let output = root.join(format!("{}-bin", case.name));
+        fs::write(&input, case.source).unwrap();
+
+        match compile_file(&input, &output, CompileOptions { emit_c: false }) {
+            Ok(_) => {
+                panic!(
+                    "{} ({}) compiled successfully; expected diagnostic",
+                    case.name, case.oracle
+                );
+            }
+            Err(error) => {
+                let actual = error.to_string();
+                if actual.contains(case.expected_diagnostic) {
+                    passed += 1;
+                    continue;
+                }
+
+                assert!(
+                    actual.contains(case.expected_diagnostic),
+                    "{} ({}) diagnostic mismatch\nexpected substring: {}\nactual: {}",
+                    case.name,
+                    case.oracle,
+                    case.expected_diagnostic,
+                    actual
+                );
+            }
+        }
+    }
+
+    assert_eq!(
+        passed, expected,
+        "recursive reference diagnostic reducer pass count changed"
+    );
+    let failed = expected - passed;
+    assert_eq!(
+        failed, 0,
+        "recursive reference diagnostic reducer fail count changed"
+    );
+}
+
 #[test]
 fn compile_focused_cow_reducers_to_native_binary() {
     let cases = [

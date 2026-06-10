@@ -1303,6 +1303,59 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "recursive array references are unsupported"
     );
 
+    let same_array_append =
+        parser::parse("<?php $array = [1]; $array[] =& $array[0];").unwrap_err();
+    assert_eq!(
+        same_array_append.message,
+        "same-array element references are unsupported"
+    );
+
+    let same_array_element =
+        parser::parse("<?php $array = [1, 2]; $array[0] =& $array[1];").unwrap_err();
+    assert_eq!(
+        same_array_element.message,
+        "same-array element references are unsupported"
+    );
+
+    let recursive_array_literal = parser::parse("<?php $array = [&$array];").unwrap_err();
+    assert_eq!(
+        recursive_array_literal.message,
+        "recursive array references are unsupported"
+    );
+
+    let keyed_recursive_array_literal =
+        parser::parse("<?php $array = ['self' => &$array];").unwrap_err();
+    assert_eq!(
+        keyed_recursive_array_literal.message,
+        "recursive array references are unsupported"
+    );
+
+    let nested_recursive_array_literal = parser::parse("<?php $array = [[&$array]];").unwrap_err();
+    assert_eq!(
+        nested_recursive_array_literal.message,
+        "recursive array references are unsupported"
+    );
+
+    let recursive_array_element_literal =
+        parser::parse("<?php $array = []; $array[] = [&$array];").unwrap_err();
+    assert_eq!(
+        recursive_array_element_literal.message,
+        "recursive array references are unsupported"
+    );
+
+    let same_array_element_literal = parser::parse("<?php $array = [&$array[0]];").unwrap_err();
+    assert_eq!(
+        same_array_element_literal.message,
+        "same-array element references are unsupported"
+    );
+
+    let same_array_element_append_literal =
+        parser::parse("<?php $array = []; $array[] = [&$array[0]];").unwrap_err();
+    assert_eq!(
+        same_array_element_append_literal.message,
+        "same-array element references are unsupported"
+    );
+
     let nested_array_reference = parser::parse("<?php $array[0][1] =& $value;").unwrap_err();
     assert_eq!(
         nested_array_reference.message,

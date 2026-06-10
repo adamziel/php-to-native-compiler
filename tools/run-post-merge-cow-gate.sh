@@ -44,6 +44,15 @@ diagnostic_cases=(
     unsupported_foreach_destructuring
     unsupported_by_reference_return
     unsupported_reference_assignment_from_call
+    unsupported_recursive_array_append_self
+    unsupported_same_array_append_element_reference
+    unsupported_same_array_element_reference_assignment
+    unsupported_recursive_array_literal_self
+    unsupported_recursive_array_literal_keyed_self
+    unsupported_recursive_array_literal_nested_self
+    unsupported_recursive_array_element_literal_self
+    unsupported_same_array_literal_element_reference
+    unsupported_same_array_element_literal_element_reference
 )
 
 coverage() {
@@ -92,6 +101,33 @@ coverage() {
             ;;
         unsupported_reference_assignment_from_call)
             printf 'diagnostic: by-reference assignment from call results remains explicit unsupported behavior\n'
+            ;;
+        unsupported_recursive_array_append_self)
+            printf 'diagnostic: array append by reference to itself remains explicit unsupported behavior\n'
+            ;;
+        unsupported_same_array_append_element_reference)
+            printf 'diagnostic: appending a same-array element reference remains explicit unsupported behavior\n'
+            ;;
+        unsupported_same_array_element_reference_assignment)
+            printf 'diagnostic: same-array element reference assignment remains explicit unsupported behavior\n'
+            ;;
+        unsupported_recursive_array_literal_self)
+            printf 'diagnostic: array literal reference to assigned variable remains explicit unsupported behavior\n'
+            ;;
+        unsupported_recursive_array_literal_keyed_self)
+            printf 'diagnostic: keyed array literal reference to assigned variable remains explicit unsupported behavior\n'
+            ;;
+        unsupported_recursive_array_literal_nested_self)
+            printf 'diagnostic: nested array literal reference to assigned variable remains explicit unsupported behavior\n'
+            ;;
+        unsupported_recursive_array_element_literal_self)
+            printf 'diagnostic: array-element literal reference to containing array remains explicit unsupported behavior\n'
+            ;;
+        unsupported_same_array_literal_element_reference)
+            printf 'diagnostic: array literal reference to a same-array element remains explicit unsupported behavior\n'
+            ;;
+        unsupported_same_array_element_literal_element_reference)
+            printf 'diagnostic: array-element literal reference to a same-array element remains explicit unsupported behavior\n'
             ;;
         *)
             return 1
@@ -286,6 +322,65 @@ function make_value() {
 $ref =& make_value();
 PHP
             ;;
+        unsupported_recursive_array_append_self)
+            cat >"$path" <<'PHP'
+<?php
+$array = [];
+$array[] =& $array;
+PHP
+            ;;
+        unsupported_same_array_append_element_reference)
+            cat >"$path" <<'PHP'
+<?php
+$array = [1];
+$array[] =& $array[0];
+PHP
+            ;;
+        unsupported_same_array_element_reference_assignment)
+            cat >"$path" <<'PHP'
+<?php
+$array = [1, 2];
+$array[0] =& $array[1];
+PHP
+            ;;
+        unsupported_recursive_array_literal_self)
+            cat >"$path" <<'PHP'
+<?php
+$array = [&$array];
+PHP
+            ;;
+        unsupported_recursive_array_literal_keyed_self)
+            cat >"$path" <<'PHP'
+<?php
+$array = ["self" => &$array];
+PHP
+            ;;
+        unsupported_recursive_array_literal_nested_self)
+            cat >"$path" <<'PHP'
+<?php
+$array = [[&$array]];
+PHP
+            ;;
+        unsupported_recursive_array_element_literal_self)
+            cat >"$path" <<'PHP'
+<?php
+$array = [];
+$array[] = [&$array];
+PHP
+            ;;
+        unsupported_same_array_literal_element_reference)
+            cat >"$path" <<'PHP'
+<?php
+$array = [&$array[0]];
+PHP
+            ;;
+        unsupported_same_array_element_literal_element_reference)
+            cat >"$path" <<'PHP'
+<?php
+$array = [];
+$array[] = [&$array[0]];
+PHP
+            ;;
         *)
             echo "unknown diagnostic case: $name" >&2
             return 1
@@ -306,6 +401,33 @@ expected_diagnostic() {
             ;;
         unsupported_reference_assignment_from_call)
             printf 'unsupported by-reference assignment target\n'
+            ;;
+        unsupported_recursive_array_append_self)
+            printf 'recursive array references are unsupported\n'
+            ;;
+        unsupported_same_array_append_element_reference)
+            printf 'same-array element references are unsupported\n'
+            ;;
+        unsupported_same_array_element_reference_assignment)
+            printf 'same-array element references are unsupported\n'
+            ;;
+        unsupported_recursive_array_literal_self)
+            printf 'recursive array references are unsupported\n'
+            ;;
+        unsupported_recursive_array_literal_keyed_self)
+            printf 'recursive array references are unsupported\n'
+            ;;
+        unsupported_recursive_array_literal_nested_self)
+            printf 'recursive array references are unsupported\n'
+            ;;
+        unsupported_recursive_array_element_literal_self)
+            printf 'recursive array references are unsupported\n'
+            ;;
+        unsupported_same_array_literal_element_reference)
+            printf 'same-array element references are unsupported\n'
+            ;;
+        unsupported_same_array_element_literal_element_reference)
+            printf 'same-array element references are unsupported\n'
             ;;
         *)
             return 1
