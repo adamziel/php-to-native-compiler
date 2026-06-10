@@ -432,7 +432,17 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
             Statement::ArrayAssign {
                 target, op, value, ..
             } => {
-                instructions.push(lower_array_dim_store(target, *op, value));
+                if matches!(op, AssignmentOp::CoalesceAssign) {
+                    instructions.push(Instruction::Expression(ValueExpr::Assign {
+                        target: lower_assignment_target(&AstAssignmentTarget::ArrayDim(
+                            target.clone(),
+                        )),
+                        op: *op,
+                        value: Box::new(lower_expr(value)),
+                    }));
+                } else {
+                    instructions.push(lower_array_dim_store(target, *op, value));
+                }
             }
             Statement::ArrayAssignRef { target, source, .. } => {
                 instructions.push(Instruction::StoreArrayDimRef {
@@ -712,7 +722,7 @@ fn assignment_op_binary_op(op: AssignmentOp) -> Option<BinaryOp> {
     match op {
         AssignmentOp::Assign => None,
         AssignmentOp::CoalesceAssign => {
-            unreachable!("parser rejects null coalescing assignment for array dimensions")
+            unreachable!("null coalescing assignment lowers through ValueExpr::Assign")
         }
         AssignmentOp::AddAssign => Some(BinaryOp::Add),
         AssignmentOp::SubtractAssign => Some(BinaryOp::Subtract),

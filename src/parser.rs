@@ -276,12 +276,19 @@ impl Parser {
             let op_span = self.peek().span;
             let op = self.expect_assignment_op()?;
             if matches!(op, AssignmentOp::CoalesceAssign) {
-                reject_unsupported_coalesce_assignment_target(
+                validate_coalesce_assignment_target(
                     op,
-                    &AssignmentTarget::ArrayDim(target),
+                    &AssignmentTarget::ArrayDim(target.clone()),
                     op_span,
                 )?;
-                unreachable!("offset null coalescing assignment is rejected");
+                let value = self.parse_assignment_value_expr()?;
+                self.expect_statement_terminator()?;
+                return Ok(Statement::ArrayAssign {
+                    target,
+                    op,
+                    value,
+                    span: token.span,
+                });
             }
             if matches!(op, AssignmentOp::Assign)
                 && matches!(self.peek().kind, TokenKind::Ampersand)
@@ -1034,7 +1041,7 @@ impl Parser {
                 Some(operator.span),
             )
         })?;
-        reject_unsupported_coalesce_assignment_target(op, &target, operator.span)?;
+        validate_coalesce_assignment_target(op, &target, operator.span)?;
         if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             let source = self.parse_reference_source()?;
@@ -1075,7 +1082,7 @@ impl Parser {
                     Some(operator.span),
                 )
             })?;
-            reject_unsupported_coalesce_assignment_target(op, &target, operator.span)?;
+            validate_coalesce_assignment_target(op, &target, operator.span)?;
             if matches!(op, AssignmentOp::Assign)
                 && matches!(self.peek().kind, TokenKind::Ampersand)
             {
@@ -2998,26 +3005,31 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
     }
 }
 
-fn reject_unsupported_coalesce_assignment_target(
+fn validate_coalesce_assignment_target(
     op: AssignmentOp,
     target: &AssignmentTarget,
     span: SourceSpan,
 ) -> Result<()> {
-    if matches!(op, AssignmentOp::CoalesceAssign)
-        && !matches!(target, AssignmentTarget::Variable { .. })
-    {
-        let message = match target {
-            AssignmentTarget::ArrayDim(_) => {
-                "null coalescing assignment for offset targets is unsupported; direct variables are supported"
-            }
-            AssignmentTarget::List(_) => {
-                "null coalescing assignment currently supports direct variables only"
-            }
-            AssignmentTarget::Variable { .. } => unreachable!(),
-        };
-        return Err(Diagnostic::new(message, Some(span)));
+    if !matches!(op, AssignmentOp::CoalesceAssign) {
+        return Ok(());
     }
-    Ok(())
+
+    match target {
+        AssignmentTarget::Variable { .. } => Ok(()),
+        AssignmentTarget::ArrayDim(target) => {
+            if target.dimensions.iter().any(Option::is_none) {
+                return Err(Diagnostic::new(
+                    "null coalescing assignment cannot use append array access",
+                    Some(span),
+                ));
+            }
+            Ok(())
+        }
+        AssignmentTarget::List(_) => Err(Diagnostic::new(
+            "null coalescing assignment currently supports variables and array/string offsets",
+            Some(span),
+        )),
+    }
 }
 
 fn validate_reference_assignment_target_source(
