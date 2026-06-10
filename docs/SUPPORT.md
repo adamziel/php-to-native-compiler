@@ -486,16 +486,20 @@ supports in generated native binaries.
 - Exact `str_starts_with()`/`str_ends_with()` binary-string behavior for
   embedded NUL bytes and unsupported array/object/resource/reference operands.
 - Exact `quotemeta()` embedded-NUL behavior and unsupported
-  array/object/resource/reference operand diagnostics.
+  resource/reference operand diagnostics beyond modeled first-argument
+  array/object TypeErrors.
 - Exact `chunk_split()` embedded-NUL behavior, non-positive length exception
   parity, and unsupported array/object/resource/reference operand diagnostics.
 - Exact `strip_tags()` binary-string behavior, allowed-tags argument support,
-  malformed/incomplete tag parity, and unsupported
-  array/object/resource/reference operand diagnostics.
+  malformed/incomplete tag parity, and unsupported resource/reference operand
+  diagnostics beyond modeled first-argument array/object TypeErrors.
 - Exact `quoted_printable_decode()` embedded-NUL output behavior and
-  unsupported array/object/resource/reference operand diagnostics.
+  unsupported resource/reference operand diagnostics beyond modeled
+  first-argument array/object TypeErrors.
 - `md5()`/`sha1()` raw binary output containing NUL bytes, embedded-NUL input
-  parity, and unsupported array/object/resource/reference operand diagnostics.
+  parity, `sha1()` unsupported operand diagnostics, and unsupported
+  resource/reference operand diagnostics beyond modeled `md5()` first-argument
+  array/object TypeErrors.
 - Exact `substr()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
 - Exact `chr()` diagnostics for out-of-range integers or float-to-int precision
@@ -518,7 +522,8 @@ supports in generated native binaries.
 - Exact `dirname()` edge parity for unusual paths, embedded NULs, and
   unsupported array/object/resource/reference operands.
 - Exact `soundex()` locale/non-ASCII behavior and unsupported
-  array/object/resource/reference operand diagnostics.
+  resource/reference operand diagnostics beyond modeled first-argument
+  array/object TypeErrors.
 - Exact non-finite formatting outside current scalar `var_dump()` output and
   complete non-finite comparison parity for unsupported arrays, objects,
   resources, and references.

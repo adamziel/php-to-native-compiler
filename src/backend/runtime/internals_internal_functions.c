@@ -55,6 +55,48 @@ static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
     return ptn_offset_container_type_name(value);
 }
 
+static PTN_UNUSED const char *ptn_internal_string_argument_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_ARRAY:
+            return "array";
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        default:
+            return ptn_offset_container_type_name(value);
+    }
+}
+
+static PTN_UNUSED void ptn_internal_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY && value.type != PTN_OBJECT && value.type != PTN_EXCEPTION) {
+        return;
+    }
+
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type string, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_internal_string_argument_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
 static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime, PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
@@ -1539,9 +1581,9 @@ static char *ptn_quotemeta_string(const char *input, size_t len, size_t *output_
 }
 
 static PtnValue ptn_internal_quotemeta(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
+    ptn_internal_expect_string_arg(runtime, "quotemeta", 1, "string", args[0]);
     PtnStringOperand input = ptn_value_to_string_operand(args[0]);
     size_t output_len = 0;
     char *output = ptn_quotemeta_string(input.data, input.len, &output_len);
@@ -1678,9 +1720,9 @@ static char *ptn_strip_tags_string(const char *input, size_t len, size_t *output
 }
 
 static PtnValue ptn_internal_strip_tags(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
+    ptn_internal_expect_string_arg(runtime, "strip_tags", 1, "string", args[0]);
     PtnStringOperand input = ptn_value_to_string_operand(args[0]);
     size_t output_len = 0;
     char *output = ptn_strip_tags_string(input.data, input.len, &output_len);
@@ -1836,8 +1878,8 @@ static void ptn_md5_digest_bytes(const unsigned char *input, size_t input_len, u
 }
 
 static PtnValue ptn_internal_md5(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)line;
+    ptn_internal_expect_string_arg(runtime, "md5", 1, "string", args[0]);
     PtnStringOperand input = ptn_value_to_string_operand(args[0]);
     unsigned char digest[16];
     ptn_md5_digest_bytes((const unsigned char *)input.data, input.len, digest);
@@ -2648,9 +2690,9 @@ static char *ptn_quoted_printable_decode_string(const char *input, size_t len, s
 }
 
 static PtnValue ptn_internal_quoted_printable_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
+    ptn_internal_expect_string_arg(runtime, "quoted_printable_decode", 1, "string", args[0]);
     PtnStringOperand input = ptn_value_to_string_operand(args[0]);
     size_t output_len = 0;
     char *output = ptn_quoted_printable_decode_string(input.data, input.len, &output_len);
@@ -2717,9 +2759,9 @@ static int ptn_soundex_resets_previous(unsigned char byte) {
 }
 
 static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
+    ptn_internal_expect_string_arg(runtime, "soundex", 1, "string", args[0]);
     PtnStringOperand string = ptn_value_to_string_operand(args[0]);
     char *result = malloc(5);
     if (result == NULL) {

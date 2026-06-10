@@ -3589,6 +3589,42 @@ fn compile_md5_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_md5_array_and_object_operands_throw_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-md5-unsupported-string-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("md5-unsupported-string-operands.php");
+    let output = root.join("md5-unsupported-string-operands-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$values = [[], new stdClass];\n\
+foreach ($values as $value) {\n\
+    try {\n\
+        var_dump(md5($value));\n\
+    } catch (\\TypeError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+echo md5(123), \"\\n\";\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "md5(): Argument #1 ($string) must be of type string, array given\n\
+md5(): Argument #1 ($string) must be of type string, stdClass given\n\
+202cb962ac59075b964b07152d234b70\n\
+after\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_md5_raw_output_argument_to_native_binary() {
     let root = temp_dir("ptn-native-md5-raw-output-argument");
     fs::create_dir_all(&root).unwrap();
