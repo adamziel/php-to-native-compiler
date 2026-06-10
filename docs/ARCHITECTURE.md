@@ -183,13 +183,21 @@ Current runtime/compiler slices:
 - Statement-form direct variable increment/decrement lowers to a runtime read,
   boxed numeric increment/decrement helper, and runtime write. Expression-value
   semantics for pre/post increment remain outside this slice.
+- Top-level class metadata carries declared methods and public static property
+  declarations. Static property defaults use the supported constant-expression
+  subset and initialize declaration-backed slots in a runtime-owned static
+  property table before top-level statements execute. Function frames borrow
+  that table from the caller runtime, so direct `Class::$name` access and
+  `self::$name` inside methods share persisted values while undeclared static
+  properties stay at a runtime `Error` boundary.
 
 Near-term architecture targets:
 
 - Broader PHP array behavior: element mutation, append/unset, recursive arrays,
   mutation-visible iteration, references, and copy-on-write.
 - References and copy-on-write.
-- Function and class metadata.
+- Broader function and class metadata beyond declared methods and static
+  properties.
 - Broader diagnostics and exception channels.
 - Full PHP numeric-string conversions, non-numeric string arithmetic
   diagnostics, warnings, scalar cast overflow behavior, exact

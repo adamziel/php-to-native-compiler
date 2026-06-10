@@ -11,7 +11,15 @@ pub struct Program {
 pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
+    pub static_properties: Vec<StaticPropertyDecl>,
     pub methods: Vec<MethodDecl>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaticPropertyDecl {
+    pub name: String,
+    pub value: Option<Expr>,
     pub span: SourceSpan,
 }
 
@@ -228,6 +236,11 @@ pub enum AssignmentTarget {
         name: String,
         span: SourceSpan,
     },
+    StaticProperty {
+        class_name: String,
+        name: String,
+        span: SourceSpan,
+    },
     List(ListAssignmentTarget),
 }
 
@@ -331,6 +344,11 @@ pub enum Expr {
     },
     PropertyFetch {
         receiver: Box<Expr>,
+        name: String,
+        span: SourceSpan,
+    },
+    StaticPropertyFetch {
+        class_name: String,
         name: String,
         span: SourceSpan,
     },
@@ -470,7 +488,8 @@ impl Expr {
             | Expr::DynamicCall { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::NewObject { span, .. }
-            | Expr::PropertyFetch { span, .. } => *span,
+            | Expr::PropertyFetch { span, .. }
+            | Expr::StaticPropertyFetch { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,

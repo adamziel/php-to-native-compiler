@@ -240,6 +240,8 @@ typedef struct {
     PtnSymbolTable *global_symbols;
     PtnSymbolTable owned_constants;
     PtnSymbolTable *constants;
+    PtnSymbolTable owned_static_properties;
+    PtnSymbolTable *static_properties;
     PtnDiagnosticSink diagnostics;
     PtnExceptionState owned_exceptions;
     PtnExceptionState *exceptions;

@@ -412,6 +412,12 @@ supports in generated native binaries.
   recognized as the current built-in object shell. Declared instance methods
   can be called directly through object receivers and through
   `[$object, "method"]` callable values, including internal callback dispatch.
+- Public static property declarations in top-level classes, using the supported
+  constant-expression default subset. Generated native code initializes
+  declaration-backed static slots before top-level statements, supports
+  `Class::$name` reads and writes, resolves `self::$name` inside declared
+  methods, and throws modeled PHP `Error` diagnostics for undeclared static
+  properties.
 - `new stdClass` expressions, boxed object handles, and public dynamic property
   reads/writes such as `$object->name` and `$object->name = expr`. Object
   assignment shares the object handle, so property writes through an alias are
@@ -421,9 +427,9 @@ supports in generated native binaries.
   null coalescing assignment `$object->name ??= expr` quiet-reads the property,
   lazily evaluates the right-hand expression only for missing or `null`
   properties, and re-evaluates the receiver for the write side. This is a
-  bounded public-property object-storage slice; declared properties,
-  visibility, inheritance, static properties, magic methods, destructors, and
-  broader reflection metadata remain outside this support boundary.
+  bounded public-property object-storage slice; declared instance properties,
+  non-public visibility, broader inheritance, constructors, magic methods,
+  destructors, and reflection metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
@@ -576,9 +582,10 @@ supports in generated native binaries.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for integer-only operator conversion diagnostics, including bitwise,
   shift, and modulo diagnostics.
-- Object, static-property, variable-variable, append-form null-coalescing,
-  property null-coalescing expressions/`isset()`/`empty()`, and property
-  compound-assignment operators outside modeled public-property `??=`.
+- Object, variable-variable, append-form null-coalescing, property
+  null-coalescing expressions/`isset()`/`empty()`, property compound-assignment
+  operators outside modeled public-property `??=`, and static-property
+  compound/null-coalescing lvalues outside modeled direct reads/writes.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.

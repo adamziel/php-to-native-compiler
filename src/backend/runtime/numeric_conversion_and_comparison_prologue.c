@@ -3,6 +3,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->global_symbols = caller_runtime->global_symbols;
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = caller_runtime->constants;
+    ptn_symbols_init(&runtime->owned_static_properties);
+    runtime->static_properties = caller_runtime->static_properties;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
@@ -32,6 +34,7 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
+    ptn_symbols_free(&runtime->owned_static_properties);
     ptn_symbols_free(&runtime->owned_constants);
     ptn_symbols_free(&runtime->symbols);
 }
@@ -306,6 +309,92 @@ static PTN_UNUSED void ptn_throw_exception_at(
 
 static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message) {
     ptn_throw_exception_at(runtime, class_name, message, NULL, 0);
+}
+
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_table(PtnRuntime *runtime) {
+    return runtime->static_properties == NULL ? &runtime->owned_static_properties : runtime->static_properties;
+}
+
+static PTN_UNUSED char *ptn_static_property_key(const char *class_name, const char *property) {
+    size_t class_len = strlen(class_name);
+    size_t property_len = strlen(property);
+    size_t len = class_len + property_len + 4;
+    char *key = malloc(len);
+    if (key == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(key, class_name, class_len);
+    memcpy(key + class_len, "::$", 3);
+    memcpy(key + class_len + 3, property, property_len);
+    key[len - 1] = '\0';
+    return key;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_undeclared_static_property(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Access to undeclared static property %s::$%s",
+        class_name,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+    return ptn_null();
+}
+
+static PTN_UNUSED void ptn_runtime_define_static_property(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    PtnValue value
+) {
+    char *key = ptn_static_property_key(class_name, property);
+    ptn_symbols_set(ptn_runtime_static_property_table(runtime), key, ptn_value_deref(value));
+    free(key);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    size_t line
+) {
+    (void)line;
+    char *key = ptn_static_property_key(class_name, property);
+    PtnValue value;
+    if (ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
+        free(key);
+        return ptn_value_clone_deref(value);
+    }
+    free(key);
+    return ptn_runtime_undeclared_static_property(runtime, class_name, property);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_write_static_property(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    PtnValue value,
+    size_t line
+) {
+    (void)line;
+    char *key = ptn_static_property_key(class_name, property);
+    if (ptn_symbols_value_slot(ptn_runtime_static_property_table(runtime), key) == NULL) {
+        free(key);
+        return ptn_runtime_undeclared_static_property(runtime, class_name, property);
+    }
+    PtnValue result = ptn_value_clone_deref(value);
+    ptn_symbols_set(ptn_runtime_static_property_table(runtime), key, result);
+    free(key);
+    return result;
 }
 
 static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *type_name) {

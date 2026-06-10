@@ -1,19 +1,19 @@
 # PTN Progress
 
-Refresh: 2026-06-11T00:25Z
-Measured: `ptn-dru` rebased on current `origin/master` after prior queue
-merges; inherited public instance-method reducers, public property `??=`,
-nested string-offset unset exception parity, addslashes/stripslashes, braced
-interpolation, scalar offset-lvalue reducers, object `foreach`, declared class
-metadata, object-method callable dispatch, method-scope magic constants,
-cslashes, and callback/COW/directory evidence.
+Refresh: 2026-06-11T00:34Z
+Measured: `ptn-t7q6` rebased on current `origin/master` after prior queue
+merges; declared static-property reducers, inherited public instance-method
+reducers, public property `??=`, nested string-offset unset exception parity,
+addslashes/stripslashes, braced interpolation, scalar offset-lvalue reducers,
+object `foreach`, declared class metadata, object-method callable dispatch,
+method-scope magic constants, cslashes, and callback/COW/directory evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 379 | 379 | 0 |
+| Native compiled PHP snippets | 381 | 381 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -56,15 +56,16 @@ callable-only object method dispatch through internal callbacks,
 method-scope `__FUNCTION__`/`__METHOD__`/`__CLASS__`, nested string-offset
 unset errors, and public property `??=` with quiet lookup, lazy RHS
 evaluation, PHP receiver re-evaluation order, and inherited public instance
-methods.
+methods, plus static properties with constant defaults, direct/self read-write
+persistence, and undeclared static-property `Error` diagnostics.
 
 ## Still Needed
 
 The remaining focused COW PHPT gap is Closure `use` captures for the
 `array_walk()`/`$GLOBALS` row. Broader bounded-PHPT gaps are constructors,
 declared properties, non-public visibility/interfaces/traits, broader
-inheritance, static
-properties, magic methods, property compound operators beyond `??=`,
+inheritance, magic methods, property compound operators beyond `??=`,
+static-property compound/null-coalescing lvalues,
 destructors, exceptions, broader magic constants for
 traits/namespaces/includes/eval, reflection, unsupported array/string
 internals, 64-bit operator exactness, destructuring `foreach`
@@ -73,7 +74,8 @@ and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused class/method,
+Commands: `cargo check`; `cargo test static_property --test compile_native`;
+`cargo fmt --check`; `cargo build --bin phpc`; focused class/method,
 property `??=`, addslashes, cslashes, object `foreach`, scalar offset, and
 declared class metadata native tests/reducers; `cargo test callable`; focused
 catchable exception-message tests; focused `cargo test interpolation`; exact

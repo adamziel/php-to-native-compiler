@@ -5,7 +5,8 @@ use crate::ast::{
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ConstDeclaration, Expr,
     FunctionDecl, FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, MagicConstantKind, MethodDecl, Program, ReferenceTarget, Statement,
-    StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp,
+    UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -54,6 +55,16 @@ struct ForeachVariable {
     name: String,
     by_ref: bool,
     span: SourceSpan,
+}
+
+#[derive(Default)]
+struct ClassModifiers {
+    is_static: bool,
+}
+
+enum ParsedClassMember {
+    Method(MethodDecl),
+    StaticProperties(Vec<StaticPropertyDecl>),
 }
 
 impl Parser {
@@ -145,21 +156,58 @@ impl Parser {
         }
 
         self.expect_left_brace()?;
+        let mut static_properties = Vec::new();
         let mut methods = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
-            methods.push(self.parse_method_decl()?);
+            match self.parse_class_member()? {
+                ParsedClassMember::Method(method) => methods.push(method),
+                ParsedClassMember::StaticProperties(properties) => {
+                    static_properties.extend(properties);
+                }
+            }
         }
         self.expect_right_brace()?;
         Ok(ClassDecl {
             name: class_name,
             parent_name,
+            static_properties,
             methods,
             span: class_token.span,
         })
     }
 
-    fn parse_method_decl(&mut self) -> Result<MethodDecl> {
-        let mut is_static = false;
+    fn parse_class_member(&mut self) -> Result<ParsedClassMember> {
+        let modifiers = self.parse_class_modifiers()?;
+        if matches!(self.peek().kind, TokenKind::Const) {
+            return Err(Diagnostic::new(
+                CLASS_CONSTANT_FETCH_UNSUPPORTED,
+                Some(self.peek().span),
+            ));
+        }
+        if matches!(self.peek().kind, TokenKind::Variable(_)) {
+            if modifiers.is_static {
+                return Ok(ParsedClassMember::StaticProperties(
+                    self.parse_static_property_declarations()?,
+                ));
+            }
+            return Err(Diagnostic::new(
+                "class properties are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        if !matches!(self.peek().kind, TokenKind::Function) {
+            return Err(Diagnostic::new(
+                "unsupported class member",
+                Some(self.peek().span),
+            ));
+        }
+        Ok(ParsedClassMember::Method(
+            self.parse_method_decl(modifiers)?,
+        ))
+    }
+
+    fn parse_class_modifiers(&mut self) -> Result<ClassModifiers> {
+        let mut modifiers = ClassModifiers::default();
         loop {
             let TokenKind::Identifier(modifier) = &self.peek().kind else {
                 break;
@@ -169,12 +217,12 @@ impl Parser {
                     self.advance();
                 }
                 "static" => {
-                    is_static = true;
+                    modifiers.is_static = true;
                     self.advance();
                 }
                 "private" | "protected" => {
                     return Err(Diagnostic::new(
-                        "non-public class methods are unsupported",
+                        "non-public class members are unsupported",
                         Some(self.peek().span),
                     ));
                 }
@@ -190,26 +238,48 @@ impl Parser {
                 _ => break,
             }
         }
+        Ok(modifiers)
+    }
 
-        if matches!(self.peek().kind, TokenKind::Const) {
-            return Err(Diagnostic::new(
-                CLASS_CONSTANT_FETCH_UNSUPPORTED,
-                Some(self.peek().span),
-            ));
+    fn parse_static_property_declarations(&mut self) -> Result<Vec<StaticPropertyDecl>> {
+        let mut properties = vec![self.parse_static_property_declaration()?];
+        while matches!(self.peek().kind, TokenKind::Comma) {
+            self.advance();
+            properties.push(self.parse_static_property_declaration()?);
         }
-        if matches!(self.peek().kind, TokenKind::Variable(_)) {
-            return Err(Diagnostic::new(
-                "class properties are unsupported",
-                Some(self.peek().span),
-            ));
-        }
-        if !matches!(self.peek().kind, TokenKind::Function) {
-            return Err(Diagnostic::new(
-                "unsupported class member",
-                Some(self.peek().span),
-            ));
-        }
+        self.expect_semicolon()?;
+        Ok(properties)
+    }
 
+    fn parse_static_property_declaration(&mut self) -> Result<StaticPropertyDecl> {
+        let token = self.advance().clone();
+        let TokenKind::Variable(name) = token.kind else {
+            return Err(Diagnostic::new(
+                "expected static property name",
+                Some(token.span),
+            ));
+        };
+        let value = if matches!(self.peek().kind, TokenKind::Equal) {
+            self.advance();
+            let value = self.parse_expr()?;
+            if !is_supported_global_const_expr(&value) {
+                return Err(Diagnostic::new(
+                    "static property default value must be a supported constant expression",
+                    Some(value.span()),
+                ));
+            }
+            Some(value)
+        } else {
+            None
+        };
+        Ok(StaticPropertyDecl {
+            name,
+            value,
+            span: token.span,
+        })
+    }
+
+    fn parse_method_decl(&mut self, modifiers: ClassModifiers) -> Result<MethodDecl> {
         let span = self.expect_function()?;
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
@@ -240,7 +310,7 @@ impl Parser {
             parameters,
             return_type,
             return_by_ref,
-            is_static,
+            is_static: modifiers.is_static,
             body,
             span,
         })
@@ -280,6 +350,9 @@ impl Parser {
                 if name.eq_ignore_ascii_case("list")
                     && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
             {
+                self.parse_expression_statement()
+            }
+            TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::DoubleColon) => {
                 self.parse_expression_statement()
             }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LeftParen) => {
@@ -1544,6 +1617,13 @@ impl Parser {
     ) -> Result<Expr> {
         let scope_span = self.advance().span;
         let member = self.advance().clone();
+        if let TokenKind::Variable(member_name) = member.kind {
+            return Ok(Expr::StaticPropertyFetch {
+                class_name,
+                name: member_name,
+                span: combine_spans(class_span, member.span),
+            });
+        }
         let TokenKind::Identifier(member_name) = member.kind else {
             return Err(Diagnostic::new(
                 CLASS_CONSTANT_FETCH_UNSUPPORTED,
@@ -2515,6 +2595,7 @@ fn validate_recursive_reference_assignment_value(
         AssignmentTarget::Variable { name, .. } => name,
         AssignmentTarget::ArrayDim(target) => &target.array,
         AssignmentTarget::Property { .. } => return Ok(()),
+        AssignmentTarget::StaticProperty { .. } => return Ok(()),
         AssignmentTarget::List(_) => return Ok(()),
     };
     if let Some(diagnostic) = expr_array_literal_reference_to_variable(value, variable) {
@@ -2574,6 +2655,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::MethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::PropertyFetch { .. }
+        | Expr::StaticPropertyFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. }
@@ -2836,6 +2918,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         Expr::PropertyFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
         }
+        Expr::StaticPropertyFetch { .. } => {}
         Expr::Array { elements, .. } => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -3505,6 +3588,15 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             name,
             span,
         }),
+        Expr::StaticPropertyFetch {
+            class_name,
+            name,
+            span,
+        } => Ok(AssignmentTarget::StaticProperty {
+            class_name,
+            name,
+            span,
+        }),
         Expr::Array { elements, span } => Ok(AssignmentTarget::List(
             list_assignment_target_from_array_elements(elements, span)?,
         )),
@@ -3558,6 +3650,10 @@ fn validate_coalesce_assignment_target(
             Ok(())
         }
         AssignmentTarget::Property { .. } => Ok(()),
+        AssignmentTarget::StaticProperty { .. } => Err(Diagnostic::new(
+            "null coalescing assignment currently supports variables and array/string offsets",
+            Some(span),
+        )),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables and array/string offsets",
             Some(span),
@@ -3588,6 +3684,12 @@ fn validate_reference_assignment_target_source(
             }
         }
         AssignmentTarget::Property { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
+        }
+        AssignmentTarget::StaticProperty { .. } => {
             return Err(Diagnostic::new(
                 "unsupported by-reference assignment target",
                 Some(span),
@@ -3673,6 +3775,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::PropertyFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
+        Expr::StaticPropertyFetch { .. } => {}
         Expr::Array { elements, .. } => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -3773,6 +3876,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::MethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::PropertyFetch { .. }
+        | Expr::StaticPropertyFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,

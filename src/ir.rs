@@ -25,7 +25,14 @@ pub struct Module {
 pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
+    pub static_properties: Vec<StaticPropertyDecl>,
     pub methods: Vec<MethodDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaticPropertyDecl {
+    pub name: String,
+    pub value: Option<ValueExpr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -246,6 +253,11 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    StaticPropertyFetch {
+        class_name: String,
+        name: String,
+        line: usize,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<ValueExpr>,
@@ -296,6 +308,11 @@ pub enum AssignmentTarget {
     },
     Property {
         receiver: Box<ValueExpr>,
+        name: String,
+        line: usize,
+    },
+    StaticProperty {
+        class_name: String,
         name: String,
         line: usize,
     },
@@ -466,6 +483,14 @@ impl LoweringContext {
     }
 
     fn lower_class(&mut self, class: &AstClassDecl) -> ClassDecl {
+        let static_properties = class
+            .static_properties
+            .iter()
+            .map(|property| StaticPropertyDecl {
+                name: property.name.clone(),
+                value: property.value.as_ref().map(|value| self.lower_expr(value)),
+            })
+            .collect();
         let methods = class
             .methods
             .iter()
@@ -494,6 +519,7 @@ impl LoweringContext {
         ClassDecl {
             name: class.name.clone(),
             parent_name: class.parent_name.clone(),
+            static_properties,
             methods,
         }
     }
@@ -809,6 +835,15 @@ impl LoweringContext {
                 name: name.clone(),
                 line: span.line,
             },
+            AstAssignmentTarget::StaticProperty {
+                class_name,
+                name,
+                span,
+            } => AssignmentTarget::StaticProperty {
+                class_name: class_name.clone(),
+                name: name.clone(),
+                line: span.line,
+            },
             AstAssignmentTarget::List(target) => {
                 AssignmentTarget::List(self.lower_list_assignment_target(target))
             }
@@ -1089,6 +1124,15 @@ impl LoweringContext {
                 span,
             } => ValueExpr::PropertyFetch {
                 receiver: Box::new(self.lower_expr(receiver)),
+                name: name.clone(),
+                line: span.line,
+            },
+            Expr::StaticPropertyFetch {
+                class_name,
+                name,
+                span,
+            } => ValueExpr::StaticPropertyFetch {
+                class_name: class_name.clone(),
                 name: name.clone(),
                 line: span.line,
             },

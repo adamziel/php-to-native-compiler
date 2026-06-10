@@ -55,6 +55,13 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
+    let mut values = ValueEmitter::new(
+        &module.source_file,
+        &module.source_dir,
+        &module.functions,
+        &module.classes,
+    );
+    emit_static_property_initializers(&mut out, &mut values, &module.classes);
     for warning in collect_control_warnings(&module.instructions) {
         emit_control_warning(
             &mut out,
@@ -63,12 +70,6 @@ pub fn emit_c(module: &Module) -> String {
             warning.line,
         );
     }
-    let mut values = ValueEmitter::new(
-        &module.source_file,
-        &module.source_dir,
-        &module.functions,
-        &module.classes,
-    );
     let mut control_targets = Vec::new();
     for instruction in &module.instructions {
         emit_instruction(
@@ -336,6 +337,35 @@ fn emit_user_functions(
         out.push_str("    ptn_runtime_free(&runtime);\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
+    }
+}
+
+fn emit_static_property_initializers(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    classes: &[ClassDecl],
+) {
+    for class in classes {
+        for property in &class.static_properties {
+            let value_temp = match &property.value {
+                Some(value) => values.emit_materialized_value(out, value),
+                None => {
+                    let temp = values.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&temp);
+                    out.push_str(" = ptn_null();\n");
+                    temp
+                }
+            };
+            out.push_str("    ptn_runtime_define_static_property(&runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\", ");
+            out.push_str(&value_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &value_temp);
+        }
     }
 }
 
@@ -1522,6 +1552,13 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
         &module.functions,
         &mut requirements,
     );
+    for class in &module.classes {
+        for property in &class.static_properties {
+            if let Some(value) = &property.value {
+                collect_value_runtime_requirements(value, &module.functions, &mut requirements);
+            }
+        }
+    }
     for function in &module.functions {
         collect_instructions_runtime_requirements(
             &function.body,
@@ -1678,6 +1715,7 @@ fn collect_assignment_target_runtime_requirements(
         AssignmentTarget::Property { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
+        AssignmentTarget::StaticProperty { .. } => {}
         AssignmentTarget::List(target) => {
             for element in &target.elements {
                 if let Some(key) = &element.key {
@@ -1793,6 +1831,7 @@ fn collect_value_runtime_requirements(
         ValueExpr::PropertyFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
+        ValueExpr::StaticPropertyFetch { .. } => {}
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             collect_value_runtime_requirements(expr, functions, requirements);
         }
@@ -2243,7 +2282,8 @@ impl AssignmentTargetLine for AssignmentTarget {
             AssignmentTarget::Variable { line, .. } | AssignmentTarget::ArrayDim { line, .. } => {
                 *line
             }
-            AssignmentTarget::Property { line, .. } => *line,
+            AssignmentTarget::Property { line, .. }
+            | AssignmentTarget::StaticProperty { line, .. } => *line,
             AssignmentTarget::List(target) => target.line,
         }
     }
@@ -2265,7 +2305,8 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
             AssignmentTarget::List(target) => list_assignment_has_reference(target),
             AssignmentTarget::Variable { .. }
             | AssignmentTarget::ArrayDim { .. }
-            | AssignmentTarget::Property { .. } => false,
+            | AssignmentTarget::Property { .. }
+            | AssignmentTarget::StaticProperty { .. } => false,
         },
     })
 }
@@ -2286,6 +2327,7 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
         AssignmentTarget::Variable { name: target, .. } => target == name,
         AssignmentTarget::ArrayDim { array, .. } => array == name,
         AssignmentTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
+        AssignmentTarget::StaticProperty { .. } => false,
         AssignmentTarget::List(target) => list_assignment_references_variable(target, name),
     }
 }
@@ -2351,6 +2393,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .any(|argument| value_mentions_variable(argument, name))
         }
         ValueExpr::PropertyFetch { receiver, .. } => value_mentions_variable(receiver, name),
+        ValueExpr::StaticPropertyFetch { .. } => false,
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             value_mentions_variable(expr, name)
         }
@@ -2441,6 +2484,17 @@ impl ValueEmitter {
             .map(|class| class.name.as_str())
     }
 
+    fn static_property_class_name(&self, class_name: &str) -> String {
+        if class_name.eq_ignore_ascii_case("self") {
+            if let Some(current_class_name) = &self.current_class_name {
+                return current_class_name.clone();
+            }
+        }
+        self.declared_class_name(class_name)
+            .unwrap_or(class_name)
+            .to_string()
+    }
+
     fn direct_user_function(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
         self.user_functions
             .iter()
@@ -2492,6 +2546,11 @@ impl ValueEmitter {
                 } => {
                     return self
                         .emit_property_coalesce_assignment(out, receiver, name, *line, value);
+                }
+                AssignmentTarget::StaticProperty { .. } => {
+                    unreachable!(
+                        "parser rejects null coalescing assignment for static property targets"
+                    );
                 }
             }
         }
@@ -2731,6 +2790,9 @@ impl ValueEmitter {
             AssignmentTarget::Property { .. } => {
                 unreachable!("parser rejects by-reference assignment to property targets");
             }
+            AssignmentTarget::StaticProperty { .. } => {
+                unreachable!("parser rejects by-reference assignment to static property targets");
+            }
             AssignmentTarget::List(_) => {
                 unreachable!("parser rejects by-reference assignment to list targets");
             }
@@ -2812,6 +2874,26 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
+                result_temp
+            }
+            AssignmentTarget::StaticProperty {
+                class_name,
+                name,
+                line,
+            } => {
+                let resolved_class_name = self.static_property_class_name(class_name);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(value_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
                 result_temp
             }
             AssignmentTarget::List(target) => {
@@ -3199,6 +3281,11 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_property_fetch(out, receiver, name, *line),
+            ValueExpr::StaticPropertyFetch {
+                class_name,
+                name,
+                line,
+            } => self.emit_static_property_fetch(out, class_name, name, *line),
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
             ValueExpr::Empty { target } => self.emit_empty(out, target),
             ValueExpr::Load { name, line } => format!(
@@ -3337,6 +3424,27 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
+    }
+
+    fn emit_static_property_fetch(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &str,
+        line: usize,
+    ) -> String {
+        let resolved_class_name = self.static_property_class_name(class_name);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         result_temp
     }
 
@@ -4207,6 +4315,7 @@ impl ValueEmitter {
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }
                 | ValueExpr::MethodCall { .. }
+                | ValueExpr::StaticPropertyFetch { .. }
         ) {
             return self.emit_value(out, value);
         }

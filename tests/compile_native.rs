@@ -1811,6 +1811,56 @@ echo Reducer::combine(1, 2);",
 }
 
 #[test]
+fn parser_accepts_declared_static_property_reads_and_writes() {
+    let program = parser::parse(
+        "<?php
+class Counter {
+    public static $value = 1, $label;
+}
+Counter::$value = 5;
+echo Counter::$value;",
+    )
+    .unwrap();
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].static_properties.len(), 2);
+    assert_eq!(program.classes[0].static_properties[0].name, "value");
+    assert_eq!(program.classes[0].static_properties[1].name, "label");
+
+    let Some(Expr::Int(1, _)) = &program.classes[0].static_properties[0].value else {
+        panic!("expected static property default expression");
+    };
+    assert!(program.classes[0].static_properties[1].value.is_none());
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected static property assignment statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target:
+                AssignmentTarget::StaticProperty {
+                    class_name,
+                    name,
+                    ..
+                },
+            ..
+        } if class_name == "Counter" && name == "value"
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected static property echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::StaticPropertyFetch {
+            class_name,
+            name,
+            ..
+        } if class_name == "Counter" && name == "value"
+    ));
+}
+
+#[test]
 fn parser_accepts_instance_class_methods_and_object_callables() {
     let program = parser::parse(
         "<?php
@@ -11240,6 +11290,84 @@ Attempt to assign property \"bad\" on int\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_object_property_lookup_quiet(&runtime"));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
+}
+
+#[test]
+fn compile_static_property_reads_and_writes_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-access");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-access.php");
+    let output = root.join("static-property-access-bin");
+    fs::write(
+        &input,
+        "<?php
+class Counter {
+    public static $value = 1;
+
+    public static function bump() {
+        self::$value = self::$value + 1;
+        return self::$value;
+    }
+}
+
+echo Counter::$value, \"\\n\";
+Counter::$value = 5;
+echo Counter::bump(), \"\\n\";
+echo Counter::$value, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n6\n6\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_define_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+}
+
+#[test]
+fn compile_static_property_undeclared_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-diagnostics.php");
+    let output = root.join("static-property-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php
+class Known {
+    public static $value;
+}
+
+try {
+    echo Known::$missing;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    Missing::$value = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Access to undeclared static property Known::$missing\nAccess to undeclared static property Missing::$value\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
