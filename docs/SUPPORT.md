@@ -262,7 +262,9 @@ supports in generated native binaries.
   returning lowercase hexadecimal byte output.
 - `hex2bin()` over current boxed scalar values after scalar string conversion,
   decoding hexadecimal byte pairs and returning `false` with a warning boundary
-  for odd-length or non-hexadecimal input.
+  for odd-length or non-hexadecimal input. Consecutive invalid-input warnings
+  use the modeled PHP display separation, and unsupported array/object
+  operands raise a catchable `TypeError`.
 - `quoted_printable_decode()` over current boxed scalar values after scalar
   string conversion, decoding `=HH` byte escapes and soft line breaks through
   the current C-string-backed value path.
@@ -518,8 +520,9 @@ supports in generated native binaries.
   `PHP_INT_MIN / -1`, and unsupported array/object/resource/reference operands.
 - Exact diagnostics and full precision/range parity for `intval()`, `bindec()`,
   `hexdec()`, and `octdec()` on remaining very large or unsupported values.
-- Exact `hex2bin()` warning text/file-name parity and unsupported
-  array/object/resource/reference diagnostics.
+- Exact `hex2bin()` source file-name parity, uncaught TypeError stack
+  formatting, resource operands, and remaining reference/object edge
+  diagnostics.
 - Exact `dirname()` edge parity for unusual paths, embedded NULs, and
   unsupported array/object/resource/reference operands.
 - Exact `soundex()` locale/non-ASCII behavior and unsupported

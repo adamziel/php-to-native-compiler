@@ -3788,7 +3788,36 @@ fn compile_hex2bin_invalid_input_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Warning: hex2bin(): Hexadecimal input string must have an even length in ptn on line 1\nbool(false)\nWarning: hex2bin(): Input string must be hexadecimal string in ptn on line 1\nbool(false)\n"
+        "Warning: hex2bin(): Hexadecimal input string must have an even length in ptn on line 1\nbool(false)\n\nWarning: hex2bin(): Input string must be hexadecimal string in ptn on line 1\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_hex2bin_array_operand_type_error_is_catchable() {
+    let root = temp_dir("ptn-native-hex2bin-array-operand-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("hex2bin-array-operand-type-error.php");
+    let output = root.join("hex2bin-array-operand-type-error-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    var_dump(hex2bin([]));\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "hex2bin(): Argument #1 ($string) must be of type string, array given\nafter\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

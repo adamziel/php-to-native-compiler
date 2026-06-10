@@ -230,6 +230,17 @@ static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const ch
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_separated_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+    if (diagnostics->suppressed > 0) {
+        return;
+    }
+    if (diagnostics->emitted_warning) {
+        fputc('\n', stdout);
+    }
+    diagnostics->emitted_warning = 1;
+    ptn_emit_warning(diagnostics, message, line);
+}
+
 static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
     if (diagnostics->suppressed > 0) {
         return;

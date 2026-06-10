@@ -75,6 +75,40 @@ static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime, PtnValue value) 
     return ptn_null();
 }
 
+static PTN_UNUSED PtnStringOperand ptn_internal_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    if (
+        value.type == PTN_ARRAY ||
+        value.type == PTN_OBJECT ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION ||
+        value.type == PTN_REFERENCE
+    ) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must be of type string, %s given",
+            function_name,
+            position,
+            parameter_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_string_operand_borrowed("");
+    }
+    return ptn_value_to_string_operand(value);
+}
+
 static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnValue key_value, PtnValue array_value, size_t line) {
     key_value = ptn_value_deref(key_value);
     array_value = ptn_value_deref(array_value);
@@ -2631,10 +2665,10 @@ static int ptn_hex_nibble(unsigned char byte) {
 
 static PtnValue ptn_internal_hex2bin(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand hex = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand hex = ptn_internal_expect_string_arg(runtime, "hex2bin", 1, "string", args[0]);
     size_t len = hex.len;
     if ((len % 2) != 0) {
-        ptn_emit_warning(
+        ptn_emit_separated_warning(
             &runtime->diagnostics,
             "hex2bin(): Hexadecimal input string must have an even length",
             line
@@ -2653,7 +2687,7 @@ static PtnValue ptn_internal_hex2bin(PtnRuntime *runtime, size_t argc, const Ptn
         int high = ptn_hex_nibble((unsigned char)hex.data[i]);
         int low = ptn_hex_nibble((unsigned char)hex.data[i + 1]);
         if (high < 0 || low < 0) {
-            ptn_emit_warning(
+            ptn_emit_separated_warning(
                 &runtime->diagnostics,
                 "hex2bin(): Input string must be hexadecimal string",
                 line

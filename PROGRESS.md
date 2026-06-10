@@ -1,10 +1,8 @@
 # PTN Progress
 
-Refresh: 2026-06-10T15:06Z
-Measured: `ptn-wk3` on `origin/master@d2d51779`; callback closures,
-static/string callables, array_reduce COW, directory APIs, `stdClass`,
-non-array `foreach` diagnostics, and
-`array_count_values()` PHPT evidence.
+Refresh: 2026-06-10T18:10Z
+Measured: `ptn-8ko` on `origin/master@8a659986`; focused `hex2bin()`
+PHPT/reducer evidence over current 153/200 bounded baseline.
 
 ## Test Dashboard
 
@@ -57,7 +55,8 @@ string-callable `call_user_func()`, string-callable/null `array_map()`,
 refcounts, and `new stdClass` boxed objects with public
 dynamic property reads/writes shared through object aliases, plus
 `array_count_values()` over integer/string boxed array values with unsupported
-entries skipped after modeled warnings.
+entries skipped after modeled warnings. `hex2bin()` matches focused
+basic/error PHPT rows and catchable array/object TypeErrors.
 
 ## Still Needed
 
@@ -67,11 +66,11 @@ declarations/metadata, instance methods, visibility/inheritance/static
 properties/magic methods, non-static method callable values, unsupported
 array/string internals, 64-bit operator exactness, object/destructuring
 foreach diagnostics, object/property compound lvalues, scalar offset-lvalue
-fatal parity, and broader file APIs.
+fatal parity, broader file APIs, and exact `hex2bin()` source-name/uncaught
+stack/resource parity.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-focused non-array `foreach` native tests; exact
-`array_reduce_accumulator_refcount.phpt`; `tools/run-bounded-phpt.sh
-tools/phpt-cow-manifest.txt`.
+Commands: `cargo test compile_hex2bin --test compile_native`; `cargo build
+--bin phpc`; focused `hex2bin_basic.phpt`/`hex2bin_error.phpt`; direct
+reducers.
