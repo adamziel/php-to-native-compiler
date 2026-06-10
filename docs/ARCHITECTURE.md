@@ -195,9 +195,8 @@ Near-term architecture targets:
 - PHP-exact file/line/error-handler behavior for integer-only operator
   float-to-int precision-loss diagnostics, and overflow parity for bitwise,
   shift, and modulo integer conversions.
-- Array, object, and reference lvalues for compound assignment, plus
-  unsupported compound operators beyond `+=`, `-=`, `*=`, `**=`, `/=`, `%=`,
-  `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`: `??=`.
+- Array, object, and reference lvalues for compound assignment, including
+  offset-form `??=`.
 - Complete comparison parity for objects, references, recursive arrays, chained
   comparison parse errors, keyword boolean operators, and unsupported scalar
   edge cases.

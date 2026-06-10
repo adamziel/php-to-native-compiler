@@ -53,6 +53,9 @@ supports in generated native binaries.
   variable read happens before the right-hand expression, so existing
   source-spanned undefined-variable diagnostics remain observable in source
   order.
+- Direct named-variable null coalescing assignment `??=`. The compiler uses the
+  same quiet lookup path as expression-form `??`, writes only when the variable
+  is missing or `null`, and evaluates the right-hand expression lazily.
 - Print statements use the same generated boxed output path as echo.
 - Parenthesized expressions for grouping supported scalar expressions,
   including nested grouping.
@@ -134,8 +137,7 @@ supports in generated native binaries.
   reads, string offset reads, and currently supported value expressions. The
   left operand uses the same quiet lookup path as `isset()`/`empty()`, returns
   present non-`null` values without evaluating the right operand, and evaluates
-  the right operand only for missing or `null` left values. Assignment-form
-  `??=` remains unsupported.
+  the right operand only for missing or `null` left values.
 - Boxed scalar and literal-array comparison operators `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, and `<=>`. Strict array identity compares type, key
   order, key type, and value. Numeric comparisons involving `NAN` are treated
@@ -496,10 +498,9 @@ supports in generated native binaries.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for integer-only operator conversion diagnostics, including bitwise,
   shift, and modulo diagnostics.
-- Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `**=`,
-  `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`: `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,
-  reference, and other non-direct-variable compound-assignment lvalues.
+  reference, and other non-direct-variable compound-assignment lvalues,
+  including offset-form `??=`.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.
