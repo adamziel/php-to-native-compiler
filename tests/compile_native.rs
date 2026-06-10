@@ -1227,6 +1227,59 @@ fn parser_accepts_append_and_list_assignment_expressions() {
 }
 
 #[test]
+fn parser_accepts_compound_assignment_expressions() {
+    let program =
+        parser::parse("<?php assert(false && ($a **= 2)); var_dump($b += 3, $c .= \"x\");")
+            .unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Call {
+        name, arguments, ..
+    } = &program.statements[0]
+    else {
+        panic!("expected assert call statement");
+    };
+    assert_eq!(name, "assert");
+    let Expr::Binary {
+        op: BinaryOp::And,
+        right,
+        ..
+    } = &arguments[0]
+    else {
+        panic!("expected boolean-and assertion argument");
+    };
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Grouped { expr, .. }
+            if matches!(
+                expr.as_ref(),
+                Expr::Assign {
+                    op: AssignmentOp::PowerAssign,
+                    ..
+                }
+            )
+    ));
+
+    let Statement::Call { arguments, .. } = &program.statements[1] else {
+        panic!("expected var_dump call statement");
+    };
+    assert!(matches!(
+        &arguments[0],
+        Expr::Assign {
+            op: AssignmentOp::AddAssign,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &arguments[1],
+        Expr::Assign {
+            op: AssignmentOp::ConcatAssign,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_variable_root_array_assignment_and_unset() {
     let program = parser::parse(
         "<?php $items[null] = \"value\"; $items[] += 2; $items[0][\"nested\"] = 3; unset($items[null], $items[0][\"nested\"], $items);",
@@ -4916,7 +4969,7 @@ fn compile_internal_function_registry_lookup_edges_to_native_binary() {
     let output = root.join("internal-registry-lookup-edges-bin");
     fs::write(
         &input,
-        "<?php var_dump(function_exists(\"ABS\"), function_exists(\"array_key_exists\"), function_exists(\"SUBSTR\"), function_exists(\"VAR_DUMP\"), function_exists(\"missing_internal\")); echo abs(-5), \" \", strlen(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \"\\n\";",
+        "<?php var_dump(function_exists(\"ABS\"), function_exists(\"array_key_exists\"), function_exists(\"ASSERT\"), function_exists(\"SUBSTR\"), function_exists(\"VAR_DUMP\"), function_exists(\"missing_internal\")); echo abs(-5), \" \", strlen(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \"\\n\";",
     )
     .unwrap();
 
@@ -4926,7 +4979,7 @@ fn compile_internal_function_registry_lookup_edges_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n5 3 cde\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n5 3 cde\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -8363,6 +8416,29 @@ fn compile_power_operator_to_native_binary() {
 }
 
 #[test]
+fn compile_assert_and_compound_assignment_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-compound-assignment-expressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-compound-assignment-expressions.php");
+    let output = root.join("assert-compound-assignment-expressions-bin");
+    fs::write(
+        &input,
+        "<?php try { assert(false && ($a **= 2)); } catch (\\AssertionError $e) { echo 'assert(): ', $e->getMessage(), ' failed', \"\\n\"; } $x = 2; var_dump(($x **= 3) === 8, $x === 8); $y = 1; var_dump(($y += 4) === 5, $y === 5);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "assert(): assert(false && ($a **= 2)) failed\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_run_alias_executes_compiled_native_binary() {
     let root = temp_dir("ptn-phpc-run-alias");
     fs::create_dir_all(&root).unwrap();
@@ -9223,6 +9299,40 @@ fn compile_direct_compound_assignments_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Ada Lovelace 6\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_assertion_error_uses_call_source_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-source-message");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-source.php");
+    let output = root.join("assert-source-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    assert(false && ($a **= 2));
+} catch (AssertionError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    assert(false, \"custom assertion\");
+} catch (AssertionError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "assert(false && ($a **= 2))\ncustom assertion\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
