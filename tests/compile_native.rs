@@ -6112,6 +6112,71 @@ done\n",
 }
 
 #[test]
+fn compile_foreach_object_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-object-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-object-properties.php");
+    let output = root.join("foreach-object-properties-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$object = new stdClass;\n\
+$object->a = 1;\n\
+$object->b = \"two\";\n\
+foreach ($object as $key => $value) {\n\
+    echo $key, \"=\", $value, \"\\n\";\n\
+}\n\
+echo \"done\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "a=1\nb=two\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_object_properties_are_live_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-object-live-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-object-live-properties.php");
+    let output = root.join("foreach-object-live-properties-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$object = new stdClass;\n\
+$object->a = 1;\n\
+foreach ($object as $key => $value) {\n\
+    echo $key, \"=\", $value, \"\\n\";\n\
+    if ($key === \"a\") {\n\
+        $object->b = 2;\n\
+    }\n\
+}\n\
+foreach ($object as $key => &$value) {\n\
+    $value += 10;\n\
+}\n\
+echo $object->a, \":\", $object->b, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "a=1\nb=2\n11:12\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_by_value_snapshots_iteration_set_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-cow-snapshot");
     fs::create_dir_all(&root).unwrap();

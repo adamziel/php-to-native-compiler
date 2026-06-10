@@ -394,6 +394,28 @@ static PTN_UNUSED void ptn_runtime_bind_array_dim_reference(
     ptn_array_set_entry(array, key, ptn_value_clone(reference));
 }
 
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
+    PtnArrayIterator iterator;
+    iterator.array = NULL;
+    iterator.index = 0;
+    iterator.length = 0;
+    iterator.valid = 0;
+    iterator.live = 0;
+    return iterator;
+}
+
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(PtnObject *object) {
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    if (object == NULL || object->properties == NULL) {
+        return iterator;
+    }
+    iterator.array = object->properties;
+    iterator.valid = iterator.array->len != 0;
+    iterator.live = 1;
+    ptn_array_iterator_retain(iterator.array);
+    return iterator;
+}
+
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     PtnRuntime *runtime,
     PtnValue value,
@@ -402,13 +424,11 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
 ) {
     (void)runtime;
     value = ptn_value_deref(value);
-    PtnArrayIterator iterator;
-    iterator.array = NULL;
-    iterator.index = 0;
-    iterator.length = 0;
-    iterator.valid = 0;
-    iterator.live = 0;
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
     if (value.type != PTN_ARRAY) {
+        if (value.type == PTN_OBJECT) {
+            return ptn_array_iterator_from_object_properties(value.as.object);
+        }
         ptn_emit_foreach_non_array_warning(value, path, line);
         return iterator;
     }
@@ -416,16 +436,6 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     iterator.length = iterator.array->len;
     ptn_array_retain(iterator.array);
     iterator.valid = iterator.length != 0;
-    return iterator;
-}
-
-static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
-    PtnArrayIterator iterator;
-    iterator.array = NULL;
-    iterator.index = 0;
-    iterator.length = 0;
-    iterator.valid = 0;
-    iterator.live = 0;
     return iterator;
 }
 
@@ -443,6 +453,9 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
     }
 
     PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    if (value->type == PTN_OBJECT) {
+        return ptn_array_iterator_from_object_properties(value->as.object);
+    }
     if (value->type != PTN_ARRAY) {
         ptn_emit_foreach_non_array_warning(ptn_value_deref(*value), path, line);
         return iterator;

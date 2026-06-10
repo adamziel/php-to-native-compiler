@@ -1,17 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-10T23:01Z
-Measured: `ptn-4n1` rebased on current `origin/master`; addslashes/stripslashes
-native PHPT-shape coverage, cslashes PHPT shape, double-quoted ASCII octal/hex
-escapes, declared class/object method dispatch, and callback/COW/directory
-evidence.
+Refresh: 2026-06-10T23:14Z
+Measured: `ptn-ock` rebased after `ptn-4n1` on current `origin/master`;
+addslashes/stripslashes native PHPT-shape coverage, cslashes PHPT shape,
+double-quoted ASCII octal/hex escapes, declared class/object method dispatch,
+object `foreach` reducers, and callback/COW/directory evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 373 | 373 | 0 |
+| Native compiled PHP snippets | 375 | 375 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -44,7 +44,9 @@ dynamic lvalue-reference calls, list/append assignment expressions,
 static method callable values, `array_reduce()` callback dispatch,
 `array_count_values()`, `new stdClass` dynamic properties, declared class
 method metadata, `new DeclaredClass()` object shells, direct declared method
-calls, `$this` binding, and object/static method callable arrays.
+calls, `$this` binding, object/static method callable arrays, and object
+`foreach` over public dynamic properties including live additions and
+by-reference value binding.
 
 ## Still Needed
 
@@ -53,11 +55,12 @@ The remaining focused COW PHPT gap is Closure `use` captures for the
 declared properties, visibility/inheritance/interfaces/traits, static
 properties, magic methods, object/property compound lvalues, destructors,
 exceptions, reflection, unsupported array/string internals, 64-bit operator
-exactness, object/destructuring `foreach` diagnostics, scalar offset-lvalue
+exactness, destructuring `foreach` diagnostics/semantics, scalar offset-lvalue
 fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes
-and cslashes native tests; `cargo test`. Exact addslashes PHPT rows are blocked
-locally by missing `/home/claude/php-src-phpt/run-tests.php` (`ptn-jmq`).
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes,
+cslashes, and object `foreach` native tests/reducers; `cargo test`. Exact
+addslashes PHPT rows are blocked locally by missing
+`/home/claude/php-src-phpt/run-tests.php` (`ptn-jmq`).
