@@ -368,12 +368,14 @@ supports in generated native binaries.
   array copy-on-write and do not change the active iteration set. Non-array
   iterables emit a PHP-style warning with the generated source path, line, and
   operand type, then skip the loop body.
-- Braced `switch (expr) { case expr: ... default: ... }` statements over the
+- Braced `switch (expr) { case expr: ... default: ... }` and alternate
+  `switch (expr): case expr: ... default: ... endswitch;` statements over the
   currently supported scalar expression and statement subset. The generated
   native code evaluates the switch expression once, compares case expressions
   in source order with boxed loose `==` semantics, honors a single `default`,
-  allows PHP-style fallthrough, and supports `break;` or explicit-level
-  `break N;` from the active emitted switch/loop target stack.
+  allows PHP-style fallthrough, models the deprecated `case expr;`/`default;`
+  separator boundary, and supports `break;` or explicit-level `break N;` from
+  the active emitted switch/loop target stack.
 - `continue;` and explicit-level `continue N;` over active loop/switch targets.
   The generated backend jumps to the appropriate loop continuation point, runs
   `for` update clauses on `continue`, and emits the current PHP-style warning
@@ -431,8 +433,8 @@ supports in generated native binaries.
   beyond the modeled nested associativity diagnostics, PHP-exact chained
   comparison parse errors, and complete comparison parity for unsupported value
   types.
-- Unbraced switch bodies, alternate control-flow syntax,
-  branch-condition assignments, for-loop comma expressions and
+- Unbraced switch bodies, alternate control-flow syntax for non-switch
+  constructs, branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics
   beyond the currently modeled level/context fatals and switch-target warning,
   labels/goto inside unsupported functions, classes, and `try`/`finally`
@@ -441,8 +443,8 @@ supports in generated native binaries.
   `foreach` diagnostics outside the current array/non-array warning lane.
 - PHP-exact `return` value propagation for includes/functions and return
   inside unsupported function/class contexts.
-- Switch alternate syntax and switch behavior for arrays, objects, references,
-  copy-on-write, and exceptions.
+- Switch behavior for arrays, objects, references, copy-on-write, and
+  exceptions.
 - Increment/decrement as expressions, including pre/post result values in echo,
   assignment, binary operands, function arguments, or branch conditions.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,

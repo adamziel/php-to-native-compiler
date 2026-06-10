@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::ast::AssignmentOp;
+use crate::ast::{AssignmentOp, SwitchCaseSeparator};
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
@@ -46,6 +46,9 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
+    for deprecation in collect_switch_case_deprecations(module) {
+        emit_startup_deprecation(&mut out, deprecation.message, deprecation.line);
+    }
     for warning in collect_control_warnings(&module.instructions) {
         emit_control_warning(
             &mut out,
@@ -1331,10 +1334,78 @@ struct ControlWarning {
     line: usize,
 }
 
+struct StartupDeprecation {
+    message: &'static str,
+    line: usize,
+}
+
+const SWITCH_CASE_SEMICOLON_DEPRECATION: &str =
+    "Case statements followed by a semicolon (;) are deprecated, use a colon (:) instead";
+
 fn collect_control_warnings(instructions: &[Instruction]) -> Vec<ControlWarning> {
     let mut warnings = Vec::new();
     collect_control_warnings_in(instructions, &mut Vec::new(), &mut warnings);
     warnings
+}
+
+fn collect_switch_case_deprecations(module: &Module) -> Vec<StartupDeprecation> {
+    let mut deprecations = Vec::new();
+    collect_switch_case_deprecations_in(&module.instructions, &mut deprecations);
+    for function in &module.functions {
+        collect_switch_case_deprecations_in(&function.body, &mut deprecations);
+    }
+    deprecations
+}
+
+fn collect_switch_case_deprecations_in(
+    instructions: &[Instruction],
+    deprecations: &mut Vec<StartupDeprecation>,
+) {
+    for instruction in instructions {
+        match instruction {
+            Instruction::Branch {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_switch_case_deprecations_in(then_body, deprecations);
+                collect_switch_case_deprecations_in(else_body, deprecations);
+            }
+            Instruction::Try { body, catches } => {
+                collect_switch_case_deprecations_in(body, deprecations);
+                for catch in catches {
+                    collect_switch_case_deprecations_in(&catch.body, deprecations);
+                }
+            }
+            Instruction::While { body, .. }
+            | Instruction::DoWhile { body, .. }
+            | Instruction::Foreach { body, .. } => {
+                collect_switch_case_deprecations_in(body, deprecations);
+            }
+            Instruction::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                collect_switch_case_deprecations_in(initializers, deprecations);
+                collect_switch_case_deprecations_in(body, deprecations);
+                collect_switch_case_deprecations_in(updates, deprecations);
+            }
+            Instruction::Switch { cases, .. } => {
+                for case in cases {
+                    if case.separator == SwitchCaseSeparator::Semicolon {
+                        deprecations.push(StartupDeprecation {
+                            message: SWITCH_CASE_SEMICOLON_DEPRECATION,
+                            line: case.line,
+                        });
+                    }
+                    collect_switch_case_deprecations_in(&case.body, deprecations);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
@@ -1755,6 +1826,14 @@ fn emit_control_warning(out: &mut String, message: &str, source_path: &str, line
     out.push_str(&c_string(message));
     out.push_str("\", \"");
     out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+}
+
+fn emit_startup_deprecation(out: &mut String, message: &str, line: usize) {
+    out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+    out.push_str(&c_string(message));
     out.push_str("\", ");
     out.push_str(&line.to_string());
     out.push_str(");\n");

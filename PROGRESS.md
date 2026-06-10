@@ -1,10 +1,11 @@
 # PTN Progress
 
 Refresh: 2026-06-10T14:28Z
-Measured: `ptn-107` rebased on `origin/master@51e3314d`; anonymous callback
-closures, static callables, string-callable callbacks, recursive directory
-APIs, bounded `stdClass` property evidence, and non-array `foreach`
-source-path diagnostics.
+Measured: `ptn-107` rebased on `origin/master@51e3314d`, plus focused
+`ptn-lat` switch alternate-syntax native/parser checks on
+`origin/master@df737c70`; anonymous callback closures, static callables,
+string-callable callbacks, recursive directory APIs, bounded `stdClass`
+property evidence, and non-array `foreach` source-path diagnostics.
 
 ## Test Dashboard
 
@@ -54,7 +55,8 @@ offset-form `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, and `new stdClass` boxed objects with public dynamic
-property reads/writes shared through object aliases.
+property reads/writes shared through object aliases, plus alternate switch
+syntax with the semicolon case/default deprecation boundary.
 
 ## Still Needed
 
@@ -70,5 +72,5 @@ fatal parity, and broader file APIs.
 
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
 anonymous/static/object callback native tests; focused non-array `foreach`
-native tests; `tools/run-native-smoke-matrix.sh`;
+native tests; focused switch native/parser tests; `tools/run-native-smoke-matrix.sh`;
 `tools/run-post-merge-cow-gate.sh`.

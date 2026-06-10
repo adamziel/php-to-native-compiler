@@ -5,7 +5,7 @@ use crate::ast::{
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ConstDeclaration, Expr, FunctionDecl,
     FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, MagicConstantKind, Program, ReferenceTarget, Statement, StringPart,
-    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    SwitchCase, SwitchCaseSeparator, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -860,18 +860,33 @@ impl Parser {
         self.expect_left_paren()?;
         let expression = self.parse_expr()?;
         self.expect_right_paren()?;
-        self.expect_left_brace()?;
+        let alternate_syntax = match self.peek().kind {
+            TokenKind::LeftBrace => {
+                self.advance();
+                false
+            }
+            TokenKind::Colon => {
+                self.advance();
+                true
+            }
+            _ => {
+                return Err(Diagnostic::new(
+                    "expected left brace or colon",
+                    Some(self.peek().span),
+                ))
+            }
+        };
 
         let mut cases = Vec::new();
         let mut seen_default = false;
-        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+        while !self.peek_is_switch_end(alternate_syntax) {
             let case_span = self.peek().span;
-            let condition = match self.peek().kind {
+            let (condition, separator) = match self.peek().kind {
                 TokenKind::Case => {
                     self.advance();
                     let condition = self.parse_expr()?;
-                    self.expect_colon()?;
-                    Some(condition)
+                    let separator = self.parse_switch_case_separator()?;
+                    (Some(condition), separator)
                 }
                 TokenKind::Default => {
                     self.advance();
@@ -882,8 +897,8 @@ impl Parser {
                         ));
                     }
                     seen_default = true;
-                    self.expect_colon()?;
-                    None
+                    let separator = self.parse_switch_case_separator()?;
+                    (None, separator)
                 }
                 _ => {
                     return Err(Diagnostic::new(
@@ -894,25 +909,70 @@ impl Parser {
             };
 
             let mut body = Vec::new();
-            while !matches!(
-                self.peek().kind,
-                TokenKind::Case | TokenKind::Default | TokenKind::RightBrace | TokenKind::Eof
-            ) {
+            while !self.peek_is_switch_case_boundary(alternate_syntax) {
                 body.push(self.parse_nested_statement()?);
             }
             cases.push(SwitchCase {
                 condition,
                 body,
+                separator,
                 span: case_span,
             });
         }
 
-        self.expect_right_brace()?;
+        if alternate_syntax {
+            self.expect_endswitch()?;
+            self.expect_semicolon()?;
+        } else {
+            self.expect_right_brace()?;
+        }
         Ok(Statement::Switch {
             expression,
             cases,
             span,
         })
+    }
+
+    fn parse_switch_case_separator(&mut self) -> Result<SwitchCaseSeparator> {
+        match self.peek().kind {
+            TokenKind::Colon => {
+                self.advance();
+                Ok(SwitchCaseSeparator::Colon)
+            }
+            TokenKind::Semicolon => {
+                self.advance();
+                Ok(SwitchCaseSeparator::Semicolon)
+            }
+            _ => Err(Diagnostic::new("expected colon", Some(self.peek().span))),
+        }
+    }
+
+    fn peek_is_switch_case_boundary(&self, alternate_syntax: bool) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Case | TokenKind::Default | TokenKind::Eof
+        ) || if alternate_syntax {
+            self.peek_is_identifier("endswitch")
+        } else {
+            matches!(self.peek().kind, TokenKind::RightBrace)
+        }
+    }
+
+    fn peek_is_switch_end(&self, alternate_syntax: bool) -> bool {
+        matches!(self.peek().kind, TokenKind::Eof)
+            || if alternate_syntax {
+                self.peek_is_identifier("endswitch")
+            } else {
+                matches!(self.peek().kind, TokenKind::RightBrace)
+            }
+    }
+
+    fn expect_endswitch(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        match &token.kind {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("endswitch") => Ok(token.span),
+            _ => Err(Diagnostic::new("expected endswitch", Some(token.span))),
+        }
     }
 
     fn parse_break(&mut self) -> Result<Statement> {

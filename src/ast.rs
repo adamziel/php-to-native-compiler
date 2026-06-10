@@ -179,7 +179,14 @@ pub struct CatchClause {
 pub struct SwitchCase {
     pub condition: Option<Expr>,
     pub body: Vec<Statement>,
+    pub separator: SwitchCaseSeparator,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SwitchCaseSeparator {
+    Colon,
+    Semicolon,
 }
 
 #[derive(Debug, Clone, PartialEq)]

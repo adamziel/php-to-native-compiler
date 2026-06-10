@@ -7,7 +7,8 @@ use crate::ast::{
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
     Program, ReferenceTarget as AstReferenceTarget, Statement, StringPart as AstStringPart,
-    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
+    SwitchCaseSeparator, TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
+    UnsetTarget as AstUnsetTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,6 +158,8 @@ pub struct CatchClause {
 pub struct SwitchCase {
     pub condition: Option<ValueExpr>,
     pub body: Vec<Instruction>,
+    pub separator: SwitchCaseSeparator,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -613,6 +616,8 @@ impl LoweringContext {
                                     .as_ref()
                                     .map(|condition| self.lower_expr(condition)),
                                 body: self.lower_statements(&case.body),
+                                separator: case.separator,
+                                line: case.span.line,
                             })
                             .collect(),
                     });

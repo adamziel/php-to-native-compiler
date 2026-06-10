@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
     ListAssignmentElementTarget, MagicConstantKind, ReferenceTarget, Statement, StringPart,
-    TypeHint, UnaryOp, UnsetTarget,
+    SwitchCaseSeparator, TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -2109,6 +2109,33 @@ fn parser_accepts_braced_switch_cases_default_and_break() {
     assert!(matches!(cases[0].condition, Some(Expr::Int(0, _))));
     assert!(matches!(cases[1].condition, Some(Expr::Int(1, _))));
     assert!(cases[2].condition.is_none());
+    assert!(matches!(
+        cases[1].body.last(),
+        Some(Statement::Break { level: 2, .. })
+    ));
+}
+
+#[test]
+fn parser_accepts_alternate_switch_cases_default_and_endswitch() {
+    let program = parser::parse(
+        "<?php $a = 1; switch ($a): case 0; echo \"bad\"; break; case 1: echo \"good\"; break 2; default; echo \"bad\"; break; endswitch;",
+    )
+    .unwrap();
+
+    let Statement::Switch {
+        expression, cases, ..
+    } = &program.statements[1]
+    else {
+        panic!("expected switch statement");
+    };
+    assert!(matches!(expression, Expr::Variable(name, _) if name == "a"));
+    assert_eq!(cases.len(), 3);
+    assert!(matches!(cases[0].condition, Some(Expr::Int(0, _))));
+    assert_eq!(cases[0].separator, SwitchCaseSeparator::Semicolon);
+    assert!(matches!(cases[1].condition, Some(Expr::Int(1, _))));
+    assert_eq!(cases[1].separator, SwitchCaseSeparator::Colon);
+    assert!(cases[2].condition.is_none());
+    assert_eq!(cases[2].separator, SwitchCaseSeparator::Semicolon);
     assert!(matches!(
         cases[1].body.last(),
         Some(Statement::Break { level: 2, .. })
@@ -8861,6 +8888,75 @@ fn compile_braced_switch_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "good");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_alternate_switch_to_native_binary() {
+    let root = temp_dir("ptn-native-switch-alternate");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("switch-alternate.php");
+    let output = root.join("switch-alternate-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = 5;
+switch ($a):
+    case 0:
+        echo \"bad\";
+        break;
+    case 5:
+        echo \"good\\n\";
+        break;
+    default:
+        echo \"bad\";
+        break;
+endswitch;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "good\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_switch_semicolon_case_separators_emit_deprecations_to_native_binary() {
+    let root = temp_dir("ptn-native-switch-case-semicolon-deprecations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("switch-case-semicolon-deprecations.php");
+    let output = root.join("switch-case-semicolon-deprecations-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = 5;
+switch ($a):
+    case 0;
+        echo \"bad\";
+        break;
+    case 5:
+        echo \"good\\n\";
+        break;
+    default;
+        echo \"bad\";
+        break;
+endswitch;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: Case statements followed by a semicolon (;) are deprecated, use a colon (:) instead in ptn on line 4\n\nDeprecated: Case statements followed by a semicolon (;) are deprecated, use a colon (:) instead in ptn on line 10\ngood\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
