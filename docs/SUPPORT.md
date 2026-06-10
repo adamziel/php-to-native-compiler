@@ -120,7 +120,8 @@ supports in generated native binaries.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
-  empty string.
+  empty string. Unsupported boxed array/object key operands and non-array
+  containers throw catchable `TypeError` exceptions with PHP-like messages.
 - `in_array()` over current ordered-array values, using shared loose equality
   or strict identity comparison and dereferencing references in both the needle
   and haystack entries.
@@ -468,9 +469,9 @@ supports in generated native binaries.
   complete reference identity, copy-on-write, and `var_dump()` reference
   identity beyond the currently modeled ordered-array, direct-reference, and
   `stdClass` public-property behavior.
-- Exact `array_key_exists()` TypeError parity for unsupported key/container
-  types, object property checks, resources, references, and error-handler
-  routing.
+- Exact `array_key_exists()` parity for resource keys, object property checks,
+  references, error-handler routing, and remaining unsupported dynamic value
+  classes.
 - String-offset append, unset, compound assignment, property/reference
   `isset()`/`empty()` and null-coalescing semantics, and complete
   TypeError/exception parity for unsupported string offset key types.
@@ -505,7 +506,8 @@ supports in generated native binaries.
   diagnostics, and complete special-float parity.
 - Exact `abs()` diagnostics for unsupported array/object/resource/reference
   operands and complete overflow parity beyond the current boxed numeric path.
-- `count()` support for `Countable` objects and exact non-array diagnostics.
+- `count()` support for `Countable` objects, resources, references, and
+  remaining exact non-array diagnostics beyond current boxed values.
 - Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
 - Exact `fdiv()` unsupported-type diagnostics for arrays, objects, resources,
   and references.

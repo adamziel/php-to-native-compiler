@@ -5644,7 +5644,8 @@ fn compile_count_type_errors_are_catchable_to_native_binary() {
     fs::write(
         &input,
         "<?php\n\
-$values = [[], [1, 2], null, false, true, 42, 1.25, \"abc\"];\n\
+$object = new stdClass;\n\
+$values = [[], [1, 2], null, false, true, 42, 1.25, \"abc\", $object];\n\
 foreach ($values as $value) {\n\
     try {\n\
         var_dump(count($value));\n\
@@ -5662,7 +5663,7 @@ echo \"after\\n\";",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(0)\nint(2)\ncount(): Argument #1 ($value) must be of type Countable|array, null given\ncount(): Argument #1 ($value) must be of type Countable|array, false given\ncount(): Argument #1 ($value) must be of type Countable|array, true given\ncount(): Argument #1 ($value) must be of type Countable|array, int given\ncount(): Argument #1 ($value) must be of type Countable|array, float given\ncount(): Argument #1 ($value) must be of type Countable|array, string given\nafter\n"
+        "int(0)\nint(2)\ncount(): Argument #1 ($value) must be of type Countable|array, null given\ncount(): Argument #1 ($value) must be of type Countable|array, false given\ncount(): Argument #1 ($value) must be of type Countable|array, true given\ncount(): Argument #1 ($value) must be of type Countable|array, int given\ncount(): Argument #1 ($value) must be of type Countable|array, float given\ncount(): Argument #1 ($value) must be of type Countable|array, string given\ncount(): Argument #1 ($value) must be of type Countable|array, stdClass given\nafter\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -6899,6 +6900,47 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(false)\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_key_exists_type_errors_are_catchable_to_native_binary() {
+    let root = temp_dir("ptn-native-array-key-exists-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-key-exists-type-errors.php");
+    let output = root.join("array-key-exists-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$object = new stdClass;\n\
+$containers = [null, false, true, 42, 1.25, \"abc\", $object];\n\
+foreach ($containers as $container) {\n\
+    try {\n\
+        var_dump(array_key_exists(\"x\", $container));\n\
+    } catch (\\TypeError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+$keys = [[], $object];\n\
+foreach ($keys as $key) {\n\
+    try {\n\
+        var_dump(array_key_exists($key, []));\n\
+    } catch (\\TypeError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array_key_exists(): Argument #2 ($array) must be of type array, null given\narray_key_exists(): Argument #2 ($array) must be of type array, false given\narray_key_exists(): Argument #2 ($array) must be of type array, true given\narray_key_exists(): Argument #2 ($array) must be of type array, int given\narray_key_exists(): Argument #2 ($array) must be of type array, float given\narray_key_exists(): Argument #2 ($array) must be of type array, string given\narray_key_exists(): Argument #2 ($array) must be of type array, stdClass given\nCannot access offset of type array on array\nCannot access offset of type stdClass on array\nafter\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

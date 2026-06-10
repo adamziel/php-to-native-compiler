@@ -1,16 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-10T13:58Z
-Measured: `ptn-j8p` rebased on `origin/master@be9cc35`; anonymous callback
-closures, static callables, string-callable callbacks, recursive directory
-APIs, and bounded `stdClass` property evidence.
+Refresh: 2026-06-10T14:32Z
+Measured: `ptn-tom` rebased on `origin/master@51e3314`; bounded
+`array_key_exists()`/`count()` diagnostic reducers, anonymous callback
+closures, static callables, recursive directory APIs, and `stdClass` property
+evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 367 | 367 | 0 |
+| Native compiled PHP snippets | 368 | 368 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -43,12 +44,13 @@ array dimensions, temporaries, recursive/user functions, anonymous function
 values for direct dynamic calls and internal callbacks, magic constants,
 `func_*`, `print_r`, binary strings, string offsets, scalar diagnostics, array
 literal references, array union `+`, scalar type hints, by-reference return
-boundaries, `count()`, `??`, assignment expressions, expression-level `@`, file
-APIs including recursive `mkdir()` plus directory predicates, array-path
-snapshots, `array_sum()`/`strtr()`/`in_array()`, recursive array merge/replace,
-`debug_zval_dump()`, dynamic lvalue-reference calls, append/list assignment
-expressions, nested same-array reference lvalues, direct-variable and
-offset-form `??=`, grouped reference targets, `array_fill_keys()`,
+boundaries, `count()` with object-class TypeErrors, `??`, assignment
+expressions, expression-level `@`, file APIs including recursive `mkdir()` plus
+directory predicates, array-path snapshots, `array_sum()`/`strtr()`/`in_array()`,
+recursive array merge/replace, `debug_zval_dump()`, dynamic lvalue-reference
+calls, append/list assignment expressions, nested same-array reference lvalues,
+direct-variable and offset-form `??=`, grouped reference targets,
+`array_fill_keys()`, `array_key_exists()` boxed key/container TypeErrors,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, and `new stdClass` boxed objects with public dynamic
@@ -68,4 +70,5 @@ broader file APIs.
 
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
 anonymous/static/object callback native tests; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`.
+`tools/run-post-merge-cow-gate.sh`; focused `array_key_exists()`/`count()`
+diagnostic reducers; 4-row bounded `array_key_exists()` PHPT slice.

@@ -47,10 +47,16 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
 }
 
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
-static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
+static PTN_UNUSED const char *ptn_internal_argument_type_name(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_BOOL) {
         return value.as.boolean ? "true" : "false";
+    }
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_EXCEPTION) {
+        return value.as.exception->class_name;
     }
     return ptn_offset_container_type_name(value);
 }
@@ -66,7 +72,7 @@ static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime, PtnValue value) 
         message,
         sizeof(message),
         "count(): Argument #1 ($value) must be of type Countable|array, %s given",
-        ptn_count_operand_type_name(value)
+        ptn_internal_argument_type_name(value)
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
@@ -79,8 +85,18 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
     key_value = ptn_value_deref(key_value);
     array_value = ptn_value_deref(array_value);
     if (array_value.type != PTN_ARRAY) {
-        fputs("Fatal error: array_key_exists(): Argument #2 ($array) must be of type array\n", stderr);
-        exit(255);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "array_key_exists(): Argument #2 ($array) must be of type array, %s given",
+            ptn_internal_argument_type_name(array_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
     }
     if (key_value.type == PTN_NULL) {
         ptn_emit_deprecation(
@@ -88,6 +104,20 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
             "Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead",
             line
         );
+    }
+    if (key_value.type == PTN_ARRAY || key_value.type == PTN_OBJECT || key_value.type == PTN_EXCEPTION) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot access offset of type %s on array",
+            ptn_internal_argument_type_name(key_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
     }
     PtnArrayKey key = ptn_array_key_from_value(key_value);
     int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
