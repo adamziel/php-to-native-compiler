@@ -1,15 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-10T09:54Z
-Measured: `polecat/chrome/ptn-4dv@mq7upueq` after `ptn-kia`; focused COW
-manifest and post-merge COW gate.
+Refresh: 2026-06-10T10:02Z
+Measured: `polecat/118/ptn-c7b@mq7vaa27` after `ptn-kia`/`ptn-4dv`; COW
+manifest and post-merge gate.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 327 | 327 | 0 |
+| Native compiled PHP snippets | 336 | 336 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 146 | 54 |
 | PHPT Zend rows | 76 | 63 | 13 |
@@ -53,11 +53,12 @@ by-reference return separation, `count()`, `??`, COW gates/oracles, assignment
 expressions, expression-level `@` suppression, `file_put_contents()`,
 `sha1_file()`, `unlink()` byte-file slices, array-path RHS snapshots,
 reference-aware `array_sum()`/`strtr()` replacement maps and byte maps,
-`array_merge_recursive()`/`array_replace_recursive()`, `debug_zval_dump()`,
-string-valued dynamic calls with lvalue reference arguments through fallback
-dispatch, append/list assignment expressions for reference arrays,
-direct-variable assignment-form `??=`, six offset-form `??=` diagnostics, and
-recursive/same-array reference diagnostics.
+reference-aware `in_array()`, `array_merge_recursive()`/
+`array_replace_recursive()`, `debug_zval_dump()`, string-valued dynamic calls
+with lvalue reference arguments through fallback dispatch, append/list
+assignment expressions for reference arrays, direct-variable assignment-form
+`??=`, six offset-form `??=` diagnostics, and recursive/same-array reference
+diagnostics.
 
 ## Still Needed
 

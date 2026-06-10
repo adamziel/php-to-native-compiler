@@ -117,6 +117,9 @@ supports in generated native binaries.
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
   empty string.
+- `in_array()` over current ordered-array values, using shared loose equality
+  or strict identity comparison and dereferencing references in both the needle
+  and haystack entries.
 - Array cursor reads and moves over direct variable ordered arrays through
   `current()`, `key()`, `reset()`, `end()`, `next()`, and `prev()`. Cursor-moving
   calls are currently limited to direct variable arguments; temporary arrays,
@@ -127,6 +130,9 @@ supports in generated native binaries.
   shared array payloads before mutation; temporary arrays, array offsets, and
   other non-direct-variable mutation targets fail before code generation with an
   explicit unsupported diagnostic.
+- Sort-family by-reference array mutators such as `sort()`, `asort()`,
+  `usort()`, and `array_multisort()` remain unsupported and fail before code
+  generation with an explicit unsupported diagnostic.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
   offset reads, and currently supported value expressions. Variable and offset
   operands use a quiet existence lookup: missing variables, missing offsets,
@@ -171,6 +177,7 @@ supports in generated native binaries.
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
+  `in_array(expr, expr[, expr]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
@@ -188,6 +195,7 @@ supports in generated native binaries.
   `ord(expr)`,
   `count(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
   `array_replace_recursive(expr, ...)`,
+  `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates, and
   `array_key_exists(expr, expr)` in echo operands, assignments, binary
@@ -296,6 +304,9 @@ supports in generated native binaries.
 - `array_merge_recursive()` and `array_replace_recursive()` over current boxed
   arrays, preserving ordered-map key behavior while cloning dereferenced values
   across COW boundaries.
+- `in_array()` over current boxed arrays, returning whether the needle matches
+  any entry under loose or strict comparison. References are read through the
+  same dereferencing path as other comparison internals.
 - `error_reporting()` currently accepts zero or one scalar argument and returns
   a placeholder integer level. It does not configure diagnostic filtering yet.
 - `gettype()` over current boxed scalar values, returning `NULL`, `boolean`,

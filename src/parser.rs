@@ -2266,6 +2266,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "print_r"
             | "bindec"
             | "hexdec"
+            | "in_array"
             | "octdec"
             | "intval"
             | "chr"
@@ -2330,6 +2331,25 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
     )
 }
 
+fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "sort"
+            | "rsort"
+            | "asort"
+            | "arsort"
+            | "ksort"
+            | "krsort"
+            | "natsort"
+            | "natcasesort"
+            | "usort"
+            | "uasort"
+            | "uksort"
+            | "shuffle"
+            | "array_multisort"
+    )
+}
+
 fn is_direct_variable_argument(expr: &Expr) -> bool {
     match expr {
         Expr::Variable(_, _) => true,
@@ -2343,6 +2363,31 @@ fn validate_mutating_array_internal_call(
     arguments: &[Expr],
     call_span: SourceSpan,
 ) -> Result<()> {
+    if is_unsupported_sort_family_mutation_name(name) {
+        let normalized = name.to_ascii_lowercase();
+        if arguments.is_empty() {
+            return Err(Diagnostic::new(
+                format!(
+                    "{normalized}() mutates array arguments by reference; sort-family array mutation semantics are unsupported"
+                ),
+                Some(call_span),
+            ));
+        }
+        if is_direct_variable_argument(&arguments[0]) {
+            return Err(Diagnostic::new(
+                format!(
+                    "{normalized}() mutates array arguments by reference; sort-family array mutation semantics are unsupported"
+                ),
+                Some(arguments.first().map_or(call_span, Expr::span)),
+            ));
+        }
+        return Err(Diagnostic::new(
+            format!(
+                "{normalized}() requires a direct variable array argument; sort-family array mutation targets are unsupported"
+            ),
+            Some(arguments.first().map_or(call_span, Expr::span)),
+        ));
+    }
     if arguments.is_empty() {
         return Ok(());
     }

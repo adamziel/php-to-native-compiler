@@ -576,6 +576,21 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
     return use_float ? ptn_float(float_sum) : ptn_int(integer_sum);
 }
 
+static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "in_array", 2, "haystack", args[1]);
+    int strict = argc >= 3 && ptn_is_truthy(args[2]);
+    for (size_t i = 0; i < array->len; i++) {
+        int matched = strict
+            ? ptn_compare_identical(args[0], array->entries[i].value)
+            : ptn_compare_equal(args[0], array->entries[i].value);
+        if (matched) {
+            return ptn_bool(1);
+        }
+    }
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_array_unshift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unshift", 1, "array", args[0]);
@@ -2559,6 +2574,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gettype", 1, 1, ptn_internal_gettype },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
+        { "in_array", 2, 3, ptn_internal_in_array },
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
         { "is_array", 1, 1, ptn_internal_is_array },

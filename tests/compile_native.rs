@@ -778,6 +778,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
 
     let error = parser::parse("<?php function array_values($array) { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_values()");
+
+    let error =
+        parser::parse("<?php function IN_ARRAY($needle, $haystack) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function in_array()");
 }
 
 #[test]
@@ -5900,6 +5904,40 @@ var_dump(strtr(\"abc\", \"ab\", \"xy\"));",
 }
 
 #[test]
+fn compile_in_array_dereferences_needle_and_haystack_entries_to_native_binary() {
+    let root = temp_dir("ptn-native-in-array-reference-aware");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("in-array-reference-aware.php");
+    let output = root.join("in-array-reference-aware-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$value = \"10\";\n\
+$haystack = [&$value, 20, \"030\"];\n\
+var_dump(in_array(10, $haystack));\n\
+var_dump(in_array(10, $haystack, true));\n\
+var_dump(in_array(\"10\", $haystack, true));\n\
+$value = 30;\n\
+var_dump(in_array(\"30\", $haystack));\n\
+var_dump(in_array(\"30\", $haystack, true));\n\
+$needle =& $value;\n\
+var_dump(in_array($needle, $haystack, true));\n\
+var_dump(function_exists(\"in_array\"), function_exists(\"IN_ARRAY\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_literal_reference_elements_to_native_binary() {
     let root = temp_dir("ptn-native-array-literal-reference-elements");
     fs::create_dir_all(&root).unwrap();
@@ -6590,6 +6628,44 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
     parser::parse("<?php $items = [1, 2]; array_pop(($items));").unwrap();
     parser::parse("<?php $items = [1]; array_push(($items), 2);").unwrap();
     parser::parse("<?php $items = [1]; array_unshift(($items), 0);").unwrap();
+}
+
+#[test]
+fn parser_rejects_unsupported_sort_family_array_mutators() {
+    for (source, function, target_message) in [
+        (
+            "<?php sort([3, 2, 1]);",
+            "sort",
+            "sort-family array mutation targets are unsupported",
+        ),
+        (
+            "<?php $items = [[3, 2, 1]]; asort($items[0]);",
+            "asort",
+            "sort-family array mutation targets are unsupported",
+        ),
+        (
+            "<?php $items = [3, 2, 1]; usort($items, \"cmp\");",
+            "usort",
+            "sort-family array mutation semantics are unsupported",
+        ),
+        (
+            "<?php $items = [3, 2, 1]; array_multisort($items);",
+            "array_multisort",
+            "sort-family array mutation semantics are unsupported",
+        ),
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert!(
+            error.message.contains(&format!("{function}()")),
+            "unexpected diagnostic for {function}: {}",
+            error.message
+        );
+        assert!(
+            error.message.contains(target_message),
+            "unexpected diagnostic for {function}: {}",
+            error.message
+        );
+    }
 }
 
 #[test]
