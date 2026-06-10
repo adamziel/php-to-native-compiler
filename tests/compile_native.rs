@@ -583,9 +583,15 @@ fn parser_accepts_inline_html_after_close_tag_as_output() {
 }
 
 #[test]
-fn parser_rejects_inline_html_between_php_blocks() {
-    let error = parser::parse("<?php print \"ok\"; ?> html <?php print \"again\";").unwrap_err();
-    assert!(error.message.contains("inline HTML between PHP blocks"));
+fn parser_accepts_inline_html_between_php_blocks() {
+    let program = parser::parse("<?php print \"ok\"; ?> html <?php print \"again\";").unwrap();
+    assert_eq!(program.statements.len(), 3);
+    assert!(matches!(&program.statements[0], Statement::Print { .. }));
+    assert!(matches!(
+        &program.statements[1],
+        Statement::InlineHtml { content, .. } if content == " html "
+    ));
+    assert!(matches!(&program.statements[2], Statement::Print { .. }));
 }
 
 #[test]
@@ -600,6 +606,26 @@ fn parser_accepts_internal_call_statements_and_inline_html() {
         &program.statements[1],
         Statement::InlineHtml { content, .. } if content == "DONE\n"
     ));
+}
+
+#[test]
+fn compile_inline_html_between_php_blocks_to_native_binary() {
+    let root = temp_dir("ptn-native-inline-html-between-blocks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inline-html-between-blocks.php");
+    let output = root.join("inline-html-between-blocks-bin");
+    fs::write(&input, "<?php echo \"A\"; ?>\nB\n<?php echo \"C\"; ?> tail").unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "AB\nC tail");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_string_literal(\"B\\n\", 2)"));
+    assert!(c_source.contains("ptn_string_literal(\" tail\", 5)"));
 }
 
 #[test]

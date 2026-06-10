@@ -317,10 +317,7 @@ impl<'a> Lexer<'a> {
         let mut content = String::new();
         while let Some(ch) = self.peek_char() {
             if self.rest().starts_with("<?php") {
-                return Err(Diagnostic::new(
-                    "inline HTML between PHP blocks is unsupported",
-                    Some(self.current_span(5)),
-                ));
+                break;
             }
             content.push(ch);
             self.bump_char();
@@ -330,6 +327,10 @@ impl<'a> Lexer<'a> {
                 kind: TokenKind::InlineHtml(content),
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
+        }
+        if self.rest().starts_with("<?php") {
+            self.closed_php = false;
+            self.push_open_tag();
         }
         Ok(())
     }

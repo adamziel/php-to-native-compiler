@@ -26,9 +26,9 @@ for `-O1`, `-O2`, `-O3`, `-Os`, and `-Oz`.
 Current runtime/compiler slices:
 
 - The lexer recognizes the supported PHP code envelope: optional byte-zero
-  Unix shebang, required `<?php`, PHP comments inside the code region, and one
-  `?>` close tag that switches to inline output through EOF. Inline HTML before
-  `<?php` and multi-block PHP/HTML mode switching remain unsupported.
+  Unix shebang, required `<?php`, PHP comments inside PHP regions, and `?>`
+  close tags that switch to inline output until the next `<?php` block or EOF.
+  Inline HTML before `<?php` remains unsupported.
 - Numeric literal lexing accepts PHP digit separators between valid digits and
   routes decimal, exponent float, legacy octal, binary `0b`/`0B`, and
   hexadecimal `0x`/`0X` spellings into the existing integer/float AST literal

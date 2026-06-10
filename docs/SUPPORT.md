@@ -9,8 +9,8 @@ supports in generated native binaries.
 - A Unix shebang at byte 0 before `<?php`.
 - PHP `//`, `#`, and `/* ... */` comments inside PHP code. One-line
   comments end at a newline or at a trailing `?>` close tag.
-- A `?>` close tag that ends PHP mode and emits following inline output, with
-  one immediately following newline swallowed.
+- `?>` close tags that end PHP mode and emit following inline output until the
+  next `<?php` block or EOF, with one immediately following newline swallowed.
 - Global-scope `const NAME = expr;` declarations for the currently supported
   constant-expression subset. Declared constants are visible to bare constant
   reads, `defined()`, and `constant()`. Duplicate declarations emit the modeled
@@ -451,7 +451,7 @@ supports in generated native binaries.
   assignment, binary operands, function arguments, or branch conditions.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,
   objects, references, copy-on-write, overflow edge cases, and diagnostics.
-- Inline HTML before `<?php` or between PHP blocks.
+- Inline HTML before `<?php`.
 - Complex/braced string interpolation and interpolation of arrays, objects,
   offsets, properties, variable variables, or other non-direct-variable forms.
 - Internal functions outside the registered internal-function subset.
