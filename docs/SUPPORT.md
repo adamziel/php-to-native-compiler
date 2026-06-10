@@ -117,6 +117,10 @@ supports in generated native binaries.
 - Attempts to create references to/from string offsets in supported reference
   lvalue positions, including array literal reference elements, raise the
   modeled PHP `Error` through the runtime exception path.
+- Scalar offset lvalue writes and references on `false` promote to arrays with
+  the modeled PHP deprecation. Writes, references, and unsets through
+  non-array `true`, integer, and float containers raise the modeled PHP
+  `Error` boundary instead of silently continuing.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the

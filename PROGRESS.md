@@ -1,17 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-10T14:28Z
-Measured: `ptn-107` rebased on `origin/master@51e3314d`; anonymous callback
-closures, static callables, string-callable callbacks, recursive directory
-APIs, bounded `stdClass` property evidence, and non-array `foreach`
-source-path diagnostics.
+Refresh: 2026-06-10T14:52Z
+Measured: `ptn-y9k` rebased on `origin/master@df737c70`; non-array
+`foreach` source-path diagnostics plus scalar offset-lvalue false-promotion
+and non-array fatal boundary evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 368 | 368 | 0 |
+| Native compiled PHP snippets | 369 | 369 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -54,7 +53,9 @@ offset-form `??=`, grouped reference targets, `array_fill_keys()`,
 string-callable `call_user_func()`, string-callable/null `array_map()`, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, and `new stdClass` boxed objects with public dynamic
-property reads/writes shared through object aliases.
+property reads/writes shared through object aliases. Scalar offset writes and
+references now promote `false` to arrays with deprecation and throw for
+non-array `true`/int/float lvalues.
 
 ## Still Needed
 
@@ -68,7 +69,7 @@ fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-anonymous/static/object callback native tests; focused non-array `foreach`
-native tests; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`.
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused
+scalar/string/`??=` and non-array `foreach` native tests; invalid-container
+PHPT row remains blocked by complex interpolation; prior smoke and post-merge
+COW gates.
