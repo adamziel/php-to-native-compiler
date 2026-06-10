@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-manifest=${1:-tools/phpt-bounded-manifest.txt}
-php_src=${PHP_SRC_PHPT:-/home/claude/php-src-phpt}
-out_dir=${PHPT_PROGRESS_DIR:-.runtime/phpt-progress}
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+manifest=${1:-$repo_root/tools/phpt-bounded-manifest.txt}
+source "$repo_root/tools/phpt-corpus.sh"
+php_src="$(ptn_resolve_phpt_corpus "$repo_root")"
+out_dir=${PHPT_PROGRESS_DIR:-$repo_root/.runtime/phpt-progress}
 
 if [[ ! -f "$manifest" ]]; then
     echo "manifest not found: $manifest" >&2
-    exit 1
-fi
-
-if [[ ! -f "$php_src/run-tests.php" ]]; then
-    echo "PHP source checkout not found or missing run-tests.php: $php_src" >&2
     exit 1
 fi
 

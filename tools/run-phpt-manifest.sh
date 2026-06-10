@@ -3,7 +3,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 manifest="${1:-$repo_root/tools/phpt-manifest-200.txt}"
-php_src="${PHP_SRC_PHPT:-/home/claude/php-src-phpt}"
+source "$repo_root/tools/phpt-corpus.sh"
+php_src="$(ptn_resolve_phpt_corpus "$repo_root")"
 log_dir="$repo_root/.runtime/phpt-progress"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 log="$log_dir/run-$stamp.log"
@@ -11,11 +12,6 @@ resolved_manifest="$log_dir/manifest-$stamp.txt"
 
 if [[ ! -f "$manifest" ]]; then
   echo "manifest not found: $manifest" >&2
-  exit 2
-fi
-
-if [[ ! -f "$php_src/run-tests.php" ]]; then
-  echo "PHP source checkout with run-tests.php not found: $php_src" >&2
   exit 2
 fi
 

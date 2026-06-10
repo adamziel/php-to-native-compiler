@@ -64,5 +64,5 @@ sub-path scalar offset-lvalue parity, and broader file APIs.
 
 Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes,
 cslashes, object `foreach`, and scalar offset native tests/reducers; exact
-`add-and-stripcslashes.phpt`; `cargo test`. Exact addslashes PHPT rows are
-blocked locally by missing `/home/claude/php-src-phpt/run-tests.php` (`ptn-jmq`).
+`add-and-stripcslashes.phpt`; `cargo test`. PHPT runners resolve php-src via
+`PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or `.runtime/php-src-phpt`.

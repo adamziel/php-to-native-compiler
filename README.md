@@ -23,7 +23,8 @@ expected rows, or one-off outputs.
   userland parameters cover the first COW/reference boundary slice.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for
   non-array operands in the current boxed value domain.
-- Bounded PHPT telemetry from `/home/claude/php-src-phpt`.
+- Bounded PHPT telemetry from a php-src checkout resolved by `PHP_SRC_PHPT`,
+  `/home/claude/php-src-phpt`, or the `.runtime/php-src-phpt` cache.
 
 ## Status Files
 
@@ -41,7 +42,7 @@ cargo test
 tools/run-native-smoke-matrix.sh
 tools/run-post-merge-cow-gate.sh
 cargo build --bin phpc
-PHPC_BIN="$PWD/target/debug/phpc" php /home/claude/php-src-phpt/run-tests.php -q -p "$PWD/target/debug/phpc" <manifest paths>
+tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
 ```
 
 Detailed history lives in beads, commits, and merge requests, not in this file.

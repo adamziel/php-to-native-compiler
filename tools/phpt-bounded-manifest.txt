@@ -5,7 +5,8 @@
 # tests/strings, tests/output, and ext/standard. Do not replace this with a
 # full-suite discovery run.
 #
-# Default corpus: /home/claude/php-src-phpt
+# Default corpus: PHP_SRC_PHPT, /home/claude/php-src-phpt, or
+# .runtime/php-src-phpt.
 
 Zend/tests/add_001.phpt
 Zend/tests/add_002.phpt
