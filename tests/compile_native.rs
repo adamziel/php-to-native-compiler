@@ -74,6 +74,21 @@ fn lexer_accepts_numeric_literal_separators_and_radices() {
 }
 
 #[test]
+fn lexer_promotes_oversized_integer_literals_to_float() {
+    let tokens = lexer::lex(
+        "<?php 9223372036854775808 0x8000000000000000 0xffffffffffffffff 0b1000000000000000000000000000000000000000000000000000000000000000 01000000000000000000000 0o1000000000000000000000",
+    )
+    .unwrap();
+    for token in &tokens[1..7] {
+        assert!(
+            matches!(token.kind, TokenKind::Float(value) if value.is_finite()),
+            "expected oversized integer literal to become a finite float, got {:?}",
+            token.kind
+        );
+    }
+}
+
+#[test]
 fn lexer_rejects_invalid_legacy_octal_integer_literals_as_parse_errors() {
     for source in ["<?php\n$x = 08;", "<?php\n$x = 0_8;", "<?php\n$x = 019;"] {
         let error = lexer::lex(source).unwrap_err();
@@ -10709,6 +10724,29 @@ fn compile_boxed_arithmetic_literals_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "7 6 3.5 2 -1 1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_oversized_integer_literals_promote_to_float_to_native_binary() {
+    let root = temp_dir("ptn-native-oversized-integer-literals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("oversized-integer-literals.php");
+    let output = root.join("oversized-integer-literals-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(9223372036854775808); var_dump(0x8000000000000000); var_dump(0xffffffffffffffff); var_dump(0o1000000000000000000000); var_dump(0x8000000000000000 * 2);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "float(9.223372036854776E+18)\nfloat(9.223372036854776E+18)\nfloat(1.8446744073709552E+19)\nfloat(9.223372036854776E+18)\nfloat(1.8446744073709552E+19)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

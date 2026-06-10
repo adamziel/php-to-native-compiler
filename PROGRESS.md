@@ -1,6 +1,6 @@
 # PTN Progress
 
-Refresh: 2026-06-10T15:06Z
+Refresh: 2026-06-10T16:22Z
 Measured: `ptn-wk3` on `origin/master@d2d51779`; callback closures,
 static/string callables, array_reduce COW, directory APIs, `stdClass`,
 non-array `foreach` diagnostics, and
@@ -11,7 +11,7 @@ non-array `foreach` diagnostics, and
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 369 | 369 | 0 |
+| Native compiled PHP snippets | 370 | 370 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -54,10 +54,10 @@ string-callable `call_user_func()`, string-callable/null `array_map()`,
 `intval()` base-prefix and range-saturating string conversion, named
 `array_walk()` global-array rebinding, public static methods registered as
 `Class::method` callables, `array_reduce()` callback dispatch with debug
-refcounts, and `new stdClass` boxed objects with public
-dynamic property reads/writes shared through object aliases, plus
-`array_count_values()` over integer/string boxed array values with unsupported
-entries skipped after modeled warnings.
+refcounts, `new stdClass` boxed objects with shared public dynamic properties,
+oversized integer-literal float promotion, plus `array_count_values()` over
+integer/string boxed array values with unsupported entries skipped after
+modeled warnings.
 
 ## Still Needed
 

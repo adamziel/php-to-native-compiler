@@ -472,12 +472,7 @@ impl<'a> Lexer<'a> {
             self.bump_char();
             self.bump_char();
             self.collect_digits(&mut text, |ch| ch.is_ascii_hexdigit());
-            let value = i64::from_str_radix(&text, 16)
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
-            self.tokens.push(Token {
-                kind: TokenKind::Int(value),
-                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
-            });
+            self.push_radix_integer_or_float(start, &text, 16)?;
             return Ok(());
         }
 
@@ -487,12 +482,7 @@ impl<'a> Lexer<'a> {
             self.bump_char();
             self.bump_char();
             self.collect_digits(&mut text, |ch| matches!(ch, '0' | '1'));
-            let value = i64::from_str_radix(&text, 2)
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
-            self.tokens.push(Token {
-                kind: TokenKind::Int(value),
-                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
-            });
+            self.push_radix_integer_or_float(start, &text, 2)?;
             return Ok(());
         }
 
@@ -502,12 +492,7 @@ impl<'a> Lexer<'a> {
             self.bump_char();
             self.bump_char();
             self.collect_digits(&mut text, |ch| matches!(ch, '0'..='7'));
-            let value = i64::from_str_radix(&text, 8)
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
-            self.tokens.push(Token {
-                kind: TokenKind::Int(value),
-                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
-            });
+            self.push_radix_integer_or_float(start, &text, 8)?;
             return Ok(());
         }
 
@@ -541,23 +526,50 @@ impl<'a> Lexer<'a> {
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
         } else {
-            let value = if text.len() > 1 && text.starts_with('0') {
+            if text.len() > 1 && text.starts_with('0') {
                 if text.bytes().any(|digit| matches!(digit, b'8' | b'9')) {
                     return Err(Diagnostic::parse_error(
                         "Invalid numeric literal",
                         Some(start),
                     ));
                 }
-                i64::from_str_radix(&text, 8)
+                self.push_radix_integer_or_float(start, &text, 8)?;
             } else {
-                text.parse::<i64>()
+                self.push_decimal_integer_or_float(start, &text)?;
             }
-            .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
-            self.tokens.push(Token {
-                kind: TokenKind::Int(value),
-                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
-            });
         }
+        Ok(())
+    }
+
+    fn push_radix_integer_or_float(
+        &mut self,
+        start: SourceSpan,
+        digits: &str,
+        radix: u32,
+    ) -> Result<()> {
+        let kind = match i64::from_str_radix(digits, radix) {
+            Ok(value) => TokenKind::Int(value),
+            Err(_) => TokenKind::Float(radix_digits_to_float(digits, radix)),
+        };
+        self.tokens.push(Token {
+            kind,
+            span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+        });
+        Ok(())
+    }
+
+    fn push_decimal_integer_or_float(&mut self, start: SourceSpan, text: &str) -> Result<()> {
+        let kind = match text.parse::<i64>() {
+            Ok(value) => TokenKind::Int(value),
+            Err(_) => TokenKind::Float(
+                text.parse::<f64>()
+                    .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?,
+            ),
+        };
+        self.tokens.push(Token {
+            kind,
+            span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+        });
         Ok(())
     }
 
@@ -759,6 +771,21 @@ impl<'a> Lexer<'a> {
             }
         }
     }
+}
+
+fn radix_digits_to_float(digits: &str, radix: u32) -> f64 {
+    let base = f64::from(radix);
+    let mut value = 0.0;
+    for byte in digits.bytes() {
+        let digit = match byte {
+            b'0'..=b'9' => u32::from(byte - b'0'),
+            b'a'..=b'z' => 10 + u32::from(byte - b'a'),
+            b'A'..=b'Z' => 10 + u32::from(byte - b'A'),
+            _ => continue,
+        };
+        value = (value * base) + f64::from(digit);
+    }
+    value
 }
 
 fn is_ident_start(ch: char) -> bool {
