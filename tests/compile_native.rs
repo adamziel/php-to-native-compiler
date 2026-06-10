@@ -8554,18 +8554,18 @@ echo $numeric == $numericFloat, \"|\", \"10\" < \"2\", \"|\", \"alpha\" < \"beta
 }
 
 #[test]
-fn compile_scalar_shift_strings_and_constants_to_native_binary() {
-    let root = temp_dir("ptn-native-scalar-shifts");
+fn compile_bitwise_shift_variation_str2_phpt_rows_to_native_binary() {
+    let root = temp_dir("ptn-native-bitwise-shift-variation-str2");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("scalar-shifts.php");
-    let output = root.join("scalar-shifts-bin");
+    let input = root.join("bitwise-shift-variation-str2.php");
+    let output = root.join("bitwise-shift-variation-str2-bin");
     fs::write(
         &input,
         "<?php error_reporting(E_ERROR); var_dump(\"12\" << \"0\"); var_dump(\"34\" << \"1\"); var_dump(\"56\" << \"2\"); var_dump(\"12\" >> \"0\"); var_dump(\"34\" >> \"1\"); var_dump(\"56\" >> \"2\"); var_dump(defined(\"E_ERROR\"));",
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -8574,6 +8574,18 @@ fn compile_scalar_shift_strings_and_constants_to_native_binary() {
         "int(12)\nint(68)\nint(224)\nint(12)\nint(17)\nint(14)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let left_body =
+        generated_c_static_function_body(&c_source, "static PTN_UNUSED PtnValue ptn_shift_left(");
+    assert!(left_body.contains("ptn_bitwise_integer_operand(left)"));
+    assert!(left_body.contains("ptn_shift_distance(right)"));
+    let right_body =
+        generated_c_static_function_body(&c_source, "static PTN_UNUSED PtnValue ptn_shift_right(");
+    assert!(right_body.contains("ptn_bitwise_integer_operand(left)"));
+    assert!(right_body.contains("ptn_shift_distance(right)"));
+    assert!(c_source.contains(" = ptn_shift_left("));
+    assert!(c_source.contains(" = ptn_shift_right("));
 }
 
 #[test]
