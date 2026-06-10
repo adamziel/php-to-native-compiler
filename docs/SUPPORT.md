@@ -29,11 +29,12 @@ supports in generated native binaries.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
   variables use the same runtime variable read, scalar string cast, and
   concatenation paths as ordinary expressions.
-- Direct variable assignment and scalar reads through the generated runtime
-  symbol table.
-- Assignment expressions for direct variables, array dimension/append lvalues,
-  and list/short-array destructuring targets, including by-reference
-  destructuring entries in the modeled reference-array subset.
+- Direct variable assignment/read plus variable-variable scalar reads/writes
+  through the generated runtime symbol table.
+- Assignment expressions for direct variables, variable-variable targets, array
+  dimension/append lvalues including dynamic `${expr}[...]` roots, and
+  list/short-array destructuring targets, including by-reference destructuring
+  entries in the modeled reference-array subset.
 - Undefined direct variable reads emit a runtime warning with generated source
   path and line, then yield `null`.
 - Boxed scalar `+`, `-`, `*`, `**`, `/`, and `%` numeric arithmetic and `.`
@@ -544,12 +545,12 @@ supports in generated native binaries.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for integer-only operator conversion diagnostics, including bitwise,
   shift, and modulo diagnostics.
-- Object, property, static-property, variable-variable, append-form
-  null-coalescing, and remaining non-direct-variable compound-assignment
-  lvalues outside modeled keyed array/string offsets.
+- Object, property, static-property, variable-variable null-coalescing,
+  append-form null-coalescing, and remaining non-direct-variable
+  compound-assignment lvalues outside modeled keyed array/string offsets.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.
 - Arrays, references, copy-on-write, globals, superglobals, classes, objects,
-  resources, exceptions, variable variables, includes, and dynamic
-  fallback.
+  resources, exceptions, remaining variable-variable reference/compound forms,
+  includes, and dynamic fallback.

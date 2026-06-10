@@ -51,6 +51,43 @@ fn parser_accepts_direct_assignment_and_variable_reads() {
 }
 
 #[test]
+fn parser_accepts_variable_variables_and_dynamic_array_targets() {
+    let program =
+        parser::parse("<?php $$name = \"value\"; ${$$name}[\"key\"] = \"nested\";").unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected dynamic variable assignment expression");
+    };
+    let Expr::Assign { target, .. } = expression else {
+        panic!("expected dynamic variable assignment");
+    };
+    assert!(matches!(
+        target,
+        AssignmentTarget::DynamicVariable { name, .. }
+            if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected dynamic array assignment expression");
+    };
+    let Expr::Assign { target, .. } = expression else {
+        panic!("expected dynamic array assignment");
+    };
+    let AssignmentTarget::DynamicArrayDim {
+        array, dimensions, ..
+    } = target
+    else {
+        panic!("expected dynamic array assignment target");
+    };
+    assert!(matches!(array.as_ref(), Expr::DynamicVariable { .. }));
+    assert!(matches!(
+        dimensions.as_slice(),
+        [Some(Expr::String(key, _))] if key == "key"
+    ));
+}
+
+#[test]
 fn lexer_accepts_numeric_literal_separators_and_radices() {
     let tokens = lexer::lex(
         "<?php 299_792_458 96_485.332_12 6.626_070_15e-34 0xCAFE_F00D 0b0101_1111 0137_041 0_124 0o1_6 0O10",
@@ -9453,6 +9490,37 @@ fn compile_direct_variable_assignment_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "PTN 2\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_variable_variables_to_native_binary() {
+    let root = temp_dir("ptn-native-variable-variables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("variable-variables.php");
+    let output = root.join("variable-variables-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$a = "b";
+$$a = "test";
+$$$a = "blah";
+${$$$a}["associative arrays work too"] = "this is nifty";
+echo "$test\n";
+echo $blah[$test = "associative arrays work too"]."\n";
+var_dump($b, $test);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "blah\nthis is nifty\nstring(4) \"test\"\nstring(27) \"associative arrays work too\"\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

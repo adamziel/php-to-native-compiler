@@ -1419,6 +1419,7 @@ impl Parser {
             TokenKind::False => Ok(Expr::Bool(false, token.span)),
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::Dollar => self.parse_dynamic_variable_expr(token.span),
             TokenKind::Function => self.parse_anonymous_function_expr(token.span),
             TokenKind::Identifier(name) => {
                 let lowercase = name.to_ascii_lowercase();
@@ -1479,6 +1480,23 @@ impl Parser {
             TokenKind::LeftBracket => self.parse_array_literal(token.span),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
+    }
+
+    fn parse_dynamic_variable_expr(&mut self, dollar_span: SourceSpan) -> Result<Expr> {
+        let (name, right_span) = if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            self.advance();
+            let name = self.parse_expr()?;
+            let right_span = self.expect_right_brace()?;
+            (name, right_span)
+        } else {
+            let name = self.parse_primary_expr()?;
+            let right_span = name.span();
+            (name, right_span)
+        };
+        Ok(Expr::DynamicVariable {
+            name: Box::new(name),
+            span: combine_spans(dollar_span, right_span),
+        })
     }
 
     fn parse_static_member_expr(
@@ -1841,6 +1859,7 @@ impl Parser {
                 | TokenKind::True
                 | TokenKind::False
                 | TokenKind::Null
+                | TokenKind::Dollar
                 | TokenKind::Variable(_)
                 | TokenKind::Function
                 | TokenKind::Identifier(_)
@@ -2269,6 +2288,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::True => "true",
         TokenKind::False => "false",
         TokenKind::Null => "null",
+        TokenKind::Dollar => "$",
         TokenKind::Variable(_) => "variable",
         TokenKind::Equal => "=",
         TokenKind::DoubleArrow => "=>",
@@ -2406,6 +2426,8 @@ fn validate_recursive_reference_assignment_value(
     let variable = match target {
         AssignmentTarget::Variable { name, .. } => name,
         AssignmentTarget::ArrayDim(target) => &target.array,
+        AssignmentTarget::DynamicVariable { .. } => return Ok(()),
+        AssignmentTarget::DynamicArrayDim { .. } => return Ok(()),
         AssignmentTarget::Property { .. } => return Ok(()),
         AssignmentTarget::List(_) => return Ok(()),
     };
@@ -2448,6 +2470,7 @@ fn expr_array_literal_reference_to_variable(
             .find_map(|element| array_element_reference_to_variable(element, variable)),
         Expr::Assign { value, .. }
         | Expr::AssignRef { source: value, .. }
+        | Expr::DynamicVariable { name: value, .. }
         | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
@@ -2727,6 +2750,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         }
         Expr::PropertyFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
+        }
+        Expr::DynamicVariable { name, .. } => {
+            validate_anonymous_functions_in_expr(name, functions)?;
         }
         Expr::Array { elements, .. } => {
             for element in elements {
@@ -3330,6 +3356,35 @@ fn array_dim_target_from_expr(expr: Expr) -> Result<ArrayDimTarget> {
     }
 }
 
+fn dynamic_array_dim_target_from_expr(
+    expr: Expr,
+) -> Result<(Box<Expr>, Vec<Option<Expr>>, SourceSpan)> {
+    let span = expr.span();
+    let mut dimensions = Vec::new();
+    let mut current = expr;
+    loop {
+        match current {
+            Expr::ArrayAccess { array, index, .. } => {
+                dimensions.push(index.map(|index| *index));
+                current = *array;
+            }
+            Expr::Grouped { expr, .. } => {
+                current = *expr;
+            }
+            Expr::DynamicVariable { name, .. } => {
+                dimensions.reverse();
+                return Ok((name, dimensions, span));
+            }
+            _ => {
+                return Err(Diagnostic::new(
+                    "unsupported assignment target",
+                    Some(current.span()),
+                ));
+            }
+        }
+    }
+}
+
 fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
     let span = expr.span();
     match expr {
@@ -3381,9 +3436,20 @@ fn reference_array_dim_target_from_expr(
 fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
     match expr {
         Expr::Variable(name, span) => Ok(AssignmentTarget::Variable { name, span }),
-        Expr::ArrayAccess { .. } => Ok(AssignmentTarget::ArrayDim(array_dim_target_from_expr(
-            expr,
-        )?)),
+        Expr::DynamicVariable { name, span } => {
+            Ok(AssignmentTarget::DynamicVariable { name, span })
+        }
+        Expr::ArrayAccess { .. } => match array_dim_target_from_expr(expr.clone()) {
+            Ok(target) => Ok(AssignmentTarget::ArrayDim(target)),
+            Err(_) => {
+                let (array, dimensions, span) = dynamic_array_dim_target_from_expr(expr)?;
+                Ok(AssignmentTarget::DynamicArrayDim {
+                    array,
+                    dimensions,
+                    span,
+                })
+            }
+        },
         Expr::PropertyFetch {
             receiver,
             name,
@@ -3436,6 +3502,10 @@ fn validate_coalesce_assignment_target(
 
     match target {
         AssignmentTarget::Variable { .. } => Ok(()),
+        AssignmentTarget::DynamicVariable { .. } => Err(Diagnostic::new(
+            "null coalescing assignment currently supports variables and array/string offsets",
+            Some(span),
+        )),
         AssignmentTarget::ArrayDim(target) => {
             if target.dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
@@ -3445,6 +3515,10 @@ fn validate_coalesce_assignment_target(
             }
             Ok(())
         }
+        AssignmentTarget::DynamicArrayDim { .. } => Err(Diagnostic::new(
+            "null coalescing assignment currently supports variables and array/string offsets",
+            Some(span),
+        )),
         AssignmentTarget::Property { .. } => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables and array/string offsets",
             Some(span),
@@ -3469,6 +3543,12 @@ fn validate_reference_assignment_target_source(
                     Some(*span),
                 ));
             }
+        }
+        AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::DynamicArrayDim { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
         }
         AssignmentTarget::ArrayDim(target) => {
             if reference_source_is_variable(source, &target.array) {
@@ -3582,6 +3662,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::Empty { target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::Cast { expr: target, .. }
+        | Expr::DynamicVariable { name: target, .. }
         | Expr::Grouped { expr: target, .. } => reject_append_array_read(target)?,
         Expr::Binary { left, right, .. } => {
             reject_append_array_read(left)?;
@@ -3639,6 +3720,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         }
         Expr::InterpolatedString(_, _)
         | Expr::Variable(_, _)
+        | Expr::DynamicVariable { .. }
         | Expr::Assign { .. }
         | Expr::AssignRef { .. }
         | Expr::AnonymousFunction(_)

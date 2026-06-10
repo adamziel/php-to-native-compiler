@@ -222,5 +222,5 @@ Near-term architecture targets:
   exception/finally edges.
 - Full PHP increment/decrement semantics, including expression result values,
   strings, booleans, arrays/objects, references, and copy-on-write behavior.
-- Explicit fallback boundaries for `eval`, variable variables, and runtime
-  symbol mutation.
+- Explicit fallback boundaries for `eval`, remaining variable-variable
+  reference/compound forms, and runtime symbol mutation.

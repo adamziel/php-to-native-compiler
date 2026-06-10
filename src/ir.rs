@@ -174,6 +174,10 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    DynamicLoad {
+        name: Box<ValueExpr>,
+        line: usize,
+    },
     Assign {
         target: AssignmentTarget,
         op: AssignmentOp,
@@ -269,8 +273,17 @@ pub enum AssignmentTarget {
         name: String,
         line: usize,
     },
+    DynamicVariable {
+        name: Box<ValueExpr>,
+        line: usize,
+    },
     ArrayDim {
         array: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
+    DynamicArrayDim {
+        array: Box<ValueExpr>,
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
@@ -722,6 +735,12 @@ impl LoweringContext {
                 name: name.clone(),
                 line: span.line,
             },
+            AstAssignmentTarget::DynamicVariable { name, span } => {
+                AssignmentTarget::DynamicVariable {
+                    name: Box::new(self.lower_expr(name)),
+                    line: span.line,
+                }
+            }
             AstAssignmentTarget::ArrayDim(target) => AssignmentTarget::ArrayDim {
                 array: target.array.clone(),
                 dimensions: target
@@ -734,6 +753,22 @@ impl LoweringContext {
                     })
                     .collect(),
                 line: target.span.line,
+            },
+            AstAssignmentTarget::DynamicArrayDim {
+                array,
+                dimensions,
+                span,
+            } => AssignmentTarget::DynamicArrayDim {
+                array: Box::new(self.lower_expr(array)),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
             },
             AstAssignmentTarget::Property {
                 receiver,
@@ -923,6 +958,10 @@ impl LoweringContext {
             Expr::Null(_) => ValueExpr::Null,
             Expr::Variable(name, span) => ValueExpr::Load {
                 name: name.clone(),
+                line: span.line,
+            },
+            Expr::DynamicVariable { name, span } => ValueExpr::DynamicLoad {
+                name: Box::new(self.lower_expr(name)),
                 line: span.line,
             },
             Expr::AnonymousFunction(function) => self.lower_anonymous_function(function),
