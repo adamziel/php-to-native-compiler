@@ -41,10 +41,10 @@ supports in generated native binaries.
   precedence relative to unary operators. Other arithmetic chains are parsed
   left-associatively, with `*`, `/`, and `%` binding tighter than `+` and `-`,
   and arithmetic binding tighter than `.`. Integer-only `%` conversions emit
-  the current float/float-string precision-loss deprecation boundary when a
-  scalar operand loses precision while converting to an integer, and leading
-  numeric strings with trailing non-numeric data emit the current non-numeric
-  warning boundary.
+  the current non-representable float warning boundary, the current
+  float/float-string precision-loss deprecation boundary when a scalar operand
+  loses precision while converting to an integer, and leading numeric strings
+  with trailing non-numeric data emit the current non-numeric warning boundary.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
@@ -70,8 +70,9 @@ supports in generated native binaries.
 - Unary bitwise `~` over supported boxed scalar values. String operands produce
   bytewise string results for non-NUL string data; other supported scalar
   operands are converted to integers through the current scalar numeric path,
-  including the current float/float-string precision-loss deprecation boundary
-  and leading-numeric-string warning boundary.
+  including the current non-representable float warning boundary,
+  float/float-string precision-loss deprecation boundary, and
+  leading-numeric-string warning boundary.
 - Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
   non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts over
   supported boxed scalar values.
@@ -160,8 +161,9 @@ supports in generated native binaries.
 - Boxed scalar bitwise `&`, `^`, and `|` operators. When both operands are strings,
   the result is a bytewise string for non-NUL string data. Other supported
   scalar operands are converted to integers through the current scalar numeric
-  conversion path, including the current float/float-string precision-loss
-  deprecation boundary and leading-numeric-string warning boundary.
+  conversion path, including the current non-representable float warning
+  boundary, float/float-string precision-loss deprecation boundary, and
+  leading-numeric-string warning boundary.
 - Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
   converted to integers through the current bitwise integer-conversion path,
   including the current float/float-string precision-loss deprecation boundary
@@ -537,8 +539,8 @@ supports in generated native binaries.
 - Scope-aware magic constants inside functions, methods, classes, traits,
   namespaces, includes, and eval contexts.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
-  parity for integer-only operator conversion diagnostics, including bitwise,
-  shift, and modulo diagnostics.
+  parity for remaining integer-only operator conversion diagnostics, including
+  `error_reporting()` suppression for bitwise, shift, and modulo diagnostics.
 - Object, property, static-property, variable-variable, append-form
   null-coalescing, and remaining non-direct-variable compound-assignment
   lvalues outside modeled keyed array/string offsets.

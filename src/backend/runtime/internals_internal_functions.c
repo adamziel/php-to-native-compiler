@@ -25,9 +25,12 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_INT:
             printf("%lld", (long long)value.as.integer);
             break;
-        case PTN_FLOAT:
-            printf("%.14g", value.as.floating);
+        case PTN_FLOAT: {
+            char formatted[64];
+            ptn_format_php_float_precision(value.as.floating, 14, formatted, sizeof(formatted));
+            fputs(formatted, stdout);
             break;
+        }
         case PTN_STRING:
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             break;
@@ -466,9 +469,12 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
         case PTN_INT:
             ptn_string_buffer_append_format(buffer, "%lld", (long long)value.as.integer);
             break;
-        case PTN_FLOAT:
-            ptn_string_buffer_append_format(buffer, "%.14g", value.as.floating);
+        case PTN_FLOAT: {
+            char formatted[64];
+            ptn_format_php_float_precision(value.as.floating, 14, formatted, sizeof(formatted));
+            ptn_string_buffer_append(buffer, formatted);
             break;
+        }
         case PTN_STRING:
             ptn_string_buffer_append_len(
                 buffer,

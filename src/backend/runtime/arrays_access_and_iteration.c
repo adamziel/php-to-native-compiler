@@ -1,6 +1,6 @@
         snprintf(buffer, buffer_len, "%lld", (long long)value.as.integer);
     } else {
-        snprintf(buffer, buffer_len, "%.14g", value.as.floating);
+        ptn_format_php_float_precision(value.as.floating, 14, buffer, buffer_len);
     }
 }
 

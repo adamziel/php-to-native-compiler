@@ -138,7 +138,8 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             written = snprintf(buffer, sizeof(buffer), "%lld", (long long)value.as.integer);
             break;
         case PTN_FLOAT:
-            written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
+            ptn_format_php_float_precision(value.as.floating, 14, buffer, sizeof(buffer));
+            written = (int)strlen(buffer);
             break;
         case PTN_STRING:
             return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
@@ -233,7 +234,8 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
             written = snprintf(buffer, sizeof(buffer), "%lld", (long long)value.as.integer);
             break;
         case PTN_FLOAT:
-            written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
+            ptn_format_php_float_precision(value.as.floating, 14, buffer, sizeof(buffer));
+            written = (int)strlen(buffer);
             break;
         case PTN_STRING:
             return ptn_string_operand_borrowed_len((const char *)value.as.string.data, value.as.string.len);
@@ -540,52 +542,8 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     return 0;
 }
 
-static PTN_UNUSED int ptn_same_double(double left, double right) {
-    return memcmp(&left, &right, sizeof(double)) == 0;
-}
-
-static PTN_UNUSED void ptn_normalize_var_dump_exponent(char *buffer) {
-    for (char *cursor = buffer; *cursor != '\0'; cursor++) {
-        if (*cursor == 'e' || *cursor == 'E') {
-            *cursor = 'E';
-            cursor++;
-            if (*cursor == '+' || *cursor == '-') {
-                cursor++;
-            }
-            while (*cursor == '0' && isdigit((unsigned char)cursor[1])) {
-                memmove(cursor, cursor + 1, strlen(cursor));
-            }
-            return;
-        }
-    }
-}
-
 static PTN_UNUSED void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_size) {
-    if (isnan(value)) {
-        snprintf(buffer, buffer_size, "NAN");
-        return;
-    }
-    if (isinf(value)) {
-        snprintf(buffer, buffer_size, signbit(value) ? "-INF" : "INF");
-        return;
-    }
-
-    for (int precision = 1; precision <= 17; precision++) {
-        char candidate[64];
-        char *end = NULL;
-        double reparsed;
-        snprintf(candidate, sizeof(candidate), "%.*g", precision, value);
-        ptn_normalize_var_dump_exponent(candidate);
-        errno = 0;
-        reparsed = strtod(candidate, &end);
-        if (errno == 0 && end != NULL && *end == '\0' && ptn_same_double(reparsed, value)) {
-            snprintf(buffer, buffer_size, "%s", candidate);
-            return;
-        }
-    }
-
-    snprintf(buffer, buffer_size, "%.17g", value);
-    ptn_normalize_var_dump_exponent(buffer);
+    ptn_format_php_float_roundtrip(value, buffer, buffer_size);
 }
 
 static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {

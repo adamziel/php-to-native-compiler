@@ -577,18 +577,34 @@ static PTN_UNUSED PtnValue ptn_divide(PtnValue left, PtnValue right) {
     return ptn_float(left_number.floating / right_number.floating);
 }
 
+static PTN_UNUSED int ptn_float_to_int_not_representable(double value) {
+    return isnan(value) || isinf(value) ||
+        value < -9223372036854775808.0 || value >= 9223372036854775808.0;
+}
+
 static PTN_UNUSED int ptn_float_to_int_loses_precision(double value) {
-    if (value < -9223372036854775808.0 || value >= 9223372036854775808.0) {
+    if (ptn_float_to_int_not_representable(value)) {
         return 1;
     }
     int64_t integer = (int64_t)value;
     return (double)integer != value;
 }
 
-static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation(double value) {
+static PTN_UNUSED void ptn_emit_float_to_int_not_representable_warning(double value) {
+    char formatted[64];
+    ptn_format_php_float_roundtrip(value, formatted, sizeof(formatted));
     printf(
-        "\nDeprecated: Implicit conversion from float %.14g to int loses precision in ptn-generated-code on line 0\n",
-        value
+        "\nWarning: The float %s is not representable as an int, cast occurred in ptn-generated-code on line 0\n",
+        formatted
+    );
+}
+
+static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation(double value) {
+    char formatted[64];
+    ptn_format_php_float_precision(value, 14, formatted, sizeof(formatted));
+    printf(
+        "\nDeprecated: Implicit conversion from float %s to int loses precision in ptn-generated-code on line 0\n",
+        formatted
     );
 }
 
@@ -637,7 +653,9 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnVal
         return integer;
     }
     if (value.type == PTN_FLOAT) {
-        if (ptn_float_to_int_loses_precision(value.as.floating)) {
+        if (ptn_float_to_int_not_representable(value.as.floating)) {
+            ptn_emit_float_to_int_not_representable_warning(value.as.floating);
+        } else if (ptn_float_to_int_loses_precision(value.as.floating)) {
             ptn_emit_float_to_int_precision_deprecation(value.as.floating);
         }
         return (int64_t)value.as.floating;
@@ -648,10 +666,12 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnVal
     if (value.type == PTN_STRING && ptn_string_has_trailing_non_numeric_data(string_data)) {
         ptn_emit_non_numeric_value_warning();
     }
-    if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
-        if (value.type == PTN_STRING) {
+    if (number.type == PTN_NUMBER_FLOAT) {
+        if (ptn_float_to_int_not_representable(number.floating)) {
+            ptn_emit_float_to_int_not_representable_warning(number.floating);
+        } else if (value.type == PTN_STRING && ptn_float_to_int_loses_precision(number.floating)) {
             ptn_emit_float_string_to_int_precision_deprecation(string_data);
-        } else {
+        } else if (ptn_float_to_int_loses_precision(number.floating)) {
             ptn_emit_float_to_int_precision_deprecation(number.floating);
         }
     }

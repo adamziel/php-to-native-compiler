@@ -751,5 +751,70 @@ static PTN_UNUSED int ptn_compare_value_strings(PtnString left, PtnString right)
     return ptn_compare_string_bytes(left.data, left.len, right.data, right.len);
 }
 
+static PTN_UNUSED void ptn_normalize_php_float_exponent(char *buffer) {
+    for (char *cursor = buffer; *cursor != '\0'; cursor++) {
+        if (*cursor == 'e' || *cursor == 'E') {
+            *cursor = 'E';
+            cursor++;
+            if (*cursor == '+' || *cursor == '-') {
+                cursor++;
+            }
+            while (*cursor == '0' && isdigit((unsigned char)cursor[1])) {
+                memmove(cursor, cursor + 1, strlen(cursor));
+            }
+            return;
+        }
+    }
+}
+
+static PTN_UNUSED void ptn_format_php_float_precision(
+    double value,
+    int precision,
+    char *buffer,
+    size_t buffer_len
+) {
+    int written = 0;
+    if (isnan(value)) {
+        written = snprintf(buffer, buffer_len, "NAN");
+    } else if (isinf(value)) {
+        written = snprintf(buffer, buffer_len, signbit(value) ? "-INF" : "INF");
+    } else {
+        written = snprintf(buffer, buffer_len, "%.*g", precision, value);
+        ptn_normalize_php_float_exponent(buffer);
+    }
+    if (written < 0 || (size_t)written >= buffer_len) {
+        ptn_abort_out_of_memory();
+    }
+}
+
+static PTN_UNUSED int ptn_same_double_bits(double left, double right) {
+    return memcmp(&left, &right, sizeof(double)) == 0;
+}
+
+static PTN_UNUSED void ptn_format_php_float_roundtrip(double value, char *buffer, size_t buffer_len) {
+    if (isnan(value) || isinf(value)) {
+        ptn_format_php_float_precision(value, 14, buffer, buffer_len);
+        return;
+    }
+
+    for (int precision = 1; precision <= 17; precision++) {
+        char candidate[64];
+        char *end = NULL;
+        double reparsed;
+        ptn_format_php_float_precision(value, precision, candidate, sizeof(candidate));
+        errno = 0;
+        reparsed = strtod(candidate, &end);
+        if (errno == 0 && end != NULL && *end == '\0' && ptn_same_double_bits(reparsed, value)) {
+            int written = snprintf(buffer, buffer_len, "%s", candidate);
+            if (written < 0 || (size_t)written >= buffer_len) {
+                ptn_abort_out_of_memory();
+            }
+            return;
+        }
+    }
+
+    ptn_format_php_float_precision(value, 17, buffer, buffer_len);
+}
+
 static PTN_UNUSED void ptn_number_value_to_string(PtnValue value, char *buffer, size_t buffer_len) {
     if (value.type == PTN_INT) {

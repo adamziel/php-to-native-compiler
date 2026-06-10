@@ -10826,6 +10826,29 @@ fn compile_unary_bitwise_not_to_native_binary() {
 }
 
 #[test]
+fn compile_bitwise_not_64bit_float_overflow_to_native_binary() {
+    let root = temp_dir("ptn-native-bitwise-not-64bit-overflow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bitwise-not-64bit-overflow.php");
+    let output = root.join("bitwise-not-64bit-overflow-bin");
+    fs::write(
+        &input,
+        "<?php define(\"MAX_64Bit\", 9223372036854775807); $value = MAX_64Bit + 1; echo \"--- testing: $value ---\\n\"; var_dump(~$value);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "--- testing: 9.2233720368548E+18 ---\n\nWarning: The float 9.223372036854776E+18 is not representable as an int, cast occurred in ptn-generated-code on line 0\nint(9223372036854775807)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unary_bitwise_not_array_operand_fatals() {
     let root = temp_dir("ptn-native-bitwise-not-array");
     fs::create_dir_all(&root).unwrap();

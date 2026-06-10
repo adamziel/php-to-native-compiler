@@ -47,9 +47,9 @@ Current runtime/compiler slices:
   data; other supported scalar operands convert through the current numeric
   path before integer bitwise operations. Bitwise, shift, and modulo helpers
   share the current integer-only operator conversion boundary, including
-  float/float-string precision-loss deprecations when scalar conversion would
-  discard a fractional part. Shift operands always use that integer-conversion
-  path.
+  non-representable float warnings and float/float-string precision-loss
+  deprecations when scalar conversion would discard a fractional part. Shift
+  operands always use that integer-conversion path.
 - Direct named-variable `+=`, `-=`, `*=`, `**=`, `/=`, `%=`, `.=`, `&=`, `^=`,
   `|=`, `<<=`, and `>>=` lower in IR as a direct variable load, the same boxed
   binary helper used by the ordinary binary operator, and a direct variable
@@ -192,9 +192,9 @@ Near-term architecture targets:
   diagnostics, warnings, scalar cast overflow behavior, exact
   division/modulo-by-zero exception behavior, and complete overflow behavior for
   arithmetic helpers.
-- PHP-exact file/line/error-handler behavior for integer-only operator
-  float-to-int precision-loss diagnostics, and overflow parity for bitwise,
-  shift, and modulo integer conversions.
+- PHP-exact file/line/error-handler behavior for remaining integer-only
+  operator conversion diagnostics, including `error_reporting()` suppression
+  for bitwise, shift, and modulo integer conversions.
 - Object, reference, property, and remaining non-direct-variable lvalues for
   compound assignment beyond modeled keyed array/string offsets.
 - Complete comparison parity for objects, references, recursive arrays, chained
