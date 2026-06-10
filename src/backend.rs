@@ -2923,7 +2923,7 @@ impl ValueEmitter {
             ValueExpr::String(value) => {
                 format!(
                     "ptn_string_literal(\"{}\", {})",
-                    c_string(value),
+                    c_php_string(value),
                     value.len()
                 )
             }
@@ -4467,8 +4467,16 @@ fn collect_concat_operands<'a>(
 }
 
 fn c_string(value: &str) -> String {
+    c_bytes(value.as_bytes())
+}
+
+fn c_php_string(value: &crate::php_string::PhpString) -> String {
+    c_bytes(value.as_bytes())
+}
+
+fn c_bytes(bytes: &[u8]) -> String {
     let mut out = String::new();
-    for byte in value.bytes() {
+    for &byte in bytes {
         match byte {
             b'\\' => out.push_str("\\\\"),
             b'"' => out.push_str("\\\""),

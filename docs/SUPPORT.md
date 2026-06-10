@@ -24,6 +24,9 @@ supports in generated native binaries.
   PHP digit separators between digits; integer literals include decimal,
   legacy octal, explicit octal `0o`/`0O`, binary `0b`/`0B`, and hexadecimal
   `0x`/`0X` forms.
+- Double-quoted string byte escapes for common control characters, `\xH`/`\xHH`
+  hexadecimal bytes, and one- to three-digit octal bytes. Escaped bytes are
+  carried as binary string payloads rather than UTF-8 text.
 - Invalid legacy octal integer literals containing `8` or `9` are rejected with
   source-spanned PHP-style parse errors through `phpc`.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
@@ -480,7 +483,7 @@ supports in generated native binaries.
   `isset()`/`empty()` and null-coalescing semantics, and complete
   TypeError/exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
-  length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
+  length/output, `strlen()`, `str_rot13()`, `strcmp()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
   `strip_tags()`, `quoted_printable_decode()`, `md5()`, `sha1()`, `substr()`,
   `soundex()`, `ord()`, or bitwise string results.

@@ -1,4 +1,5 @@
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
+use crate::php_string::PhpString;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -27,7 +28,7 @@ pub enum TokenKind {
     Const,
     Function,
     Identifier(String),
-    String(String),
+    String(PhpString),
     InterpolatedString(Vec<StringPart>),
     Int(i64),
     Float(f64),
@@ -108,7 +109,7 @@ pub enum TokenKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StringPart {
-    Literal(String),
+    Literal(PhpString),
     Variable(String),
 }
 
@@ -341,12 +342,12 @@ impl<'a> Lexer<'a> {
 
         let start = self.current_span(0);
         self.bump_char();
-        let mut value = String::new();
+        let mut value = Vec::new();
         while let Some(ch) = self.peek_char() {
             if ch == quote {
                 self.bump_char();
                 self.tokens.push(Token {
-                    kind: TokenKind::String(value),
+                    kind: TokenKind::String(PhpString::new(value)),
                     span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
                 });
                 return Ok(());
@@ -357,20 +358,20 @@ impl<'a> Lexer<'a> {
                     Diagnostic::new("unterminated string escape", Some(self.current_span(0)))
                 })?;
                 match escaped {
-                    'n' if quote == '"' => value.push('\n'),
-                    'r' if quote == '"' => value.push('\r'),
-                    't' if quote == '"' => value.push('\t'),
-                    '\\' => value.push('\\'),
-                    '\'' if quote == '\'' => value.push('\''),
-                    '"' if quote == '"' => value.push('"'),
+                    'n' if quote == '"' => value.push(b'\n'),
+                    'r' if quote == '"' => value.push(b'\r'),
+                    't' if quote == '"' => value.push(b'\t'),
+                    '\\' => value.push(b'\\'),
+                    '\'' if quote == '\'' => value.push(b'\''),
+                    '"' if quote == '"' => value.push(b'"'),
                     other => {
-                        value.push('\\');
-                        value.push(other);
+                        push_utf8_byte(&mut value, '\\');
+                        push_utf8_byte(&mut value, other);
                     }
                 }
                 self.bump_char();
             } else {
-                value.push(ch);
+                push_utf8_byte(&mut value, ch);
                 self.bump_char();
             }
         }
@@ -380,7 +381,7 @@ impl<'a> Lexer<'a> {
     fn lex_double_quoted_string(&mut self) -> Result<()> {
         let start = self.current_span(0);
         self.bump_char();
-        let mut literal = String::new();
+        let mut literal = Vec::new();
         let mut parts = Vec::new();
         let mut has_variable = false;
 
@@ -389,11 +390,11 @@ impl<'a> Lexer<'a> {
                 self.bump_char();
                 let kind = if has_variable {
                     if !literal.is_empty() {
-                        parts.push(StringPart::Literal(literal));
+                        parts.push(StringPart::Literal(PhpString::new(literal)));
                     }
                     TokenKind::InterpolatedString(parts)
                 } else {
-                    TokenKind::String(literal)
+                    TokenKind::String(PhpString::new(literal))
                 };
                 self.tokens.push(Token {
                     kind,
@@ -408,18 +409,58 @@ impl<'a> Lexer<'a> {
                     Diagnostic::new("unterminated string escape", Some(self.current_span(0)))
                 })?;
                 match escaped {
-                    'n' => literal.push('\n'),
-                    'r' => literal.push('\r'),
-                    't' => literal.push('\t'),
-                    '\\' => literal.push('\\'),
-                    '"' => literal.push('"'),
-                    '$' => literal.push('$'),
+                    'n' => {
+                        literal.push(b'\n');
+                        self.bump_char();
+                    }
+                    'r' => {
+                        literal.push(b'\r');
+                        self.bump_char();
+                    }
+                    't' => {
+                        literal.push(b'\t');
+                        self.bump_char();
+                    }
+                    'v' => {
+                        literal.push(0x0b);
+                        self.bump_char();
+                    }
+                    'e' => {
+                        literal.push(0x1b);
+                        self.bump_char();
+                    }
+                    'f' => {
+                        literal.push(0x0c);
+                        self.bump_char();
+                    }
+                    '\\' => {
+                        literal.push(b'\\');
+                        self.bump_char();
+                    }
+                    '"' => {
+                        literal.push(b'"');
+                        self.bump_char();
+                    }
+                    '$' => {
+                        literal.push(b'$');
+                        self.bump_char();
+                    }
+                    'x' | 'X' => {
+                        self.bump_char();
+                        if let Some(byte) = self.consume_hex_escape_byte() {
+                            literal.push(byte);
+                        } else {
+                            literal.push(b'\\');
+                            literal.push(escaped as u8);
+                        }
+                    }
+                    '0'..='7' => literal.push(self.consume_octal_escape_byte()),
                     other => {
-                        literal.push('\\');
-                        literal.push(other);
+                        literal.push(b'\\');
+                        push_utf8_byte(&mut literal, other);
+                        self.bump_char();
                     }
                 }
-                self.bump_char();
                 continue;
             }
 
@@ -427,15 +468,15 @@ impl<'a> Lexer<'a> {
                 self.bump_char();
                 if let Some(first) = self.peek_char() {
                     if is_ident_start(first) {
-                        if literal.ends_with('{') {
+                        if literal.ends_with(b"{") {
                             return Err(Diagnostic::new(
                                 "complex string interpolation is unsupported",
                                 Some(self.current_span(1)),
                             ));
                         }
                         if !literal.is_empty() {
-                            parts.push(StringPart::Literal(literal));
-                            literal = String::new();
+                            parts.push(StringPart::Literal(PhpString::new(literal)));
+                            literal = Vec::new();
                         }
                         let mut name = String::new();
                         while let Some(ch) = self.peek_char() {
@@ -451,11 +492,11 @@ impl<'a> Lexer<'a> {
                         continue;
                     }
                 }
-                literal.push('$');
+                literal.push(b'$');
                 continue;
             }
 
-            literal.push(ch);
+            push_utf8_byte(&mut literal, ch);
             self.bump_char();
         }
 
@@ -759,6 +800,49 @@ impl<'a> Lexer<'a> {
             }
         }
     }
+
+    fn consume_hex_escape_byte(&mut self) -> Option<u8> {
+        let mut value = 0u8;
+        let mut digits = 0usize;
+        while digits < 2 {
+            let Some(ch) = self.peek_char() else {
+                break;
+            };
+            let Some(digit) = ch.to_digit(16) else {
+                break;
+            };
+            value = (value << 4) | digit as u8;
+            digits += 1;
+            self.bump_char();
+        }
+        if digits == 0 {
+            None
+        } else {
+            Some(value)
+        }
+    }
+
+    fn consume_octal_escape_byte(&mut self) -> u8 {
+        let mut value = 0u16;
+        let mut digits = 0usize;
+        while digits < 3 {
+            let Some(ch) = self.peek_char() else {
+                break;
+            };
+            let Some(digit) = ch.to_digit(8) else {
+                break;
+            };
+            value = (value << 3) | digit as u16;
+            digits += 1;
+            self.bump_char();
+        }
+        (value & 0xff) as u8
+    }
+}
+
+fn push_utf8_byte(bytes: &mut Vec<u8>, ch: char) {
+    let mut buffer = [0u8; 4];
+    bytes.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
 }
 
 fn is_ident_start(ch: char) -> bool {

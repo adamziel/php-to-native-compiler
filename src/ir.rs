@@ -9,6 +9,7 @@ use crate::ast::{
     Program, ReferenceTarget as AstReferenceTarget, Statement, StringPart as AstStringPart,
     TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
 };
+use crate::php_string::PhpString;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
@@ -161,7 +162,7 @@ pub struct SwitchCase {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueExpr {
-    String(String),
+    String(PhpString),
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -534,7 +535,9 @@ impl LoweringContext {
                     instructions.push(Instruction::Expression(self.lower_expr(expression)));
                 }
                 Statement::InlineHtml { content, .. } => {
-                    instructions.push(Instruction::Echo(ValueExpr::String(content.clone())));
+                    instructions.push(Instruction::Echo(ValueExpr::String(PhpString::from_text(
+                        content,
+                    ))));
                 }
                 Statement::If {
                     condition,
@@ -1084,7 +1087,7 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
     });
 
     let Some(mut expr) = values.next() else {
-        return ValueExpr::String(String::new());
+        return ValueExpr::String(PhpString::empty());
     };
 
     for next in values {

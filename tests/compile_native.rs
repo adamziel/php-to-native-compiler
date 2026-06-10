@@ -103,6 +103,14 @@ fn lexer_preserves_unknown_string_escape_backslashes() {
 }
 
 #[test]
+fn lexer_decodes_double_quoted_hex_and_octal_byte_escapes() {
+    let tokens = lexer::lex("<?php \"\\x00\\x7\\x90\\X9f\\101\\400\"").unwrap();
+    assert!(
+        matches!(&tokens[1].kind, TokenKind::String(value) if value.as_bytes() == b"\x00\x07\x90\x9fA\x00")
+    );
+}
+
+#[test]
 fn lexer_accepts_keyword_boolean_operators() {
     let tokens = lexer::lex("<?php true and false or true xor false").unwrap();
     assert!(matches!(tokens[2].kind, TokenKind::KeywordAnd));
@@ -2182,9 +2190,9 @@ fn parser_accepts_direct_variable_interpolated_strings() {
     assert_eq!(
         parts,
         &vec![
-            StringPart::Literal("value=".to_string()),
+            StringPart::Literal("value=".into()),
             StringPart::Variable("value".to_string()),
-            StringPart::Literal("\n".to_string()),
+            StringPart::Literal("\n".into()),
         ]
     );
     assert!(matches!(&expressions[1], Expr::String(value, _) if value == "literal$value\n"));
@@ -8371,6 +8379,32 @@ echo strlen($alias), \":\", bin2hex($alias), \"\\n\";",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "3:414243\n3:410043\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_double_quoted_hex_escape_bytes_to_native_binary() {
+    let root = temp_dir("ptn-native-string-hex-escape-bytes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-hex-escape-bytes.php");
+    let output = root.join("string-hex-escape-bytes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$s = \"\\x90\\x91\\x00\\x93\\x94\\x90\\x91\\x95\\x96\\x97\\x98\\x99\\x9a\\x9b\\x9c\\x9d\\x9e\\x9f\";\n\
+var_dump(bin2hex($s));\n\
+echo strlen(\"\\x00\\x7\\101\\400\"), \":\", bin2hex(\"\\x00\\x7\\101\\400\"), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(36) \"9091009394909195969798999a9b9c9d9e9f\"\n4:00074100\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

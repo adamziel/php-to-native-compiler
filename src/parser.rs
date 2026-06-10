@@ -2342,18 +2342,20 @@ fn token_text(kind: &TokenKind) -> &'static str {
     }
 }
 
-fn escape_token_text(value: &str) -> String {
-    value
-        .chars()
-        .flat_map(|ch| match ch {
-            '\\' => "\\\\".chars().collect::<Vec<_>>(),
-            '"' => "\\\"".chars().collect::<Vec<_>>(),
-            '\n' => "\\n".chars().collect::<Vec<_>>(),
-            '\r' => "\\r".chars().collect::<Vec<_>>(),
-            '\t' => "\\t".chars().collect::<Vec<_>>(),
-            other => vec![other],
-        })
-        .collect()
+fn escape_token_text(value: &crate::php_string::PhpString) -> String {
+    let mut escaped = String::new();
+    for &byte in value.as_bytes() {
+        match byte {
+            b'\\' => escaped.push_str("\\\\"),
+            b'"' => escaped.push_str("\\\""),
+            b'\n' => escaped.push_str("\\n"),
+            b'\r' => escaped.push_str("\\r"),
+            b'\t' => escaped.push_str("\\t"),
+            0x20..=0x7e => escaped.push(byte as char),
+            _ => escaped.push_str(&format!("\\x{byte:02x}")),
+        }
+    }
+    escaped
 }
 
 fn is_unsupported_class_like_declaration(name: &str) -> bool {

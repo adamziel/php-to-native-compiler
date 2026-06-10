@@ -1,4 +1,5 @@
 use crate::diagnostic::SourceSpan;
+use crate::php_string::PhpString;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
@@ -267,7 +268,7 @@ pub enum IncDecOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    String(String, SourceSpan),
+    String(PhpString, SourceSpan),
     InterpolatedString(Vec<StringPart>, SourceSpan),
     Int(i64, SourceSpan),
     Float(f64, SourceSpan),
@@ -367,7 +368,7 @@ pub enum ArrayElementValue {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StringPart {
-    Literal(String),
+    Literal(PhpString),
     Variable(String),
 }
 
