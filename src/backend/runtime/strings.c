@@ -156,6 +156,38 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
     return ptn_duplicate_string(buffer);
 }
 
+static PTN_UNUSED char *ptn_callable_function_name(PtnValue callable) {
+    callable = ptn_value_deref(callable);
+    if (callable.type == PTN_ARRAY && callable.as.array->len == 2) {
+        PtnArrayKey scope_key = ptn_array_int_key(0);
+        PtnArrayKey method_key = ptn_array_int_key(1);
+        PtnArrayEntry *scope_entry = ptn_array_entry_for_key(callable.as.array, scope_key);
+        PtnArrayEntry *method_entry = ptn_array_entry_for_key(callable.as.array, method_key);
+        if (scope_entry == NULL || method_entry == NULL) {
+            return ptn_value_to_string(callable);
+        }
+        PtnValue scope = ptn_value_deref(scope_entry->value);
+        PtnValue method = ptn_value_deref(method_entry->value);
+        if (scope.type == PTN_STRING && method.type == PTN_STRING) {
+            size_t scope_len = scope.as.string.len;
+            size_t method_len = method.as.string.len;
+            if (scope_len > SIZE_MAX - method_len - 3) {
+                ptn_abort_out_of_memory();
+            }
+            char *name = malloc(scope_len + method_len + 3);
+            if (name == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            memcpy(name, scope.as.string.data, scope_len);
+            memcpy(name + scope_len, "::", 2);
+            memcpy(name + scope_len + 2, method.as.string.data, method_len);
+            name[scope_len + method_len + 2] = '\0';
+            return name;
+        }
+    }
+    return ptn_value_to_string(callable);
+}
+
 static PTN_UNUSED PtnStringOperand ptn_string_operand_borrowed_len(const char *data, size_t len) {
     PtnStringOperand operand;
     operand.data = data;

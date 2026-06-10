@@ -1,15 +1,15 @@
 # PTN Progress
 
 Refresh: 2026-06-10T12:36Z
-Measured: `ptn-wvv` rebased on `origin/master@316fbe019` after `ptn-ss3`;
-focused string-callable callback and recursive array-literal evidence.
+Measured: current branch rebased on `origin/master@1c445f86d`; focused
+static-callable native coverage plus latest COW/callback evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 353 | 353 | 0 |
+| Native compiled PHP snippets | 355 | 355 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 152 | 48 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -28,47 +28,40 @@ focused string-callable callback and recursive array-literal evidence.
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` has 29 rows. Focused evidence is 26 passing,
-3 failing: assignment-aliasing 4/4, string-offsets 4/4,
-array-writes-appends-unset 4/4, nested-arrays 4/4, foreach-mutation 3/4,
-function-boundaries 2/4, reference-interaction 5/5. `bug35163.phpt` and
-`assign_by_val_function_by_ref_return_value.phpt` now pass. Closure-backed
-callback rows remain blocked by Closure/callable values (`ptn-dis`).
+`tools/phpt-cow-manifest.txt` is 26/29: assignment-aliasing, string-offsets,
+array-writes/appends/unset, nested-arrays, and reference-interaction pass;
+foreach-mutation is 3/4 and function-boundaries is 2/4. Closure-backed callback
+rows and `array_reduce()` refcount edges remain blocked.
 
 ## Already Ported
 
-Lexer/parser, AST, IR, C backend, boxed values, variables, constants,
-string/math/type internals, ordered arrays, `foreach`, cursors,
-`array_values()`, numeric-string keys, payload refcounts, array/string COW,
-references, by-reference parameters and `foreach`, array dimensions,
-temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
-binary strings, string offsets, scalar offset diagnostics, array literal
-reference elements, array union `+`, scalar type hints, by-reference return
-alias/separation boundaries, `count()`, `??`, assignment expressions,
-expression-level `@`, selected file APIs, array-path RHS snapshots,
-reference-aware `array_sum()`/`strtr()`/`in_array()`, recursive array merge and
-replace, `debug_zval_dump()`, dynamic lvalue-reference calls, append/list
-assignment expressions for reference arrays, nested same-array reference
-lvalues with recursive `var_dump()`, direct-variable `??=`, keyed array/string
-offset-form `??=`, append-form `??=` diagnostics, grouped reference targets,
-named `array_reduce()` callback dispatch with by-reference returns,
-non-reference call-result by-reference fallback notices, call-result
-by-reference return chains, `array_fill_keys()`, string-callable
-`call_user_func()` dispatch, and variable-assigned recursive array literals
-with slot replacement and cleanup.
+Lexer/parser, AST/IR/C backend, boxed values, variables/constants,
+string/math/type internals, ordered arrays, `foreach`, cursors, numeric keys,
+payload refcounts, array/string COW, references, by-reference params/foreach,
+array dimensions, temporaries, recursive/user functions, magic constants,
+`func_*`, `print_r`, binary strings, string offsets, scalar diagnostics, array
+literal references, array union `+`, scalar type hints, by-reference return
+boundaries, `count()`, `??`, assignment expressions, expression-level `@`, file
+APIs, array-path RHS snapshots, `array_sum()`/`strtr()`/`in_array()`, recursive
+array merge/replace, `debug_zval_dump()`, dynamic lvalue-reference calls,
+append/list assignment expressions, nested same-array reference lvalues,
+direct-variable and offset-form `??=`, grouped reference targets,
+`array_fill_keys()`, string-callable `call_user_func()`, and public static
+methods registered as `Class::method` callables for dynamic calls and internals.
 
 ## Still Needed
 
 Remaining COW PHPT gaps are closure callback mutation through
 `array_walk()`/`$GLOBALS`, closure-backed callback by-reference returns,
 `array_reduce()` callback/refcount behavior, and broader recursive
-by-reference return edges. Broader bounded-PHPT gaps are objects, unsupported
-array/string internals, 64-bit operator exactness, foreach diagnostics,
-object/property compound lvalues, scalar offset-lvalue fatal parity, and
-broader file APIs.
+by-reference return edges. Broader bounded-PHPT gaps are still objects,
+unsupported array/string internals, 64-bit operator exactness, foreach
+diagnostics, object/property compound lvalues, scalar offset-lvalue fatal
+parity, and broader file APIs.
 
 ## Verification
 
 Commands: `cargo fmt --check`; `cargo test`; `tools/run-native-smoke-matrix.sh`;
-`tools/run-post-merge-cow-gate.sh`; focused callback and
-`assign_by_val_function_by_ref_return_value.phpt` evidence.
+`tools/run-post-merge-cow-gate.sh`; focused callback PHPT evidence. Static
+callback PHPT rows `array_map_object1`/`bug36011` are 0/2 because class-member
+and non-static-method blockers are reached before callback checks.
