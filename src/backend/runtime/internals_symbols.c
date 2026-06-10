@@ -88,6 +88,20 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     free(reference);
 }
 
+static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
+    if (closure == NULL) {
+        return;
+    }
+    if (closure->refcount == 0) {
+        return;
+    }
+    closure->refcount--;
+    if (closure->refcount != 0) {
+        return;
+    }
+    free(closure);
+}
+
 static PTN_UNUSED void ptn_array_destroy_storage(PtnArray *array) {
     if (array == NULL) {
         return;
@@ -132,6 +146,9 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
             break;
         case PTN_OBJECT:
             ptn_object_release(value->as.object);
+            break;
+        case PTN_CLOSURE:
+            ptn_closure_release(value->as.closure);
             break;
         case PTN_EXCEPTION:
             ptn_exception_free(value->as.exception);

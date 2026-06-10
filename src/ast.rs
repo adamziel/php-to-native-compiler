@@ -24,6 +24,15 @@ pub struct FunctionParameter {
     pub span: SourceSpan,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnonymousFunction {
+    pub parameters: Vec<FunctionParameter>,
+    pub return_type: Option<TypeHint>,
+    pub return_by_ref: bool,
+    pub body: Vec<Statement>,
+    pub span: SourceSpan,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeHint {
     Null,
@@ -265,6 +274,7 @@ pub enum Expr {
     Bool(bool, SourceSpan),
     Null(SourceSpan),
     Variable(String, SourceSpan),
+    AnonymousFunction(AnonymousFunction),
     Assign {
         target: AssignmentTarget,
         op: AssignmentOp,
@@ -423,6 +433,7 @@ impl Expr {
             | Expr::Variable(_, span)
             | Expr::Constant(_, span)
             | Expr::MagicConstant(_, span) => *span,
+            Expr::AnonymousFunction(function) => function.span,
             Expr::Assign { span, .. } | Expr::AssignRef { span, .. } => *span,
             Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }

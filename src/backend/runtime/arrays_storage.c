@@ -103,6 +103,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
         }
         case PTN_ARRAY:
         case PTN_OBJECT:
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
             ptn_abort_illegal_array_key();
@@ -489,6 +490,10 @@ static PTN_UNUSED PtnValue ptn_value_deep_clone(PtnValue value) {
         case PTN_OBJECT:
             ptn_object_retain(value.as.object);
             return ptn_object(value.as.object);
+        case PTN_CLOSURE:
+            value.as.closure->refcount++;
+            value.owned = 1;
+            return value;
         case PTN_EXCEPTION: {
             PtnException *exception = malloc(sizeof(PtnException));
             if (exception == NULL) {
@@ -527,6 +532,10 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
         case PTN_OBJECT:
             ptn_object_retain(value.as.object);
             return ptn_object(value.as.object);
+        case PTN_CLOSURE:
+            value.as.closure->refcount++;
+            value.owned = 1;
+            return value;
         case PTN_EXCEPTION: {
             PtnException *exception = malloc(sizeof(PtnException));
             if (exception == NULL) {

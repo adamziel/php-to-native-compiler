@@ -18,12 +18,14 @@ mod runtime;
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let runtime_requirements = module_runtime_requirements(module);
+    let needs_callable_dispatch = runtime_requirements.internal_function_dispatch
+        || runtime_requirements.dynamic_function_dispatch;
     emit_runtime(&mut out, &runtime_requirements);
     emit_user_function_prototypes(
         &mut out,
         &module.functions,
         runtime_requirements.internal_function_dispatch,
-        runtime_requirements.dynamic_function_dispatch,
+        needs_callable_dispatch,
     );
     emit_user_functions(
         &mut out,
@@ -34,8 +36,9 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions);
     }
-    if runtime_requirements.dynamic_function_dispatch {
+    if needs_callable_dispatch {
         emit_dynamic_function_dispatch(&mut out);
+        emit_callable_dispatch(&mut out, &module.functions);
     }
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
@@ -137,6 +140,9 @@ fn emit_user_function_prototypes(
     if needs_function_dispatch {
         out.push_str(
             "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
+        );
+        out.push_str(
+            "static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);\n",
         );
     }
     if needs_dynamic_function_dispatch {
@@ -363,10 +369,13 @@ fn type_hint_scalar_cast_helper(type_hint: Option<TypeHint>) -> Option<&'static 
 
 fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
     out.push_str("\nstatic int ptn_user_function_exists(const char *name) {\n");
-    if functions.is_empty() {
+    if functions.iter().all(|function| function.is_anonymous) {
         out.push_str("    (void)name;\n");
     }
     for function in functions {
+        if function.is_anonymous {
+            continue;
+        }
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&function.name));
         out.push_str("\")) {\n");
@@ -379,7 +388,7 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
     out.push_str(
         "\nstatic PtnValue ptn_call_user_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line, int *found) {\n",
     );
-    if functions.is_empty() {
+    if functions.iter().all(|function| function.is_anonymous) {
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)name;\n");
         out.push_str("    (void)argc;\n");
@@ -387,6 +396,9 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
         out.push_str("    (void)line;\n");
     }
     for (index, function) in functions.iter().enumerate() {
+        if function.is_anonymous {
+            continue;
+        }
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&function.name));
         out.push_str("\")) {\n");
@@ -464,6 +476,37 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     );
     out.push_str("    ptn_dynamic_call_detach_first_reference_argument(name, argc, args);\n");
     out.push_str("    return ptn_call_function(runtime, name, argc, args, line);\n");
+    out.push_str("}\n");
+}
+
+fn emit_callable_dispatch(out: &mut String, functions: &[FunctionDecl]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
+    out.push_str("        switch (resolved.as.closure->function_index) {\n");
+    for (index, function) in functions.iter().enumerate() {
+        if !function.is_anonymous {
+            continue;
+        }
+        out.push_str("            case ");
+        out.push_str(&index.to_string());
+        out.push_str(": return ");
+        out.push_str(&user_function_c_name(index));
+        out.push_str("(runtime, argc, args, line);\n");
+    }
+    out.push_str("            default:\n");
+    out.push_str("                fputs(\"Fatal error: invalid closure\\n\", stderr);\n");
+    out.push_str("                exit(255);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    char *name = ptn_dynamic_function_name(resolved);\n");
+    out.push_str(
+        "    PtnValue result = ptn_call_dynamic_function_name(runtime, name, argc, args, line);\n",
+    );
+    out.push_str("    free(name);\n");
+    out.push_str("    return result;\n");
     out.push_str("}\n");
 }
 
@@ -1488,6 +1531,7 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Float(_)
         | ValueExpr::Bool(_)
         | ValueExpr::Null
+        | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => {}
@@ -1595,7 +1639,7 @@ fn collect_call_runtime_requirements(
 fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bool {
     functions
         .iter()
-        .any(|function| function.name.eq_ignore_ascii_case(name))
+        .any(|function| !function.is_anonymous && function.name.eq_ignore_ascii_case(name))
 }
 
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
@@ -2117,6 +2161,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::Float(_)
         | ValueExpr::Bool(_)
         | ValueExpr::Null
+        | ValueExpr::Closure { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => false,
     }
@@ -2165,7 +2210,9 @@ impl ValueEmitter {
         self.user_functions
             .iter()
             .enumerate()
-            .find(|(_, function)| function.name.eq_ignore_ascii_case(name))
+            .find(|(_, function)| {
+                !function.is_anonymous && function.name.eq_ignore_ascii_case(name)
+            })
     }
 
     fn source_is_declared_by_ref_call(&self, source: &ValueExpr) -> bool {
@@ -2879,6 +2926,9 @@ impl ValueEmitter {
             ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
             ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
             ValueExpr::Null => "ptn_null()".to_string(),
+            ValueExpr::Closure { function_index, .. } => {
+                format!("ptn_closure({function_index}, \"{{closure}}\")")
+            }
             ValueExpr::Array(elements) => self.emit_array(out, elements),
             ValueExpr::ArrayAccess { array, index, line } => {
                 let array_temp = self.emit_materialized_value(out, array);
@@ -4085,26 +4135,16 @@ impl ValueEmitter {
         line: usize,
     ) -> String {
         let callee_temp = self.emit_materialized_value(out, callee);
-        let name_temp = self.next_temp();
-        out.push_str("    char *");
-        out.push_str(&name_temp);
-        out.push_str(" = ptn_dynamic_function_name(");
-        out.push_str(&callee_temp);
-        out.push_str(");\n");
-        emit_value_cleanup(out, "    ", &callee_temp);
-
         let result_temp = self.next_temp();
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_dynamic_function_name(&runtime, ");
-            out.push_str(&name_temp);
+            out.push_str(" = ptn_call_callable(&runtime, ");
+            out.push_str(&callee_temp);
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            out.push_str("    free(");
-            out.push_str(&name_temp);
-            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &callee_temp);
             return result_temp;
         }
 
@@ -4128,8 +4168,8 @@ impl ValueEmitter {
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_call_dynamic_function_name(&runtime, ");
-        out.push_str(&name_temp);
+        out.push_str(" = ptn_call_callable(&runtime, ");
+        out.push_str(&callee_temp);
         out.push_str(", ");
         out.push_str(&arguments.len().to_string());
         out.push_str(", ");
@@ -4143,9 +4183,7 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
-        out.push_str("    free(");
-        out.push_str(&name_temp);
-        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &callee_temp);
         result_temp
     }
 

@@ -35,6 +35,7 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
             fputs("Array", stdout);
             break;
         case PTN_OBJECT:
+        case PTN_CLOSURE:
             fputs("Object", stdout);
             break;
         case PTN_EXCEPTION:
@@ -97,6 +98,7 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
 
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
 
 static void ptn_var_dump_indent(size_t indent) {
     for (size_t i = 0; i < indent; i++) {
@@ -226,6 +228,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             fputs("}\n", stdout);
             break;
         }
+        case PTN_CLOSURE:
+            printf("object(Closure)#1 (0) {\n");
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
         case PTN_EXCEPTION:
             printf("object(%s)#1 (1) {\n", value.as.exception->class_name);
             ptn_var_dump_indent(indent + 1);
@@ -336,6 +343,11 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             printf("string(%zu) \"", value.as.string.len);
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             fputs("\"\n", stdout);
+            break;
+        case PTN_CLOSURE:
+            printf("object(Closure)#1 (0) {\n");
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
             break;
         case PTN_EXCEPTION:
             printf("object(%s)#1 (1) {\n", value.as.exception->class_name);
@@ -468,6 +480,7 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
             ptn_print_r_array(buffer, value.as.array, indent);
             break;
         case PTN_OBJECT:
+        case PTN_CLOSURE:
             ptn_string_buffer_append(buffer, "Object");
             break;
         case PTN_EXCEPTION:
@@ -841,7 +854,7 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
 
 static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_reduce", 1, "array", args[0]);
-    char *function_name = ptn_callable_function_name(args[1]);
+    PtnValue callback = ptn_value_clone_deref(args[1]);
     PtnValue carry = argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_null();
 
     for (size_t i = 0; i < array->len; i++) {
@@ -849,7 +862,7 @@ static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, cons
             ptn_value_clone(carry),
             ptn_value_clone_deref(array->entries[i].value)
         };
-        PtnValue callback_result = ptn_call_function(runtime, function_name, 2, callback_args, line);
+        PtnValue callback_result = ptn_call_callable(runtime, callback, 2, callback_args, line);
         ptn_value_destroy(&callback_args[0]);
         ptn_value_destroy(&callback_args[1]);
         ptn_value_destroy(&carry);
@@ -857,7 +870,7 @@ static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, cons
         ptn_value_destroy(&callback_result);
     }
 
-    free(function_name);
+    ptn_value_destroy(&callback);
     return carry;
 }
 

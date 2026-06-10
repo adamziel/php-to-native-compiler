@@ -145,6 +145,7 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
         case PTN_ARRAY:
             return ptn_duplicate_string("Array");
         case PTN_OBJECT:
+        case PTN_CLOSURE:
             return ptn_duplicate_string("Object");
         case PTN_EXCEPTION:
             return ptn_duplicate_string("Object");
@@ -239,6 +240,7 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
         case PTN_ARRAY:
             return ptn_string_operand_borrowed("Array");
         case PTN_OBJECT:
+        case PTN_CLOSURE:
             return ptn_string_operand_borrowed("Object");
         case PTN_EXCEPTION:
             return ptn_string_operand_borrowed("Object");
@@ -379,6 +381,7 @@ static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
         case PTN_ARRAY:
             return ptn_string("array");
         case PTN_OBJECT:
+        case PTN_CLOSURE:
             return ptn_string("object");
         case PTN_EXCEPTION:
             return ptn_string("object");

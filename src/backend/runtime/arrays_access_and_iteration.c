@@ -85,6 +85,7 @@ static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
         case PTN_ARRAY:
             return "array";
         case PTN_OBJECT:
+        case PTN_CLOSURE:
             return "object";
         case PTN_EXCEPTION:
             return "object";
@@ -728,6 +729,7 @@ static PTN_UNUSED int ptn_string_offset_from_value(
             }
             ptn_throw_exception(runtime, "TypeError", "Cannot access offset of type object on string");
             return 0;
+        case PTN_CLOSURE:
         case PTN_EXCEPTION:
             if (quiet) {
                 return 0;

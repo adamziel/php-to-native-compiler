@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp,
-    CastKind, CatchClause, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
-    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    Program, ReferenceTarget, Statement, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
+    AssignmentTarget, BinaryOp, CastKind, CatchClause, ConstDeclaration, Expr, FunctionDecl,
+    FunctionParameter, IncDecOp, ListAssignmentElement, ListAssignmentElementTarget,
+    ListAssignmentTarget, MagicConstantKind, Program, ReferenceTarget, Statement, StringPart,
+    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -63,7 +64,7 @@ impl Parser {
                 self.advance();
                 continue;
             }
-            if matches!(self.peek().kind, TokenKind::Function) {
+            if self.peek_starts_function_decl() {
                 functions.push(self.parse_function_decl()?);
             } else if token_is_identifier_named(self.peek(), "class") {
                 let (class_name, class_span, methods) = self.parse_static_class_decl()?;
@@ -83,8 +84,10 @@ impl Parser {
         }
         validate_function_names(&functions)?;
         validate_by_reference_returns(&functions)?;
+        validate_anonymous_functions_in_statements(&statements, &functions)?;
         validate_reference_assignment_sources(&statements, &functions)?;
         for function in &functions {
+            validate_anonymous_functions_in_statements(&function.body, &functions)?;
             validate_reference_assignment_sources(&function.body, &functions)?;
             validate_goto_labels(&function.body)?;
         }
@@ -274,6 +277,39 @@ impl Parser {
             body,
             span,
         })
+    }
+
+    fn parse_anonymous_function_expr(&mut self, span: SourceSpan) -> Result<Expr> {
+        let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        let parameters = self.parse_function_parameters()?;
+        if self.peek_is_identifier("use") {
+            return Err(Diagnostic::new(
+                "closure use captures are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            Some(self.parse_type_hint()?)
+        } else {
+            None
+        };
+        self.function_depth += 1;
+        let body = self.parse_block();
+        self.function_depth -= 1;
+        let body = body?;
+        Ok(Expr::AnonymousFunction(AnonymousFunction {
+            parameters,
+            return_type,
+            return_by_ref,
+            body,
+            span,
+        }))
     }
 
     fn parse_function_parameters(&mut self) -> Result<Vec<FunctionParameter>> {
@@ -1383,6 +1419,7 @@ impl Parser {
             TokenKind::False => Ok(Expr::Bool(false, token.span)),
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::Function => self.parse_anonymous_function_expr(token.span),
             TokenKind::Identifier(name) => {
                 let lowercase = name.to_ascii_lowercase();
                 if lowercase == "new" {
@@ -1805,6 +1842,7 @@ impl Parser {
                 | TokenKind::False
                 | TokenKind::Null
                 | TokenKind::Variable(_)
+                | TokenKind::Function
                 | TokenKind::Identifier(_)
                 | TokenKind::Plus
                 | TokenKind::Minus
@@ -1814,6 +1852,33 @@ impl Parser {
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
                 | TokenKind::Backslash
+        )
+    }
+
+    fn peek_is_identifier(&self, expected: &str) -> bool {
+        matches!(
+            &self.peek().kind,
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected)
+        )
+    }
+
+    fn peek_starts_function_decl(&self) -> bool {
+        if !matches!(self.peek().kind, TokenKind::Function) {
+            return false;
+        }
+        let mut index = self.index + 1;
+        if matches!(
+            self.tokens.get(index).map(|token| &token.kind),
+            Some(TokenKind::Ampersand)
+        ) {
+            index += 1;
+        }
+        matches!(
+            self.tokens.get(index).map(|token| &token.kind),
+            Some(TokenKind::Identifier(_))
+        ) && matches!(
+            self.tokens.get(index + 1).map(|token| &token.kind),
+            Some(TokenKind::LeftParen)
         )
     }
 
@@ -2393,6 +2458,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::Bool(_, _)
         | Expr::Null(_)
         | Expr::Variable(_, _)
+        | Expr::AnonymousFunction(_)
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _)
         | Expr::Call { .. }
@@ -2520,6 +2586,188 @@ fn validate_by_reference_returns(functions: &[FunctionDecl]) -> Result<()> {
         if function.return_by_ref {
             validate_by_reference_returns_in_statements(&function.body, &function.name)?;
         }
+    }
+    Ok(())
+}
+
+fn validate_anonymous_functions_in_statements(
+    statements: &[Statement],
+    functions: &[FunctionDecl],
+) -> Result<()> {
+    for statement in statements {
+        match statement {
+            Statement::Assign { value, .. }
+            | Statement::AssignRef { source: value, .. }
+            | Statement::ArrayAssign { value, .. }
+            | Statement::ArrayAssignRef { source: value, .. }
+            | Statement::Print {
+                expression: value, ..
+            }
+            | Statement::Expression {
+                expression: value, ..
+            }
+            | Statement::Return {
+                value: Some(value), ..
+            } => {
+                validate_anonymous_functions_in_expr(value, functions)?;
+            }
+            Statement::Call { arguments, .. }
+            | Statement::Echo {
+                expressions: arguments,
+                ..
+            } => {
+                for argument in arguments {
+                    validate_anonymous_functions_in_expr(argument, functions)?;
+                }
+            }
+            Statement::Const { declarations, .. } => {
+                for declaration in declarations {
+                    validate_anonymous_functions_in_expr(&declaration.value, functions)?;
+                }
+            }
+            Statement::If {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
+                validate_anonymous_functions_in_expr(condition, functions)?;
+                validate_anonymous_functions_in_statements(then_body, functions)?;
+                validate_anonymous_functions_in_statements(else_body, functions)?;
+            }
+            Statement::Block { statements, .. } => {
+                validate_anonymous_functions_in_statements(statements, functions)?;
+            }
+            Statement::While {
+                condition, body, ..
+            }
+            | Statement::DoWhile {
+                condition, body, ..
+            } => {
+                validate_anonymous_functions_in_expr(condition, functions)?;
+                validate_anonymous_functions_in_statements(body, functions)?;
+            }
+            Statement::For {
+                initializers,
+                condition,
+                updates,
+                body,
+                ..
+            } => {
+                validate_anonymous_functions_in_statements(initializers, functions)?;
+                if let Some(condition) = condition {
+                    validate_anonymous_functions_in_expr(condition, functions)?;
+                }
+                validate_anonymous_functions_in_statements(updates, functions)?;
+                validate_anonymous_functions_in_statements(body, functions)?;
+            }
+            Statement::Foreach { iterable, body, .. } => {
+                validate_anonymous_functions_in_expr(iterable, functions)?;
+                validate_anonymous_functions_in_statements(body, functions)?;
+            }
+            Statement::Switch {
+                expression, cases, ..
+            } => {
+                validate_anonymous_functions_in_expr(expression, functions)?;
+                for case in cases {
+                    if let Some(condition) = &case.condition {
+                        validate_anonymous_functions_in_expr(condition, functions)?;
+                    }
+                    validate_anonymous_functions_in_statements(&case.body, functions)?;
+                }
+            }
+            Statement::Try { body, catches, .. } => {
+                validate_anonymous_functions_in_statements(body, functions)?;
+                for catch in catches {
+                    validate_anonymous_functions_in_statements(&catch.body, functions)?;
+                }
+            }
+            Statement::Return { value: None, .. }
+            | Statement::Increment { .. }
+            | Statement::Unset { .. }
+            | Statement::Break { .. }
+            | Statement::Continue { .. }
+            | Statement::Label { .. }
+            | Statement::Goto { .. }
+            | Statement::InlineHtml { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl]) -> Result<()> {
+    match expr {
+        Expr::AnonymousFunction(function) => {
+            if function.return_by_ref {
+                validate_by_reference_returns_in_statements(&function.body, "{closure}")?;
+            }
+            validate_anonymous_functions_in_statements(&function.body, functions)?;
+            validate_reference_assignment_sources(&function.body, functions)?;
+            validate_goto_labels(&function.body)?;
+        }
+        Expr::Assign { value, .. } => {
+            validate_anonymous_functions_in_expr(value, functions)?;
+        }
+        Expr::AssignRef { source, .. } => {
+            validate_anonymous_functions_in_expr(source, functions)?;
+        }
+        Expr::Call { arguments, .. }
+        | Expr::DynamicCall { arguments, .. }
+        | Expr::MethodCall { arguments, .. }
+        | Expr::NewObject { arguments, .. } => {
+            for argument in arguments {
+                validate_anonymous_functions_in_expr(argument, functions)?;
+            }
+            if let Expr::DynamicCall { callee, .. } = expr {
+                validate_anonymous_functions_in_expr(callee, functions)?;
+            }
+            if let Expr::MethodCall { receiver, .. } = expr {
+                validate_anonymous_functions_in_expr(receiver, functions)?;
+            }
+        }
+        Expr::PropertyFetch { receiver, .. } => {
+            validate_anonymous_functions_in_expr(receiver, functions)?;
+        }
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    validate_anonymous_functions_in_expr(key, functions)?;
+                }
+                if let ArrayElementValue::Value(value) = &element.value {
+                    validate_anonymous_functions_in_expr(value, functions)?;
+                }
+            }
+        }
+        Expr::ArrayAccess { array, index, .. } => {
+            validate_anonymous_functions_in_expr(array, functions)?;
+            if let Some(index) = index {
+                validate_anonymous_functions_in_expr(index, functions)?;
+            }
+        }
+        Expr::Isset { targets, .. } => {
+            for target in targets {
+                validate_anonymous_functions_in_expr(target, functions)?;
+            }
+        }
+        Expr::Empty { target, .. } => {
+            validate_anonymous_functions_in_expr(target, functions)?;
+        }
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
+            validate_anonymous_functions_in_expr(expr, functions)?;
+        }
+        Expr::Binary { left, right, .. } => {
+            validate_anonymous_functions_in_expr(left, functions)?;
+            validate_anonymous_functions_in_expr(right, functions)?;
+        }
+        Expr::String(_, _)
+        | Expr::InterpolatedString(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _) => {}
     }
     Ok(())
 }
@@ -3339,6 +3587,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
             reject_append_array_read(right)?;
         }
         Expr::InterpolatedString(_, _)
+        | Expr::AnonymousFunction(_)
         | Expr::String(_, _)
         | Expr::Int(_, _)
         | Expr::Float(_, _)
@@ -3391,6 +3640,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Variable(_, _)
         | Expr::Assign { .. }
         | Expr::AssignRef { .. }
+        | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
