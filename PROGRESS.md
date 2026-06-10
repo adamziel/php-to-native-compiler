@@ -1,9 +1,10 @@
 # PTN Progress
 
-Refresh: 2026-06-10T16:39Z
-Measured: `ptn-yjo` rebased on current `origin/master`; cslashes PHPT shape,
-double-quoted ASCII octal/hex escapes, declared class/object method dispatch,
-and callback/COW/directory evidence.
+Refresh: 2026-06-10T23:01Z
+Measured: `ptn-4n1` rebased on current `origin/master`; addslashes/stripslashes
+native PHPT-shape coverage, cslashes PHPT shape, double-quoted ASCII octal/hex
+escapes, declared class/object method dispatch, and callback/COW/directory
+evidence.
 
 ## Test Dashboard
 
@@ -38,6 +39,7 @@ constants, `func_*`, `print_r`, scalar diagnostics, array union `+`, scalar
 type hints, by-reference returns, `count()`, `??`, assignment expressions,
 expression-level `@`, directory/file predicates, array-path snapshots,
 selected array/string internals including `addcslashes()`/`stripcslashes()`,
+`addslashes()`/`stripslashes()`,
 dynamic lvalue-reference calls, list/append assignment expressions,
 static method callable values, `array_reduce()` callback dispatch,
 `array_count_values()`, `new stdClass` dynamic properties, declared class
@@ -56,5 +58,6 @@ fatal parity, and broader file APIs.
 
 ## Verification
 
-Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused cslashes
-native tests; exact `add-and-stripcslashes.phpt`; `cargo test`.
+Commands: `cargo fmt --check`; `cargo build --bin phpc`; focused addslashes
+and cslashes native tests; `cargo test`. Exact addslashes PHPT rows are blocked
+locally by missing `/home/claude/php-src-phpt/run-tests.php` (`ptn-jmq`).

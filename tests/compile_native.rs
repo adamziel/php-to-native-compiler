@@ -2931,6 +2931,8 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
         "static char *ptn_strip_tags_string(",
         "static char *ptn_dirname_string(",
         "static char *ptn_quoted_printable_decode_string(",
+        "static char *ptn_addslashes_string(",
+        "static char *ptn_stripslashes_string(",
         "static PtnValue ptn_base_string_to_number(",
     ] {
         let body = generated_c_static_function_body(&c_source, marker);
@@ -4037,6 +4039,109 @@ bool(true)
             "{function} should not convert direct argument expressions unconditionally"
         );
     }
+}
+
+#[test]
+fn compile_addslashes_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-addslashes-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("addslashes-basic.php");
+    let output = root.join("addslashes-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"*** Testing addslashes() : basic functionality ***\\n\";\n\
+$str_array = array(\n\
+    \"How's everybody\",\n\
+    'Are you \"JOHN\"?',\n\
+    'c:\\php\\addslashes',\n\
+    \"hello\\0world\"\n\
+);\n\
+foreach ($str_array as $str) {\n\
+    var_dump(addslashes($str));\n\
+}\n\
+echo \"Done\\n\";\n\
+var_dump(function_exists(\"addslashes\"), function_exists(\"ADDSLASHES\"));\n\
+?>",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"*** Testing addslashes() : basic functionality ***\n\
+string(16) \"How\\'s everybody\"\n\
+string(17) \"Are you \\\"JOHN\\\"?\"\n\
+string(19) \"c:\\\\php\\\\addslashes\"\n\
+string(12) \"hello\\0world\"\n\
+Done\n\
+bool(true)\n\
+bool(true)\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let body =
+        generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_addslashes(");
+    assert!(
+        body.contains("ptn_value_to_string_operand"),
+        "addslashes should use the direct string operand helper"
+    );
+    assert!(
+        !body.contains("ptn_value_to_string(args"),
+        "addslashes should not convert direct argument expressions unconditionally"
+    );
+}
+
+#[test]
+fn compile_addslashes_stripslashes_round_trip_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-add-stripslashes-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("add-stripslashes.php");
+    let output = root.join("add-stripslashes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$input = '';\n\
+for ($i = 0; $i < 512; $i++) {\n\
+    $input .= chr($i % 256);\n\
+}\n\
+echo \"Normal: \";\n\
+if ($input === stripslashes(addslashes($input))) {\n\
+    echo \"OK\\n\";\n\
+} else {\n\
+    echo \"FAILED\\n\";\n\
+}\n\
+var_dump(stripslashes(\"A\\\\0B\\\\nC\\\\\\\\\"), function_exists(\"stripslashes\"), function_exists(\"STRIPSLASHES\"));\n\
+?>",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"Normal: OK\nstring(6) \"A\0BnC\\\"\nbool(true)\nbool(true)\n".to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let body =
+        generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_stripslashes(");
+    assert!(
+        body.contains("ptn_value_to_string_operand"),
+        "stripslashes should use the direct string operand helper"
+    );
+    assert!(
+        !body.contains("ptn_value_to_string(args"),
+        "stripslashes should not convert direct argument expressions unconditionally"
+    );
 }
 
 #[test]
