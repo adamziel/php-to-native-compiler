@@ -2972,6 +2972,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "php_sapi_name"
             | "phpversion"
             | "print_r"
+            | "range"
             | "bindec"
             | "hexdec"
             | "in_array"

@@ -2696,7 +2696,9 @@ print_r(["x" => 1, "nested" => ["y" => 2], "" => null, true, false]);
 var_dump(print_r(["a" => [1]], true));
 var_dump(print_r(null, true), print_r(true, true), print_r(false, true), print_r(42, true), print_r(1.25, true), print_r("x", true));
 var_dump(print_r("out"));
-var_dump(function_exists("print_r"), function_exists("PRINT_R"));"#,
+print_r(range(1, 4));
+var_dump(print_r(range(5, 1, 2), true));
+var_dump(function_exists("print_r"), function_exists("PRINT_R"), function_exists("range"), function_exists("RANGE"));"#,
     )
     .unwrap();
 
@@ -2741,6 +2743,22 @@ var_dump(function_exists("print_r"), function_exists("PRINT_R"));"#,
             "string(4) \"1.25\"\n",
             "string(1) \"x\"\n",
             "outbool(true)\n",
+            "Array\n",
+            "(\n",
+            "    [0] => 1\n",
+            "    [1] => 2\n",
+            "    [2] => 3\n",
+            "    [3] => 4\n",
+            ")\n",
+            "string(49) \"Array\n",
+            "(\n",
+            "    [0] => 5\n",
+            "    [1] => 3\n",
+            "    [2] => 1\n",
+            ")\n",
+            "\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
         )

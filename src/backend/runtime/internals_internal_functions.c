@@ -514,6 +514,61 @@ static PtnValue ptn_internal_print_r(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_bool(1);
 }
 
+static uint64_t ptn_range_integer_distance(int64_t lower, int64_t upper) {
+    if (lower < 0 && upper >= 0) {
+        return (uint64_t)(-(lower + 1)) + 1 + (uint64_t)upper;
+    }
+    return (uint64_t)(upper - lower);
+}
+
+static uint64_t ptn_range_step_magnitude(int64_t step) {
+    if (step >= 0) {
+        return (uint64_t)step;
+    }
+    return (uint64_t)(-(step + 1)) + 1;
+}
+
+static void ptn_range_throw_step_error(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ValueError",
+        "range(): Argument #3 ($step) must not exceed the specified range"
+    );
+}
+
+static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    int64_t start = ptn_value_to_integer(args[0]);
+    int64_t end = ptn_value_to_integer(args[1]);
+    uint64_t step_magnitude = argc >= 3 ? ptn_range_step_magnitude(ptn_value_to_integer(args[2])) : 1;
+    uint64_t distance = start <= end
+        ? ptn_range_integer_distance(start, end)
+        : ptn_range_integer_distance(end, start);
+
+    if (step_magnitude == 0 || step_magnitude > (uint64_t)INT64_MAX ||
+        (start != end && step_magnitude > distance)) {
+        ptn_range_throw_step_error(runtime);
+    }
+
+    int64_t step = (int64_t)step_magnitude;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int ascending = start <= end;
+    int64_t current = start;
+    for (;;) {
+        PtnArray *array = result.as.array;
+        ptn_array_set_entry(array, ptn_array_int_key(array->next_auto_key), ptn_int(current));
+
+        uint64_t remaining = ascending
+            ? ptn_range_integer_distance(current, end)
+            : ptn_range_integer_distance(end, current);
+        if (remaining < step_magnitude) {
+            break;
+        }
+        current = ascending ? current + step : current - step;
+    }
+    return result;
+}
+
 static PtnArray *ptn_internal_expect_array_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -3358,6 +3413,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "print_r", 1, 2, ptn_internal_print_r },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
+        { "range", 2, 3, ptn_internal_range },
         { "reset", 1, 1, ptn_internal_reset },
         { "rmdir", 1, 2, ptn_internal_rmdir },
         { "sha1", 1, 2, ptn_internal_sha1 },

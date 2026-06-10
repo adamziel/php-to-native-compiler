@@ -181,7 +181,7 @@ supports in generated native binaries.
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_count_values(expr);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
-  `in_array(expr, expr[, expr]);`,
+  `range(expr, expr[, expr]);`, `in_array(expr, expr[, expr]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
@@ -199,6 +199,7 @@ supports in generated native binaries.
   `ord(expr)`,
   `count(expr)`, `array_count_values(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
   `array_replace_recursive(expr, ...)`,
+  `range(expr, expr[, expr])`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates, and
@@ -227,6 +228,9 @@ supports in generated native binaries.
 - `print_r()` output for current boxed values, including scalar output,
   ordered-array formatting, nested arrays, and string-return mode through the
   optional second argument.
+- `range()` over integer-converted bounds with optional integer step, returning
+  ascending or descending ordered arrays with PHP's positive step magnitude
+  rule and current `ValueError` boundary for zero or oversized steps.
 - `strlen()` over current boxed scalar values after scalar string conversion.
 - `str_rot13()` over current boxed scalar values after scalar string conversion,
   returning ASCII ROT13 output while leaving non-letters unchanged.
