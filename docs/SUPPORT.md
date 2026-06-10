@@ -179,7 +179,7 @@ supports in generated native binaries.
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
-  `count(expr);`, `array_values(expr);`,
+  `count(expr);`, `array_filter(expr[, callback[, mode]]);`, `array_values(expr);`,
   `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
@@ -197,7 +197,7 @@ supports in generated native binaries.
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
+  `count(expr)`, `array_filter(expr[, callback[, mode]])`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
   `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
@@ -302,6 +302,10 @@ supports in generated native binaries.
   returning the first byte as an integer. Empty and multi-byte strings emit
   PHP-like deprecation diagnostics with the internal-call source line.
 - `count()` over current boxed arrays, returning their length as an integer.
+- `array_filter()` over current boxed arrays, preserving original keys and
+  cloned values while filtering either by PHP truthiness or a supported
+  callable. Numeric mode values `0`, `ARRAY_FILTER_USE_BOTH`, and
+  `ARRAY_FILTER_USE_KEY` select value, value/key, and key callback arguments.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `array_merge_recursive()` and `array_replace_recursive()` over current boxed

@@ -779,6 +779,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function array_values($array) { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_values()");
 
+    let error = parser::parse("<?php function ARRAY_FILTER($array) { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_filter()");
+
     let error =
         parser::parse("<?php function IN_ARRAY($needle, $haystack) { return true; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function in_array()");
@@ -6963,6 +6966,44 @@ var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));"
         "array(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [3]=>\n  int(3)\n  [4]=>\n  string(3) \"ten\"\n}\narray(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [\"three\"]=>\n  int(3)\n  [10]=>\n  string(3) \"ten\"\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_filter_to_native_binary() {
+    let root = temp_dir("ptn-native-array-filter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-filter.php");
+    let output = root.join("array-filter-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function even($input) { return ($input % 2 == 0); }\n\
+function key_over_one($value, $key) { return is_int($key) && $key > 1; }\n\
+function numeric_key($key) { return is_int($key); }\n\
+$input = array(1, 2, 3, 0, -1);\n\
+var_dump(array_filter($input, \"even\"));\n\
+var_dump(array_filter($input));\n\
+var_dump(array_filter($input, null));\n\
+$mixed = array(1 => \"a\", 2 => \"b\", \"a\" => 1, \"b\" => 2);\n\
+var_dump(array_filter($mixed, \"key_over_one\", ARRAY_FILTER_USE_BOTH));\n\
+var_dump(array_filter($mixed, \"numeric_key\", ARRAY_FILTER_USE_KEY));\n\
+var_dump(function_exists(\"array_filter\"), function_exists(\"ARRAY_FILTER\"), ARRAY_FILTER_USE_BOTH, ARRAY_FILTER_USE_KEY);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [1]=>\n  int(2)\n  [3]=>\n  int(0)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(1) {\n  [2]=>\n  string(1) \"b\"\n}\narray(2) {\n  [1]=>\n  string(1) \"a\"\n  [2]=>\n  string(1) \"b\"\n}\nbool(true)\nbool(true)\nint(1)\nint(2)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_filter"));
+    assert!(c_source.contains("ptn_call_callable(runtime, callback"));
 }
 
 #[test]

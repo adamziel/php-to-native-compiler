@@ -429,6 +429,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(1);
         return 1;
     }
+    if (strcmp(name, "ARRAY_FILTER_USE_BOTH") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "ARRAY_FILTER_USE_KEY") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
     if (strcmp(name, "M_E") == 0) {
         *out = ptn_float(2.718281828459045);
         return 1;

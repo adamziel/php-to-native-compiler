@@ -890,6 +890,75 @@ static PtnValue ptn_internal_array_walk(PtnRuntime *runtime, size_t argc, const 
     return result;
 }
 
+static PtnValue ptn_array_filter_callback_arg_value(PtnArrayEntry *entry, int mode) {
+    if (mode == 2) {
+        return ptn_array_key_value(entry->key);
+    }
+    return ptn_value_clone_deref(entry->value);
+}
+
+static int ptn_array_filter_should_keep(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    PtnArrayEntry *entry,
+    int mode,
+    size_t line
+) {
+    if (ptn_value_deref(callback).type == PTN_NULL) {
+        return ptn_is_truthy(entry->value);
+    }
+
+    size_t callback_argc = mode == 1 ? 2 : 1;
+    PtnValue callback_args[2] = {
+        ptn_array_filter_callback_arg_value(entry, mode),
+        ptn_null()
+    };
+    if (mode == 1) {
+        callback_args[1] = ptn_array_key_value(entry->key);
+    }
+
+    PtnValue callback_result = ptn_call_callable(runtime, callback, callback_argc, callback_args, line);
+    int keep = ptn_is_truthy(callback_result);
+    ptn_value_destroy(&callback_args[0]);
+    if (mode == 1) {
+        ptn_value_destroy(&callback_args[1]);
+    }
+    ptn_value_destroy(&callback_result);
+    return keep;
+}
+
+static PtnValue ptn_internal_array_filter(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_filter", 1, "array", args[0]);
+    PtnValue callback = argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_null();
+    int64_t mode_value = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
+    if (mode_value != 0 && mode_value != 1 && mode_value != 2) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_filter(): Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH"
+        );
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+    int mode = (int)mode_value;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        if (!ptn_array_filter_should_keep(runtime, callback, entry, mode, line)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+
+    ptn_value_destroy(&callback);
+    return result;
+}
+
 static PtnArray **ptn_array_map_arrays(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t *max_len_out) {
     size_t array_count = argc - 1;
     PtnArray **arrays = malloc(array_count * sizeof(PtnArray *));
@@ -3175,6 +3244,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
+        { "array_filter", 1, 3, ptn_internal_array_filter },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
