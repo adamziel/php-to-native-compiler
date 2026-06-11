@@ -266,7 +266,7 @@ Post-RC architecture remains explicit rather than hidden:
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
   `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr);`,
   `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
-  `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
+  `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
@@ -274,7 +274,8 @@ Post-RC architecture remains explicit rather than hidden:
   `array_change_key_case(expr[, expr]);`, `array_column(expr, expr[, expr]);`,
   `array_combine(expr, expr);`, `array_count_values(expr);`,
   `array_fill(expr, expr, expr);`, `array_filter(expr[, expr[, expr]]);`,
-  `array_values(expr);`, `array_merge_recursive(expr, ...);`,
+  `array_values(expr);`, `array_merge(expr, ...);`,
+  `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
   `assert(expr[, description]);`,
   `in_array(expr, expr[, expr]);`,
@@ -291,7 +292,7 @@ Post-RC architecture remains explicit rather than hidden:
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `quoted_printable_decode(expr)`, `dirname(expr)`,
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
-  `abs(expr)`, `sqrt(expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
+  `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
@@ -299,7 +300,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_change_key_case(expr[, expr])`, `array_column(expr, expr[, expr])`,
   `array_combine(expr, expr)`, `array_count_values(expr)`,
   `array_fill(expr, expr, expr)`, `array_filter(expr[, expr[, expr]])`,
-  `array_values(expr)`,
+  `array_values(expr)`, `array_merge(expr, ...)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `assert(expr[, description])`,
   `in_array(expr, expr[, expr])`,
@@ -318,11 +319,11 @@ Post-RC architecture remains explicit rather than hidden:
   Assertion INI modes and throwable descriptions are not yet modeled.
 - Top-level named user-defined functions with by-value positional parameters,
   direct by-reference positional parameters, final variadic parameters,
-  trailing scalar default parameter values including omitted `null` defaults,
-  local variable storage, ordinary `return` statements, implicit `null`
-  returns, recursive calls, call-frame argument introspection, and minimal
-  `null` parameter and return type declarations over the currently supported
-  expression and statement subset. Direct calls may omit defaulted trailing
+  trailing scalar and literal-array default parameter values including omitted
+  `null` defaults, local variable storage, ordinary `return` statements,
+  implicit `null` returns, recursive calls, call-frame argument introspection,
+  and minimal `null` parameter and return type declarations over the currently
+  supported expression and statement subset. Direct calls may omit defaulted trailing
   arguments, pass extra positional arguments, or use named arguments for direct
   generated user-function calls: argument expressions are evaluated
   left-to-right, values are bound to parameters by name, call-frame
@@ -492,6 +493,9 @@ Post-RC architecture remains explicit rather than hidden:
   columns, and cloning dereferenced values across COW boundaries.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
+- `array_merge()` over current boxed arrays, appending integer-keyed entries
+  with fresh sequential keys, preserving or overwriting string-keyed entries,
+  and cloning values into a fresh ordered array.
 - `range()` over current boxed integer-convertible start, end, and optional
   step arguments, returning ordered arrays of integer values and throwing the
   modeled `ValueError` for zero or out-of-range steps.

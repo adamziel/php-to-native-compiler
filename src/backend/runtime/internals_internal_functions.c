@@ -1910,6 +1910,36 @@ static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnVa
     return result;
 }
 
+static void ptn_array_merge_append(PtnArray *target, PtnValue value) {
+    PtnArrayKey key = ptn_array_int_key(target->next_auto_key);
+    ptn_array_set_entry(target, key, ptn_value_clone(ptn_array_reindexing_internal_value(value)));
+}
+
+static void ptn_array_merge_into(PtnArray *target, PtnArray *source) {
+    for (size_t i = 0; i < source->len; i++) {
+        PtnArrayEntry *entry = &source->entries[i];
+        if (entry->key.type == PTN_ARRAY_KEY_INT) {
+            ptn_array_merge_append(target, entry->value);
+        } else {
+            ptn_array_set_entry(
+                target,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone(ptn_array_reindexing_internal_value(entry->value))
+            );
+        }
+    }
+}
+
+static PtnValue ptn_internal_array_merge(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < argc; i++) {
+        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge", i + 1, "arrays", args[i]);
+        ptn_array_merge_into(result.as.array, array);
+    }
+    (void)line;
+    return result;
+}
+
 static void ptn_array_merge_recursive_into(PtnArray *target, PtnArray *source);
 
 static void ptn_array_merge_recursive_append(PtnArray *target, PtnValue value) {
@@ -4150,6 +4180,11 @@ static PtnValue ptn_internal_sqrt(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_float(sqrt(ptn_value_to_double(args[0])));
 }
 
+static PtnValue ptn_internal_pow(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_power(runtime, args[0], args[1], line);
+}
+
 static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -4594,6 +4629,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_flip", 1, 1, ptn_internal_array_flip },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
+        { "array_merge", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
@@ -4669,6 +4705,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "phpversion", 0, 1, ptn_internal_phpversion },
         { "pi", 0, 0, ptn_internal_pi },
+        { "pow", 2, 2, ptn_internal_pow },
         { "prev", 1, 1, ptn_internal_prev },
         { "print_r", 1, 2, ptn_internal_print_r },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },

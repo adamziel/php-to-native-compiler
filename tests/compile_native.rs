@@ -971,11 +971,30 @@ fn parser_accepts_scalar_function_parameter_defaults() {
 }
 
 #[test]
+fn parser_accepts_array_function_parameter_defaults() {
+    let program = parser::parse(
+        "<?php function defaults($a = [1, \"key\" => [false]], $b = array()) { return $a; }",
+    )
+    .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(function.parameters.len(), 2);
+    assert!(matches!(
+        function.parameters[0].default_value,
+        Some(Expr::Array { ref elements, .. }) if elements.len() == 2
+    ));
+    assert!(matches!(
+        function.parameters[1].default_value,
+        Some(Expr::Array { ref elements, .. }) if elements.is_empty()
+    ));
+}
+
+#[test]
 fn parser_rejects_unsupported_function_parameter_default_expression() {
-    let error = parser::parse("<?php function unsupported($value = [1]) {}").unwrap_err();
+    let error = parser::parse("<?php function unsupported($value = strlen('x')) {}").unwrap_err();
     assert_eq!(
         error.message,
-        "function parameter default value must be a supported scalar constant expression"
+        "function parameter default value must be a supported constant expression"
     );
 }
 
@@ -5252,6 +5271,36 @@ inspect();",
 }
 
 #[test]
+fn compile_user_function_array_default_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-array-default-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-array-default-arguments.php");
+    let output = root.join("user-function-array-default-arguments-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function inspect($items = [\"seed\" => \"value\", 4 => \"four\"], $empty = array()) {\n\
+    var_dump($items, $empty);\n\
+    $items[\"seed\"] = \"changed\";\n\
+    $empty[] = \"local\";\n\
+}\n\
+inspect();\n\
+inspect();",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [\"seed\"]=>\n  string(5) \"value\"\n  [4]=>\n  string(4) \"four\"\n}\narray(0) {\n}\narray(2) {\n  [\"seed\"]=>\n  string(5) \"value\"\n  [4]=>\n  string(4) \"four\"\n}\narray(0) {\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_user_function_default_argument_too_few_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-default-argument-too-few");
     fs::create_dir_all(&root).unwrap();
@@ -6656,6 +6705,33 @@ var_dump(function_exists(\"sqrt\"), function_exists(\"SQRT\"));\n\
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "float(3)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_pow_function_to_native_binary() {
+    let root = temp_dir("ptn-native-pow-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pow-function.php");
+    let output = root.join("pow-function-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(pow(2, 10));\n\
+var_dump(pow(\"2\", \"3\"));\n\
+var_dump(pow(9, 0.5));\n\
+var_dump(function_exists(\"pow\"), function_exists(\"POW\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1024)\nint(8)\nfloat(3)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -10068,6 +10144,72 @@ var_dump(function_exists(\"array_reverse\"), function_exists(\"ARRAY_REVERSE\"))
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_reverse"));
     assert!(c_source.contains("ptn_array_reindexing_internal_value"));
+}
+
+#[test]
+fn compile_array_merge_to_native_binary() {
+    let root = temp_dir("ptn-native-array-merge");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-merge.php");
+    let output = root.join("array-merge-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_merge());\n\
+$left = [10 => \"ten\", \"keep\" => \"left\", 11 => \"eleven\"];\n\
+$right = [\"keep\" => \"right\", 0 => \"zero\", \"new\" => \"new\"];\n\
+$merged = array_merge($left, $right);\n\
+$merged[\"keep\"] = \"changed\";\n\
+var_dump($merged, $left, $right, function_exists(\"array_merge\"), function_exists(\"ARRAY_MERGE\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(0) {\n",
+            "}\n",
+            "array(5) {\n",
+            "  [0]=>\n",
+            "  string(3) \"ten\"\n",
+            "  [\"keep\"]=>\n",
+            "  string(7) \"changed\"\n",
+            "  [1]=>\n",
+            "  string(6) \"eleven\"\n",
+            "  [2]=>\n",
+            "  string(4) \"zero\"\n",
+            "  [\"new\"]=>\n",
+            "  string(3) \"new\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [10]=>\n",
+            "  string(3) \"ten\"\n",
+            "  [\"keep\"]=>\n",
+            "  string(4) \"left\"\n",
+            "  [11]=>\n",
+            "  string(6) \"eleven\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"keep\"]=>\n",
+            "  string(5) \"right\"\n",
+            "  [0]=>\n",
+            "  string(4) \"zero\"\n",
+            "  [\"new\"]=>\n",
+            "  string(3) \"new\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_merge"));
+    assert!(c_source.contains("ptn_array_merge_into"));
 }
 
 #[test]

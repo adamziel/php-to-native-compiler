@@ -582,7 +582,7 @@ impl Parser {
             let value = self.parse_expr()?;
             if !is_supported_parameter_default_expr(&value) {
                 return Err(Diagnostic::new(
-                    "function parameter default value must be a supported scalar constant expression",
+                    "function parameter default value must be a supported constant expression",
                     Some(value.span()),
                 ));
             }
@@ -3516,6 +3516,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "floor"
             | "abs"
             | "sqrt"
+            | "pow"
             | "fdiv"
             | "fclose"
             | "file_exists"
@@ -3576,6 +3577,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_filter"
             | "array_flip"
             | "array_key_exists"
+            | "array_merge"
             | "array_merge_recursive"
             | "array_pop"
             | "array_push"
@@ -4370,6 +4372,16 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
         | Expr::Null(_) => true,
+        Expr::Array { elements, .. } => elements.iter().all(|element| {
+            element
+                .key
+                .as_ref()
+                .is_none_or(is_supported_parameter_default_expr)
+                && match &element.value {
+                    ArrayElementValue::Value(value) => is_supported_parameter_default_expr(value),
+                    ArrayElementValue::Reference(_) => false,
+                }
+        }),
         Expr::Unary { expr, .. } | Expr::Grouped { expr, .. } => {
             is_supported_parameter_default_expr(expr)
         }

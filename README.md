@@ -24,9 +24,10 @@ expected rows, or one-off outputs.
 - Top-level user functions and declared class methods include scoped magic
   constant coverage for their current supported scope plus `func_num_args()`,
   `func_get_arg()`, and `func_get_args()` call-frame introspection, scalar type
-  hints, and by-reference return aliases for variables, one-level array
-  elements, local lifetimes, typed coercion, plain-assignment separation, and
-  declared public constructor dispatch through the method path.
+  hints, literal-array default parameters, and by-reference return aliases for
+  variables, one-level array elements, local lifetimes, typed coercion,
+  plain-assignment separation, and declared public constructor dispatch through
+  the method path.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
 - Arithmetic rejects non-numeric strings and mixed array operands with modeled
@@ -35,8 +36,8 @@ expected rows, or one-off outputs.
   exponent spelling across echo, casts, concatenation, and string internals.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for
   non-array operands in the current boxed value domain.
-- `array_chunk()` and `array_combine()` build fresh ordered arrays through the
-  shared array runtime.
+- `array_chunk()`, `array_combine()`, and `array_merge()` build fresh ordered
+  arrays through the shared array runtime.
 - `array_filter()` preserves keys while filtering arrays by PHP truthiness or
   modeled callbacks.
 - `array_key_exists()` handles current ordered arrays, including `null`
@@ -46,6 +47,7 @@ expected rows, or one-off outputs.
   default messages for direct calls.
 - `ksort()` and `shuffle()` mutate direct variable arrays through the shared
   ordered-array COW path, and `str_shuffle()` shuffles scalar strings by byte.
+- `pow()` reuses the same boxed exponentiation helper as the `**` operator.
 - Bounded PHPT telemetry from a php-src checkout resolved by `PHP_SRC_PHPT`,
   `/home/claude/php-src-phpt`, or the `.runtime/php-src-phpt` cache.
 
