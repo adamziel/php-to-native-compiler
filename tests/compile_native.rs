@@ -9438,6 +9438,85 @@ var_dump(function_exists('array_flip'), function_exists('ARRAY_FLIP'));",
 }
 
 #[test]
+fn compile_var_export_and_array_set_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-var-export-array-set-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-export-array-set-internals.php");
+    let output = root.join("var-export-array-set-internals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [1, \"big\" => 2, 2, 6, 3, 5, \"s\" => \"some\"];\n\
+$b = [2, 3, \"some\"];\n\
+$c = [1, 5, \"some\"];\n\
+$copy = $a;\n\
+echo var_export($a, true), \";\\n\";\n\
+var_dump(array_diff($a, $b, $c));\n\
+var_dump(array_diff_assoc($a, $b, $c));\n\
+var_dump(array_intersect($a, $b, $c));\n\
+var_dump(array_intersect_assoc($a, $b));\n\
+var_export(false);\n\
+echo \"\\n\";\n\
+var_dump($copy === $a, function_exists(\"array_diff\"), function_exists(\"ARRAY_INTERSECT_ASSOC\"), function_exists(\"var_export\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array (\n",
+            "  0 => 1,\n",
+            "  'big' => 2,\n",
+            "  1 => 2,\n",
+            "  2 => 6,\n",
+            "  3 => 3,\n",
+            "  4 => 5,\n",
+            "  's' => 'some',\n",
+            ");\n",
+            "array(1) {\n",
+            "  [2]=>\n",
+            "  int(6)\n",
+            "}\n",
+            "array(6) {\n",
+            "  [\"big\"]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(6)\n",
+            "  [3]=>\n",
+            "  int(3)\n",
+            "  [4]=>\n",
+            "  int(5)\n",
+            "  [\"s\"]=>\n",
+            "  string(4) \"some\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"s\"]=>\n",
+            "  string(4) \"some\"\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "false\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_var_export"));
+    assert!(c_source.contains("ptn_internal_array_diff"));
+    assert!(c_source.contains("ptn_internal_array_intersect_assoc"));
+}
+
+#[test]
 fn compile_call_user_func_array_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-array");
     fs::create_dir_all(&root).unwrap();

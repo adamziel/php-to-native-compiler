@@ -579,6 +579,123 @@ static PtnValue ptn_internal_print_r(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_bool(1);
 }
 
+static void ptn_var_export_value_indented(PtnStringBuffer *buffer, PtnValue value, size_t indent);
+
+static void ptn_var_export_string(PtnStringBuffer *buffer, const char *value, size_t len) {
+    ptn_string_buffer_append_char(buffer, '\'');
+    for (size_t i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)value[i];
+        if (ch == '\'' || ch == '\\') {
+            ptn_string_buffer_append_char(buffer, '\\');
+        }
+        ptn_string_buffer_append_char(buffer, (char)ch);
+    }
+    ptn_string_buffer_append_char(buffer, '\'');
+}
+
+static void ptn_var_export_key(PtnStringBuffer *buffer, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        ptn_string_buffer_append_format(buffer, "%lld", (long long)key.as.integer);
+        return;
+    }
+    ptn_var_export_string(buffer, key.as.string, strlen(key.as.string));
+}
+
+static int ptn_var_export_value_is_multiline(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_ARRAY || value.type == PTN_OBJECT;
+}
+
+static void ptn_var_export_array(PtnStringBuffer *buffer, PtnArray *array, size_t indent) {
+    ptn_string_buffer_append(buffer, "array (\n");
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        ptn_string_buffer_append_indent(buffer, indent + 2);
+        ptn_var_export_key(buffer, entry->key);
+        ptn_string_buffer_append(buffer, " => ");
+        if (ptn_var_export_value_is_multiline(entry->value)) {
+            ptn_string_buffer_append_char(buffer, '\n');
+            ptn_string_buffer_append_indent(buffer, indent + 2);
+        }
+        ptn_var_export_value_indented(buffer, entry->value, indent + 2);
+        ptn_string_buffer_append(buffer, ",\n");
+    }
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append_char(buffer, ')');
+}
+
+static void ptn_var_export_object(PtnStringBuffer *buffer, PtnObject *object, size_t indent) {
+    ptn_string_buffer_append_format(buffer, "\\%s::__set_state(array(\n", object->class_name);
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        ptn_string_buffer_append_indent(buffer, indent + 3);
+        ptn_var_export_key(buffer, entry->key);
+        ptn_string_buffer_append(buffer, " => ");
+        if (ptn_var_export_value_is_multiline(entry->value)) {
+            ptn_string_buffer_append_char(buffer, '\n');
+            ptn_string_buffer_append_indent(buffer, indent + 3);
+        }
+        ptn_var_export_value_indented(buffer, entry->value, indent + 3);
+        ptn_string_buffer_append(buffer, ",\n");
+    }
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, "))");
+}
+
+static void ptn_var_export_value_indented(PtnStringBuffer *buffer, PtnValue value, size_t indent) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_string_buffer_append(buffer, "NULL");
+            break;
+        case PTN_BOOL:
+            ptn_string_buffer_append(buffer, value.as.boolean ? "true" : "false");
+            break;
+        case PTN_INT:
+            ptn_string_buffer_append_format(buffer, "%lld", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT: {
+            char formatted[128];
+            ptn_format_scalar_float(value.as.floating, formatted, sizeof(formatted));
+            ptn_string_buffer_append(buffer, formatted);
+            break;
+        }
+        case PTN_STRING:
+            ptn_var_export_string(buffer, (const char *)value.as.string.data, value.as.string.len);
+            break;
+        case PTN_RESOURCE:
+            ptn_string_buffer_append(buffer, "NULL");
+            break;
+        case PTN_ARRAY:
+            ptn_var_export_array(buffer, value.as.array, indent);
+            break;
+        case PTN_OBJECT:
+            ptn_var_export_object(buffer, value.as.object, indent);
+            break;
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+            ptn_string_buffer_append(buffer, "NULL");
+            break;
+        case PTN_REFERENCE:
+            break;
+    }
+}
+
+static PtnValue ptn_internal_var_export(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    int return_output = argc >= 2 && ptn_is_truthy(args[1]);
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_var_export_value_indented(&buffer, args[0], 0);
+    if (return_output) {
+        return ptn_owned_string_len(buffer.data, buffer.len);
+    }
+    fwrite(buffer.data, 1, buffer.len, stdout);
+    free(buffer.data);
+    return ptn_bool(1);
+}
+
 static PtnArray *ptn_internal_expect_array_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -1510,6 +1627,138 @@ static PtnValue ptn_internal_array_flip(PtnRuntime *runtime, size_t argc, const 
         ptn_array_set_entry(result.as.array, key, ptn_array_key_value(array->entries[i].key));
     }
     return result;
+}
+
+static PtnStringOperand ptn_array_set_compare_string_operand(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
+static int ptn_array_set_compare_values(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    PtnStringOperand left_string = ptn_array_set_compare_string_operand(runtime, left, line);
+    PtnStringOperand right_string = ptn_array_set_compare_string_operand(runtime, right, line);
+    int equal = left_string.len == right_string.len &&
+        memcmp(left_string.data, right_string.data, left_string.len) == 0;
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    return equal;
+}
+
+static int ptn_array_set_contains_entry(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnArrayEntry *needle,
+    int match_key,
+    size_t line
+) {
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *candidate = &array->entries[i];
+        if (match_key && !ptn_array_keys_equal(needle->key, candidate->key)) {
+            continue;
+        }
+        if (ptn_array_set_compare_values(runtime, needle->value, candidate->value, line)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_array_set_entry_is_in_all_rhs(
+    PtnRuntime *runtime,
+    PtnArrayEntry *entry,
+    size_t rhs_count,
+    PtnArray **rhs_arrays,
+    int match_key,
+    size_t line
+) {
+    for (size_t i = 0; i < rhs_count; i++) {
+        if (!ptn_array_set_contains_entry(runtime, rhs_arrays[i], entry, match_key, line)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_array_set_entry_is_in_any_rhs(
+    PtnRuntime *runtime,
+    PtnArrayEntry *entry,
+    size_t rhs_count,
+    PtnArray **rhs_arrays,
+    int match_key,
+    size_t line
+) {
+    for (size_t i = 0; i < rhs_count; i++) {
+        if (ptn_array_set_contains_entry(runtime, rhs_arrays[i], entry, match_key, line)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnArray **ptn_array_set_rhs_arrays(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args
+) {
+    size_t rhs_count = argc - 1;
+    PtnArray **rhs_arrays = malloc(rhs_count * sizeof(PtnArray *));
+    if (rhs_arrays == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < rhs_count; i++) {
+        rhs_arrays[i] = ptn_internal_expect_array_arg(runtime, function_name, i + 2, "arrays", args[i + 1]);
+    }
+    return rhs_arrays;
+}
+
+static PtnValue ptn_array_set_result_from_first(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    int match_key,
+    int keep_matches,
+    size_t line
+) {
+    PtnArray *left = ptn_internal_expect_array_arg(runtime, function_name, 1, "array", args[0]);
+    PtnArray **rhs_arrays = ptn_array_set_rhs_arrays(runtime, function_name, argc, args);
+    size_t rhs_count = argc - 1;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < left->len; i++) {
+        PtnArrayEntry *entry = &left->entries[i];
+        int selected = keep_matches
+            ? ptn_array_set_entry_is_in_all_rhs(runtime, entry, rhs_count, rhs_arrays, match_key, line)
+            : !ptn_array_set_entry_is_in_any_rhs(runtime, entry, rhs_count, rhs_arrays, match_key, line);
+        if (selected) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone(ptn_array_reindexing_internal_value(entry->value))
+            );
+        }
+    }
+    free(rhs_arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_diff(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_array_set_result_from_first(runtime, "array_diff", argc, args, 0, 0, line);
+}
+
+static PtnValue ptn_internal_array_diff_assoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_array_set_result_from_first(runtime, "array_diff_assoc", argc, args, 1, 0, line);
+}
+
+static PtnValue ptn_internal_array_intersect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_array_set_result_from_first(runtime, "array_intersect", argc, args, 0, 1, line);
+}
+
+static PtnValue ptn_internal_array_intersect_assoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_array_set_result_from_first(runtime, "array_intersect_assoc", argc, args, 1, 1, line);
 }
 
 static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -4673,10 +4922,14 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_column", 2, 3, ptn_internal_array_column },
         { "array_combine", 2, 2, ptn_internal_array_combine },
         { "array_count_values", 1, 1, ptn_internal_array_count_values },
+        { "array_diff", 2, PTN_VARIADIC_ARGS, ptn_internal_array_diff },
+        { "array_diff_assoc", 2, PTN_VARIADIC_ARGS, ptn_internal_array_diff_assoc },
         { "array_fill", 3, 3, ptn_internal_array_fill },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_filter", 1, 3, ptn_internal_array_filter },
         { "array_flip", 1, 1, ptn_internal_array_flip },
+        { "array_intersect", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect },
+        { "array_intersect_assoc", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_assoc },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
         { "array_merge", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge },
@@ -4786,6 +5039,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "substr", 2, 3, ptn_internal_substr },
         { "unlink", 1, 1, ptn_internal_unlink },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
+        { "var_export", 1, 2, ptn_internal_var_export },
     };
     *count = sizeof(functions) / sizeof(functions[0]);
     return functions;

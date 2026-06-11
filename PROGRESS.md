@@ -1,93 +1,53 @@
 # PTN Progress
 
-Refresh: 2026-06-11T22:53Z
-Measured: `ptn-pjah` rebased on `origin/master` at `0aab39abd`.
+Refresh: 2026-06-11T22:58Z
+Measured here on `ptn-k14b` rebased on `origin/master` at `b62428b21`
+plus local slice changes.
 
-Recent RC slices cover array/key canonicalization, foreach targets, catchable
-arithmetic/assertion boundaries, public `__call`/`__toString`, precision-driven
-float output, scalar `var_dump()` spelling, inline HTML, string-offset
-diagnostics, minimal resources, `array_key_exists()` null/resource-key parity,
-PHP-style float exponent spelling, direct `ksort()`/`shuffle()`,
-variable-root array-path cursor mutation, one-argument `array_pop()`/
-`array_shift()`, literal-array defaults, `pow()`, `array_merge()`, bounded
-`highlight_string()` output buffers, `phpc -d error_reporting=N`,
-`call_user_func_array()` through shared callable dispatch, and filtered bitwise
-integer-conversion diagnostics. `ptn-snsk` emits legacy `${var}` string
-interpolation deprecations before runtime execution and routes undefined
-variable warnings through stdout formatting, so exact `strlen.phpt` passes.
+Recent RC slices cover parser/IR/C backend, boxed values, ordered arrays,
+strings, scalar operators, selected internals, COW/reference slices, user
+functions, call-frame introspection, scalar type hints, bounded callables,
+public class/object shells, public properties/static properties, public
+constructors, public `__call`/`__toString`, `is_callable()`, assertion errors,
+heredoc/nowdoc literals, interpolation diagnostic ordering, stream resources,
+variable-root array-path mutation, `pow()`, `array_merge()`,
+`call_user_func_array()`, CLI `error_reporting`, bounded
+`highlight_string()`/empty output-buffer reads, bitwise integer-conversion
+diagnostic filtering, and direct array mutators through `shuffle`.
+
 `ptn-pjah` extends minimal resources into boxed stream resources: `fopen()`
 keeps streams open, `fclose()` closes them, `is_resource()` is false after
 close, and `gettype()` reports `resource (closed)`.
 
-## Dashboard
+`ptn-k14b` adds scalar/array `var_export()` plus non-callback `array_diff()`,
+`array_diff_assoc()`, `array_intersect()`, and `array_intersect_assoc()` through
+the shared ordered-array runtime. Array set comparisons use PHP's stringified
+value comparison and preserve keys from the first array.
 
-| Format / source | Ported | Passing | Needs work |
-| --- | ---: | ---: | ---: |
-| Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 478 | 478 | 0 |
-| Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 195 | 5 |
-| PHPT Zend rows | 76 | 76 | 0 |
-| PHPT ext/standard rows | 77 | 73 | 4 |
-| PHPT tests/basic+func+lang | 45 | 44 | 1 |
-| PHPT other rows | 2 | 2 | 0 |
-| PHPT COW manifest | 29 | 29 | 0 |
-| Post-merge COW gate | 25 | 25 | 0 |
+## Current Evidence
 
-## RC Surface
+| Signal | Latest result |
+| --- | --- |
+| Rust native/compiler suite | `cargo test` passes; `compile_native` is 480/480 |
+| Focused native reducer | `compile_var_export_and_array_set_internals_to_native_binary` passes |
+| Exact PHPT array frontier | `array/008.phpt` passes; `array/007.phpt` reaches the later non-public class-member blocker |
+| PHPT COW manifest | 29/29 on `6cdf19c77` before this slice |
+| Bounded PHPT full manifest | latest full run before `ptn-k14b` was 195/200; full post-change rerun pending |
 
-Parser/IR/C backend, boxed values, variables/constants, strings, scalar
-operators, ordered arrays, `foreach`, branch/loop/switch, compile-time
-includes, selected internals, COW/reference slices, top-level functions,
-call-frame introspection, scalar type hints including literal-array defaults,
-bounded closures/callables, `stdClass`, public class/object shells, public
-properties/static properties, public constructors, public `__call`/
-`__toString`, `is_callable()`, assertion errors, heredoc/nowdoc,
-interpolation slices, stream resources, `pow()`, `array_merge()`,
-`call_user_func_array()`, CLI `error_reporting` ini wiring, bounded
-`highlight_string()`/empty output-buffer reads, error-reporting-aware bitwise
-integer conversion diagnostics, and direct array mutators through `shuffle`.
+## Remaining Bounded Work
 
-## Remaining Bounded Failures
-
-- `ptn-lrty.3`, `ptn-xery`, and `ptn-k95f`: 2 broad array-internal rows remain:
-  `007` and `008`. `001`, `005`, `array_column()`, and `array_key_exists()`
-  variants are covered.
-- `ptn-lrty.4`, `ptn-loyg`, and `ptn-qm7v`: 2 string/output rows remain. `004`
-  now reaches array-element inc/dec after sort/shuffle support; `005` and
-  `strlen` are covered; `006` still needs highlight-file/output-buffer support.
-- `ptn-lrty.6` plus `ptn-r52`: `tests/lang/024.phpt` remains at the
+- Array frontier: `array/007.phpt` still fails when the row reaches private
+  class members and callback-based `array_udiff*` variants. The scalar/array
+  `array_diff*` section is now covered, and exact `array/008.phpt` passes.
+- String/output frontier: `strings/004.phpt` and `strings/006.phpt` remain
+  around array-element inc/dec and `highlight_file()`/output-buffer support;
+  `strlen.phpt` is covered on the rebased base.
+- Language/control frontier: `tests/lang/024.phpt` remains at the
   dynamic-variable array-offset lvalue blocker.
 
-## Verification
-
-Evidence: exact `array_key_exists*` PHPT rows pass 3/3 for `ptn-lrty.3`; exact
-`add_basiclong_64bit.phpt` passes for `ptn-icd9`; `strings/004.phpt` advances
-for `ptn-loyg`; exact `array/005.phpt` passes for `ptn-xery`; exact
-`array/001.phpt` passes for `ptn-k95f`; `strings/005.phpt` passes for
-`ptn-qm7v`; exact `call_user_func_array_variation_001.phpt` passes for
-`ptn-z8jv`; exact bitwise PHPT rows `bitwiseAnd_basiclong_64bit`,
-`bitwiseNot_basiclong_64bit`, `bitwiseOr_basiclong_64bit`, and
-`bitwiseXor_basiclong_64bit` pass 4/4 for `ptn-na3m`. Bounded PHPT
-`summary-20260611T214758Z.txt` is 194/200. Focused `ptn-na3m` coverage includes
-bitwise diagnostic filtering, out-of-range `~`, and existing bitwise native
-rows.
-`ptn-snsk` post-rebase evidence includes exact
-`ext/standard/tests/strings/strlen.phpt` passing 1/1, bounded PHPT
-`run-20260611T223244Z-manifest.log` at 195/200, COW PHPT
-`run-20260611T222948Z-*` at 29/29, full `cargo test`, and
-`cargo fmt --check`.
-`ptn-pjah` pre-rebase evidence on `6cdf19c77` includes `cargo fmt --check`,
-`git diff --check HEAD~1..HEAD`, full `cargo test` with native/compiler
-478/478, native smoke 6/6, post-merge COW gate 25/25, and bounded PHPT
-`manifest-20260611T223047Z.txt` at 194/200 before the `strlen` row landed.
-It keeps `array_key_exists_variation1.phpt`, `strings/005.phpt`,
-`call_user_func_array_variation_001.phpt`, and all 4 bitwise basiclong rows
-passing. `ptn-pjah` adds focused native stream-resource coverage.
-
 Follow-ups remain broad visibility/inheritance, typed/non-public/promoted
-properties, interfaces/traits, namespaces, reflection, remaining magic
-methods, first-class callables, destructors, broader resources/exceptions,
-dynamic includes, heredoc interpolation, full unsupported-internal coverage,
-remaining scalar offset-lvalues, assertion configuration, non-direct-variable
-or non-numeric inc/dec, and broader foreach destructuring/reference targets.
+properties, interfaces/traits, namespaces, reflection, remaining magic methods,
+first-class callables, destructors, broader resources/exceptions, dynamic
+includes, heredoc interpolation, unsupported internals, scalar offset-lvalues,
+assertion configuration, non-direct-variable or non-numeric inc/dec, and broader
+foreach destructuring/reference targets.

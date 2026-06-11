@@ -3574,10 +3574,14 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_column"
             | "array_combine"
             | "array_count_values"
+            | "array_diff"
+            | "array_diff_assoc"
             | "array_fill"
             | "array_fill_keys"
             | "array_filter"
             | "array_flip"
+            | "array_intersect"
+            | "array_intersect_assoc"
             | "array_key_exists"
             | "array_merge"
             | "array_merge_recursive"
@@ -3601,6 +3605,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "str_shuffle"
             | "strtr"
             | "unlink"
+            | "var_export"
     )
 }
 
