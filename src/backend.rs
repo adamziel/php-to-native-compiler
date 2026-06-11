@@ -50,7 +50,11 @@ pub fn emit_c(module: &Module) -> String {
     );
     if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions);
+    }
+    if runtime_requirements.internal_function_dispatch || needs_method_dispatch {
         emit_class_metadata_helpers(&mut out, &module.classes);
+    }
+    if runtime_requirements.internal_function_dispatch {
         emit_callable_validation_helpers(&mut out);
     }
     if needs_method_dispatch {
@@ -63,6 +67,10 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    if needs_method_dispatch {
+        out.push_str("    runtime.method_dispatch = ptn_call_declared_method;\n");
+        out.push_str("    runtime.declared_method_exists = ptn_declared_class_method_exists;\n");
+    }
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
@@ -1288,9 +1296,9 @@ fn emit_instruction(
         }
         Instruction::Echo(value) => {
             let emitted_value = values.emit_materialized_value(out, value);
-            out.push_str("    ptn_echo(");
+            out.push_str("    ptn_echo(&runtime, ");
             out.push_str(&emitted_value);
-            out.push_str(");\n");
+            out.push_str(", 0);\n");
             emit_value_cleanup(out, "    ", &emitted_value);
         }
         Instruction::Increment { name, op, line } => {
@@ -3865,21 +3873,40 @@ impl ValueEmitter {
                 out.push_str(" = ");
                 match kind {
                     CastKind::Int | CastKind::Float | CastKind::String | CastKind::Bool => {
-                        out.push_str(match kind {
-                            CastKind::Int => "ptn_cast_int",
-                            CastKind::Float => "ptn_cast_float",
-                            CastKind::String => "ptn_cast_string",
-                            CastKind::Bool => "ptn_cast_bool",
+                        match kind {
+                            CastKind::String => {
+                                out.push_str("ptn_cast_string_with_runtime(&runtime, ");
+                                out.push_str(&expr_temp);
+                                out.push_str(", ");
+                                out.push_str(&line.to_string());
+                                out.push_str(");\n");
+                            }
+                            CastKind::Int | CastKind::Float | CastKind::Bool => {
+                                out.push_str(match kind {
+                                    CastKind::Int => "ptn_cast_int",
+                                    CastKind::Float => "ptn_cast_float",
+                                    CastKind::Bool => "ptn_cast_bool",
+                                    CastKind::String
+                                    | CastKind::Integer
+                                    | CastKind::Double
+                                    | CastKind::Binary
+                                    | CastKind::Boolean => {
+                                        unreachable!(
+                                            "only int/float/bool canonical casts use this branch"
+                                        )
+                                    }
+                                });
+                                out.push('(');
+                                out.push_str(&expr_temp);
+                                out.push_str(");\n");
+                            }
                             CastKind::Integer
                             | CastKind::Double
                             | CastKind::Binary
                             | CastKind::Boolean => {
                                 unreachable!("non-canonical casts are handled separately")
                             }
-                        });
-                        out.push('(');
-                        out.push_str(&expr_temp);
-                        out.push_str(");\n");
+                        }
                     }
                     CastKind::Integer | CastKind::Double | CastKind::Binary | CastKind::Boolean => {
                         let (spelling, canonical, target) = match kind {
@@ -4302,9 +4329,9 @@ impl ValueEmitter {
 
     fn emit_print(&mut self, out: &mut String, expression: &ValueExpr) -> String {
         let expression_temp = self.emit_materialized_value(out, expression);
-        out.push_str("    ptn_echo(");
+        out.push_str("    ptn_echo(&runtime, ");
         out.push_str(&expression_temp);
-        out.push_str(");\n");
+        out.push_str(", 0);\n");
         emit_value_cleanup(out, "    ", &expression_temp);
         "ptn_int(1)".to_string()
     }

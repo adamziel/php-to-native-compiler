@@ -55,6 +55,7 @@ typedef struct PtnClosure PtnClosure;
 typedef struct PtnException PtnException;
 typedef struct PtnObject PtnObject;
 typedef struct PtnReference PtnReference;
+typedef struct PtnRuntime PtnRuntime;
 typedef struct PtnTryFrame PtnTryFrame;
 
 typedef enum {
@@ -256,7 +257,17 @@ typedef struct {
     int64_t error_reporting;
 } PtnDiagnosticSink;
 
-typedef struct {
+typedef PtnValue (*PtnMethodDispatchHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+typedef int (*PtnDeclaredMethodExistsHandler)(const char *class_name, const char *method_name);
+
+struct PtnRuntime {
     PtnSymbolTable symbols;
     PtnSymbolTable *global_symbols;
     PtnSymbolTable owned_constants;
@@ -268,10 +279,12 @@ typedef struct {
     PtnExceptionState *exceptions;
     PtnCallFrame owned_call_frame;
     PtnCallFrame *call_frame;
+    PtnMethodDispatchHandler method_dispatch;
+    PtnDeclaredMethodExistsHandler declared_method_exists;
     const char *source_path;
     const char *current_function_name;
     size_t call_site_line;
-} PtnRuntime;
+};
 
 typedef struct {
     size_t string_allocs;

@@ -3119,7 +3119,7 @@ fn compile_scalar_echo_keeps_direct_output_path_to_native_binary() {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     let echo_start = c_source
-        .find("static PTN_UNUSED void ptn_echo(PtnValue value)")
+        .find("static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line)")
         .expect("generated runtime should contain ptn_echo");
     let echo_tail = &c_source[echo_start..];
     let echo_end = echo_tail
@@ -3134,6 +3134,45 @@ fn compile_scalar_echo_keeps_direct_output_path_to_native_binary() {
     assert!(echo_body.contains("case PTN_INT:"));
     assert!(echo_body.contains("case PTN_FLOAT:"));
     assert!(echo_body.contains("case PTN_STRING:"));
+}
+
+#[test]
+fn compile_object_to_string_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-object-to-string-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-to-string-conversion.php");
+    let output = root.join("object-to-string-conversion-bin");
+    fs::write(
+        &input,
+        "<?php
+class StringCapable {
+    public function __toString() {
+        return \"Hello, world\";
+    }
+}
+
+$value = new StringCapable();
+var_dump(strlen($value));
+var_dump(strlen(\"$value\"));
+echo $value, \"\\n\";
+echo \"prefix:$value\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(12)\nint(12)\nHello, world\nprefix:Hello, world\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.method_dispatch = ptn_call_declared_method;"));
+    assert!(c_source.contains("ptn_value_to_string_operand_with_runtime"));
 }
 
 #[test]

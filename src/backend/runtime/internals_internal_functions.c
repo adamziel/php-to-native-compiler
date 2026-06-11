@@ -12,7 +12,7 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     return ptn_null();
 }
 
-static PTN_UNUSED void ptn_echo(PtnValue value) {
+static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
@@ -37,7 +37,16 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_ARRAY:
             fputs("Array", stdout);
             break;
-        case PTN_OBJECT:
+        case PTN_OBJECT: {
+            PtnStringOperand object_string;
+            if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+                fwrite(object_string.data, 1, object_string.len, stdout);
+                ptn_string_operand_free(object_string);
+                break;
+            }
+            fputs("Object", stdout);
+            break;
+        }
         case PTN_CLOSURE:
             fputs("Object", stdout);
             break;
@@ -3073,16 +3082,18 @@ static PtnStringOperand ptn_internal_expect_string_arg(
             ptn_abort_out_of_memory();
         }
         ptn_emit_deprecation(&runtime->diagnostics, message, line);
-    } else if (
-        value.type == PTN_ARRAY ||
-        value.type == PTN_OBJECT ||
-        value.type == PTN_CLOSURE ||
-        value.type == PTN_EXCEPTION
-    ) {
+    } else if (value.type == PTN_OBJECT) {
+        PtnStringOperand object_string;
+        if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+            return object_string;
+        }
+        ptn_internal_throw_string_arg_type_error(runtime, function_name, position, argument_name, value);
+        return ptn_string_operand_borrowed("");
+    } else if (value.type == PTN_ARRAY || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
         ptn_internal_throw_string_arg_type_error(runtime, function_name, position, argument_name, value);
         return ptn_string_operand_borrowed("");
     }
-    return ptn_value_to_string_operand(value);
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
 }
 
 static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

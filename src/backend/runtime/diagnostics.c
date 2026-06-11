@@ -339,6 +339,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->owned_call_frame.parameter_count = 0;
     runtime->owned_call_frame.parameter_names = NULL;
     runtime->call_frame = NULL;
+    runtime->method_dispatch = NULL;
+    runtime->declared_method_exists = NULL;
     runtime->source_path = NULL;
     runtime->current_function_name = NULL;
     runtime->call_site_line = 0;

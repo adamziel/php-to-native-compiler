@@ -15,6 +15,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_call_frame.parameter_count = 0;
     runtime->owned_call_frame.parameter_names = NULL;
     runtime->call_frame = NULL;
+    runtime->method_dispatch = caller_runtime->method_dispatch;
+    runtime->declared_method_exists = caller_runtime->declared_method_exists;
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
     runtime->call_site_line = 0;

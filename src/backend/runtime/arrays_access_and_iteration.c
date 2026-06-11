@@ -60,6 +60,11 @@ static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value);
+static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+);
 static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
 static PTN_UNUSED PtnArray *ptn_runtime_array_detach_variable(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED PtnArray *ptn_value_replace_with_empty_array(PtnValue *value);
@@ -920,7 +925,7 @@ static PTN_UNUSED unsigned char ptn_string_offset_assignment_byte(
         ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
     }
 
-    PtnStringOperand string = ptn_value_to_string_operand(value);
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
     if (string.len == 0) {
         ptn_string_operand_free(string);
         ptn_throw_exception(runtime, "Error", "Cannot assign an empty string to a string offset");

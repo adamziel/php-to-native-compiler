@@ -296,6 +296,44 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
     return ptn_string_operand_owned_len(ptn_duplicate_string_len(buffer, (size_t)written), (size_t)written);
 }
 
+static PTN_UNUSED int ptn_try_object_to_string_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnStringOperand *out
+) {
+    value = ptn_value_deref(value);
+    if (
+        runtime == NULL ||
+        runtime->method_dispatch == NULL ||
+        runtime->declared_method_exists == NULL ||
+        value.type != PTN_OBJECT ||
+        !runtime->declared_method_exists(value.as.object->class_name, "__toString")
+    ) {
+        return 0;
+    }
+
+    PtnValue result = runtime->method_dispatch(runtime, value, "__toString", 0, NULL, line);
+    PtnStringOperand result_string = ptn_value_to_string_operand(result);
+    char *copy = ptn_duplicate_string_len(result_string.data, result_string.len);
+    *out = ptn_string_operand_owned_len(copy, result_string.len);
+    ptn_string_operand_free(result_string);
+    ptn_value_destroy(&result);
+    return 1;
+}
+
+static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand object_string;
+    if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+        return object_string;
+    }
+    return ptn_value_to_string_operand(value);
+}
+
 static PTN_UNUSED PtnStringOperand ptn_concat_string_operand(
     PtnRuntime *runtime,
     PtnValue value,
@@ -305,7 +343,7 @@ static PTN_UNUSED PtnStringOperand ptn_concat_string_operand(
     if (value.type == PTN_ARRAY) {
         ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
     }
-    return ptn_value_to_string_operand(value);
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
 }
 
 static PTN_UNUSED PtnValue ptn_concat_many(
@@ -351,12 +389,16 @@ static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnVal
     return ptn_concat_many(runtime, operands, 2, strings);
 }
 
-static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value) {
-    PtnStringOperand string = ptn_value_to_string_operand(value);
+static PTN_UNUSED PtnValue ptn_cast_string_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
     char *copy = ptn_duplicate_string_len(string.data, string.len);
     size_t len = string.len;
     ptn_string_operand_free(string);
     return ptn_owned_string_len(copy, len);
+}
+
+static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value) {
+    return ptn_cast_string_with_runtime(NULL, value, 0);
 }
 
 static PTN_UNUSED PtnValue ptn_cast_bool(PtnValue value) {
