@@ -18,10 +18,13 @@ use crate::ir::{
 mod runtime;
 
 const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
+const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
+    "Using ${var} in strings is deprecated, use {$var} instead";
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let runtime_requirements = module_runtime_requirements(module);
+    let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let needs_callable_dispatch = runtime_requirements.internal_function_dispatch
         || runtime_requirements.dynamic_function_dispatch;
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
@@ -80,6 +83,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.functions,
         &module.classes,
     );
+    emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
     emit_static_property_initializers(&mut out, &mut values, &module.classes);
     for warning in collect_module_control_warnings(module) {
         emit_control_warning(
@@ -618,6 +622,9 @@ fn emit_include_helpers(
         out.push_str("    (void)include_runtime;\n");
         out.push_str("#define runtime (*include_runtime)\n");
         out.push_str("    PtnValue ptn_return_value = ptn_int(1);\n");
+        let legacy_dollar_brace_deprecations =
+            collect_include_legacy_dollar_brace_deprecations(include);
+        emit_legacy_dollar_brace_deprecations(out, &legacy_dollar_brace_deprecations);
         let mut values = ValueEmitter::new(
             &include.source_file,
             &include.source_dir,
@@ -672,6 +679,24 @@ fn emit_static_property_initializers(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &value_temp);
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LegacyDollarBraceDeprecation {
+    line: usize,
+}
+
+fn emit_legacy_dollar_brace_deprecations(
+    out: &mut String,
+    deprecations: &[LegacyDollarBraceDeprecation],
+) {
+    for deprecation in deprecations {
+        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE));
+        out.push_str("\", ");
+        out.push_str(&deprecation.line.to_string());
+        out.push_str(");\n");
     }
 }
 
@@ -2032,6 +2057,325 @@ fn collect_module_control_warnings(module: &Module) -> Vec<ControlWarning> {
     }
     warnings.extend(collect_control_warnings(&module.instructions));
     warnings
+}
+
+fn collect_module_legacy_dollar_brace_deprecations(
+    module: &Module,
+) -> Vec<LegacyDollarBraceDeprecation> {
+    let mut deprecations = Vec::new();
+    for class in &module.classes {
+        for property in &class.properties {
+            if let Some(value) = &property.value {
+                collect_value_legacy_dollar_brace_deprecations(value, &mut deprecations);
+            }
+        }
+        for property in &class.static_properties {
+            if let Some(value) = &property.value {
+                collect_value_legacy_dollar_brace_deprecations(value, &mut deprecations);
+            }
+        }
+    }
+    for function in &module.functions {
+        for parameter in &function.parameters {
+            if let Some(default_value) = &parameter.default_value {
+                collect_value_legacy_dollar_brace_deprecations(default_value, &mut deprecations);
+            }
+        }
+        collect_instructions_legacy_dollar_brace_deprecations(&function.body, &mut deprecations);
+    }
+    collect_instructions_legacy_dollar_brace_deprecations(&module.instructions, &mut deprecations);
+    deprecations
+}
+
+fn collect_include_legacy_dollar_brace_deprecations(
+    include: &IncludeFile,
+) -> Vec<LegacyDollarBraceDeprecation> {
+    let mut deprecations = Vec::new();
+    collect_instructions_legacy_dollar_brace_deprecations(&include.instructions, &mut deprecations);
+    deprecations
+}
+
+fn collect_instructions_legacy_dollar_brace_deprecations(
+    instructions: &[Instruction],
+    deprecations: &mut Vec<LegacyDollarBraceDeprecation>,
+) {
+    for instruction in instructions {
+        collect_instruction_legacy_dollar_brace_deprecations(instruction, deprecations);
+    }
+}
+
+fn collect_instruction_legacy_dollar_brace_deprecations(
+    instruction: &Instruction,
+    deprecations: &mut Vec<LegacyDollarBraceDeprecation>,
+) {
+    match instruction {
+        Instruction::Store { value, .. }
+        | Instruction::DefineConstant { value, .. }
+        | Instruction::Expression(value)
+        | Instruction::Echo(value) => {
+            collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+        }
+        Instruction::StoreRef { source, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(source, deprecations);
+        }
+        Instruction::StoreArrayDim {
+            dimensions, value, ..
+        } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+            collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+        }
+        Instruction::StoreArrayDimRef { target, source } => {
+            collect_array_dim_target_legacy_dollar_brace_deprecations(target, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(source, deprecations);
+        }
+        Instruction::UnsetArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+            }
+        }
+        Instruction::InternalCall { arguments, .. } => {
+            for argument in arguments {
+                collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
+            }
+        }
+        Instruction::Return { value, .. } => {
+            if let Some(value) = value {
+                collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+            }
+        }
+        Instruction::Try { body, catches } => {
+            collect_instructions_legacy_dollar_brace_deprecations(body, deprecations);
+            for catch in catches {
+                collect_instructions_legacy_dollar_brace_deprecations(&catch.body, deprecations);
+            }
+        }
+        Instruction::Branch {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(condition, deprecations);
+            collect_instructions_legacy_dollar_brace_deprecations(then_body, deprecations);
+            collect_instructions_legacy_dollar_brace_deprecations(else_body, deprecations);
+        }
+        Instruction::While { condition, body } | Instruction::DoWhile { body, condition } => {
+            collect_value_legacy_dollar_brace_deprecations(condition, deprecations);
+            collect_instructions_legacy_dollar_brace_deprecations(body, deprecations);
+        }
+        Instruction::For {
+            initializers,
+            condition,
+            updates,
+            body,
+        } => {
+            collect_instructions_legacy_dollar_brace_deprecations(initializers, deprecations);
+            if let Some(condition) = condition {
+                collect_value_legacy_dollar_brace_deprecations(condition, deprecations);
+            }
+            collect_instructions_legacy_dollar_brace_deprecations(updates, deprecations);
+            collect_instructions_legacy_dollar_brace_deprecations(body, deprecations);
+        }
+        Instruction::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(iterable, deprecations);
+            if let Some(key) = key {
+                collect_assignment_target_legacy_dollar_brace_deprecations(key, deprecations);
+            }
+            collect_assignment_target_legacy_dollar_brace_deprecations(value, deprecations);
+            collect_instructions_legacy_dollar_brace_deprecations(body, deprecations);
+        }
+        Instruction::Switch { expression, cases } => {
+            collect_value_legacy_dollar_brace_deprecations(expression, deprecations);
+            for case in cases {
+                if let Some(condition) = &case.condition {
+                    collect_value_legacy_dollar_brace_deprecations(condition, deprecations);
+                }
+                collect_instructions_legacy_dollar_brace_deprecations(&case.body, deprecations);
+            }
+        }
+        Instruction::Increment { .. }
+        | Instruction::UnsetVariable { .. }
+        | Instruction::Break { .. }
+        | Instruction::Continue { .. }
+        | Instruction::Label { .. }
+        | Instruction::Goto { .. } => {}
+    }
+}
+
+fn collect_array_dim_target_legacy_dollar_brace_deprecations(
+    target: &crate::ir::ArrayDimTarget,
+    deprecations: &mut Vec<LegacyDollarBraceDeprecation>,
+) {
+    for dimension in &target.dimensions {
+        if let Some(dimension) = dimension {
+            collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+        }
+    }
+}
+
+fn collect_reference_target_legacy_dollar_brace_deprecations(
+    target: &ReferenceTarget,
+    deprecations: &mut Vec<LegacyDollarBraceDeprecation>,
+) {
+    match target {
+        ReferenceTarget::Variable { .. } => {}
+        ReferenceTarget::ArrayDim(target) => {
+            collect_array_dim_target_legacy_dollar_brace_deprecations(target, deprecations);
+        }
+    }
+}
+
+fn collect_assignment_target_legacy_dollar_brace_deprecations(
+    target: &AssignmentTarget,
+    deprecations: &mut Vec<LegacyDollarBraceDeprecation>,
+) {
+    match target {
+        AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::DynamicVariable { name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
+        AssignmentTarget::ArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+        }
+        AssignmentTarget::Property { receiver, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+        }
+        AssignmentTarget::List(target) => {
+            collect_list_assignment_legacy_dollar_brace_deprecations(target, deprecations);
+        }
+    }
+}
+
+fn collect_list_assignment_legacy_dollar_brace_deprecations(
+    target: &ListAssignmentTarget,
+    deprecations: &mut Vec<LegacyDollarBraceDeprecation>,
+) {
+    for element in &target.elements {
+        if let Some(key) = &element.key {
+            collect_value_legacy_dollar_brace_deprecations(key, deprecations);
+        }
+        match &element.target {
+            ListAssignmentElementTarget::Value(target) => {
+                collect_assignment_target_legacy_dollar_brace_deprecations(target, deprecations);
+            }
+            ListAssignmentElementTarget::Reference(target) => {
+                collect_reference_target_legacy_dollar_brace_deprecations(target, deprecations);
+            }
+        }
+    }
+}
+
+fn collect_value_legacy_dollar_brace_deprecations(
+    value: &ValueExpr,
+    deprecations: &mut Vec<LegacyDollarBraceDeprecation>,
+) {
+    match value {
+        ValueExpr::LegacyDollarBraceStringVariable { line, .. } => {
+            deprecations.push(LegacyDollarBraceDeprecation { line: *line });
+        }
+        ValueExpr::DynamicVariable { name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
+        ValueExpr::Assign { target, value, .. } => {
+            collect_assignment_target_legacy_dollar_brace_deprecations(target, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+        }
+        ValueExpr::AssignRef { target, source } => {
+            collect_assignment_target_legacy_dollar_brace_deprecations(target, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(source, deprecations);
+        }
+        ValueExpr::Array(elements) => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    collect_value_legacy_dollar_brace_deprecations(key, deprecations);
+                }
+                match &element.value {
+                    IrArrayElementValue::Value(value) => {
+                        collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+                    }
+                    IrArrayElementValue::Reference(target) => {
+                        collect_reference_target_legacy_dollar_brace_deprecations(
+                            target,
+                            deprecations,
+                        );
+                    }
+                }
+            }
+        }
+        ValueExpr::ArrayAccess { array, index, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(array, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(index, deprecations);
+        }
+        ValueExpr::Isset { targets } => {
+            for target in targets {
+                collect_value_legacy_dollar_brace_deprecations(target, deprecations);
+            }
+        }
+        ValueExpr::Empty { target } => {
+            collect_value_legacy_dollar_brace_deprecations(target, deprecations);
+        }
+        ValueExpr::Print { expression } => {
+            collect_value_legacy_dollar_brace_deprecations(expression, deprecations);
+        }
+        ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
+            for argument in arguments {
+                collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
+            }
+        }
+        ValueExpr::DynamicCall {
+            callee, arguments, ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(callee, deprecations);
+            for argument in arguments {
+                collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
+            }
+        }
+        ValueExpr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            for argument in arguments {
+                collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
+            }
+        }
+        ValueExpr::PropertyFetch { receiver, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+        }
+        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
+        }
+        ValueExpr::Binary { left, right, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(left, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(right, deprecations);
+        }
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null
+        | ValueExpr::Closure { .. }
+        | ValueExpr::Load { .. }
+        | ValueExpr::IncDec { .. }
+        | ValueExpr::Constant(_)
+        | ValueExpr::MagicConstant { .. }
+        | ValueExpr::Include { .. }
+        | ValueExpr::StaticPropertyFetch { .. } => {}
+    }
 }
 
 fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
@@ -4044,11 +4388,6 @@ impl ValueEmitter {
             ),
             ValueExpr::LegacyDollarBraceStringVariable { name, line } => {
                 let result_temp = self.next_temp();
-                out.push_str(
-                    "    ptn_emit_deprecation(&runtime.diagnostics, \"Using ${var} in strings is deprecated, use {$var} instead\", ",
-                );
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_runtime_read_variable(&runtime, \"");

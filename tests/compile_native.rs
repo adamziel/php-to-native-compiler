@@ -13,17 +13,14 @@ use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
 
 fn undefined_variable_warning(path: &Path, name: &str, line: usize) -> String {
     format!(
-        "Warning: Undefined variable ${name} in {} on line {line}\n",
+        "\nWarning: Undefined variable ${name} in {} on line {line}\n",
         path.display()
     )
 }
 
 fn undefined_variable_warnings(path: &Path, warnings: &[(&str, usize)]) -> String {
     let mut output = String::new();
-    for (index, (name, line)) in warnings.iter().enumerate() {
-        if index != 0 {
-            output.push('\n');
-        }
+    for (name, line) in warnings {
         output.push_str(&undefined_variable_warning(path, name, *line));
     }
     output
@@ -3461,11 +3458,14 @@ fn compile_internal_call_arguments_evaluate_left_to_right_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\nNULL\n");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}NULL\nNULL\n",
+            undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
+        )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -5130,11 +5130,14 @@ fn compile_internal_call_expression_arguments_evaluate_left_to_right() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}0\n",
+            undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
+        )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -7453,12 +7456,12 @@ var_dump($left xor $right);\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\n"
+        format!(
+            "bool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\n{}bool(false)\n",
+            undefined_variable_warnings(&input, &[("left", 10), ("right", 10)])
+        )
     );
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warnings(&input, &[("left", 10), ("right", 10)])
-    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -9070,12 +9073,14 @@ var_dump($a);",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "\nWarning: Undefined array key 0 in ptn on line 2\nint(2)\nstring(1) \"x\"\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 6\n\nWarning: Undefined array key \"\" in ptn on line 6\narray(1) {\n  [\"\"]=>\n  int(1)\n}\n"
+        format!(
+            "{}\nWarning: Undefined array key 0 in ptn on line 2\nint(2)\n{}string(1) \"x\"\n{}\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 6\n\nWarning: Undefined array key \"\" in ptn on line 6\narray(1) {{\n  [\"\"]=>\n  int(1)\n}}\n",
+            undefined_variable_warning(&input, "items", 2),
+            undefined_variable_warning(&input, "append", 4),
+            undefined_variable_warnings(&input, &[("a", 6), ("b", 6)])
+        )
     );
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warnings(&input, &[("items", 2), ("append", 4), ("a", 6), ("b", 6)])
-    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -11697,11 +11702,14 @@ fn compile_if_condition_evaluates_before_selected_branch_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "fallback\n");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warning(&input, "missing", 1)
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}fallback\n",
+            undefined_variable_warning(&input, "missing", 1)
+        )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -11722,12 +11730,12 @@ fn compile_branch_condition_assignments_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "if:0\nif:ok\nwhile:1\nwhile:2\nfor:1\nfor:2\ncompound-false:0\n"
+        format!(
+            "if:0\nif:ok\nwhile:1\nwhile:2\nfor:1\nfor:2\n{}compound-false:0\n",
+            undefined_variable_warnings(&input, &[("cond", 1), ("missing", 1)])
+        )
     );
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warnings(&input, &[("cond", 1), ("missing", 1)])
-    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -11926,11 +11934,11 @@ fn compile_expression_statements_evaluate_and_discard_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warning(&input, "missing", 1)
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("{}done\n", undefined_variable_warning(&input, "missing", 1))
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -11955,11 +11963,11 @@ default:
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
+        String::from_utf8(execution.stdout).unwrap(),
         undefined_variable_warning(&input, "x", 2)
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -12627,6 +12635,39 @@ item=compiler bare=Ada legacy=legacy!\n"
 }
 
 #[test]
+fn compile_legacy_interpolation_deprecation_precedes_runtime_diagnostic() {
+    let root = temp_dir("ptn-native-legacy-interpolation-diagnostic-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("legacy-interpolation-diagnostic-order.php");
+    let output = root.join("legacy-interpolation-diagnostic-order-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = \"world\";\n\
+$strS = null;\n\
+var_dump(strlen($strS));\n\
+var_dump(strlen(\"${str}S\"));\n\
+var_dump(strlen(\"{$str}S\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Using ${var} in strings is deprecated, use {$var} instead in ptn on line 5\n\
+\n\
+Deprecated: strlen(): Passing null to parameter #1 ($string) of type string is deprecated in ptn on line 4\n\
+int(0)\n\
+int(6)\n\
+int(6)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_lang020_switch_for_interpolation_shape_to_native_binary() {
     let root = temp_dir("ptn-native-lang020-shape");
     fs::create_dir_all(&root).unwrap();
@@ -12690,11 +12731,14 @@ fn compile_comparison_operands_evaluate_left_to_right_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}1\n",
+            undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
+        )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -12907,19 +12951,15 @@ fn compound_assignments_read_left_before_rhs_and_then_write() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n[]\n");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warnings(
-            &input,
-            &[
-                ("total", 1),
-                ("missing_number", 1),
-                ("text", 1),
-                ("missing_text", 1),
-            ]
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}0\n{}[]\n",
+            undefined_variable_warnings(&input, &[("total", 1), ("missing_number", 1)]),
+            undefined_variable_warnings(&input, &[("text", 1), ("missing_text", 1)])
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -14462,11 +14502,14 @@ fn compile_arithmetic_operands_evaluate_left_to_right_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warnings(&input, &[("left", 1), ("right", 1), ("third", 1)])
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}0\n",
+            undefined_variable_warnings(&input, &[("left", 1), ("right", 1), ("third", 1)])
+        )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -14778,11 +14821,14 @@ fn compile_binary_operands_evaluate_left_to_right_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "\n");
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}\n",
+            undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
+        )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -14803,12 +14849,12 @@ fn compile_defined_and_undefined_variable_reads_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "defined done\n"
+        format!(
+            "defined{} done\n",
+            undefined_variable_warning(&input, "missing", 1)
+        )
     );
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        undefined_variable_warning(&input, "missing", 1)
-    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

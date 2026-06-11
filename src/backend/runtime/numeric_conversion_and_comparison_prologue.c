@@ -5,7 +5,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->constants = caller_runtime->constants;
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = caller_runtime->static_properties;
-    ptn_diagnostics_init(&runtime->diagnostics, stderr);
+    ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->diagnostics.error_reporting = caller_runtime->diagnostics.error_reporting;
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;

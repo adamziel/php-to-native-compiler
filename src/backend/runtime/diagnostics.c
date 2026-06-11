@@ -165,10 +165,8 @@ static void ptn_emit_undefined_variable_warning(
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
-    FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
-    if (diagnostics->emitted_warning) {
-        fputc('\n', stream);
-    }
+    FILE *stream = diagnostics->stream == NULL ? stdout : diagnostics->stream;
+    fputc('\n', stream);
     diagnostics->emitted_warning = 1;
     fputs("Warning: Undefined variable $", stream);
     fputs(name, stream);
@@ -330,7 +328,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->constants = &runtime->owned_constants;
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = &runtime->owned_static_properties;
-    ptn_diagnostics_init(&runtime->diagnostics, stderr);
+    ptn_diagnostics_init(&runtime->diagnostics, NULL);
     const char *configured_error_reporting = getenv("PTN_PHP_ERROR_REPORTING");
     if (configured_error_reporting != NULL && configured_error_reporting[0] != '\0') {
         char *end = NULL;

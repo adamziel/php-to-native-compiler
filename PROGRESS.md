@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T22:08Z
-Measured: `ptn-na3m` rebased on `origin/master` at `06f1dcced`.
+Refresh: 2026-06-11T22:43Z
+Measured: `ptn-snsk` rebased on `origin/master` at `6cdf19c77`.
 
 Recent RC slices cover array/key canonicalization, foreach targets, catchable
 arithmetic/assertion boundaries, public `__call`/`__toString`, precision-driven
@@ -14,22 +14,21 @@ variable-root array-path cursor mutation, one-argument `array_pop()`/
 `call_user_func_array()` through shared callable dispatch. `ptn-na3m` routes
 bitwise integer-conversion diagnostics for `&`, `|`, `^`, and `~` through
 runtime error-reporting filters, including float precision and out-of-range
-float warnings; all four 64-bit bitwise basiclong PHPT rows pass.
-
-Exact `strlen.phpt` gets object `__toString()` length right; it still fails on
-ordering/source-path parity for the `${str}` deprecation versus the undefined
-`$strS` warning.
+float warnings; all four 64-bit bitwise basiclong PHPT rows pass. `ptn-snsk`
+emits legacy `${var}` string interpolation deprecations before runtime execution
+and routes undefined variable warnings through stdout formatting, so exact
+`strlen.phpt` passes.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 477 | 477 | 0 |
+| Native/compiler Rust suite | 478 | 478 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 194 | 6 |
+| PHPT bounded manifest | 200 | 195 | 5 |
 | PHPT Zend rows | 76 | 76 | 0 |
-| PHPT ext/standard rows | 77 | 72 | 5 |
+| PHPT ext/standard rows | 77 | 73 | 4 |
 | PHPT tests/basic+func+lang | 45 | 44 | 1 |
 | PHPT other rows | 2 | 2 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
@@ -55,9 +54,9 @@ integer conversion diagnostics, and direct array mutators through `shuffle`.
 - `ptn-lrty.3`, `ptn-xery`, and `ptn-k95f`: 2 broad array-internal rows remain:
   `007` and `008`. `001`, `005`, `array_column()`, and `array_key_exists()`
   variants are covered.
-- `ptn-lrty.4`, `ptn-loyg`, and `ptn-qm7v`: 3 string/output rows remain. `004`
-  reaches array-element inc/dec; `005` is covered; `006` and `strlen`
-  diagnostic parity remain.
+- `ptn-lrty.4`, `ptn-loyg`, and `ptn-qm7v`: 2 string/output rows remain. `004`
+  now reaches array-element inc/dec after sort/shuffle support; `005` and
+  `strlen` are covered; `006` still needs highlight-file/output-buffer support.
 - `ptn-lrty.6` plus `ptn-r52`: `tests/lang/024.phpt` remains at the
   dynamic-variable array-offset lvalue blocker.
 
@@ -74,6 +73,11 @@ for `ptn-loyg`; exact `array/005.phpt` passes for `ptn-xery`; exact
 `summary-20260611T214758Z.txt` is 194/200. Focused `ptn-na3m` coverage includes
 bitwise diagnostic filtering, out-of-range `~`, and existing bitwise native
 rows.
+`ptn-snsk` post-rebase evidence includes exact
+`ext/standard/tests/strings/strlen.phpt` passing 1/1, bounded PHPT
+`run-20260611T223244Z-manifest.log` at 195/200, COW PHPT
+`run-20260611T222948Z-*` at 29/29, full `cargo test`, and
+`cargo fmt --check`.
 
 Follow-ups remain broad visibility/inheritance, typed/non-public/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,
