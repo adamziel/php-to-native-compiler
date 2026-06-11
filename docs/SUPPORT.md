@@ -348,7 +348,9 @@ supports in generated native binaries.
   with bounded string/base conversion for supported bases, including PHP-style
   `0x`/`0b` prefix handling and integer-range saturation.
 - `chr()` over current boxed scalar values after scalar integer conversion,
-  returning a one-byte string with byte values constrained modulo 256.
+  returning a one-byte string with byte values constrained modulo 256 and
+  emitting the modeled out-of-range deprecation for integers outside
+  `[0, 255]`.
 - `ord()` over current boxed scalar values after scalar string conversion,
   returning the first byte as an integer. Empty and multi-byte strings emit
   PHP-like deprecation diagnostics with the internal-call source line.
@@ -597,8 +599,7 @@ supports in generated native binaries.
   parity, and unsupported array/object/resource/reference operand diagnostics.
 - Exact `substr()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
-- Exact `chr()` diagnostics for out-of-range integers or float-to-int precision
-  loss.
+- Exact `chr()` float-to-int precision-loss diagnostics.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
 - Exact `ceil()`/`floor()` null deprecations, string and unsupported-type
   diagnostics, and complete special-float parity.

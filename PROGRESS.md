@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T12:52Z
-Measured: `ptn-28xs` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T13:03Z
+Measured: `ptn-kzap` rebased after current `origin/master`; array null-offset
 diagnostics, Closure captures, expression-form `print`, static properties,
 inherited methods, property `??=`, loose object `switch`, nested string-offset
 unset, braced interpolation, branch-condition assignment, named arguments,
@@ -9,21 +9,21 @@ scalar offsets, object `foreach`, class metadata, method callables/magic
 constants, cslashes, scalar variable variables, include returns, array/object
 type predicates, `define()` legacy flag parity, shared `error_reporting()`
 filtering, dirname edges, high-byte string escapes, declared-function
-`continue`/`switch` warnings, `str_repeat()`, `array_fill()`, and
-braced-interpolation alternative-offset parse errors are integrated. Bounded
-PHPT/COW evidence is refreshed; `array_fill_basic.phpt` still fails at the
-separate heredoc parser boundary.
+`continue`/`switch` warnings, `str_repeat()`, `array_fill()`,
+braced-interpolation alternative-offset parse errors, and `chr()` out-of-range
+deprecations are integrated. Bounded PHPT/COW evidence is refreshed;
+`array_fill_basic.phpt` still fails at the separate heredoc parser boundary.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 398 | 398 | 0 |
+| Native compiled PHP snippets | 399 | 399 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 159 | 41 |
+| PHPT bounded manifest | 200 | 163 | 37 |
 | PHPT Zend rows | 76 | 69 | 7 |
-| PHPT ext/standard rows | 77 | 55 | 22 |
+| PHPT ext/standard rows | 77 | 58 | 19 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -57,18 +57,18 @@ Constructors, declared properties, non-public visibility, interfaces/traits,
 broader inheritance, magic methods, broader property compounds,
 static-property compound/null-coalescing lvalues, destructors, exceptions,
 reflection, unsupported internals, 64-bit operator exactness, destructuring
-`foreach`, heredoc/nowdoc, remaining string sub-path scalar offset-lvalue
-parity, dynamic-variable array-offset lvalues, dynamic include/include_once
-behavior, and broader file APIs.
+`foreach`, heredoc/nowdoc, remaining scalar offset-lvalue parity,
+dynamic-variable array-offset lvalues, dynamic include/include_once behavior,
+broader file APIs, and `chr()` float-to-int precision diagnostics.
 
 ## Verification
 
 Commands: focused native/parser/phpc reducers for recent slices; exact
 `array_null_offset_deprecation.phpt`, `array_count_values.phpt`,
 `array_fill.phpt`, `alternative_offset_syntax_in_encaps_string.phpt`,
-`ord_basic.phpt`, and declared-function continue/switch rows;
-`cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-`tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt`;
+`chr_out_of_range.phpt`, `ord_basic.phpt`, and declared-function
+continue/switch rows; `cargo fmt --check`; `cargo build --bin phpc`;
+`cargo test`; `tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt`;
 `tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`;
 `tools/run-post-merge-cow-gate.sh`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or

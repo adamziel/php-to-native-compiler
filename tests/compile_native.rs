@@ -5552,7 +5552,7 @@ fn compile_chr_internal_function_to_native_binary() {
     let output = root.join("chr-function-bin");
     fs::write(
         &input,
-        "<?php echo chr(72). chr(101) . chr(108) . chr(108). chr(111); echo chr(10); echo bin2hex(chr(255)), \" \", bin2hex(chr(-1)), \" \", bin2hex(chr(\"65\")), \"\\n\"; var_dump(function_exists(\"chr\"), function_exists(\"CHR\"));",
+        "<?php echo chr(72). chr(101) . chr(108) . chr(108). chr(111); echo chr(10); echo bin2hex(chr(255)), \" \", bin2hex(chr(254)), \" \", bin2hex(chr(\"65\")), \"\\n\"; var_dump(function_exists(\"chr\"), function_exists(\"CHR\"));",
     )
     .unwrap();
 
@@ -5562,7 +5562,30 @@ fn compile_chr_internal_function_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Hello\nff ff 41\nbool(true)\nbool(true)\n"
+        "Hello\nff fe 41\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_chr_out_of_range_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-chr-out-of-range-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chr-out-of-range.php");
+    let output = root.join("chr-out-of-range-bin");
+    fs::write(
+        &input,
+        "<?php\n\nvar_dump(\"\\xFF\" == chr(-1));\nvar_dump(\"\\0\" == chr(256));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: chr(): Providing a value not in-between 0 and 255 is deprecated, this is because a byte value must be in the [0, 255] interval. The value used will be constrained using % 256 in ptn on line 3\nbool(true)\n\nDeprecated: chr(): Providing a value not in-between 0 and 255 is deprecated, this is because a byte value must be in the [0, 255] interval. The value used will be constrained using % 256 in ptn on line 4\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

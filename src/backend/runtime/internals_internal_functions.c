@@ -3593,10 +3593,15 @@ static PtnValue ptn_internal_intval(PtnRuntime *runtime, size_t argc, const PtnV
 }
 
 static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
     int64_t integer = ptn_value_to_integer(args[0]);
+    if (integer < 0 || integer > 255) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "chr(): Providing a value not in-between 0 and 255 is deprecated, this is because a byte value must be in the [0, 255] interval. The value used will be constrained using % 256",
+            line
+        );
+    }
     int64_t normalized = integer % 256;
     if (normalized < 0) {
         normalized += 256;
