@@ -303,13 +303,21 @@ static PTN_UNUSED PtnArray *ptn_array_convertible_scalar_for_write(PtnValue *val
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_foreach_operand_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_BOOL) {
+        return value.as.boolean ? "true" : "false";
+    }
+    return ptn_offset_container_type_name(value);
+}
+
 static PTN_UNUSED void ptn_emit_foreach_non_array_warning(PtnValue value, const char *path, size_t line) {
     char message[128];
     snprintf(
         message,
         sizeof(message),
         "foreach() argument must be of type array|object, %s given",
-        ptn_offset_container_type_name(value)
+        ptn_foreach_operand_type_name(value)
     );
     ptn_emit_array_runtime_diagnostic_at_path("Warning", message, path, line);
 }

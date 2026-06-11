@@ -7311,6 +7311,7 @@ fn compile_foreach_non_array_diagnostics_include_source_path_to_native_binary() 
         &input,
         "<?php\n\
 foreach (false as $value) { echo \"bad\"; }\n\
+foreach (true as $value) { echo \"bad\"; }\n\
 $scalar = \"x\";\n\
 foreach ($scalar as &$value) { echo \"bad\"; }\n\
 echo \"done\\n\";",
@@ -7324,9 +7325,11 @@ echo \"done\\n\";",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "\nWarning: foreach() argument must be of type array|object, bool given in {} on line 2\n\
-\nWarning: foreach() argument must be of type array|object, string given in {} on line 4\n\
+            "\nWarning: foreach() argument must be of type array|object, false given in {} on line 2\n\
+\nWarning: foreach() argument must be of type array|object, true given in {} on line 3\n\
+\nWarning: foreach() argument must be of type array|object, string given in {} on line 5\n\
 done\n",
+            input.display(),
             input.display(),
             input.display()
         )

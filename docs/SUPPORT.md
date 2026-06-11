@@ -524,7 +524,8 @@ Post-RC architecture remains explicit rather than hidden:
   unsets through the source variable or its aliases detach through ordinary
   array copy-on-write and do not change the active iteration set. Non-array
   iterables emit a PHP-style warning with the generated source path, line, and
-  operand type, then skip the loop body.
+  operand type, including `true`/`false` boolean spelling, then skip the loop
+  body.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported expression and statement subset, including arrays,
   references, and public-property object shells through boxed loose `==`
