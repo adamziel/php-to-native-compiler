@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T15:28Z
-Measured: `ptn-jvfe` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T15:38Z
+Measured: `ptn-9hjd` rebased after current `origin/master`; array null-offset
 diagnostics, Closure captures, expression-form `print`, static properties,
 inherited methods, property `??=`, loose object `switch`, nested string-offset
 unset, simple/braced/legacy string interpolation, branch-condition assignment,
@@ -12,10 +12,10 @@ scalar variable variables, include returns, array/object type predicates,
 edges, high-byte string escapes, declared-function `continue`/`switch`
 warnings, `str_repeat()`, `array_fill()` including integer-key overflow parity,
 `array_flip()`, `array_change_key_case()`, and `array_chunk()` with
-assoc-key/COW coverage, `array_combine()`, public declared properties,
-`array_key_exists()` TypeErrors, braced-interpolation alternative-offset parse
-errors, `chr()` out-of-range deprecations, integer `range()`, plain
-heredoc/nowdoc literals, and COW evidence are integrated.
+assoc-key/COW coverage, `array_combine()` including reference values, public
+declared properties, `array_key_exists()` TypeErrors, braced-interpolation
+alternative-offset parse errors, `chr()` out-of-range deprecations, integer
+`range()`, plain heredoc/nowdoc literals, and COW evidence are integrated.
 `array_key_exists.phpt` now reaches only deprecation blank-line formatting
 parity.
 
@@ -24,7 +24,7 @@ parity.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 410 | 410 | 0 |
+| Native compiled PHP snippets | 411 | 411 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 171 | 29 |
 | PHPT Zend rows | 76 | 69 | 7 |
@@ -72,6 +72,7 @@ parity, broader file APIs, and `chr()` float-to-int precision diagnostics.
 Commands: focused native/parser/phpc reducers for recent slices, including
 `compile_increment_and_decrement_expression_results_to_native_binary`,
 `compile_array_combine_to_native_binary`,
+`compile_array_combine_preserves_reference_values_to_native_binary`,
 `compile_array_fill_to_native_binary`, `compile_array_flip_to_native_binary`,
 `compile_array_change_key_case_to_native_binary`,
 `compile_array_chunk_to_native_binary`,

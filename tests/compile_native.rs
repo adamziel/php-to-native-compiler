@@ -1014,6 +1014,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         "Cannot redeclare function array_key_exists()"
     );
 
+    let error =
+        parser::parse("<?php function array_combine($keys, $values) { return []; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_combine()");
+
     let error = parser::parse("<?php function End($array) { return $array; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function end()");
 
@@ -8643,6 +8647,38 @@ var_dump(function_exists('array_chunk'), function_exists('ARRAY_CHUNK'));",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "array(3) {\n  [0]=>\n  array(2) {\n    [0]=>\n    string(3) \"one\"\n    [1]=>\n    string(3) \"two\"\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    string(5) \"three\"\n    [1]=>\n    int(4)\n  }\n  [2]=>\n  array(1) {\n    [0]=>\n    int(5)\n  }\n}\narray(3) {\n  [0]=>\n  array(2) {\n    [1]=>\n    string(3) \"one\"\n    [2]=>\n    string(3) \"two\"\n  }\n  [1]=>\n  array(2) {\n    [3]=>\n    string(5) \"three\"\n    [4]=>\n    int(4)\n  }\n  [2]=>\n  array(1) {\n    [\"five\"]=>\n    int(5)\n  }\n}\narray(2) {\n  [0]=>\n  array(2) {\n    [\"a\"]=>\n    int(1)\n    [\"b\"]=>\n    int(2)\n  }\n  [1]=>\n  array(1) {\n    [\"c\"]=>\n    int(3)\n  }\n}\narray(2) {\n  [0]=>\n  string(4) \"seed\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray_chunk(): Argument #2 ($length) must be greater than 0\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_combine_preserves_reference_values_to_native_binary() {
+    let root = temp_dir("ptn-native-array-combine-reference-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-combine-reference-values.php");
+    let output = root.join("array-combine-reference-values-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_combine([1, \"two\"], [\"one\", 2]));\n\
+var_dump(array_combine([\"x\", \"x\", false, null, 1.5], [1, 2, \"false\", \"null\", \"float\"]));\n\
+$value = \"seed\";\n\
+$values = [&$value];\n\
+$combined = array_combine([\"ref\"], $values);\n\
+$combined[\"ref\"] = \"changed\";\n\
+var_dump($value, $combined);\n\
+try { array_combine([1], []); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"array_combine\"), function_exists(\"ARRAY_COMBINE\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [1]=>\n  string(3) \"one\"\n  [\"two\"]=>\n  int(2)\n}\narray(3) {\n  [\"x\"]=>\n  int(2)\n  [\"\"]=>\n  string(4) \"null\"\n  [\"1.5\"]=>\n  string(5) \"float\"\n}\nstring(7) \"changed\"\narray(1) {\n  [\"ref\"]=>\n  &string(7) \"changed\"\n}\narray_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

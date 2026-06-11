@@ -28,6 +28,8 @@ expected rows, or one-off outputs.
   userland parameters cover the first COW/reference boundary slice.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for
   non-array operands in the current boxed value domain.
+- `array_chunk()` and `array_combine()` build fresh ordered arrays through the
+  shared array runtime.
 - `range()` builds integer ranges through the ordered-array runtime.
 - Bounded PHPT telemetry from a php-src checkout resolved by `PHP_SRC_PHPT`,
   `/home/claude/php-src-phpt`, or the `.runtime/php-src-phpt` cache.

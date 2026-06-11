@@ -208,6 +208,7 @@ supports in generated native binaries.
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_chunk(expr, expr[, expr]);`,
+  `array_combine(expr, expr);`,
   `array_change_key_case(expr[, expr]);`, `array_count_values(expr);`,
   `array_combine(expr, expr);`, `array_fill(expr, expr, expr);`,
   `array_values(expr);`, `array_merge_recursive(expr, ...);`,
@@ -231,6 +232,7 @@ supports in generated native binaries.
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
   `count(expr)`, `array_chunk(expr, expr[, expr])`,
+  `array_combine(expr, expr)`,
   `array_change_key_case(expr[, expr])`, `array_count_values(expr)`,
   `array_combine(expr, expr)`, `array_fill(expr, expr, expr)`, `array_values(expr)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
@@ -374,6 +376,9 @@ supports in generated native binaries.
   from dereferenced entries, and the optional preserve-keys flag controls
   whether original integer/string keys are cloned or each chunk is reindexed
   from zero.
+- `array_combine()` over current boxed key/value arrays, requiring equal
+  lengths, converting key entries through the shared array-key path, and
+  cloning value entries into a fresh ordered array while preserving references.
 - `array_fill()` over boxed start/count operands and mixed boxed values,
   returning a fresh ordered array keyed from the requested integer start.
   Negative counts throw the modeled PHP `ValueError`; filled array/object
@@ -388,9 +393,9 @@ supports in generated native binaries.
   `ValueError`.
 - `array_combine()` over current boxed arrays, pairing key and value arrays by
   insertion order, converting key values through the shared
-  `array_fill_keys()` key-value canonicalization path, cloning dereferenced
-  values into a fresh ordered array, and throwing the modeled PHP `ValueError`
-  when the arrays have different element counts.
+  `array_fill_keys()` key-value canonicalization path, cloning values into a
+  fresh ordered array while preserving reference values, and throwing the
+  modeled PHP `ValueError` when the arrays have different element counts.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `range()` over current boxed integer-convertible start, end, and optional

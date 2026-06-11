@@ -1287,7 +1287,7 @@ static PtnValue ptn_internal_array_combine(PtnRuntime *runtime, size_t argc, con
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < keys->len; i++) {
         PtnArrayKey key = ptn_array_key_from_key_value(runtime, keys->entries[i].value, line);
-        ptn_array_set_entry(result.as.array, key, ptn_value_clone_deref(values->entries[i].value));
+        ptn_array_set_entry(result.as.array, key, ptn_value_clone(values->entries[i].value));
     }
     return result;
 }
