@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::ast::{
     AnonymousFunction as AstAnonymousFunction, ArrayDimTarget as AstArrayDimTarget,
     ArrayElement as AstArrayElement, ArrayElementValue as AstArrayElementValue, AssignmentOp,
@@ -16,10 +18,27 @@ use crate::ast::{
 pub struct Module {
     pub classes: Vec<ClassDecl>,
     pub functions: Vec<FunctionDecl>,
+    pub includes: Vec<IncludeFile>,
     pub instructions: Vec<Instruction>,
     pub source_file: String,
     pub source_dir: String,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IncludeFile {
+    pub source_file: String,
+    pub source_dir: String,
+    pub instructions: Vec<Instruction>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IncludeSource {
+    pub source_file: String,
+    pub source_dir: String,
+    pub program: Program,
+}
+
+pub type IncludeResolutionMap = HashMap<(String, usize, usize), usize>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDecl {
@@ -231,6 +250,10 @@ pub enum ValueExpr {
     Print {
         expression: Box<ValueExpr>,
     },
+    Include {
+        index: usize,
+        line: usize,
+    },
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
@@ -427,7 +450,28 @@ pub fn lower(program: &Program) -> Module {
 }
 
 pub fn lower_with_source(program: &Program, source_file: String, source_dir: String) -> Module {
-    let mut context = LoweringContext::new(program);
+    lower_with_source_and_includes(
+        program,
+        source_file,
+        source_dir,
+        Vec::new(),
+        &IncludeResolutionMap::new(),
+    )
+}
+
+pub fn lower_with_source_and_includes(
+    program: &Program,
+    source_file: String,
+    source_dir: String,
+    include_sources: Vec<IncludeSource>,
+    include_resolutions: &IncludeResolutionMap,
+) -> Module {
+    let mut context = LoweringContext::new(
+        program,
+        source_file.clone(),
+        source_dir.clone(),
+        include_resolutions,
+    );
     for (index, function) in program.functions.iter().enumerate() {
         let body = context.lower_statements(&function.body);
         context.functions[index].body = body;
@@ -437,22 +481,35 @@ pub fn lower_with_source(program: &Program, source_file: String, source_dir: Str
         .iter()
         .map(|class| context.lower_class(class))
         .collect();
+    let includes = include_sources
+        .iter()
+        .map(|include| context.lower_include_source(include))
+        .collect();
     let instructions = context.lower_statements(&program.statements);
     Module {
         classes,
         functions: context.functions,
+        includes,
         instructions,
         source_file,
         source_dir,
     }
 }
 
-struct LoweringContext {
+struct LoweringContext<'a> {
     functions: Vec<FunctionDecl>,
+    source_file: String,
+    source_dir: String,
+    include_resolutions: &'a IncludeResolutionMap,
 }
 
-impl LoweringContext {
-    fn new(program: &Program) -> Self {
+impl<'a> LoweringContext<'a> {
+    fn new(
+        program: &Program,
+        source_file: String,
+        source_dir: String,
+        include_resolutions: &'a IncludeResolutionMap,
+    ) -> Self {
         Self {
             functions: program
                 .functions
@@ -469,6 +526,24 @@ impl LoweringContext {
                     body: Vec::new(),
                 })
                 .collect(),
+            source_file,
+            source_dir,
+            include_resolutions,
+        }
+    }
+
+    fn lower_include_source(&mut self, include: &IncludeSource) -> IncludeFile {
+        let previous_source_file =
+            std::mem::replace(&mut self.source_file, include.source_file.clone());
+        let previous_source_dir =
+            std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+        let instructions = self.lower_statements(&include.program.statements);
+        self.source_file = previous_source_file;
+        self.source_dir = previous_source_dir;
+        IncludeFile {
+            source_file: include.source_file.clone(),
+            source_dir: include.source_dir.clone(),
+            instructions,
         }
     }
 
@@ -832,7 +907,7 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
     }
 }
 
-impl LoweringContext {
+impl<'a> LoweringContext<'a> {
     fn lower_assignment_target(&mut self, target: &AstAssignmentTarget) -> AssignmentTarget {
         match target {
             AstAssignmentTarget::Variable { name, span } => AssignmentTarget::Variable {
@@ -966,7 +1041,7 @@ fn assignment_op_binary_op(op: AssignmentOp) -> Option<BinaryOp> {
     }
 }
 
-impl LoweringContext {
+impl<'a> LoweringContext<'a> {
     fn lower_catch_clause(&mut self, catch: &AstCatchClause) -> CatchClause {
         CatchClause {
             type_name: catch.type_name.clone(),
@@ -1072,7 +1147,7 @@ fn lower_compound_assignment(name: &str, line: usize, op: BinaryOp, right: Value
     }
 }
 
-impl LoweringContext {
+impl<'a> LoweringContext<'a> {
     fn lower_expr(&mut self, expr: &Expr) -> ValueExpr {
         match expr {
             Expr::String(value, _) => ValueExpr::String(value.clone()),
@@ -1134,6 +1209,10 @@ impl LoweringContext {
             },
             Expr::Print { expression, .. } => ValueExpr::Print {
                 expression: Box::new(self.lower_expr(expression)),
+            },
+            Expr::Include { span, .. } => ValueExpr::Include {
+                index: self.include_index(*span),
+                line: span.line,
             },
             Expr::Call {
                 name,
@@ -1226,6 +1305,13 @@ impl LoweringContext {
             },
             Expr::Grouped { expr, .. } => self.lower_expr(expr),
         }
+    }
+
+    fn include_index(&self, span: crate::diagnostic::SourceSpan) -> usize {
+        self.include_resolutions
+            .get(&(self.source_file.clone(), span.byte_start, span.byte_end))
+            .copied()
+            .expect("include expressions require include-aware lowering")
     }
 
     fn lower_array_element(&mut self, element: &AstArrayElement) -> ArrayElement {

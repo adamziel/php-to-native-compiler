@@ -306,6 +306,12 @@ pub enum IncDecOp {
     Decrement,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncludeKind {
+    Include,
+    Require,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     String(String, SourceSpan),
@@ -379,6 +385,11 @@ pub enum Expr {
     },
     Print {
         expression: Box<Expr>,
+        span: SourceSpan,
+    },
+    Include {
+        kind: IncludeKind,
+        path: Box<Expr>,
         span: SourceSpan,
     },
     Unary {
@@ -507,6 +518,7 @@ impl Expr {
             Expr::Isset { span, .. } => *span,
             Expr::Empty { span, .. } => *span,
             Expr::Print { span, .. } => *span,
+            Expr::Include { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,
         }

@@ -373,6 +373,12 @@ supports in generated native binaries.
 - Script-level `return;` and `return expr;` statements. Optional return
   expressions are evaluated through the current boxed expression path, then the
   generated native program frees runtime state and exits successfully.
+- `include expr` and `require expr` over compile-time-resolved string paths,
+  including string literals and `__DIR__`/`__FILE__` concatenation. Included
+  statement-only files are compiled into native helpers that share the caller's
+  current variable frame, emit ordinary output at the include point, return the
+  included `return expr;` value, return `null` for `return;`, and return
+  `int(1)` when the included file reaches EOF without `return`.
 - `while (expr) statement` loops where the condition and braced or
   single-statement body use the currently supported scalar expression and
   statement subset.
@@ -478,7 +484,9 @@ supports in generated native binaries.
   constructs, and exception/finally control-flow edges.
 - Object `Traversable`, destructuring foreach targets, and PHP-exact
   `foreach` diagnostics outside the current array/non-array warning lane.
-- PHP-exact `return` value propagation for includes/functions and return
+- PHP-exact include behavior beyond compile-time-resolved statement-only files,
+  including dynamic paths, include paths, missing-file warning/return behavior,
+  `include_once`/`require_once`, declaration-bearing include files, and return
   inside unsupported function/class contexts.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
@@ -502,7 +510,7 @@ supports in generated native binaries.
   callable slice, plus the bounded `stdClass` public-property storage slice,
   including default arguments, variadics, named arguments, by-reference returns,
   nested or conditional declarations, closures, full class metadata, namespaces,
-  globals, static locals, and PHP-exact function/include return propagation.
+  globals, static locals, and remaining PHP-exact function return propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Unsupported recursive arrays, full class/object metadata, resources,
   complete reference identity, copy-on-write, and `var_dump()` reference
@@ -582,8 +590,8 @@ supports in generated native binaries.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
 - Statement-form `(void) expr;` casts.
-- Scope-aware magic constants inside functions, methods, classes, traits,
-  namespaces, includes, and eval contexts.
+- Scope-aware magic constants inside traits, namespaces, includes, and eval
+  contexts.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for integer-only operator conversion diagnostics, including bitwise,
   shift, and modulo diagnostics.
@@ -595,5 +603,5 @@ supports in generated native binaries.
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.
 - Arrays, references, copy-on-write, globals, superglobals, classes, objects,
-  resources, exceptions, variable variables, includes, and dynamic
+  resources, exceptions, variable variables, dynamic includes, and dynamic
   fallback.

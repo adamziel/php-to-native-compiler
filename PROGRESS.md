@@ -1,19 +1,19 @@
 # PTN Progress
 
-Refresh: 2026-06-11T09:45Z
+Refresh: 2026-06-11T09:57Z
 Measured: `ptn-4jt` rebased after current `origin/master`; array null-offset
 diagnostic routing, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, nested string-offset unset,
 braced interpolation, branch-condition assignment reducers, scalar offset
 reducers, object `foreach`, class metadata, method callables/magic constants,
-cslashes, and COW evidence.
+include return helpers, cslashes, and COW evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 387 | 387 | 0 |
+| Native compiled PHP snippets | 388 | 388 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -45,7 +45,8 @@ callables, `array_reduce()`/`array_walk()`, `array_count_values()`, `stdClass`,
 declared class/object method metadata and calls, `$this`, object `foreach`,
 scalar array-lvalue fatals with false-to-array deprecation, class/method
 predicates, static properties, property `??=`, method-scope magic constants,
-inherited public methods, and nested string-offset unset errors.
+inherited public methods, nested string-offset unset errors, and
+compile-time-resolved statement-only `include`/`require` return propagation.
 
 ## Still Needed
 
@@ -55,14 +56,15 @@ interfaces/traits, broader inheritance, magic methods, property compounds
 beyond `??=`, static-property compound/null-coalescing lvalues, destructors,
 exceptions, broader magic constants, reflection, unsupported internals,
 64-bit operator exactness, destructuring `foreach`, remaining string sub-path
-scalar offset-lvalue parity, and broader file APIs.
+scalar offset-lvalue parity, dynamic include/include_once behavior, and broader
+file APIs.
 
 ## Verification
 
 Commands: focused Closure/`print`/interpolation/branch-condition assignment/
 addslashes/cslashes/object `foreach`/scalar offset/callable/metadata tests;
-`cargo check`; `cargo test static_property --test compile_native`; `cargo fmt
---check`; `cargo build --bin phpc`; exact `array_null_offset_deprecation.phpt`
-reducer; `cargo test`.
+`cargo check`; `cargo test static_property --test compile_native`; focused
+include parser/native reducers; `cargo fmt --check`; `cargo build --bin phpc`;
+exact `array_null_offset_deprecation.phpt` reducer; `cargo test`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
 `.runtime/php-src-phpt`.
