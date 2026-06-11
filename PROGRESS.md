@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T18:24Z
-Measured: `ptn-wk0a` rebased on `origin/master` at `b1d3b2070`.
+Refresh: 2026-06-11T18:34Z
+Measured: `ptn-lu3y` rebased on `origin/master` at `958c7a1fd`.
 `array_column()` support is integrated. `array_filter()` rejects unknown mode
 values with the modeled PHP `ValueError`. Foreach non-array diagnostics spell
 boolean operands as `false given` or `true given`. Shared deprecation
@@ -91,9 +91,12 @@ inc/dec parity.
 Evidence: bounded `summary-20260611T173953Z.txt` (180/200), COW PHPT
 `summary-20260611T160936Z.txt` (29/29), callback
 `summary-20260611T161926Z.txt` (2/2), native smoke, and post-merge COW gate.
-`ptn-qhla`, `ptn-en6v`, `ptn-dzgg`, `ptn-p0y1`, `ptn-lrty.8`, `ptn-29og`,
-`ptn-lrty.6`, `ptn-lrty.4`, `ptn-lrty.5`, `ptn-lrty.9`, and `ptn-wk0a` add
-the current array, foreach, deprecation, constructor, arithmetic, inline-HTML,
+Earlier `ptn-lu3y` frontier evidence, bounded `summary-20260611T173724Z.txt`
+(179/200) and COW `run-20260611T174736Z.log` (29/29), is superseded by the
+current dashboard after subsequent RC slices. `ptn-qhla`, `ptn-en6v`,
+`ptn-dzgg`, `ptn-p0y1`, `ptn-lrty.8`, `ptn-29og`, `ptn-lrty.6`,
+`ptn-lrty.4`, `ptn-lrty.5`, `ptn-lrty.9`, and `ptn-wk0a` add the current
+array, foreach, deprecation, constructor, arithmetic, inline-HTML,
 string-diagnostic, string-offset diagnostic, magic-callable, `is_callable()`,
 and float-precision rows. Focused `ptn-wk0a` verification covers
 `phpc_precision_ini_controls_scalar_float_stringification`,
