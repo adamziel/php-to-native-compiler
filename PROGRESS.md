@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T13:28Z
-Measured: `ptn-fbqd` rebased after current `origin/master`; array
+Refresh: 2026-06-11T13:33Z
+Measured: `ptn-1zrr` rebased after current `origin/master`; array
 null-offset diagnostics, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, loose object `switch`, nested
 string-offset unset, braced interpolation, branch-condition assignment, named
@@ -10,10 +10,10 @@ callables/magic constants, cslashes, scalar variable variables, include
 returns, array/object type predicates, `define()` legacy flag parity, shared
 `error_reporting()` filtering, dirname edges, high-byte string escapes,
 declared-function `continue`/`switch` warnings, `str_repeat()`,
-`array_fill()`, braced-interpolation alternative-offset parse errors, `chr()`
-out-of-range deprecations with suppression coverage, integer `range()`, and
-COW evidence are integrated. `array_fill_basic.phpt` still fails at the
-separate heredoc parser boundary.
+`array_fill()` including integer-key overflow parity, braced-interpolation
+alternative-offset parse errors, `chr()` out-of-range deprecations with
+suppression coverage, integer `range()`, and COW evidence are integrated.
+`array_fill_basic.phpt` still fails at the separate heredoc parser boundary.
 
 ## Test Dashboard
 
@@ -59,11 +59,12 @@ broader file APIs, and `chr()` float-to-int precision diagnostics.
 
 ## Verification
 
-Commands: focused native/parser/phpc reducers for recent slices; exact
-`array_null_offset_deprecation.phpt`, `array_count_values.phpt`,
-`array_fill.phpt`, `alternative_offset_syntax_in_encaps_string.phpt`,
-`chr_out_of_range.phpt`, `ord_basic.phpt`, declared-function continue/switch
-rows, and `print_r_ints.phpt`; focused `chr` and `range()` native reducers;
+Commands: focused native/parser/phpc reducers for recent slices, including
+`compile_array_fill_to_native_binary`; exact `array_null_offset_deprecation.phpt`,
+`array_count_values.phpt`, `array_fill.phpt`,
+`alternative_offset_syntax_in_encaps_string.phpt`, `chr_out_of_range.phpt`,
+`ord_basic.phpt`, declared-function continue/switch rows, and
+`print_r_ints.phpt`; focused `chr` and `range()` native reducers;
 `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
 `tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt`;
 `tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`;

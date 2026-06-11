@@ -1071,7 +1071,12 @@ static PtnValue ptn_internal_array_fill(PtnRuntime *runtime, size_t argc, const 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (int64_t i = 0; i < count; i++) {
         if (start > INT64_MAX - i) {
-            ptn_abort_out_of_memory();
+            ptn_value_destroy(&result);
+            ptn_throw_exception(
+                runtime,
+                "Error",
+                "Cannot add element to the array as the next element is already occupied"
+            );
         }
         ptn_array_set_entry(
             result.as.array,
