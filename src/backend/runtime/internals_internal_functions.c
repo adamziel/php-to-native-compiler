@@ -2469,12 +2469,17 @@ static PtnValue ptn_internal_substr(PtnRuntime *runtime, size_t argc, const PtnV
 }
 
 static int ptn_is_path_separator(char byte) {
+#ifdef _WIN32
     return byte == '/' || byte == '\\';
+#else
+    return byte == '/';
+#endif
 }
 
-static char *ptn_dirname_string(const char *path, size_t len) {
+static char *ptn_dirname_string(const char *path, size_t len, size_t *dirname_len) {
     if (len == 0) {
-        return ptn_duplicate_string(".");
+        *dirname_len = 0;
+        return ptn_duplicate_string("");
     }
     while (len > 1 && ptn_is_path_separator(path[len - 1])) {
         len--;
@@ -2485,6 +2490,7 @@ static char *ptn_dirname_string(const char *path, size_t len) {
         end--;
     }
     if (end == 0) {
+        *dirname_len = 1;
         return ptn_duplicate_string(".");
     }
     while (end > 1 && ptn_is_path_separator(path[end - 1])) {
@@ -2497,17 +2503,76 @@ static char *ptn_dirname_string(const char *path, size_t len) {
     }
     memcpy(dirname, path, end);
     dirname[end] = '\0';
+    *dirname_len = end;
     return dirname;
 }
 
+static void ptn_internal_throw_string_arg_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type string, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PtnStringOperand ptn_internal_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Passing null to parameter #%zu ($%s) of type string is deprecated",
+            function_name,
+            position,
+            argument_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    } else if (
+        value.type == PTN_ARRAY ||
+        value.type == PTN_OBJECT ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION
+    ) {
+        ptn_internal_throw_string_arg_type_error(runtime, function_name, position, argument_name, value);
+        return ptn_string_operand_borrowed("");
+    }
+    return ptn_value_to_string_operand(value);
+}
+
 static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand path = ptn_value_to_string_operand(args[0]);
-    char *dirname = ptn_dirname_string(path.data, path.len);
+    PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "dirname", 1, "path", args[0], line);
+    size_t dirname_len = 0;
+    char *dirname = ptn_dirname_string(path.data, path.len, &dirname_len);
     ptn_string_operand_free(path);
-    return ptn_owned_string(dirname);
+    return ptn_owned_string_len(dirname, dirname_len);
 }
 
 static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

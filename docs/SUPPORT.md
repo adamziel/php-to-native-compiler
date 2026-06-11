@@ -305,7 +305,10 @@ supports in generated native binaries.
   quote, and backslash bytes; `stripslashes()` removes backslashes and decodes
   backslash-zero to NUL.
 - `dirname()` over current boxed scalar values after scalar string conversion,
-  returning the parent directory for the current C-string-backed path.
+  returning the parent directory for the current binary-safe path. Empty paths,
+  embedded NUL bytes, platform directory separators, null-argument
+  deprecations, and modeled TypeError diagnostics for array/object operands are
+  handled through the runtime path.
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
 - `ceil()` and `floor()` over current boxed scalar values after scalar numeric
@@ -596,8 +599,8 @@ supports in generated native binaries.
   `hexdec()`, and `octdec()` on remaining very large or unsupported values.
 - Exact `hex2bin()` warning text/file-name parity and unsupported
   array/object/resource/reference diagnostics.
-- Exact `dirname()` edge parity for unusual paths, embedded NULs, and
-  unsupported array/object/resource/reference operands.
+- Exact `dirname()` object class-name TypeError wording and unsupported
+  resource/reference operand parity.
 - Exact `soundex()` locale/non-ASCII behavior and unsupported
   array/object/resource/reference operand diagnostics.
 - Exact non-finite formatting outside current scalar `var_dump()` output and

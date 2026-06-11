@@ -3213,7 +3213,8 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
         let marker = format!("static PtnValue {function}(");
         let body = generated_c_static_function_body(&c_source, &marker);
         assert!(
-            body.contains("ptn_value_to_string_operand"),
+            body.contains("ptn_value_to_string_operand")
+                || body.contains("ptn_internal_expect_string_arg"),
             "{function} should use the direct string operand helper"
         );
         assert!(
@@ -3226,7 +3227,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
         "ptn_rot13_string(string.data, string.len)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
-        "ptn_dirname_string(path.data, path.len)",
+        "ptn_dirname_string(path.data, path.len, &dirname_len)",
         "ptn_quoted_printable_decode_string(input.data, input.len, &output_len)",
         "ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line)",
         "ptn_base_string_to_number(runtime, string.data, string.len, 16, 'x', line)",
@@ -3273,6 +3274,44 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
         soundex_body.contains("first < string.len") && soundex_body.contains("i < string.len"),
         "soundex should iterate using the known operand length"
     );
+}
+
+#[test]
+fn compile_dirname_edge_paths_and_type_error_to_native_binary() {
+    let root = temp_dir("ptn-native-dirname-edge-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dirname-edge-paths.php");
+    let output = root.join("dirname-edge-paths-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$paths = [\"\", \"c:\\\\test\\\\afile\", \"c://test//afile\", \"/foo\" . chr(0) . \"bar/t.gz\", \"/foo\" . chr(0) . \"bar/\"];\n\
+foreach ($paths as $path) {\n\
+    var_dump(dirname($path));\n\
+}\n\
+try {\n\
+    dirname([]);\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"string(0) \"\"\n\
+string(1) \".\"\n\
+string(8) \"c://test\"\n\
+string(8) \"/foo\0bar\"\n\
+string(1) \"/\"\n\
+dirname(): Argument #1 ($path) must be of type string, array given\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
 }
 
 #[test]
