@@ -538,6 +538,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_E_ALL);
         return 1;
     }
+    if (strcmp(name, "CASE_LOWER") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "CASE_UPPER") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
     if (strcmp(name, "M_E") == 0) {
         *out = ptn_float(2.718281828459045);
         return 1;

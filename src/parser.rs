@@ -3426,6 +3426,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "isset"
             | "empty"
             | "count"
+            | "array_change_key_case"
             | "array_count_values"
             | "array_fill"
             | "array_fill_keys"

@@ -8364,6 +8364,35 @@ var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));"
 }
 
 #[test]
+fn compile_array_change_key_case_to_native_binary() {
+    let root = temp_dir("ptn-native-array-change-key-case");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-change-key-case.php");
+    let output = root.join("array-change-key-case-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = array('One' => 1, 'TWO' => 2, 3 => 'three', 'two' => 4, 'MiXeD' => 'case');\n\
+var_dump(array_change_key_case(array()));\n\
+var_dump(array_change_key_case($source));\n\
+var_dump(array_change_key_case($source, CASE_UPPER));\n\
+try { array_change_key_case($source, -10); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(CASE_LOWER, CASE_UPPER, function_exists('array_change_key_case'), function_exists('ARRAY_CHANGE_KEY_CASE'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(0) {\n}\narray(4) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(4)\n  [3]=>\n  string(5) \"three\"\n  [\"mixed\"]=>\n  string(4) \"case\"\n}\narray(4) {\n  [\"ONE\"]=>\n  int(1)\n  [\"TWO\"]=>\n  int(4)\n  [3]=>\n  string(5) \"three\"\n  [\"MIXED\"]=>\n  string(4) \"case\"\n}\narray_change_key_case(): Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER\nint(0)\nint(1)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_count_values_to_native_binary() {
     let root = temp_dir("ptn-native-array-count-values");
     fs::create_dir_all(&root).unwrap();

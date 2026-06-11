@@ -202,6 +202,7 @@ supports in generated native binaries.
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_count_values(expr);`, `array_fill(expr, expr, expr);`,
+  `array_change_key_case(expr[, expr]);`,
   `array_values(expr);`, `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
@@ -223,6 +224,7 @@ supports in generated native binaries.
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
   `count(expr)`, `array_count_values(expr)`, `array_fill(expr, expr, expr)`,
+  `array_change_key_case(expr[, expr])`,
   `array_values(expr)`, `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
@@ -365,6 +367,11 @@ supports in generated native binaries.
 - `array_flip()` over current boxed arrays, flipping dereferenced integer and
   string values into ordered-map keys and using the original keys as values.
   Unsupported value types emit the modeled PHP warning boundary and are skipped.
+- `array_change_key_case()` over current boxed arrays, preserving integer keys,
+  converting string keys through ASCII lower/upper casing, and cloning
+  dereferenced values into a fresh ordered array. The optional case flag accepts
+  `CASE_LOWER`/`CASE_UPPER` and rejects other values with the modeled PHP
+  `ValueError`.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `range()` over current boxed integer-convertible start, end, and optional

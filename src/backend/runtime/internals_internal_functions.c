@@ -858,6 +858,52 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
     return use_float ? ptn_float(float_sum) : ptn_int(integer_sum);
 }
 
+static PtnArrayKey ptn_array_change_key_case_key(PtnArrayKey source, int uppercase) {
+    if (source.type == PTN_ARRAY_KEY_INT) {
+        return ptn_array_int_key(source.as.integer);
+    }
+
+    size_t len = strlen(source.as.string);
+    char *changed = malloc(len + 1);
+    if (changed == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)source.as.string[i];
+        changed[i] = (char)(uppercase ? toupper(byte) : tolower(byte));
+    }
+    changed[len] = '\0';
+
+    PtnArrayKey key;
+    key.type = PTN_ARRAY_KEY_STRING;
+    key.as.string = changed;
+    return key;
+}
+
+static PtnValue ptn_internal_array_change_key_case(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_change_key_case", 1, "array", args[0]);
+    int64_t case_value = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    if (case_value != 0 && case_value != 1) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_change_key_case(): Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER"
+        );
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int uppercase = case_value == 1;
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_change_key_case_key(array->entries[i].key, uppercase),
+            ptn_value_clone_deref(array->entries[i].value)
+        );
+    }
+    return result;
+}
+
 static int ptn_array_count_values_key_from_value(PtnRuntime *runtime, PtnValue value, size_t line, PtnArrayKey *key_out) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -3858,6 +3904,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "abs", 1, 1, ptn_internal_abs },
         { "addcslashes", 2, 2, ptn_internal_addcslashes },
         { "addslashes", 1, 1, ptn_internal_addslashes },
+        { "array_change_key_case", 1, 2, ptn_internal_array_change_key_case },
         { "array_count_values", 1, 1, ptn_internal_array_count_values },
         { "array_fill", 3, 3, ptn_internal_array_fill },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
