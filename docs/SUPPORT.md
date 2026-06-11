@@ -266,6 +266,7 @@ Post-RC architecture remains explicit rather than hidden:
   `md5(expr[, raw_output]);`,
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
   `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr);`,
+  `highlight_string(expr[, return]);`, `highlight_file(expr[, return]);`,
   `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
   `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
@@ -298,6 +299,7 @@ Post-RC architecture remains explicit rather than hidden:
   `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `quoted_printable_decode(expr)`, `dirname(expr)`,
+  `highlight_string(expr[, return])`, `highlight_file(expr[, return])`,
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
@@ -366,6 +368,10 @@ Post-RC architecture remains explicit rather than hidden:
   through the optional second argument.
 - `strlen()` over current boxed scalar values and objects with a public
   declared `__toString()` after shared string conversion.
+- Bounded `highlight_string()` and `highlight_file()` support the current
+  source-byte highlighter: the optional return flag returns a string instead
+  of writing to stdout, `highlight_file()` reads ordinary filesystem paths, and
+  missing files emit PHP-style highlighting warnings before returning false.
 - Shared string-argument checking for common string/byte internals: supported
   scalar values and objects with a public declared `__toString()` are coerced
   through the same length-aware operand path, `null` arguments emit the modeled

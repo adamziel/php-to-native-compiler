@@ -3917,6 +3917,36 @@ bool(false)\nbool(false)\n",
 }
 
 #[test]
+fn compile_highlight_file_reads_source_to_native_binary() {
+    let root = temp_dir("ptn-native-highlight-file-source");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("highlight-file-source.php");
+    let output = root.join("highlight-file-source-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$file = __DIR__ . \"/source-to-highlight.php\";\n\
+var_dump(file_put_contents($file, \"<A&>\\n\"));\n\
+$result = highlight_file($file, true);\n\
+var_dump(is_string($result), str_contains($result, \"&lt;A&amp;&gt;\"), ob_get_contents());\n\
+var_dump(highlight_file($file, false));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(5)\n\
+bool(true)\nbool(true)\nbool(false)\n\
+<code><span style=\"color: #000000\">\n&lt;A&amp;&gt;\n</span>\n</code>bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();
