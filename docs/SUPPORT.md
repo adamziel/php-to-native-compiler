@@ -495,9 +495,10 @@ supports in generated native binaries.
   unparenthesized nested ternary fatal diagnostics and
   unexpected-token parse errors at modeled statement terminators and right
   parentheses. Global `const` declaration terminators report the
-  const-specific `"," or ";"` expected-token set. Unsupported class members and
-  class-constant fetch syntax are recognized and reported as class metadata
-  boundaries.
+  const-specific `"," or ";"` expected-token set, and removed alternative
+  `{}` offsets inside braced string interpolation report the current PHP
+  unexpected-token parse error. Unsupported class members and class-constant
+  fetch syntax are recognized and reported as class metadata boundaries.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 
@@ -510,8 +511,8 @@ supports in generated native binaries.
   arithmetic diagnostics, exact division/modulo-by-zero exception behavior,
   exact numeric literal overflow/range parity, complete overflow parity, and
   invalid numeric-separator/radix diagnostic parity beyond invalid legacy
-  octal integers, unsupported grammar-site parse-error wording, and exact
-  scalar cast overflow behavior.
+  octal integers, remaining unsupported grammar-site parse-error wording, and
+  exact scalar cast overflow behavior.
 - Prefix and postfix increment/decrement operators such as `++$value` and
   `--$value`.
 - Keyword boolean tails after direct assignment statements, ternary expressions

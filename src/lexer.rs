@@ -560,6 +560,12 @@ impl<'a> Lexer<'a> {
                     self.bump_char();
                     indices.push(index);
                 }
+                Some('{') => {
+                    return Err(Diagnostic::parse_error(
+                        "syntax error, unexpected token \"{\", expecting \"->\" or \"?->\" or \"[\"",
+                        Some(self.current_char_span()),
+                    ));
+                }
                 Some(_) => {
                     return Err(Diagnostic::new(
                         "complex string interpolation is unsupported",

@@ -2512,6 +2512,17 @@ fn parser_rejects_unsupported_braced_property_interpolation() {
 }
 
 #[test]
+fn parser_rejects_alternative_offset_syntax_in_braced_interpolation_as_parse_error() {
+    let error = parser::parse("<?php \"{$g{'h'}}\";").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        error.message,
+        "syntax error, unexpected token \"{\", expecting \"->\" or \"?->\" or \"[\""
+    );
+    assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
 fn parser_rejects_multiple_switch_defaults() {
     let error =
         parser::parse("<?php switch (1) { default: echo 1; break; default: echo 2; break; }")
@@ -2738,6 +2749,26 @@ fn phpc_renders_unexpected_right_paren_token_as_php_parse_error() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Parse error: syntax error, unexpected token \"{{\", expecting \")\" in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_alternative_offset_in_interpolation_as_php_parse_error() {
+    let root = temp_dir("ptn-phpc-alternative-offset-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("alternative-offset-interpolation.php");
+    fs::write(&input, "<?php\n\"{$g{'h'}}\";\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: syntax error, unexpected token \"{{\", expecting \"->\" or \"?->\" or \"[\" in {} on line 2\n",
             input.display()
         )
     );

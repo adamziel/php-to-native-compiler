@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T12:30Z
-Measured: `ptn-ae39` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T12:44Z
+Measured: `ptn-q2zt` rebased after current `origin/master`; array null-offset
 diagnostic routing, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, loose object equality in
 `switch`, nested string-offset unset, braced interpolation, branch-condition
@@ -13,7 +13,8 @@ dirname edge PHPT rows, double-quoted high-byte hex/octal escapes, bounded
 PHPT, COW PHPT, byte-escape reducers, declared-function `continue`/`switch`
 warnings, `str_repeat()`, generic `array_fill()`, and COW evidence.
 `array_fill.phpt` now passes; `array_fill_basic.phpt` still fails at the
-separate heredoc parser boundary.
+separate heredoc parser boundary. The braced-interpolation alternative-offset
+parse-error row now passes.
 
 ## Test Dashboard
 
@@ -22,8 +23,8 @@ separate heredoc parser boundary.
 | Source unit tests | 3 | 3 | 0 |
 | Native compiled PHP snippets | 398 | 398 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 158 | 42 |
-| PHPT Zend rows | 76 | 68 | 8 |
+| PHPT bounded manifest | 200 | 159 | 41 |
+| PHPT Zend rows | 76 | 69 | 7 |
 | PHPT ext/standard rows | 77 | 52 | 25 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
@@ -62,7 +63,8 @@ propagation, `define()`'s legacy case-insensitive flag warning with
 case-sensitive runtime constants, `error_reporting()` mask filtering for
 modeled shared warning/deprecation/notice emitters, dirname
 empty/path-separator/embedded-NUL edges, declared-function `continue`/`switch`
-warnings, and `str_repeat()`.
+warnings, `str_repeat()`, and braced-interpolation alternative-offset parse
+errors.
 
 ## Still Needed
 
@@ -87,8 +89,9 @@ suppression reducer; exact `array_count_values.phpt` row; dirname native and
 PHPT reducers; double-quoted byte escape reducer; targeted
 `bin2hex_basic.phpt`/`ord_basic.phpt`; declared-function
 continue-switch reducer; `str_repeat()` native reducer; `array_fill()` native
-reducer; exact `array_fill.phpt`; internal redeclaration parser reducer;
-`cargo test`;
+reducer; exact `array_fill.phpt`; focused parser/phpc interpolation reducers;
+exact `alternative_offset_syntax_in_encaps_string.phpt`; internal redeclaration
+parser reducer; `cargo test`;
 `tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt`;
 `tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
