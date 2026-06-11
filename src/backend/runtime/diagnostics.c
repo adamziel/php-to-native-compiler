@@ -331,6 +331,15 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = &runtime->owned_static_properties;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
+    const char *configured_error_reporting = getenv("PTN_PHP_ERROR_REPORTING");
+    if (configured_error_reporting != NULL && configured_error_reporting[0] != '\0') {
+        char *end = NULL;
+        errno = 0;
+        long long parsed = strtoll(configured_error_reporting, &end, 10);
+        if (errno == 0 && end != configured_error_reporting && *end == '\0') {
+            runtime->diagnostics.error_reporting = (int64_t)parsed;
+        }
+    }
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
     runtime->exceptions = &runtime->owned_exceptions;

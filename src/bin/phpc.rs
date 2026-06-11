@@ -24,7 +24,7 @@ fn run() -> Result<i32, PhpcError> {
             Ok(0)
         }
         Mode::Modules => Ok(0),
-        Mode::Script { script, args } => compile_and_run(&script, &args, invocation.precision),
+        Mode::Script { script, args } => compile_and_run(&script, &args, invocation.runtime_ini),
         Mode::Inline { source } => {
             let temp = TempPath::new("ptn-phpc-inline", "php");
             let source = if source.trim_start().starts_with("<?") {
@@ -34,7 +34,7 @@ fn run() -> Result<i32, PhpcError> {
             };
             fs::write(temp.path(), source)
                 .map_err(|error| format!("failed to write inline source: {error}"))?;
-            compile_and_run(temp.path(), &[], invocation.precision)
+            compile_and_run(temp.path(), &[], invocation.runtime_ini)
         }
     }
 }
@@ -79,7 +79,7 @@ impl From<String> for PhpcError {
 #[derive(Debug)]
 struct Invocation {
     mode: Mode,
-    precision: Option<u8>,
+    runtime_ini: RuntimeIni,
 }
 
 #[derive(Debug)]
@@ -90,6 +90,12 @@ enum Mode {
     Inline { source: String },
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct RuntimeIni {
+    precision: Option<u8>,
+    error_reporting: Option<i64>,
+}
+
 impl Invocation {
     fn parse<I>(args: I) -> Result<Self, String>
     where
@@ -98,7 +104,7 @@ impl Invocation {
         let mut args = args.into_iter().peekable();
         let mut script = None;
         let mut script_args = Vec::new();
-        let mut precision = None;
+        let mut runtime_ini = RuntimeIni::default();
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -106,20 +112,20 @@ impl Invocation {
                 "-v" | "--version" => {
                     return Ok(Self {
                         mode: Mode::Version,
-                        precision,
+                        runtime_ini,
                     });
                 }
                 "-m" => {
                     return Ok(Self {
                         mode: Mode::Modules,
-                        precision,
+                        runtime_ini,
                     });
                 }
                 "-d" => {
                     let value = args
                         .next()
                         .ok_or_else(|| format!("missing value for {arg}"))?;
-                    apply_ini_setting(&value, &mut precision);
+                    apply_ini_setting(&value, &mut runtime_ini);
                 }
                 "-c" => {
                     args.next()
@@ -138,7 +144,7 @@ impl Invocation {
                         .ok_or_else(|| "missing inline source for -r".to_string())?;
                     return Ok(Self {
                         mode: Mode::Inline { source },
-                        precision,
+                        runtime_ini,
                     });
                 }
                 "run" if script.is_none() => {
@@ -157,7 +163,7 @@ impl Invocation {
                     break;
                 }
                 _ if let Some(value) = arg.strip_prefix("-d") => {
-                    apply_ini_setting(value, &mut precision);
+                    apply_ini_setting(value, &mut runtime_ini);
                 }
                 _ if arg.starts_with("-c") => {}
                 _ if arg.starts_with('-') => {}
@@ -175,20 +181,26 @@ impl Invocation {
                 script,
                 args: script_args,
             },
-            precision,
+            runtime_ini,
         })
     }
 }
 
-fn apply_ini_setting(value: &str, precision: &mut Option<u8>) {
+fn apply_ini_setting(value: &str, runtime_ini: &mut RuntimeIni) {
     let Some((name, raw_value)) = value.split_once('=') else {
         return;
     };
-    if name.trim().eq_ignore_ascii_case("precision") {
-        if let Ok(parsed) = raw_value.trim().parse::<u8>() {
+    let name = name.trim();
+    let raw_value = raw_value.trim();
+    if name.eq_ignore_ascii_case("precision") {
+        if let Ok(parsed) = raw_value.parse::<u8>() {
             if parsed <= 53 {
-                *precision = Some(parsed);
+                runtime_ini.precision = Some(parsed);
             }
+        }
+    } else if name.eq_ignore_ascii_case("error_reporting") {
+        if let Ok(parsed) = raw_value.parse::<i64>() {
+            runtime_ini.error_reporting = Some(parsed);
         }
     }
 }
@@ -196,7 +208,7 @@ fn apply_ini_setting(value: &str, precision: &mut Option<u8>) {
 fn compile_and_run(
     script: &Path,
     args: &[String],
-    precision: Option<u8>,
+    runtime_ini: RuntimeIni,
 ) -> Result<i32, PhpcError> {
     let native = TempPath::new("ptn-phpc-native", "bin");
     compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
@@ -212,8 +224,11 @@ fn compile_and_run(
 
     let mut command = Command::new(native.path());
     command.args(args);
-    if let Some(precision) = precision {
+    if let Some(precision) = runtime_ini.precision {
         command.env("PTN_PHP_PRECISION", precision.to_string());
+    }
+    if let Some(error_reporting) = runtime_ini.error_reporting {
+        command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());
     }
     let status = command
         .status()

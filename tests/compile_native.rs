@@ -3485,6 +3485,34 @@ fn compile_strlen_expression_to_native_binary() {
 }
 
 #[test]
+fn compile_highlight_string_and_empty_output_buffer_to_native_binary() {
+    let root = temp_dir("ptn-native-highlight-string-output-buffer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("highlight-string-output-buffer.php");
+    let output = root.join("highlight-string-output-buffer-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists(\"highlight_string\"), function_exists(\"ob_get_contents\"));\n\
+echo \"before\\n\";\n\
+$result = highlight_string(\"hidden\", true);\n\
+echo \"after\\n\";\n\
+var_dump(is_string($result), $result !== \"\", ob_get_contents());",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbefore\nafter\nbool(true)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_string_internals_use_direct_string_operand_fast_paths_to_native_binary() {
     let root = temp_dir("ptn-native-string-internal-direct-operands");
     fs::create_dir_all(&root).unwrap();
@@ -11509,6 +11537,25 @@ fn phpc_precision_ini_controls_scalar_float_stringification() {
         String::from_utf8(execution.stdout).unwrap(),
         "13 12 10.5555555556 10.555555556\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_error_reporting_ini_sets_initial_level() {
+    let root = temp_dir("ptn-phpc-error-reporting-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-reporting-ini.php");
+    fs::write(&input, "<?php var_dump(error_reporting());").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("error_reporting=8192")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(8192)\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

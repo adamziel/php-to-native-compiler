@@ -2109,6 +2109,21 @@ static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int((int64_t)len);
 }
 
+static PtnValue ptn_internal_highlight_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "highlight_string", 1, "string", args[0], line);
+    int return_output = argc >= 2 && ptn_is_truthy(args[1]);
+    if (return_output) {
+        char *copy = ptn_duplicate_string_len(string.data, string.len);
+        size_t len = string.len;
+        ptn_string_operand_free(string);
+        return ptn_owned_string_len(copy, len);
+    }
+
+    fwrite(string.data, 1, string.len, stdout);
+    ptn_string_operand_free(string);
+    return ptn_bool(1);
+}
+
 static char *ptn_rot13_string(const char *string, size_t len) {
     char *rotated = malloc(len + 1);
     if (rotated == NULL) {
@@ -4495,6 +4510,14 @@ static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, c
     return ptn_int(previous_level);
 }
 
+static PtnValue ptn_internal_ob_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(0);
+}
+
 static PtnCallFrame *ptn_current_call_frame(PtnRuntime *runtime, const char *function_name) {
     if (runtime->call_frame != NULL) {
         return runtime->call_frame;
@@ -4673,6 +4696,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gettype", 1, 1, ptn_internal_gettype },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
+        { "highlight_string", 1, 2, ptn_internal_highlight_string },
         { "in_array", 2, 3, ptn_internal_in_array },
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
@@ -4700,6 +4724,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "method_exists", 2, 2, ptn_internal_method_exists },
         { "mkdir", 1, 4, ptn_internal_mkdir },
         { "next", 1, 1, ptn_internal_next },
+        { "ob_get_contents", 0, 0, ptn_internal_ob_get_contents },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "ord", 1, 1, ptn_internal_ord },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
