@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T13:40Z
-Measured: `ptn-3vjm` rebased after current `origin/master`; array
+Refresh: 2026-06-11T13:47Z
+Measured: `ptn-pbj0` rebased after current `origin/master`; array
 null-offset diagnostics, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, loose object `switch`, nested
 string-offset unset, braced interpolation, branch-condition assignment, named
@@ -12,9 +12,9 @@ returns, array/object type predicates, `define()` legacy flag parity, shared
 declared-function `continue`/`switch` warnings, `str_repeat()`,
 `array_fill()` including integer-key overflow parity, `array_flip()`,
 braced-interpolation alternative-offset parse errors, `chr()` out-of-range
-deprecations with suppression coverage, integer `range()`, and COW evidence
-are integrated. `array_fill_basic.phpt` still fails at the separate heredoc
-parser boundary.
+deprecations with suppression coverage, integer `range()` including default
+and descending-step coverage, and COW evidence are integrated.
+`array_fill_basic.phpt` still fails at the separate heredoc parser boundary.
 
 ## Test Dashboard
 

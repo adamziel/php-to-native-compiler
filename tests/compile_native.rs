@@ -8531,8 +8531,12 @@ fn compile_range_integer_internal_to_native_binary() {
     fs::write(
         &input,
         "<?php\n\
+print_r(range(1, 3));\n\
 print_r(range(1, 5, 2));\n\
+print_r(range(1, 3, -1));\n\
 print_r(range(-1, -5, -2));\n\
+print_r(range(3, 1, -1));\n\
+print_r(range(3, 1, 1));\n\
 print_r(range(3, 3, 9));\n\
 try { range(1, 3, 0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { range(1, 3, 5); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
@@ -8546,7 +8550,7 @@ var_dump(function_exists('range'), function_exists('RANGE'));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Array\n(\n    [0] => 1\n    [1] => 3\n    [2] => 5\n)\nArray\n(\n    [0] => -1\n    [1] => -3\n    [2] => -5\n)\nArray\n(\n    [0] => 3\n)\nrange(): Argument #3 ($step) must not exceed the specified range\nrange(): Argument #3 ($step) must not exceed the specified range\nbool(true)\nbool(true)\n"
+        "Array\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [0] => 1\n    [1] => 3\n    [2] => 5\n)\nArray\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [0] => -1\n    [1] => -3\n    [2] => -5\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n)\nrange(): Argument #3 ($step) must not exceed the specified range\nrange(): Argument #3 ($step) must not exceed the specified range\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
