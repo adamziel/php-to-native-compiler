@@ -263,6 +263,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
+  `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
   `md5(expr[, raw_output]);`,
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
   `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr);`,
@@ -296,6 +297,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
+  `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
   `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `quoted_printable_decode(expr)`, `dirname(expr)`,
@@ -372,6 +374,15 @@ Post-RC architecture remains explicit rather than hidden:
   source-byte highlighter: the optional return flag returns a string instead
   of writing to stdout, `highlight_file()` reads ordinary filesystem paths, and
   missing files emit PHP-style highlighting warnings before returning false.
+- `join()`/`implode()` concatenate current ordered-array values in iteration
+  order. The one-argument form uses an empty separator; the two-argument form
+  uses the shared string-argument path for the separator. Entries use the
+  length-aware runtime string conversion path, and nested arrays emit the
+  current array-to-string warning boundary.
+- `sprintf()` over current scalar values supports `%%`, `%s`, `%d`/`%i`,
+  `%u`, `%o`, `%x`/`%X`, `%b`, `%c`, and `%f`/`%F`/`%e`/`%E`/`%g`/`%G`
+  conversions with ordinary flags, width, and precision. String formatting is
+  length-aware for embedded NUL bytes in current string operands.
 - Shared string-argument checking for common string/byte internals: supported
   scalar values and objects with a public declared `__toString()` are coerced
   through the same length-aware operand path, `null` arguments emit the modeled
@@ -703,6 +714,10 @@ Post-RC architecture remains explicit rather than hidden:
   write the updated value. Expression forms such as `++$name`, `$name++`,
   `--$name`, and `$name--` return the PHP pre/post result value while applying
   the same side effect.
+- Statement-form array dimension increment/decrement over variable-root array
+  paths such as `$items[$key]++;` and `--$items[0];`. The parser lowers these
+  forms through the same array-path compound-assignment helpers as `+= 1` and
+  `-= 1`.
 
 ## Not Yet Supported
 
@@ -715,8 +730,8 @@ Post-RC architecture remains explicit rather than hidden:
   invalid numeric-separator/radix diagnostic parity beyond invalid legacy
   octal integers, remaining unsupported grammar-site parse-error wording, and
   exact scalar cast overflow behavior.
-- Increment/decrement targets beyond direct variables, including array
-  offsets, properties, and static properties.
+- Increment/decrement expression targets beyond direct variables, and property
+  or static-property increment/decrement targets.
 - Keyword boolean tails after direct assignment statements, ternary expressions
   beyond the modeled nested associativity diagnostics, PHP-exact chained
   comparison parse errors, and complete comparison parity for unsupported value

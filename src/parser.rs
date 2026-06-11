@@ -656,6 +656,18 @@ impl Parser {
         }
         if matches!(self.peek().kind, TokenKind::LeftBracket) {
             let target = self.parse_array_dim_target(name, token.span)?;
+            match self.peek().kind {
+                TokenKind::PlusPlus | TokenKind::MinusMinus => {
+                    let op_token = self.advance().clone();
+                    self.expect_statement_terminator()?;
+                    return Ok(array_dim_inc_dec_statement(
+                        target,
+                        op_token.kind,
+                        combine_spans(token.span, op_token.span),
+                    ));
+                }
+                _ => {}
+            }
             if !self.peek_is_assignment_op() {
                 self.index = start;
                 return self.parse_expression_statement();
@@ -795,6 +807,15 @@ impl Parser {
         let TokenKind::Variable(name) = variable.kind else {
             return Err(Diagnostic::new("expected variable", Some(variable.span)));
         };
+        if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            let target = self.parse_array_dim_target(name, variable.span)?;
+            self.expect_statement_terminator()?;
+            return Ok(array_dim_inc_dec_statement(
+                target,
+                op_token.kind,
+                combine_spans(op_token.span, variable.span),
+            ));
+        }
         self.expect_statement_terminator()?;
         Ok(Statement::Increment {
             name,
@@ -1093,6 +1114,14 @@ impl Parser {
         let TokenKind::Variable(name) = variable.kind else {
             return Err(Diagnostic::new("expected variable", Some(variable.span)));
         };
+        if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            let target = self.parse_array_dim_target(name, variable.span)?;
+            return Ok(array_dim_inc_dec_statement(
+                target,
+                op_token.kind,
+                combine_spans(op_token.span, variable.span),
+            ));
+        }
         Ok(Statement::Increment {
             name,
             op,
@@ -3512,6 +3541,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "hex2bin"
             | "quoted_printable_decode"
             | "soundex"
+            | "sprintf"
             | "ceil"
             | "floor"
             | "abs"
@@ -3534,6 +3564,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "var_export"
             | "bindec"
             | "hexdec"
+            | "implode"
             | "in_array"
             | "ob_get_contents"
             | "octdec"
@@ -3564,6 +3595,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "is_finite"
             | "is_infinite"
             | "is_nan"
+            | "join"
             | "define"
             | "constant"
             | "defined"
@@ -4327,6 +4359,24 @@ fn lower_string_interpolation_index(
         TokenStringInterpolationIndex::String(value) => StringInterpolationIndex::String(value),
         TokenStringInterpolationIndex::Int(value) => StringInterpolationIndex::Int(value),
         TokenStringInterpolationIndex::Variable(name) => StringInterpolationIndex::Variable(name),
+    }
+}
+
+fn array_dim_inc_dec_statement(
+    target: ArrayDimTarget,
+    op: TokenKind,
+    span: SourceSpan,
+) -> Statement {
+    let assignment_op = match op {
+        TokenKind::PlusPlus => AssignmentOp::AddAssign,
+        TokenKind::MinusMinus => AssignmentOp::SubtractAssign,
+        _ => unreachable!("array dimension inc/dec op must be ++ or --"),
+    };
+    Statement::ArrayAssign {
+        target,
+        op: assignment_op,
+        value: Expr::Int(1, span),
+        span,
     }
 }
 

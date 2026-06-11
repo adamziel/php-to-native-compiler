@@ -356,8 +356,8 @@ fn parser_accepts_assignment_expressions_in_branch_conditions() {
 
 #[test]
 fn parser_accepts_direct_variable_increment_decrement_statements() {
-    let program = parser::parse("<?php $value = 1; $value++; ++$value; $value--; --$value; while ($value < 3) { $value++; }").unwrap();
-    assert_eq!(program.statements.len(), 6);
+    let program = parser::parse("<?php $value = 1; $value++; ++$value; $value--; --$value; $items[0]++; --$items[$key]; while ($value < 3) { $value++; }").unwrap();
+    assert_eq!(program.statements.len(), 8);
 
     let Statement::Increment { op, .. } = &program.statements[1] else {
         panic!("expected postfix increment statement");
@@ -369,7 +369,24 @@ fn parser_accepts_direct_variable_increment_decrement_statements() {
     };
     assert_eq!(*op, IncDecOp::Decrement);
 
-    let Statement::While { body, .. } = &program.statements[5] else {
+    assert!(matches!(
+        &program.statements[5],
+        Statement::ArrayAssign {
+            op: AssignmentOp::AddAssign,
+            value: Expr::Int(1, _),
+            ..
+        }
+    ));
+    assert!(matches!(
+        &program.statements[6],
+        Statement::ArrayAssign {
+            op: AssignmentOp::SubtractAssign,
+            value: Expr::Int(1, _),
+            ..
+        }
+    ));
+
+    let Statement::While { body, .. } = &program.statements[7] else {
         panic!("expected while statement");
     };
     assert!(matches!(
@@ -3944,6 +3961,69 @@ bool(true)\nbool(true)\nbool(false)\n\
 <code><span style=\"color: #000000\">\n&lt;A&amp;&gt;\n</span>\n</code>bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_join_and_implode_to_native_binary() {
+    let root = temp_dir("ptn-native-join-implode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("join-implode.php");
+    let output = root.join("join-implode-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"x\", 7, false, null, \"z\"];\n\
+echo join(\"\", [1, 2, 3, 4]), \"\\n\";\n\
+echo implode(\"-\", $items), \"\\n\";\n\
+echo implode($items), \"\\n\";\n\
+echo bin2hex(join(\"\", [\"A\", chr(0), \"B\"])), \"\\n\";\n\
+var_dump(function_exists(\"join\"), function_exists(\"implode\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1234\nx-7---z\nx7z\n410042\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_implode("));
+    assert!(c_source.contains("static PtnValue ptn_internal_join("));
+}
+
+#[test]
+fn compile_sprintf_scalar_formats_to_native_binary() {
+    let root = temp_dir("ptn-native-sprintf-scalar-formats");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sprintf-scalar-formats.php");
+    let output = root.join("sprintf-scalar-formats-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo sprintf(\"%0.3f\", 1 / 24), \"\\n\";\n\
+echo sprintf(\"[%+05d] [%6.3s] [%04b] [%X] [%%]\", 7, \"abcdef\", 5, 255), \"\\n\";\n\
+echo bin2hex(sprintf(\"%c\", 0)), \"\\n\";\n\
+var_dump(function_exists(\"sprintf\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "0.042\n[+0007] [   abc] [0101] [FF] [%]\n00\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_sprintf("));
 }
 
 #[test]
@@ -12354,6 +12434,40 @@ fn compile_prefix_increment_and_decrement_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2 3 2 1\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_offset_increment_decrement_statements_to_native_binary() {
+    let root = temp_dir("ptn-native-array-offset-inc-dec-statements");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-offset-inc-dec-statements.php");
+    let output = root.join("array-offset-inc-dec-statements-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$counts = [\"a\" => 0, \"b\" => 2];\n\
+$key = \"a\";\n\
+$counts[$key]++;\n\
+++$counts[\"a\"];\n\
+$counts[\"b\"]--;\n\
+--$counts[\"b\"];\n\
+var_dump($counts);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [\"a\"]=>\n  int(2)\n  [\"b\"]=>\n  int(0)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_read_for_assign_op"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_from_assign_op"));
 }
 
 #[test]

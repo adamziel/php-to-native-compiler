@@ -2542,6 +2542,7 @@ static PtnStringOperand ptn_internal_expect_string_arg(
     PtnValue value,
     size_t line
 );
+static double ptn_value_to_double(PtnValue value);
 
 static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
@@ -2549,6 +2550,394 @@ static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnV
     size_t len = string.len;
     ptn_string_operand_free(string);
     return ptn_int((int64_t)len);
+}
+
+static PtnValue ptn_internal_implode_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnStringOperand separator = ptn_string_operand_borrowed("");
+    PtnArray *array = NULL;
+    if (argc == 1) {
+        array = ptn_internal_expect_array_arg(runtime, function_name, 1, "array", args[0]);
+    } else {
+        separator = ptn_internal_expect_string_arg(runtime, function_name, 1, "separator", args[0], line);
+        array = ptn_internal_expect_array_arg(runtime, function_name, 2, "array", args[1]);
+    }
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    for (size_t i = 0; i < array->len; i++) {
+        if (i > 0) {
+            ptn_string_buffer_append_len(&buffer, separator.data, separator.len);
+        }
+
+        PtnValue entry_value = ptn_value_deref(array->entries[i].value);
+        if (entry_value.type == PTN_ARRAY) {
+            ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+        }
+        PtnStringOperand part = ptn_value_to_string_operand_with_runtime(runtime, entry_value, line);
+        ptn_string_buffer_append_len(&buffer, part.data, part.len);
+        ptn_string_operand_free(part);
+    }
+
+    if (argc >= 2) {
+        ptn_string_operand_free(separator);
+    }
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static PtnValue ptn_internal_implode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_implode_named(runtime, "implode", argc, args, line);
+}
+
+static PtnValue ptn_internal_join(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_implode_named(runtime, "join", argc, args, line);
+}
+
+typedef struct {
+    int left_adjust;
+    int show_sign;
+    int space_sign;
+    int zero_pad;
+    int alternate;
+    int has_width;
+    int width;
+    int has_precision;
+    int precision;
+} PtnSprintfSpec;
+
+static void ptn_sprintf_append_repeated(PtnStringBuffer *buffer, char byte, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        ptn_string_buffer_append_char(buffer, byte);
+    }
+}
+
+static int ptn_sprintf_parse_decimal(const char *data, size_t len, size_t *offset) {
+    int value = 0;
+    while (*offset < len && isdigit((unsigned char)data[*offset])) {
+        int digit = data[*offset] - '0';
+        if (value > (INT_MAX - digit) / 10) {
+            ptn_abort_out_of_memory();
+        }
+        value = value * 10 + digit;
+        (*offset)++;
+    }
+    return value;
+}
+
+static void ptn_sprintf_build_numeric_format(char *format, size_t format_size, const PtnSprintfSpec *spec, char conversion, int use_long_long) {
+    char *cursor = format;
+    char *end = format + format_size;
+    if (cursor >= end) {
+        ptn_abort_out_of_memory();
+    }
+    *cursor++ = '%';
+    if (spec->left_adjust && cursor < end) {
+        *cursor++ = '-';
+    }
+    if (spec->show_sign && cursor < end) {
+        *cursor++ = '+';
+    }
+    if (spec->space_sign && cursor < end) {
+        *cursor++ = ' ';
+    }
+    if (spec->zero_pad && cursor < end) {
+        *cursor++ = '0';
+    }
+    if (spec->alternate && cursor < end) {
+        *cursor++ = '#';
+    }
+    if (spec->has_width) {
+        int written = snprintf(cursor, (size_t)(end - cursor), "%d", spec->width);
+        if (written < 0 || written >= end - cursor) {
+            ptn_abort_out_of_memory();
+        }
+        cursor += written;
+    }
+    if (spec->has_precision) {
+        if (cursor >= end) {
+            ptn_abort_out_of_memory();
+        }
+        *cursor++ = '.';
+        int written = snprintf(cursor, (size_t)(end - cursor), "%d", spec->precision);
+        if (written < 0 || written >= end - cursor) {
+            ptn_abort_out_of_memory();
+        }
+        cursor += written;
+    }
+    if (use_long_long) {
+        if (end - cursor < 3) {
+            ptn_abort_out_of_memory();
+        }
+        *cursor++ = 'l';
+        *cursor++ = 'l';
+    }
+    if (end - cursor < 2) {
+        ptn_abort_out_of_memory();
+    }
+    *cursor++ = conversion;
+    *cursor = '\0';
+}
+
+static void ptn_sprintf_append_snprintf_signed(PtnStringBuffer *buffer, const char *format, long long value) {
+    int needed = snprintf(NULL, 0, format, value);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *formatted = malloc((size_t)needed + 1);
+    if (formatted == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(formatted, (size_t)needed + 1, format, value);
+    if (written != needed) {
+        free(formatted);
+        ptn_abort_out_of_memory();
+    }
+    ptn_string_buffer_append_len(buffer, formatted, (size_t)needed);
+    free(formatted);
+}
+
+static void ptn_sprintf_append_snprintf_unsigned(PtnStringBuffer *buffer, const char *format, unsigned long long value) {
+    int needed = snprintf(NULL, 0, format, value);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *formatted = malloc((size_t)needed + 1);
+    if (formatted == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(formatted, (size_t)needed + 1, format, value);
+    if (written != needed) {
+        free(formatted);
+        ptn_abort_out_of_memory();
+    }
+    ptn_string_buffer_append_len(buffer, formatted, (size_t)needed);
+    free(formatted);
+}
+
+static void ptn_sprintf_append_snprintf_double(PtnStringBuffer *buffer, const char *format, double value) {
+    int needed = snprintf(NULL, 0, format, value);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *formatted = malloc((size_t)needed + 1);
+    if (formatted == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(formatted, (size_t)needed + 1, format, value);
+    if (written != needed) {
+        free(formatted);
+        ptn_abort_out_of_memory();
+    }
+    ptn_string_buffer_append_len(buffer, formatted, (size_t)needed);
+    free(formatted);
+}
+
+static void ptn_sprintf_append_string(PtnStringBuffer *buffer, PtnStringOperand string, const PtnSprintfSpec *spec) {
+    size_t len = string.len;
+    if (spec->has_precision && spec->precision >= 0 && (size_t)spec->precision < len) {
+        len = (size_t)spec->precision;
+    }
+    size_t width = spec->has_width && spec->width > 0 ? (size_t)spec->width : 0;
+    size_t padding = width > len ? width - len : 0;
+    if (!spec->left_adjust) {
+        ptn_sprintf_append_repeated(buffer, ' ', padding);
+    }
+    ptn_string_buffer_append_len(buffer, string.data, len);
+    if (spec->left_adjust) {
+        ptn_sprintf_append_repeated(buffer, ' ', padding);
+    }
+}
+
+static void ptn_sprintf_append_char(PtnStringBuffer *buffer, int64_t value, const PtnSprintfSpec *spec) {
+    size_t width = spec->has_width && spec->width > 0 ? (size_t)spec->width : 0;
+    size_t padding = width > 1 ? width - 1 : 0;
+    char pad = spec->zero_pad && !spec->left_adjust ? '0' : ' ';
+    if (!spec->left_adjust) {
+        ptn_sprintf_append_repeated(buffer, pad, padding);
+    }
+    ptn_string_buffer_append_char(buffer, (char)((unsigned char)value));
+    if (spec->left_adjust) {
+        ptn_sprintf_append_repeated(buffer, ' ', padding);
+    }
+}
+
+static void ptn_sprintf_append_binary(PtnStringBuffer *buffer, uint64_t value, const PtnSprintfSpec *spec) {
+    char digits[65];
+    size_t len = 0;
+    if (value == 0) {
+        digits[len++] = '0';
+    } else {
+        while (value != 0) {
+            digits[len++] = (value & 1) ? '1' : '0';
+            value >>= 1;
+        }
+        for (size_t i = 0; i < len / 2; i++) {
+            char tmp = digits[i];
+            digits[i] = digits[len - 1 - i];
+            digits[len - 1 - i] = tmp;
+        }
+    }
+
+    size_t precision_padding = 0;
+    if (spec->has_precision && spec->precision > 0 && (size_t)spec->precision > len) {
+        precision_padding = (size_t)spec->precision - len;
+    }
+    size_t value_len = len + precision_padding;
+    size_t width = spec->has_width && spec->width > 0 ? (size_t)spec->width : 0;
+    size_t width_padding = width > value_len ? width - value_len : 0;
+    char pad = spec->zero_pad && !spec->left_adjust && !spec->has_precision ? '0' : ' ';
+    if (!spec->left_adjust) {
+        ptn_sprintf_append_repeated(buffer, pad, width_padding);
+    }
+    ptn_sprintf_append_repeated(buffer, '0', precision_padding);
+    ptn_string_buffer_append_len(buffer, digits, len);
+    if (spec->left_adjust) {
+        ptn_sprintf_append_repeated(buffer, ' ', width_padding);
+    }
+}
+
+static void ptn_sprintf_throw_unknown_specifier(PtnRuntime *runtime, char specifier) {
+    char message[96];
+    int written = snprintf(message, sizeof(message), "Unknown format specifier \"%c\"", specifier);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static PtnValue ptn_internal_sprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "sprintf", 1, "format", args[0], line);
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t arg_index = 1;
+
+    for (size_t i = 0; i < format.len; i++) {
+        char byte = format.data[i];
+        if (byte != '%') {
+            ptn_string_buffer_append_char(&output, byte);
+            continue;
+        }
+        if (i + 1 < format.len && format.data[i + 1] == '%') {
+            ptn_string_buffer_append_char(&output, '%');
+            i++;
+            continue;
+        }
+
+        i++;
+        PtnSprintfSpec spec = {0};
+        while (i < format.len) {
+            switch (format.data[i]) {
+                case '-':
+                    spec.left_adjust = 1;
+                    i++;
+                    continue;
+                case '+':
+                    spec.show_sign = 1;
+                    i++;
+                    continue;
+                case ' ':
+                    spec.space_sign = 1;
+                    i++;
+                    continue;
+                case '0':
+                    spec.zero_pad = 1;
+                    i++;
+                    continue;
+                case '#':
+                    spec.alternate = 1;
+                    i++;
+                    continue;
+                default:
+                    break;
+            }
+            break;
+        }
+
+        if (i < format.len && isdigit((unsigned char)format.data[i])) {
+            spec.has_width = 1;
+            spec.width = ptn_sprintf_parse_decimal(format.data, format.len, &i);
+        }
+        if (i < format.len && format.data[i] == '.') {
+            i++;
+            spec.has_precision = 1;
+            spec.precision = ptn_sprintf_parse_decimal(format.data, format.len, &i);
+        }
+        while (i < format.len && strchr("hlLjzt", format.data[i]) != NULL) {
+            i++;
+        }
+        if (i >= format.len) {
+            ptn_string_operand_free(format);
+            free(output.data);
+            ptn_throw_exception(runtime, "ValueError", "Missing format specifier at end of string");
+        }
+
+        char conversion = format.data[i];
+        if (arg_index >= argc) {
+            ptn_string_operand_free(format);
+            free(output.data);
+            ptn_emit_argument_count_error(&runtime->diagnostics, "sprintf", arg_index + 1, argc);
+            exit(255);
+        }
+        PtnValue arg = args[arg_index++];
+
+        switch (conversion) {
+            case 's': {
+                PtnValue value = ptn_value_deref(arg);
+                if (value.type == PTN_ARRAY) {
+                    ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+                }
+                PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+                ptn_sprintf_append_string(&output, string, &spec);
+                ptn_string_operand_free(string);
+                break;
+            }
+            case 'c':
+                ptn_sprintf_append_char(&output, ptn_value_to_integer(arg), &spec);
+                break;
+            case 'b':
+                ptn_sprintf_append_binary(&output, (uint64_t)ptn_value_to_integer(arg), &spec);
+                break;
+            case 'd':
+            case 'i': {
+                char c_format[64];
+                ptn_sprintf_build_numeric_format(c_format, sizeof(c_format), &spec, conversion, 1);
+                ptn_sprintf_append_snprintf_signed(&output, c_format, (long long)ptn_value_to_integer(arg));
+                break;
+            }
+            case 'u':
+            case 'o':
+            case 'x':
+            case 'X': {
+                char c_format[64];
+                ptn_sprintf_build_numeric_format(c_format, sizeof(c_format), &spec, conversion, 1);
+                ptn_sprintf_append_snprintf_unsigned(&output, c_format, (unsigned long long)((uint64_t)ptn_value_to_integer(arg)));
+                break;
+            }
+            case 'f':
+            case 'F':
+            case 'e':
+            case 'E':
+            case 'g':
+            case 'G': {
+                char c_format[64];
+                ptn_sprintf_build_numeric_format(c_format, sizeof(c_format), &spec, conversion, 0);
+                ptn_sprintf_append_snprintf_double(&output, c_format, ptn_value_to_double(arg));
+                break;
+            }
+            default:
+                ptn_string_operand_free(format);
+                free(output.data);
+                ptn_sprintf_throw_unknown_specifier(runtime, conversion);
+        }
+    }
+
+    ptn_string_operand_free(format);
+    return ptn_owned_string_len(output.data, output.len);
 }
 
 static char *ptn_rot13_string(const char *string, size_t len) {
@@ -5270,6 +5659,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "highlight_file", 1, 2, ptn_internal_highlight_file },
         { "highlight_string", 1, 2, ptn_internal_highlight_string },
+        { "implode", 1, 2, ptn_internal_implode },
         { "in_array", 2, 3, ptn_internal_in_array },
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
@@ -5291,6 +5681,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_resource", 1, 1, ptn_internal_is_resource },
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
         { "is_string", 1, 1, ptn_internal_is_string },
+        { "join", 1, 2, ptn_internal_join },
         { "key", 1, 1, ptn_internal_key },
         { "ksort", 1, 1, ptn_internal_ksort },
         { "md5", 1, 2, ptn_internal_md5 },
@@ -5315,6 +5706,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
         { "soundex", 1, 1, ptn_internal_soundex },
+        { "sprintf", 1, PTN_VARIADIC_ARGS, ptn_internal_sprintf },
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "str_contains", 2, 2, ptn_internal_str_contains },
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
