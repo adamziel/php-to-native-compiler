@@ -518,8 +518,11 @@ supports in generated native binaries.
   `{}` offsets inside braced string interpolation report the current PHP
   unexpected-token parse error. Unsupported class members and class-constant
   fetch syntax are recognized and reported as class metadata boundaries.
-- Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
-  `$name--;`, and `--$name;`.
+- Direct variable increment/decrement over current boxed integer and float
+  values. Statement forms `$name++;`, `++$name;`, `$name--;`, and `--$name;`
+  write the updated value. Expression forms such as `++$name`, `$name++`,
+  `--$name`, and `$name--` return the PHP pre/post result value while applying
+  the same side effect.
 
 ## Not Yet Supported
 
@@ -532,8 +535,8 @@ supports in generated native binaries.
   invalid numeric-separator/radix diagnostic parity beyond invalid legacy
   octal integers, remaining unsupported grammar-site parse-error wording, and
   exact scalar cast overflow behavior.
-- Prefix and postfix increment/decrement operators such as `++$value` and
-  `--$value`.
+- Increment/decrement targets beyond direct variables, including array
+  offsets, properties, and static properties.
 - Keyword boolean tails after direct assignment statements, ternary expressions
   beyond the modeled nested associativity diagnostics, PHP-exact chained
   comparison parse errors, and complete comparison parity for unsupported value
@@ -550,11 +553,11 @@ supports in generated native binaries.
   including dynamic paths, include paths, missing-file warning/return behavior,
   `include_once`/`require_once`, declaration-bearing include files, and return
   inside unsupported function/class contexts.
-- Switch alternate syntax and exception/finally control-flow edges.
-- Increment/decrement as expressions, including pre/post result values in echo,
-  assignment, binary operands, function arguments, or branch conditions.
-- PHP-exact increment/decrement semantics for strings, booleans, arrays,
-  objects, references, copy-on-write, overflow edge cases, and diagnostics.
+- Switch alternate syntax and switch behavior for arrays, objects, references,
+  copy-on-write, and exceptions.
+- PHP-exact increment/decrement semantics for null, booleans, strings, arrays,
+  objects, references, copy-on-write, and diagnostics beyond the current
+  integer/float direct-variable expression slice.
 - Inline HTML before `<?php` or between PHP blocks.
 - Remaining complex string interpolation forms, including object/property
   interpolation, variable variables, arbitrary expressions/calls, append

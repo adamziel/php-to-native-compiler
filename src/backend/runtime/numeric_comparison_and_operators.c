@@ -693,28 +693,32 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
     return ptn_int(left_integer % right_integer);
 }
 
-static PTN_UNUSED PtnValue ptn_increment(PtnValue value) {
+static PTN_UNUSED void ptn_abort_increment_decrement_numeric_boundary(void) {
+    ptn_abort_arithmetic_error("Increment/decrement currently supports only int and float values");
+}
+
+static PTN_UNUSED PtnValue ptn_increment_numeric(PtnValue value) {
     value = ptn_value_deref(value);
-    int64_t integer = 0;
-    if (ptn_fast_integer_value(value, &integer)) {
-        return ptn_add_integers(integer, 1);
+    if (value.type == PTN_INT) {
+        return ptn_add_integers(value.as.integer, 1);
     }
     if (value.type == PTN_FLOAT) {
         return ptn_float(value.as.floating + 1.0);
     }
-    return ptn_add(value, ptn_int(1));
+    ptn_abort_increment_decrement_numeric_boundary();
+    return ptn_null();
 }
 
-static PTN_UNUSED PtnValue ptn_decrement(PtnValue value) {
+static PTN_UNUSED PtnValue ptn_decrement_numeric(PtnValue value) {
     value = ptn_value_deref(value);
-    int64_t integer = 0;
-    if (ptn_fast_integer_value(value, &integer)) {
-        return ptn_subtract_integers(integer, 1);
+    if (value.type == PTN_INT) {
+        return ptn_subtract_integers(value.as.integer, 1);
     }
     if (value.type == PTN_FLOAT) {
         return ptn_float(value.as.floating - 1.0);
     }
-    return ptn_subtract(value, ptn_int(1));
+    ptn_abort_increment_decrement_numeric_boundary();
+    return ptn_null();
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_string_and(PtnStringOperand left, PtnStringOperand right) {

@@ -337,6 +337,7 @@ impl IncludeCollector {
             | Expr::Bool(_, _)
             | Expr::Null(_)
             | Expr::Variable(_, _)
+            | Expr::IncDec { .. }
             | Expr::Constant(_, _)
             | Expr::MagicConstant(_, _)
             | Expr::StaticPropertyFetch { .. } => Ok(()),

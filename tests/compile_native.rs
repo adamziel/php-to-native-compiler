@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
-    IncludeKind, ListAssignmentElementTarget, MagicConstantKind, ReferenceTarget, Statement,
-    StringInterpolationIndex, StringPart, TypeHint, UnaryOp, UnsetTarget,
+    IncDecResult, IncludeKind, ListAssignmentElementTarget, MagicConstantKind, ReferenceTarget,
+    Statement, StringInterpolationIndex, StringPart, TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -599,16 +599,71 @@ fn parser_accepts_include_expression_contexts() {
 }
 
 #[test]
-fn parser_rejects_increment_and_decrement_expression_contexts() {
-    let increment = parser::parse("<?php echo ++$value;").unwrap_err();
-    assert!(increment.message.contains("expected expression"));
+fn parser_accepts_direct_variable_increment_and_decrement_expression_contexts() {
+    let program =
+        parser::parse("<?php echo ++$value, $value--; $after = --$value + $value++;").unwrap();
 
-    let decrement = parser::parse("<?php echo $value--;").unwrap_err();
-    assert_eq!(decrement.message, "syntax error, unexpected token \"--\"");
-    assert_eq!(decrement.kind, DiagnosticKind::ParseError);
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::IncDec {
+            name,
+            op: IncDecOp::Increment,
+            result: IncDecResult::Pre,
+            ..
+        } if name == "value"
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::IncDec {
+            name,
+            op: IncDecOp::Decrement,
+            result: IncDecResult::Post,
+            ..
+        } if name == "value"
+    ));
 
-    let invalid_prefix = parser::parse("<?php ++1;").unwrap_err();
-    assert!(invalid_prefix.message.contains("expected variable"));
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected assignment statement");
+    };
+    assert!(matches!(
+        value,
+        Expr::Binary {
+            op: BinaryOp::Add,
+            left,
+            right,
+            ..
+        } if matches!(
+            left.as_ref(),
+            Expr::IncDec {
+                op: IncDecOp::Decrement,
+                result: IncDecResult::Pre,
+                ..
+            }
+        ) && matches!(
+            right.as_ref(),
+            Expr::IncDec {
+                op: IncDecOp::Increment,
+                result: IncDecResult::Post,
+                ..
+            }
+        )
+    ));
+}
+
+#[test]
+fn parser_rejects_non_variable_increment_and_decrement_expression_targets() {
+    let invalid_prefix = parser::parse("<?php echo ++1;").unwrap_err();
+    assert!(invalid_prefix
+        .message
+        .contains("increment/decrement expression target must be a variable"));
+
+    let invalid_postfix = parser::parse("<?php echo $items[0]++;").unwrap_err();
+    assert!(invalid_postfix
+        .message
+        .contains("increment/decrement expression target must be a variable"));
 }
 
 #[test]
@@ -10736,6 +10791,29 @@ fn compile_prefix_increment_and_decrement_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2 3 2 1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_increment_and_decrement_expression_results_to_native_binary() {
+    let root = temp_dir("ptn-native-inc-dec-expression-results");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inc-dec-expression-results.php");
+    let output = root.join("inc-dec-expression-results-bin");
+    fs::write(
+        &input,
+        "<?php $value = 1; echo ++$value, ':', $value, \"\\n\"; $old = $value++; echo $old, ':', $value, \"\\n\"; $new = --$value; echo $new, ':', $value, \"\\n\"; echo $value--, ':', $value, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2:2\n2:3\n2:2\n2:1\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

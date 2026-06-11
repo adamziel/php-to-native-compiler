@@ -78,9 +78,11 @@ Current runtime/compiler slices:
   and the existing boxed concat helper. Object/property interpolation,
   variable-variable interpolation, and arbitrary expressions remain outside
   this slice.
-- Increment/decrement expression contexts are rejected while full PHP
-  pre/post-increment value semantics are unsupported, so statement-form direct
-  variable support is not confused with expression result behavior.
+- Direct-variable increment/decrement expression contexts lower to value
+  expressions over the boxed numeric runtime helper. Prefix forms return the
+  updated value, postfix forms return a cloned old value, and both write the
+  side effect back through the runtime variable table. Non-variable targets and
+  full non-numeric PHP value semantics remain outside this slice.
 - Scalar comparison and boolean expressions share the same AST/IR binary node
   shape. Comparisons emit boxed booleans through runtime helpers, while `&&`
   and `||` emit native C branches that short-circuit over boxed PHP truthiness.
@@ -182,9 +184,11 @@ Current runtime/compiler slices:
   statement tree and reports source-spanned fatals for `goto` targets that are
   not defined or labels that are repeated before the backend emits generated
   labels.
-- Statement-form direct variable increment/decrement lowers to a runtime read,
-  boxed numeric increment/decrement helper, and runtime write. Expression-value
-  semantics for pre/post increment remain outside this slice.
+- Statement-form and expression-form direct variable increment/decrement lower
+  to a runtime read, boxed integer/float increment/decrement helper, and
+  runtime write. Expression form additionally preserves PHP pre/post result
+  timing by returning the new value for prefix and a cloned old value for
+  postfix.
 - Top-level class metadata carries declared methods and public static property
   declarations. Static property defaults use the supported constant-expression
   subset and initialize declaration-backed slots in a runtime-owned static
@@ -233,7 +237,8 @@ Near-term architecture targets:
   by-reference/destructuring/object `foreach`, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics, and
   exception/finally edges.
-- Full PHP increment/decrement semantics, including expression result values,
-  strings, booleans, arrays/objects, references, and copy-on-write behavior.
+- Full PHP increment/decrement semantics for null, booleans, strings,
+  arrays/objects, non-direct-variable targets, references, and copy-on-write
+  behavior.
 - Explicit fallback boundaries for `eval`, broader runtime-generated symbols,
   and runtime symbol mutation beyond scalar variable-variable names.

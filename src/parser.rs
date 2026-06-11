@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClosureUseCapture,
-    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, IncludeKind,
+    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncludeKind,
     ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
     MethodDecl, Program, ReferenceTarget, Statement, StaticPropertyDecl, StringInterpolationIndex,
     StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
@@ -1513,6 +1513,7 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_expr(),
             TokenKind::Print => self.parse_print_expr(),
             TokenKind::Include => self.parse_include_expr(IncludeKind::Include),
             TokenKind::Require => self.parse_include_expr(IncludeKind::Require),
@@ -1577,6 +1578,28 @@ impl Parser {
         })
     }
 
+    fn parse_prefix_increment_expr(&mut self) -> Result<Expr> {
+        let op_token = self.advance().clone();
+        let op = match op_token.kind {
+            TokenKind::PlusPlus => IncDecOp::Increment,
+            TokenKind::MinusMinus => IncDecOp::Decrement,
+            _ => return Err(Diagnostic::new("expected increment", Some(op_token.span))),
+        };
+        let variable = self.advance().clone();
+        let TokenKind::Variable(name) = variable.kind else {
+            return Err(Diagnostic::new(
+                "increment/decrement expression target must be a variable",
+                Some(variable.span),
+            ));
+        };
+        Ok(Expr::IncDec {
+            name,
+            op,
+            result: IncDecResult::Pre,
+            span: combine_spans(op_token.span, variable.span),
+        })
+    }
+
     fn parse_postfix_expr(&mut self) -> Result<Expr> {
         let mut expr = self.parse_primary_expr()?;
         loop {
@@ -1635,6 +1658,28 @@ impl Parser {
                         CLASS_CONSTANT_FETCH_UNSUPPORTED,
                         Some(scope_span),
                     ));
+                }
+                TokenKind::PlusPlus | TokenKind::MinusMinus => {
+                    let op_token = self.advance().clone();
+                    let op = match op_token.kind {
+                        TokenKind::PlusPlus => IncDecOp::Increment,
+                        TokenKind::MinusMinus => IncDecOp::Decrement,
+                        _ => {
+                            return Err(Diagnostic::new("expected increment", Some(op_token.span)));
+                        }
+                    };
+                    let Expr::Variable(name, variable_span) = expr else {
+                        return Err(Diagnostic::new(
+                            "increment/decrement expression target must be a variable",
+                            Some(op_token.span),
+                        ));
+                    };
+                    expr = Expr::IncDec {
+                        name,
+                        op,
+                        result: IncDecResult::Post,
+                        span: combine_spans(variable_span, op_token.span),
+                    };
                 }
                 _ => break,
             }
@@ -2862,6 +2907,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::Null(_)
         | Expr::Variable(_, _)
         | Expr::AnonymousFunction(_)
+        | Expr::IncDec { .. }
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _)
         | Expr::Call { .. }
@@ -3176,6 +3222,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         | Expr::Bool(_, _)
         | Expr::Null(_)
         | Expr::Variable(_, _)
+        | Expr::IncDec { .. }
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _) => {}
     }
@@ -4079,6 +4126,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::Bool(_, _)
         | Expr::Null(_)
         | Expr::Variable(_, _)
+        | Expr::IncDec { .. }
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _) => {}
     }
@@ -4141,6 +4189,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         Expr::InterpolatedString(_, _)
         | Expr::Variable(_, _)
         | Expr::DynamicVariable { .. }
+        | Expr::IncDec { .. }
         | Expr::Assign { .. }
         | Expr::AssignRef { .. }
         | Expr::Print { .. }

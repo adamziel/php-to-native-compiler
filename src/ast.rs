@@ -314,6 +314,12 @@ pub enum IncDecOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncDecResult {
+    Pre,
+    Post,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncludeKind {
     Include,
     Require,
@@ -333,6 +339,12 @@ pub enum Expr {
         span: SourceSpan,
     },
     AnonymousFunction(AnonymousFunction),
+    IncDec {
+        name: String,
+        op: IncDecOp,
+        result: IncDecResult,
+        span: SourceSpan,
+    },
     Assign {
         target: AssignmentTarget,
         op: AssignmentOp,
@@ -522,6 +534,7 @@ impl Expr {
             | Expr::Constant(_, span)
             | Expr::MagicConstant(_, span) => *span,
             Expr::AnonymousFunction(function) => function.span,
+            Expr::IncDec { span, .. } => *span,
             Expr::Assign { span, .. } | Expr::AssignRef { span, .. } => *span,
             Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }

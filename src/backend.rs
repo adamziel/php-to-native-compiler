@@ -10,7 +10,7 @@ use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
-    FunctionParameter, IncDecOp, IncludeFile, Instruction, ListAssignmentElement,
+    FunctionParameter, IncDecOp, IncDecResult, IncludeFile, Instruction, ListAssignmentElement,
     ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind, Module, ReferenceTarget,
     TypeHint, UnaryOp, ValueExpr,
 };
@@ -1138,8 +1138,8 @@ fn emit_instruction(
             out.push_str(&result_temp);
             out.push_str(" = ");
             out.push_str(match op {
-                IncDecOp::Increment => "ptn_increment",
-                IncDecOp::Decrement => "ptn_decrement",
+                IncDecOp::Increment => "ptn_increment_numeric",
+                IncDecOp::Decrement => "ptn_decrement_numeric",
             });
             out.push('(');
             out.push_str(&current_temp);
@@ -2058,6 +2058,7 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Null
         | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
+        | ValueExpr::IncDec { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => {}
         ValueExpr::DynamicVariable { name, .. } => {
@@ -2722,6 +2723,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
     match value {
         ValueExpr::Load { name: target, .. } => target == name,
         ValueExpr::DynamicVariable { name: target, .. } => value_mentions_variable(target, name),
+        ValueExpr::IncDec { name: target, .. } => target == name,
         ValueExpr::Assign { target, value, .. } => {
             assignment_target_mentions_variable(target, name)
                 || value_mentions_variable(value, name)
@@ -3781,6 +3783,12 @@ impl ValueEmitter {
             ValueExpr::DynamicVariable { name, line } => {
                 self.emit_dynamic_variable_read(out, name, *line)
             }
+            ValueExpr::IncDec {
+                name,
+                op,
+                result,
+                line,
+            } => self.emit_inc_dec_expression(out, name, *op, *result, *line),
             ValueExpr::Constant(name) => {
                 format!("ptn_read_constant(&runtime, \"{}\")", c_string(name))
             }
@@ -3841,6 +3849,63 @@ impl ValueEmitter {
                 argument_names,
                 line,
             } => self.emit_method_call(out, receiver, name, arguments, argument_names, *line),
+        }
+    }
+
+    fn emit_inc_dec_expression(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        op: IncDecOp,
+        result: IncDecResult,
+        line: usize,
+    ) -> String {
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let old_temp = if matches!(result, IncDecResult::Post) {
+            let old_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&old_temp);
+            out.push_str(" = ptn_value_clone(ptn_value_deref(");
+            out.push_str(&current_temp);
+            out.push_str("));\n");
+            Some(old_temp)
+        } else {
+            None
+        };
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(match op {
+            IncDecOp::Increment => "ptn_increment_numeric",
+            IncDecOp::Decrement => "ptn_decrement_numeric",
+        });
+        out.push('(');
+        out.push_str(&current_temp);
+        out.push_str(");\n");
+        out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&result_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &current_temp);
+
+        if let Some(old_temp) = old_temp {
+            emit_value_cleanup(out, "    ", &result_temp);
+            old_temp
+        } else {
+            result_temp
         }
     }
 
@@ -4859,6 +4924,7 @@ impl ValueEmitter {
             ValueExpr::Binary { .. }
                 | ValueExpr::Assign { .. }
                 | ValueExpr::AssignRef { .. }
+                | ValueExpr::IncDec { .. }
                 | ValueExpr::InternalCall { .. }
                 | ValueExpr::DynamicCall { .. }
                 | ValueExpr::Unary { .. }

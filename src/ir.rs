@@ -6,7 +6,8 @@ use crate::ast::{
     AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
     CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
     ClosureUseCapture as AstClosureUseCapture, Expr, FunctionParameter as AstFunctionParameter,
-    IncDecOp as AstIncDecOp, ListAssignmentElement as AstListAssignmentElement,
+    IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult,
+    ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
     Program, ReferenceTarget as AstReferenceTarget, Statement,
@@ -226,6 +227,12 @@ pub enum ValueExpr {
     },
     DynamicVariable {
         name: Box<ValueExpr>,
+        line: usize,
+    },
+    IncDec {
+        name: String,
+        op: IncDecOp,
+        result: IncDecResult,
         line: usize,
     },
     Assign {
@@ -458,6 +465,12 @@ pub enum MagicConstantKind {
 pub enum IncDecOp {
     Increment,
     Decrement,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncDecResult {
+    Pre,
+    Post,
 }
 
 pub fn lower(program: &Program) -> Module {
@@ -1209,6 +1222,17 @@ impl<'a> LoweringContext<'a> {
                 line: span.line,
             },
             Expr::AnonymousFunction(function) => self.lower_anonymous_function(function),
+            Expr::IncDec {
+                name,
+                op,
+                result,
+                span,
+            } => ValueExpr::IncDec {
+                name: name.clone(),
+                op: lower_inc_dec_op(*op),
+                result: lower_inc_dec_result(*result),
+                line: span.line,
+            },
             Expr::Assign {
                 target, op, value, ..
             } => {
@@ -1491,6 +1515,13 @@ fn lower_inc_dec_op(op: AstIncDecOp) -> IncDecOp {
     match op {
         AstIncDecOp::Increment => IncDecOp::Increment,
         AstIncDecOp::Decrement => IncDecOp::Decrement,
+    }
+}
+
+fn lower_inc_dec_result(result: AstIncDecResult) -> IncDecResult {
+    match result {
+        AstIncDecResult::Pre => IncDecResult::Pre,
+        AstIncDecResult::Post => IncDecResult::Post,
     }
 }
 
