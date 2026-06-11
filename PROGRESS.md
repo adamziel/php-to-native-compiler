@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T18:14Z
-Measured: `ptn-lrty.9` rebased on `origin/master` at `7ee3242a9`.
+Refresh: 2026-06-11T18:24Z
+Measured: `ptn-wk0a` rebased on `origin/master` at `b1d3b2070`.
 `array_column()` support is integrated. `array_filter()` rejects unknown mode
 values with the modeled PHP `ValueError`. Foreach non-array diagnostics spell
 boolean operands as `false given` or `true given`. Shared deprecation
@@ -19,7 +19,10 @@ single-offset assign-op from nested string-offset-as-array access, and
 `Zend/tests/offset_assign.phpt` now passes. Public `__call` fallback is wired
 for missing direct object methods and supported object callable dispatch, and
 `is_callable()` validates the current string, closure, static-array, and
-object-array callable subset.
+object-array callable subset. `phpc -d precision=N` now drives scalar float
+stringification for generated native execution; exact `strlen.phpt` no longer
+has the float-length diff but still fails on object `__toString` and
+interpolation diagnostic ordering.
 
 ## RC Surface
 
@@ -33,8 +36,9 @@ public property writes/`??=`, inherited public methods, public constructor
 dispatch, diagnostic filtering, catchable arithmetic `TypeError` boundaries,
 string-internal argument `TypeError` boundaries, inline HTML output across PHP
 blocks, nested string-offset assign-op diagnostics, public `__call` fallback
-for object calls/callables, `is_callable()` subset validation, plain
-heredoc/nowdoc literals, and string interpolation slices.
+for object calls/callables, `is_callable()` subset validation, `phpc -d
+precision=N` scalar float stringification, plain heredoc/nowdoc literals, and
+string interpolation slices.
 
 The RC demo corpus exercises scalar control flow, string internals, arrays plus
 `array_combine`, `array_filter`, and `array_chunk`, top-level functions, public
@@ -45,7 +49,7 @@ class/object shells, direct static properties, and public property `??=`.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 459 | 459 | 0 |
+| Native/compiler Rust suite | 460 | 460 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 180 | 20 |
 | PHPT Zend rows | 76 | 73 | 3 |
@@ -62,7 +66,7 @@ class/object shells, direct static properties, and public property `??=`.
   TypeError handling and `offset_assign` coverage.
 - `ptn-lrty.3`: 6 array-internal rows; `array_column` is now covered.
 - `ptn-lrty.4`: 4 string/output rows remain; shared string-argument TypeErrors
-  are covered, while full `strlen` still needs `__toString`, float precision,
+  and float precision are covered, while full `strlen` still needs `__toString`
   and legacy interpolation diagnostic-order parity.
 - `ptn-lrty.6` plus `ptn-r52`: 2 control-flow/foreach/lang rows remain after
   `foreachLoop.003.phpt` is covered; `tests/lang/024.phpt` now reaches the
@@ -88,11 +92,11 @@ Evidence: bounded `summary-20260611T173953Z.txt` (180/200), COW PHPT
 `summary-20260611T160936Z.txt` (29/29), callback
 `summary-20260611T161926Z.txt` (2/2), native smoke, and post-merge COW gate.
 `ptn-qhla`, `ptn-en6v`, `ptn-dzgg`, `ptn-p0y1`, `ptn-lrty.8`, `ptn-29og`,
-`ptn-lrty.6`, `ptn-lrty.4`, `ptn-lrty.5`, and `ptn-lrty.9` add the current
-array, foreach, deprecation, constructor, arithmetic, inline-HTML,
-string-diagnostic, string-offset diagnostic, magic-callable, and
-`is_callable()` rows. Focused `ptn-lrty.9` verification covers
-`compile_magic_call_object_callables_to_native_binary`,
-`compile_is_callable_object_callable_subset_to_native_binary`, and the 2/2
-callback PHPT manifest; final gates cover `cargo fmt --check`,
-`git diff --check`, `cargo test`, native smoke matrix, and post-merge COW gate.
+`ptn-lrty.6`, `ptn-lrty.4`, `ptn-lrty.5`, `ptn-lrty.9`, and `ptn-wk0a` add
+the current array, foreach, deprecation, constructor, arithmetic, inline-HTML,
+string-diagnostic, string-offset diagnostic, magic-callable, `is_callable()`,
+and float-precision rows. Focused `ptn-wk0a` verification covers
+`phpc_precision_ini_controls_scalar_float_stringification`,
+`compile_strlen_expression_to_native_binary`, and exact `strlen.phpt` residual
+diffs; final gates cover `cargo fmt --check`, `git diff --check`,
+`cargo test`, native smoke matrix, and post-merge COW gate.

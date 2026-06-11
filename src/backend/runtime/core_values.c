@@ -48,6 +48,7 @@
 #define PTN_E_ALL 32767
 #define PTN_ARRAY_FILTER_USE_BOTH 1
 #define PTN_ARRAY_FILTER_USE_KEY 2
+#define PTN_DEFAULT_PRECISION 14
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnClosure PtnClosure;
@@ -323,6 +324,31 @@ typedef struct {
 } PtnInternalFunction;
 
 #define PTN_VARIADIC_ARGS ((size_t)-1)
+
+static PTN_UNUSED int ptn_float_precision(void) {
+    static int initialized = 0;
+    static int precision = PTN_DEFAULT_PRECISION;
+    if (!initialized) {
+        const char *configured = getenv("PTN_PHP_PRECISION");
+        if (configured != NULL && configured[0] != '\0') {
+            char *end = NULL;
+            errno = 0;
+            long parsed = strtol(configured, &end, 10);
+            if (errno == 0 && end != configured && *end == '\0' && parsed >= 0 && parsed <= 53) {
+                precision = (int)parsed;
+            }
+        }
+        initialized = 1;
+    }
+    return precision;
+}
+
+static PTN_UNUSED void ptn_format_scalar_float(double value, char *buffer, size_t buffer_size) {
+    int written = snprintf(buffer, buffer_size, "%.*g", ptn_float_precision(), value);
+    if (written < 0 || (size_t)written >= buffer_size) {
+        ptn_abort_out_of_memory();
+    }
+}
 
 static PTN_UNUSED PtnValue ptn_null(void) {
     PtnValue value;

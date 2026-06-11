@@ -138,7 +138,8 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             written = snprintf(buffer, sizeof(buffer), "%lld", (long long)value.as.integer);
             break;
         case PTN_FLOAT:
-            written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
+            ptn_format_scalar_float(value.as.floating, buffer, sizeof(buffer));
+            written = (int)strlen(buffer);
             break;
         case PTN_STRING:
             return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
@@ -273,7 +274,8 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
             written = snprintf(buffer, sizeof(buffer), "%lld", (long long)value.as.integer);
             break;
         case PTN_FLOAT:
-            written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
+            ptn_format_scalar_float(value.as.floating, buffer, sizeof(buffer));
+            written = (int)strlen(buffer);
             break;
         case PTN_STRING:
             return ptn_string_operand_borrowed_len((const char *)value.as.string.data, value.as.string.len);

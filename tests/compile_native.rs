@@ -11026,6 +11026,32 @@ fn phpc_run_alias_executes_compiled_native_binary() {
 }
 
 #[test]
+fn phpc_precision_ini_controls_scalar_float_stringification() {
+    let root = temp_dir("ptn-phpc-precision-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("precision-ini.php");
+    fs::write(
+        &input,
+        "<?php echo strlen(10.55555555555555555555555555), \" \", strlen(10.55555555595555555555555555), \" \", 10.55555555555555555555555555, \" \", 10.55555555595555555555555555, \"\\n\";",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("precision=12")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "13 12 10.5555555556 10.555555556\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_if_elseif_else_to_native_binary() {
     let root = temp_dir("ptn-native-if-elseif-else");
     fs::create_dir_all(&root).unwrap();

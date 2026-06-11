@@ -24,7 +24,7 @@ fn run() -> Result<i32, PhpcError> {
             Ok(0)
         }
         Mode::Modules => Ok(0),
-        Mode::Script { script, args } => compile_and_run(&script, &args),
+        Mode::Script { script, args } => compile_and_run(&script, &args, invocation.precision),
         Mode::Inline { source } => {
             let temp = TempPath::new("ptn-phpc-inline", "php");
             let source = if source.trim_start().starts_with("<?") {
@@ -34,7 +34,7 @@ fn run() -> Result<i32, PhpcError> {
             };
             fs::write(temp.path(), source)
                 .map_err(|error| format!("failed to write inline source: {error}"))?;
-            compile_and_run(temp.path(), &[])
+            compile_and_run(temp.path(), &[], invocation.precision)
         }
     }
 }
@@ -79,6 +79,7 @@ impl From<String> for PhpcError {
 #[derive(Debug)]
 struct Invocation {
     mode: Mode,
+    precision: Option<u8>,
 }
 
 #[derive(Debug)]
@@ -97,6 +98,7 @@ impl Invocation {
         let mut args = args.into_iter().peekable();
         let mut script = None;
         let mut script_args = Vec::new();
+        let mut precision = None;
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -104,14 +106,22 @@ impl Invocation {
                 "-v" | "--version" => {
                     return Ok(Self {
                         mode: Mode::Version,
+                        precision,
                     });
                 }
                 "-m" => {
                     return Ok(Self {
                         mode: Mode::Modules,
+                        precision,
                     });
                 }
-                "-d" | "-c" => {
+                "-d" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| format!("missing value for {arg}"))?;
+                    apply_ini_setting(&value, &mut precision);
+                }
+                "-c" => {
                     args.next()
                         .ok_or_else(|| format!("missing value for {arg}"))?;
                 }
@@ -128,6 +138,7 @@ impl Invocation {
                         .ok_or_else(|| "missing inline source for -r".to_string())?;
                     return Ok(Self {
                         mode: Mode::Inline { source },
+                        precision,
                     });
                 }
                 "run" if script.is_none() => {
@@ -145,7 +156,10 @@ impl Invocation {
                     }
                     break;
                 }
-                _ if arg.starts_with("-d") || arg.starts_with("-c") => {}
+                _ if let Some(value) = arg.strip_prefix("-d") => {
+                    apply_ini_setting(value, &mut precision);
+                }
+                _ if arg.starts_with("-c") => {}
                 _ if arg.starts_with('-') => {}
                 _ => {
                     script = Some(PathBuf::from(arg));
@@ -161,11 +175,29 @@ impl Invocation {
                 script,
                 args: script_args,
             },
+            precision,
         })
     }
 }
 
-fn compile_and_run(script: &Path, args: &[String]) -> Result<i32, PhpcError> {
+fn apply_ini_setting(value: &str, precision: &mut Option<u8>) {
+    let Some((name, raw_value)) = value.split_once('=') else {
+        return;
+    };
+    if name.trim().eq_ignore_ascii_case("precision") {
+        if let Ok(parsed) = raw_value.trim().parse::<u8>() {
+            if parsed <= 53 {
+                *precision = Some(parsed);
+            }
+        }
+    }
+}
+
+fn compile_and_run(
+    script: &Path,
+    args: &[String],
+    precision: Option<u8>,
+) -> Result<i32, PhpcError> {
     let native = TempPath::new("ptn-phpc-native", "bin");
     compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
         if error.span.is_some() {
@@ -178,8 +210,12 @@ fn compile_and_run(script: &Path, args: &[String]) -> Result<i32, PhpcError> {
         }
     })?;
 
-    let status = Command::new(native.path())
-        .args(args)
+    let mut command = Command::new(native.path());
+    command.args(args);
+    if let Some(precision) = precision {
+        command.env("PTN_PHP_PRECISION", precision.to_string());
+    }
+    let status = command
         .status()
         .map_err(|error| PhpcError::Message(format!("failed to run native binary: {error}")))?;
     Ok(status.code().unwrap_or(255))

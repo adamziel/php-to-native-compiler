@@ -139,6 +139,11 @@ Post-RC architecture remains explicit rather than hidden:
 - Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
   non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts over
   supported boxed scalar values.
+- `phpc -d precision=N` accepts bounded integer precision values for generated
+  native execution. Scalar float stringification for echo, string casts,
+  concatenation, string internals such as `strlen()`, and `print_r()` uses that
+  precision, defaulting to PHP's current 14 significant-digit boundary when the
+  setting is absent.
 - Removed `(real)` cast syntax is rejected with a source-spanned PHP-style
   parse error through `phpc`.
 - Removed `(unset)` cast syntax is rejected with a source-spanned PHP-style
