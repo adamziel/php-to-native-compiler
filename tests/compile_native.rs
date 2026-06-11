@@ -15136,19 +15136,25 @@ var_dump($object);
 }
 
 #[test]
-fn compile_minimal_file_resources_to_native_binary() {
-    let root = temp_dir("ptn-native-file-resources");
+fn compile_stream_resources_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-resources");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("file-resources.php");
-    let output = root.join("file-resources-bin");
+    let data = root.join("payload.txt");
+    fs::write(&data, "payload").unwrap();
+    let input = root.join("stream-resources.php");
+    let output = root.join("stream-resources-bin");
+    let data_path = data.to_string_lossy();
     fs::write(
         &input,
-        "<?php\n\
-$fp = fopen(__FILE__, \"r\");\n\
-var_dump(gettype($fp));\n\
-var_dump(is_resource($fp));\n\
-var_dump(array_key_exists($fp, [\"key\" => \"value\"]));\n\
-var_dump(fclose($fp));",
+        format!(
+            "<?php\n\
+$fp = fopen(\"{}\", \"r\");\n\
+var_dump(gettype($fp), is_resource($fp), function_exists(\"fopen\"), function_exists(\"fclose\"), function_exists(\"is_resource\"));\n\
+var_dump($fp);\n\
+var_dump(array_key_exists($fp, [2 => \"no\"]));\n\
+var_dump(fclose($fp), is_resource($fp), gettype($fp));",
+            data_path
+        ),
     )
     .unwrap();
 
@@ -15158,9 +15164,39 @@ var_dump(fclose($fp));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(8) \"resource\"\nbool(true)\n\nWarning: Resource ID#5 used as offset, casting to integer (5) in ptn on line 5\nbool(false)\nbool(true)\n"
+        "string(8) \"resource\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+resource(5) of type (stream)\n\
+\n\
+Warning: Resource ID#5 used as offset, casting to integer (5) in ptn on line 5\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+string(17) \"resource (closed)\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn unsupported_internal_functions_fail_in_generated_runtime() {
+    let root = temp_dir("ptn-native-unsupported-internal-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unsupported-internal-function.php");
+    let output = root.join("unsupported-internal-function-bin");
+    fs::write(&input, "<?php definitely_missing_internal();").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Fatal error: Call to undefined function definitely_missing_internal()\n"
+    );
 }
 
 #[test]

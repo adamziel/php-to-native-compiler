@@ -49,6 +49,8 @@ expected rows, or one-off outputs.
   default messages for direct calls.
 - `ksort()` and `shuffle()` mutate direct variable arrays through the shared
   ordered-array COW path, and `str_shuffle()` shuffles scalar strings by byte.
+- Basic stream resources from `fopen()`/`fclose()` are boxed runtime values with
+  `gettype()`, `is_resource()`, `var_dump()`, and array-key cast behavior.
 - Bounded PHPT telemetry from a php-src checkout resolved by `PHP_SRC_PHPT`,
   `/home/claude/php-src-phpt`, or the `.runtime/php-src-phpt` cache.
 

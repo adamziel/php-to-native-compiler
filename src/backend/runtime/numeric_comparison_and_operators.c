@@ -109,8 +109,6 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
                 return ptn_compare_numbers(left.as.floating, right.as.floating) == PTN_COMPARE_EQUAL;
             case PTN_STRING:
                 return ptn_compare_strings_loose(left.as.string, right.as.string) == PTN_COMPARE_EQUAL;
-            case PTN_RESOURCE:
-                return left.as.resource_id == right.as.resource_id;
             case PTN_ARRAY:
                 return ptn_compare_arrays_equal(left.as.array, right.as.array);
             case PTN_OBJECT:
@@ -119,6 +117,8 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
                 return left.as.closure == right.as.closure;
             case PTN_EXCEPTION:
                 return left.as.exception == right.as.exception;
+            case PTN_RESOURCE:
+                return left.as.resource == right.as.resource;
             case PTN_REFERENCE:
                 return 0;
         }
@@ -143,14 +143,14 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
                 return other.as.floating == 0.0;
             case PTN_STRING:
                 return other.as.string.len == 0;
-            case PTN_RESOURCE:
-                return other.as.resource_id == 0;
             case PTN_ARRAY:
                 return other.as.array->len == 0;
             case PTN_OBJECT:
             case PTN_CLOSURE:
                 return 0;
             case PTN_EXCEPTION:
+                return 0;
+            case PTN_RESOURCE:
                 return 0;
             case PTN_REFERENCE:
                 return 0;
@@ -195,8 +195,6 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
             return left.as.floating == right.as.floating;
         case PTN_STRING:
             return ptn_compare_value_strings(left.as.string, right.as.string) == PTN_COMPARE_EQUAL;
-        case PTN_RESOURCE:
-            return left.as.resource_id == right.as.resource_id;
         case PTN_ARRAY:
             if (left.as.array == right.as.array) {
                 return 1;
@@ -208,6 +206,8 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
             return left.as.closure == right.as.closure;
         case PTN_EXCEPTION:
             return left.as.exception == right.as.exception;
+        case PTN_RESOURCE:
+            return left.as.resource == right.as.resource;
         case PTN_REFERENCE:
             return 0;
     }
@@ -231,8 +231,6 @@ static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right) {
             return left.as.floating != right.as.floating;
         case PTN_STRING:
             return ptn_compare_value_strings(left.as.string, right.as.string) != PTN_COMPARE_EQUAL;
-        case PTN_RESOURCE:
-            return left.as.resource_id != right.as.resource_id;
         case PTN_ARRAY:
             if (left.as.array == right.as.array) {
                 return 0;
@@ -244,6 +242,8 @@ static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right) {
             return left.as.closure != right.as.closure;
         case PTN_EXCEPTION:
             return left.as.exception != right.as.exception;
+        case PTN_RESOURCE:
+            return left.as.resource != right.as.resource;
         case PTN_REFERENCE:
             return 1;
     }
@@ -270,8 +270,6 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
                 return ptn_compare_numbers(left.as.floating, right.as.floating);
             case PTN_STRING:
                 return ptn_compare_strings_loose(left.as.string, right.as.string);
-            case PTN_RESOURCE:
-                return ptn_compare_integers(left.as.resource_id, right.as.resource_id);
             case PTN_ARRAY:
                 return ptn_compare_arrays_order(left.as.array, right.as.array);
             case PTN_OBJECT:
@@ -280,6 +278,8 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
                 return left.as.closure == right.as.closure ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
             case PTN_EXCEPTION:
                 return left.as.exception == right.as.exception ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
+            case PTN_RESOURCE:
+                return ptn_compare_integers(left.as.resource->id, right.as.resource->id);
             case PTN_REFERENCE:
                 return PTN_COMPARE_UNORDERED;
         }

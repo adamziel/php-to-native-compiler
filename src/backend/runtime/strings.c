@@ -146,9 +146,6 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             break;
         case PTN_STRING:
             return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
-        case PTN_RESOURCE:
-            written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource_id);
-            break;
         case PTN_ARRAY:
             return ptn_duplicate_string("Array");
         case PTN_OBJECT:
@@ -156,6 +153,9 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             return ptn_duplicate_string("Object");
         case PTN_EXCEPTION:
             return ptn_duplicate_string("Object");
+        case PTN_RESOURCE:
+            written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource->id);
+            break;
         case PTN_REFERENCE:
             return ptn_duplicate_string("");
     }
@@ -286,9 +286,6 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
             break;
         case PTN_STRING:
             return ptn_string_operand_borrowed_len((const char *)value.as.string.data, value.as.string.len);
-        case PTN_RESOURCE:
-            written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource_id);
-            break;
         case PTN_ARRAY:
             return ptn_string_operand_borrowed("Array");
         case PTN_OBJECT:
@@ -296,6 +293,9 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
             return ptn_string_operand_borrowed("Object");
         case PTN_EXCEPTION:
             return ptn_string_operand_borrowed("Object");
+        case PTN_RESOURCE:
+            written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource->id);
+            break;
         case PTN_REFERENCE:
             return ptn_string_operand_borrowed("");
     }
@@ -472,8 +472,6 @@ static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
             return ptn_string("double");
         case PTN_STRING:
             return ptn_string("string");
-        case PTN_RESOURCE:
-            return ptn_string("resource");
         case PTN_ARRAY:
             return ptn_string("array");
         case PTN_OBJECT:
@@ -481,6 +479,8 @@ static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
             return ptn_string("object");
         case PTN_EXCEPTION:
             return ptn_string("object");
+        case PTN_RESOURCE:
+            return ptn_string(value.as.resource->stream == NULL ? "resource (closed)" : "resource");
         case PTN_REFERENCE:
             return ptn_string("unknown type");
     }

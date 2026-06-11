@@ -154,6 +154,9 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
         case PTN_EXCEPTION:
             ptn_exception_free(value->as.exception);
             break;
+        case PTN_RESOURCE:
+            ptn_resource_release(value->as.resource);
+            break;
         case PTN_REFERENCE:
             ptn_reference_release(value->as.reference);
             break;
@@ -161,7 +164,6 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
         case PTN_BOOL:
         case PTN_INT:
         case PTN_FLOAT:
-        case PTN_RESOURCE:
             break;
     }
     *value = ptn_null();

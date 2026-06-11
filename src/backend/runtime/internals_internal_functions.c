@@ -34,9 +34,6 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
         case PTN_STRING:
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             break;
-        case PTN_RESOURCE:
-            printf("Resource id #%lld", (long long)value.as.resource_id);
-            break;
         case PTN_ARRAY:
             fputs("Array", stdout);
             break;
@@ -55,6 +52,9 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
             break;
         case PTN_EXCEPTION:
             fputs("Object", stdout);
+            break;
+        case PTN_RESOURCE:
+            printf("Resource id #%lld", (long long)value.as.resource->id);
             break;
         case PTN_REFERENCE:
             break;
@@ -139,21 +139,10 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
         ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
-    PtnArrayKey key;
     if (key_value.type == PTN_RESOURCE) {
-        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-            fputc('\n', stdout);
-            printf(
-                "Warning: Resource ID#%lld used as offset, casting to integer (%lld) in ptn on line %zu\n",
-                (long long)key_value.as.resource_id,
-                (long long)key_value.as.resource_id,
-                line
-            );
-        }
-        key = ptn_array_int_key(key_value.as.resource_id);
-    } else {
-        key = ptn_array_key_from_value(key_value);
+        ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
     }
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
     int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
     ptn_array_key_free(key);
     return ptn_bool(exists);
@@ -255,9 +244,6 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             fputs("\"\n", stdout);
             break;
-        case PTN_RESOURCE:
-            printf("resource(%lld) of type (stream)\n", (long long)value.as.resource_id);
-            break;
         case PTN_ARRAY: {
             PtnArray *array = value.as.array;
             printf("array(%zu) {\n", array->len);
@@ -310,6 +296,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             fputs("\"\n", stdout);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
+            break;
+        case PTN_RESOURCE:
+            printf("resource(%lld) of type (%s)\n", (long long)value.as.resource->id, value.as.resource->type_name);
             break;
         case PTN_REFERENCE:
             fputs("NULL\n", stdout);
@@ -419,9 +408,6 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             fputs("\"\n", stdout);
             break;
-        case PTN_RESOURCE:
-            printf("resource(%lld) of type (stream)\n", (long long)value.as.resource_id);
-            break;
         case PTN_CLOSURE:
             printf("object(Closure)#1 (0) {\n");
             ptn_var_dump_indent(indent);
@@ -437,6 +423,9 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             fputs("\"\n", stdout);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
+            break;
+        case PTN_RESOURCE:
+            printf("resource(%lld) of type (%s)\n", (long long)value.as.resource->id, value.as.resource->type_name);
             break;
     }
 }
@@ -557,9 +546,6 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
                 value.as.string.len
             );
             break;
-        case PTN_RESOURCE:
-            ptn_string_buffer_append_format(buffer, "Resource id #%lld", (long long)value.as.resource_id);
-            break;
         case PTN_ARRAY:
             ptn_print_r_array(buffer, value.as.array, indent);
             break;
@@ -569,6 +555,9 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
             break;
         case PTN_EXCEPTION:
             ptn_string_buffer_append(buffer, "Object");
+            break;
+        case PTN_RESOURCE:
+            ptn_string_buffer_append_format(buffer, "Resource id #%lld", (long long)value.as.resource->id);
             break;
         case PTN_REFERENCE:
             break;
@@ -2912,18 +2901,20 @@ static void ptn_emit_file_warning(
 
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    static int64_t next_resource_id = 5;
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    PtnStringOperand mode_operand = ptn_value_to_string_operand(args[1]);
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "fopen", 1, "filename", args[0], line);
     char *path = ptn_path_operand_to_c_string(path_operand);
-    char *mode = ptn_path_operand_to_c_string(mode_operand);
     ptn_string_operand_free(path_operand);
-    ptn_string_operand_free(mode_operand);
-
-    if (path == NULL || mode == NULL) {
+    if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "fopen(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    PtnStringOperand mode_operand = ptn_internal_expect_string_arg(runtime, "fopen", 2, "mode", args[1], line);
+    char *mode = ptn_path_operand_to_c_string(mode_operand);
+    ptn_string_operand_free(mode_operand);
+    if (mode == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "fopen(): Argument #2 ($mode) must not contain any null bytes", line);
         free(path);
-        free(mode);
         return ptn_bool(0);
     }
 
@@ -2935,27 +2926,26 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
             ptn_abort_out_of_memory();
         }
         ptn_emit_file_warning(runtime, "fopen", path, detail, line);
-        free(path);
         free(mode);
+        free(path);
         return ptn_bool(0);
     }
-    fclose(stream);
-    free(path);
+
     free(mode);
-    return ptn_resource(next_resource_id++);
+    free(path);
+    return ptn_resource(ptn_resource_new_stream(stream));
 }
 
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnValue stream = ptn_value_deref(args[0]);
-    if (stream.type != PTN_RESOURCE) {
-        char message[128];
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type != PTN_RESOURCE) {
+        char message[192];
         int written = snprintf(
             message,
             sizeof(message),
             "fclose(): Argument #1 ($stream) must be of type resource, %s given",
-            ptn_offset_container_type_name(stream)
+            ptn_offset_container_type_name(value)
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
@@ -2963,6 +2953,11 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
         ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
+    if (value.as.resource->stream == NULL) {
+        return ptn_bool(0);
+    }
+    ptn_resource_close(value.as.resource);
+    (void)line;
     return ptn_bool(1);
 }
 
@@ -3489,7 +3484,12 @@ static PtnStringOperand ptn_internal_expect_string_arg(
         }
         ptn_internal_throw_string_arg_type_error(runtime, function_name, position, argument_name, value);
         return ptn_string_operand_borrowed("");
-    } else if (value.type == PTN_ARRAY || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
+    } else if (
+        value.type == PTN_ARRAY ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION ||
+        value.type == PTN_RESOURCE
+    ) {
         ptn_internal_throw_string_arg_type_error(runtime, function_name, position, argument_name, value);
         return ptn_string_operand_borrowed("");
     }
@@ -3565,7 +3565,8 @@ static PtnValue ptn_internal_is_resource(PtnRuntime *runtime, size_t argc, const
     (void)runtime;
     (void)argc;
     (void)line;
-    return ptn_is_type(args[0], PTN_RESOURCE);
+    PtnValue value = ptn_value_deref(args[0]);
+    return ptn_bool(value.type == PTN_RESOURCE && value.as.resource->stream != NULL);
 }
 
 static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -4654,6 +4655,8 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     /* Keep sorted by ASCII case-insensitive name for ptn_find_internal_function. */
@@ -4711,7 +4714,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "file_exists", 1, 1, ptn_internal_file_exists },
         { "file_put_contents", 2, 2, ptn_internal_file_put_contents },
         { "floor", 1, 1, ptn_internal_floor },
-        { "fopen", 2, 2, ptn_internal_fopen },
+        { "fopen", 2, 4, ptn_internal_fopen },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
         { "func_num_args", 0, 0, ptn_internal_func_num_args },

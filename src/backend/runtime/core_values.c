@@ -57,6 +57,7 @@ typedef struct PtnException PtnException;
 typedef struct PtnObject PtnObject;
 typedef struct PtnReference PtnReference;
 typedef struct PtnRuntime PtnRuntime;
+typedef struct PtnResource PtnResource;
 typedef struct PtnTryFrame PtnTryFrame;
 
 typedef enum {
@@ -106,11 +107,11 @@ typedef struct {
         int64_t integer;
         double floating;
         PtnString string;
-        int64_t resource_id;
         PtnArray *array;
         PtnObject *object;
         PtnClosure *closure;
         PtnException *exception;
+        PtnResource *resource;
         PtnReference *reference;
     } as;
 } PtnValue;
@@ -233,6 +234,13 @@ struct PtnException {
     char *message;
     const char *path;
     size_t line;
+};
+
+struct PtnResource {
+    size_t refcount;
+    int64_t id;
+    const char *type_name;
+    FILE *stream;
 };
 
 typedef struct {
@@ -438,14 +446,6 @@ static PTN_UNUSED PtnValue ptn_float(double floating) {
     return value;
 }
 
-static PTN_UNUSED PtnValue ptn_resource(int64_t resource_id) {
-    PtnValue value;
-    value.type = PTN_RESOURCE;
-    value.owned = 0;
-    value.as.resource_id = resource_id;
-    return value;
-}
-
 static PTN_UNUSED PtnStringPayload *ptn_string_payload_from_owned(char *string, size_t len) {
     PtnStringPayload *payload = malloc(sizeof(PtnStringPayload));
     if (payload == NULL) {
@@ -602,6 +602,67 @@ static PTN_UNUSED PtnValue ptn_exception_value(PtnException *exception) {
 static PTN_UNUSED PtnValue ptn_exception_borrow(PtnException *exception) {
     PtnValue value = ptn_exception_value(exception);
     value.owned = 0;
+    return value;
+}
+
+static int64_t ptn_next_resource_id = 5;
+
+static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream) {
+    PtnResource *resource = malloc(sizeof(PtnResource));
+    if (resource == NULL) {
+        if (stream != NULL) {
+            fclose(stream);
+        }
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_next_resource_id == INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    resource->refcount = 1;
+    resource->id = ptn_next_resource_id++;
+    resource->type_name = "stream";
+    resource->stream = stream;
+    return resource;
+}
+
+static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
+    if (resource == NULL) {
+        return;
+    }
+    if (resource->refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    resource->refcount++;
+}
+
+static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
+    if (resource == NULL || resource->stream == NULL) {
+        return;
+    }
+    fclose(resource->stream);
+    resource->stream = NULL;
+}
+
+static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
+    if (resource == NULL) {
+        return;
+    }
+    if (resource->refcount == 0) {
+        return;
+    }
+    resource->refcount--;
+    if (resource->refcount != 0) {
+        return;
+    }
+    ptn_resource_close(resource);
+    free(resource);
+}
+
+static PTN_UNUSED PtnValue ptn_resource(PtnResource *resource) {
+    PtnValue value;
+    value.type = PTN_RESOURCE;
+    value.owned = 1;
+    value.as.resource = resource;
     return value;
 }
 

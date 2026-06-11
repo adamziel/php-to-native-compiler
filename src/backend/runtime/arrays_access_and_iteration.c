@@ -130,6 +130,25 @@ static PTN_UNUSED void ptn_emit_array_runtime_warning(PtnRuntime *runtime, const
     ptn_emit_array_runtime_diagnostic("Warning", message, line);
 }
 
+static PTN_UNUSED void ptn_emit_resource_offset_warning(PtnRuntime *runtime, PtnResource *resource, size_t line) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Resource ID#%lld used as offset, casting to integer (%lld)",
+        (long long)resource->id,
+        (long long)resource->id
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    fputc('\n', stdout);
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
 static PTN_UNUSED int ptn_class_name_is_stdclass(const char *class_name) {
     const char *stdclass = "stdClass";
     while (*class_name != '\0' && *stdclass != '\0') {
@@ -801,6 +820,12 @@ static PTN_UNUSED int ptn_string_offset_from_value(
             }
             *offset = (int64_t)key_value.as.floating;
             return 1;
+        case PTN_RESOURCE:
+            if (!quiet) {
+                ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
+            }
+            *offset = key_value.as.resource->id;
+            return 1;
         case PTN_STRING: {
             int warn_illegal = 0;
             const char *key_string = (const char *)key_value.as.string.data;
@@ -824,12 +849,6 @@ static PTN_UNUSED int ptn_string_offset_from_value(
                 return 0;
             }
             ptn_throw_exception(runtime, "TypeError", "Cannot access offset of type array on string");
-            return 0;
-        case PTN_RESOURCE:
-            if (quiet) {
-                return 0;
-            }
-            ptn_throw_exception(runtime, "TypeError", "Cannot access offset of type resource on string");
             return 0;
         case PTN_OBJECT:
             if (quiet) {

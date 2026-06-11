@@ -306,10 +306,11 @@ Post-RC architecture remains explicit rather than hidden:
   `call_user_func_array(expr, expr)`,
   `assert(expr[, description])`,
   `in_array(expr, expr[, expr])`,
+  `fopen(expr, expr[, expr[, expr]])`, `fclose(expr)`,
   `is_callable(expr[, syntax_only])`, `is_finite(expr)`,
   `is_infinite(expr)`, `is_nan(expr)`,
-  `error_reporting(expr)`, `gettype(expr)`, scalar plus array/object `is_*`
-  type predicates, and
+  `error_reporting(expr)`, `gettype(expr)`, scalar plus array/object/resource
+  `is_*` type predicates, and
   `array_key_exists(expr, expr)` in echo operands, assignments, binary
   operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
@@ -515,14 +516,18 @@ Post-RC architecture remains explicit rather than hidden:
   shared warning/deprecation/notice emitters. Expression-level `@` suppression
   still stacks independently with the configured mask.
 - `gettype()` over current boxed values, returning `NULL`, `boolean`,
-  `integer`, `double`, `string`, `array`, or `object` for the currently modeled
-  scalar, array, `stdClass`, declared-object, Closure, and exception value
-  domains.
+  `integer`, `double`, `string`, `array`, `object`, `resource`, or
+  `resource (closed)` for the currently modeled scalar, array, object,
+  Closure, exception, and stream-resource value domains.
 - Type predicates over current boxed scalar and selected non-scalar values:
   `is_array()`, `is_object()`, `is_null()`,
   `is_bool()`, `is_int()`, `is_integer()`, `is_long()`, `is_float()`,
   `is_double()`, `is_string()`, `is_scalar()`, `is_finite()`,
-  `is_infinite()`, and `is_nan()`.
+  `is_infinite()`, `is_nan()`, and `is_resource()` for open stream resources.
+- `fopen()` opens filesystem-backed streams through the shared resource value
+  model, and `fclose()` closes those resources. Closed stream resources remain
+  boxed values for `gettype()` and `var_dump()` but no longer satisfy
+  `is_resource()`.
 - `function_exists()` over generated user-function declarations and the
   currently registered internal-function names.
 - `is_callable()` over current string, closure, static method array, and object
@@ -728,11 +733,13 @@ Post-RC architecture remains explicit rather than hidden:
   declarations, closures, old-style constructor dispatch, full class metadata,
   namespaces, globals, static locals, and remaining PHP-exact function return
   propagation.
-- Broad type predicate coverage for full PHP resource and reference metadata.
-- Unsupported recursive arrays, full class/object metadata, resources,
-  complete reference identity, copy-on-write, and `var_dump()` reference
-  identity beyond the currently modeled ordered-array, direct-reference, and
-  `stdClass` public-property behavior.
+- Type predicate coverage for full PHP resource and reference metadata beyond
+  the current open-stream `is_resource()` slice.
+- Unsupported recursive arrays, full class/object metadata, broad resources
+  beyond the current stream slice, complete reference identity,
+  copy-on-write, and `var_dump()` reference identity beyond the currently
+  modeled ordered-array, direct-reference, and `stdClass` public-property
+  behavior.
 - `array_key_exists()` object property checks, references, and error-handler
   routing beyond the current ordered-array/resource-key slice.
 - String-offset append, compound assignment, property/reference `isset()`/

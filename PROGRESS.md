@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T22:43Z
-Measured: `ptn-snsk` rebased on `origin/master` at `6cdf19c77`.
+Refresh: 2026-06-11T22:53Z
+Measured: `ptn-pjah` rebased on `origin/master` at `0aab39abd`.
 
 Recent RC slices cover array/key canonicalization, foreach targets, catchable
 arithmetic/assertion boundaries, public `__call`/`__toString`, precision-driven
@@ -10,14 +10,14 @@ diagnostics, minimal resources, `array_key_exists()` null/resource-key parity,
 PHP-style float exponent spelling, direct `ksort()`/`shuffle()`,
 variable-root array-path cursor mutation, one-argument `array_pop()`/
 `array_shift()`, literal-array defaults, `pow()`, `array_merge()`, bounded
-`highlight_string()` output buffers, `phpc -d error_reporting=N`, and
-`call_user_func_array()` through shared callable dispatch. `ptn-na3m` routes
-bitwise integer-conversion diagnostics for `&`, `|`, `^`, and `~` through
-runtime error-reporting filters, including float precision and out-of-range
-float warnings; all four 64-bit bitwise basiclong PHPT rows pass. `ptn-snsk`
-emits legacy `${var}` string interpolation deprecations before runtime execution
-and routes undefined variable warnings through stdout formatting, so exact
-`strlen.phpt` passes.
+`highlight_string()` output buffers, `phpc -d error_reporting=N`,
+`call_user_func_array()` through shared callable dispatch, and filtered bitwise
+integer-conversion diagnostics. `ptn-snsk` emits legacy `${var}` string
+interpolation deprecations before runtime execution and routes undefined
+variable warnings through stdout formatting, so exact `strlen.phpt` passes.
+`ptn-pjah` extends minimal resources into boxed stream resources: `fopen()`
+keeps streams open, `fclose()` closes them, `is_resource()` is false after
+close, and `gettype()` reports `resource (closed)`.
 
 ## Dashboard
 
@@ -37,14 +37,13 @@ and routes undefined variable warnings through stdout formatting, so exact
 ## RC Surface
 
 Parser/IR/C backend, boxed values, variables/constants, strings, scalar
-operators, ordered arrays, `foreach`, branch/loop/switch, compile-time includes,
-selected internals, COW/reference slices, top-level functions, call-frame
-introspection, scalar type hints including literal-array defaults, bounded
-closures/callables, `stdClass`, public class/object shells, public static
-properties, public property writes/`??=`, inherited methods/constructors,
-public `__call`, public `__toString`, `is_callable()`, assertion errors,
-heredoc/nowdoc literals, string interpolation slices, variable-root array-path
-cursor/single-pop/shift mutation, `pow()`, `array_merge()`,
+operators, ordered arrays, `foreach`, branch/loop/switch, compile-time
+includes, selected internals, COW/reference slices, top-level functions,
+call-frame introspection, scalar type hints including literal-array defaults,
+bounded closures/callables, `stdClass`, public class/object shells, public
+properties/static properties, public constructors, public `__call`/
+`__toString`, `is_callable()`, assertion errors, heredoc/nowdoc,
+interpolation slices, stream resources, `pow()`, `array_merge()`,
 `call_user_func_array()`, CLI `error_reporting` ini wiring, bounded
 `highlight_string()`/empty output-buffer reads, error-reporting-aware bitwise
 integer conversion diagnostics, and direct array mutators through `shuffle`.
@@ -78,10 +77,17 @@ rows.
 `run-20260611T223244Z-manifest.log` at 195/200, COW PHPT
 `run-20260611T222948Z-*` at 29/29, full `cargo test`, and
 `cargo fmt --check`.
+`ptn-pjah` pre-rebase evidence on `6cdf19c77` includes `cargo fmt --check`,
+`git diff --check HEAD~1..HEAD`, full `cargo test` with native/compiler
+478/478, native smoke 6/6, post-merge COW gate 25/25, and bounded PHPT
+`manifest-20260611T223047Z.txt` at 194/200 before the `strlen` row landed.
+It keeps `array_key_exists_variation1.phpt`, `strings/005.phpt`,
+`call_user_func_array_variation_001.phpt`, and all 4 bitwise basiclong rows
+passing. `ptn-pjah` adds focused native stream-resource coverage.
 
 Follow-ups remain broad visibility/inheritance, typed/non-public/promoted
-properties, interfaces/traits, namespaces, reflection, remaining magic methods,
-first-class callables, destructors, broader resources/exceptions, dynamic
-includes, heredoc interpolation, full unsupported-internal coverage, remaining
-scalar offset-lvalues, assertion configuration, non-direct-variable or
-non-numeric inc/dec, and broader foreach destructuring/reference targets.
+properties, interfaces/traits, namespaces, reflection, remaining magic
+methods, first-class callables, destructors, broader resources/exceptions,
+dynamic includes, heredoc interpolation, full unsupported-internal coverage,
+remaining scalar offset-lvalues, assertion configuration, non-direct-variable
+or non-numeric inc/dec, and broader foreach destructuring/reference targets.

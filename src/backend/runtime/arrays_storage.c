@@ -94,7 +94,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
         case PTN_FLOAT:
             return ptn_array_int_key((int64_t)value.as.floating);
         case PTN_RESOURCE:
-            return ptn_array_int_key(value.as.resource_id);
+            return ptn_array_int_key(value.as.resource->id);
         case PTN_STRING: {
             int64_t integer = 0;
             const char *string = (const char *)value.as.string.data;
@@ -553,11 +553,13 @@ static PTN_UNUSED PtnValue ptn_value_deep_clone(PtnValue value) {
             return value;
         case PTN_EXCEPTION:
             return ptn_exception_clone_value(value.as.exception);
+        case PTN_RESOURCE:
+            ptn_resource_retain(value.as.resource);
+            return ptn_resource(value.as.resource);
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_INT:
         case PTN_FLOAT:
-        case PTN_RESOURCE:
             return value;
     }
     return value;
@@ -589,11 +591,13 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
             return value;
         case PTN_EXCEPTION:
             return ptn_exception_clone_value(value.as.exception);
+        case PTN_RESOURCE:
+            ptn_resource_retain(value.as.resource);
+            return ptn_resource(value.as.resource);
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_INT:
         case PTN_FLOAT:
-        case PTN_RESOURCE:
             return value;
     }
     return value;
