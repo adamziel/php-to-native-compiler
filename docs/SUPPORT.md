@@ -442,7 +442,8 @@ supports in generated native binaries.
 - `continue;` and explicit-level `continue N;` over active loop/switch targets.
   The generated backend jumps to the appropriate loop continuation point, runs
   `for` update clauses on `continue`, and emits the current PHP-style warning
-  boundary when a `continue` targets a `switch`.
+  boundary when a `continue` targets a `switch`, including inside generated
+  user-function bodies.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
   generated main function, including source-spanned fatal diagnostics for
   undefined target labels, duplicate labels, and `goto` jumps into active loop

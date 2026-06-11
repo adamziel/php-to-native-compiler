@@ -72,7 +72,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.classes,
     );
     emit_static_property_initializers(&mut out, &mut values, &module.classes);
-    for warning in collect_control_warnings(&module.instructions) {
+    for warning in collect_module_control_warnings(module) {
         emit_control_warning(
             &mut out,
             &warning.message,
@@ -1817,6 +1817,15 @@ struct ControlWarning {
 fn collect_control_warnings(instructions: &[Instruction]) -> Vec<ControlWarning> {
     let mut warnings = Vec::new();
     collect_control_warnings_in(instructions, &mut Vec::new(), &mut warnings);
+    warnings
+}
+
+fn collect_module_control_warnings(module: &Module) -> Vec<ControlWarning> {
+    let mut warnings = Vec::new();
+    for function in &module.functions {
+        warnings.extend(collect_control_warnings(&function.body));
+    }
+    warnings.extend(collect_control_warnings(&module.instructions));
     warnings
 }
 

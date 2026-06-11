@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T12:03Z
-Measured: `ptn-vvoo` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T12:12Z
+Measured: `ptn-z3df` rebased after current `origin/master`; array null-offset
 diagnostic routing, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, loose object equality in
 `switch`, nested string-offset unset, braced interpolation, branch-condition
@@ -10,14 +10,15 @@ assignment and named-argument reducers, scalar offset reducers, object
 variable variables, include return helpers, array/object type predicates,
 runtime `define()` legacy flag parity, shared `error_reporting()` filtering,
 dirname edge PHPT rows, double-quoted high-byte hex/octal escapes, bounded
-PHPT, COW PHPT, and byte-escape reducers.
+PHPT, COW PHPT, byte-escape reducers, declared-function `continue`/`switch`
+warnings, and COW evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 395 | 395 | 0 |
+| Native compiled PHP snippets | 396 | 396 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 157 | 43 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -57,12 +58,12 @@ public methods, loose object equality in braced `switch`, nested string-offset
 unset errors, compile-time-resolved statement-only `include`/`require` return
 propagation, `define()`'s legacy case-insensitive flag warning with
 case-sensitive runtime constants, `error_reporting()` mask filtering for
-modeled shared warning/deprecation/notice emitters, and dirname
-empty/path-separator/embedded-NUL edges.
+modeled shared warning/deprecation/notice emitters, dirname
+empty/path-separator/embedded-NUL edges, and declared-function
+`continue`/`switch` warnings.
 
 ## Still Needed
 
-PHPT confirmation for the `array_walk()`/`$GLOBALS` Closure row is pending.
 Broader gaps are constructors, declared properties, non-public visibility,
 interfaces/traits, broader inheritance, magic methods, property compounds
 beyond `??=`, static-property compound/null-coalescing lvalues, destructors,
@@ -82,7 +83,8 @@ flag ordering reducer; `cargo fmt --check`; `cargo build --bin phpc`; exact
 `array_null_offset_deprecation.phpt` reducer; focused `error_reporting()`
 suppression reducer; exact `array_count_values.phpt` row; dirname native and
 PHPT reducers; double-quoted byte escape reducer; targeted
-`bin2hex_basic.phpt`/`ord_basic.phpt`; `cargo test`;
+`bin2hex_basic.phpt`/`ord_basic.phpt`; declared-function
+continue-switch reducer; `cargo test`;
 `tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt`;
 `tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or

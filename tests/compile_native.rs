@@ -10721,6 +10721,91 @@ fn compile_continue_levels_through_switch_to_native_binary() {
 }
 
 #[test]
+fn compile_continue_targeting_switch_warnings_in_uncalled_function_to_native_binary() {
+    let root = temp_dir("ptn-native-function-switch-continue-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-switch-continue-warnings.php");
+    let output = root.join("function-switch-continue-warnings-bin");
+    fs::write(
+        &input,
+        "<?php
+
+function test() {
+    switch ($foo) {
+        case 0:
+            continue;
+        case 1:
+            break;
+    }
+
+    while ($foo) {
+        switch ($bar) {
+            case 0:
+                continue;
+            case 1:
+                continue 2;
+            case 2:
+                break;
+        }
+    }
+
+    switch ($bar) {
+        case 0:
+            while ($xyz) {
+                continue 2;
+            }
+        case 1:
+            while ($xyz) {
+                continue;
+            }
+        case 2:
+            while ($xyz) {
+                break 2;
+            }
+    }
+
+    while ($foo) {
+        switch ($bar) {
+            case 0:
+                while ($xyz) {
+                    continue 2;
+                }
+            case 1:
+                while ($xyz) {
+                    continue 3;
+                }
+            case 2:
+                while ($xyz) {
+                    break 2;
+                }
+        }
+    }
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: \"continue\" targeting switch is equivalent to \"break\" in {} on line 6\n\
+\nWarning: \"continue\" targeting switch is equivalent to \"break\". Did you mean to use \"continue 2\"? in {} on line 14\n\
+\nWarning: \"continue 2\" targeting switch is equivalent to \"break 2\" in {} on line 25\n\
+\nWarning: \"continue 2\" targeting switch is equivalent to \"break 2\". Did you mean to use \"continue 3\"? in {} on line 41\n",
+            input.display(),
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unmatched_large_continue_level_reports_source_line_to_native_binary() {
     let root = temp_dir("ptn-native-large-continue-level-fatal");
     fs::create_dir_all(&root).unwrap();
