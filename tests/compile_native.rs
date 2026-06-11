@@ -13806,7 +13806,10 @@ try { var_dump([1] + 2); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; 
 try { var_dump(\"abc\" * 2); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump(\"123abc\" + \"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(\"123abc\" + 2);\n\
-var_dump(\"3.5x\" * 2);\n",
+var_dump(\"3.5x\" * 2);\n\
+$object = new stdClass;\n\
+try { var_dump($object + [1]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump([1] + $object); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
     )
     .unwrap();
 
@@ -13828,7 +13831,9 @@ Warning: A non-numeric value encountered in ptn on line 7\n\
 int(125)\n\
 \n\
 Warning: A non-numeric value encountered in ptn on line 8\n\
-float(7)\n"
+float(7)\n\
+Unsupported operand types: stdClass + array\n\
+Unsupported operand types: array + stdClass\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

@@ -465,6 +465,27 @@ static PTN_UNUSED int ptn_arithmetic_number(
     return 0;
 }
 
+static PTN_UNUSED const char *ptn_arithmetic_operand_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_ARRAY:
+        case PTN_REFERENCE:
+            return ptn_offset_container_type_name(value);
+    }
+    return ptn_offset_container_type_name(value);
+}
+
 static PTN_UNUSED void ptn_throw_unsupported_operand_types(
     PtnRuntime *runtime,
     PtnValue left,
@@ -472,19 +493,37 @@ static PTN_UNUSED void ptn_throw_unsupported_operand_types(
     PtnValue right,
     size_t line
 ) {
-    char message[128];
+    const char *left_type = ptn_arithmetic_operand_type_name(left);
+    const char *right_type = ptn_arithmetic_operand_type_name(right);
+    int needed = snprintf(
+        NULL,
+        0,
+        "Unsupported operand types: %s %s %s",
+        left_type,
+        operator,
+        right_type
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
     int written = snprintf(
         message,
-        sizeof(message),
+        (size_t)needed + 1,
         "Unsupported operand types: %s %s %s",
-        ptn_offset_container_type_name(left),
+        left_type,
         operator,
-        ptn_offset_container_type_name(right)
+        right_type
     );
-    if (written < 0 || (size_t)written >= sizeof(message)) {
+    if (written < 0 || written != needed) {
+        free(message);
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+    free(message);
 }
 
 static PTN_UNUSED void ptn_arithmetic_operands(
