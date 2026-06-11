@@ -30,6 +30,10 @@ supports in generated native binaries.
   variable-root array offset interpolation such as `{$items['key']}` and
   `{$items[$key]}`. Interpolated values use the same runtime variable/array
   reads, scalar string casts, and concatenation paths as ordinary expressions.
+- Double-quoted string escapes for `\n`, `\r`, `\t`, `\v`, `\f`, escaped
+  backslash, quote, dollar, `\xNN`, and octal byte sequences. Hex and octal
+  escapes can produce high bytes in native string literals; octal overflow
+  diagnostics are not yet modeled.
 - Direct variable assignment and scalar reads through the generated runtime
   symbol table.
 - Variable-variable reads and ordinary assignments with `$$name`, `$$$name`,

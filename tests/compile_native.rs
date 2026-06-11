@@ -3343,6 +3343,33 @@ echo $s;\n",
 }
 
 #[test]
+fn compile_double_quoted_byte_escapes_to_native_binary() {
+    let root = temp_dir("ptn-native-double-quoted-byte-escapes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("double-quoted-byte-escapes.php");
+    let output = root.join("double-quoted-byte-escapes-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$bytes = "\x00\x0a\x7f\x80\x90\xff\377\x100";
+echo strlen($bytes), " ", bin2hex($bytes), "\n";
+echo ord("\xFF"), " ", ord("\377"), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "9 000a7f8090ffff1030\n255 255\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_sha1_embedded_nul_input_and_raw_output_to_native_binary() {
     let root = temp_dir("ptn-native-sha1-binary-safe");
     fs::create_dir_all(&root).unwrap();

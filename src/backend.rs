@@ -17,6 +17,8 @@ use crate::ir::{
 
 mod runtime;
 
+const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
+
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let runtime_requirements = module_runtime_requirements(module);
@@ -3702,7 +3704,7 @@ impl ValueEmitter {
                 format!(
                     "ptn_string_literal(\"{}\", {})",
                     c_string(value),
-                    value.len()
+                    php_string_byte_len(value)
                 )
             }
             ValueExpr::Int(value) => format!("ptn_int({value})"),
@@ -5571,18 +5573,52 @@ fn collect_concat_operands<'a>(
 
 fn c_string(value: &str) -> String {
     let mut out = String::new();
-    for byte in value.bytes() {
-        match byte {
-            b'\\' => out.push_str("\\\\"),
-            b'"' => out.push_str("\\\""),
-            b'\n' => out.push_str("\\n"),
-            b'\r' => out.push_str("\\r"),
-            b'\t' => out.push_str("\\t"),
-            0x20..=0x7e => out.push(byte as char),
-            _ => out.push_str(&format!("\\{byte:03o}")),
+    for ch in value.chars() {
+        if let Some(byte) = php_binary_sentinel_byte(ch) {
+            push_c_string_byte(&mut out, byte);
+        } else {
+            let mut encoded = [0; 4];
+            for byte in ch.encode_utf8(&mut encoded).bytes() {
+                push_c_string_byte(&mut out, byte);
+            }
         }
     }
     out
+}
+
+fn push_c_string_byte(out: &mut String, byte: u8) {
+    match byte {
+        b'\\' => out.push_str("\\\\"),
+        b'"' => out.push_str("\\\""),
+        b'\n' => out.push_str("\\n"),
+        b'\r' => out.push_str("\\r"),
+        b'\t' => out.push_str("\\t"),
+        0x20..=0x7e => out.push(byte as char),
+        _ => out.push_str(&format!("\\{byte:03o}")),
+    }
+}
+
+fn php_string_byte_len(value: &str) -> usize {
+    value
+        .chars()
+        .map(|ch| {
+            if php_binary_sentinel_byte(ch).is_some() {
+                1
+            } else {
+                ch.len_utf8()
+            }
+        })
+        .sum()
+}
+
+fn php_binary_sentinel_byte(ch: char) -> Option<u8> {
+    let value = ch as u32;
+    let offset = value.checked_sub(PHP_BINARY_BYTE_SENTINEL_BASE)?;
+    if (0x80..=0xff).contains(&offset) {
+        Some(offset as u8)
+    } else {
+        None
+    }
 }
 
 fn c_label(value: &str) -> String {

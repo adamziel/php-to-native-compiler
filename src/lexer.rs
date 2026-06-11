@@ -1,5 +1,7 @@
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 
+const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     OpenTag,
@@ -451,13 +453,7 @@ impl<'a> Lexer<'a> {
                             literal.push('x');
                         } else {
                             let value = u8::from_str_radix(&digits, 16).unwrap();
-                            if value <= 0x7f {
-                                literal.push(value as char);
-                            } else {
-                                literal.push('\\');
-                                literal.push('x');
-                                literal.push_str(&digits);
-                            }
+                            push_php_string_byte(&mut literal, value);
                         }
                         continue;
                     }
@@ -474,12 +470,7 @@ impl<'a> Lexer<'a> {
                             break;
                         }
                         let value = u16::from_str_radix(&digits, 8).unwrap();
-                        if value <= 0x7f {
-                            literal.push((value as u8) as char);
-                        } else {
-                            literal.push('\\');
-                            literal.push_str(&digits);
-                        }
+                        push_php_string_byte(&mut literal, (value & 0xff) as u8);
                         continue;
                     }
                     other => {
@@ -641,6 +632,44 @@ impl<'a> Lexer<'a> {
                     '\'' if quote == '\'' => value.push('\''),
                     '"' if quote == '"' => value.push('"'),
                     '$' if quote == '"' => value.push('$'),
+                    'x' if quote == '"' => {
+                        self.bump_char();
+                        let mut digits = String::new();
+                        for _ in 0..2 {
+                            if let Some(hex) = self.peek_char() {
+                                if hex.is_ascii_hexdigit() {
+                                    digits.push(hex);
+                                    self.bump_char();
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                        if digits.is_empty() {
+                            value.push('\\');
+                            value.push('x');
+                        } else {
+                            let byte = u8::from_str_radix(&digits, 16).unwrap();
+                            push_php_string_byte(&mut value, byte);
+                        }
+                        continue;
+                    }
+                    '0'..='7' if quote == '"' => {
+                        let mut digits = String::new();
+                        for _ in 0..3 {
+                            if let Some(octal) = self.peek_char() {
+                                if matches!(octal, '0'..='7') {
+                                    digits.push(octal);
+                                    self.bump_char();
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                        let byte = u16::from_str_radix(&digits, 8).unwrap();
+                        push_php_string_byte(&mut value, (byte & 0xff) as u8);
+                        continue;
+                    }
                     other => {
                         value.push('\\');
                         value.push(other);
@@ -1015,4 +1044,15 @@ impl<'a> Lexer<'a> {
 
 fn is_ident_start(ch: char) -> bool {
     ch.is_ascii_alphabetic() || ch == '_'
+}
+
+fn push_php_string_byte(value: &mut String, byte: u8) {
+    if byte <= 0x7f {
+        value.push(byte as char);
+    } else {
+        value.push(
+            char::from_u32(PHP_BINARY_BYTE_SENTINEL_BASE + byte as u32)
+                .expect("PHP binary-byte sentinel must be a Unicode scalar"),
+        );
+    }
 }

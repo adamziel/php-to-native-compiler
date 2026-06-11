@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T11:54Z
-Measured: `ptn-5u3m` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T12:03Z
+Measured: `ptn-vvoo` rebased after current `origin/master`; array null-offset
 diagnostic routing, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, loose object equality in
 `switch`, nested string-offset unset, braced interpolation, branch-condition
@@ -9,18 +9,19 @@ assignment and named-argument reducers, scalar offset reducers, object
 `foreach`, class metadata, method callables/magic constants, cslashes, scalar
 variable variables, include return helpers, array/object type predicates,
 runtime `define()` legacy flag parity, shared `error_reporting()` filtering,
-dirname edge PHPT rows, and COW evidence.
+dirname edge PHPT rows, double-quoted high-byte hex/octal escapes, bounded
+PHPT, COW PHPT, and byte-escape reducers.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 394 | 394 | 0 |
+| Native compiled PHP snippets | 395 | 395 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 153 | 47 |
+| PHPT bounded manifest | 200 | 157 | 43 |
 | PHPT Zend rows | 76 | 68 | 8 |
-| PHPT ext/standard rows | 77 | 49 | 28 |
+| PHPT ext/standard rows | 77 | 51 | 26 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -30,7 +31,7 @@ dirname edge PHPT rows, and COW evidence.
 | By-reference foreach COW oracle | 11 | 11 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
 | Post-merge COW gate | 25 | 25 | 0 |
-| PHPT COW manifest | 29 | 28 | 1 |
+| PHPT COW manifest | 29 | 29 | 0 |
 | PHPT callback manifest | 3 | 3 | 0 |
 
 ## Already Ported
@@ -45,6 +46,7 @@ default function parameters, `count()`, `??`, assignment expressions including
 direct-variable compound branch/loop conditions, direct user-function named
 arguments, expression-form `print`, expression-level `@`, directory/file
 predicates, array-path snapshots, selected array/string internals,
+double-quoted high-byte hex/octal string escapes,
 lvalue-reference calls, list/append assignment, scalar variable-variable
 reads/ordinary assignments with unsupported-name diagnostics, method callables,
 `array_reduce()`/`array_walk()`, `array_count_values()`, `stdClass`, declared
@@ -79,6 +81,9 @@ native reducers/array-object-predicate tests; `cargo check`;
 flag ordering reducer; `cargo fmt --check`; `cargo build --bin phpc`; exact
 `array_null_offset_deprecation.phpt` reducer; focused `error_reporting()`
 suppression reducer; exact `array_count_values.phpt` row; dirname native and
-PHPT reducers; `cargo test`.
+PHPT reducers; double-quoted byte escape reducer; targeted
+`bin2hex_basic.phpt`/`ord_basic.phpt`; `cargo test`;
+`tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt`;
+`tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
 `.runtime/php-src-phpt`.
