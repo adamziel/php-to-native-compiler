@@ -1,20 +1,18 @@
 # PTN Progress
 
-Refresh: 2026-06-11T12:44Z
-Measured: `ptn-q2zt` rebased after current `origin/master`; array null-offset
-diagnostic routing, Closure captures, expression-form `print`, static
-properties, inherited methods, property `??=`, loose object equality in
-`switch`, nested string-offset unset, braced interpolation, branch-condition
-assignment and named-argument reducers, scalar offset reducers, object
-`foreach`, class metadata, method callables/magic constants, cslashes, scalar
-variable variables, include return helpers, array/object type predicates,
-runtime `define()` legacy flag parity, shared `error_reporting()` filtering,
-dirname edge PHPT rows, double-quoted high-byte hex/octal escapes, bounded
-PHPT, COW PHPT, byte-escape reducers, declared-function `continue`/`switch`
-warnings, `str_repeat()`, generic `array_fill()`, and COW evidence.
-`array_fill.phpt` now passes; `array_fill_basic.phpt` still fails at the
-separate heredoc parser boundary. The braced-interpolation alternative-offset
-parse-error row now passes.
+Refresh: 2026-06-11T12:52Z
+Measured: `ptn-28xs` rebased after current `origin/master`; array null-offset
+diagnostics, Closure captures, expression-form `print`, static properties,
+inherited methods, property `??=`, loose object `switch`, nested string-offset
+unset, braced interpolation, branch-condition assignment, named arguments,
+scalar offsets, object `foreach`, class metadata, method callables/magic
+constants, cslashes, scalar variable variables, include returns, array/object
+type predicates, `define()` legacy flag parity, shared `error_reporting()`
+filtering, dirname edges, high-byte string escapes, declared-function
+`continue`/`switch` warnings, `str_repeat()`, `array_fill()`, and
+braced-interpolation alternative-offset parse errors are integrated. Bounded
+PHPT/COW evidence is refreshed; `array_fill_basic.phpt` still fails at the
+separate heredoc parser boundary.
 
 ## Test Dashboard
 
@@ -25,7 +23,7 @@ parse-error row now passes.
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 159 | 41 |
 | PHPT Zend rows | 76 | 69 | 7 |
-| PHPT ext/standard rows | 77 | 52 | 25 |
+| PHPT ext/standard rows | 77 | 55 | 22 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
@@ -42,57 +40,36 @@ parse-error row now passes.
 
 Lexer/parser, AST/IR/C backend, boxed values, variables/constants, strings,
 math/type internals, ordered arrays, `foreach`, COW/references/by-reference
-params, array dimensions, recursive/user functions, Closure captures, magic
-constants, `func_*`, `print_r`, scalar diagnostics, array null-offset
-diagnostics routed through `@` suppression, array union `+`, scalar type hints,
-by-reference returns, top-level variadic parameter packing, trailing scalar
-default function parameters, `count()`, `??`, assignment expressions including
-direct-variable compound branch/loop conditions, direct user-function named
-arguments, expression-form `print`, expression-level `@`, directory/file
-predicates, array-path snapshots, selected array/string internals including
-`array_fill()`, double-quoted high-byte hex/octal string escapes,
-lvalue-reference calls, list/append assignment, scalar variable-variable
-reads/ordinary assignments with unsupported-name diagnostics, method callables,
-`array_reduce()`/`array_walk()`, `array_count_values()`, `stdClass`, declared
-class/object method metadata and calls, `$this`, object `foreach`, scalar
-array-lvalue fatals with false-to-array deprecation, class/method and
-array/object type predicates, static properties, property `??=`, inherited
-public methods, loose object equality in braced `switch`, nested string-offset
-unset errors, compile-time-resolved statement-only `include`/`require` return
-propagation, `define()`'s legacy case-insensitive flag warning with
-case-sensitive runtime constants, `error_reporting()` mask filtering for
-modeled shared warning/deprecation/notice emitters, dirname
-empty/path-separator/embedded-NUL edges, declared-function `continue`/`switch`
-warnings, `str_repeat()`, and braced-interpolation alternative-offset parse
-errors.
+params, dimensions, recursive/user functions, Closure captures, magic
+constants, `func_*`, `print_r`, scalar diagnostics, array union, scalar type
+hints, by-reference returns, variadics/default parameters, `count()`, `??`,
+assignment expressions, named arguments, expression-form `print`, `@`, file
+predicates, selected array/string internals, lvalue-reference calls,
+list/append assignment, scalar variable variables, method callables,
+`array_reduce()`/`array_walk()`, `array_count_values()`, `stdClass`,
+class/object metadata, `$this`, scalar array-lvalue fatals, static properties,
+property `??=`, inherited public methods, include/require return propagation,
+diagnostic filtering, and the focused PHPT rows listed above.
 
 ## Still Needed
 
-Broader gaps are constructors, declared properties, non-public visibility,
-interfaces/traits, broader inheritance, magic methods, property compounds beyond
-`??=`, static-property compound/null-coalescing lvalues, destructors,
-exceptions, broader magic constants, reflection, unsupported internals, 64-bit
-operator exactness, destructuring `foreach`, heredoc/nowdoc, remaining string
-sub-path scalar offset-lvalue parity, dynamic-variable array-offset lvalues,
-dynamic include/include_once behavior, and broader file APIs.
+Constructors, declared properties, non-public visibility, interfaces/traits,
+broader inheritance, magic methods, broader property compounds,
+static-property compound/null-coalescing lvalues, destructors, exceptions,
+reflection, unsupported internals, 64-bit operator exactness, destructuring
+`foreach`, heredoc/nowdoc, remaining string sub-path scalar offset-lvalue
+parity, dynamic-variable array-offset lvalues, dynamic include/include_once
+behavior, and broader file APIs.
 
 ## Verification
 
-Commands: focused Closure/`print`/interpolation/branch-condition assignment/
-named-argument/loose-object switch/addslashes/cslashes/object `foreach`/scalar
-offset/callable/metadata/scalar variable-variable/focused include parser and
-native reducers/array-object-predicate tests; `cargo check`;
-`cargo test static_property --test compile_native`; runtime `define()` legacy
-flag ordering reducer; `cargo fmt --check`; `cargo build --bin phpc`; exact
-`array_null_offset_deprecation.phpt` reducer; focused `error_reporting()`
-suppression reducer; exact `array_count_values.phpt` row; dirname native and
-PHPT reducers; double-quoted byte escape reducer; targeted
-`bin2hex_basic.phpt`/`ord_basic.phpt`; declared-function
-continue-switch reducer; `str_repeat()` native reducer; `array_fill()` native
-reducer; exact `array_fill.phpt`; focused parser/phpc interpolation reducers;
-exact `alternative_offset_syntax_in_encaps_string.phpt`; internal redeclaration
-parser reducer; `cargo test`;
+Commands: focused native/parser/phpc reducers for recent slices; exact
+`array_null_offset_deprecation.phpt`, `array_count_values.phpt`,
+`array_fill.phpt`, `alternative_offset_syntax_in_encaps_string.phpt`,
+`ord_basic.phpt`, and declared-function continue/switch rows;
+`cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
 `tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt`;
-`tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`.
+`tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`;
+`tools/run-post-merge-cow-gate.sh`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
 `.runtime/php-src-phpt`.
