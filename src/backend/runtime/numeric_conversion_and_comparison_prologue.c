@@ -207,9 +207,9 @@ static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const cha
     ptn_symbols_unset(&runtime->symbols, name);
 }
 
-static PTN_UNUSED PtnException *ptn_exception_new(
+static PTN_UNUSED PtnException *ptn_exception_new_owned(
     const char *class_name,
-    const char *message,
+    char *message,
     const char *path,
     size_t line
 ) {
@@ -218,10 +218,19 @@ static PTN_UNUSED PtnException *ptn_exception_new(
         ptn_abort_out_of_memory();
     }
     exception->class_name = class_name;
-    exception->message = ptn_duplicate_string(message);
+    exception->message = message;
     exception->path = path;
     exception->line = line;
     return exception;
+}
+
+static PTN_UNUSED PtnException *ptn_exception_new(
+    const char *class_name,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    return ptn_exception_new_owned(class_name, ptn_duplicate_string(message), path, line);
 }
 
 static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *right) {
@@ -328,6 +337,20 @@ static PTN_UNUSED void ptn_throw_exception_at(
 
 static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message) {
     ptn_throw_exception_at(runtime, class_name, message, NULL, 0);
+}
+
+static PTN_UNUSED void ptn_throw_exception_owned_message(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message
+) {
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = ptn_exception_new_owned(class_name, message, NULL, 0);
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
 }
 
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_table(PtnRuntime *runtime) {

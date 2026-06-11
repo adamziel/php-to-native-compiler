@@ -4187,8 +4187,8 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_bool(1);
     }
 
-    char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("assertion failed");
-    ptn_throw_exception(runtime, "AssertionError", message);
+    char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
+    ptn_throw_exception_owned_message(runtime, "AssertionError", message);
     return ptn_bool(0);
 }
 

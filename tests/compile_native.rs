@@ -6832,13 +6832,28 @@ fn compile_assert_internal_to_native_binary() {
     fs::write(
         &input,
         "<?php
+var_dump(function_exists(\"assert\"));
+var_dump(assert(true));
 try {
     assert(false && ($a **= 2));
 } catch (AssertionError $e) {
     echo 'assert(): ', $e->getMessage(), ' failed', \"\\n\";
 }
-assert(true);
-var_dump(function_exists(\"assert\"));
+if (isset($a)) {
+    echo \"bad\\n\";
+} else {
+    echo \"short\\n\";
+}
+try {
+    assert(false, \"custom failure\");
+} catch (\\Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    call_user_func(\"assert\", false);
+} catch (AssertionError $e) {
+    var_dump($e->getMessage());
+}
 ",
     )
     .unwrap();
@@ -6849,7 +6864,7 @@ var_dump(function_exists(\"assert\"));
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "assert(): assert(false && ($a **= 2)) failed\nbool(true)\n"
+        "bool(true)\nbool(true)\nassert(): assert(false && ($a **= 2)) failed\nshort\ncustom failure\nstring(0) \"\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

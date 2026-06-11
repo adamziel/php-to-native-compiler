@@ -38,6 +38,8 @@ expected rows, or one-off outputs.
 - `array_filter()` preserves keys while filtering arrays by PHP truthiness or
   modeled callbacks.
 - `range()` builds integer ranges through the ordered-array runtime.
+- `assert()` throws catchable `AssertionError` values with compiler-generated
+  default messages for direct calls.
 - Bounded PHPT telemetry from a php-src checkout resolved by `PHP_SRC_PHPT`,
   `/home/claude/php-src-phpt`, or the `.runtime/php-src-phpt` cache.
 

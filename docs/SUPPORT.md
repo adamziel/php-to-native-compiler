@@ -265,6 +265,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_fill(expr, expr, expr);`, `array_filter(expr[, expr[, expr]]);`,
   `array_values(expr);`, `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
+  `assert(expr[, description]);`,
   `in_array(expr, expr[, expr]);`,
   `is_callable(expr[, syntax_only]);`, `is_finite(expr);`,
   `is_infinite(expr);`, `is_nan(expr);`, and `error_reporting(expr);`.
@@ -289,6 +290,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_fill(expr, expr, expr)`, `array_filter(expr[, expr[, expr]])`,
   `array_values(expr)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
+  `assert(expr[, description])`,
   `in_array(expr, expr[, expr])`,
   `is_callable(expr[, syntax_only])`, `is_finite(expr)`,
   `is_infinite(expr)`, `is_nan(expr)`,
@@ -298,6 +300,11 @@ Post-RC architecture remains explicit rather than hidden:
   operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
+- Direct `assert(expr)` calls throw catchable `AssertionError` values with
+  PHP-style compiler-generated default messages when the assertion is false;
+  explicit scalar descriptions are string-converted through the shared runtime
+  path, and dynamic one-argument calls use PHP's empty fallback message.
+  Assertion INI modes and throwable descriptions are not yet modeled.
 - Top-level named user-defined functions with by-value positional parameters,
   direct by-reference positional parameters, final variadic parameters,
   trailing scalar default parameter values including omitted `null` defaults,
