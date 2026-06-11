@@ -375,10 +375,12 @@ Post-RC architecture remains explicit rather than hidden:
   through the optional second argument.
 - `strlen()` over current boxed scalar values and objects with a public
   declared `__toString()` after shared string conversion.
-- Bounded `highlight_string()` and `highlight_file()` support the current
-  source-byte highlighter: the optional return flag returns a string instead
-  of writing to stdout, `highlight_file()` reads ordinary filesystem paths, and
-  missing files emit PHP-style highlighting warnings before returning false.
+- Bounded `highlight_string()` and `highlight_file()` use the current
+  PHP-style escaped source-byte highlighter: the optional return flag returns a
+  string instead of writing to stdout, `highlight_file()` reads ordinary
+  filesystem paths, and missing files emit PHP-style highlighting warnings
+  before returning false. `ob_get_contents()` returns `false` because output
+  buffers are not yet modeled.
 - `join()`/`implode()` concatenate current ordered-array values in iteration
   order. The one-argument form uses an empty separator; the two-argument form
   uses the shared string-argument path for the separator. Entries use the
