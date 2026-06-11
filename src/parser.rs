@@ -358,6 +358,7 @@ impl Parser {
 
     fn parse_statement(&mut self) -> Result<Statement> {
         match self.peek().kind {
+            TokenKind::Semicolon => self.parse_empty_statement(),
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
@@ -409,6 +410,11 @@ impl Parser {
                 Some(self.peek().span),
             )),
         }
+    }
+
+    fn parse_empty_statement(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        Ok(Statement::Empty { span: token.span })
     }
 
     fn parse_function_decl(&mut self) -> Result<FunctionDecl> {
@@ -3173,6 +3179,7 @@ fn validate_anonymous_functions_in_statements(
                 }
             }
             Statement::Return { value: None, .. }
+            | Statement::Empty { .. }
             | Statement::Increment { .. }
             | Statement::Unset { .. }
             | Statement::Break { .. }

@@ -684,6 +684,7 @@ impl<'a> LoweringContext<'a> {
         let mut instructions = Vec::new();
         for statement in statements {
             match statement {
+                Statement::Empty { .. } => {}
                 Statement::Assign {
                     name,
                     op,

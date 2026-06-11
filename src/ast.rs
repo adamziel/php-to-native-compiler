@@ -90,6 +90,9 @@ pub enum TypeHint {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
+    Empty {
+        span: SourceSpan,
+    },
     Assign {
         name: String,
         op: AssignmentOp,

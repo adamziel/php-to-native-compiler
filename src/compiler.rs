@@ -220,6 +220,7 @@ impl IncludeCollector {
                 Ok(())
             }
             Statement::Increment { .. }
+            | Statement::Empty { .. }
             | Statement::Break { .. }
             | Statement::Continue { .. }
             | Statement::Label { .. }

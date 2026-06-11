@@ -483,6 +483,25 @@ fn parser_accepts_foreach_value_and_key_value_statements() {
 }
 
 #[test]
+fn parser_accepts_empty_statements_as_loop_bodies() {
+    let program = parser::parse("<?php ; foreach ($items as $value); while ($ready);").unwrap();
+    assert_eq!(program.statements.len(), 3);
+    assert!(matches!(&program.statements[0], Statement::Empty { .. }));
+
+    let Statement::Foreach { body, .. } = &program.statements[1] else {
+        panic!("expected foreach statement");
+    };
+    assert_eq!(body.len(), 1);
+    assert!(matches!(&body[0], Statement::Empty { .. }));
+
+    let Statement::While { body, .. } = &program.statements[2] else {
+        panic!("expected while statement");
+    };
+    assert_eq!(body.len(), 1);
+    assert!(matches!(&body[0], Statement::Empty { .. }));
+}
+
+#[test]
 fn parser_accepts_by_reference_foreach_value_binding() {
     let program = parser::parse(
         "<?php foreach ($items as &$value) { echo $value; } foreach ($items as $key => &$value) echo $key;",
@@ -7245,6 +7264,35 @@ fn compile_foreach_break_and_continue_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "13\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_empty_statement_body_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-empty-body");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-empty-body.php");
+    let output = root.join("foreach-empty-body-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"a\", \"b\", \"c\"];\n\
+foreach ($items as $value);\n\
+var_dump($value);\n\
+foreach ($items as $key => $value);\n\
+var_dump($key, $value);\n\
+echo \"done\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"c\"\nint(2)\nstring(1) \"c\"\ndone\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
