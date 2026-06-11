@@ -51,6 +51,7 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions);
         emit_class_metadata_helpers(&mut out, &module.classes);
+        emit_callable_validation_helpers(&mut out);
     }
     if needs_method_dispatch {
         emit_method_dispatch(&mut out, &module.classes);
@@ -792,6 +793,57 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic int ptn_declared_class_static_method_exists(const char *class_name, const char *method_name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    let has_static_methods = classes.iter().any(|class| {
+        class_method_lookup_chain(class, classes)
+            .into_iter()
+            .any(|method| method.is_static)
+    });
+    if !has_static_methods {
+        out.push_str("    (void)method_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for method in class_method_lookup_chain(class, classes) {
+            if !method.is_static {
+                continue;
+            }
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic int ptn_declared_class_has_call_magic(const char *class_name) {\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if class_magic_call_method(class, classes).is_some() {
+            out.push_str("        return 1;\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
 }
 
 fn class_by_name<'a>(classes: &'a [ClassDecl], name: &str) -> Option<&'a ClassDecl> {
@@ -848,6 +900,93 @@ fn class_has_constructor(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
         .any(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
 }
 
+fn class_magic_call_method<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<&'a crate::ir::MethodDecl> {
+    class_method_lookup_chain(class, classes)
+        .into_iter()
+        .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__call"))
+}
+
+fn emit_callable_validation_helpers(out: &mut String) {
+    out.push_str(
+        "\nstatic int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out) {\n",
+    );
+    out.push_str("    callable = ptn_value_deref(callable);\n");
+    out.push_str("    if (callable.type != PTN_ARRAY || callable.as.array->len != 2) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnArrayKey scope_key = ptn_array_int_key(0);\n");
+    out.push_str("    PtnArrayKey method_key = ptn_array_int_key(1);\n");
+    out.push_str(
+        "    PtnArrayEntry *scope_entry = ptn_array_entry_for_key(callable.as.array, scope_key);\n",
+    );
+    out.push_str("    PtnArrayEntry *method_entry = ptn_array_entry_for_key(callable.as.array, method_key);\n");
+    out.push_str("    ptn_array_key_free(scope_key);\n");
+    out.push_str("    ptn_array_key_free(method_key);\n");
+    out.push_str("    if (scope_entry == NULL || method_entry == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    *scope_out = ptn_value_deref(scope_entry->value);\n");
+    out.push_str("    *method_out = ptn_value_deref(method_entry->value);\n");
+    out.push_str("    return 1;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic int ptn_callable_is_valid(PtnValue callable, int syntax_only) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (resolved.type == PTN_STRING) {\n");
+    out.push_str("        if (syntax_only) {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        char *name = ptn_value_to_string(resolved);\n");
+    out.push_str("        int valid = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;\n");
+    out.push_str("        free(name);\n");
+    out.push_str("        return valid;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue scope;\n");
+    out.push_str("    PtnValue method;\n");
+    out.push_str("    if (!ptn_callable_array_parts(resolved, &scope, &method) || method.type != PTN_STRING) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (scope.type == PTN_OBJECT) {\n");
+    out.push_str("        if (syntax_only) {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        char *method_name = ptn_value_to_string(method);\n");
+    out.push_str("        int valid = ptn_declared_class_method_exists(scope.as.object->class_name, method_name) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
+    out.push_str("        free(method_name);\n");
+    out.push_str("        return valid;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (scope.type == PTN_EXCEPTION) {\n");
+    out.push_str("        if (syntax_only) {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        char *method_name = ptn_value_to_string(method);\n");
+    out.push_str("        int valid = ptn_exception_name_equal(method_name, \"getMessage\");\n");
+    out.push_str("        free(method_name);\n");
+    out.push_str("        return valid;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (scope.type == PTN_STRING) {\n");
+    out.push_str("        if (syntax_only) {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        char *class_name = ptn_value_to_string(scope);\n");
+    out.push_str("        char *method_name = ptn_value_to_string(method);\n");
+    out.push_str(
+        "        int valid = ptn_declared_class_static_method_exists(class_name, method_name);\n",
+    );
+    out.push_str("        free(method_name);\n");
+    out.push_str("        free(class_name);\n");
+    out.push_str("        return valid;\n");
+    out.push_str("    }\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+}
+
 fn emit_method_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line) {\n",
@@ -880,6 +1019,23 @@ fn emit_method_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str(&user_function_c_name(method.function_index));
             out.push_str("(runtime, resolved, argc, args, line);\n");
             out.push_str("        }\n");
+        }
+        if let Some(method) = class_magic_call_method(class, classes) {
+            out.push_str("        PtnValue ptn_magic_args[2];\n");
+            out.push_str("        ptn_magic_args[0] = ptn_string(method_name);\n");
+            out.push_str("        ptn_magic_args[1] = ptn_array_from_literal_entries(0, NULL);\n");
+            out.push_str("        for (size_t ptn_magic_arg_i = 0; ptn_magic_arg_i < argc; ptn_magic_arg_i++) {\n");
+            out.push_str("            if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
+            out.push_str("                ptn_abort_out_of_memory();\n");
+            out.push_str("            }\n");
+            out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_clone_deref(args[ptn_magic_arg_i]));\n");
+            out.push_str("        }\n");
+            out.push_str("        PtnValue ptn_magic_result = ");
+            out.push_str(&user_function_c_name(method.function_index));
+            out.push_str("(runtime, resolved, 2, ptn_magic_args, line);\n");
+            out.push_str("        ptn_value_destroy(&ptn_magic_args[0]);\n");
+            out.push_str("        ptn_value_destroy(&ptn_magic_args[1]);\n");
+            out.push_str("        return ptn_magic_result;\n");
         }
         out.push_str("    }\n");
     }

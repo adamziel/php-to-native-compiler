@@ -5511,6 +5511,124 @@ echo call_user_func([$greeter, \"via_this\"], 5), \"\\n\";
 }
 
 #[test]
+fn compile_magic_call_object_callables_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-call-object-callables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-call-object-callables.php");
+    let output = root.join("magic-call-object-callables-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicBase {
+    public function __call($name, $args) {
+        return $name . \":\" . count($args) . \":\" . $args[0];
+    }
+}
+
+class MagicChild extends MagicBase {
+}
+
+$child = new MagicChild();
+echo $child->direct(\"one\"), \"\\n\";
+echo call_user_func([$child, \"via_user\"], \"two\"), \"\\n\";
+$dynamic = [$child, \"via_dynamic\"];
+echo $dynamic(\"three\"), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "direct:1:one\nvia_user:1:two\nvia_dynamic:1:three\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_has_call_magic"));
+    assert!(c_source.contains("ptn_magic_args[0] = ptn_string(method_name);"));
+    assert!(c_source.contains("MagicBase::__call"));
+    assert!(c_source.contains("ptn_call_callable(&runtime"));
+}
+
+#[test]
+fn compile_is_callable_object_callable_subset_to_native_binary() {
+    let root = temp_dir("ptn-native-is-callable-object-subset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("is-callable-object-subset.php");
+    let output = root.join("is-callable-object-subset-bin");
+    fs::write(
+        &input,
+        "<?php
+class CallableBase {
+    public function inherited() {
+    }
+}
+
+class CallableWorker extends CallableBase {
+    public static function stat() {
+    }
+
+    public function own() {
+    }
+}
+
+class CallableMagic extends CallableBase {
+    public function __call($name, $args) {
+    }
+}
+
+$worker = new CallableWorker();
+$magic = new CallableMagic();
+$closure = function () { return 1; };
+var_dump(is_callable(\"strlen\"));
+var_dump(is_callable(\"missing_function\"));
+var_dump(is_callable(\"missing_function\", true));
+var_dump(is_callable($closure));
+var_dump(is_callable([$worker, \"inherited\"]));
+var_dump(is_callable([$worker, \"missing\"]));
+var_dump(is_callable([$magic, \"missing\"]));
+var_dump(is_callable([\"CallableWorker\", \"stat\"]));
+var_dump(is_callable([\"CallableWorker\", \"own\"]));
+var_dump(is_callable([\"CallableWorker\", \"missing\"], true));
+var_dump(is_callable([1, \"x\"], true));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_is_callable"));
+    assert!(c_source.contains("ptn_callable_is_valid"));
+    assert!(c_source.contains("ptn_declared_class_static_method_exists"));
+    assert!(c_source.contains("ptn_declared_class_has_call_magic"));
+}
+
+#[test]
 fn compile_declared_public_instance_properties_to_native_binary() {
     let root = temp_dir("ptn-native-declared-public-properties");
     fs::create_dir_all(&root).unwrap();

@@ -23,14 +23,20 @@ Post-RC architecture remains explicit rather than hidden:
 - Static properties: direct public static reads/writes are supported, but
   visibility, inheritance, late static binding, typed/default metadata, and
   static-property compound or null-coalescing lvalues are post-RC.
-- Magic methods other than the supported public constructor hook:
-  `__destruct`, `__get`, `__set`, `__isset`, `__unset`, `__call`,
-  `__callStatic`, `__invoke`, `__toString`, and related dispatch hooks are
-  unsupported.
+- Magic methods: public declared instance `__construct` is supported during
+  object construction, and public declared instance `__call` is supported as a
+  fallback for direct object calls and supported object callable dispatch when
+  no declared method matches. `__destruct`, `__get`, `__set`, `__isset`,
+  `__unset`, `__callStatic`, `__invoke`, `__toString`, and related hooks
+  remain unsupported.
 - Non-static callables: direct object method calls and bounded
-  `[$object, "method"]` callback dispatch work, but first-class callables,
-  visibility-aware dispatch, magic dispatch, arbitrary dynamic instance method
-  resolution, and inherited non-static callable semantics are post-RC.
+  `[$object, "method"]` callback dispatch work for declared and inherited
+  public methods, and missing object methods fall through to supported
+  `__call`. `is_callable()` validates the current string, closure,
+  `["Class", "staticMethod"]`, and `[$object, "method"]` subset, including
+  `__call`-capable objects and syntax-only checks. First-class callable syntax,
+  non-public visibility, `__invoke`, `__callStatic`, and arbitrary dynamic
+  instance method metadata remain post-RC.
 - Object destructuring and object `Traversable` remain unsupported; current
   destructuring support is array/list lvalues.
 - Property compound lvalues remain post-RC except public property `??=`:
@@ -253,8 +259,8 @@ Post-RC architecture remains explicit rather than hidden:
   `array_values(expr);`, `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
-  `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
-  `error_reporting(expr);`.
+  `is_callable(expr[, syntax_only]);`, `is_finite(expr);`,
+  `is_infinite(expr);`, `is_nan(expr);`, and `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
   including `print_r(expr[, return])`, `strlen(expr)`, `addcslashes(expr, expr)`,
   `stripcslashes(expr)`, `addslashes(expr)`, `stripslashes(expr)`,
@@ -277,7 +283,8 @@ Post-RC architecture remains explicit rather than hidden:
   `array_values(expr)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
-  `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
+  `is_callable(expr[, syntax_only])`, `is_finite(expr)`,
+  `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar plus array/object `is_*`
   type predicates, and
   `array_key_exists(expr, expr)` in echo operands, assignments, binary
@@ -479,6 +486,10 @@ Post-RC architecture remains explicit rather than hidden:
   `is_infinite()`, and `is_nan()`.
 - `function_exists()` over generated user-function declarations and the
   currently registered internal-function names.
+- `is_callable()` over current string, closure, static method array, and object
+  method array callable values, including inherited public object methods,
+  supported `__call` fallback, and the optional syntax-only flag. The third
+  by-reference callable-name output parameter is not yet supported.
 - `define()` creates runtime constants over the current boxed value subset,
   returning `false` with a warning when the requested name is already defined.
   Its legacy third `$case_insensitive` argument is accepted for PHP 8 parity:
@@ -562,14 +573,20 @@ Post-RC architecture remains explicit rather than hidden:
   and `["Class", "method"]` callable values. Declared class names and declared
   method names are exposed through bounded `class_exists()` and
   `method_exists()` metadata, with case-insensitive lookup and `stdClass`
-  recognized as the current built-in object shell. Declared instance methods
-  can be called directly through object receivers and through
-  `[$object, "method"]` callable values, including internal callback dispatch.
-  Public `__construct` methods in declared classes are invoked during
-  `new Class(...)` after declared property defaults are installed, using the
-  same method dispatch, `$this` binding, inherited public method lookup,
-  positional argument/default-parameter handling, and return-value cleanup as
-  other declared instance methods.
+  recognized as the current built-in object shell. Declared and inherited
+  public instance methods can be called directly through object receivers and
+  through `[$object, "method"]` callable values, including internal callback
+  dispatch. Public `__construct` methods in declared classes are invoked
+  during `new Class(...)` after declared property defaults are installed,
+  using the same method dispatch, `$this` binding, inherited public method
+  lookup, positional argument/default-parameter handling, and return-value
+  cleanup as other declared instance methods. Missing direct and callable
+  object method dispatch falls through to inherited public
+  `__call($name, $args)` when present; the generated helper supplies the
+  attempted method name and an ordered argument array. `is_callable()` reports
+  the supported string, closure, static-method array, object-method array,
+  inherited method, and `__call` fallback subset, with optional syntax-only
+  checks for valid callable shapes.
 - Public static property declarations in top-level classes, using the supported
   constant-expression default subset. Generated native code initializes
   declaration-backed static slots before top-level statements, supports

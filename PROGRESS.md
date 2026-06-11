@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T18:05Z
-Measured: `ptn-lrty.5` rebased on `origin/master` at `7999a656f`.
+Refresh: 2026-06-11T18:14Z
+Measured: `ptn-lrty.9` rebased on `origin/master` at `7ee3242a9`.
 `array_column()` support is integrated. `array_filter()` rejects unknown mode
 values with the modeled PHP `ValueError`. Foreach non-array diagnostics spell
 boolean operands as `false given` or `true given`. Shared deprecation
@@ -16,7 +16,10 @@ Common string/byte internals share modeled string-argument TypeErrors for
 array/object/closure/exception operands while preserving scalar, null, and
 embedded-NUL paths. Nested string-offset assign-op diagnostics now distinguish
 single-offset assign-op from nested string-offset-as-array access, and
-`Zend/tests/offset_assign.phpt` now passes.
+`Zend/tests/offset_assign.phpt` now passes. Public `__call` fallback is wired
+for missing direct object methods and supported object callable dispatch, and
+`is_callable()` validates the current string, closure, static-array, and
+object-array callable subset.
 
 ## RC Surface
 
@@ -29,8 +32,9 @@ call-frame introspection, scalar type hints, bounded closures/callables,
 public property writes/`??=`, inherited public methods, public constructor
 dispatch, diagnostic filtering, catchable arithmetic `TypeError` boundaries,
 string-internal argument `TypeError` boundaries, inline HTML output across PHP
-blocks, nested string-offset assign-op diagnostics, plain heredoc/nowdoc
-literals, and string interpolation slices.
+blocks, nested string-offset assign-op diagnostics, public `__call` fallback
+for object calls/callables, `is_callable()` subset validation, plain
+heredoc/nowdoc literals, and string interpolation slices.
 
 The RC demo corpus exercises scalar control flow, string internals, arrays plus
 `array_combine`, `array_filter`, and `array_chunk`, top-level functions, public
@@ -41,7 +45,7 @@ class/object shells, direct static properties, and public property `??=`.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 457 | 457 | 0 |
+| Native/compiler Rust suite | 459 | 459 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 180 | 20 |
 | PHPT Zend rows | 76 | 73 | 3 |
@@ -68,13 +72,15 @@ class/object shells, direct static properties, and public property `??=`.
 
 Explicit follow-up work: full visibility/inheritance semantics, typed or
 non-public/promoted properties, interfaces/traits, namespaces, class constants,
-reflection, magic methods beyond public `__construct`, old-style constructors,
-destructors, broader static-property semantics, non-static callables beyond
-bounded dispatch, object destructuring/`Traversable`, property compound
-lvalues beyond public property `??=`, exceptions, resources, dynamic includes,
-heredoc interpolation/flexible indentation, unsupported internals, exact 64-bit
-operator/diagnostic parity, remaining scalar offset-lvalue parity, and
-non-direct-variable or non-numeric inc/dec parity.
+reflection, remaining magic methods (`__invoke`, `__callStatic`, property
+hooks, destructors), first-class callable syntax, old-style constructors,
+visibility-aware callable metadata beyond the public-only slice, object
+destructuring/`Traversable`, broader static-property semantics, property
+compound/static lvalues beyond public property `??=`, exceptions, resources,
+dynamic include/include_once behavior, heredoc interpolation/flexible
+indentation, unsupported internals, exact 64-bit operator/diagnostic parity,
+remaining scalar offset-lvalue parity, and non-direct-variable or non-numeric
+inc/dec parity.
 
 ## Verification
 
@@ -82,10 +88,11 @@ Evidence: bounded `summary-20260611T173953Z.txt` (180/200), COW PHPT
 `summary-20260611T160936Z.txt` (29/29), callback
 `summary-20260611T161926Z.txt` (2/2), native smoke, and post-merge COW gate.
 `ptn-qhla`, `ptn-en6v`, `ptn-dzgg`, `ptn-p0y1`, `ptn-lrty.8`, `ptn-29og`,
-`ptn-lrty.6`, `ptn-lrty.4`, and `ptn-lrty.5` add the current array, foreach,
-deprecation, constructor, arithmetic, inline-HTML, string-diagnostic, and
-string-offset diagnostic rows. Focused `ptn-lrty.5` verification covers
-`compile_nested_string_offset_assign_op_diagnostics_to_native_binary` and exact
-`Zend/tests/offset_assign.phpt`; final gates cover `cargo fmt --check`,
-`git diff --check`, `cargo test`, bounded PHPT, native smoke matrix, and
-post-merge COW gate.
+`ptn-lrty.6`, `ptn-lrty.4`, `ptn-lrty.5`, and `ptn-lrty.9` add the current
+array, foreach, deprecation, constructor, arithmetic, inline-HTML,
+string-diagnostic, string-offset diagnostic, magic-callable, and
+`is_callable()` rows. Focused `ptn-lrty.9` verification covers
+`compile_magic_call_object_callables_to_native_binary`,
+`compile_is_callable_object_callable_subset_to_native_binary`, and the 2/2
+callback PHPT manifest; final gates cover `cargo fmt --check`,
+`git diff --check`, `cargo test`, native smoke matrix, and post-merge COW gate.

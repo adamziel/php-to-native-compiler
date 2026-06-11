@@ -4178,11 +4178,13 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(const char *name);
+static int ptn_callable_is_valid(PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
@@ -4252,6 +4254,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intval", 1, 2, ptn_internal_intval },
         { "is_array", 1, 1, ptn_internal_is_array },
         { "is_bool", 1, 1, ptn_internal_is_bool },
+        { "is_callable", 1, 2, ptn_internal_is_callable },
         { "is_dir", 1, 1, ptn_internal_is_dir },
         { "is_double", 1, 1, ptn_internal_is_float },
         { "is_file", 1, 1, ptn_internal_is_file },
@@ -4372,6 +4375,13 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     int exists = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;
     free(name);
     return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    int syntax_only = argc >= 2 && ptn_is_truthy(args[1]);
+    return ptn_bool(ptn_callable_is_valid(args[0], syntax_only));
 }
 
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
