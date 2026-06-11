@@ -4098,7 +4098,7 @@ fn var_dump_float_exponents_use_php_spelling_in_native_binary() {
     let output = root.join("var-dump-float-exponents-bin");
     fs::write(
         &input,
-        "<?php var_dump(-9.22337203900226E+18); var_dump(1.4757395258967642E+19); var_dump(1.2e-5);",
+        "<?php var_dump(12300000.0); var_dump(24600000.0); var_dump(1.0e16); var_dump(1.0e17); var_dump(-9.22337203900226E+18); var_dump(1.4757395258967642E+19); var_dump(1.2e-5);",
     )
     .unwrap();
 
@@ -4108,7 +4108,7 @@ fn var_dump_float_exponents_use_php_spelling_in_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "float(-9.22337203900226E+18)\nfloat(1.4757395258967642E+19)\nfloat(1.2E-5)\n"
+        "float(12300000)\nfloat(24600000)\nfloat(10000000000000000)\nfloat(1.0E+17)\nfloat(-9.22337203900226E+18)\nfloat(1.4757395258967642E+19)\nfloat(1.2E-5)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -13737,7 +13737,7 @@ fn compile_common_scalar_numeric_paths_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(11)\nfloat(25)\nint(5)\nint(4)\nint(2)\nbool(true)\nint(1)\nfloat(1E+1)\nfloat(2.5)\n"
+        "int(11)\nfloat(25)\nint(5)\nint(4)\nint(2)\nbool(true)\nint(1)\nfloat(10)\nfloat(2.5)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -14488,7 +14488,7 @@ fn support_docs_name_var_dump_unsupported_edges() {
     assert!(support.contains("resources"));
     assert!(support.contains("references"));
     assert!(support.contains("Embedded NUL strings"));
-    assert!(support.contains("Full PHP float precision and formatting edge cases"));
+    assert!(support.contains("Remaining PHP float precision and formatting edge cases"));
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {

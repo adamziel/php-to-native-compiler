@@ -687,6 +687,52 @@ static PTN_UNUSED void ptn_normalize_var_dump_exponent(char *buffer) {
     }
 }
 
+static PTN_UNUSED int ptn_var_dump_has_nonnegative_exponent(const char *buffer) {
+    for (const char *cursor = buffer; *cursor != '\0'; cursor++) {
+        if (*cursor == 'e' || *cursor == 'E') {
+            cursor++;
+            return *cursor != '-';
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_var_dump_ensure_exponent_decimal(char *buffer) {
+    for (char *cursor = buffer; *cursor != '\0'; cursor++) {
+        if (*cursor == '.') {
+            return;
+        }
+        if (*cursor == 'E') {
+            size_t tail_len = strlen(cursor);
+            memmove(cursor + 2, cursor, tail_len + 1);
+            cursor[0] = '.';
+            cursor[1] = '0';
+            return;
+        }
+    }
+}
+
+static PTN_UNUSED int ptn_format_var_dump_integral_fixed(double value, char *buffer, size_t buffer_size) {
+    double integral = 0.0;
+    char candidate[64];
+    char *end = NULL;
+    double reparsed;
+
+    if (fabs(value) >= 1e17 || modf(value, &integral) != 0.0) {
+        return 0;
+    }
+
+    snprintf(candidate, sizeof(candidate), "%.0f", value);
+    errno = 0;
+    reparsed = strtod(candidate, &end);
+    if (errno != 0 || end == NULL || *end != '\0' || !ptn_same_double(reparsed, value)) {
+        return 0;
+    }
+
+    snprintf(buffer, buffer_size, "%s", candidate);
+    return 1;
+}
+
 static PTN_UNUSED void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_size) {
     if (isnan(value)) {
         snprintf(buffer, buffer_size, "NAN");
@@ -706,6 +752,11 @@ static PTN_UNUSED void ptn_format_var_dump_float(double value, char *buffer, siz
         errno = 0;
         reparsed = strtod(candidate, &end);
         if (errno == 0 && end != NULL && *end == '\0' && ptn_same_double(reparsed, value)) {
+            if (ptn_var_dump_has_nonnegative_exponent(candidate) &&
+                ptn_format_var_dump_integral_fixed(value, buffer, buffer_size)) {
+                return;
+            }
+            ptn_var_dump_ensure_exponent_decimal(candidate);
             snprintf(buffer, buffer_size, "%s", candidate);
             return;
         }
@@ -713,6 +764,7 @@ static PTN_UNUSED void ptn_format_var_dump_float(double value, char *buffer, siz
 
     snprintf(buffer, buffer_size, "%.17g", value);
     ptn_normalize_var_dump_exponent(buffer);
+    ptn_var_dump_ensure_exponent_decimal(buffer);
 }
 
 static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
