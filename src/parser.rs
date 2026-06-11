@@ -70,14 +70,21 @@ enum ParsedClassMember {
 
 impl Parser {
     fn parse_program(&mut self) -> Result<Program> {
-        self.expect_open_tag()?;
+        if matches!(self.peek().kind, TokenKind::OpenTag) {
+            self.expect_open_tag()?;
+        } else if !matches!(self.peek().kind, TokenKind::InlineHtml(_) | TokenKind::Eof) {
+            return Err(Diagnostic::new(
+                "expected <?php open tag",
+                Some(self.peek().span),
+            ));
+        }
         let mut classes = Vec::new();
         let mut functions = Vec::new();
         let mut statements = Vec::new();
         while !matches!(self.peek().kind, TokenKind::Eof) {
-            if matches!(self.peek().kind, TokenKind::OpenTag | TokenKind::CloseTag) {
-                self.advance();
-                continue;
+            self.skip_php_tags();
+            if matches!(self.peek().kind, TokenKind::Eof) {
+                break;
             }
             if self.peek_starts_function_decl() {
                 functions.push(self.parse_function_decl()?);
@@ -874,6 +881,7 @@ impl Parser {
         let condition = self.parse_expr()?;
         self.expect_right_paren()?;
         let then_body = self.parse_statement_body()?;
+        self.skip_php_tags();
         let else_body = match self.peek().kind {
             TokenKind::Elseif => vec![self.parse_if()?],
             TokenKind::Else => {
@@ -906,6 +914,7 @@ impl Parser {
     fn parse_do_while(&mut self) -> Result<Statement> {
         let span = self.expect_do()?;
         let body = self.parse_statement_body()?;
+        self.skip_php_tags();
         self.expect_while()?;
         self.expect_left_paren()?;
         let condition = self.parse_expr()?;
@@ -1106,6 +1115,10 @@ impl Parser {
         let mut cases = Vec::new();
         let mut seen_default = false;
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            self.skip_php_tags();
+            if matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+                break;
+            }
             let case_span = self.peek().span;
             let condition = match self.peek().kind {
                 TokenKind::Case => {
@@ -1139,6 +1152,13 @@ impl Parser {
                 self.peek().kind,
                 TokenKind::Case | TokenKind::Default | TokenKind::RightBrace | TokenKind::Eof
             ) {
+                self.skip_php_tags();
+                if matches!(
+                    self.peek().kind,
+                    TokenKind::Case | TokenKind::Default | TokenKind::RightBrace | TokenKind::Eof
+                ) {
+                    break;
+                }
                 body.push(self.parse_nested_statement()?);
             }
             cases.push(SwitchCase {
@@ -1366,6 +1386,10 @@ impl Parser {
         self.expect_left_brace()?;
         let mut statements = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            self.skip_php_tags();
+            if matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+                break;
+            }
             statements.push(self.parse_nested_statement()?);
         }
         self.expect_right_brace()?;
@@ -1373,6 +1397,7 @@ impl Parser {
     }
 
     fn parse_statement_body(&mut self) -> Result<Vec<Statement>> {
+        self.skip_php_tags();
         if matches!(self.peek().kind, TokenKind::LeftBrace) {
             self.parse_block()
         } else {
@@ -1381,10 +1406,17 @@ impl Parser {
     }
 
     fn parse_nested_statement(&mut self) -> Result<Statement> {
+        self.skip_php_tags();
         self.block_depth += 1;
         let statement = self.parse_statement();
         self.block_depth -= 1;
         statement
+    }
+
+    fn skip_php_tags(&mut self) {
+        while matches!(self.peek().kind, TokenKind::OpenTag | TokenKind::CloseTag) {
+            self.advance();
+        }
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {

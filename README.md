@@ -19,6 +19,8 @@ expected rows, or one-off outputs.
   `${name}` variables.
 - Double-quoted string escapes cover common control escapes plus `\xNN` and
   octal byte escapes, including high bytes in generated native binaries.
+- Inline HTML before, between, and after PHP blocks lowers through the shared
+  output path.
 - Top-level user functions and declared class methods include scoped magic
   constant coverage for their current supported scope plus `func_num_args()`,
   `func_get_arg()`, and `func_get_args()` call-frame introspection, scalar type

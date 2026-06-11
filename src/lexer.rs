@@ -176,19 +176,16 @@ impl<'a> Lexer<'a> {
                     self.skip_line();
                     continue;
                 }
-                if ch.is_whitespace() {
-                    self.bump_char();
-                    continue;
-                }
                 if self.rest().starts_with("<?php") {
                     self.push_open_tag();
                     continue;
                 }
-
-                return Err(Diagnostic::new(
-                    "expected <?php open tag",
-                    Some(self.current_char_span()),
-                ));
+                if ch.is_whitespace() && self.leading_whitespace_reaches_open_tag_or_eof() {
+                    self.bump_char();
+                    continue;
+                }
+                self.lex_inline_html()?;
+                continue;
             }
 
             match ch {
@@ -338,10 +335,19 @@ impl<'a> Lexer<'a> {
         let mut content = String::new();
         while let Some(ch) = self.peek_char() {
             if self.rest().starts_with("<?php") {
-                return Err(Diagnostic::new(
-                    "inline HTML between PHP blocks is unsupported",
-                    Some(self.current_span(5)),
-                ));
+                if !content.is_empty() {
+                    self.tokens.push(Token {
+                        kind: TokenKind::InlineHtml(content),
+                        span: SourceSpan::new(
+                            start.byte_start,
+                            self.cursor,
+                            start.line,
+                            start.column,
+                        ),
+                    });
+                }
+                self.push_open_tag();
+                return Ok(());
             }
             content.push(ch);
             self.bump_char();
@@ -353,6 +359,20 @@ impl<'a> Lexer<'a> {
             });
         }
         Ok(())
+    }
+
+    fn leading_whitespace_reaches_open_tag_or_eof(&self) -> bool {
+        let mut cursor = self.cursor;
+        while cursor < self.source.len() {
+            let Some(ch) = self.source[cursor..].chars().next() else {
+                break;
+            };
+            if !ch.is_whitespace() {
+                break;
+            }
+            cursor += ch.len_utf8();
+        }
+        cursor == self.source.len() || self.source[cursor..].starts_with("<?php")
     }
 
     fn lex_string(&mut self, quote: char) -> Result<()> {
@@ -1220,6 +1240,7 @@ impl<'a> Lexer<'a> {
     fn push_open_tag(&mut self) {
         self.push_fixed(TokenKind::OpenTag, 5);
         self.seen_open_tag = true;
+        self.closed_php = false;
     }
 
     fn push_close_tag(&mut self) {
