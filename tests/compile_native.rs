@@ -8481,6 +8481,8 @@ fn compile_array_chunk_to_native_binary() {
 $items = array(1 => 'one','two', 3 => 'three', 4, 'five' => 5);\n\
 var_dump(array_chunk($items, 2));\n\
 var_dump(array_chunk($items, 2, true));\n\
+$assoc = array('a' => 1, 'b' => 2, 'c' => 3);\n\
+var_dump(array_chunk($assoc, 2, true));\n\
 $nested = array(array('seed'), array('next'));\n\
 $chunks = array_chunk($nested, 1);\n\
 $chunks[0][0][] = 'copy';\n\
@@ -8496,7 +8498,7 @@ var_dump(function_exists('array_chunk'), function_exists('ARRAY_CHUNK'));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(3) {\n  [0]=>\n  array(2) {\n    [0]=>\n    string(3) \"one\"\n    [1]=>\n    string(3) \"two\"\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    string(5) \"three\"\n    [1]=>\n    int(4)\n  }\n  [2]=>\n  array(1) {\n    [0]=>\n    int(5)\n  }\n}\narray(3) {\n  [0]=>\n  array(2) {\n    [1]=>\n    string(3) \"one\"\n    [2]=>\n    string(3) \"two\"\n  }\n  [1]=>\n  array(2) {\n    [3]=>\n    string(5) \"three\"\n    [4]=>\n    int(4)\n  }\n  [2]=>\n  array(1) {\n    [\"five\"]=>\n    int(5)\n  }\n}\narray(2) {\n  [0]=>\n  string(4) \"seed\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray_chunk(): Argument #2 ($length) must be greater than 0\nbool(true)\nbool(true)\n"
+        "array(3) {\n  [0]=>\n  array(2) {\n    [0]=>\n    string(3) \"one\"\n    [1]=>\n    string(3) \"two\"\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    string(5) \"three\"\n    [1]=>\n    int(4)\n  }\n  [2]=>\n  array(1) {\n    [0]=>\n    int(5)\n  }\n}\narray(3) {\n  [0]=>\n  array(2) {\n    [1]=>\n    string(3) \"one\"\n    [2]=>\n    string(3) \"two\"\n  }\n  [1]=>\n  array(2) {\n    [3]=>\n    string(5) \"three\"\n    [4]=>\n    int(4)\n  }\n  [2]=>\n  array(1) {\n    [\"five\"]=>\n    int(5)\n  }\n}\narray(2) {\n  [0]=>\n  array(2) {\n    [\"a\"]=>\n    int(1)\n    [\"b\"]=>\n    int(2)\n  }\n  [1]=>\n  array(1) {\n    [\"c\"]=>\n    int(3)\n  }\n}\narray(2) {\n  [0]=>\n  string(4) \"seed\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray_chunk(): Argument #2 ($length) must be greater than 0\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

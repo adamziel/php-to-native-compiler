@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T14:42Z
-Measured: `ptn-tf9u` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T14:50Z
+Measured: `ptn-ke07` rebased after current `origin/master`; array null-offset
 diagnostics, Closure captures, expression-form `print`, static properties,
 inherited methods, property `??=`, loose object `switch`, nested string-offset
 unset, braced interpolation, branch-condition assignment, named arguments,
@@ -11,11 +11,11 @@ scalar variable variables, include returns, array/object type predicates,
 `define()` legacy flag parity, shared `error_reporting()` filtering, dirname
 edges, high-byte string escapes, declared-function `continue`/`switch`
 warnings, `str_repeat()`, `array_fill()` including integer-key overflow parity,
-`array_flip()`, `array_change_key_case()`, `array_chunk()`,
-braced-interpolation alternative-offset parse errors, `chr()` out-of-range
-deprecations with suppression coverage, integer `range()` default/descending
-step coverage, plain heredoc/nowdoc string literals, and COW evidence are
-integrated.
+`array_flip()`, `array_change_key_case()`, and `array_chunk()` with
+assoc-key/COW reducer coverage, braced-interpolation alternative-offset parse
+errors, `chr()` out-of-range deprecations with suppression coverage, integer
+`range()` default/descending-step coverage, plain heredoc/nowdoc string
+literals, and COW evidence are integrated.
 
 ## Test Dashboard
 

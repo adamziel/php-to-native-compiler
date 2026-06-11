@@ -384,6 +384,9 @@ supports in generated native binaries.
   dereferenced values into a fresh ordered array. The optional case flag accepts
   `CASE_LOWER`/`CASE_UPPER` and rejects other values with the modeled PHP
   `ValueError`.
+- `array_chunk()` over current boxed arrays, splitting entries in insertion
+  order, reindexing chunk keys by default, preserving integer/string keys when
+  requested, and throwing the modeled PHP `ValueError` for lengths below one.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `range()` over current boxed integer-convertible start, end, and optional

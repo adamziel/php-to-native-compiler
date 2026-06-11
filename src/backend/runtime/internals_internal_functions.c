@@ -904,6 +904,63 @@ static PtnValue ptn_internal_array_change_key_case(PtnRuntime *runtime, size_t a
     return result;
 }
 
+static void ptn_array_chunk_append_result(PtnValue *result, PtnValue chunk, int64_t *chunk_index) {
+    ptn_array_set_entry(
+        result->as.array,
+        ptn_array_int_key(*chunk_index),
+        chunk
+    );
+    if (*chunk_index == INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    (*chunk_index)++;
+}
+
+static PtnValue ptn_internal_array_chunk(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_chunk", 1, "array", args[0]);
+    int64_t length = ptn_value_to_integer(args[1]);
+    if (length < 1) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_chunk(): Argument #2 ($length) must be greater than 0"
+        );
+    }
+
+    int preserve_keys = argc >= 3 && ptn_is_truthy(args[2]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnValue chunk = ptn_null();
+    int64_t chunk_index = 0;
+    int64_t chunk_len = 0;
+
+    for (size_t i = 0; i < array->len; i++) {
+        if (chunk_len == 0) {
+            chunk = ptn_array_from_literal_entries(0, NULL);
+        }
+
+        PtnArrayEntry *source = &array->entries[i];
+        PtnArrayKey key = preserve_keys
+            ? ptn_array_key_clone(source->key)
+            : ptn_array_int_key(chunk.as.array->next_auto_key);
+        PtnValue value = ptn_array_reindexing_internal_value(source->value);
+        ptn_array_set_entry(chunk.as.array, key, ptn_value_clone(value));
+
+        chunk_len++;
+        if (chunk_len == length) {
+            ptn_array_chunk_append_result(&result, chunk, &chunk_index);
+            chunk = ptn_null();
+            chunk_len = 0;
+        }
+    }
+
+    if (chunk_len != 0) {
+        ptn_array_chunk_append_result(&result, chunk, &chunk_index);
+    }
+
+    return result;
+}
+
 static int ptn_array_count_values_key_from_value(PtnRuntime *runtime, PtnValue value, size_t line, PtnArrayKey *key_out) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -985,44 +1042,6 @@ static PtnValue ptn_internal_array_flip(PtnRuntime *runtime, size_t argc, const 
             continue;
         }
         ptn_array_set_entry(result.as.array, key, ptn_array_key_value(array->entries[i].key));
-    }
-    return result;
-}
-
-static PtnValue ptn_internal_array_chunk(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_chunk", 1, "array", args[0]);
-    int64_t length = ptn_value_to_integer(args[1]);
-    if (length <= 0) {
-        ptn_throw_exception(
-            runtime,
-            "ValueError",
-            "array_chunk(): Argument #2 ($length) must be greater than 0"
-        );
-    }
-
-    int preserve_keys = argc >= 3 && ptn_is_truthy(args[2]);
-    PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    size_t source_index = 0;
-    int64_t chunk_index = 0;
-    while (source_index < array->len) {
-        PtnValue chunk = ptn_array_from_literal_entries(0, NULL);
-        int64_t chunk_key = 0;
-        while (source_index < array->len && chunk_key < length) {
-            PtnArrayEntry *source = &array->entries[source_index];
-            PtnArrayKey key = preserve_keys
-                ? ptn_array_key_clone(source->key)
-                : ptn_array_int_key(chunk_key);
-            ptn_array_set_entry(chunk.as.array, key, ptn_value_clone_deref(source->value));
-            source_index++;
-            chunk_key++;
-        }
-
-        ptn_array_set_entry(result.as.array, ptn_array_int_key(chunk_index), chunk);
-        if (chunk_index == INT64_MAX) {
-            ptn_abort_out_of_memory();
-        }
-        chunk_index++;
     }
     return result;
 }
