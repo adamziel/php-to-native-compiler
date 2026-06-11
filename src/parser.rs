@@ -3522,6 +3522,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "count"
             | "array_change_key_case"
             | "array_chunk"
+            | "array_column"
             | "array_combine"
             | "array_count_values"
             | "array_fill"

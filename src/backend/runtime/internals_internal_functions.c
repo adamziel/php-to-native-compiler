@@ -991,6 +991,168 @@ static PtnValue ptn_internal_array_chunk(PtnRuntime *runtime, size_t argc, const
     return result;
 }
 
+typedef struct {
+    int is_null;
+    PtnArrayKey array_key;
+    char *property_name;
+} PtnArrayColumnKey;
+
+static char *ptn_array_column_integer_property_name(int64_t integer) {
+    char buffer[32];
+    int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)integer);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_duplicate_string(buffer);
+}
+
+static const char *ptn_array_column_argument_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static PtnArrayColumnKey ptn_array_column_key_from_arg(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    PtnArrayColumnKey key;
+    key.is_null = 0;
+    key.property_name = NULL;
+
+    int64_t integer = 0;
+    switch (value.type) {
+        case PTN_NULL:
+            key.is_null = 1;
+            key.array_key = ptn_array_int_key(0);
+            return key;
+        case PTN_BOOL:
+            integer = value.as.boolean ? 1 : 0;
+            key.array_key = ptn_array_int_key(integer);
+            key.property_name = ptn_array_column_integer_property_name(integer);
+            return key;
+        case PTN_INT:
+            key.array_key = ptn_array_int_key(value.as.integer);
+            key.property_name = ptn_array_column_integer_property_name(value.as.integer);
+            return key;
+        case PTN_FLOAT:
+            integer = ptn_value_to_integer(value);
+            key.array_key = ptn_array_int_key(integer);
+            key.property_name = ptn_array_column_integer_property_name(integer);
+            return key;
+        case PTN_STRING:
+            key.array_key = ptn_array_key_from_value(value);
+            key.property_name = ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
+            return key;
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_REFERENCE: {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "array_column(): Argument #%zu ($%s) must be of type string|int|null, %s given",
+                position,
+                argument_name,
+                ptn_array_column_argument_type_name(value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            key.is_null = 1;
+            key.array_key = ptn_array_int_key(0);
+            return key;
+        }
+    }
+
+    key.is_null = 1;
+    key.array_key = ptn_array_int_key(0);
+    return key;
+}
+
+static void ptn_array_column_key_free(PtnArrayColumnKey key) {
+    if (key.is_null) {
+        return;
+    }
+    ptn_array_key_free(key.array_key);
+    free(key.property_name);
+}
+
+static int ptn_array_column_lookup(PtnValue row, PtnArrayColumnKey key, PtnValue *value_out) {
+    row = ptn_value_deref(row);
+    if (key.is_null) {
+        *value_out = ptn_value_clone_deref(row);
+        return 1;
+    }
+
+    if (row.type == PTN_ARRAY) {
+        PtnArrayEntry *entry = ptn_array_entry_for_key(row.as.array, key.array_key);
+        if (entry == NULL) {
+            return 0;
+        }
+        *value_out = ptn_value_clone_deref(entry->value);
+        return 1;
+    }
+
+    if (row.type == PTN_OBJECT) {
+        PtnArrayKey property_key = ptn_array_string_key(key.property_name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(row.as.object->properties, property_key);
+        ptn_array_key_free(property_key);
+        if (entry == NULL) {
+            return 0;
+        }
+        *value_out = ptn_value_clone_deref(entry->value);
+        return 1;
+    }
+
+    return 0;
+}
+
+static void ptn_array_column_add_value(PtnValue *result, PtnValue row, PtnArrayColumnKey index_key, PtnValue value) {
+    if (!index_key.is_null) {
+        PtnValue index_value;
+        if (ptn_array_column_lookup(row, index_key, &index_value)) {
+            PtnArrayKey result_key = ptn_array_key_from_value(index_value);
+            ptn_value_destroy(&index_value);
+            ptn_array_set_entry(result->as.array, result_key, value);
+            return;
+        }
+    }
+
+    PtnArrayKey next_key = ptn_array_int_key(result->as.array->next_auto_key);
+    ptn_array_set_entry(result->as.array, next_key, value);
+}
+
+static PtnValue ptn_internal_array_column(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_column", 1, "array", args[0]);
+    PtnArrayColumnKey column_key = ptn_array_column_key_from_arg(runtime, 2, "column_key", args[1]);
+    PtnArrayColumnKey index_key = argc >= 3
+        ? ptn_array_column_key_from_arg(runtime, 3, "index_key", args[2])
+        : (PtnArrayColumnKey){ 1, { 0 }, NULL };
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value;
+        if (!ptn_array_column_lookup(array->entries[i].value, column_key, &value)) {
+            continue;
+        }
+        ptn_array_column_add_value(&result, array->entries[i].value, index_key, value);
+    }
+
+    ptn_array_column_key_free(column_key);
+    ptn_array_column_key_free(index_key);
+    return result;
+}
+
 static int ptn_array_count_values_key_from_value(PtnRuntime *runtime, PtnValue value, size_t line, PtnArrayKey *key_out) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -4058,6 +4220,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "addslashes", 1, 1, ptn_internal_addslashes },
         { "array_change_key_case", 1, 2, ptn_internal_array_change_key_case },
         { "array_chunk", 2, 3, ptn_internal_array_chunk },
+        { "array_column", 2, 3, ptn_internal_array_column },
         { "array_combine", 2, 2, ptn_internal_array_combine },
         { "array_count_values", 1, 1, ptn_internal_array_count_values },
         { "array_fill", 3, 3, ptn_internal_array_fill },

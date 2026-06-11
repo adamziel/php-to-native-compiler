@@ -8737,6 +8737,44 @@ var_dump(function_exists(\"array_combine\"), function_exists(\"ARRAY_COMBINE\"))
 }
 
 #[test]
+fn compile_array_column_to_native_binary() {
+    let root = temp_dir("ptn-native-array-column");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-column.php");
+    let output = root.join("array-column-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$rows = [\n\
+    [42 => \"a\", \"id\" => \"2\"],\n\
+    [42 => \"b\", \"id\" => \"02\"],\n\
+    [42 => \"c\", \"id\" => 3],\n\
+    [\"x\" => \"missing\", \"id\" => \"skip\"],\n\
+];\n\
+var_dump(array_column($rows, 42));\n\
+var_dump(array_column($rows, \"42\", \"id\"));\n\
+var_dump(array_column($rows, null, \"id\"));\n\
+$nested = [\"seed\"];\n\
+$rows2 = [[\"key\" => \"x\", \"value\" => $nested], [\"key\" => \"y\", \"value\" => [\"next\"]]];\n\
+$result = array_column($rows2, \"value\", \"key\");\n\
+$result[\"x\"][] = \"copy\";\n\
+var_dump($result[\"x\"], $nested);\n\
+var_dump(function_exists(\"array_column\"), function_exists(\"ARRAY_COLUMN\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"c\"\n}\narray(3) {\n  [2]=>\n  string(1) \"a\"\n  [\"02\"]=>\n  string(1) \"b\"\n  [3]=>\n  string(1) \"c\"\n}\narray(4) {\n  [2]=>\n  array(2) {\n    [42]=>\n    string(1) \"a\"\n    [\"id\"]=>\n    string(1) \"2\"\n  }\n  [\"02\"]=>\n  array(2) {\n    [42]=>\n    string(1) \"b\"\n    [\"id\"]=>\n    string(2) \"02\"\n  }\n  [3]=>\n  array(2) {\n    [42]=>\n    string(1) \"c\"\n    [\"id\"]=>\n    int(3)\n  }\n  [\"skip\"]=>\n  array(2) {\n    [\"x\"]=>\n    string(7) \"missing\"\n    [\"id\"]=>\n    string(4) \"skip\"\n  }\n}\narray(2) {\n  [0]=>\n  string(4) \"seed\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_count_values_to_native_binary() {
     let root = temp_dir("ptn-native-array-count-values");
     fs::create_dir_all(&root).unwrap();

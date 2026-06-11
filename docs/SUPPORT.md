@@ -147,6 +147,10 @@ supports in generated native binaries.
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
   empty string.
+- `array_column()` over current ordered-array inputs, reading array entries or
+  object properties by int/string column keys, returning whole rows for `null`
+  column keys, optionally keying rows from an int/string index key, and using
+  the usual PHP array-key canonicalization for numeric strings.
 - `in_array()` over current ordered-array values, using shared loose equality
   or strict identity comparison and dereferencing references in both the needle
   and haystack entries.
@@ -208,9 +212,9 @@ supports in generated native binaries.
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_chunk(expr, expr[, expr]);`,
-  `array_combine(expr, expr);`, `array_change_key_case(expr[, expr]);`,
-  `array_count_values(expr);`, `array_fill(expr, expr, expr);`,
-  `array_filter(expr[, expr[, expr]]);`,
+  `array_change_key_case(expr[, expr]);`, `array_column(expr, expr[, expr]);`,
+  `array_combine(expr, expr);`, `array_count_values(expr);`,
+  `array_fill(expr, expr, expr);`, `array_filter(expr[, expr[, expr]]);`,
   `array_values(expr);`, `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
@@ -232,9 +236,10 @@ supports in generated native binaries.
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
   `count(expr)`, `array_chunk(expr, expr[, expr])`,
-  `array_combine(expr, expr)`, `array_change_key_case(expr[, expr])`,
-  `array_count_values(expr)`, `array_fill(expr, expr, expr)`,
-  `array_filter(expr[, expr[, expr]])`, `array_values(expr)`,
+  `array_change_key_case(expr[, expr])`, `array_column(expr, expr[, expr])`,
+  `array_combine(expr, expr)`, `array_count_values(expr)`,
+  `array_fill(expr, expr, expr)`, `array_filter(expr[, expr[, expr]])`,
+  `array_values(expr)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
@@ -401,6 +406,10 @@ supports in generated native binaries.
   callback may be `null` for PHP truthiness filtering or any currently modeled
   callable, and the modeled `ARRAY_FILTER_USE_BOTH`/`ARRAY_FILTER_USE_KEY`
   constants select value+key or key-only callback arguments.
+- `array_column()` over current boxed arrays, selecting array entries or object
+  properties by int/string column key, returning full rows for `null`
+  column keys, optionally using row values as result keys, skipping missing
+  columns, and cloning dereferenced values across COW boundaries.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `range()` over current boxed integer-convertible start, end, and optional
