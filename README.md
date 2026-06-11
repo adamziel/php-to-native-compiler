@@ -1,19 +1,18 @@
 # PTN From Scratch
 
-PTN compiles a growing subset of PHP into native binaries through a generic
+PTN compiles a growing PHP subset into native binaries through the
 compiler/runtime path:
 
 `PHP source -> lexer/parser -> AST -> IR -> C runtime -> native executable`
 
 Rule: implement reusable PHP semantics. Do not special-case PHPT filenames,
-expected rows, or one-off outputs.
+rows, or outputs.
 
 ## Current Shape
 
 - Rust crate and `phpc` compiler binary.
 - Boxed C runtime for PHP-like values.
-- Native execution tests for parser, IR, backend, runtime, and selected PHP
-  behavior.
+- Native execution tests for parser, IR, backend, runtime, and PHP behavior.
 - Double-quoted interpolation covers direct `$name`, simple `$items[$key]`
   offsets, braced `{$name}`/`{$items['key']}`, and deprecated legacy
   `${name}` variables.
@@ -60,8 +59,8 @@ expected rows, or one-off outputs.
 - `STATUS.md`: current operating status.
 - `progress.md`, `progress.html`, `STATUS.html`: short generated mirrors.
 
-These files must stay under 500 words each. One progress patrol polecat refreshes
-them about every 10 minutes.
+Keep each under 500 words; progress patrol refreshes them about every 10
+minutes.
 
 ## Commands
 

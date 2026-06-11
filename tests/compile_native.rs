@@ -3489,34 +3489,6 @@ fn compile_strlen_expression_to_native_binary() {
 }
 
 #[test]
-fn compile_highlight_string_and_empty_output_buffer_to_native_binary() {
-    let root = temp_dir("ptn-native-highlight-string-output-buffer");
-    fs::create_dir_all(&root).unwrap();
-    let input = root.join("highlight-string-output-buffer.php");
-    let output = root.join("highlight-string-output-buffer-bin");
-    fs::write(
-        &input,
-        "<?php\n\
-var_dump(function_exists(\"highlight_string\"), function_exists(\"ob_get_contents\"));\n\
-echo \"before\\n\";\n\
-$result = highlight_string(\"hidden\", true);\n\
-echo \"after\\n\";\n\
-var_dump(is_string($result), $result !== \"\", ob_get_contents());",
-    )
-    .unwrap();
-
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
-
-    let execution = Command::new(&output).output().unwrap();
-    assert!(execution.status.success());
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbefore\nafter\nbool(true)\nbool(true)\nbool(false)\n"
-    );
-    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
-}
-
-#[test]
 fn compile_string_internals_use_direct_string_operand_fast_paths_to_native_binary() {
     let root = temp_dir("ptn-native-string-internal-direct-operands");
     fs::create_dir_all(&root).unwrap();
@@ -3879,6 +3851,68 @@ echo \"done\\n\";\n",
     ));
     assert!(!stdout.contains("Warning: unlink("));
     assert!(stdout.ends_with("done\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_highlight_string_and_empty_output_buffer_to_native_binary() {
+    let root = temp_dir("ptn-native-highlight-string-ob");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("highlight-string-ob.php");
+    let output = root.join("highlight-string-ob-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists(\"highlight_string\"), function_exists(\"highlight_file\"), function_exists(\"ob_get_contents\"));\n\
+echo highlight_string(\"<A&>\", true), \"\\n\";\n\
+highlight_string(\"A\", false);\n\
+echo \"\\n\";\n\
+var_dump(ob_get_contents());\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\n\
+<code><span style=\"color: #000000\">\n&lt;A&amp;&gt;</span>\n</code>\n\
+<code><span style=\"color: #000000\">\nA</span>\n</code>\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_highlight_file_missing_path_to_native_binary() {
+    let root = temp_dir("ptn-native-highlight-file-missing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("highlight-file-missing.php");
+    let output = root.join("highlight-file-missing-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(highlight_file(\"missing-highlight.php\", true));\n\
+var_dump(ob_get_contents());\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: highlight_file(missing-highlight.php): Failed to open stream: No such file or directory in {} on line 2\n\n\
+Warning: highlight_file(): Failed opening 'missing-highlight.php' for highlighting in {} on line 2\n\
+bool(false)\nbool(false)\n",
+            input.display(),
+            input.display()
+        )
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

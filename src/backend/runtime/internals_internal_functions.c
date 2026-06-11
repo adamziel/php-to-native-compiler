@@ -2344,21 +2344,6 @@ static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int((int64_t)len);
 }
 
-static PtnValue ptn_internal_highlight_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "highlight_string", 1, "string", args[0], line);
-    int return_output = argc >= 2 && ptn_is_truthy(args[1]);
-    if (return_output) {
-        char *copy = ptn_duplicate_string_len(string.data, string.len);
-        size_t len = string.len;
-        ptn_string_operand_free(string);
-        return ptn_owned_string_len(copy, len);
-    }
-
-    fwrite(string.data, 1, string.len, stdout);
-    ptn_string_operand_free(string);
-    return ptn_bool(1);
-}
-
 static char *ptn_rot13_string(const char *string, size_t len) {
     char *rotated = malloc(len + 1);
     if (rotated == NULL) {
@@ -3742,6 +3727,105 @@ static PtnStringOperand ptn_internal_expect_string_arg(
     return ptn_value_to_string_operand_with_runtime(runtime, value, line);
 }
 
+static void ptn_highlight_append_escaped(PtnStringBuffer *buffer, const char *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        switch ((unsigned char)data[i]) {
+            case '&':
+                ptn_string_buffer_append(buffer, "&amp;");
+                break;
+            case '<':
+                ptn_string_buffer_append(buffer, "&lt;");
+                break;
+            case '>':
+                ptn_string_buffer_append(buffer, "&gt;");
+                break;
+            default:
+                ptn_string_buffer_append_char(buffer, data[i]);
+                break;
+        }
+    }
+}
+
+static PtnValue ptn_highlight_string_value(PtnStringOperand input) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_string_buffer_append(&buffer, "<code><span style=\"color: #000000\">\n");
+    ptn_highlight_append_escaped(&buffer, input.data, input.len);
+    ptn_string_buffer_append(&buffer, "</span>\n</code>");
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static PtnValue ptn_internal_highlight_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "highlight_string", 1, "string", args[0], line);
+    int return_output = argc >= 2 && ptn_is_truthy(args[1]);
+    PtnValue highlighted = ptn_highlight_string_value(input);
+    ptn_string_operand_free(input);
+    if (return_output) {
+        return highlighted;
+    }
+    fwrite(highlighted.as.string.data, 1, highlighted.as.string.len, stdout);
+    ptn_value_destroy(&highlighted);
+    return ptn_bool(1);
+}
+
+static void ptn_emit_highlight_file_open_warnings(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *reason,
+    size_t line
+) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    const char *source_path = runtime->source_path == NULL ? "ptn" : runtime->source_path;
+    printf(
+        "Warning: highlight_file(%s): Failed to open stream: %s in %s on line %zu\n\n",
+        path,
+        reason,
+        source_path,
+        line
+    );
+    printf(
+        "Warning: highlight_file(): Failed opening '%s' for highlighting in %s on line %zu\n",
+        path,
+        source_path,
+        line
+    );
+}
+
+static PtnValue ptn_internal_highlight_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "highlight_file", 1, "filename", args[0], line);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "highlight_file(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    if (read_result <= 0) {
+        const char *reason = read_result == 0 ? strerror(errno) : "Failed to read stream";
+        ptn_emit_highlight_file_open_warnings(runtime, path, reason, line);
+        free(path);
+        free(data);
+        return ptn_bool(0);
+    }
+
+    PtnStringOperand input = ptn_string_operand_owned_len((char *)data, data_len);
+    int return_output = argc >= 2 && ptn_is_truthy(args[1]);
+    PtnValue highlighted = ptn_highlight_string_value(input);
+    ptn_string_operand_free(input);
+    free(path);
+    if (return_output) {
+        return highlighted;
+    }
+    fwrite(highlighted.as.string.data, 1, highlighted.as.string.len, stdout);
+    ptn_value_destroy(&highlighted);
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "dirname", 1, "path", args[0], line);
@@ -4974,6 +5058,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gettype", 1, 1, ptn_internal_gettype },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
+        { "highlight_file", 1, 2, ptn_internal_highlight_file },
         { "highlight_string", 1, 2, ptn_internal_highlight_string },
         { "in_array", 2, 3, ptn_internal_in_array },
         { "intdiv", 2, 2, ptn_internal_intdiv },

@@ -144,12 +144,31 @@ static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *na
     ptn_symbols_rebuild_index(symbols, symbols->len);
 }
 
+static int ptn_parse_int64_env(const char *name, int64_t *out) {
+    const char *configured = getenv(name);
+    if (configured == NULL || configured[0] == '\0') {
+        return 0;
+    }
+    char *end = NULL;
+    errno = 0;
+    long long parsed = strtoll(configured, &end, 10);
+    if (errno != 0 || end == configured || *end != '\0') {
+        return 0;
+    }
+    *out = (int64_t)parsed;
+    return 1;
+}
+
 static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->stream = stream;
     diagnostics->emitted_deprecation = 0;
     diagnostics->emitted_warning = 0;
     diagnostics->suppressed = 0;
     diagnostics->error_reporting = PTN_E_ALL;
+    int64_t configured_error_reporting = 0;
+    if (ptn_parse_int64_env("PTN_PHP_ERROR_REPORTING", &configured_error_reporting)) {
+        diagnostics->error_reporting = configured_error_reporting;
+    }
 }
 
 static PTN_UNUSED int ptn_diagnostics_should_emit(PtnDiagnosticSink *diagnostics, int64_t severity) {
