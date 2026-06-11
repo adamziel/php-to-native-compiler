@@ -1,10 +1,11 @@
 # PTN Progress
 
-Refresh: 2026-06-11T16:47Z
-Measured: `ptn-dzgg` rebased on `origin/master` at `ff7801200`.
-`array_column()` support is integrated. `array_filter()` rejects unknown mode
-values with the modeled PHP `ValueError`. Foreach non-array diagnostics now
-spell boolean operands as `false given` or `true given` instead of `bool given`.
+Refresh: 2026-06-11T16:53Z
+Measured: `ptn-lrty.10` rebased on `origin/master` at `160faa991`.
+`array_column()` and `array_filter()` support are integrated. Foreach non-array
+diagnostics now spell boolean operands exactly. Public object-property and
+direct static-property compound assignments now lower through reusable
+read-op-write backend helpers with PHP RHS-before-read order.
 
 ## RC Surface
 
@@ -14,8 +15,9 @@ values, variables/constants, strings, scalar operators, ordered arrays,
 selected standard internals, COW/reference slices, top-level functions,
 call-frame introspection, scalar type hints, bounded closures/callables,
 `stdClass`, public class/object shells, direct public static properties,
-public property writes/`??=`, inherited public methods, diagnostic filtering,
-plain heredoc/nowdoc literals, and string interpolation slices.
+public property writes/`??=`/compounds, static-property compounds, inherited
+public methods, diagnostic filtering, plain heredoc/nowdoc literals, and string
+interpolation slices.
 
 The demo corpus exercises scalar control flow, string internals, arrays plus
 `array_combine`, `array_filter`, and `array_chunk`, top-level functions, public
@@ -26,7 +28,7 @@ class/object shells, direct static properties, and public property `??=`.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 451 | 451 | 0 |
+| Native/compiler Rust suite | 454 | 454 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 174 | 26 |
 | PHPT Zend rows | 76 | 69 | 7 |
@@ -49,10 +51,10 @@ class/object shells, direct static properties, and public property `??=`.
 
 Explicit follow-up work: full classes and inheritance, constructors/destructors,
 typed or non-public properties, interfaces/traits, namespaces, class constants,
-reflection, magic methods, broader static-property semantics, non-static
-callables beyond direct object calls and bounded `[$object, "method"]`,
-object destructuring, object `Traversable`, property compound lvalues beyond
-public property `??=`, static-property compound/null-coalescing lvalues,
+reflection, magic methods, broader static-property semantics including
+null-coalescing lvalues, non-static callables beyond direct object calls and
+bounded `[$object, "method"]`, object destructuring, object `Traversable`,
+property inc/dec plus `isset()`/`empty()`/null-coalescing expressions,
 exceptions, resources, dynamic include/include_once behavior, heredoc
 interpolation/flexible indentation, unsupported internals, exact 64-bit
 operator/diagnostic parity, and remaining scalar offset-lvalue parity.
@@ -71,3 +73,7 @@ verification covers `compile_foreach_non_array_diagnostics_include_source_path_t
 and exact `foreachLoop.003.phpt`; the final rebase verification is
 `cargo fmt --check`, `git diff --check origin/master..HEAD`, `cargo test`,
 `tools/run-native-smoke-matrix.sh`, and `tools/run-post-merge-cow-gate.sh`.
+`ptn-lrty.10` adds focused parser/native coverage for object-property and
+static-property compounds; verification: `cargo fmt --check`,
+`git diff --check origin/master..HEAD`, `cargo test property`, `cargo test`,
+and `tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt` (29/29).

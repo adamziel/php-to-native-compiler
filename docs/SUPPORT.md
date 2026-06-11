@@ -555,20 +555,22 @@ Post-RC architecture remains explicit rather than hidden:
 - Public static property declarations in top-level classes, using the supported
   constant-expression default subset. Generated native code initializes
   declaration-backed static slots before top-level statements, supports
-  `Class::$name` reads and writes, resolves `self::$name` inside declared
-  methods, and throws modeled PHP `Error` diagnostics for undeclared static
-  properties.
+  `Class::$name` reads, writes, and compound assignment expressions, resolves
+  `self::$name` inside declared methods, and throws modeled PHP `Error`
+  diagnostics for undeclared static properties.
 - `new stdClass` and declared-class object shells, boxed object handles, public
   dynamic property reads/writes such as `$object->name`, and public declared
   instance properties with supported constant defaults. Object assignment
   shares the object handle, declared defaults are initialized on construction,
   property assignment expressions return the assigned value, and property reads
   can flow through generated user functions and string-callable
-  `call_user_func()` dispatch. Public property null coalescing assignment
-  `$object->name ??= expr` quiet-reads the property and lazily evaluates the
-  right-hand expression. Non-public, typed, inherited, constructor-promoted,
-  magic, destructor, and reflection property metadata remain outside this
-  support boundary.
+  `call_user_func()` dispatch. Public property compound assignments reuse the
+  receiver once, evaluate the right-hand expression before the read, and write
+  back through the object property runtime. Public property null coalescing
+  assignment `$object->name ??= expr` quiet-reads the property and lazily
+  evaluates the right-hand expression. Non-public, typed, inherited,
+  constructor-promoted, magic, destructor, and reflection property metadata
+  remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
@@ -727,10 +729,8 @@ Post-RC architecture remains explicit rather than hidden:
   parity for integer-only operator conversion diagnostics, including bitwise,
   shift, and modulo diagnostics.
 - Object, dynamic-variable array-offset lvalues, append-form null-coalescing,
-  property null-coalescing expressions/`isset()`/`empty()`, property
-  compound-assignment operators outside modeled public-property `??=`, and
-  static-property compound/null-coalescing lvalues outside modeled direct
-  reads/writes.
+  property null-coalescing expressions/`isset()`/`empty()`, and static-property
+  null-coalescing lvalues outside modeled direct reads/writes and compounds.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.

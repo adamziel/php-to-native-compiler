@@ -4008,13 +4008,13 @@ fn validate_expression_assignment_target(
     }
 
     match target {
-        AssignmentTarget::Variable { .. } => Ok(()),
+        AssignmentTarget::Variable { .. }
+        | AssignmentTarget::Property { .. }
+        | AssignmentTarget::StaticProperty { .. } => Ok(()),
         AssignmentTarget::DynamicVariable { .. }
         | AssignmentTarget::ArrayDim(_)
-        | AssignmentTarget::Property { .. }
-        | AssignmentTarget::StaticProperty { .. }
         | AssignmentTarget::List(_) => Err(Diagnostic::new(
-            "compound assignment expressions currently support direct variables",
+            "compound assignment expressions currently support variables and properties",
             Some(span),
         )),
     }

@@ -12911,6 +12911,42 @@ $object->missing ??= 8;\n",
 }
 
 #[test]
+fn parser_accepts_property_and_static_property_compound_assignments() {
+    let program = parser::parse(
+        "<?php\n\
+$object = new stdClass;\n\
+$object->value += 3;\n\
+Counter::$text .= \"x\";\n",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 3);
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected property compound assignment expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::Property { name, .. },
+            op: AssignmentOp::AddAssign,
+            ..
+        } if name == "value"
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[2] else {
+        panic!("expected static property compound assignment expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::StaticProperty { class_name, name, .. },
+            op: AssignmentOp::ConcatAssign,
+            ..
+        } if class_name == "Counter" && name == "text"
+    ));
+}
+
+#[test]
 fn compile_stdclass_property_reads_and_writes_to_native_binary() {
     let root = temp_dir("ptn-native-stdclass-property-access");
     fs::create_dir_all(&root).unwrap();
@@ -12944,6 +12980,64 @@ var_dump($object->value);
     assert!(c_source.contains("ptn_new_object(&runtime, \"stdClass\""));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_object_read_property(&runtime"));
+}
+
+#[test]
+fn compile_stdclass_property_compound_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-stdclass-property-compound-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stdclass-property-compound-assignment.php");
+    let output = root.join("stdclass-property-compound-assignment-bin");
+    fs::write(
+        &input,
+        "<?php
+function receiver($object, $label) {
+    echo \"receiver:$label\\n\";
+    return $object;
+}
+function rhs_count($object) {
+    echo \"rhs:add\\n\";
+    $object->count = 10;
+    return 1;
+}
+function rhs_text($object) {
+    echo \"rhs:concat\\n\";
+    $object->text = \"reset\";
+    return \"b\";
+}
+
+$object = new stdClass;
+$object->count = 2;
+var_dump(receiver($object, \"add\")->count += rhs_count($object));
+var_dump($object->count);
+$object->text = \"a\";
+var_dump(receiver($object, \"concat\")->text .= rhs_text($object));
+var_dump($object->text);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "receiver:add\n\
+rhs:add\n\
+int(11)\n\
+int(11)\n\
+receiver:concat\n\
+rhs:concat\n\
+string(6) \"resetb\"\n\
+string(6) \"resetb\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_read_property(&runtime"));
+    assert!(c_source.contains("ptn_object_write_property(&runtime"));
+    assert!(c_source.contains(" = ptn_concat(&runtime, "));
 }
 
 #[test]
@@ -13048,6 +13142,65 @@ echo Counter::$value, \"\\n\";
     assert!(c_source.contains("ptn_runtime_define_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+}
+
+#[test]
+fn compile_static_property_compound_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-compound-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-compound-assignment.php");
+    let output = root.join("static-property-compound-assignment-bin");
+    fs::write(
+        &input,
+        "<?php
+class Counter {
+    public static $value = 2;
+    public static $text = \"a\";
+
+    public static function bump() {
+        self::$value += rhs_static_count();
+        return self::$value;
+    }
+}
+
+function rhs_static_count() {
+    echo \"rhs:static-add\\n\";
+    Counter::$value = 10;
+    return 1;
+}
+function rhs_static_text() {
+    echo \"rhs:static-concat\\n\";
+    Counter::$text = \"reset\";
+    return \"b\";
+}
+
+var_dump(Counter::bump());
+var_dump(Counter::$value);
+var_dump(Counter::$text .= rhs_static_text());
+var_dump(Counter::$text);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "rhs:static-add\n\
+int(11)\n\
+int(11)\n\
+rhs:static-concat\n\
+string(6) \"resetb\"\n\
+string(6) \"resetb\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+    assert!(c_source.contains(" = ptn_concat(&runtime, "));
 }
 
 #[test]

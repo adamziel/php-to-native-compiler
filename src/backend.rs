@@ -2565,6 +2565,24 @@ fn binary_runtime_function(op: BinaryOp) -> &'static str {
     }
 }
 
+fn compound_assignment_binary_op(op: AssignmentOp) -> Option<BinaryOp> {
+    match op {
+        AssignmentOp::Assign | AssignmentOp::CoalesceAssign => None,
+        AssignmentOp::AddAssign => Some(BinaryOp::Add),
+        AssignmentOp::SubtractAssign => Some(BinaryOp::Subtract),
+        AssignmentOp::MultiplyAssign => Some(BinaryOp::Multiply),
+        AssignmentOp::PowerAssign => Some(BinaryOp::Power),
+        AssignmentOp::DivideAssign => Some(BinaryOp::Divide),
+        AssignmentOp::ModuloAssign => Some(BinaryOp::Modulo),
+        AssignmentOp::ConcatAssign => Some(BinaryOp::Concat),
+        AssignmentOp::BitwiseAndAssign => Some(BinaryOp::BitwiseAnd),
+        AssignmentOp::BitwiseOrAssign => Some(BinaryOp::BitwiseOr),
+        AssignmentOp::BitwiseXorAssign => Some(BinaryOp::BitwiseXor),
+        AssignmentOp::ShiftLeftAssign => Some(BinaryOp::ShiftLeft),
+        AssignmentOp::ShiftRightAssign => Some(BinaryOp::ShiftRight),
+    }
+}
+
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     let c_path = output.with_extension("c");
     fs::write(&c_path, c_source).map_err(|error| {
@@ -3021,6 +3039,35 @@ impl ValueEmitter {
             return result_temp;
         }
 
+        if let Some(binary_op) = compound_assignment_binary_op(op) {
+            match target {
+                AssignmentTarget::Property {
+                    receiver,
+                    name,
+                    line,
+                } => {
+                    return self.emit_property_compound_assignment(
+                        out, receiver, name, *line, binary_op, value,
+                    );
+                }
+                AssignmentTarget::StaticProperty {
+                    class_name,
+                    name,
+                    line,
+                } => {
+                    return self.emit_static_property_compound_assignment(
+                        out, class_name, name, *line, binary_op, value,
+                    );
+                }
+                AssignmentTarget::Variable { .. }
+                | AssignmentTarget::DynamicVariable { .. }
+                | AssignmentTarget::ArrayDim { .. }
+                | AssignmentTarget::List(_) => {
+                    unreachable!("parser rejects compound assignment expression targets")
+                }
+            }
+        }
+
         if let AssignmentTarget::Property {
             receiver,
             name,
@@ -3049,6 +3096,121 @@ impl ValueEmitter {
         let value_temp = self.emit_materialized_value(out, value);
         let result_temp = self.emit_store_assignment_target_from_temp(out, target, &value_temp);
         emit_value_cleanup(out, "    ", &value_temp);
+        result_temp
+    }
+
+    fn emit_property_compound_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+        op: BinaryOp,
+        value: &ValueExpr,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let value_temp = self.emit_materialized_value(out, value);
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        let result_value_temp =
+            self.emit_compound_binary_from_temps(out, op, &current_temp, &value_temp, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_object_write_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&result_value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &result_value_temp);
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
+    }
+
+    fn emit_static_property_compound_assignment(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &str,
+        line: usize,
+        op: BinaryOp,
+        value: &ValueExpr,
+    ) -> String {
+        let resolved_class_name = self.static_property_class_name(class_name);
+        let value_temp = self.emit_materialized_value(out, value);
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        let result_value_temp =
+            self.emit_compound_binary_from_temps(out, op, &current_temp, &value_temp, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&result_value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &result_value_temp);
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        result_temp
+    }
+
+    fn emit_compound_binary_from_temps(
+        &mut self,
+        out: &mut String,
+        op: BinaryOp,
+        left_temp: &str,
+        right_temp: &str,
+        line: usize,
+    ) -> String {
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        if matches!(op, BinaryOp::Concat) {
+            out.push_str("ptn_concat(&runtime, ");
+            out.push_str(left_temp);
+            out.push_str(", ");
+            out.push_str(right_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push(')');
+        } else {
+            out.push_str(binary_runtime_function(op));
+            out.push('(');
+            out.push_str(left_temp);
+            out.push_str(", ");
+            out.push_str(right_temp);
+            out.push(')');
+        }
+        out.push_str(";\n");
         result_temp
     }
 
