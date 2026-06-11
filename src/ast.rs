@@ -49,6 +49,7 @@ pub struct FunctionParameter {
     pub name: String,
     pub type_hint: Option<TypeHint>,
     pub by_ref: bool,
+    pub is_variadic: bool,
     pub span: SourceSpan,
 }
 

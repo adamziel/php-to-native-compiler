@@ -483,6 +483,18 @@ impl Parser {
             }
         }
         self.expect_right_paren()?;
+        if let Some((index, parameter)) = parameters
+            .iter()
+            .enumerate()
+            .find(|(_, parameter)| parameter.is_variadic)
+        {
+            if index + 1 != parameters.len() {
+                return Err(Diagnostic::new(
+                    "Only the last parameter can be variadic",
+                    Some(parameter.span),
+                ));
+            }
+        }
         Ok(parameters)
     }
 
@@ -493,6 +505,12 @@ impl Parser {
             None
         };
         let by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        let is_variadic = if matches!(self.peek().kind, TokenKind::Ellipsis) {
             self.advance();
             true
         } else {
@@ -509,6 +527,7 @@ impl Parser {
             name,
             type_hint,
             by_ref,
+            is_variadic,
             span: token.span,
         })
     }
@@ -2558,6 +2577,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Bang => "!",
         TokenKind::At => "@",
         TokenKind::Backslash => "\\",
+        TokenKind::Ellipsis => "...",
         TokenKind::Dot => ".",
         TokenKind::Comma => ",",
         TokenKind::Question => "?",

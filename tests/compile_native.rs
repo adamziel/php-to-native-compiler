@@ -773,6 +773,23 @@ fn parser_accepts_scalar_parameter_return_hints_and_by_ref_returns() {
 }
 
 #[test]
+fn parser_accepts_variadic_function_parameters() {
+    let program =
+        parser::parse("<?php function test(int $head, string &...$tail) { return $head; }")
+            .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(function.parameters.len(), 2);
+    assert!(!function.parameters[0].is_variadic);
+    assert!(function.parameters[1].is_variadic);
+    assert!(function.parameters[1].by_ref);
+    assert_eq!(function.parameters[1].type_hint, Some(TypeHint::String));
+
+    let error = parser::parse("<?php function invalid(...$head, $tail) {}").unwrap_err();
+    assert_eq!(error.message, "Only the last parameter can be variadic");
+}
+
+#[test]
 fn parser_rejects_duplicate_user_function_declarations() {
     let error = parser::parse("<?php function same() {} function same() {}").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function same()");
@@ -4659,6 +4676,34 @@ fn compile_zero_parameter_user_function_func_args_to_native_binary() {
         "int(2)\narray(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  string(3) \"two\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_variadic_user_function_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-variadic-user-function-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("variadic-user-function-arguments.php");
+    let output = root.join("variadic-user-function-arguments-bin");
+    fs::write(
+        &input,
+        "<?php function inspect($head, ...$tail) { $tail[0] = \"changed\"; var_dump($head, $tail, func_num_args(), func_get_arg(1), func_get_args()); } inspect(\"h\", \"a\", \"b\");",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"h\"\narray(2) {\n  [0]=>\n  string(7) \"changed\"\n  [1]=>\n  string(1) \"b\"\n}\nint(3)\nstring(1) \"a\"\narray(3) {\n  [0]=>\n  string(1) \"h\"\n  [1]=>\n  string(1) \"a\"\n  [2]=>\n  string(1) \"b\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source
+        .contains("ptn_runtime_set_call_frame(&runtime, argc, args, 1, ptn_parameter_names);"));
+    assert!(c_source.contains("ptn_array_set_entry(ptn_variadic_1.as.array"));
 }
 
 #[test]
@@ -11077,6 +11122,40 @@ var_dump(array_reduce($array, \"pick_reduce_value\", 0));
     assert!(c_source.contains("ptn_internal_array_reduce"));
     assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("carry = ptn_value_clone_deref(callback_result);"));
+}
+
+#[test]
+fn compile_array_reduce_variadic_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-array-reduce-variadic-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-reduce-variadic-callback.php");
+    let output = root.join("array-reduce-variadic-callback-bin");
+    fs::write(
+        &input,
+        "<?php
+function variadic_sum($carry, ...$values) {
+    var_dump($values, func_get_arg(1));
+    return $carry + $values[0];
+}
+
+var_dump(array_reduce([1, 2], \"variadic_sum\", 0));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  int(1)\n}\nint(1)\narray(1) {\n  [0]=>\n  int(2)\n}\nint(2)\nint(3)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_reduce"));
+    assert!(c_source.contains("ptn_array_set_entry(ptn_variadic_1.as.array"));
 }
 
 #[test]

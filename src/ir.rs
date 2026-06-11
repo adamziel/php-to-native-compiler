@@ -60,6 +60,7 @@ pub struct FunctionParameter {
     pub name: String,
     pub type_hint: Option<TypeHint>,
     pub by_ref: bool,
+    pub is_variadic: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -818,6 +819,7 @@ fn lower_parameter(parameter: &AstFunctionParameter) -> FunctionParameter {
         name: parameter.name.clone(),
         type_hint: parameter.type_hint.map(lower_type_hint),
         by_ref: parameter.by_ref,
+        is_variadic: parameter.is_variadic,
     }
 }
 

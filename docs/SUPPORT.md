@@ -222,17 +222,17 @@ supports in generated native binaries.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - Top-level named user-defined functions with by-value positional parameters,
-  direct by-reference positional parameters, local variable storage, ordinary
-  `return` statements, implicit `null` returns, recursive calls, call-frame
-  argument introspection, and minimal `null` parameter and return type
-  declarations over the currently supported expression and statement subset.
-  Direct calls may pass extra positional arguments. Named arguments are
-  supported for direct generated user-function calls: argument expressions are
-  evaluated left-to-right, values are bound to parameters by name, call-frame
-  introspection observes parameter order, and unknown or overwritten parameter
-  names raise the modeled fatal boundary. Duplicate declarations and
-  declarations that collide with currently modeled internal function names are
-  rejected.
+  direct by-reference positional parameters, final variadic parameters, local
+  variable storage, ordinary `return` statements, implicit `null` returns,
+  recursive calls, call-frame argument introspection, and minimal `null`
+  parameter and return type declarations over the currently supported
+  expression and statement subset. Direct calls may pass extra positional
+  arguments. Named arguments are supported for direct generated user-function
+  calls: argument expressions are evaluated left-to-right, values are bound to
+  parameters by name, call-frame introspection observes parameter order, and
+  unknown or overwritten parameter names raise the modeled fatal boundary.
+  Duplicate declarations and declarations that collide with currently modeled
+  internal function names are rejected.
 - Direct variable reference aliases, grouped direct-variable aliases,
   single-dimension array element references, grouped single-dimension array
   element references, array literal reference elements, and by-value copies near
@@ -505,8 +505,8 @@ supports in generated native binaries.
   `M_*` constants in `defined()`/`constant()`.
 - Function forms beyond top-level named declarations and the public class-method
   callable slice, plus the bounded `stdClass` public-property storage slice,
-  including default arguments, variadics, named arguments outside direct
-  generated user-function calls, by-reference returns, nested or conditional
+  including default arguments, named arguments outside direct generated
+  user-function calls, by-reference returns, nested or conditional
   declarations, closures, full class metadata, namespaces, globals, static
   locals, and PHP-exact function/include return propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
