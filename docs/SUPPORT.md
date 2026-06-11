@@ -271,7 +271,7 @@ Post-RC architecture remains explicit rather than hidden:
   `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
   `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
-  `getmypid();`, `php_sapi_name();`,
+  `getmypid();`, `ob_get_contents();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_chunk(expr, expr[, expr]);`,
   `array_change_key_case(expr[, expr]);`, `array_column(expr, expr[, expr]);`,
@@ -304,9 +304,9 @@ Post-RC architecture remains explicit rather than hidden:
   `highlight_string(expr[, return])`, `highlight_file(expr[, return])`,
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
-  `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
-  `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
-  `ord(expr)`,
+  `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
+  `getmypid()`, `ob_get_contents()`, `php_sapi_name()`,
+  `phpversion([extension])`, `intval(expr)`, `chr(expr)`, `ord(expr)`,
   `count(expr)`, `array_chunk(expr, expr[, expr])`,
   `array_change_key_case(expr[, expr])`, `array_column(expr, expr[, expr])`,
   `array_combine(expr, expr)`, `array_count_values(expr)`,
@@ -329,6 +329,11 @@ Post-RC architecture remains explicit rather than hidden:
   operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
+- `highlight_string()` and `highlight_file()` use the current bounded source
+  highlighting path for native binaries. With `return` truthy they return the
+  highlighted string, otherwise they write it to stdout and return `true`;
+  missing files emit modeled warnings and return `false`. `ob_get_contents()`
+  returns `false` because active output buffers are not yet modeled.
 - Direct `assert(expr)` calls throw catchable `AssertionError` values with
   PHP-style compiler-generated default messages when the assertion is false;
   explicit scalar descriptions are string-converted through the shared runtime
