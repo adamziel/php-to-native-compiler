@@ -3,6 +3,38 @@
 This file tracks user-visible PHP behavior that the scratch compiler currently
 supports in generated native binaries.
 
+## RC Boundary
+
+The release-candidate surface is the generic compiler/runtime path exercised by
+`examples/rc`: scalar control flow, strings, ordered arrays, selected standard
+internals, top-level functions, includes resolved at compile time, copy-on-write
+array/reference slices, and public class/object shells. Public class support is
+bounded to top-level declarations with public methods, direct public static
+property reads/writes, public instance property reads/writes, and public
+property `??=`.
+
+Post-RC architecture remains explicit rather than hidden:
+
+- Classes and inheritance: constructors, interfaces, traits, namespaces,
+  non-public/typed/promoted properties, broad metadata/reflection, destructors,
+  class constants, and complete inherited property/method resolution remain
+  outside the RC boundary.
+- Static properties: direct public static reads/writes are supported, but
+  visibility, inheritance, late static binding, typed/default metadata, and
+  static-property compound or null-coalescing lvalues are post-RC.
+- Magic methods: `__construct`, `__destruct`, `__get`, `__set`, `__isset`,
+  `__unset`, `__call`, `__callStatic`, `__invoke`, `__toString`, and related
+  dispatch hooks are unsupported.
+- Non-static callables: direct object method calls and bounded
+  `[$object, "method"]` callback dispatch work, but first-class callables,
+  visibility-aware dispatch, magic dispatch, arbitrary dynamic instance method
+  resolution, and inherited non-static callable semantics are post-RC.
+- Object destructuring and object `Traversable` remain unsupported; current
+  destructuring support is array/list lvalues.
+- Property compound lvalues remain post-RC except public property `??=`:
+  property `+=`, `.=` and other compounds, property inc/dec, nested/dynamic
+  property lvalues, and static-property compounds are unsupported.
+
 ## Supported
 
 - `<?php` open tag.
@@ -381,9 +413,6 @@ supports in generated native binaries.
   from dereferenced entries, and the optional preserve-keys flag controls
   whether original integer/string keys are cloned or each chunk is reindexed
   from zero.
-- `array_combine()` over current boxed key/value arrays, requiring equal
-  lengths, converting key entries through the shared array-key path, and
-  cloning value entries into a fresh ordered array while preserving references.
 - `array_fill()` over boxed start/count operands and mixed boxed values,
   returning a fresh ordered array keyed from the requested integer start.
   Negative counts throw the modeled PHP `ValueError`; filled array/object

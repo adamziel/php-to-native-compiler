@@ -55,4 +55,18 @@ cargo build --bin phpc
 tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
 ```
 
+## RC Demo
+
+```bash
+cargo build --bin phpc
+for f in examples/rc/*.php; do
+  echo "== $f =="
+  target/debug/phpc "$f"
+done
+```
+
+The corpus exercises the current RC surface: scalar control flow, arrays and
+internal functions, user functions, public class/object shells, direct static
+properties, and public property `??=`.
+
 Detailed history lives in beads, commits, and merge requests, not in this file.
