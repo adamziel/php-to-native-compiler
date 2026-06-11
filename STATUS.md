@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-11T16:19Z
-Measured base: `origin/master` at `7d642e99b`
+Last refresh: 2026-06-11T20:31Z
+Measured base: `origin/master` at `636306708`
 
 ## Operating Goal
 
@@ -10,21 +10,21 @@ map for row-shaped fixes.
 
 ## Current Signal
 
-Source unit tests: 3/3. Rust native/compiler suite: 450/450. Native smoke: 6/6.
-Bounded PHPT manifest: 173/200. COW PHPT manifest: 29/29. Post-merge COW gate:
-25/25.
+Source unit tests: 3/3. Rust native/compiler suite: 464/464. Native smoke:
+6/6. Bounded PHPT manifest: 186/200. COW PHPT manifest: 29/29. Post-merge COW
+gate: 25/25. Callback PHPT manifest: 2/2.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 450/450 |
+| Native/compiler Rust suite | 464/464 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 173/200 |
-| PHPT Zend rows | 69/76 |
-| PHPT ext/standard rows | 66/77 |
-| PHPT tests/basic+func+lang | 36/45 |
+| PHPT bounded manifest | 186/200 |
+| PHPT Zend rows | 76/76 |
+| PHPT ext/standard rows | 69/77 |
+| PHPT tests/basic+func+lang | 39/45 |
 | PHPT other rows | 2/2 |
 | PHPT COW manifest | 29/29 |
 | Post-merge COW gate | 25/25 |

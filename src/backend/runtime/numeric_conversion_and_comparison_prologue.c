@@ -570,6 +570,8 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
                 return ptn_number_int(0);
             }
             return ptn_string_to_number((const char *)value.as.string.data);
+        case PTN_RESOURCE:
+            return ptn_number_int(value.as.resource_id);
         case PTN_ARRAY:
             return ptn_number_int(value.as.array->len == 0 ? 0 : 1);
         case PTN_OBJECT:
@@ -597,6 +599,7 @@ static PTN_UNUSED int ptn_fast_integer_value(PtnValue value, int64_t *integer) {
             return 1;
         case PTN_FLOAT:
         case PTN_STRING:
+        case PTN_RESOURCE:
         case PTN_ARRAY:
         case PTN_OBJECT:
         case PTN_CLOSURE:
@@ -675,6 +678,8 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
         case PTN_STRING:
             return value.as.string.len != 0 &&
                 !(value.as.string.len == 1 && value.as.string.data[0] == '0');
+        case PTN_RESOURCE:
+            return 1;
         case PTN_ARRAY:
             return value.as.array->len != 0;
         case PTN_OBJECT:
@@ -810,6 +815,7 @@ static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *numbe
                 return 0;
             }
             return ptn_is_numeric_string((const char *)value.as.string.data, number);
+        case PTN_RESOURCE:
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_ARRAY:

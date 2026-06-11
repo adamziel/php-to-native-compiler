@@ -161,6 +161,7 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
         case PTN_BOOL:
         case PTN_INT:
         case PTN_FLOAT:
+        case PTN_RESOURCE:
             break;
     }
     *value = ptn_null();

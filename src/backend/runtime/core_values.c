@@ -64,6 +64,7 @@ typedef enum {
     PTN_INT,
     PTN_FLOAT,
     PTN_STRING,
+    PTN_RESOURCE,
     PTN_ARRAY,
     PTN_OBJECT,
     PTN_CLOSURE,
@@ -104,6 +105,7 @@ typedef struct {
         int64_t integer;
         double floating;
         PtnString string;
+        int64_t resource_id;
         PtnArray *array;
         PtnObject *object;
         PtnClosure *closure;
@@ -391,6 +393,14 @@ static PTN_UNUSED PtnValue ptn_float(double floating) {
     value.type = PTN_FLOAT;
     value.owned = 0;
     value.as.floating = floating;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_resource(int64_t resource_id) {
+    PtnValue value;
+    value.type = PTN_RESOURCE;
+    value.owned = 0;
+    value.as.resource_id = resource_id;
     return value;
 }
 

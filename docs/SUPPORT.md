@@ -196,7 +196,8 @@ Post-RC architecture remains explicit rather than hidden:
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary with the shared leading
-  diagnostic separator and canonicalize to the empty string.
+  diagnostic separator and canonicalize to the empty string. Resource keys emit
+  the PHP-like cast warning and canonicalize to their integer resource ID.
 - `array_column()` over current ordered-array inputs, reading array entries or
   object properties by int/string column keys, returning whole rows for `null`
   column keys, optionally keying rows from an int/string index key, and using
@@ -703,13 +704,13 @@ Post-RC architecture remains explicit rather than hidden:
   declarations, closures, old-style constructor dispatch, full class metadata,
   namespaces, globals, static locals, and remaining PHP-exact function return
   propagation.
-- Type predicate coverage for resources and full PHP reference metadata.
+- Broad type predicate coverage for full PHP resource and reference metadata.
 - Unsupported recursive arrays, full class/object metadata, resources,
   complete reference identity, copy-on-write, and `var_dump()` reference
   identity beyond the currently modeled ordered-array, direct-reference, and
   `stdClass` public-property behavior.
-- `array_key_exists()` object property checks, resources, references, and
-  error-handler routing.
+- `array_key_exists()` object property checks, references, and error-handler
+  routing beyond the current ordered-array/resource-key slice.
 - String-offset append, compound assignment, property/reference `isset()`/
   `empty()` and null-coalescing semantics, and complete TypeError/exception
   parity for unsupported string offset key types.

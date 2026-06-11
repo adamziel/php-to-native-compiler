@@ -34,6 +34,9 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
         case PTN_STRING:
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             break;
+        case PTN_RESOURCE:
+            printf("Resource id #%lld", (long long)value.as.resource_id);
+            break;
         case PTN_ARRAY:
             fputs("Array", stdout);
             break;
@@ -108,11 +111,16 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
         return ptn_null();
     }
     if (key_value.type == PTN_NULL) {
-        ptn_emit_deprecation(
-            &runtime->diagnostics,
-            "Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead",
-            line
-        );
+        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
+            fputc('\n', stdout);
+            runtime->diagnostics.emitted_deprecation = 1;
+            fputs(
+                "Deprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line ",
+                stdout
+            );
+            fprintf(stdout, "%zu", line);
+            fputc('\n', stdout);
+        }
     }
     if (key_value.type == PTN_ARRAY || key_value.type == PTN_OBJECT || key_value.type == PTN_CLOSURE || key_value.type == PTN_EXCEPTION) {
         const char *type_name = key_value.type == PTN_OBJECT
@@ -131,7 +139,21 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
         ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayKey key;
+    if (key_value.type == PTN_RESOURCE) {
+        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+            fputc('\n', stdout);
+            printf(
+                "Warning: Resource ID#%lld used as offset, casting to integer (%lld) in ptn on line %zu\n",
+                (long long)key_value.as.resource_id,
+                (long long)key_value.as.resource_id,
+                line
+            );
+        }
+        key = ptn_array_int_key(key_value.as.resource_id);
+    } else {
+        key = ptn_array_key_from_value(key_value);
+    }
     int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
     ptn_array_key_free(key);
     return ptn_bool(exists);
@@ -232,6 +254,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             printf("string(%zu) \"", value.as.string.len);
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             fputs("\"\n", stdout);
+            break;
+        case PTN_RESOURCE:
+            printf("resource(%lld) of type (stream)\n", (long long)value.as.resource_id);
             break;
         case PTN_ARRAY: {
             PtnArray *array = value.as.array;
@@ -394,6 +419,9 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             fputs("\"\n", stdout);
             break;
+        case PTN_RESOURCE:
+            printf("resource(%lld) of type (stream)\n", (long long)value.as.resource_id);
+            break;
         case PTN_CLOSURE:
             printf("object(Closure)#1 (0) {\n");
             ptn_var_dump_indent(indent);
@@ -528,6 +556,9 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
                 (const char *)value.as.string.data,
                 value.as.string.len
             );
+            break;
+        case PTN_RESOURCE:
+            ptn_string_buffer_append_format(buffer, "Resource id #%lld", (long long)value.as.resource_id);
             break;
         case PTN_ARRAY:
             ptn_print_r_array(buffer, value.as.array, indent);
@@ -1064,6 +1095,7 @@ static PtnArrayColumnKey ptn_array_column_key_from_arg(
             key.array_key = ptn_array_key_from_value(value);
             key.property_name = ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
             return key;
+        case PTN_RESOURCE:
         case PTN_ARRAY:
         case PTN_OBJECT:
         case PTN_CLOSURE:
@@ -1178,6 +1210,7 @@ static int ptn_array_count_values_key_from_value(PtnRuntime *runtime, PtnValue v
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_FLOAT:
+        case PTN_RESOURCE:
         case PTN_ARRAY:
         case PTN_OBJECT:
         case PTN_CLOSURE:
@@ -1224,6 +1257,7 @@ static int ptn_array_flip_key_from_value(PtnRuntime *runtime, PtnValue value, si
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_FLOAT:
+        case PTN_RESOURCE:
         case PTN_ARRAY:
         case PTN_OBJECT:
         case PTN_CLOSURE:
@@ -2566,6 +2600,62 @@ static void ptn_emit_file_warning(
     free(message);
 }
 
+static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    static int64_t next_resource_id = 5;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand mode_operand = ptn_value_to_string_operand(args[1]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    char *mode = ptn_path_operand_to_c_string(mode_operand);
+    ptn_string_operand_free(path_operand);
+    ptn_string_operand_free(mode_operand);
+
+    if (path == NULL || mode == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "fopen(): Filename contains null byte", line);
+        free(path);
+        free(mode);
+        return ptn_bool(0);
+    }
+
+    FILE *stream = fopen(path, mode);
+    if (stream == NULL) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "fopen", path, detail, line);
+        free(path);
+        free(mode);
+        return ptn_bool(0);
+    }
+    fclose(stream);
+    free(path);
+    free(mode);
+    return ptn_resource(next_resource_id++);
+}
+
+static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue stream = ptn_value_deref(args[0]);
+    if (stream.type != PTN_RESOURCE) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "fclose(): Argument #1 ($stream) must be of type resource, %s given",
+            ptn_offset_container_type_name(stream)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
@@ -3159,6 +3249,13 @@ static PtnValue ptn_internal_is_string(PtnRuntime *runtime, size_t argc, const P
     (void)argc;
     (void)line;
     return ptn_is_type(args[0], PTN_STRING);
+}
+
+static PtnValue ptn_internal_is_resource(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_is_type(args[0], PTN_RESOURCE);
 }
 
 static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -4265,10 +4362,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "dirname", 1, 1, ptn_internal_dirname },
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
+        { "fclose", 1, 1, ptn_internal_fclose },
         { "fdiv", 2, 2, ptn_internal_fdiv },
         { "file_exists", 1, 1, ptn_internal_file_exists },
         { "file_put_contents", 2, 2, ptn_internal_file_put_contents },
         { "floor", 1, 1, ptn_internal_floor },
+        { "fopen", 2, 2, ptn_internal_fopen },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
@@ -4296,6 +4395,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_nan", 1, 1, ptn_internal_is_nan },
         { "is_null", 1, 1, ptn_internal_is_null },
         { "is_object", 1, 1, ptn_internal_is_object },
+        { "is_resource", 1, 1, ptn_internal_is_resource },
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
         { "is_string", 1, 1, ptn_internal_is_string },
         { "key", 1, 1, ptn_internal_key },

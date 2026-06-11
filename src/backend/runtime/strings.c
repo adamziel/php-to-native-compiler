@@ -143,6 +143,9 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             break;
         case PTN_STRING:
             return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
+        case PTN_RESOURCE:
+            written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource_id);
+            break;
         case PTN_ARRAY:
             return ptn_duplicate_string("Array");
         case PTN_OBJECT:
@@ -176,6 +179,7 @@ static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue 
         case PTN_INT:
         case PTN_FLOAT:
         case PTN_STRING:
+        case PTN_RESOURCE:
             return ptn_value_to_string(value);
         case PTN_ARRAY:
         case PTN_OBJECT:
@@ -279,6 +283,9 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
             break;
         case PTN_STRING:
             return ptn_string_operand_borrowed_len((const char *)value.as.string.data, value.as.string.len);
+        case PTN_RESOURCE:
+            written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource_id);
+            break;
         case PTN_ARRAY:
             return ptn_string_operand_borrowed("Array");
         case PTN_OBJECT:
@@ -462,6 +469,8 @@ static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
             return ptn_string("double");
         case PTN_STRING:
             return ptn_string("string");
+        case PTN_RESOURCE:
+            return ptn_string("resource");
         case PTN_ARRAY:
             return ptn_string("array");
         case PTN_OBJECT:

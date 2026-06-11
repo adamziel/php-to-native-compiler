@@ -37,6 +37,8 @@ expected rows, or one-off outputs.
   shared array runtime.
 - `array_filter()` preserves keys while filtering arrays by PHP truthiness or
   modeled callbacks.
+- `array_key_exists()` handles current ordered arrays, including `null`
+  key deprecation and resource-key integer casting.
 - `range()` builds integer ranges through the ordered-array runtime.
 - `assert()` throws catchable `AssertionError` values with compiler-generated
   default messages for direct calls.

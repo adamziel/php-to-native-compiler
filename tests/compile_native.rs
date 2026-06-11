@@ -6113,7 +6113,7 @@ var_dump(function_exists(\"is_array\"), function_exists(\"IS_OBJECT\"), function
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(5) \"array\"\nbool(true)\nbool(false)\nstring(5) \"array\"\nbool(true)\nbool(false)\nstring(6) \"object\"\nbool(false)\nbool(true)\nstring(6) \"object\"\nbool(false)\nbool(true)\nstring(6) \"object\"\nbool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\n"
+        "string(5) \"array\"\nbool(true)\nbool(false)\nstring(5) \"array\"\nbool(true)\nbool(false)\nstring(6) \"object\"\nbool(false)\nbool(true)\nstring(6) \"object\"\nbool(false)\nbool(true)\nstring(6) \"object\"\nbool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -14635,22 +14635,31 @@ var_dump($object);
 }
 
 #[test]
-fn unsupported_internal_functions_fail_in_generated_runtime() {
-    let root = temp_dir("ptn-native-unsupported-internal-function");
+fn compile_minimal_file_resources_to_native_binary() {
+    let root = temp_dir("ptn-native-file-resources");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("unsupported-internal-function.php");
-    let output = root.join("unsupported-internal-function-bin");
-    fs::write(&input, "<?php var_dump(fopen('php://memory', 'r'));").unwrap();
+    let input = root.join("file-resources.php");
+    let output = root.join("file-resources-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$fp = fopen(__FILE__, \"r\");\n\
+var_dump(gettype($fp));\n\
+var_dump(is_resource($fp));\n\
+var_dump(array_key_exists($fp, [\"key\" => \"value\"]));\n\
+var_dump(fclose($fp));",
+    )
+    .unwrap();
 
     compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
-    assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert!(execution.status.success());
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        "Fatal error: Call to undefined function fopen()\n"
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"resource\"\nbool(true)\n\nWarning: Resource ID#5 used as offset, casting to integer (5) in ptn on line 5\nbool(false)\nbool(true)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
