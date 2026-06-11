@@ -781,14 +781,30 @@ static PTN_UNUSED int ptn_float_to_int_loses_precision(double value) {
     return (double)integer != value;
 }
 
-static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation(double value) {
+static PTN_UNUSED int ptn_float_to_int_out_of_range(double value) {
+    return value < -9223372036854775808.0 || value >= 9223372036854775808.0;
+}
+
+static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation(
+    PtnDiagnosticSink *diagnostics,
+    double value
+) {
+    if (diagnostics != NULL && !ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
+        return;
+    }
     printf(
         "\nDeprecated: Implicit conversion from float %.14g to int loses precision in ptn-generated-code on line 0\n",
         value
     );
 }
 
-static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation(const char *value) {
+static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation(
+    PtnDiagnosticSink *diagnostics,
+    const char *value
+) {
+    if (diagnostics != NULL && !ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
+        return;
+    }
     printf(
         "\nDeprecated: Implicit conversion from float-string \"%s\" to int loses precision in ptn-generated-code on line 0\n",
         value
@@ -815,7 +831,10 @@ static PTN_UNUSED int ptn_string_has_trailing_non_numeric_data(const char *strin
     return *end != '\0';
 }
 
-static PTN_UNUSED void ptn_emit_non_numeric_value_warning(void) {
+static PTN_UNUSED void ptn_emit_non_numeric_value_warning(PtnDiagnosticSink *diagnostics) {
+    if (diagnostics != NULL && !ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        return;
+    }
     printf("\nWarning: A non-numeric value encountered in ptn-generated-code on line 0\n");
 }
 
@@ -826,7 +845,10 @@ static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
     return number.integer;
 }
 
-static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnValue value) {
+static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(
+    PtnDiagnosticSink *diagnostics,
+    PtnValue value
+) {
     value = ptn_value_deref(value);
     int64_t integer = 0;
     if (ptn_fast_integer_value(value, &integer)) {
@@ -834,7 +856,7 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnVal
     }
     if (value.type == PTN_FLOAT) {
         if (ptn_float_to_int_loses_precision(value.as.floating)) {
-            ptn_emit_float_to_int_precision_deprecation(value.as.floating);
+            ptn_emit_float_to_int_precision_deprecation(diagnostics, value.as.floating);
         }
         return (int64_t)value.as.floating;
     }
@@ -842,13 +864,13 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnVal
     PtnNumber number = ptn_to_number(value);
     const char *string_data = value.type == PTN_STRING ? (const char *)value.as.string.data : "";
     if (value.type == PTN_STRING && ptn_string_has_trailing_non_numeric_data(string_data)) {
-        ptn_emit_non_numeric_value_warning();
+        ptn_emit_non_numeric_value_warning(diagnostics);
     }
     if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
         if (value.type == PTN_STRING) {
-            ptn_emit_float_string_to_int_precision_deprecation(string_data);
+            ptn_emit_float_string_to_int_precision_deprecation(diagnostics, string_data);
         } else {
-            ptn_emit_float_to_int_precision_deprecation(number.floating);
+            ptn_emit_float_to_int_precision_deprecation(diagnostics, number.floating);
         }
     }
     return ptn_number_to_integer(number);
@@ -868,8 +890,8 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
         return ptn_int(left_fast_integer % right_fast_integer);
     }
 
-    int64_t left_integer = ptn_value_to_integer_with_precision_deprecation(left);
-    int64_t right_integer = ptn_value_to_integer_with_precision_deprecation(right);
+    int64_t left_integer = ptn_value_to_integer_with_precision_deprecation(NULL, left);
+    int64_t right_integer = ptn_value_to_integer_with_precision_deprecation(NULL, right);
     if (right_integer == 0) {
         ptn_abort_arithmetic_error("Modulo by zero");
     }
@@ -968,14 +990,63 @@ static PTN_UNUSED PtnValue ptn_bitwise_string_not(PtnStringOperand value) {
 }
 
 static PTN_UNUSED int64_t ptn_value_to_integer(PtnValue value) {
-    return ptn_value_to_integer_with_precision_deprecation(value);
+    return ptn_value_to_integer_with_precision_deprecation(NULL, value);
 }
 
 static PTN_UNUSED int64_t ptn_bitwise_integer_operand(PtnValue value) {
-    return ptn_value_to_integer_with_precision_deprecation(value);
+    return ptn_value_to_integer_with_precision_deprecation(NULL, value);
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_and(PtnValue left, PtnValue right) {
+static PTN_UNUSED void ptn_format_bitwise_float_diagnostic(double value, char *buffer, size_t buffer_size) {
+    int written = snprintf(buffer, buffer_size, "%.16G", value);
+    if (written < 0 || (size_t)written >= buffer_size) {
+        ptn_abort_out_of_memory();
+    }
+}
+
+static PTN_UNUSED void ptn_emit_bitwise_float_out_of_range_warning(
+    PtnDiagnosticSink *diagnostics,
+    double value,
+    size_t line
+) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    char formatted[64];
+    ptn_format_bitwise_float_diagnostic(value, formatted, sizeof(formatted));
+    fputc('\n', stdout);
+    fputs("Warning: The float ", stdout);
+    fputs(formatted, stdout);
+    fputs(" is not representable as an int, cast occurred in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
+static PTN_UNUSED int64_t ptn_bitwise_integer_operand_checked(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_FLOAT) {
+        if (ptn_float_to_int_out_of_range(value.as.floating)) {
+            ptn_emit_bitwise_float_out_of_range_warning(&runtime->diagnostics, value.as.floating, line);
+            return INT64_MIN;
+        }
+        if (ptn_float_to_int_loses_precision(value.as.floating)) {
+            ptn_emit_float_to_int_precision_deprecation(&runtime->diagnostics, value.as.floating);
+        }
+        return (int64_t)value.as.floating;
+    }
+    return ptn_value_to_integer_with_precision_deprecation(&runtime->diagnostics, value);
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_and(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
@@ -991,10 +1062,18 @@ static PTN_UNUSED PtnValue ptn_bitwise_and(PtnValue left, PtnValue right) {
         };
         return ptn_bitwise_string_and(left_string, right_string);
     }
-    return ptn_int(ptn_bitwise_integer_operand(left) & ptn_bitwise_integer_operand(right));
+    return ptn_int(
+        ptn_bitwise_integer_operand_checked(runtime, left, line) &
+        ptn_bitwise_integer_operand_checked(runtime, right, line)
+    );
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_or(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_bitwise_or(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
@@ -1010,10 +1089,18 @@ static PTN_UNUSED PtnValue ptn_bitwise_or(PtnValue left, PtnValue right) {
         };
         return ptn_bitwise_string_or(left_string, right_string);
     }
-    return ptn_int(ptn_bitwise_integer_operand(left) | ptn_bitwise_integer_operand(right));
+    return ptn_int(
+        ptn_bitwise_integer_operand_checked(runtime, left, line) |
+        ptn_bitwise_integer_operand_checked(runtime, right, line)
+    );
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_xor(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_bitwise_xor(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
@@ -1029,4 +1116,8 @@ static PTN_UNUSED PtnValue ptn_bitwise_xor(PtnValue left, PtnValue right) {
         };
         return ptn_bitwise_string_xor(left_string, right_string);
     }
-    return ptn_int(ptn_bitwise_integer_operand(left) ^ ptn_bitwise_integer_operand(right));
+    return ptn_int(
+        ptn_bitwise_integer_operand_checked(runtime, left, line) ^
+        ptn_bitwise_integer_operand_checked(runtime, right, line)
+    );
+}

@@ -135,9 +135,9 @@ Post-RC architecture remains explicit rather than hidden:
   `0.0`, `""`, and `"0"` are falsey; other supported scalar values are truthy.
 - Unary bitwise `~` over supported boxed scalar values. String operands produce
   bytewise string results for non-NUL string data; other supported scalar
-  operands are converted to integers through the current scalar numeric path,
-  including the current float/float-string precision-loss deprecation boundary
-  and leading-numeric-string warning boundary.
+  operands are converted to integers through the bitwise numeric path. Float
+  precision-loss deprecations respect `error_reporting()`, and out-of-range
+  direct floats emit the modeled non-representable integer warning.
 - Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
   non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts over
   supported boxed scalar values.
@@ -248,9 +248,9 @@ Post-RC architecture remains explicit rather than hidden:
   left-to-right.
 - Boxed scalar bitwise `&`, `^`, and `|` operators. When both operands are strings,
   the result is a bytewise string for non-NUL string data. Other supported
-  scalar operands are converted to integers through the current scalar numeric
-  conversion path, including the current float/float-string precision-loss
-  deprecation boundary and leading-numeric-string warning boundary.
+  scalar operands are converted to integers through the bitwise numeric path;
+  float precision-loss deprecations, out-of-range float warnings, and
+  leading-numeric-string warnings respect `error_reporting()`.
 - Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
   converted to integers through the current bitwise integer-conversion path,
   including the current float/float-string precision-loss deprecation boundary
@@ -819,9 +819,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Statement-form `(void) expr;` casts.
 - Scope-aware magic constants inside traits, namespaces, includes, and eval
   contexts.
-- PHP-exact file names, line numbers, error-handler routing, and overflow
-  parity for integer-only operator conversion diagnostics, including bitwise,
-  shift, and modulo diagnostics.
+- PHP-exact file names, line numbers, custom error-handler routing, and
+  overflow parity for remaining integer-only operator conversion diagnostics,
+  including shift and modulo diagnostics.
 - Object, dynamic-variable array-offset lvalues, append-form null-coalescing,
   property null-coalescing expressions/`isset()`/`empty()`, property
   compound-assignment operators outside modeled public-property `??=`, and

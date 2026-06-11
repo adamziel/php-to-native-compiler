@@ -14575,6 +14575,48 @@ fn compile_unary_bitwise_not_to_native_binary() {
 }
 
 #[test]
+fn compile_bitwise_conversion_diagnostics_respect_error_reporting_to_native_binary() {
+    let root = temp_dir("ptn-native-bitwise-diagnostic-filter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bitwise-diagnostic-filter.php");
+    let output = root.join("bitwise-diagnostic-filter-bin");
+    fs::write(
+        &input,
+        "<?php error_reporting(E_ERROR); var_dump((PHP_INT_MAX + 1) & 1); var_dump(3 | 1.5); var_dump(\"1.5abc\" ^ 0); error_reporting(E_ALL); var_dump(3 | 1.5);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(3)\nint(1)\n\nDeprecated: Implicit conversion from float 1.5 to int loses precision in ptn-generated-code on line 0\nint(3)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_bitwise_not_out_of_range_float_uses_php_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-bitwise-not-out-of-range-float");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bitwise-not-out-of-range-float.php");
+    let output = root.join("bitwise-not-out-of-range-float-bin");
+    fs::write(&input, "<?php var_dump(~(PHP_INT_MAX + 1));").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: The float 9.223372036854776E+18 is not representable as an int, cast occurred in ptn on line 1\nint(9223372036854775807)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unary_bitwise_not_array_operand_fatals() {
     let root = temp_dir("ptn-native-bitwise-not-array");
     fs::create_dir_all(&root).unwrap();

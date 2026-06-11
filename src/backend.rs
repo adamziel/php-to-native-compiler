@@ -2789,6 +2789,9 @@ fn binary_runtime_function_uses_context(op: BinaryOp) -> bool {
             | BinaryOp::Multiply
             | BinaryOp::Power
             | BinaryOp::Divide
+            | BinaryOp::BitwiseAnd
+            | BinaryOp::BitwiseXor
+            | BinaryOp::BitwiseOr
     )
 }
 
@@ -3881,6 +3884,9 @@ impl ValueEmitter {
                     UnaryOp::ErrorSuppress => unreachable!(),
                 });
                 out.push('(');
+                if matches!(op, UnaryOp::BitwiseNot) {
+                    out.push_str("&runtime, ");
+                }
                 out.push_str(&expr_temp);
                 if matches!(op, UnaryOp::BitwiseNot) {
                     out.push_str(", \"");

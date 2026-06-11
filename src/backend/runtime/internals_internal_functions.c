@@ -4210,11 +4210,10 @@ static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnVal
 }
 
 static PtnValue ptn_internal_intdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
-    int64_t dividend = ptn_value_to_integer_with_precision_deprecation(args[0]);
-    int64_t divisor = ptn_value_to_integer_with_precision_deprecation(args[1]);
+    int64_t dividend = ptn_value_to_integer_with_precision_deprecation(&runtime->diagnostics, args[0]);
+    int64_t divisor = ptn_value_to_integer_with_precision_deprecation(&runtime->diagnostics, args[1]);
     if (divisor == 0) {
         ptn_abort_arithmetic_error("Division by zero");
     }

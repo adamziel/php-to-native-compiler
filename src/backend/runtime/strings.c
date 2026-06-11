@@ -1,5 +1,3 @@
-}
-
 static PTN_UNUSED void ptn_string_buffer_init(PtnStringBuffer *buffer) {
     buffer->capacity = 128;
     buffer->len = 0;
@@ -77,7 +75,12 @@ static PTN_UNUSED void ptn_string_buffer_append_indent(PtnStringBuffer *buffer, 
     }
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value, const char *path, size_t line) {
+static PTN_UNUSED PtnValue ptn_bitwise_not(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *path,
+    size_t line
+) {
     value = ptn_value_deref(value);
     if (value.type == PTN_STRING) {
         PtnStringOperand string = {
@@ -90,7 +93,7 @@ static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value, const char *path, siz
     if (value.type == PTN_ARRAY) {
         ptn_abort_type_error_at("Cannot perform bitwise not on array", path, line);
     }
-    return ptn_int(~ptn_bitwise_integer_operand(value));
+    return ptn_int(~ptn_bitwise_integer_operand_checked(runtime, value, line));
 }
 
 static PTN_UNUSED int64_t ptn_shift_distance(PtnValue value) {
