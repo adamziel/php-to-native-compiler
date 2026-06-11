@@ -505,18 +505,17 @@ supports in generated native binaries.
   `Class::$name` reads and writes, resolves `self::$name` inside declared
   methods, and throws modeled PHP `Error` diagnostics for undeclared static
   properties.
-- `new stdClass` expressions, boxed object handles, and public dynamic property
-  reads/writes such as `$object->name` and `$object->name = expr`. Object
-  assignment shares the object handle, so property writes through an alias are
-  visible through the original variable. Property assignment expressions return
-  the assigned value, and property reads can flow through generated user
-  functions and string-callable `call_user_func()` dispatch. Public property
-  null coalescing assignment `$object->name ??= expr` quiet-reads the property,
-  lazily evaluates the right-hand expression only for missing or `null`
-  properties, and re-evaluates the receiver for the write side. This is a
-  bounded public-property object-storage slice; declared instance properties,
-  non-public visibility, broader inheritance, constructors, magic methods,
-  destructors, and reflection metadata remain outside this support boundary.
+- `new stdClass` and declared-class object shells, boxed object handles, public
+  dynamic property reads/writes such as `$object->name`, and public declared
+  instance properties with supported constant defaults. Object assignment
+  shares the object handle, declared defaults are initialized on construction,
+  property assignment expressions return the assigned value, and property reads
+  can flow through generated user functions and string-callable
+  `call_user_func()` dispatch. Public property null coalescing assignment
+  `$object->name ??= expr` quiet-reads the property and lazily evaluates the
+  right-hand expression. Non-public, typed, inherited, constructor-promoted,
+  magic, destructor, and reflection property metadata remain outside this
+  support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
@@ -596,9 +595,8 @@ supports in generated native binaries.
   complete reference identity, copy-on-write, and `var_dump()` reference
   identity beyond the currently modeled ordered-array, direct-reference, and
   `stdClass` public-property behavior.
-- Exact `array_key_exists()` TypeError parity for unsupported key/container
-  types, object property checks, resources, references, and error-handler
-  routing.
+- Exact `array_key_exists()` diagnostic formatting parity, object property
+  checks, resources, references, and error-handler routing.
 - String-offset append, compound assignment, property/reference `isset()`/
   `empty()` and null-coalescing semantics, and complete TypeError/exception
   parity for unsupported string offset key types.

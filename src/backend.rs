@@ -772,6 +772,8 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     );
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
+    }
+    if classes.iter().all(|class| class.methods.is_empty()) {
         out.push_str("    (void)method_name;\n");
     }
     for class in classes {
@@ -1837,6 +1839,11 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
         &mut requirements,
     );
     for class in &module.classes {
+        for property in &class.properties {
+            if let Some(value) = &property.value {
+                collect_value_runtime_requirements(value, &module.functions, &mut requirements);
+            }
+        }
         for property in &class.static_properties {
             if let Some(value) = &property.value {
                 collect_value_runtime_requirements(value, &module.functions, &mut requirements);
@@ -3995,12 +4002,43 @@ impl ValueEmitter {
             argument_temps.push(self.emit_materialized_value(out, argument));
         }
         let result_temp = self.next_temp();
-        if let Some(declared_class_name) = self.declared_class_name(class_name) {
+        if let Some(declared_class) = self
+            .classes
+            .iter()
+            .find(|class| class.name.eq_ignore_ascii_case(class_name))
+            .cloned()
+        {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_object_new_shell(\"");
-            out.push_str(&c_string(declared_class_name));
+            out.push_str(&c_string(&declared_class.name));
             out.push_str("\");\n");
+            for property in &declared_class.properties {
+                let value_temp = match &property.value {
+                    Some(value) => self.emit_materialized_value(out, value),
+                    None => {
+                        let temp = self.next_temp();
+                        out.push_str("    PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(" = ptn_null();\n");
+                        temp
+                    }
+                };
+                let assigned_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_object_write_property(&runtime, ");
+                out.push_str(&result_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&property.name));
+                out.push_str("\", ");
+                out.push_str(&value_temp);
+                out.push_str(", ");
+                out.push_str(&property.line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &assigned_temp);
+                emit_value_cleanup(out, "    ", &value_temp);
+            }
         } else if argument_temps.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);

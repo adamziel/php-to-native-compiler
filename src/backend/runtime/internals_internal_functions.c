@@ -79,8 +79,21 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
     key_value = ptn_value_deref(key_value);
     array_value = ptn_value_deref(array_value);
     if (array_value.type != PTN_ARRAY) {
-        fputs("Fatal error: array_key_exists(): Argument #2 ($array) must be of type array\n", stderr);
-        exit(255);
+        const char *given = array_value.type == PTN_OBJECT
+            ? array_value.as.object->class_name
+            : ptn_offset_container_type_name(array_value);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "array_key_exists(): Argument #2 ($array) must be of type array, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
     }
     if (key_value.type == PTN_NULL) {
         ptn_emit_deprecation(
@@ -88,6 +101,23 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
             "Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead",
             line
         );
+    }
+    if (key_value.type == PTN_ARRAY || key_value.type == PTN_OBJECT || key_value.type == PTN_CLOSURE || key_value.type == PTN_EXCEPTION) {
+        const char *type_name = key_value.type == PTN_OBJECT
+            ? key_value.as.object->class_name
+            : ptn_offset_container_type_name(key_value);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot access offset of type %s on array",
+            type_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
     }
     PtnArrayKey key = ptn_array_key_from_value(key_value);
     int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;

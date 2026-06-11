@@ -45,8 +45,16 @@ pub type IncludeResolutionMap = HashMap<(String, usize, usize), usize>;
 pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
+    pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
     pub methods: Vec<MethodDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropertyDecl {
+    pub name: String,
+    pub value: Option<ValueExpr>,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -616,6 +624,15 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_class(&mut self, class: &AstClassDecl) -> ClassDecl {
+        let properties = class
+            .properties
+            .iter()
+            .map(|property| PropertyDecl {
+                name: property.name.clone(),
+                value: property.value.as_ref().map(|value| self.lower_expr(value)),
+                line: property.span.line,
+            })
+            .collect();
         let static_properties = class
             .static_properties
             .iter()
@@ -657,6 +674,7 @@ impl<'a> LoweringContext<'a> {
         ClassDecl {
             name: class.name.clone(),
             parent_name: class.parent_name.clone(),
+            properties,
             static_properties,
             methods,
         }

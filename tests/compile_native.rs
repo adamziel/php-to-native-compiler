@@ -2100,6 +2100,34 @@ echo Counter::$value;",
 }
 
 #[test]
+fn parser_accepts_declared_public_instance_properties() {
+    let program = parser::parse(
+        "<?php
+class Box {
+    public $name = \"ptn\", $count = 2, $unset;
+}
+$box = new Box;
+echo $box->name;",
+    )
+    .unwrap();
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].properties.len(), 3);
+    assert_eq!(program.classes[0].properties[0].name, "name");
+    assert_eq!(program.classes[0].properties[1].name, "count");
+    assert_eq!(program.classes[0].properties[2].name, "unset");
+
+    let Some(Expr::String(value, _)) = &program.classes[0].properties[0].value else {
+        panic!("expected string property default expression");
+    };
+    assert_eq!(value, "ptn");
+    assert!(matches!(
+        program.classes[0].properties[1].value,
+        Some(Expr::Int(2, _))
+    ));
+    assert!(program.classes[0].properties[2].value.is_none());
+}
+
+#[test]
 fn parser_accepts_instance_class_methods_and_object_callables() {
     let program = parser::parse(
         "<?php
@@ -5371,6 +5399,48 @@ echo call_user_func([$greeter, \"via_this\"], 5), \"\\n\";
 }
 
 #[test]
+fn compile_declared_public_instance_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-declared-public-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("declared-public-properties.php");
+    let output = root.join("declared-public-properties-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public $name = \"ptn\";
+    public $count = 2, $unset;
+}
+
+$box = new Box;
+var_dump($box->name);
+var_dump($box->count);
+var_dump($box->unset);
+$box->name = \"native\";
+var_dump($box->name);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"ptn\"\nint(2)\nNULL\nstring(6) \"native\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_new_shell(\"Box\")"));
+    assert!(c_source.contains("ptn_object_write_property(&runtime"));
+    assert!(c_source.contains("\"name\""));
+    assert!(c_source.contains("\"count\""));
+    assert!(c_source.contains("\"unset\""));
+}
+
+#[test]
 fn compile_declared_class_metadata_intrinsics_to_native_binary() {
     let root = temp_dir("ptn-native-declared-class-metadata-intrinsics");
     fs::create_dir_all(&root).unwrap();
@@ -8467,7 +8537,10 @@ var_dump(array_key_exists(null, $items));\n\
 var_dump(array_key_exists(\"\", $items));\n\
 var_dump(array_key_exists(\"0\", $items));\n\
 var_dump(array_key_exists(\"n\", $items));\n\
-var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXISTS\"));",
+var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXISTS\"));\n\
+class KeyCheck { public $public_var = \"Public var\"; }\n\
+try { array_key_exists(array(), $items); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_key_exists(\"public_var\", new KeyCheck); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }",
     )
     .unwrap();
 
@@ -8477,7 +8550,7 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(false)\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+        "bool(true)\nbool(false)\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nCannot access offset of type array on array\narray_key_exists(): Argument #2 ($array) must be of type array, KeyCheck given\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

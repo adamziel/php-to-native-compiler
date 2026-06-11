@@ -11,8 +11,16 @@ pub struct Program {
 pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
+    pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
     pub methods: Vec<MethodDecl>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropertyDecl {
+    pub name: String,
+    pub value: Option<Expr>,
     pub span: SourceSpan,
 }
 

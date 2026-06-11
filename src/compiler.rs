@@ -81,6 +81,11 @@ impl IncludeCollector {
             self.collect_statements(&function.body, source_file, source_dir)?;
         }
         for class in &program.classes {
+            for property in &class.properties {
+                if let Some(value) = &property.value {
+                    self.collect_expr(value, source_file, source_dir)?;
+                }
+            }
             for property in &class.static_properties {
                 if let Some(value) = &property.value {
                     self.collect_expr(value, source_file, source_dir)?;

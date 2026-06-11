@@ -5,8 +5,8 @@ use crate::ast::{
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClosureUseCapture,
     ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncludeKind,
     ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    MethodDecl, Program, ReferenceTarget, Statement, StaticPropertyDecl, StringInterpolationIndex,
-    StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    MethodDecl, Program, PropertyDecl, ReferenceTarget, Statement, StaticPropertyDecl,
+    StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -64,6 +64,7 @@ struct ClassModifiers {
 
 enum ParsedClassMember {
     Method(MethodDecl),
+    Properties(Vec<PropertyDecl>),
     StaticProperties(Vec<StaticPropertyDecl>),
 }
 
@@ -156,11 +157,15 @@ impl Parser {
         }
 
         self.expect_left_brace()?;
+        let mut properties = Vec::new();
         let mut static_properties = Vec::new();
         let mut methods = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             match self.parse_class_member()? {
                 ParsedClassMember::Method(method) => methods.push(method),
+                ParsedClassMember::Properties(parsed_properties) => {
+                    properties.extend(parsed_properties);
+                }
                 ParsedClassMember::StaticProperties(properties) => {
                     static_properties.extend(properties);
                 }
@@ -170,6 +175,7 @@ impl Parser {
         Ok(ClassDecl {
             name: class_name,
             parent_name,
+            properties,
             static_properties,
             methods,
             span: class_token.span,
@@ -190,9 +196,8 @@ impl Parser {
                     self.parse_static_property_declarations()?,
                 ));
             }
-            return Err(Diagnostic::new(
-                "class properties are unsupported",
-                Some(self.peek().span),
+            return Ok(ParsedClassMember::Properties(
+                self.parse_property_declarations()?,
             ));
         }
         if !matches!(self.peek().kind, TokenKind::Function) {
@@ -249,6 +254,41 @@ impl Parser {
         }
         self.expect_semicolon()?;
         Ok(properties)
+    }
+
+    fn parse_property_declarations(&mut self) -> Result<Vec<PropertyDecl>> {
+        let mut properties = vec![self.parse_property_declaration()?];
+        while matches!(self.peek().kind, TokenKind::Comma) {
+            self.advance();
+            properties.push(self.parse_property_declaration()?);
+        }
+        self.expect_semicolon()?;
+        Ok(properties)
+    }
+
+    fn parse_property_declaration(&mut self) -> Result<PropertyDecl> {
+        let token = self.advance().clone();
+        let TokenKind::Variable(name) = token.kind else {
+            return Err(Diagnostic::new("expected property name", Some(token.span)));
+        };
+        let value = if matches!(self.peek().kind, TokenKind::Equal) {
+            self.advance();
+            let value = self.parse_expr()?;
+            if !is_supported_global_const_expr(&value) {
+                return Err(Diagnostic::new(
+                    "property default value must be a supported constant expression",
+                    Some(value.span()),
+                ));
+            }
+            Some(value)
+        } else {
+            None
+        };
+        Ok(PropertyDecl {
+            name,
+            value,
+            span: token.span,
+        })
     }
 
     fn parse_static_property_declaration(&mut self) -> Result<StaticPropertyDecl> {
