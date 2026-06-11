@@ -225,6 +225,10 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    LegacyDollarBraceStringVariable {
+        name: String,
+        line: usize,
+    },
     DynamicVariable {
         name: Box<ValueExpr>,
         line: usize,
@@ -1418,6 +1422,14 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
         AstStringPart::Variable(name) => Some(ValueExpr::Cast {
             kind: CastKind::String,
             expr: Box::new(ValueExpr::Load {
+                name: name.clone(),
+                line,
+            }),
+            line,
+        }),
+        AstStringPart::LegacyDollarBraceVariable(name) => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(ValueExpr::LegacyDollarBraceStringVariable {
                 name: name.clone(),
                 line,
             }),

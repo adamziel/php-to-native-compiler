@@ -2582,6 +2582,37 @@ fn parser_accepts_braced_array_interpolated_strings() {
 }
 
 #[test]
+fn parser_accepts_simple_array_and_legacy_dollar_brace_interpolation() {
+    let program =
+        parser::parse("<?php echo \"item=$items[$key] bare=$items[name] legacy=${name}!\\n\";")
+            .unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            StringPart::Literal("item=".to_string()),
+            StringPart::ArrayAccess {
+                array: "items".to_string(),
+                indices: vec![StringInterpolationIndex::Variable("key".to_string())],
+            },
+            StringPart::Literal(" bare=".to_string()),
+            StringPart::ArrayAccess {
+                array: "items".to_string(),
+                indices: vec![StringInterpolationIndex::String("name".to_string())],
+            },
+            StringPart::Literal(" legacy=".to_string()),
+            StringPart::LegacyDollarBraceVariable("name".to_string()),
+            StringPart::Literal("!\n".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn parser_rejects_unsupported_braced_property_interpolation() {
     let error = parser::parse("<?php echo \"name={$object->name}\\n\";").unwrap_err();
     assert_eq!(error.message, "complex string interpolation is unsupported");
@@ -11351,6 +11382,34 @@ Warning: Undefined array key \"one\" in ptn on line 7\n\
 \n\
 Warning: Undefined array key \"two\" in ptn on line 7\n\
 a=b=zeroc=d\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_simple_and_legacy_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-simple-legacy-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simple-legacy-interpolation.php");
+    let output = root.join("simple-legacy-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"name\" => \"Ada\", \"later\" => \"compiler\"];\n\
+$key = \"later\";\n\
+$name = \"legacy\";\n\
+echo \"item=$items[$key] bare=$items[name] legacy=${name}!\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: Using ${var} in strings is deprecated, use {$var} instead in ptn on line 5\n\
+item=compiler bare=Ada legacy=legacy!\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

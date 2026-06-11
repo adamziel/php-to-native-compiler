@@ -26,10 +26,12 @@ supports in generated native binaries.
   `0x`/`0X` forms.
 - Invalid legacy octal integer literals containing `8` or `9` are rejected with
   source-spanned PHP-style parse errors through `phpc`.
-- Double-quoted strings with direct `$name`, braced `{$name}`, and braced
-  variable-root array offset interpolation such as `{$items['key']}` and
-  `{$items[$key]}`. Interpolated values use the same runtime variable/array
-  reads, scalar string casts, and concatenation paths as ordinary expressions.
+- Double-quoted strings with direct `$name`, simple variable-root array offset
+  interpolation such as `$items[$key]`, `$items[name]`, and `$items[0]`,
+  braced `{$name}`/`{$items['key']}` forms, and deprecated legacy `${name}`
+  variables. Legacy dollar-brace variables emit the modeled PHP deprecation.
+  Interpolated values use the same runtime variable/array reads, scalar string
+  casts, and concatenation paths as ordinary expressions.
 - Double-quoted string escapes for `\n`, `\r`, `\t`, `\v`, `\f`, escaped
   backslash, quote, dollar, `\xNN`, and octal byte sequences. Hex and octal
   escapes can produce high bytes in native string literals; octal overflow

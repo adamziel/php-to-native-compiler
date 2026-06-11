@@ -117,6 +117,7 @@ pub enum TokenKind {
 pub enum StringPart {
     Literal(String),
     Variable(String),
+    LegacyDollarBraceVariable(String),
     ArrayAccess {
         array: String,
         indices: Vec<StringInterpolationIndex>,
@@ -587,8 +588,18 @@ impl<'a> Lexer<'a> {
             }
 
             if ch == '$' {
+                let start = self.current_span(1);
                 self.bump_char();
                 if let Some(first) = self.peek_char() {
+                    if first == '{' {
+                        if !literal.is_empty() {
+                            parts.push(StringPart::Literal(literal));
+                            literal = String::new();
+                        }
+                        parts.push(self.lex_legacy_dollar_brace_interpolation_part(start)?);
+                        has_variable = true;
+                        continue;
+                    }
                     if is_ident_start(first) {
                         if !literal.is_empty() {
                             parts.push(StringPart::Literal(literal));
@@ -603,7 +614,15 @@ impl<'a> Lexer<'a> {
                                 break;
                             }
                         }
-                        parts.push(StringPart::Variable(name));
+                        let indices = self.lex_unbraced_interpolation_indices()?;
+                        if indices.is_empty() {
+                            parts.push(StringPart::Variable(name));
+                        } else {
+                            parts.push(StringPart::ArrayAccess {
+                                array: name,
+                                indices,
+                            });
+                        }
                         has_variable = true;
                         continue;
                     }
@@ -617,6 +636,35 @@ impl<'a> Lexer<'a> {
         }
 
         Err(Diagnostic::new("unterminated string literal", Some(start)))
+    }
+
+    fn lex_legacy_dollar_brace_interpolation_part(
+        &mut self,
+        start: SourceSpan,
+    ) -> Result<StringPart> {
+        debug_assert_eq!(self.peek_char(), Some('{'));
+        self.bump_char();
+        if matches!(self.peek_char(), Some('$')) {
+            return Err(Diagnostic::new(
+                "complex string interpolation is unsupported",
+                Some(self.current_char_span()),
+            ));
+        }
+        let name = self.read_interpolation_variable_name(start)?;
+        match self.peek_char() {
+            Some('}') => {
+                self.bump_char();
+                Ok(StringPart::LegacyDollarBraceVariable(name))
+            }
+            Some(_) => Err(Diagnostic::new(
+                "complex string interpolation is unsupported",
+                Some(self.current_char_span()),
+            )),
+            None => Err(Diagnostic::new(
+                "unterminated string interpolation",
+                Some(start),
+            )),
+        }
     }
 
     fn lex_braced_interpolation_part(&mut self) -> Result<StringPart> {
@@ -679,6 +727,62 @@ impl<'a> Lexer<'a> {
             Ok(StringPart::Variable(array))
         } else {
             Ok(StringPart::ArrayAccess { array, indices })
+        }
+    }
+
+    fn lex_unbraced_interpolation_indices(&mut self) -> Result<Vec<StringInterpolationIndex>> {
+        let mut indices = Vec::new();
+        while matches!(self.peek_char(), Some('[')) {
+            self.bump_char();
+            if matches!(self.peek_char(), Some(']')) {
+                return Err(Diagnostic::new(
+                    "array append interpolation is unsupported",
+                    Some(self.current_char_span()),
+                ));
+            }
+            let index = self.lex_unbraced_interpolation_index()?;
+            if !matches!(self.peek_char(), Some(']')) {
+                return Err(Diagnostic::new(
+                    "expected interpolation array index close bracket",
+                    Some(self.current_char_span()),
+                ));
+            }
+            self.bump_char();
+            indices.push(index);
+        }
+        Ok(indices)
+    }
+
+    fn lex_unbraced_interpolation_index(&mut self) -> Result<StringInterpolationIndex> {
+        match self.peek_char() {
+            Some('$') => {
+                let span = self.current_span(1);
+                self.bump_char();
+                Ok(StringInterpolationIndex::Variable(
+                    self.read_interpolation_variable_name(span)?,
+                ))
+            }
+            Some('-') | Some('0'..='9') => self.lex_interpolation_index_int(),
+            Some(ch) if is_ident_start(ch) => {
+                let mut key = String::new();
+                while let Some(ch) = self.peek_char() {
+                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                        key.push(ch);
+                        self.bump_char();
+                    } else {
+                        break;
+                    }
+                }
+                Ok(StringInterpolationIndex::String(key))
+            }
+            Some(_) => Err(Diagnostic::new(
+                "complex string interpolation is unsupported",
+                Some(self.current_char_span()),
+            )),
+            None => Err(Diagnostic::new(
+                "unterminated string interpolation",
+                Some(self.current_span(0)),
+            )),
         }
     }
 

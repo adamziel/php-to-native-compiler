@@ -14,8 +14,9 @@ expected rows, or one-off outputs.
 - Boxed C runtime for PHP-like values.
 - Native execution tests for parser, IR, backend, runtime, and selected PHP
   behavior.
-- Double-quoted interpolation covers direct `$name`, braced `{$name}`, and
-  braced variable-root array offsets such as `{$items['key']}`.
+- Double-quoted interpolation covers direct `$name`, simple `$items[$key]`
+  offsets, braced `{$name}`/`{$items['key']}`, and deprecated legacy
+  `${name}` variables.
 - Double-quoted string escapes cover common control escapes plus `\xNN` and
   octal byte escapes, including high bytes in generated native binaries.
 - Top-level user functions and declared class methods include scoped magic

@@ -2059,6 +2059,7 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
         | ValueExpr::IncDec { .. }
+        | ValueExpr::LegacyDollarBraceStringVariable { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => {}
         ValueExpr::DynamicVariable { name, .. } => {
@@ -2722,6 +2723,7 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
 fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
     match value {
         ValueExpr::Load { name: target, .. } => target == name,
+        ValueExpr::LegacyDollarBraceStringVariable { name: target, .. } => target == name,
         ValueExpr::DynamicVariable { name: target, .. } => value_mentions_variable(target, name),
         ValueExpr::IncDec { name: target, .. } => target == name,
         ValueExpr::Assign { target, value, .. } => {
@@ -3780,6 +3782,24 @@ impl ValueEmitter {
                 c_string(&self.source_file),
                 line
             ),
+            ValueExpr::LegacyDollarBraceStringVariable { name, line } => {
+                let result_temp = self.next_temp();
+                out.push_str(
+                    "    ptn_emit_deprecation(&runtime.diagnostics, \"Using ${var} in strings is deprecated, use {$var} instead\", ",
+                );
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                result_temp
+            }
             ValueExpr::DynamicVariable { name, line } => {
                 self.emit_dynamic_variable_read(out, name, *line)
             }
@@ -4932,6 +4952,7 @@ impl ValueEmitter {
                 | ValueExpr::Array(_)
                 | ValueExpr::Closure { .. }
                 | ValueExpr::ArrayAccess { .. }
+                | ValueExpr::LegacyDollarBraceStringVariable { .. }
                 | ValueExpr::DynamicVariable { .. }
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }

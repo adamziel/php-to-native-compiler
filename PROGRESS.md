@@ -1,11 +1,11 @@
 # PTN Progress
 
-Refresh: 2026-06-11T14:50Z
-Measured: `ptn-ke07` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T15:04Z
+Measured: `ptn-dsgt` rebased after current `origin/master`; array null-offset
 diagnostics, Closure captures, expression-form `print`, static properties,
 inherited methods, property `??=`, loose object `switch`, nested string-offset
-unset, braced interpolation, branch-condition assignment, named arguments,
-scalar offsets, direct-variable numeric pre/post increment expression results,
+unset, simple/braced/legacy string interpolation, branch-condition assignment,
+named arguments, scalar offsets, direct-variable numeric pre/post inc/dec,
 object `foreach`, class metadata, method callables/magic constants, cslashes,
 scalar variable variables, include returns, array/object type predicates,
 `define()` legacy flag parity, shared `error_reporting()` filtering, dirname
@@ -22,12 +22,12 @@ literals, and COW evidence are integrated.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 406 | 406 | 0 |
+| Native compiled PHP snippets | 408 | 408 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 169 | 31 |
+| PHPT bounded manifest | 200 | 170 | 30 |
 | PHPT Zend rows | 76 | 69 | 7 |
 | PHPT ext/standard rows | 77 | 64 | 13 |
-| PHPT tests/basic+func+lang | 45 | 34 | 11 |
+| PHPT tests/basic+func+lang | 45 | 35 | 10 |
 | PHPT other rows | 2 | 2 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
 | COW reducer/oracle/gate suites | 150 | 150 | 0 |
@@ -42,7 +42,8 @@ Closure captures, magic constants, `func_*`, `print_r`, scalar diagnostics,
 array union, scalar type hints, by-reference returns, variadics/default
 parameters, `count()`, `??`, assignment expressions, named arguments,
 expression-form `print`, direct-variable numeric inc/dec statement and
-expression results, `@`, file predicates, selected array/string internals
+expression results, simple array-offset and legacy dollar-brace interpolation,
+`@`, file predicates, selected array/string internals
 including `array_fill()`, `array_flip()`, `array_change_key_case()`,
 `array_chunk()`, `array_count_values()`, `str_repeat()`, and integer `range()`,
 lvalue-reference calls, list/append assignment, scalar variable variables,
@@ -57,8 +58,9 @@ Constructors, declared properties, non-public visibility, interfaces/traits,
 broader inheritance, magic methods, property compounds beyond `??=`,
 static-property compound/null-coalescing lvalues, destructors, exceptions,
 reflection, unsupported internals, 64-bit operator exactness, destructuring
-`foreach`, heredoc interpolation/flexible indentation, remaining scalar
-offset-lvalue parity, dynamic-variable array-offset lvalues, dynamic
+`foreach`, heredoc interpolation/flexible indentation, legacy interpolation
+diagnostic ordering, remaining scalar offset-lvalue parity, dynamic-variable
+array-offset lvalues, dynamic
 include/include_once behavior, non-direct-variable and non-numeric inc/dec
 parity, broader file APIs, and `chr()` float-to-int precision diagnostics.
 
@@ -68,7 +70,8 @@ Commands: focused native/parser/phpc reducers for recent slices, including
 `compile_increment_and_decrement_expression_results_to_native_binary`,
 `compile_array_fill_to_native_binary`, `compile_array_flip_to_native_binary`,
 `compile_array_change_key_case_to_native_binary`,
-`compile_array_chunk_to_native_binary`, and
+`compile_array_chunk_to_native_binary`,
+`compile_simple_and_legacy_interpolation_to_native_binary`, and
 `compile_plain_heredoc_values_to_native_binary`; exact
 `array_null_offset_deprecation.phpt`, `array_count_values.phpt`,
 `array_fill.phpt`, `array_fill_basic.phpt`, `array_flip_basic.phpt`,

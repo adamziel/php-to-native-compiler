@@ -4142,6 +4142,9 @@ fn lower_string_part(part: TokenStringPart) -> StringPart {
     match part {
         TokenStringPart::Literal(value) => StringPart::Literal(value),
         TokenStringPart::Variable(name) => StringPart::Variable(name),
+        TokenStringPart::LegacyDollarBraceVariable(name) => {
+            StringPart::LegacyDollarBraceVariable(name)
+        }
         TokenStringPart::ArrayAccess { array, indices } => StringPart::ArrayAccess {
             array,
             indices: indices

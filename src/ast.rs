@@ -457,6 +457,7 @@ pub enum ArrayElementValue {
 pub enum StringPart {
     Literal(String),
     Variable(String),
+    LegacyDollarBraceVariable(String),
     ArrayAccess {
         array: String,
         indices: Vec<StringInterpolationIndex>,
