@@ -413,10 +413,21 @@ Post-RC architecture remains explicit rather than hidden:
   from dereferenced entries, and the optional preserve-keys flag controls
   whether original integer/string keys are cloned or each chunk is reindexed
   from zero.
+- `array_combine()` over current boxed key/value arrays, pairing entries by
+  insertion order, converting key values through the shared
+  `array_fill_keys()` canonicalization path, cloning values into a fresh
+  ordered array while preserving reference values, and throwing the modeled PHP
+  `ValueError` when the arrays have different element counts.
 - `array_fill()` over boxed start/count operands and mixed boxed values,
   returning a fresh ordered array keyed from the requested integer start.
   Negative counts throw the modeled PHP `ValueError`; filled array/object
   payloads use the shared COW clone path.
+- `array_filter()` over current boxed arrays, preserving original keys in a
+  fresh ordered result. With a `null` callback it keeps values that are truthy
+  under the shared PHP truthiness helper; otherwise it dispatches through the
+  shared callable path with value, key, or value/key arguments according to
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`, and rejects unknown modes
+  with the modeled PHP `ValueError`.
 - `array_flip()` over current boxed arrays, flipping dereferenced integer and
   string values into ordered-map keys and using the original keys as values.
   Unsupported value types emit the modeled PHP warning boundary and are skipped.
@@ -425,16 +436,6 @@ Post-RC architecture remains explicit rather than hidden:
   dereferenced values into a fresh ordered array. The optional case flag accepts
   `CASE_LOWER`/`CASE_UPPER` and rejects other values with the modeled PHP
   `ValueError`.
-- `array_combine()` over current boxed arrays, pairing key and value arrays by
-  insertion order, converting key values through the shared
-  `array_fill_keys()` key-value canonicalization path, cloning values into a
-  fresh ordered array while preserving reference values, and throwing the
-  modeled PHP `ValueError` when the arrays have different element counts.
-- `array_filter()` over current boxed arrays, preserving original keys while
-  cloning kept dereferenced values into a fresh ordered array. The optional
-  callback may be `null` for PHP truthiness filtering or any currently modeled
-  callable, and the modeled `ARRAY_FILTER_USE_BOTH`/`ARRAY_FILTER_USE_KEY`
-  constants select value+key or key-only callback arguments.
 - `array_column()` over current boxed arrays, selecting array entries or object
   properties by int/string column key, returning full rows for `null`
   column keys, optionally using row values as result keys, skipping missing

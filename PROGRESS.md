@@ -1,10 +1,11 @@
 # PTN Progress
 
-Refresh: 2026-06-11T16:30Z
-Measured: `ptn-qhla` rebased on `origin/master` at `4cc4c178b` after the
-`ptn-lrty.1` release dashboard refresh. `array_column()` support is integrated;
-this branch adds the RC docs/demo corpus and no compiler behavior. The README
-RC demo command builds `phpc` and runs every `examples/rc/*.php` program.
+Refresh: 2026-06-11T16:42Z
+Measured: `ptn-en6v` rebased on `origin/master` at `4f531eaeb` after the
+`ptn-lrty.7` RC docs/demo merge. `array_column()` support is integrated.
+`array_filter()` now rejects unknown mode values with the modeled PHP
+`ValueError` while preserving current key, callback-argument, truthiness, and
+COW behavior.
 
 ## RC Surface
 
@@ -62,5 +63,9 @@ Freeze evidence: bounded `summary-20260611T161121Z.txt` (173/200), COW PHPT
 `summary-20260611T160936Z.txt` (29/29), callback
 `summary-20260611T161926Z.txt` (2/2), native smoke, and post-merge COW gate.
 `ptn-qhla` adds `array_column_numeric_string_key.phpt`, bringing bounded to
-174/200. This branch reran `cargo fmt --check`, `cargo build --bin phpc`, the
-documented README demo loop, and `cargo test`.
+174/200. `ptn-lrty.7` reran `cargo fmt --check`, `cargo build --bin phpc`, the
+documented README demo loop, and `cargo test`. Focused `ptn-en6v`
+verification covers `compile_array_filter_to_native_binary`, exact
+`array_filter_basic.phpt`, and `cargo test`; the final rebase verification is
+`cargo fmt --check`, `git diff --check origin/master..HEAD`,
+`tools/run-native-smoke-matrix.sh`, and `tools/run-post-merge-cow-gate.sh`.

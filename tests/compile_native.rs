@@ -8989,6 +8989,7 @@ $source = array(\"x\" => $value, \"empty\" => array());\n\
 $filtered = array_filter($source);\n\
 $filtered[\"x\"][] = \"copy\";\n\
 var_dump($filtered, $source[\"x\"]);\n\
+try { array_filter($input, null, 999); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(ARRAY_FILTER_USE_BOTH, ARRAY_FILTER_USE_KEY, function_exists('array_filter'), function_exists('ARRAY_FILTER'));",
     )
     .unwrap();
@@ -8999,7 +9000,7 @@ var_dump(ARRAY_FILTER_USE_BOTH, ARRAY_FILTER_USE_KEY, function_exists('array_fil
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(2) {\n  [1]=>\n  int(2)\n  [3]=>\n  int(0)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(2) {\n  [\"keep1\"]=>\n  int(1)\n  [\"keep0\"]=>\n  int(0)\n}\narray(1) {\n  [\"drop\"]=>\n  int(2)\n}\narray(1) {\n  [\"x\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\nint(1)\nint(2)\nbool(true)\nbool(true)\n"
+        "array(2) {\n  [1]=>\n  int(2)\n  [3]=>\n  int(0)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(2) {\n  [\"keep1\"]=>\n  int(1)\n  [\"keep0\"]=>\n  int(0)\n}\narray(1) {\n  [\"drop\"]=>\n  int(2)\n}\narray(1) {\n  [\"x\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray_filter(): Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH\nint(1)\nint(2)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
