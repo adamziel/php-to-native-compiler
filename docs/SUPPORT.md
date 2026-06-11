@@ -362,6 +362,9 @@ supports in generated native binaries.
   returning a fresh ordered array keyed from the requested integer start.
   Negative counts throw the modeled PHP `ValueError`; filled array/object
   payloads use the shared COW clone path.
+- `array_flip()` over current boxed arrays, flipping dereferenced integer and
+  string values into ordered-map keys and using the original keys as values.
+  Unsupported value types emit the modeled PHP warning boundary and are skipped.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `range()` over current boxed integer-convertible start, end, and optional

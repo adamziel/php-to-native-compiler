@@ -8395,6 +8395,37 @@ var_dump(function_exists(\"array_count_values\"), function_exists(\"ARRAY_COUNT_
 }
 
 #[test]
+fn compile_array_flip_to_native_binary() {
+    let root = temp_dir("ptn-native-array-flip");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-flip.php");
+    let output = root.join("array-flip-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_flip(array(1, 2)));\n\
+var_dump(array_flip(array('value1', \"value2\")));\n\
+var_dump(array_flip(array('key1' => 1, \"key2\" => 2)));\n\
+var_dump(array_flip(array(1 => 'one', 2 => \"two\")));\n\
+var_dump(array_flip(array(1 => 'one','two', 3 => 'three', 4, \"five\" => 5)));\n\
+var_dump(array_flip(array('first' => 'same', 'second' => 'same', 'kept' => 'other')));\n\
+var_dump(array_flip(array('ok', [], false, 'done')));\n\
+var_dump(function_exists('array_flip'), function_exists('ARRAY_FLIP'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [1]=>\n  int(0)\n  [2]=>\n  int(1)\n}\narray(2) {\n  [\"value1\"]=>\n  int(0)\n  [\"value2\"]=>\n  int(1)\n}\narray(2) {\n  [1]=>\n  string(4) \"key1\"\n  [2]=>\n  string(4) \"key2\"\n}\narray(2) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n}\narray(5) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n  [\"three\"]=>\n  int(3)\n  [4]=>\n  int(4)\n  [5]=>\n  string(4) \"five\"\n}\narray(2) {\n  [\"same\"]=>\n  string(6) \"second\"\n  [\"other\"]=>\n  string(4) \"kept\"\n}\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 8\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 8\narray(2) {\n  [\"ok\"]=>\n  int(0)\n  [\"done\"]=>\n  int(3)\n}\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_error_reporting_filters_internal_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-error-reporting-internal-warnings");
     fs::create_dir_all(&root).unwrap();
