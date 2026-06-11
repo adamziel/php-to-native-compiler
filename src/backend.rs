@@ -1667,11 +1667,9 @@ fn emit_instruction(
                 out.push_str(" = ptn_array_iterator_current_key(&");
                 out.push_str(&iterator_temp);
                 out.push_str(");\n");
-                out.push_str("        ptn_runtime_write_variable(&runtime, \"");
-                out.push_str(&c_string(key));
-                out.push_str("\", ");
-                out.push_str(&key_temp);
-                out.push_str(");\n");
+                let key_result_temp =
+                    values.emit_store_assignment_target_from_temp(out, key, &key_temp);
+                emit_value_cleanup(out, "        ", &key_result_temp);
                 emit_value_cleanup(out, "        ", &key_temp);
             }
             let value_temp = values.next_temp();
@@ -1686,14 +1684,12 @@ fn emit_instruction(
             out.push_str(&iterator_temp);
             out.push_str(");\n");
             if *value_by_ref {
-                out.push_str("        ptn_runtime_bind_variable_reference(&runtime, \"");
+                values.emit_bind_assignment_target_reference(out, value, &value_temp);
             } else {
-                out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+                let value_result_temp =
+                    values.emit_store_assignment_target_from_temp(out, value, &value_temp);
+                emit_value_cleanup(out, "        ", &value_result_temp);
             }
-            out.push_str(&c_string(value));
-            out.push_str("\", ");
-            out.push_str(&value_temp);
-            out.push_str(");\n");
             emit_value_cleanup(out, "        ", &value_temp);
             control_targets.push(ControlTarget::loop_target(
                 cleanup_label.clone(),
@@ -2137,8 +2133,18 @@ fn collect_instruction_runtime_requirements(
             collect_instructions_runtime_requirements(updates, functions, requirements);
             collect_instructions_runtime_requirements(body, functions, requirements);
         }
-        Instruction::Foreach { iterable, body, .. } => {
+        Instruction::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            ..
+        } => {
             collect_value_runtime_requirements(iterable, functions, requirements);
+            if let Some(key) = key {
+                collect_assignment_target_runtime_requirements(key, functions, requirements);
+            }
+            collect_assignment_target_runtime_requirements(value, functions, requirements);
             collect_instructions_runtime_requirements(body, functions, requirements);
         }
         Instruction::Switch { expression, cases } => {

@@ -462,7 +462,10 @@ fn parser_accepts_foreach_value_and_key_value_statements() {
     };
     assert!(matches!(iterable, Expr::Variable(name, _) if name == "items"));
     assert_eq!(key, &None);
-    assert_eq!(value, "value");
+    assert!(matches!(
+        value,
+        AssignmentTarget::Variable { name, .. } if name == "value"
+    ));
     assert!(!value_by_ref);
     assert_eq!(body.len(), 1);
 
@@ -476,10 +479,36 @@ fn parser_accepts_foreach_value_and_key_value_statements() {
     else {
         panic!("expected key/value foreach statement");
     };
-    assert_eq!(key.as_deref(), Some("key"));
-    assert_eq!(value, "value");
+    assert!(matches!(
+        key,
+        Some(AssignmentTarget::Variable { name, .. }) if name == "key"
+    ));
+    assert!(matches!(
+        value,
+        AssignmentTarget::Variable { name, .. } if name == "value"
+    ));
     assert!(!value_by_ref);
     assert_eq!(body.len(), 1);
+}
+
+#[test]
+fn parser_accepts_foreach_array_dim_binding_targets() {
+    let program =
+        parser::parse("<?php foreach ($items as $keys[0] => $values[$i]) { echo $i; }").unwrap();
+
+    let Statement::Foreach { key, value, .. } = &program.statements[0] else {
+        panic!("expected foreach statement");
+    };
+    let Some(AssignmentTarget::ArrayDim(key_target)) = key else {
+        panic!("expected array-dimension key target");
+    };
+    assert_eq!(key_target.array, "keys");
+    assert_eq!(key_target.dimensions.len(), 1);
+    let AssignmentTarget::ArrayDim(value_target) = value else {
+        panic!("expected array-dimension value target");
+    };
+    assert_eq!(value_target.array, "values");
+    assert_eq!(value_target.dimensions.len(), 1);
 }
 
 #[test]
@@ -519,7 +548,10 @@ fn parser_accepts_by_reference_foreach_value_binding() {
         panic!("expected value-only foreach statement");
     };
     assert_eq!(key, &None);
-    assert_eq!(value, "value");
+    assert!(matches!(
+        value,
+        AssignmentTarget::Variable { name, .. } if name == "value"
+    ));
     assert!(*value_by_ref);
 
     let Statement::Foreach {
@@ -531,8 +563,14 @@ fn parser_accepts_by_reference_foreach_value_binding() {
     else {
         panic!("expected key/value foreach statement");
     };
-    assert_eq!(key.as_deref(), Some("key"));
-    assert_eq!(value, "value");
+    assert!(matches!(
+        key,
+        Some(AssignmentTarget::Variable { name, .. }) if name == "key"
+    ));
+    assert!(matches!(
+        value,
+        AssignmentTarget::Variable { name, .. } if name == "value"
+    ));
     assert!(*value_by_ref);
 }
 
@@ -7546,6 +7584,55 @@ echo \"total=\", $total, \"\\n\";",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "a:2\nb:3\n0:5\ntotal=10\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_array_dim_value_target_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-array-dim-value");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-array-dim-value.php");
+    let output = root.join("foreach-array-dim-value-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [\"a\", \"b\", \"c\"];\n\
+$v = [];\n\
+foreach ($a as $v[0]) {\n\
+    var_dump($v);\n\
+}\n\
+var_dump($a);\n\
+var_dump($v);\n\
+\n\
+echo \"\\n\";\n\
+$a = [\"a\", \"b\", \"c\"];\n\
+$v = [];\n\
+foreach ($a as $k => $v[0]) {\n\
+    var_dump($k, $v);\n\
+}\n\
+var_dump($a);\n\
+var_dump($k, $v);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  string(1) \"a\"\n}\n\
+array(1) {\n  [0]=>\n  string(1) \"b\"\n}\n\
+array(1) {\n  [0]=>\n  string(1) \"c\"\n}\n\
+array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"c\"\n}\n\
+array(1) {\n  [0]=>\n  string(1) \"c\"\n}\n\
+\n\
+int(0)\narray(1) {\n  [0]=>\n  string(1) \"a\"\n}\n\
+int(1)\narray(1) {\n  [0]=>\n  string(1) \"b\"\n}\n\
+int(2)\narray(1) {\n  [0]=>\n  string(1) \"c\"\n}\n\
+array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"c\"\n}\n\
+int(2)\narray(1) {\n  [0]=>\n  string(1) \"c\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

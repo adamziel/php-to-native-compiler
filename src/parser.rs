@@ -52,7 +52,7 @@ struct Parser {
 }
 
 struct ForeachVariable {
-    name: String,
+    target: AssignmentTarget,
     by_ref: bool,
     span: SourceSpan,
 }
@@ -977,9 +977,9 @@ impl Parser {
             }
             self.advance();
             let value = self.parse_foreach_variable()?;
-            (Some(first.name), value.name, value.by_ref)
+            (Some(first.target), value.target, value.by_ref)
         } else {
-            (None, first.name, first.by_ref)
+            (None, first.target, first.by_ref)
         };
         self.expect_right_paren()?;
         let body = self.parse_statement_body()?;
@@ -1006,14 +1006,24 @@ impl Parser {
                 Some(self.peek().span),
             ));
         }
-        let token = self.advance().clone();
-        match token.kind {
-            TokenKind::Variable(name) => Ok(ForeachVariable { name, by_ref, span }),
-            _ => Err(Diagnostic::new(
-                "expected foreach variable",
-                Some(token.span),
-            )),
+        let target_expr = self.parse_expr()?;
+        let target_span = target_expr.span();
+        let target = assignment_target_from_expr(target_expr)
+            .map_err(|_| Diagnostic::new("expected foreach variable", Some(target_span)))?;
+        if matches!(target, AssignmentTarget::List(_)) {
+            return Err(Diagnostic::new(
+                "foreach destructuring is unsupported",
+                Some(assignment_target_span(&target)),
+            ));
         }
+        if by_ref {
+            validate_foreach_by_reference_target(&target, span)?;
+        }
+        Ok(ForeachVariable {
+            target,
+            by_ref,
+            span,
+        })
     }
 
     fn parse_for_clause_list(&mut self) -> Result<Vec<Statement>> {
@@ -3988,6 +3998,31 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
         other => Err(Diagnostic::new(
             "unsupported assignment target",
             Some(other.span()),
+        )),
+    }
+}
+
+fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
+    match target {
+        AssignmentTarget::Variable { span, .. }
+        | AssignmentTarget::DynamicVariable { span, .. }
+        | AssignmentTarget::Property { span, .. }
+        | AssignmentTarget::StaticProperty { span, .. } => *span,
+        AssignmentTarget::ArrayDim(target) => target.span,
+        AssignmentTarget::List(target) => target.span,
+    }
+}
+
+fn validate_foreach_by_reference_target(target: &AssignmentTarget, span: SourceSpan) -> Result<()> {
+    match target {
+        AssignmentTarget::Variable { .. } | AssignmentTarget::ArrayDim(_) => Ok(()),
+        AssignmentTarget::List(_) => Err(Diagnostic::new(
+            "foreach destructuring is unsupported",
+            Some(assignment_target_span(target)),
+        )),
+        _ => Err(Diagnostic::new(
+            "unsupported by-reference assignment target",
+            Some(span),
         )),
     }
 }

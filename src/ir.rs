@@ -178,8 +178,8 @@ pub enum Instruction {
     },
     Foreach {
         iterable: ValueExpr,
-        key: Option<String>,
-        value: String,
+        key: Option<AssignmentTarget>,
+        value: AssignmentTarget,
         value_by_ref: bool,
         body: Vec<Instruction>,
         line: usize,
@@ -844,8 +844,10 @@ impl<'a> LoweringContext<'a> {
                 } => {
                     instructions.push(Instruction::Foreach {
                         iterable: self.lower_expr(iterable),
-                        key: key.clone(),
-                        value: value.clone(),
+                        key: key
+                            .as_ref()
+                            .map(|target| self.lower_assignment_target(target)),
+                        value: self.lower_assignment_target(value),
                         value_by_ref: *value_by_ref,
                         body: self.lower_statements(body),
                         line: span.line,

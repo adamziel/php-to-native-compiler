@@ -175,8 +175,8 @@ pub enum Statement {
     },
     Foreach {
         iterable: Expr,
-        key: Option<String>,
-        value: String,
+        key: Option<AssignmentTarget>,
+        value: AssignmentTarget,
         value_by_ref: bool,
         body: Vec<Statement>,
         span: SourceSpan,

@@ -193,8 +193,18 @@ impl IncludeCollector {
                 self.collect_statements(updates, source_file, source_dir)?;
                 self.collect_statements(body, source_file, source_dir)
             }
-            Statement::Foreach { iterable, body, .. } => {
+            Statement::Foreach {
+                iterable,
+                key,
+                value,
+                body,
+                ..
+            } => {
                 self.collect_expr(iterable, source_file, source_dir)?;
+                if let Some(key) = key {
+                    self.collect_assignment_target(key, source_file, source_dir)?;
+                }
+                self.collect_assignment_target(value, source_file, source_dir)?;
                 self.collect_statements(body, source_file, source_dir)
             }
             Statement::Switch {

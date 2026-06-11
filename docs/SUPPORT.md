@@ -550,11 +550,12 @@ Post-RC architecture remains explicit rather than hidden:
   internal-call statements, conditions use the currently supported scalar
   expression subset, and the body is either a braced block or one supported
   statement. Missing conditions are treated as true.
-- `foreach (expr as $value) statement` and
-  `foreach (expr as $key => $value) statement` loops over current boxed ordered
-  arrays. The iterable expression is evaluated once, array entries are visited
-  in current insertion order, optional keys and values are assigned through the
-  ordinary runtime variable table before the body, and current
+- `foreach (expr as target) statement` and
+  `foreach (expr as key_target => value_target) statement` loops over current
+  boxed ordered arrays. The iterable expression is evaluated once, array
+  entries are visited in current insertion order, optional keys and values are
+  assigned through ordinary assignment-target storage for direct variables and
+  array dimensions before the body, and current
   `break`/`continue` level semantics apply inside the body. By-value foreach
   retains the iterable array payload for the loop snapshot, so appends and
   unsets through the source variable or its aliases detach through ordinary
