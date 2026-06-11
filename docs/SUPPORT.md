@@ -401,11 +401,12 @@ supports in generated native binaries.
   iterables emit a PHP-style warning with the generated source path, line, and
   operand type, then skip the loop body.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
-  currently supported scalar expression and statement subset. The generated
-  native code evaluates the switch expression once, compares case expressions
-  in source order with boxed loose `==` semantics, honors a single `default`,
-  allows PHP-style fallthrough, and supports `break;` or explicit-level
-  `break N;` from the active emitted switch/loop target stack.
+  currently supported expression and statement subset, including arrays,
+  references, and public-property object shells through boxed loose `==`
+  semantics. The generated native code evaluates the switch expression once,
+  compares case expressions in source order, honors a single `default`, allows
+  PHP-style fallthrough, and supports `break;` or explicit-level `break N;`
+  from the active emitted switch/loop target stack.
 - `continue;` and explicit-level `continue N;` over active loop/switch targets.
   The generated backend jumps to the appropriate loop continuation point, runs
   `for` update clauses on `continue`, and emits the current PHP-style warning
@@ -485,8 +486,7 @@ supports in generated native binaries.
   `foreach` diagnostics outside the current array/non-array warning lane.
 - PHP-exact `return` value propagation for includes/functions and return
   inside unsupported function/class contexts.
-- Switch alternate syntax and switch behavior for arrays, objects, references,
-  copy-on-write, and exceptions.
+- Switch alternate syntax and exception/finally control-flow edges.
 - Increment/decrement as expressions, including pre/post result values in echo,
   assignment, binary operands, function arguments, or branch conditions.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,

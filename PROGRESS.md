@@ -1,19 +1,20 @@
 # PTN Progress
 
-Refresh: 2026-06-11T10:05Z
-Measured: `ptn-4jt` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T10:37Z
+Measured: `ptn-rx0r` rebased after current `origin/master`; array null-offset
 diagnostic routing, Closure captures, expression-form `print`, static
-properties, inherited methods, property `??=`, nested string-offset unset,
-braced interpolation, branch-condition assignment and named-argument reducers,
-scalar offset reducers, object `foreach`, class metadata, method
-callables/magic constants, cslashes, and COW evidence.
+properties, inherited methods, property `??=`, loose object equality in
+`switch`, nested string-offset unset, braced interpolation, branch-condition
+assignment and named-argument reducers, scalar offset reducers, object
+`foreach`, class metadata, method callables/magic constants, cslashes, and COW
+evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 390 | 390 | 0 |
+| Native compiled PHP snippets | 391 | 391 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -46,7 +47,8 @@ lvalue-reference calls, list/append assignment, method callables,
 class/object method metadata and calls, `$this`, object `foreach`, scalar
 array-lvalue fatals with false-to-array deprecation, class/method predicates,
 static properties, property `??=`, method-scope magic constants, inherited
-public methods, and nested string-offset unset errors.
+public methods, loose object equality in braced `switch`, and nested
+string-offset unset errors.
 
 ## Still Needed
 
@@ -61,7 +63,7 @@ scalar offset-lvalue parity, and broader file APIs.
 ## Verification
 
 Commands: focused Closure/`print`/interpolation/branch-condition assignment/
-named-argument/addslashes/cslashes/object `foreach`/scalar
+named-argument/loose-object switch/addslashes/cslashes/object `foreach`/scalar
 offset/callable/metadata tests; `cargo check`; `cargo test static_property
 --test compile_native`; `cargo fmt --check`; `cargo build --bin phpc`; exact
 `array_null_offset_deprecation.phpt` reducer; `cargo test`.

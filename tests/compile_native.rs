@@ -9942,6 +9942,53 @@ fn compile_switch_evaluates_subject_and_cases_until_match() {
 }
 
 #[test]
+fn compile_switch_uses_loose_object_property_equality_to_native_binary() {
+    let root = temp_dir("ptn-native-switch-object-loose-equality");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("switch-object-loose-equality.php");
+    let output = root.join("switch-object-loose-equality-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$subject = new stdClass;\n\
+$subject->name = \"ptn\";\n\
+$subject->count = 2;\n\
+$case = new stdClass;\n\
+$case->count = \"2\";\n\
+$case->name = \"ptn\";\n\
+switch ($subject) {\n\
+    case $case:\n\
+        echo \"object-match\\n\";\n\
+        break;\n\
+    default:\n\
+        echo \"bad\\n\";\n\
+}\n\
+$other = new stdClass;\n\
+$other->name = \"ptn\";\n\
+$other->count = 3;\n\
+switch ($subject) {\n\
+    case $other:\n\
+        echo \"bad\\n\";\n\
+        break;\n\
+    default:\n\
+        echo \"object-miss\\n\";\n\
+}\n\
+var_dump($subject == $case, $subject === $case);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object-match\nobject-miss\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_while_with_postfix_increment_to_native_binary() {
     let root = temp_dir("ptn-native-while-postfix-increment");
     fs::create_dir_all(&root).unwrap();
