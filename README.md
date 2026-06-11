@@ -17,7 +17,7 @@ rows, or outputs.
   offsets, braced `{$name}`/`{$items['key']}`, and deprecated legacy
   `${name}` variables.
 - Double-quoted string escapes cover common control escapes plus `\xNN` and
-  octal byte escapes, including high bytes in generated native binaries.
+  octal byte escapes.
 - Inline HTML before, between, and after PHP blocks lowers through the shared
   output path.
 - Top-level user functions and declared class methods include scoped magic
@@ -35,8 +35,8 @@ rows, or outputs.
   exponent spelling across echo, casts, concatenation, and string internals.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for
   non-array operands in the current boxed value domain.
-- `array_chunk()`, `array_combine()`, and `array_merge()` build fresh ordered
-  arrays through the shared array runtime.
+- `array_chunk()`, `array_combine()`, `array_merge()`, and array set-operation
+  internals build fresh ordered arrays through the shared array runtime.
 - `array_filter()` preserves keys while filtering arrays by PHP truthiness or
   modeled callbacks.
 - `array_key_exists()` handles current ordered arrays, including `null`

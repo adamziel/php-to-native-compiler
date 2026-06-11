@@ -1701,6 +1701,13 @@ static PtnValue ptn_array_intersect_or_diff(
     return result;
 }
 
+static PtnArray **ptn_array_set_operation_array_args(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t array_count,
+    const PtnValue *args
+);
+
 static PtnArray **ptn_array_set_operation_arrays(
     PtnRuntime *runtime,
     const char *function_name,
@@ -1708,6 +1715,16 @@ static PtnArray **ptn_array_set_operation_arrays(
     const PtnValue *args
 ) {
     size_t array_count = argc - 1;
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, function_name, array_count, args);
+    return arrays;
+}
+
+static PtnArray **ptn_array_set_operation_array_args(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t array_count,
+    const PtnValue *args
+) {
     PtnArray **arrays = NULL;
     if (array_count != 0) {
         arrays = malloc(array_count * sizeof(PtnArray *));
@@ -1754,6 +1771,196 @@ static PtnValue ptn_internal_array_intersect_assoc(PtnRuntime *runtime, size_t a
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect_assoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_intersect_assoc", argc, args);
     PtnValue result = ptn_array_intersect_or_diff(source, argc - 1, arrays, 1, 1);
+    free(arrays);
+    return result;
+}
+
+static int ptn_array_user_compare(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    PtnValue callback_args[2] = {
+        ptn_value_clone_deref(left),
+        ptn_value_clone_deref(right)
+    };
+    PtnValue callback_result = ptn_call_callable(runtime, callback, 2, callback_args, line);
+    int64_t compared = ptn_value_to_integer(callback_result);
+    ptn_value_destroy(&callback_args[0]);
+    ptn_value_destroy(&callback_args[1]);
+    ptn_value_destroy(&callback_result);
+    if (compared < 0) {
+        return -1;
+    }
+    if (compared > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_array_udiff_keys_match(
+    PtnRuntime *runtime,
+    PtnArrayKey left,
+    PtnArrayKey right,
+    int compare_keys,
+    int use_key_callback,
+    PtnValue key_callback,
+    size_t line
+) {
+    if (!compare_keys) {
+        return 1;
+    }
+    if (!use_key_callback) {
+        return ptn_array_keys_equal(left, right);
+    }
+
+    PtnValue left_key = ptn_array_key_value(left);
+    PtnValue right_key = ptn_array_key_value(right);
+    int matched = ptn_array_user_compare(runtime, key_callback, left_key, right_key, line) == 0;
+    ptn_value_destroy(&left_key);
+    ptn_value_destroy(&right_key);
+    return matched;
+}
+
+static int ptn_array_udiff_entry_matches_array(
+    PtnRuntime *runtime,
+    PtnArrayEntry *entry,
+    PtnArray *array,
+    PtnValue value_callback,
+    int compare_keys,
+    int use_key_callback,
+    PtnValue key_callback,
+    size_t line
+) {
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *candidate = &array->entries[i];
+        if (!ptn_array_udiff_keys_match(
+                runtime,
+                entry->key,
+                candidate->key,
+                compare_keys,
+                use_key_callback,
+                key_callback,
+                line
+            )) {
+            continue;
+        }
+        if (ptn_array_user_compare(runtime, value_callback, entry->value, candidate->value, line) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_array_udiff_impl(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnArray *source,
+    size_t array_count,
+    PtnArray **arrays,
+    PtnValue value_callback,
+    int compare_keys,
+    int use_key_callback,
+    PtnValue key_callback,
+    size_t line
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < source->len; i++) {
+        PtnArrayEntry *entry = &source->entries[i];
+        int matched = 0;
+        for (size_t array_index = 0; array_index < array_count; array_index++) {
+            if (ptn_array_udiff_entry_matches_array(
+                    runtime,
+                    entry,
+                    arrays[array_index],
+                    value_callback,
+                    compare_keys,
+                    use_key_callback,
+                    key_callback,
+                    line
+                )) {
+                matched = 1;
+                break;
+            }
+        }
+        if (!matched) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone(ptn_array_reindexing_internal_value(entry->value))
+            );
+        }
+    }
+    (void)function_name;
+    return result;
+}
+
+static PtnValue ptn_internal_array_udiff(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 2;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_udiff", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff", array_count, args);
+    PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_udiff_impl(
+        runtime,
+        "array_udiff",
+        source,
+        array_count,
+        arrays,
+        value_callback,
+        0,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&value_callback);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_udiff_assoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 2;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_udiff_assoc", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff_assoc", array_count, args);
+    PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_udiff_impl(
+        runtime,
+        "array_udiff_assoc",
+        source,
+        array_count,
+        arrays,
+        value_callback,
+        1,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&value_callback);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_udiff_uassoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 3;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_udiff_uassoc", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff_uassoc", array_count, args);
+    PtnValue value_callback = ptn_value_clone_deref(args[argc - 2]);
+    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_udiff_impl(
+        runtime,
+        "array_udiff_uassoc",
+        source,
+        array_count,
+        arrays,
+        value_callback,
+        1,
+        1,
+        key_callback,
+        line
+    );
+    ptn_value_destroy(&value_callback);
+    ptn_value_destroy(&key_callback);
     free(arrays);
     return result;
 }
@@ -5022,6 +5229,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_reverse", 1, 2, ptn_internal_array_reverse },
         { "array_shift", 1, 1, ptn_internal_array_shift },
         { "array_sum", 1, 1, ptn_internal_array_sum },
+        { "array_udiff", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff },
+        { "array_udiff_assoc", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff_assoc },
+        { "array_udiff_uassoc", 4, PTN_VARIADIC_ARGS, ptn_internal_array_udiff_uassoc },
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
         { "array_walk", 2, 3, ptn_internal_array_walk },

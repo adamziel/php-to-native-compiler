@@ -10428,6 +10428,83 @@ var_dump(function_exists(\"var_export\"), function_exists(\"array_diff\"), funct
 }
 
 #[test]
+fn compile_array_udiff_variants_to_native_binary() {
+    let root = temp_dir("ptn-native-array-udiff-variants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-udiff-variants.php");
+    let output = root.join("array-udiff-variants-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Cmp {\n\
+    public static function cmp($a, $b) {\n\
+        if ($a === $b) return 0;\n\
+        if ($a > $b) return 1;\n\
+        return -1;\n\
+    }\n\
+}\n\
+function cmp_values($a, $b) {\n\
+    if ($a === $b) return 0;\n\
+    if ($a > $b) return 1;\n\
+    return -1;\n\
+}\n\
+function cmp_keys($a, $b) {\n\
+    $a = (string)$a;\n\
+    $b = (string)$b;\n\
+    if ($a === $b) return 0;\n\
+    if ($a > $b) return 1;\n\
+    return -1;\n\
+}\n\
+$left = [\"a\" => 3, \"b\" => 2, 0 => 5, 1 => 7, \"drop\" => 9];\n\
+$right = [\"x\" => 2, 0 => 5, 1 => 8, \"drop\" => 9];\n\
+var_dump(array_udiff($left, $right, [\"Cmp\", \"cmp\"]));\n\
+var_dump(array_udiff_assoc($left, $right, \"cmp_values\"));\n\
+var_dump(array_udiff_uassoc($left, [\"a\" => 3, \"B\" => 2, 0 => 5, 2 => 7, \"drop\" => 9], [\"Cmp\", \"cmp\"], \"cmp_keys\"));\n\
+var_dump(function_exists(\"array_udiff\"), function_exists(\"ARRAY_UDIFF_ASSOC\"), function_exists(\"array_udiff_uassoc\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  int(3)\n",
+            "  [1]=>\n",
+            "  int(7)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"a\"]=>\n",
+            "  int(3)\n",
+            "  [\"b\"]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(7)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"b\"]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(7)\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_udiff"));
+    assert!(c_source.contains("ptn_internal_array_udiff_assoc"));
+    assert!(c_source.contains("ptn_internal_array_udiff_uassoc"));
+}
+
+#[test]
 fn compile_array_merge_recursive_to_native_binary() {
     let root = temp_dir("ptn-native-array-merge-recursive");
     fs::create_dir_all(&root).unwrap();

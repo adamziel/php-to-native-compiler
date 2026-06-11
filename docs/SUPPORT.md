@@ -256,7 +256,8 @@ Post-RC architecture remains explicit rather than hidden:
   including the current float/float-string precision-loss deprecation boundary
   and leading-numeric-string warning boundary.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
-  `print_r(expr[, return]);`, `strlen(expr);`, `addcslashes(expr, expr);`,
+  `var_export(expr[, return]);`, `print_r(expr[, return]);`, `strlen(expr);`,
+  `addcslashes(expr, expr);`,
   `stripcslashes(expr);`, `addslashes(expr);`, `stripslashes(expr);`,
   `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
@@ -274,6 +275,10 @@ Post-RC architecture remains explicit rather than hidden:
   `array_change_key_case(expr[, expr]);`, `array_column(expr, expr[, expr]);`,
   `array_combine(expr, expr);`, `array_count_values(expr);`,
   `array_fill(expr, expr, expr);`, `array_filter(expr[, expr[, expr]]);`,
+  `array_intersect(expr, ...);`, `array_intersect_assoc(expr, ...);`,
+  `array_udiff(expr, expr, callback);`,
+  `array_udiff_assoc(expr, expr, callback);`,
+  `array_udiff_uassoc(expr, expr, callback, callback);`,
   `array_values(expr);`, `array_merge(expr, ...);`,
   `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
@@ -283,7 +288,8 @@ Post-RC architecture remains explicit rather than hidden:
   `is_callable(expr[, syntax_only]);`, `is_finite(expr);`,
   `is_infinite(expr);`, `is_nan(expr);`, and `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
-  including `print_r(expr[, return])`, `strlen(expr)`, `addcslashes(expr, expr)`,
+  including `var_export(expr[, return])`, `print_r(expr[, return])`,
+  `strlen(expr)`, `addcslashes(expr, expr)`,
   `stripcslashes(expr)`, `addslashes(expr)`, `stripslashes(expr)`,
   `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
@@ -301,6 +307,10 @@ Post-RC architecture remains explicit rather than hidden:
   `array_change_key_case(expr[, expr])`, `array_column(expr, expr[, expr])`,
   `array_combine(expr, expr)`, `array_count_values(expr)`,
   `array_fill(expr, expr, expr)`, `array_filter(expr[, expr[, expr]])`,
+  `array_intersect(expr, ...)`, `array_intersect_assoc(expr, ...)`,
+  `array_udiff(expr, expr, callback)`,
+  `array_udiff_assoc(expr, expr, callback)`,
+  `array_udiff_uassoc(expr, expr, callback, callback)`,
   `array_values(expr)`, `array_merge(expr, ...)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `call_user_func_array(expr, expr)`,
@@ -351,6 +361,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `print_r()` output for current boxed values, including scalar output,
   ordered-array formatting, nested arrays, and string-return mode through the
   optional second argument.
+- `var_export()` output for current boxed null, boolean, integer, float, string,
+  and ordered-array values, including nested arrays and string-return mode
+  through the optional second argument.
 - `strlen()` over current boxed scalar values and objects with a public
   declared `__toString()` after shared string conversion.
 - Shared string-argument checking for common string/byte internals: supported
@@ -502,6 +515,13 @@ Post-RC architecture remains explicit rather than hidden:
   with fresh sequential keys, overwriting string-keyed entries by key while
   preserving insertion order, and cloning dereferenced values across COW
   boundaries.
+- `array_intersect()` and `array_intersect_assoc()` over current boxed arrays,
+  preserving entries from the first array in a fresh ordered result. Value
+  matches use PHP-style string forms; the associative variant also requires a
+  matching key in every compared array.
+- `array_udiff()`, `array_udiff_assoc()`, and `array_udiff_uassoc()` over
+  current boxed arrays, using shared callable dispatch for value comparisons
+  and, for `array_udiff_uassoc()`, key comparisons.
 - `range()` over current boxed integer-convertible start, end, and optional
   step arguments, returning ordered arrays of integer values and throwing the
   modeled `ValueError` for zero or out-of-range steps.
@@ -746,8 +766,8 @@ Post-RC architecture remains explicit rather than hidden:
   `empty()` and null-coalescing semantics, and complete TypeError/exception
   parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
-  length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
-  `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
+  length/output, `var_export()`, `strlen()`, `str_rot13()`, `strcmp()`,
+  `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
   `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
   `stripcslashes()`, `md5()`, `sha1()`, `substr()`, `soundex()`, `ord()`, or
   bitwise string results.
