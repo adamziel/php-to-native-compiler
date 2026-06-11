@@ -2059,4 +2059,85 @@ static PTN_UNUSED int64_t ptn_array_unshift_values(PtnArray *array, size_t argc,
     return (int64_t)array->len;
 }
 
+static PTN_UNUSED uint64_t ptn_random_u64(void) {
+    static uint64_t state = 0;
+    if (state == 0) {
+        uint64_t seed = (uint64_t)time(NULL) ^ ((uint64_t)(uintptr_t)&state << 1);
+#if defined(_WIN32)
+        seed ^= (uint64_t)_getpid();
+#else
+        seed ^= (uint64_t)getpid();
+#endif
+        state = seed == 0 ? 0x9e3779b97f4a7c15ULL : seed;
+    }
+    state += 0x9e3779b97f4a7c15ULL;
+    uint64_t z = state;
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
+
+static PTN_UNUSED size_t ptn_random_bounded_index(size_t upper_inclusive) {
+    if (upper_inclusive == (size_t)UINT64_MAX) {
+        return (size_t)ptn_random_u64();
+    }
+    return (size_t)(ptn_random_u64() % ((uint64_t)upper_inclusive + 1ULL));
+}
+
+static int ptn_array_key_compare_ascending(PtnArrayKey left, PtnArrayKey right) {
+    if (left.type == PTN_ARRAY_KEY_INT && right.type == PTN_ARRAY_KEY_INT) {
+        if (left.as.integer < right.as.integer) {
+            return -1;
+        }
+        if (left.as.integer > right.as.integer) {
+            return 1;
+        }
+        return 0;
+    }
+    if (left.type == PTN_ARRAY_KEY_STRING && right.type == PTN_ARRAY_KEY_STRING) {
+        return ptn_compare_string_bytes(
+            (const unsigned char *)left.as.string,
+            strlen(left.as.string),
+            (const unsigned char *)right.as.string,
+            strlen(right.as.string)
+        );
+    }
+    return left.type == PTN_ARRAY_KEY_INT ? -1 : 1;
+}
+
+static PTN_UNUSED void ptn_array_ksort_entries(PtnArray *array) {
+    for (size_t i = 1; i < array->len; i++) {
+        PtnArrayEntry moving = array->entries[i];
+        size_t j = i;
+        while (j > 0 && ptn_array_key_compare_ascending(array->entries[j - 1].key, moving.key) > 0) {
+            array->entries[j] = array->entries[j - 1];
+            j--;
+        }
+        array->entries[j] = moving;
+    }
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
+static PTN_UNUSED void ptn_array_shuffle_values(PtnArray *array) {
+    if (array->len > 1) {
+        for (size_t i = array->len - 1; i > 0; i--) {
+            size_t j = ptn_random_bounded_index(i);
+            PtnArrayEntry tmp = array->entries[i];
+            array->entries[i] = array->entries[j];
+            array->entries[j] = tmp;
+        }
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_key_free(array->entries[i].key);
+        array->entries[i].key = ptn_array_int_key((int64_t)i);
+    }
+    array->current_index = 0;
+    ptn_array_recompute_next_auto_key(array);
+    ptn_array_rebuild_index(array);
+}
+
 static PTN_UNUSED int64_t ptn_array_push_values(PtnArray *array, size_t argc, const PtnValue *values) {

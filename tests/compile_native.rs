@@ -9740,6 +9740,8 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php var_dump(array_shift(array(1, 2)));", "array_shift"),
         ("<?php array_push([1], 2);", "array_push"),
         ("<?php array_unshift([1], 2);", "array_unshift"),
+        ("<?php ksort([3 => \"c\", 1 => \"a\"]);", "ksort"),
+        ("<?php shuffle([1, 2, 3]);", "shuffle"),
         (
             "<?php $items = [[1], [2]]; array_pop($items[0]);",
             "array_pop",
@@ -9769,6 +9771,8 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
     parser::parse("<?php $items = [1, 2]; array_pop(($items));").unwrap();
     parser::parse("<?php $items = [1]; array_push(($items), 2);").unwrap();
     parser::parse("<?php $items = [1]; array_unshift(($items), 0);").unwrap();
+    parser::parse("<?php $items = [2 => \"b\", 1 => \"a\"]; ksort(($items));").unwrap();
+    parser::parse("<?php $items = [1, 2]; shuffle(($items));").unwrap();
 }
 
 #[test]
@@ -9807,6 +9811,76 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
             error.message
         );
     }
+}
+
+#[test]
+fn compile_ksort_shuffle_and_str_shuffle_to_native_binary() {
+    let root = temp_dir("ptn-native-ksort-shuffle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ksort-shuffle.php");
+    let output = root.join("ksort-shuffle-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [3 => \"c\", 1 => \"a\", 2 => \"b\"];\n\
+$copy = $items;\n\
+var_dump(ksort($copy));\n\
+echo key($items), \":\", key($copy), \":\", $items[3], \":\", $copy[1], \"\\n\";\n\
+foreach ($copy as $key => $value) {\n\
+    echo $key, \"=\", $value, \"\\n\";\n\
+}\n\
+$values = [\"a\", \"b\", \"c\", \"d\"];\n\
+$values_copy = $values;\n\
+var_dump(shuffle($values_copy));\n\
+if (count($values) === 4 && $values[0] === \"a\" && count($values_copy) === 4 && array_key_exists(0, $values_copy) && array_key_exists(1, $values_copy) && array_key_exists(2, $values_copy) && array_key_exists(3, $values_copy) && in_array(\"a\", $values_copy, true) && in_array(\"b\", $values_copy, true) && in_array(\"c\", $values_copy, true) && in_array(\"d\", $values_copy, true)) {\n\
+    echo \"shuffle-ok\\n\";\n\
+} else {\n\
+    echo \"shuffle-bad\\n\";\n\
+}\n\
+$sample = str_shuffle(\"aabb\");\n\
+$a = 0;\n\
+$b = 0;\n\
+$other = 0;\n\
+for ($i = 0; $i < strlen($sample); $i++) {\n\
+    if ($sample[$i] === \"a\") {\n\
+        $a++;\n\
+    } elseif ($sample[$i] === \"b\") {\n\
+        $b++;\n\
+    } else {\n\
+        $other++;\n\
+    }\n\
+}\n\
+echo strlen($sample), \":\", $a, \":\", $b, \":\", $other, \"\\n\";\n\
+var_dump(function_exists(\"ksort\"), function_exists(\"shuffle\"), function_exists(\"str_shuffle\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "3:1:c:a\n",
+            "1=a\n",
+            "2=b\n",
+            "3=c\n",
+            "bool(true)\n",
+            "shuffle-ok\n",
+            "4:2:2:0\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_ksort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_shuffle_variable"));
+    assert!(c_source.contains("ptn_internal_str_shuffle"));
 }
 
 #[test]

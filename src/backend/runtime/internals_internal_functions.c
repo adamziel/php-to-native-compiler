@@ -684,6 +684,32 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shift_variable(PtnRuntime *runtime,
     return ptn_array_shift_value(array);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_ksort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "ksort",
+        1,
+        "array",
+        name,
+        value
+    );
+    ptn_array_ksort_entries(array);
+    return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_shuffle_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "shuffle",
+        1,
+        "array",
+        name,
+        value
+    );
+    ptn_array_shuffle_values(array);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_unshift_variable(
     PtnRuntime *runtime,
     const char *name,
@@ -908,6 +934,22 @@ static PtnValue ptn_internal_array_shift(PtnRuntime *runtime, size_t argc, const
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_shift", 1, "array", args[0]);
     return ptn_array_shift_value(array);
+}
+
+static PtnValue ptn_internal_ksort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "ksort", 1, "array", args[0]);
+    ptn_array_ksort_entries(array);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_shuffle(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "shuffle", 1, "array", args[0]);
+    ptn_array_shuffle_values(array);
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -1870,6 +1912,30 @@ static PtnValue ptn_internal_str_rot13(PtnRuntime *runtime, size_t argc, const P
     size_t len = string.len;
     ptn_string_operand_free(string);
     return ptn_owned_string_len(rotated, len);
+}
+
+static PtnValue ptn_internal_str_shuffle(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "str_shuffle", 1, "string", args[0], line);
+    char *shuffled = malloc(string.len + 1);
+    if (shuffled == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (string.len != 0) {
+        memcpy(shuffled, string.data, string.len);
+    }
+    shuffled[string.len] = '\0';
+    if (string.len > 1) {
+        for (size_t i = string.len - 1; i > 0; i--) {
+            size_t j = ptn_random_bounded_index(i);
+            char tmp = shuffled[i];
+            shuffled[i] = shuffled[j];
+            shuffled[j] = tmp;
+        }
+    }
+    size_t len = string.len;
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(shuffled, len);
 }
 
 static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -4399,6 +4465,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
         { "is_string", 1, 1, ptn_internal_is_string },
         { "key", 1, 1, ptn_internal_key },
+        { "ksort", 1, 1, ptn_internal_ksort },
         { "md5", 1, 2, ptn_internal_md5 },
         { "method_exists", 2, 2, ptn_internal_method_exists },
         { "mkdir", 1, 4, ptn_internal_mkdir },
@@ -4417,12 +4484,14 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rmdir", 1, 2, ptn_internal_rmdir },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
+        { "shuffle", 1, 1, ptn_internal_shuffle },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "str_contains", 2, 2, ptn_internal_str_contains },
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
         { "str_repeat", 2, 2, ptn_internal_str_repeat },
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
+        { "str_shuffle", 1, 1, ptn_internal_str_shuffle },
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },

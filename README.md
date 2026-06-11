@@ -44,6 +44,8 @@ expected rows, or one-off outputs.
 - `range()` builds integer ranges through the ordered-array runtime.
 - `assert()` throws catchable `AssertionError` values with compiler-generated
   default messages for direct calls.
+- `ksort()` and `shuffle()` mutate direct variable arrays through the shared
+  ordered-array COW path, and `str_shuffle()` shuffles scalar strings by byte.
 - Bounded PHPT telemetry from a php-src checkout resolved by `PHP_SRC_PHPT`,
   `/home/claude/php-src-phpt`, or the `.runtime/php-src-phpt` cache.
 

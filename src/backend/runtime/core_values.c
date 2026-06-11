@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #if defined(_WIN32)
 #include <direct.h>
 #include <process.h>

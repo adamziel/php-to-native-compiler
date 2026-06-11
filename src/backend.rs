@@ -1066,9 +1066,11 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "array_unshift",
         "array_walk",
         "end",
+        "ksort",
         "next",
         "prev",
         "reset",
+        "shuffle",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(name);
@@ -2712,9 +2714,11 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
             | "array_unshift"
             | "array_walk"
             | "end"
+            | "ksort"
             | "next"
             | "prev"
             | "reset"
+            | "shuffle"
     )
 }
 
@@ -5738,6 +5742,8 @@ impl ValueEmitter {
                 Some("ptn_runtime_array_pop_variable")
             } else if name.eq_ignore_ascii_case("array_shift") {
                 Some("ptn_runtime_array_shift_variable")
+            } else if name.eq_ignore_ascii_case("ksort") {
+                Some("ptn_runtime_array_ksort_variable")
             } else if name.eq_ignore_ascii_case("next") {
                 Some("ptn_runtime_array_next_variable")
             } else if name.eq_ignore_ascii_case("end") {
@@ -5746,6 +5752,8 @@ impl ValueEmitter {
                 Some("ptn_runtime_array_prev_variable")
             } else if name.eq_ignore_ascii_case("reset") {
                 Some("ptn_runtime_array_reset_variable")
+            } else if name.eq_ignore_ascii_case("shuffle") {
+                Some("ptn_runtime_array_shuffle_variable")
             } else {
                 None
             }

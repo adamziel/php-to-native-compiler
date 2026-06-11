@@ -212,14 +212,16 @@ Post-RC architecture remains explicit rather than hidden:
   calls are currently limited to direct variable arguments; temporary arrays,
   array offsets, and other non-variable cursor mutation targets fail before
   code generation with an explicit unsupported diagnostic.
-- Mutating array internals `array_pop($array)`, `array_push($array, ...)`, and
-  `array_shift($array)` over direct variable ordered arrays. These calls detach
-  shared array payloads before mutation; temporary arrays, array offsets, and
-  other non-direct-variable mutation targets fail before code generation with an
-  explicit unsupported diagnostic.
-- Sort-family by-reference array mutators such as `sort()`, `asort()`,
-  `usort()`, and `array_multisort()` remain unsupported and fail before code
-  generation with an explicit unsupported diagnostic.
+- Mutating array internals `array_pop($array)`, `array_push($array, ...)`,
+  `array_shift($array)`, `array_unshift($array, ...)`, `ksort($array)`, and
+  `shuffle($array)` over direct variable ordered arrays. These calls detach
+  shared array payloads before mutation; `ksort()` uses ascending default key
+  order, and `shuffle()` reindexes values with integer keys. Temporary arrays,
+  array offsets, and other non-direct-variable mutation targets fail before
+  code generation with an explicit unsupported diagnostic.
+- Remaining sort-family by-reference array mutators such as `sort()`,
+  `asort()`, `krsort()`, `usort()`, and `array_multisort()` remain unsupported
+  and fail before code generation with an explicit unsupported diagnostic.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
   offset reads, and currently supported value expressions. Variable and offset
   operands use a quiet existence lookup: missing variables, missing offsets,
@@ -252,8 +254,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `print_r(expr[, return]);`, `strlen(expr);`, `addcslashes(expr, expr);`,
   `stripcslashes(expr);`, `addslashes(expr);`, `stripslashes(expr);`,
-  `str_rot13(expr);`, `strcmp(expr, expr);`, `str_contains(expr, expr);`,
-  `str_starts_with(expr, expr);`,
+  `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
+  `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
   `md5(expr[, raw_output]);`,
@@ -277,8 +279,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Expression-form internal calls for the currently registered functions,
   including `print_r(expr[, return])`, `strlen(expr)`, `addcslashes(expr, expr)`,
   `stripcslashes(expr)`, `addslashes(expr)`, `stripslashes(expr)`,
-  `str_rot13(expr)`, `strcmp(expr, expr)`, `str_contains(expr, expr)`,
-  `str_starts_with(expr, expr)`,
+  `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
+  `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
   `md5(expr[, raw_output])`,
@@ -348,14 +350,16 @@ Post-RC architecture remains explicit rather than hidden:
   through the same length-aware operand path, `null` arguments emit the modeled
   deprecation, and arrays, objects without the current `__toString()` support,
   closures, and exceptions throw the modeled `TypeError` boundary for `strlen()`,
-  `str_rot13()`, `strcmp()`, `str_contains()`, `str_starts_with()`,
-  `str_ends_with()`, `str_repeat()`, three-argument `strtr()`, `quotemeta()`,
-  `chunk_split()` string/separator arguments, `strip_tags()`, `md5()`,
-  `sha1()`, `substr()`, `addcslashes()`, `addslashes()`, `stripcslashes()`,
-  `stripslashes()`, `bin2hex()`, `hex2bin()`,
-  `quoted_printable_decode()`, `soundex()`, and `ord()`.
+  `str_rot13()`, `str_shuffle()`, `strcmp()`, `str_contains()`,
+  `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
+  `strtr()`, `quotemeta()`, `chunk_split()` string/separator arguments,
+  `strip_tags()`, `md5()`, `sha1()`, `substr()`, `addcslashes()`,
+  `addslashes()`, `stripcslashes()`, `stripslashes()`, `bin2hex()`,
+  `hex2bin()`, `quoted_printable_decode()`, `soundex()`, and `ord()`.
 - `str_rot13()` over current boxed scalar values after scalar string conversion,
   returning ASCII ROT13 output while leaving non-letters unchanged.
+- `str_shuffle()` over current boxed scalar values after scalar string
+  conversion, returning a byte-shuffled string without mutating the input.
 - `strcmp()` over current boxed scalar values after scalar string conversion,
   returning a negative integer, zero, or a positive integer from bytewise
   comparison of the current C-string-backed values.
