@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T22:53Z
-Measured: `ptn-pjah` rebased on `origin/master` at `0aab39abd`.
+Refresh: 2026-06-11T23:08Z
+Measured: `ptn-ndqj` rebased on `origin/master` at `b62428b21`.
 
 Recent RC slices cover array/key canonicalization, foreach targets, catchable
 arithmetic/assertion boundaries, public `__call`/`__toString`, precision-driven
@@ -17,7 +17,11 @@ interpolation deprecations before runtime execution and routes undefined
 variable warnings through stdout formatting, so exact `strlen.phpt` passes.
 `ptn-pjah` extends minimal resources into boxed stream resources: `fopen()`
 keeps streams open, `fclose()` closes them, `is_resource()` is false after
-close, and `gettype()` reports `resource (closed)`.
+close, and `gettype()` reports `resource (closed)`. `ptn-ndqj` adds
+scalar/array `var_export()` plus ordered-array `array_diff()`,
+`array_diff_assoc()`, `array_intersect()`, and `array_intersect_assoc()`
+through shared stringified-value comparison helpers; exact
+`ext/standard/tests/array/008.phpt` now passes.
 
 ## Dashboard
 
@@ -26,7 +30,7 @@ close, and `gettype()` reports `resource (closed)`.
 | Source unit tests | 3 | 3 | 0 |
 | Native/compiler Rust suite | 478 | 478 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 195 | 5 |
+| PHPT bounded manifest | 200 | 196 | 4 |
 | PHPT Zend rows | 76 | 76 | 0 |
 | PHPT ext/standard rows | 77 | 73 | 4 |
 | PHPT tests/basic+func+lang | 45 | 44 | 1 |
@@ -46,13 +50,16 @@ properties/static properties, public constructors, public `__call`/
 interpolation slices, stream resources, `pow()`, `array_merge()`,
 `call_user_func_array()`, CLI `error_reporting` ini wiring, bounded
 `highlight_string()`/empty output-buffer reads, error-reporting-aware bitwise
-integer conversion diagnostics, and direct array mutators through `shuffle`.
+integer conversion diagnostics, scalar/array `var_export()`, and direct array
+mutators and set operations including `shuffle`, `array_diff*()`, and
+`array_intersect*()`.
 
 ## Remaining Bounded Failures
 
-- `ptn-lrty.3`, `ptn-xery`, and `ptn-k95f`: 2 broad array-internal rows remain:
-  `007` and `008`. `001`, `005`, `array_column()`, and `array_key_exists()`
-  variants are covered.
+- `ext/standard/tests/array/007.phpt`: first diff reducers are covered, but the
+  full row still reaches non-public class members and later `array_udiff*()`
+  callback variants. `001`, `005`, `008`, `array_column()`, and
+  `array_key_exists()` variants are covered.
 - `ptn-lrty.4`, `ptn-loyg`, and `ptn-qm7v`: 2 string/output rows remain. `004`
   now reaches array-element inc/dec after sort/shuffle support; `005` and
   `strlen` are covered; `006` still needs highlight-file/output-buffer support.
@@ -84,6 +91,11 @@ rows.
 It keeps `array_key_exists_variation1.phpt`, `strings/005.phpt`,
 `call_user_func_array_variation_001.phpt`, and all 4 bitwise basiclong rows
 passing. `ptn-pjah` adds focused native stream-resource coverage.
+`ptn-ndqj` pre-rebase evidence on `6cdf19c77` includes full `cargo test`,
+bounded PHPT `run-20260611T223638Z.log` at 195/200, exact
+`ext/standard/tests/array/008.phpt` passing, exact `array/007.phpt` still
+failing at non-public class members, and post-merge COW gate 15 oracle,
+3 notice, and 7 diagnostic cases passing.
 
 Follow-ups remain broad visibility/inheritance, typed/non-public/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic

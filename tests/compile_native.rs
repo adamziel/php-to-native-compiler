@@ -10298,6 +10298,102 @@ var_dump($merged, $left, $right, function_exists(\"array_merge\"), function_exis
 }
 
 #[test]
+fn compile_var_export_and_array_set_operations_to_native_binary() {
+    let root = temp_dir("ptn-native-var-export-array-set-operations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-export-array-set-operations.php");
+    let output = root.join("var-export-array-set-operations-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [0=>1, \"big\"=>2, 1=>3, 2=>6, 4=>5];\n\
+$b = [2, 2, 3];\n\
+$c = [-1, 1];\n\
+echo var_export($a, true), \";\\n\";\n\
+var_dump(array_diff($a, $b, $c));\n\
+var_dump(array_diff_assoc($a, $b, $c));\n\
+$intersect = [1, \"big\"=>2, 2, 6, 3, 5, 3, 454, \"some_string\", 17];\n\
+$right = [2, 3, 17, \"some_string\", 7];\n\
+$third = [-1, 2, 1, 15, 25, 17];\n\
+var_dump(array_intersect($intersect, $right, $third));\n\
+var_dump(array_intersect_assoc($intersect, $right, $third));\n\
+$assoc = [\"a\"=>2, \"b\"=>\"some\", \"z\"=>\"foo\", \"f\"=>5, \"gate\"=>\"web\", 7=>18, 11=>42, 73=>\"foo\", \"som3\"=>\"some\"];\n\
+$assocRight = [\"a\"=>7, 7=>18, 11=>42, \"som3\"=>\"some\", \"foo\"=>\"some\", \"goo\"=>\"foo\", \"f\"=>5, \"z\"=>\"equal\", \"gate\"=>\"web\"];\n\
+$assocThird = [\"gate\"=>\"web\", 73=>\"foo\"];\n\
+var_dump(array_intersect($assoc, $assocRight, $assocThird));\n\
+var_dump(array_intersect_assoc($assoc, $assocRight, $assocThird));\n\
+var_dump(function_exists(\"var_export\"), function_exists(\"array_diff\"), function_exists(\"ARRAY_INTERSECT_ASSOC\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array (\n",
+            "  0 => 1,\n",
+            "  'big' => 2,\n",
+            "  1 => 3,\n",
+            "  2 => 6,\n",
+            "  4 => 5,\n",
+            ");\n",
+            "array(2) {\n",
+            "  [2]=>\n",
+            "  int(6)\n",
+            "  [4]=>\n",
+            "  int(5)\n",
+            "}\n",
+            "array(5) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [\"big\"]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(3)\n",
+            "  [2]=>\n",
+            "  int(6)\n",
+            "  [4]=>\n",
+            "  int(5)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"big\"]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [8]=>\n",
+            "  int(17)\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"z\"]=>\n",
+            "  string(3) \"foo\"\n",
+            "  [\"gate\"]=>\n",
+            "  string(3) \"web\"\n",
+            "  [73]=>\n",
+            "  string(3) \"foo\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"gate\"]=>\n",
+            "  string(3) \"web\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_var_export"));
+    assert!(c_source.contains("ptn_internal_array_diff"));
+    assert!(c_source.contains("ptn_internal_array_intersect"));
+}
+
+#[test]
 fn compile_array_merge_recursive_to_native_binary() {
     let root = temp_dir("ptn-native-array-merge-recursive");
     fs::create_dir_all(&root).unwrap();
