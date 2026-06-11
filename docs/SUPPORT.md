@@ -208,9 +208,9 @@ supports in generated native binaries.
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_chunk(expr, expr[, expr]);`,
-  `array_combine(expr, expr);`,
-  `array_change_key_case(expr[, expr]);`, `array_count_values(expr);`,
-  `array_combine(expr, expr);`, `array_fill(expr, expr, expr);`,
+  `array_combine(expr, expr);`, `array_change_key_case(expr[, expr]);`,
+  `array_count_values(expr);`, `array_fill(expr, expr, expr);`,
+  `array_filter(expr[, expr[, expr]]);`,
   `array_values(expr);`, `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
@@ -232,9 +232,9 @@ supports in generated native binaries.
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
   `count(expr)`, `array_chunk(expr, expr[, expr])`,
-  `array_combine(expr, expr)`,
-  `array_change_key_case(expr[, expr])`, `array_count_values(expr)`,
-  `array_combine(expr, expr)`, `array_fill(expr, expr, expr)`, `array_values(expr)`,
+  `array_combine(expr, expr)`, `array_change_key_case(expr[, expr])`,
+  `array_count_values(expr)`, `array_fill(expr, expr, expr)`,
+  `array_filter(expr[, expr[, expr]])`, `array_values(expr)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
@@ -396,6 +396,11 @@ supports in generated native binaries.
   `array_fill_keys()` key-value canonicalization path, cloning values into a
   fresh ordered array while preserving reference values, and throwing the
   modeled PHP `ValueError` when the arrays have different element counts.
+- `array_filter()` over current boxed arrays, preserving original keys while
+  cloning kept dereferenced values into a fresh ordered array. The optional
+  callback may be `null` for PHP truthiness filtering or any currently modeled
+  callable, and the modeled `ARRAY_FILTER_USE_BOTH`/`ARRAY_FILTER_USE_KEY`
+  constants select value+key or key-only callback arguments.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `range()` over current boxed integer-convertible start, end, and optional
@@ -436,8 +441,9 @@ supports in generated native binaries.
   `E_*` error-reporting mask constants, `INF`, `NAN`, `M_PI`, and the modeled
   PHP math constants `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`,
   `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`,
-  `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, and `M_SQRT3`. Other ordinary
-  names report as undefined.
+  `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, `M_SQRT3`,
+  `ARRAY_FILTER_USE_BOTH`, and `ARRAY_FILTER_USE_KEY`. Other ordinary names
+  report as undefined.
 - Duplicate global `const` declarations and `const` redeclarations after
   `define()` emit the modeled duplicate-constant warning boundary and preserve
   the original runtime constant value.

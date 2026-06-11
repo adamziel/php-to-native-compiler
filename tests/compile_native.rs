@@ -1037,6 +1037,11 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         parser::parse("<?php function array_combine($keys, $values) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_combine()");
 
+    let error =
+        parser::parse("<?php function ARRAY_FILTER($array, $callback = null) { return []; }")
+            .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_filter()");
+
     let error = parser::parse("<?php function End($array) { return $array; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function end()");
 
@@ -8920,6 +8925,49 @@ var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'))
         "array(0) {\n}\narray(2) {\n  [\"foo\"]=>\n  NULL\n  [\"bar\"]=>\n  NULL\n}\narray(7) {\n  [5]=>\n  int(123)\n  [\"foo\"]=>\n  int(123)\n  [10]=>\n  int(123)\n  [\"1.23\"]=>\n  int(123)\n  [\"\"]=>\n  int(123)\n  [1]=>\n  int(123)\n  [\"02\"]=>\n  int(123)\n}\narray(2) {\n  [\"x\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [\"y\"]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_filter_to_native_binary() {
+    let root = temp_dir("ptn-native-array-filter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-filter.php");
+    let output = root.join("array-filter-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function even($input) { return ($input % 2 == 0); }\n\
+function key_is_keep($key) { return str_contains($key, \"keep\"); }\n\
+function both_large($value, $key) { return $value > 1 && $key != \"skip\"; }\n\
+$input = array(1, 2, 3, 0, -1);\n\
+var_dump(array_filter($input, \"even\"));\n\
+var_dump(array_filter($input));\n\
+var_dump(array_filter($input, null));\n\
+$assoc = array(\"keep1\" => 1, \"drop\" => 2, \"keep0\" => 0, \"skip\" => 3);\n\
+var_dump(array_filter($assoc, \"key_is_keep\", ARRAY_FILTER_USE_KEY));\n\
+var_dump(array_filter($assoc, \"both_large\", ARRAY_FILTER_USE_BOTH));\n\
+$value = array(\"seed\");\n\
+$source = array(\"x\" => $value, \"empty\" => array());\n\
+$filtered = array_filter($source);\n\
+$filtered[\"x\"][] = \"copy\";\n\
+var_dump($filtered, $source[\"x\"]);\n\
+var_dump(ARRAY_FILTER_USE_BOTH, ARRAY_FILTER_USE_KEY, function_exists('array_filter'), function_exists('ARRAY_FILTER'));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [1]=>\n  int(2)\n  [3]=>\n  int(0)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(2) {\n  [\"keep1\"]=>\n  int(1)\n  [\"keep0\"]=>\n  int(0)\n}\narray(1) {\n  [\"drop\"]=>\n  int(2)\n}\narray(1) {\n  [\"x\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\nint(1)\nint(2)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_filter"));
+    assert!(c_source.contains("ptn_call_callable(runtime, callback, callback_argc"));
 }
 
 #[test]

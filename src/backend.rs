@@ -2262,7 +2262,8 @@ fn bind_named_call_arguments(
 }
 
 fn internal_call_may_invoke_callable(name: &str) -> bool {
-    name.eq_ignore_ascii_case("array_map")
+    name.eq_ignore_ascii_case("array_filter")
+        || name.eq_ignore_ascii_case("array_map")
         || name.eq_ignore_ascii_case("array_reduce")
         || name.eq_ignore_ascii_case("array_walk")
         || name.eq_ignore_ascii_case("call_user_func")

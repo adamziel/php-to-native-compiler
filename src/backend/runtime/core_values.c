@@ -46,6 +46,8 @@
 #define PTN_E_DEPRECATED 8192
 #define PTN_E_USER_DEPRECATED 16384
 #define PTN_E_ALL 32767
+#define PTN_ARRAY_FILTER_USE_BOTH 1
+#define PTN_ARRAY_FILTER_USE_KEY 2
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnClosure PtnClosure;

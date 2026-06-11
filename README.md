@@ -30,6 +30,8 @@ expected rows, or one-off outputs.
   non-array operands in the current boxed value domain.
 - `array_chunk()` and `array_combine()` build fresh ordered arrays through the
   shared array runtime.
+- `array_filter()` preserves keys while filtering arrays by PHP truthiness or
+  modeled callbacks.
 - `range()` builds integer ranges through the ordered-array runtime.
 - Bounded PHPT telemetry from a php-src checkout resolved by `PHP_SRC_PHPT`,
   `/home/claude/php-src-phpt`, or the `.runtime/php-src-phpt` cache.

@@ -1076,6 +1076,51 @@ static PtnValue ptn_internal_array_flip(PtnRuntime *runtime, size_t argc, const 
     return result;
 }
 
+static PtnValue ptn_internal_array_filter(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_filter", 1, "array", args[0]);
+    int has_callback = argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL;
+    int64_t mode = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
+    PtnValue callback = has_callback ? ptn_value_clone_deref(args[1]) : ptn_null();
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+
+    for (size_t i = 0; i < array->len; i++) {
+        int keep = 0;
+        if (has_callback) {
+            PtnValue callback_args[2];
+            size_t callback_argc = 1;
+            if (mode == PTN_ARRAY_FILTER_USE_BOTH) {
+                callback_argc = 2;
+                callback_args[0] = ptn_value_clone_deref(array->entries[i].value);
+                callback_args[1] = ptn_array_key_value(array->entries[i].key);
+            } else if (mode == PTN_ARRAY_FILTER_USE_KEY) {
+                callback_args[0] = ptn_array_key_value(array->entries[i].key);
+            } else {
+                callback_args[0] = ptn_value_clone_deref(array->entries[i].value);
+            }
+
+            PtnValue callback_result = ptn_call_callable(runtime, callback, callback_argc, callback_args, line);
+            keep = ptn_is_truthy(callback_result);
+            for (size_t arg_index = 0; arg_index < callback_argc; arg_index++) {
+                ptn_value_destroy(&callback_args[arg_index]);
+            }
+            ptn_value_destroy(&callback_result);
+        } else {
+            keep = ptn_is_truthy(array->entries[i].value);
+        }
+
+        if (keep) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_key_clone(array->entries[i].key),
+                ptn_value_clone_deref(array->entries[i].value)
+            );
+        }
+    }
+
+    ptn_value_destroy(&callback);
+    return result;
+}
+
 static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_reduce", 1, "array", args[0]);
     PtnValue callback = ptn_value_clone_deref(args[1]);
@@ -4017,6 +4062,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_count_values", 1, 1, ptn_internal_array_count_values },
         { "array_fill", 3, 3, ptn_internal_array_fill },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
+        { "array_filter", 1, 3, ptn_internal_array_filter },
         { "array_flip", 1, 1, ptn_internal_array_flip },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
