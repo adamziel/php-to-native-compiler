@@ -315,6 +315,16 @@ Post-RC architecture remains explicit rather than hidden:
   ordered-array formatting, nested arrays, and string-return mode through the
   optional second argument.
 - `strlen()` over current boxed scalar values after scalar string conversion.
+- Shared string-argument checking for common string/byte internals: supported
+  scalar values are coerced through the same length-aware operand path, `null`
+  arguments emit the modeled deprecation, and arrays, objects, closures, and
+  exceptions throw the modeled `TypeError` boundary for `strlen()`,
+  `str_rot13()`, `strcmp()`, `str_contains()`, `str_starts_with()`,
+  `str_ends_with()`, `str_repeat()`, three-argument `strtr()`, `quotemeta()`,
+  `chunk_split()` string/separator arguments, `strip_tags()`, `md5()`,
+  `sha1()`, `substr()`, `addcslashes()`, `addslashes()`, `stripcslashes()`,
+  `stripslashes()`, `bin2hex()`, `hex2bin()`,
+  `quoted_printable_decode()`, `soundex()`, and `ord()`.
 - `str_rot13()` over current boxed scalar values after scalar string conversion,
   returning ASCII ROT13 output while leaving non-letters unchanged.
 - `strcmp()` over current boxed scalar values after scalar string conversion,
@@ -668,32 +678,41 @@ Post-RC architecture remains explicit rather than hidden:
   `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
   `stripcslashes()`, `md5()`, `sha1()`, `substr()`, `soundex()`, `ord()`, or
   bitwise string results.
-- Exact `strcmp()` binary-string behavior for embedded NUL bytes and
-  unsupported array/object/resource/reference operands.
-- Exact `str_contains()` binary-string behavior for embedded NUL bytes and
-  unsupported array/object/resource/reference operands.
-- Exact `str_starts_with()`/`str_ends_with()` binary-string behavior for
-  embedded NUL bytes and unsupported array/object/resource/reference operands.
-- Exact `quotemeta()` embedded-NUL behavior and unsupported
-  array/object/resource/reference operand diagnostics.
-- Exact `chunk_split()` embedded-NUL behavior, non-positive length exception
-  parity, and unsupported array/object/resource/reference operand diagnostics.
+- Exact `strcmp()` object `__toString()`, resource, and reference operand
+  parity beyond the modeled string-argument `TypeError` boundary.
+- Exact `str_contains()` object `__toString()`, resource, and reference operand
+  parity beyond the modeled string-argument `TypeError` boundary.
+- Exact `str_starts_with()`/`str_ends_with()` object `__toString()`, resource,
+  and reference operand parity beyond the modeled string-argument `TypeError`
+  boundary.
+- Exact `quotemeta()` object `__toString()`, resource, and reference operand
+  parity beyond the modeled string-argument `TypeError` boundary.
+- Exact `chunk_split()` non-positive length exception parity plus object
+  `__toString()`, resource, and reference operand parity beyond the modeled
+  string-argument `TypeError` boundary.
 - Exact `strip_tags()` binary-string behavior, allowed-tags argument support,
-  malformed/incomplete tag parity, and unsupported
-  array/object/resource/reference operand diagnostics.
+  malformed/incomplete tag parity, plus object `__toString()`, resource, and
+  reference operand parity beyond the modeled string-argument `TypeError`
+  boundary.
 - Exact `quoted_printable_decode()` embedded-NUL output behavior and
-  unsupported array/object/resource/reference operand diagnostics.
+  object `__toString()`, resource, and reference operand parity beyond the
+  modeled string-argument `TypeError` boundary.
 - Exact `addcslashes()` invalid-range warning parity, malformed charlist edge
-  cases, embedded-NUL/high-byte parity, and unsupported
-  array/object/resource/reference operand diagnostics.
-- Exact `stripcslashes()` embedded-NUL/high-byte parity and unsupported
-  array/object/resource/reference operand diagnostics.
-- Exact `addslashes()`/`stripslashes()` unsupported array/object/resource/reference
-  operand diagnostics.
+  cases, embedded-NUL/high-byte parity, plus object `__toString()`, resource,
+  and reference operand parity beyond the modeled string-argument `TypeError`
+  boundary.
+- Exact `stripcslashes()` embedded-NUL/high-byte parity plus object
+  `__toString()`, resource, and reference operand parity beyond the modeled
+  string-argument `TypeError` boundary.
+- Exact `addslashes()`/`stripslashes()` object `__toString()`, resource, and
+  reference operand parity beyond the modeled string-argument `TypeError`
+  boundary.
 - `md5()`/`sha1()` raw binary output containing NUL bytes, embedded-NUL input
-  parity, and unsupported array/object/resource/reference operand diagnostics.
+  parity, plus object `__toString()`, resource, and reference operand parity
+  beyond the modeled string-argument `TypeError` boundary.
 - Exact `substr()` binary-string behavior for embedded NUL bytes and
-  unsupported array/object/resource/reference operands.
+  object `__toString()`, resource, and reference operand parity beyond the
+  modeled string-argument `TypeError` boundary.
 - Exact `chr()` float-to-int precision-loss diagnostics.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
 - Exact `ceil()`/`floor()` null deprecations, string and unsupported-type
@@ -708,12 +727,14 @@ Post-RC architecture remains explicit rather than hidden:
   `PHP_INT_MIN / -1`, and unsupported array/object/resource/reference operands.
 - Exact diagnostics and full precision/range parity for `intval()`, `bindec()`,
   `hexdec()`, and `octdec()` on remaining very large or unsupported values.
-- Exact `hex2bin()` warning text/file-name parity and unsupported
-  array/object/resource/reference diagnostics.
+- Exact `hex2bin()` warning text/file-name parity plus object `__toString()`,
+  resource, and reference operand parity beyond the modeled string-argument
+  `TypeError` boundary.
 - Exact `dirname()` object class-name TypeError wording and unsupported
   resource/reference operand parity.
-- Exact `soundex()` locale/non-ASCII behavior and unsupported
-  array/object/resource/reference operand diagnostics.
+- Exact `soundex()` locale/non-ASCII behavior plus object `__toString()`,
+  resource, and reference operand parity beyond the modeled string-argument
+  `TypeError` boundary.
 - Exact non-finite formatting outside current scalar `var_dump()` output and
   complete non-finite comparison parity for unsupported arrays, objects,
   resources, and references.

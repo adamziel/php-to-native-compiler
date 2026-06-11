@@ -1777,11 +1777,18 @@ static PtnValue ptn_internal_reset(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_array_reset_value(array);
 }
 
+static PtnStringOperand ptn_internal_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+);
+
 static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "strlen", 1, "string", args[0], line);
     size_t len = string.len;
     ptn_string_operand_free(string);
     return ptn_int((int64_t)len);
@@ -1808,10 +1815,8 @@ static char *ptn_rot13_string(const char *string, size_t len) {
 }
 
 static PtnValue ptn_internal_str_rot13(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "str_rot13", 1, "string", args[0], line);
     char *rotated = ptn_rot13_string(string.data, string.len);
     size_t len = string.len;
     ptn_string_operand_free(string);
@@ -1819,11 +1824,9 @@ static PtnValue ptn_internal_str_rot13(PtnRuntime *runtime, size_t argc, const P
 }
 
 static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand left = ptn_value_to_string_operand(args[0]);
-    PtnStringOperand right = ptn_value_to_string_operand(args[1]);
+    PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "strcmp", 1, "string1", args[0], line);
+    PtnStringOperand right = ptn_internal_expect_string_arg(runtime, "strcmp", 2, "string2", args[1], line);
     int compared = ptn_compare_string_bytes(
         (const unsigned char *)left.data,
         left.len,
@@ -1842,11 +1845,9 @@ static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnV
 }
 
 static PtnValue ptn_internal_str_contains(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand haystack = ptn_value_to_string_operand(args[0]);
-    PtnStringOperand needle = ptn_value_to_string_operand(args[1]);
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "str_contains", 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "str_contains", 2, "needle", args[1], line);
     int contains = needle.len == 0;
     if (!contains && needle.len <= haystack.len) {
         for (size_t offset = 0; offset <= haystack.len - needle.len; offset++) {
@@ -1862,11 +1863,9 @@ static PtnValue ptn_internal_str_contains(PtnRuntime *runtime, size_t argc, cons
 }
 
 static PtnValue ptn_internal_str_starts_with(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand haystack = ptn_value_to_string_operand(args[0]);
-    PtnStringOperand needle = ptn_value_to_string_operand(args[1]);
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "str_starts_with", 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "str_starts_with", 2, "needle", args[1], line);
     size_t haystack_len = haystack.len;
     size_t needle_len = needle.len;
     int starts = needle_len <= haystack_len && memcmp(haystack.data, needle.data, needle_len) == 0;
@@ -1876,11 +1875,9 @@ static PtnValue ptn_internal_str_starts_with(PtnRuntime *runtime, size_t argc, c
 }
 
 static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand haystack = ptn_value_to_string_operand(args[0]);
-    PtnStringOperand needle = ptn_value_to_string_operand(args[1]);
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "str_ends_with", 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "str_ends_with", 2, "needle", args[1], line);
     size_t haystack_len = haystack.len;
     size_t needle_len = needle.len;
     int ends =
@@ -1893,8 +1890,7 @@ static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, con
 
 static PtnValue ptn_internal_str_repeat(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "str_repeat", 1, "string", args[0], line);
     int64_t repeat = ptn_value_to_integer(args[1]);
     if (repeat < 0) {
         ptn_string_operand_free(input);
@@ -2048,8 +2044,7 @@ static PtnValue ptn_strtr_byte_map(PtnStringOperand input, PtnStringOperand from
 }
 
 static PtnValue ptn_internal_strtr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "strtr", 1, "string", args[0], line);
     if (argc == 2) {
         PtnValue map_value = ptn_value_deref(args[1]);
         if (map_value.type != PTN_ARRAY) {
@@ -2065,8 +2060,8 @@ static PtnValue ptn_internal_strtr(PtnRuntime *runtime, size_t argc, const PtnVa
         return result;
     }
 
-    PtnStringOperand from = ptn_value_to_string_operand(args[1]);
-    PtnStringOperand to = ptn_value_to_string_operand(args[2]);
+    PtnStringOperand from = ptn_internal_expect_string_arg(runtime, "strtr", 2, "from", args[1], line);
+    PtnStringOperand to = ptn_internal_expect_string_arg(runtime, "strtr", 3, "to", args[2], line);
     PtnValue result = ptn_strtr_byte_map(input, from, to);
     ptn_string_operand_free(input);
     ptn_string_operand_free(from);
@@ -2123,10 +2118,8 @@ static char *ptn_quotemeta_string(const char *input, size_t len, size_t *output_
 }
 
 static PtnValue ptn_internal_quotemeta(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "quotemeta", 1, "string", args[0], line);
     size_t output_len = 0;
     char *output = ptn_quotemeta_string(input.data, input.len, &output_len);
     ptn_string_operand_free(input);
@@ -2172,9 +2165,7 @@ static char *ptn_chunk_split_string(
 }
 
 static PtnValue ptn_internal_chunk_split(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "chunk_split", 1, "string", args[0], line);
     int64_t chunk_len_value = argc >= 2 ? ptn_value_to_integer(args[1]) : 76;
     if (chunk_len_value <= 0) {
         ptn_string_operand_free(input);
@@ -2182,7 +2173,7 @@ static PtnValue ptn_internal_chunk_split(PtnRuntime *runtime, size_t argc, const
     }
     PtnStringOperand ending;
     if (argc >= 3) {
-        ending = ptn_value_to_string_operand(args[2]);
+        ending = ptn_internal_expect_string_arg(runtime, "chunk_split", 3, "separator", args[2], line);
     } else {
         ending.data = "\r\n";
         ending.owned = NULL;
@@ -2262,10 +2253,8 @@ static char *ptn_strip_tags_string(const char *input, size_t len, size_t *output
 }
 
 static PtnValue ptn_internal_strip_tags(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "strip_tags", 1, "string", args[0], line);
     size_t output_len = 0;
     char *output = ptn_strip_tags_string(input.data, input.len, &output_len);
     ptn_string_operand_free(input);
@@ -2420,9 +2409,7 @@ static void ptn_md5_digest_bytes(const unsigned char *input, size_t input_len, u
 }
 
 static PtnValue ptn_internal_md5(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "md5", 1, "string", args[0], line);
     unsigned char digest[16];
     ptn_md5_digest_bytes((const unsigned char *)input.data, input.len, digest);
     int raw_output = argc >= 2 && ptn_is_truthy(args[1]);
@@ -2522,9 +2509,7 @@ static void ptn_sha1_digest_bytes(const unsigned char *input, size_t input_len, 
 }
 
 static PtnValue ptn_internal_sha1(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "sha1", 1, "string", args[0], line);
     unsigned char digest[20];
     ptn_sha1_digest_bytes((const unsigned char *)input.data, input.len, digest);
     int raw_output = argc >= 2 && ptn_is_truthy(args[1]);
@@ -2967,9 +2952,7 @@ static char *ptn_substr_copy(const char *string, size_t start, size_t len) {
 }
 
 static PtnValue ptn_internal_substr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "substr", 1, "string", args[0], line);
     size_t string_len = string.len;
     size_t start = ptn_substr_start_offset(string_len, ptn_value_to_integer(args[1]));
     size_t end = string_len;
@@ -3193,11 +3176,9 @@ static PtnValue ptn_internal_is_nan(PtnRuntime *runtime, size_t argc, const PtnV
 }
 
 static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
     static const char hex_digits[] = "0123456789abcdef";
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "bin2hex", 1, "string", args[0], line);
     size_t len = string.len;
     if (len > (SIZE_MAX - 1) / 2) {
         ptn_abort_out_of_memory();
@@ -3356,11 +3337,9 @@ static char *ptn_addcslashes_string(
 }
 
 static PtnValue ptn_internal_addcslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
-    PtnStringOperand charlist = ptn_value_to_string_operand(args[1]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "addcslashes", 1, "string", args[0], line);
+    PtnStringOperand charlist = ptn_internal_expect_string_arg(runtime, "addcslashes", 2, "characters", args[1], line);
     size_t output_len = 0;
     char *output = ptn_addcslashes_string(
         input.data,
@@ -3419,10 +3398,8 @@ static char *ptn_addslashes_string(const char *input, size_t len, size_t *output
 }
 
 static PtnValue ptn_internal_addslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "addslashes", 1, "string", args[0], line);
     size_t output_len = 0;
     char *output = ptn_addslashes_string(input.data, input.len, &output_len);
     ptn_string_operand_free(input);
@@ -3517,10 +3494,8 @@ static char *ptn_stripcslashes_string(const char *input, size_t len, size_t *out
 }
 
 static PtnValue ptn_internal_stripcslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "stripcslashes", 1, "string", args[0], line);
     size_t output_len = 0;
     char *output = ptn_stripcslashes_string(input.data, input.len, &output_len);
     ptn_string_operand_free(input);
@@ -3553,10 +3528,8 @@ static char *ptn_stripslashes_string(const char *input, size_t len, size_t *outp
 }
 
 static PtnValue ptn_internal_stripslashes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "stripslashes", 1, "string", args[0], line);
     size_t output_len = 0;
     char *output = ptn_stripslashes_string(input.data, input.len, &output_len);
     ptn_string_operand_free(input);
@@ -3565,7 +3538,7 @@ static PtnValue ptn_internal_stripslashes(PtnRuntime *runtime, size_t argc, cons
 
 static PtnValue ptn_internal_hex2bin(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand hex = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand hex = ptn_internal_expect_string_arg(runtime, "hex2bin", 1, "string", args[0], line);
     size_t len = hex.len;
     if ((len % 2) != 0) {
         ptn_emit_warning(
@@ -3638,10 +3611,8 @@ static char *ptn_quoted_printable_decode_string(const char *input, size_t len, s
 }
 
 static PtnValue ptn_internal_quoted_printable_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "quoted_printable_decode", 1, "string", args[0], line);
     size_t output_len = 0;
     char *output = ptn_quoted_printable_decode_string(input.data, input.len, &output_len);
     ptn_string_operand_free(input);
@@ -3707,10 +3678,8 @@ static int ptn_soundex_resets_previous(unsigned char byte) {
 }
 
 static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "soundex", 1, "string", args[0], line);
     char *result = malloc(5);
     if (result == NULL) {
         ptn_abort_out_of_memory();
@@ -4079,7 +4048,7 @@ static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValu
 
 static PtnValue ptn_internal_ord(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "ord", 1, "character", args[0], line);
     size_t len = string.len;
     int64_t byte = 0;
     if (len == 0) {

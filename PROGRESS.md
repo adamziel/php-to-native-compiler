@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T17:37Z
-Measured: `ptn-lrty.6` rebased on `origin/master` at `ca7d64d13`.
+Refresh: 2026-06-11T17:53Z
+Measured: `ptn-lrty.4` rebased on `origin/master` at `0bfc36642`.
 `array_column()` support is integrated. `array_filter()` rejects unknown mode
 values with the modeled PHP `ValueError`. Foreach non-array diagnostics spell
 boolean operands as `false given` or `true given`. Shared deprecation
@@ -11,7 +11,10 @@ defaults, using inherited public method lookup, ordinary `$this` binding,
 positional/default arguments, and return cleanup. Arithmetic on non-numeric
 strings or mixed array operands now raises catchable `TypeError` diagnostics
 through shared runtime helper paths. Inline HTML before, between, and after PHP
-blocks now tokenizes/parses as output and lowers through the shared echo path.
+blocks tokenizes/parses as output and lowers through the shared echo path.
+Common string/byte internals now share modeled string-argument TypeErrors for
+array/object/closure/exception operands while preserving scalar, null, and
+embedded-NUL paths.
 
 ## RC Surface
 
@@ -23,8 +26,8 @@ call-frame introspection, scalar type hints, bounded closures/callables,
 `stdClass`, public class/object shells, direct public static properties,
 public property writes/`??=`, inherited public methods, public constructor
 dispatch, diagnostic filtering, catchable arithmetic `TypeError` boundaries,
-inline HTML output across PHP blocks, plain heredoc/nowdoc literals, and string
-interpolation slices.
+string-internal argument `TypeError` boundaries, inline HTML output across PHP
+blocks, plain heredoc/nowdoc literals, and string interpolation slices.
 
 The RC demo corpus exercises scalar control flow, string internals, arrays plus
 `array_combine`, `array_filter`, and `array_chunk`, top-level functions, public
@@ -35,7 +38,7 @@ class/object shells, direct static properties, and public property `??=`.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 455 | 455 | 0 |
+| Native/compiler Rust suite | 456 | 456 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 179 | 21 |
 | PHPT Zend rows | 76 | 72 | 4 |
@@ -51,7 +54,9 @@ class/object shells, direct static properties, and public property `??=`.
 - `ptn-lrty.5`: 10 numeric/operator/scalar-offset rows remain after the
   non-numeric arithmetic TypeError slice.
 - `ptn-lrty.3`: 6 array-internal rows; `array_column` is now covered.
-- `ptn-lrty.4`: 4 string/output rows.
+- `ptn-lrty.4`: 4 string/output rows remain; shared string-argument TypeErrors
+  are covered, while full `strlen` still needs `__toString`, float precision,
+  and legacy interpolation diagnostic-order parity.
 - `ptn-lrty.6` plus `ptn-r52`: 2 control-flow/foreach/lang rows remain after
   `foreachLoop.003.phpt` is covered; `tests/lang/024.phpt` now reaches the
   dynamic-variable array-offset lvalue blocker after inline HTML.
@@ -73,12 +78,13 @@ non-direct-variable or non-numeric inc/dec parity.
 Freeze evidence: bounded `manifest-20260611T172355Z.txt` (179/200), COW PHPT
 `summary-20260611T160936Z.txt` (29/29), callback
 `summary-20260611T161926Z.txt` (2/2), native smoke, and post-merge COW gate.
-`ptn-qhla`, `ptn-en6v`, `ptn-dzgg`, `ptn-p0y1`, `ptn-lrty.8`, `ptn-29og`, and
-`ptn-lrty.6` add the current array/foreach/deprecation/constructor/arithmetic
-and inline-HTML rows. Focused `ptn-lrty.6` verification covers
-`cargo test inline_html --test compile_native`; exact PHPT rows include
-`tests/lang/bug44654.phpt`, while `tests/lang/024.phpt` advances past the
-inline-HTML fatal to the dynamic-variable array-assignment blocker; final
-rebase verification is `cargo fmt --check`,
+`ptn-qhla`, `ptn-en6v`, `ptn-dzgg`, `ptn-p0y1`, `ptn-lrty.8`, `ptn-29og`,
+`ptn-lrty.6`, and `ptn-lrty.4` add the current array, foreach, deprecation,
+constructor, arithmetic, inline-HTML, and string-diagnostic rows. Focused
+`ptn-lrty.4` verification covers
+`compile_string_internals_reject_non_string_arrays_to_native_binary`, focused
+string-internal/binary-safe/hex2bin tests, and targeted string/path PHPT
+evidence that remains 6/10 with known `004`, `005`, `006`, and `strlen`
+failures; final rebase verification is `cargo fmt --check`,
 `git diff --check origin/master..HEAD`, `cargo test`,
 `tools/run-native-smoke-matrix.sh`, and `tools/run-post-merge-cow-gate.sh`.

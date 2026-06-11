@@ -3623,6 +3623,46 @@ echo $s;\n",
 }
 
 #[test]
+fn compile_string_internals_reject_non_string_arrays_to_native_binary() {
+    let root = temp_dir("ptn-native-string-internal-array-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-internal-array-diagnostics.php");
+    let output = root.join("string-internal-array-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { strlen([]); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { bin2hex([]); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { quotemeta([]); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { chunk_split('abc', 2, []); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { str_contains('abc', []); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { addslashes([]); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { ord([]); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$bytes = 'a' . chr(0) . 'b';\n\
+echo strlen($bytes), ' ', bin2hex($bytes), ' ', ord($bytes[1]), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"strlen(): Argument #1 ($string) must be of type string, array given\n\
+bin2hex(): Argument #1 ($string) must be of type string, array given\n\
+quotemeta(): Argument #1 ($string) must be of type string, array given\n\
+chunk_split(): Argument #3 ($separator) must be of type string, array given\n\
+str_contains(): Argument #2 ($needle) must be of type string, array given\n\
+addslashes(): Argument #1 ($string) must be of type string, array given\n\
+ord(): Argument #1 ($character) must be of type string, array given\n\
+3 610062 0\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();
@@ -4718,7 +4758,8 @@ bool(true)
         let marker = format!("static PtnValue {function}(");
         let body = generated_c_static_function_body(&c_source, &marker);
         assert!(
-            body.contains("ptn_value_to_string_operand"),
+            body.contains("ptn_value_to_string_operand")
+                || body.contains("ptn_internal_expect_string_arg"),
             "{function} should use the direct string operand helper"
         );
         assert!(
@@ -4775,7 +4816,8 @@ bool(true)\n"
     let body =
         generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_addslashes(");
     assert!(
-        body.contains("ptn_value_to_string_operand"),
+        body.contains("ptn_value_to_string_operand")
+            || body.contains("ptn_internal_expect_string_arg"),
         "addslashes should use the direct string operand helper"
     );
     assert!(
@@ -4822,7 +4864,8 @@ var_dump(stripslashes(\"A\\\\0B\\\\nC\\\\\\\\\"), function_exists(\"stripslashes
     let body =
         generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_stripslashes(");
     assert!(
-        body.contains("ptn_value_to_string_operand"),
+        body.contains("ptn_value_to_string_operand")
+            || body.contains("ptn_internal_expect_string_arg"),
         "stripslashes should use the direct string operand helper"
     );
     assert!(
