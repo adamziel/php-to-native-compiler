@@ -6745,6 +6745,36 @@ var_dump($value[0]);",
 }
 
 #[test]
+fn compile_null_array_offset_diagnostics_respect_suppression_to_native_binary() {
+    let root = temp_dir("ptn-native-null-array-offset-diagnostic-suppression");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("null-array-offset-diagnostic-suppression.php");
+    let output = root.join("null-array-offset-diagnostic-suppression-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [];\n\
+@$items[null];\n\
+var_dump($items);\n\
+var_dump($items[null]);\n\
+@$items[null];\n\
+$items[null] = \"stored\";\n\
+var_dump($items[\"\"]);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(0) {\n}\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 5\n\nWarning: Undefined array key \"\" in ptn on line 5\nNULL\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 7\nstring(6) \"stored\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_scalar_offset_assignment_aliasing_to_native_binary() {
     let root = temp_dir("ptn-native-scalar-offset-assignment-aliasing");
     fs::create_dir_all(&root).unwrap();

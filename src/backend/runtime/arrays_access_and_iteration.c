@@ -116,6 +116,13 @@ static PTN_UNUSED void ptn_emit_array_runtime_diagnostic(const char *kind, const
     ptn_emit_array_runtime_diagnostic_at_path(kind, message, "ptn", line);
 }
 
+static PTN_UNUSED void ptn_emit_array_runtime_warning(PtnRuntime *runtime, const char *message, size_t line) {
+    if (runtime->diagnostics.suppressed > 0) {
+        return;
+    }
+    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+}
+
 static PTN_UNUSED int ptn_class_name_is_stdclass(const char *class_name) {
     const char *stdclass = "stdClass";
     while (*class_name != '\0' && *stdclass != '\0') {
@@ -266,12 +273,15 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
     return result;
 }
 
-static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(size_t line) {
-    ptn_emit_array_runtime_diagnostic(
-        "Deprecated",
-        "Using null as an array offset is deprecated, use an empty string instead",
-        line
-    );
+static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtime, size_t line) {
+    if (runtime->diagnostics.suppressed > 0) {
+        return;
+    }
+    fputc('\n', stdout);
+    runtime->diagnostics.emitted_deprecation = 1;
+    fputs("Deprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
 }
 
 static PTN_UNUSED void ptn_emit_false_array_conversion_deprecation(size_t line) {
@@ -637,7 +647,7 @@ static PTN_UNUSED char *ptn_array_key_diagnostic_name(PtnArrayKey key) {
     return display;
 }
 
-static PTN_UNUSED void ptn_emit_undefined_array_key_warning(PtnArrayKey key, size_t line) {
+static PTN_UNUSED void ptn_emit_undefined_array_key_warning(PtnRuntime *runtime, PtnArrayKey key, size_t line) {
     const char *prefix = "Undefined array key ";
     char *display = ptn_array_key_diagnostic_name(key);
     size_t prefix_len = strlen(prefix);
@@ -651,7 +661,7 @@ static PTN_UNUSED void ptn_emit_undefined_array_key_warning(PtnArrayKey key, siz
     }
     memcpy(message, prefix, prefix_len);
     memcpy(message + prefix_len, display, display_len + 1);
-    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+    ptn_emit_array_runtime_warning(runtime, message, line);
     free(message);
     free(display);
 }
@@ -971,14 +981,14 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
     }
 
     if (key_value.type == PTN_NULL) {
-        ptn_emit_null_array_offset_deprecation(line);
+        ptn_emit_null_array_offset_deprecation(runtime, line);
     }
 
     PtnArrayKey key = ptn_array_key_from_value(key_value);
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     if (entry == NULL) {
         if (!quiet) {
-            ptn_emit_undefined_array_key_warning(key, line);
+            ptn_emit_undefined_array_key_warning(runtime, key, line);
         }
         ptn_array_key_free(key);
         return ptn_lookup_missing();
@@ -1010,7 +1020,7 @@ static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container,
         return 0;
     }
     if (key_value.type == PTN_NULL) {
-        ptn_emit_null_array_offset_deprecation(line);
+        ptn_emit_null_array_offset_deprecation(runtime, line);
     }
 
     PtnArrayKey key = ptn_array_key_from_value(key_value);
@@ -1037,7 +1047,7 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
         return 1;
     }
     if (key_value.type == PTN_NULL) {
-        ptn_emit_null_array_offset_deprecation(line);
+        ptn_emit_null_array_offset_deprecation(runtime, line);
     }
 
     PtnArrayKey key = ptn_array_key_from_value(key_value);
@@ -1054,13 +1064,13 @@ static PTN_UNUSED PtnValue ptn_array_key_value(PtnArrayKey key) {
     return ptn_owned_string(ptn_duplicate_string(key.as.string));
 }
 
-static PTN_UNUSED void ptn_emit_assign_op_missing_array_key(PtnValue key_value, size_t line) {
+static PTN_UNUSED void ptn_emit_assign_op_missing_array_key(PtnRuntime *runtime, PtnValue key_value, size_t line) {
     key_value = ptn_value_deref(key_value);
     if (key_value.type == PTN_NULL) {
-        ptn_emit_null_array_offset_deprecation(line);
+        ptn_emit_null_array_offset_deprecation(runtime, line);
     }
     PtnArrayKey key = ptn_array_key_from_value(key_value);
-    ptn_emit_undefined_array_key_warning(key, line);
+    ptn_emit_undefined_array_key_warning(runtime, key, line);
     ptn_array_key_free(key);
 }
 
@@ -1274,12 +1284,13 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_array_path_lookup_quiet(
 }
 
 static PTN_UNUSED void ptn_array_path_emit_null_key_deprecation(
+    PtnRuntime *runtime,
     const PtnArrayPathSegment *segment,
     size_t line,
     int emit_null_key_deprecation
 ) {
     if (emit_null_key_deprecation && !segment->append && ptn_value_deref(segment->value).type == PTN_NULL) {
-        ptn_emit_null_array_offset_deprecation(line);
+        ptn_emit_null_array_offset_deprecation(runtime, line);
     }
 }
 
@@ -1395,7 +1406,7 @@ static PTN_UNUSED PtnArray *ptn_array_descend_for_write(
     size_t line,
     int emit_null_key_deprecation
 ) {
-    ptn_array_path_emit_null_key_deprecation(segment, line, emit_null_key_deprecation);
+    ptn_array_path_emit_null_key_deprecation(runtime, segment, line, emit_null_key_deprecation);
     PtnArrayKey key = ptn_array_path_segment_key(array, segment);
     PtnArrayEntry *entry = segment->append ? NULL : ptn_array_entry_for_key(array, key);
 
@@ -1423,13 +1434,14 @@ static PTN_UNUSED PtnArray *ptn_array_descend_for_write(
 }
 
 static PTN_UNUSED void ptn_array_set_path_leaf(
+    PtnRuntime *runtime,
     PtnArray *array,
     const PtnArrayPathSegment *segment,
     PtnValue value,
     size_t line,
     int emit_null_key_deprecation
 ) {
-    ptn_array_path_emit_null_key_deprecation(segment, line, emit_null_key_deprecation);
+    ptn_array_path_emit_null_key_deprecation(runtime, segment, line, emit_null_key_deprecation);
     PtnArrayKey key = ptn_array_path_segment_key(array, segment);
     ptn_array_write_entry(array, key, ptn_value_clone(ptn_value_deref(value)));
 }
@@ -1494,6 +1506,7 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
     }
 
     ptn_array_set_path_leaf(
+        runtime,
         array,
         &segments[segment_count - 1],
         value,
@@ -1561,6 +1574,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
     }
 
     ptn_array_set_path_leaf(
+        runtime,
         array,
         &segments[segment_count - 1],
         value,
@@ -1605,7 +1619,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
     PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
     if (slot == NULL) {
         if (!segments[0].append) {
-            ptn_emit_assign_op_missing_array_key(segments[0].value, line);
+            ptn_emit_assign_op_missing_array_key(runtime, segments[0].value, line);
         }
         return ptn_null();
     }
@@ -1626,13 +1640,13 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
             return ptn_null();
         }
         if (ptn_value_deref(segment->value).type == PTN_NULL) {
-            ptn_emit_null_array_offset_deprecation(line);
+            ptn_emit_null_array_offset_deprecation(runtime, line);
         }
         PtnArrayKey key = ptn_array_key_from_value(segment->value);
         if (container.type == PTN_ARRAY) {
             PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
             if (entry == NULL) {
-                ptn_emit_undefined_array_key_warning(key, line);
+                ptn_emit_undefined_array_key_warning(runtime, key, line);
                 ptn_array_key_free(key);
                 return ptn_null();
             }
@@ -1644,7 +1658,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
             continue;
         }
         if (container.type == PTN_NULL) {
-            ptn_emit_undefined_array_key_warning(key, line);
+            ptn_emit_undefined_array_key_warning(runtime, key, line);
             ptn_array_key_free(key);
             return ptn_null();
         }
