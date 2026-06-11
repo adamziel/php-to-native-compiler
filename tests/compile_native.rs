@@ -8839,6 +8839,39 @@ var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'))
 }
 
 #[test]
+fn compile_array_combine_to_native_binary() {
+    let root = temp_dir("ptn-native-array-combine");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-combine.php");
+    let output = root.join("array-combine-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_combine(array(), array()));\n\
+var_dump(array_combine(array(1, 2), array(3, 4)));\n\
+var_dump(array_combine(array(1 => 'a', 2 => 'b'), array(3 => 'c', 4 => 'd')));\n\
+var_dump(array_combine(array('8', '08', 8, 1.2, false, true, null, 'x', 'x'), array('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i')));\n\
+$value = array('seed');\n\
+$combined = array_combine(array('first', 'second'), array($value, $value));\n\
+$combined['first'][] = 'copy';\n\
+var_dump($combined);\n\
+try { array_combine(array(1), array(1, 2)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists('array_combine'), function_exists('ARRAY_COMBINE'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(0) {\n}\narray(2) {\n  [1]=>\n  int(3)\n  [2]=>\n  int(4)\n}\narray(2) {\n  [\"a\"]=>\n  string(1) \"c\"\n  [\"b\"]=>\n  string(1) \"d\"\n}\narray(6) {\n  [8]=>\n  string(1) \"c\"\n  [\"08\"]=>\n  string(1) \"b\"\n  [\"1.2\"]=>\n  string(1) \"d\"\n  [\"\"]=>\n  string(1) \"g\"\n  [1]=>\n  string(1) \"f\"\n  [\"x\"]=>\n  string(1) \"i\"\n}\narray(2) {\n  [\"first\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [\"second\"]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\narray_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_range_integer_internal_to_native_binary() {
     let root = temp_dir("ptn-native-range-integer");
     fs::create_dir_all(&root).unwrap();

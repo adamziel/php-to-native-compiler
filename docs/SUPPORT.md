@@ -209,7 +209,7 @@ supports in generated native binaries.
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_chunk(expr, expr[, expr]);`,
   `array_change_key_case(expr[, expr]);`, `array_count_values(expr);`,
-  `array_fill(expr, expr, expr);`,
+  `array_combine(expr, expr);`, `array_fill(expr, expr, expr);`,
   `array_values(expr);`, `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
@@ -232,7 +232,7 @@ supports in generated native binaries.
   `ord(expr)`,
   `count(expr)`, `array_chunk(expr, expr[, expr])`,
   `array_change_key_case(expr[, expr])`, `array_count_values(expr)`,
-  `array_fill(expr, expr, expr)`, `array_values(expr)`,
+  `array_combine(expr, expr)`, `array_fill(expr, expr, expr)`, `array_values(expr)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
@@ -386,9 +386,11 @@ supports in generated native binaries.
   dereferenced values into a fresh ordered array. The optional case flag accepts
   `CASE_LOWER`/`CASE_UPPER` and rejects other values with the modeled PHP
   `ValueError`.
-- `array_chunk()` over current boxed arrays, splitting entries in insertion
-  order, reindexing chunk keys by default, preserving integer/string keys when
-  requested, and throwing the modeled PHP `ValueError` for lengths below one.
+- `array_combine()` over current boxed arrays, pairing key and value arrays by
+  insertion order, converting key values through the shared
+  `array_fill_keys()` key-value canonicalization path, cloning dereferenced
+  values into a fresh ordered array, and throwing the modeled PHP `ValueError`
+  when the arrays have different element counts.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `range()` over current boxed integer-convertible start, end, and optional
