@@ -3273,6 +3273,7 @@ echo strlen(\"abcdef\"), \" \", strcmp(\"abc\", \"abd\"), \" \", str_contains(\"
 echo str_rot13(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \" \", bin2hex(\"Az\"), \" \", quotemeta(\"a.b\"), \" \", chunk_split(\"abcd\", 2, \"|\"), \"\\n\";\n\
 echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
 echo bin2hex(strip_tags(\"<b>A</b>\" . chr(0) . \"<i>B</i>\")), \" \", soundex(\"A\" . chr(0) . \"B\"), \"\\n\";\n\
+echo str_repeat(\"xy\", 3), \"|\", str_repeat(\"z\", 0), \"|\", chunk_split(str_repeat(\"X\", 6), 3, \"|\"), \"\\n\";\n\
 echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
 var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2));",
     )
@@ -3287,6 +3288,7 @@ var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2));",
         "6 -1 1 1 1\nnop cde 417a a\\.b ab|cd|\n\
 x A R163 65 5 255 8\n\
 4142 A100\n\
+xyxyxy||XXX|XXX|\n\
 d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
 int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
     );
@@ -3307,6 +3309,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
         "ptn_internal_str_ends_with",
         "ptn_internal_quotemeta",
         "ptn_internal_chunk_split",
+        "ptn_internal_str_repeat",
         "ptn_internal_strip_tags",
         "ptn_internal_md5",
         "ptn_internal_sha1",
@@ -3424,6 +3427,43 @@ dirname(): Argument #1 ($path) must be of type string, array given\n"
             .to_vec()
     );
     assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
+fn compile_chunk_split_str_repeat_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-chunk-split-str-repeat-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chunk-split-str-repeat.php");
+    let output = root.join("chunk-split-str-repeat-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo chunk_split('abc', 1, '-').\"\\n\";\n\
+echo chunk_split('foooooooooooooooo', 5).\"\\n\";\n\
+echo chunk_split(str_repeat('X', 2*76)).\"\\n\";\n\
+echo chunk_split(\"test\", 10, \"|end\") . \"\\n\";\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "a-b-c-\n\
+foooo\r\n\
+ooooo\r\n\
+ooooo\r\n\
+oo\r\n\
+\n\
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\r\n\
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\r\n\
+\n\
+test|end\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
