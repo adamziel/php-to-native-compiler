@@ -946,12 +946,12 @@ fn parser_accepts_user_function_declarations_and_returns() {
 #[test]
 fn parser_accepts_scalar_function_parameter_defaults() {
     let program = parser::parse(
-        "<?php function defaults($a = 1, $b = \"two\", $c = false, $d = null) { return $a; }",
+        "<?php function defaults($a = 1, $b = \"two\", $c = false, $d = null, $e = [\"nested\" => [1]]) { return $a; }",
     )
     .unwrap();
 
     let function = &program.functions[0];
-    assert_eq!(function.parameters.len(), 4);
+    assert_eq!(function.parameters.len(), 5);
     assert!(matches!(
         function.parameters[0].default_value,
         Some(Expr::Int(1, _))
@@ -967,6 +967,10 @@ fn parser_accepts_scalar_function_parameter_defaults() {
     assert!(matches!(
         function.parameters[3].default_value,
         Some(Expr::Null(_))
+    ));
+    assert!(matches!(
+        function.parameters[4].default_value,
+        Some(Expr::Array { .. })
     ));
 }
 
@@ -9429,6 +9433,54 @@ var_dump(function_exists('array_flip'), function_exists('ARRAY_FLIP'));",
 }
 
 #[test]
+fn compile_call_user_func_array_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-array.php");
+    let output = root.join("call-user-func-array-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function join_three($left, $middle, $right = \"C\") {\n\
+    return $left . \":\" . $middle . \":\" . $right;\n\
+}\n\
+function add_mark(&$value) {\n\
+    $value .= \"!\";\n\
+}\n\
+$box = [\"seed\"];\n\
+var_dump(call_user_func_array(\"join_three\", [\"A\", \"B\"]));\n\
+var_dump(call_user_func_array(\"strlen\", [\"abcd\"]));\n\
+var_dump(call_user_func_array(\"add_mark\", [\"plain\"]));\n\
+call_user_func_array(\"add_mark\", [&$box[0]]);\n\
+var_dump($box[0]);\n\
+var_dump(function_exists(\"call_user_func_array\"), function_exists(\"CALL_USER_FUNC_ARRAY\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(5) \"A:B:C\"\n",
+            "int(4)\n",
+            "\nWarning: add_mark(): Argument #1 ($value) must be passed by reference, value given in ptn on line 11\n",
+            "NULL\n",
+            "string(5) \"seed!\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_call_user_func_array"));
+    assert!(c_source.contains("ptn_call_callable(runtime, args[0], arguments->len"));
+}
+
+#[test]
 fn compile_error_reporting_filters_internal_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-error-reporting-internal-warnings");
     fs::create_dir_all(&root).unwrap();
@@ -11495,6 +11547,33 @@ fn compile_power_operator_to_native_binary() {
         "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_pow_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-pow-internal-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pow-internal-function.php");
+    let output = root.join("pow-internal-function-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(pow(2, 24), pow(2, -1), pow(\"3\", \"2\"), function_exists(\"pow\"), function_exists(\"POW\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(16777216)\nfloat(0.5)\nint(9)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_pow"));
+    assert!(c_source.contains("return ptn_power(runtime, args[0], args[1], line);"));
 }
 
 #[test]

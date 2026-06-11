@@ -287,6 +287,7 @@ struct PtnRuntime {
     const char *source_path;
     const char *current_function_name;
     size_t call_site_line;
+    int warn_by_ref_argument_mismatch;
 };
 
 typedef struct {

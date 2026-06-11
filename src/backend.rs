@@ -361,6 +361,22 @@ fn emit_user_functions(
                 out.push_str("    if (");
                 out.push_str(&parameter_source);
                 out.push_str(".type != PTN_REFERENCE) {\n");
+                out.push_str("        if (caller_runtime->warn_by_ref_argument_mismatch) {\n");
+                out.push_str(
+                    "            ptn_emit_by_reference_argument_warning(caller_runtime, \"",
+                );
+                out.push_str(&c_string(&function.name));
+                out.push_str("\", ");
+                out.push_str(&(parameter_index + 1).to_string());
+                out.push_str(", \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\", line);\n");
+                if let Some(temp) = &parameter_cast_temp {
+                    emit_value_cleanup(out, "            ", temp);
+                }
+                out.push_str("            ptn_runtime_free(&runtime);\n");
+                out.push_str("            return ptn_null();\n");
+                out.push_str("        }\n");
                 out.push_str("        ptn_abort_by_reference_argument_error(\"");
                 out.push_str(&c_string(&function.name));
                 out.push_str("\", ");
@@ -489,6 +505,18 @@ fn emit_variadic_parameter_binding(
         out.push_str("        if (args[");
         out.push_str(&index_temp);
         out.push_str("].type != PTN_REFERENCE) {\n");
+        out.push_str("            if (caller_runtime->warn_by_ref_argument_mismatch) {\n");
+        out.push_str("                ptn_emit_by_reference_argument_warning(caller_runtime, \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\", ");
+        out.push_str(&index_temp);
+        out.push_str(" + 1, \"");
+        out.push_str(&c_string(&parameter.name));
+        out.push_str("\", line);\n");
+        emit_value_cleanup(out, "                ", &array_temp);
+        out.push_str("                ptn_runtime_free(&runtime);\n");
+        out.push_str("                return ptn_null();\n");
+        out.push_str("            }\n");
         out.push_str("            ptn_abort_by_reference_argument_error(\"");
         out.push_str(&c_string(&function.name));
         out.push_str("\", ");
@@ -2452,6 +2480,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("array_reduce")
         || name.eq_ignore_ascii_case("array_walk")
         || name.eq_ignore_ascii_case("call_user_func")
+        || name.eq_ignore_ascii_case("call_user_func_array")
 }
 
 fn collect_control_warnings_in(

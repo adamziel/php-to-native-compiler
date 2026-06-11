@@ -43,11 +43,12 @@ expected rows, or one-off outputs.
 - `array_key_exists()` handles current ordered arrays, including `null`
   key deprecation and resource-key integer casting.
 - `range()` builds integer ranges through the ordered-array runtime.
+- `pow()` uses the same boxed numeric exponentiation helper as `**`, and
+  `call_user_func_array()` expands ordered arrays through callable dispatch.
 - `assert()` throws catchable `AssertionError` values with compiler-generated
   default messages for direct calls.
 - `ksort()` and `shuffle()` mutate direct variable arrays through the shared
   ordered-array COW path, and `str_shuffle()` shuffles scalar strings by byte.
-- `pow()` reuses the same boxed exponentiation helper as the `**` operator.
 - Bounded PHPT telemetry from a php-src checkout resolved by `PHP_SRC_PHPT`,
   `/home/claude/php-src-phpt`, or the `.runtime/php-src-phpt` cache.
 

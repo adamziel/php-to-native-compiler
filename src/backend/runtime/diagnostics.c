@@ -353,4 +353,5 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->source_path = NULL;
     runtime->current_function_name = NULL;
     runtime->call_site_line = 0;
+    runtime->warn_by_ref_argument_mismatch = 0;
 }

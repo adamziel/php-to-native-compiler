@@ -20,6 +20,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
     runtime->call_site_line = 0;
+    runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
 }
 
 static PTN_UNUSED void ptn_runtime_set_call_frame(
@@ -135,6 +136,43 @@ static PTN_UNUSED void ptn_abort_by_reference_argument_error(
         parameter_name
     );
     exit(255);
+}
+
+static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Argument #%zu ($%s) must be passed by reference, value given",
+        function_name,
+        position,
+        parameter_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Argument #%zu ($%s) must be passed by reference, value given",
+        function_name,
+        position,
+        parameter_name
+    );
+    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        fputc('\n', stdout);
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
 }
 
 static PTN_UNUSED void ptn_abort_by_reference_return_error(void) {

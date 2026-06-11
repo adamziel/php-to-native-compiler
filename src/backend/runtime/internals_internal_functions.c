@@ -2871,6 +2871,11 @@ static PtnValue ptn_internal_sha1(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_digest_value(digest, sizeof(digest), raw_output);
 }
 
+static PtnValue ptn_internal_pow(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_power(runtime, args[0], args[1], line);
+}
+
 static char *ptn_path_operand_to_c_string(PtnStringOperand path) {
     if (memchr(path.data, '\0', path.len) != NULL) {
         return NULL;
@@ -4195,11 +4200,6 @@ static PtnValue ptn_internal_sqrt(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_float(sqrt(ptn_value_to_double(args[0])));
 }
 
-static PtnValue ptn_internal_pow(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    return ptn_power(runtime, args[0], args[1], line);
-}
-
 static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -4607,6 +4607,31 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
     );
 }
 
+static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *arguments = ptn_internal_expect_array_arg(runtime, "call_user_func_array", 2, "args", args[1]);
+    PtnValue *expanded = NULL;
+    if (arguments->len != 0) {
+        expanded = malloc(arguments->len * sizeof(PtnValue));
+        if (expanded == NULL) {
+            ptn_abort_out_of_memory();
+        }
+    }
+    for (size_t i = 0; i < arguments->len; i++) {
+        expanded[i] = ptn_value_clone(arguments->entries[i].value);
+    }
+
+    int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    runtime->warn_by_ref_argument_mismatch = 1;
+    PtnValue result = ptn_call_callable(runtime, args[0], arguments->len, expanded, line);
+    runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    for (size_t i = 0; i < arguments->len; i++) {
+        ptn_value_destroy(&expanded[i]);
+    }
+    free(expanded);
+    return result;
+}
+
 static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     if (ptn_is_truthy(args[0])) {
@@ -4668,6 +4693,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "call_user_func", 1, PTN_VARIADIC_ARGS, ptn_internal_call_user_func },
+        { "call_user_func_array", 2, 2, ptn_internal_call_user_func_array },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },

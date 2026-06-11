@@ -277,6 +277,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_values(expr);`, `array_merge(expr, ...);`,
   `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
+  `call_user_func_array(expr, expr);`,
   `assert(expr[, description]);`,
   `in_array(expr, expr[, expr]);`,
   `is_callable(expr[, syntax_only]);`, `is_finite(expr);`,
@@ -302,6 +303,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_fill(expr, expr, expr)`, `array_filter(expr[, expr[, expr]])`,
   `array_values(expr)`, `array_merge(expr, ...)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
+  `call_user_func_array(expr, expr)`,
   `assert(expr[, description])`,
   `in_array(expr, expr[, expr])`,
   `is_callable(expr[, syntax_only])`, `is_finite(expr)`,
@@ -331,8 +333,8 @@ Post-RC architecture remains explicit rather than hidden:
   names raise the modeled fatal boundary. Duplicate declarations and
   declarations that collide with currently modeled internal function names are
   rejected. Required parameters after optional parameters, variadic defaults,
-  array/object defaults, and non-scalar default expressions are rejected before
-  code generation.
+  object defaults, reference defaults, and non-constant default expressions are
+  rejected before code generation.
 - Direct variable reference aliases, grouped direct-variable aliases,
   single-dimension array element references, grouped single-dimension array
   element references, array literal reference elements, and by-value copies near
@@ -433,6 +435,8 @@ Post-RC architecture remains explicit rather than hidden:
 - `intdiv()` over current boxed scalar values after scalar integer conversion,
   returning a boxed integer quotient for supported non-zero divisors.
 - `pi()` returns the modeled boxed float value of the `M_PI` constant.
+- `pow()` calls the same boxed numeric exponentiation helper as the `**`
+  operator.
 - `getrandmax()` returns the modeled maximum random integer.
 - `getmypid()` returns the generated native process id.
 - `php_sapi_name()` returns the modeled CLI SAPI name.
@@ -494,8 +498,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `array_merge()` over current boxed arrays, appending integer-keyed entries
-  with fresh sequential keys, preserving or overwriting string-keyed entries,
-  and cloning values into a fresh ordered array.
+  with fresh sequential keys, overwriting string-keyed entries by key while
+  preserving insertion order, and cloning dereferenced values across COW
+  boundaries.
 - `range()` over current boxed integer-convertible start, end, and optional
   step arguments, returning ordered arrays of integer values and throwing the
   modeled `ValueError` for zero or out-of-range steps.
@@ -524,6 +529,11 @@ Post-RC architecture remains explicit rather than hidden:
   method array callable values, including inherited public object methods,
   supported `__call` fallback, and the optional syntax-only flag. The third
   by-reference callable-name output parameter is not yet supported.
+- `call_user_func_array()` expands current ordered-array argument values through
+  the shared callable dispatch path, preserving reference entries for the
+  current by-reference callable subset. Unreferenced values passed to
+  by-reference user parameters warn and return `null` without calling the
+  target.
 - `assert()` over current boxed assertion expressions. Truthy assertions return
   `true`; falsey assertions throw a modeled `AssertionError`. One-argument
   direct calls carry a compiler-generated default assertion message from the
