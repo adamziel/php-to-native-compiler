@@ -769,6 +769,52 @@ fn parser_accepts_user_function_declarations_and_returns() {
 }
 
 #[test]
+fn parser_accepts_scalar_function_parameter_defaults() {
+    let program = parser::parse(
+        "<?php function defaults($a = 1, $b = \"two\", $c = false, $d = null) { return $a; }",
+    )
+    .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(function.parameters.len(), 4);
+    assert!(matches!(
+        function.parameters[0].default_value,
+        Some(Expr::Int(1, _))
+    ));
+    assert!(matches!(
+        function.parameters[1].default_value,
+        Some(Expr::String(ref value, _)) if value == "two"
+    ));
+    assert!(matches!(
+        function.parameters[2].default_value,
+        Some(Expr::Bool(false, _))
+    ));
+    assert!(matches!(
+        function.parameters[3].default_value,
+        Some(Expr::Null(_))
+    ));
+}
+
+#[test]
+fn parser_rejects_unsupported_function_parameter_default_expression() {
+    let error = parser::parse("<?php function unsupported($value = [1]) {}").unwrap_err();
+    assert_eq!(
+        error.message,
+        "function parameter default value must be a supported scalar constant expression"
+    );
+}
+
+#[test]
+fn parser_rejects_required_parameter_after_optional_parameter() {
+    let error =
+        parser::parse("<?php function unsupported($optional = 1, $required) {}").unwrap_err();
+    assert_eq!(
+        error.message,
+        "required function parameter cannot follow an optional parameter"
+    );
+}
+
+#[test]
 fn parser_preserves_user_function_declared_name_case() {
     let program =
         parser::parse("<?php function MixedCase() { return null; } mixedcase();").unwrap();
@@ -4664,6 +4710,59 @@ fn compile_user_function_extra_arguments_are_accepted_to_native_binary() {
 }
 
 #[test]
+fn compile_user_function_default_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-default-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-default-arguments.php");
+    let output = root.join("user-function-default-arguments-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function inspect($count = -10, $label = \"seed\", $flag = false, $none = null) {\n\
+    var_dump($count, $label, $flag, $none, func_num_args(), func_get_args());\n\
+    $label = \"changed\";\n\
+}\n\
+inspect();\n\
+inspect(20, \"passed\");\n\
+inspect();",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(-10)\nstring(4) \"seed\"\nbool(false)\nNULL\nint(0)\narray(0) {\n}\nint(20)\nstring(6) \"passed\"\nbool(false)\nNULL\nint(2)\narray(2) {\n  [0]=>\n  int(20)\n  [1]=>\n  string(6) \"passed\"\n}\nint(-10)\nstring(4) \"seed\"\nbool(false)\nNULL\nint(0)\narray(0) {\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_default_argument_too_few_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-default-argument-too-few");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-default-argument-too-few.php");
+    let output = root.join("user-function-default-argument-too-few-bin");
+    fs::write(
+        &input,
+        "<?php function required_then_optional($required, $optional = 2) { return $required; } required_then_optional();",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Fatal error: required_then_optional() expects at least 1 argument, 0 given\n"
+    );
+}
+
+#[test]
 fn compile_user_function_func_introspection_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-func-introspection");
     fs::create_dir_all(&root).unwrap();
@@ -7635,6 +7734,34 @@ var_dump($m);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(2)\nint(2)\nint(12)\nint(2)\nint(2)\nint(2)\nint(7)\nint(9)\nint(9)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_by_reference_default_parameter_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-default-parameter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-default-parameter.php");
+    let output = root.join("by-reference-default-parameter-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function maybe(&$value = null) { var_dump($value); $value = 9; }\n\
+maybe();\n\
+$x = 1;\n\
+maybe($x);\n\
+var_dump($x);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "NULL\nint(1)\nint(9)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

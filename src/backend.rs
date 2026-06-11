@@ -265,19 +265,53 @@ fn emit_user_functions(
             out.push_str("    ptn_runtime_import_closure_captures(&runtime, receiver);\n");
         }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
+        let mut values =
+            ValueEmitter::new_for_function(source_file, source_dir, functions, classes, function);
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             if parameter.is_variadic {
                 emit_variadic_parameter_binding(out, function, parameter_index, parameter);
                 continue;
             }
-            if let Some(TypeHint::Null) = parameter.type_hint {
-                out.push_str("    if (args[");
-                out.push_str(&parameter_index.to_string());
-                out.push_str("].type != PTN_NULL");
-                if parameter.by_ref {
-                    out.push_str(" && ptn_value_deref(args[");
+            let (parameter_source, default_guard) =
+                if let Some(default_value) = &parameter.default_value {
+                    let guard_name = format!("ptn_parameter_{parameter_index}_uses_default");
+                    let value_name = format!("ptn_parameter_{parameter_index}_value");
+                    out.push_str("    int ");
+                    out.push_str(&guard_name);
+                    out.push_str(" = argc <= ");
                     out.push_str(&parameter_index.to_string());
-                    out.push_str("]).type != PTN_NULL");
+                    out.push_str(";\n");
+                    out.push_str("    PtnValue ");
+                    out.push_str(&value_name);
+                    out.push_str(";\n");
+                    out.push_str("    if (");
+                    out.push_str(&guard_name);
+                    out.push_str(") {\n");
+                    let default_temp = values.emit_materialized_value(out, default_value);
+                    out.push_str("        ");
+                    out.push_str(&value_name);
+                    out.push_str(" = ");
+                    out.push_str(&default_temp);
+                    out.push_str(";\n");
+                    out.push_str("    } else {\n");
+                    out.push_str("        ");
+                    out.push_str(&value_name);
+                    out.push_str(" = args[");
+                    out.push_str(&parameter_index.to_string());
+                    out.push_str("];\n");
+                    out.push_str("    }\n");
+                    (value_name, Some(guard_name))
+                } else {
+                    (format!("args[{parameter_index}]"), None)
+                };
+            if let Some(TypeHint::Null) = parameter.type_hint {
+                out.push_str("    if (");
+                out.push_str(&parameter_source);
+                out.push_str(".type != PTN_NULL");
+                if parameter.by_ref {
+                    out.push_str(" && ptn_value_deref(");
+                    out.push_str(&parameter_source);
+                    out.push_str(").type != PTN_NULL");
                 }
                 out.push_str(") {\n");
                 out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
@@ -296,9 +330,9 @@ fn emit_user_functions(
                     out.push_str(&temp);
                     out.push_str(" = ");
                     out.push_str(cast_helper);
-                    out.push_str("(args[");
-                    out.push_str(&parameter_index.to_string());
-                    out.push_str("]);\n");
+                    out.push('(');
+                    out.push_str(&parameter_source);
+                    out.push_str(");\n");
                     Some(temp)
                 } else {
                     None
@@ -306,11 +340,16 @@ fn emit_user_functions(
             let parameter_value = parameter_cast_temp
                 .as_deref()
                 .map(str::to_string)
-                .unwrap_or_else(|| format!("args[{parameter_index}]"));
+                .unwrap_or_else(|| parameter_source.clone());
             if parameter.by_ref {
-                out.push_str("    if (args[");
-                out.push_str(&parameter_index.to_string());
-                out.push_str("].type != PTN_REFERENCE) {\n");
+                if let Some(default_guard) = &default_guard {
+                    out.push_str("    if (!");
+                    out.push_str(default_guard);
+                    out.push_str(") {\n");
+                }
+                out.push_str("    if (");
+                out.push_str(&parameter_source);
+                out.push_str(".type != PTN_REFERENCE) {\n");
                 out.push_str("        ptn_abort_by_reference_argument_error(\"");
                 out.push_str(&c_string(&function.name));
                 out.push_str("\", ");
@@ -320,31 +359,44 @@ fn emit_user_functions(
                 out.push_str("\");\n");
                 out.push_str("    }\n");
                 if let Some(temp) = &parameter_cast_temp {
-                    out.push_str("    ptn_reference_assign(args[");
-                    out.push_str(&parameter_index.to_string());
-                    out.push_str("].as.reference, ");
+                    out.push_str("    ptn_reference_assign(");
+                    out.push_str(&parameter_source);
+                    out.push_str(".as.reference, ");
                     out.push_str(temp);
                     out.push_str(");\n");
-                    emit_value_cleanup(out, "    ", temp);
                 }
                 out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
                 out.push_str(&c_string(&parameter.name));
-                out.push_str("\", args[");
-                out.push_str(&parameter_index.to_string());
-                out.push_str("]);\n");
+                out.push_str("\", ");
+                out.push_str(&parameter_source);
+                out.push_str(");\n");
+                if default_guard.is_some() {
+                    out.push_str("    } else {\n");
+                    out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+                    out.push_str(&c_string(&parameter.name));
+                    out.push_str("\", ");
+                    out.push_str(&parameter_value);
+                    out.push_str(");\n");
+                    out.push_str("    }\n");
+                }
             } else {
                 out.push_str("    ptn_runtime_write_variable(&runtime, \"");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\", ");
                 out.push_str(&parameter_value);
                 out.push_str(");\n");
-                if let Some(temp) = &parameter_cast_temp {
-                    emit_value_cleanup(out, "    ", temp);
-                }
+            }
+            if let Some(temp) = &parameter_cast_temp {
+                emit_value_cleanup(out, "    ", temp);
+            }
+            if let Some(default_guard) = &default_guard {
+                out.push_str("    if (");
+                out.push_str(default_guard);
+                out.push_str(") {\n");
+                emit_value_cleanup(out, "        ", &parameter_source);
+                out.push_str("    }\n");
             }
         }
-        let mut values =
-            ValueEmitter::new_for_function(source_file, source_dir, functions, classes, function);
         let mut break_targets = Vec::new();
         let return_label = values.next_label("ptn_function_return");
         for instruction in &function.body {
@@ -374,12 +426,16 @@ fn function_required_parameter_count(function: &FunctionDecl) -> usize {
     function
         .parameters
         .iter()
-        .position(|parameter| parameter.is_variadic)
-        .unwrap_or(function.parameters.len())
+        .take_while(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+        .count()
 }
 
 fn function_call_frame_parameter_count(function: &FunctionDecl) -> usize {
-    function_required_parameter_count(function)
+    function
+        .parameters
+        .iter()
+        .position(|parameter| parameter.is_variadic)
+        .unwrap_or(function.parameters.len())
 }
 
 fn emit_variadic_parameter_binding(

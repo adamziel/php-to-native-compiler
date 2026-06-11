@@ -50,6 +50,7 @@ pub struct FunctionParameter {
     pub type_hint: Option<TypeHint>,
     pub by_ref: bool,
     pub is_variadic: bool,
+    pub default_value: Option<Expr>,
     pub span: SourceSpan,
 }
 

@@ -80,6 +80,7 @@ pub struct FunctionParameter {
     pub type_hint: Option<TypeHint>,
     pub by_ref: bool,
     pub is_variadic: bool,
+    pub default_value: Option<ValueExpr>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -524,26 +525,31 @@ impl<'a> LoweringContext<'a> {
         source_dir: String,
         include_resolutions: &'a IncludeResolutionMap,
     ) -> Self {
-        Self {
-            functions: program
-                .functions
-                .iter()
-                .map(|function| FunctionDecl {
-                    name: function.name.clone(),
-                    class_name: None,
-                    method_name: None,
-                    is_static: false,
-                    parameters: function.parameters.iter().map(lower_parameter).collect(),
-                    return_type: function.return_type.map(lower_type_hint),
-                    return_by_ref: function.return_by_ref,
-                    is_anonymous: false,
-                    body: Vec::new(),
-                })
-                .collect(),
+        let mut context = Self {
+            functions: Vec::new(),
             source_file,
             source_dir,
             include_resolutions,
+        };
+        for function in &program.functions {
+            let parameters = function
+                .parameters
+                .iter()
+                .map(|parameter| context.lower_parameter(parameter))
+                .collect();
+            context.functions.push(FunctionDecl {
+                name: function.name.clone(),
+                class_name: None,
+                method_name: None,
+                is_static: false,
+                parameters,
+                return_type: function.return_type.map(lower_type_hint),
+                return_by_ref: function.return_by_ref,
+                is_anonymous: false,
+                body: Vec::new(),
+            });
         }
+        context
     }
 
     fn lower_include_source(&mut self, include: &IncludeSource) -> IncludeFile {
@@ -563,12 +569,17 @@ impl<'a> LoweringContext<'a> {
 
     fn lower_anonymous_function(&mut self, function: &AstAnonymousFunction) -> ValueExpr {
         let function_index = self.functions.len();
+        let parameters = function
+            .parameters
+            .iter()
+            .map(|parameter| self.lower_parameter(parameter))
+            .collect();
         self.functions.push(FunctionDecl {
             name: "{closure}".to_string(),
             class_name: None,
             method_name: None,
             is_static: false,
-            parameters: function.parameters.iter().map(lower_parameter).collect(),
+            parameters,
             return_type: function.return_type.map(lower_type_hint),
             return_by_ref: function.return_by_ref,
             is_anonymous: true,
@@ -601,12 +612,17 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|method| {
                 let function_index = self.functions.len();
+                let parameters = method
+                    .parameters
+                    .iter()
+                    .map(|parameter| self.lower_parameter(parameter))
+                    .collect();
                 self.functions.push(FunctionDecl {
                     name: format!("{}::{}", class.name, method.name),
                     class_name: Some(class.name.clone()),
                     method_name: Some(method.name.clone()),
                     is_static: method.is_static,
-                    parameters: method.parameters.iter().map(lower_parameter).collect(),
+                    parameters,
                     return_type: method.return_type.map(lower_type_hint),
                     return_by_ref: method.return_by_ref,
                     is_anonymous: false,
@@ -895,14 +911,18 @@ impl<'a> LoweringContext<'a> {
             line: target.span.line,
         }
     }
-}
 
-fn lower_parameter(parameter: &AstFunctionParameter) -> FunctionParameter {
-    FunctionParameter {
-        name: parameter.name.clone(),
-        type_hint: parameter.type_hint.map(lower_type_hint),
-        by_ref: parameter.by_ref,
-        is_variadic: parameter.is_variadic,
+    fn lower_parameter(&mut self, parameter: &AstFunctionParameter) -> FunctionParameter {
+        FunctionParameter {
+            name: parameter.name.clone(),
+            type_hint: parameter.type_hint.map(lower_type_hint),
+            by_ref: parameter.by_ref,
+            is_variadic: parameter.is_variadic,
+            default_value: parameter
+                .default_value
+                .as_ref()
+                .map(|value| self.lower_expr(value)),
+        }
     }
 }
 

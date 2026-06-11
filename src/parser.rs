@@ -495,6 +495,7 @@ impl Parser {
                 ));
             }
         }
+        validate_function_parameter_defaults(&parameters)?;
         Ok(parameters)
     }
 
@@ -523,11 +524,25 @@ impl Parser {
                 Some(token.span),
             ));
         };
+        let default_value = if matches!(self.peek().kind, TokenKind::Equal) {
+            self.advance();
+            let value = self.parse_expr()?;
+            if !is_supported_parameter_default_expr(&value) {
+                return Err(Diagnostic::new(
+                    "function parameter default value must be a supported scalar constant expression",
+                    Some(value.span()),
+                ));
+            }
+            Some(value)
+        } else {
+            None
+        };
         Ok(FunctionParameter {
             name,
             type_hint,
             by_ref,
             is_variadic,
+            default_value,
             span: token.span,
         })
     }
@@ -4135,6 +4150,41 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,
     }
+}
+
+fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::String(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_) => true,
+        Expr::Unary { expr, .. } | Expr::Grouped { expr, .. } => {
+            is_supported_parameter_default_expr(expr)
+        }
+        _ => false,
+    }
+}
+
+fn validate_function_parameter_defaults(parameters: &[FunctionParameter]) -> Result<()> {
+    let mut seen_default = false;
+    for parameter in parameters {
+        if parameter.is_variadic && parameter.default_value.is_some() {
+            return Err(Diagnostic::new(
+                "variadic function parameter cannot have a default value",
+                Some(parameter.span),
+            ));
+        }
+        if parameter.default_value.is_some() {
+            seen_default = true;
+        } else if seen_default && !parameter.is_variadic {
+            return Err(Diagnostic::new(
+                "required function parameter cannot follow an optional parameter",
+                Some(parameter.span),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn magic_constant_kind(name: &str) -> Option<MagicConstantKind> {

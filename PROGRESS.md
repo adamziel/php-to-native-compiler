@@ -38,10 +38,10 @@ math/type internals, ordered arrays, `foreach`, COW/references/by-reference
 params, array dimensions, recursive/user functions, Closure captures, magic
 constants, `func_*`, `print_r`, scalar diagnostics, array null-offset
 diagnostics routed through `@` suppression, array union `+`, scalar type hints,
-by-reference returns, top-level variadic parameter packing, `count()`, `??`,
-assignment expressions including direct-variable compound branch/loop
-conditions, direct user-function named arguments, expression-form `print`,
-expression-level `@`, directory/file
+by-reference returns, top-level variadic parameter packing, trailing scalar
+default function parameters, `count()`, `??`, assignment expressions including
+direct-variable compound branch/loop conditions, direct user-function named
+arguments, expression-form `print`, expression-level `@`, directory/file
 predicates, array-path snapshots, selected array/string internals,
 lvalue-reference calls, list/append assignment, scalar variable-variable
 reads/ordinary assignments with unsupported-name diagnostics, method callables,
