@@ -201,8 +201,9 @@ supports in generated native binaries.
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
-  `count(expr);`, `array_count_values(expr);`, `array_values(expr);`,
-  `array_merge_recursive(expr, ...);`, `array_replace_recursive(expr, ...);`,
+  `count(expr);`, `array_count_values(expr);`, `array_fill(expr, expr, expr);`,
+  `array_values(expr);`, `array_merge_recursive(expr, ...);`,
+  `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
@@ -221,8 +222,8 @@ supports in generated native binaries.
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_count_values(expr)`, `array_values(expr)`, `array_merge_recursive(expr, ...)`,
-  `array_replace_recursive(expr, ...)`,
+  `count(expr)`, `array_count_values(expr)`, `array_fill(expr, expr, expr)`,
+  `array_values(expr)`, `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar plus array/object `is_*`
@@ -355,6 +356,10 @@ supports in generated native binaries.
 - `array_count_values()` over current boxed arrays, counting dereferenced
   integer and string values with PHP array-key canonicalization. Unsupported
   value types emit the modeled PHP warning boundary and are skipped.
+- `array_fill()` over boxed start/count operands and mixed boxed values,
+  returning a fresh ordered array keyed from the requested integer start.
+  Negative counts throw the modeled PHP `ValueError`; filled array/object
+  payloads use the shared COW clone path.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
 - `array_merge_recursive()` and `array_replace_recursive()` over current boxed

@@ -1055,6 +1055,33 @@ static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_array_fill(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    int64_t start = ptn_value_to_integer(args[0]);
+    int64_t count = ptn_value_to_integer(args[1]);
+    if (count < 0) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_fill(): Argument #2 ($count) must be greater than or equal to 0"
+        );
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (int64_t i = 0; i < count; i++) {
+        if (start > INT64_MAX - i) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(start + i),
+            ptn_value_clone(args[2])
+        );
+    }
+    return result;
+}
+
 static PtnArrayKey ptn_array_fill_keys_key_from_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
@@ -3734,6 +3761,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "addcslashes", 2, 2, ptn_internal_addcslashes },
         { "addslashes", 1, 1, ptn_internal_addslashes },
         { "array_count_values", 1, 1, ptn_internal_array_count_values },
+        { "array_fill", 3, 3, ptn_internal_array_fill },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },

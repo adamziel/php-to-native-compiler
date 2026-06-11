@@ -8340,6 +8340,37 @@ var_dump(defined(\"E_WARNING\"), defined(\"E_ALL\"));",
 }
 
 #[test]
+fn compile_array_fill_to_native_binary() {
+    let root = temp_dir("ptn-native-array-fill");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-fill.php");
+    let output = root.join("array-fill-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_fill(0, 0, true));\n\
+var_dump(array_fill(1, 2, 'x'));\n\
+$value = array('seed');\n\
+$filled = array_fill(-1, 2, $value);\n\
+$filled[-1][] = 'copy';\n\
+var_dump($filled);\n\
+try { array_fill(0, -1, 'x'); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists('array_fill'), function_exists('ARRAY_FILL'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(0) {\n}\narray(2) {\n  [1]=>\n  string(1) \"x\"\n  [2]=>\n  string(1) \"x\"\n}\narray(2) {\n  [-1]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [0]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\narray_fill(): Argument #2 ($count) must be greater than or equal to 0\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_fill_keys_to_native_binary() {
     let root = temp_dir("ptn-native-array-fill-keys");
     fs::create_dir_all(&root).unwrap();
