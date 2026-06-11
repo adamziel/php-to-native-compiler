@@ -10,8 +10,9 @@ use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
-    FunctionParameter, IncDecOp, Instruction, ListAssignmentElement, ListAssignmentElementTarget,
-    ListAssignmentTarget, MagicConstantKind, Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
+    FunctionParameter, IncDecOp, IncludeFile, Instruction, ListAssignmentElement,
+    ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind, Module, ReferenceTarget,
+    TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -24,12 +25,19 @@ pub fn emit_c(module: &Module) -> String {
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
     let needs_method_dispatch = runtime_requirements.method_dispatch || has_declared_methods;
     emit_runtime(&mut out, &runtime_requirements);
+    emit_include_prototypes(&mut out, &module.includes);
     emit_user_function_prototypes(
         &mut out,
         &module.functions,
         runtime_requirements.internal_function_dispatch,
         needs_callable_dispatch,
         needs_method_dispatch,
+    );
+    emit_include_helpers(
+        &mut out,
+        &module.includes,
+        &module.functions,
+        &module.classes,
     );
     emit_user_functions(
         &mut out,
@@ -84,6 +92,14 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
     out
+}
+
+fn emit_include_prototypes(out: &mut String, includes: &[IncludeFile]) {
+    for index in 0..includes.len() {
+        out.push_str("static PTN_UNUSED PtnValue ");
+        out.push_str(&include_c_name(index));
+        out.push_str("(PtnRuntime *include_runtime);\n");
+    }
 }
 
 #[derive(Default)]
@@ -491,6 +507,47 @@ fn by_ref_parameter_for_argument(
             parameter.is_variadic && parameter.by_ref && argument_index >= *parameter_index
         })
         .map(|(_, parameter)| parameter)
+}
+
+fn emit_include_helpers(
+    out: &mut String,
+    includes: &[IncludeFile],
+    functions: &[FunctionDecl],
+    classes: &[ClassDecl],
+) {
+    for (index, include) in includes.iter().enumerate() {
+        out.push_str("\nstatic PTN_UNUSED PtnValue ");
+        out.push_str(&include_c_name(index));
+        out.push_str("(PtnRuntime *include_runtime) {\n");
+        out.push_str("    (void)include_runtime;\n");
+        out.push_str("#define runtime (*include_runtime)\n");
+        out.push_str("    PtnValue ptn_return_value = ptn_int(1);\n");
+        let mut values = ValueEmitter::new(
+            &include.source_file,
+            &include.source_dir,
+            functions,
+            classes,
+        );
+        let mut control_targets = Vec::new();
+        let return_label = values.next_label("ptn_include_return");
+        for instruction in &include.instructions {
+            emit_instruction(
+                out,
+                &mut values,
+                instruction,
+                &mut control_targets,
+                &include.source_file,
+                Some(&return_label),
+            );
+        }
+        emit_label_reference(out, &return_label);
+        out.push_str("    ");
+        out.push_str(&return_label);
+        out.push_str(":\n");
+        out.push_str("#undef runtime\n");
+        out.push_str("    return ptn_return_value;\n");
+        out.push_str("}\n");
+    }
 }
 
 fn emit_static_property_initializers(
@@ -1599,6 +1656,10 @@ fn user_function_c_name(index: usize) -> String {
     format!("ptn_user_function_{index}")
 }
 
+fn include_c_name(index: usize) -> String {
+    format!("ptn_include_file_{index}")
+}
+
 struct ControlTarget {
     break_label: String,
     continue_label: String,
@@ -1713,6 +1774,13 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
                 collect_value_runtime_requirements(value, &module.functions, &mut requirements);
             }
         }
+    }
+    for include in &module.includes {
+        collect_instructions_runtime_requirements(
+            &include.instructions,
+            &module.functions,
+            &mut requirements,
+        );
     }
     for function in &module.functions {
         collect_instructions_runtime_requirements(
@@ -1969,6 +2037,7 @@ fn collect_value_runtime_requirements(
         ValueExpr::Print { expression } => {
             collect_value_runtime_requirements(expression, functions, requirements);
         }
+        ValueExpr::Include { .. } => {}
         ValueExpr::InternalCall {
             name,
             arguments,
@@ -2613,6 +2682,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
             .any(|target| value_mentions_variable(target, name)),
         ValueExpr::Empty { target } => value_mentions_variable(target, name),
         ValueExpr::Print { expression } => value_mentions_variable(expression, name),
+        ValueExpr::Include { .. } => false,
         ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
             arguments
                 .iter()
@@ -3625,6 +3695,15 @@ impl ValueEmitter {
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
             ValueExpr::Empty { target } => self.emit_empty(out, target),
             ValueExpr::Print { expression } => self.emit_print(out, expression),
+            ValueExpr::Include { index, .. } => {
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&include_c_name(*index));
+                out.push_str("(&runtime);\n");
+                result_temp
+            }
             ValueExpr::Load { name, line } => format!(
                 "ptn_runtime_read_variable(&runtime, \"{}\", \"{}\", {})",
                 c_string(name),
@@ -4724,6 +4803,7 @@ impl ValueEmitter {
                 | ValueExpr::Empty { .. }
                 | ValueExpr::MethodCall { .. }
                 | ValueExpr::StaticPropertyFetch { .. }
+                | ValueExpr::Include { .. }
         ) {
             return self.emit_value(out, value);
         }

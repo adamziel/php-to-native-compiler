@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
-    ListAssignmentElementTarget, MagicConstantKind, ReferenceTarget, Statement,
+    IncludeKind, ListAssignmentElementTarget, MagicConstantKind, ReferenceTarget, Statement,
     StringInterpolationIndex, StringPart, TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
@@ -543,6 +543,37 @@ fn parser_accepts_print_expression_contexts() {
         panic!("expected parenthesized print assignment");
     };
     assert!(matches!(value, Expr::Print { .. }));
+}
+
+#[test]
+fn parser_accepts_include_expression_contexts() {
+    let program = parser::parse(
+        "<?php $result = include \"value.php\"; echo require(__DIR__ . \"/plain.php\");",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment from include expression");
+    };
+    assert!(matches!(
+        value,
+        Expr::Include {
+            kind: IncludeKind::Include,
+            ..
+        }
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected echo with require operand");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Include {
+            kind: IncludeKind::Require,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -9864,6 +9895,37 @@ fn compile_return_statement_exits_script_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "before\nstring(5) \"value\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_include_return_value_and_output_to_native_binary() {
+    let root = temp_dir("ptn-native-include-return-output");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let returned = root.join("returned.php");
+    let plain = root.join("plain.php");
+    let output = root.join("include-return-output-bin");
+    fs::write(
+        &returned,
+        "<?php echo \"output:$prefix\\n\"; $after = \"set\"; return \"returned\"; echo \"never\\n\";",
+    )
+    .unwrap();
+    fs::write(&plain, "<?php echo \"plain-output\\n\";").unwrap();
+    fs::write(
+        &input,
+        "<?php $prefix = \"scope\"; $value = include \"returned.php\"; echo \"value=$value after=$after\\n\"; $plain = include (__DIR__ . \"/plain.php\"); var_dump($plain);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "output:scope\nvalue=returned after=set\nplain-output\nint(1)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

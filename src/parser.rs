@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClosureUseCapture,
-    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, ListAssignmentElement,
-    ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind, MethodDecl, Program,
-    ReferenceTarget, Statement, StaticPropertyDecl, StringInterpolationIndex, StringPart,
-    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, IncludeKind,
+    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
+    MethodDecl, Program, ReferenceTarget, Statement, StaticPropertyDecl, StringInterpolationIndex,
+    StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -1499,6 +1499,8 @@ impl Parser {
                 })
             }
             TokenKind::Print => self.parse_print_expr(),
+            TokenKind::Include => self.parse_include_expr(IncludeKind::Include),
+            TokenKind::Require => self.parse_include_expr(IncludeKind::Require),
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
                     let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
@@ -1514,6 +1516,29 @@ impl Parser {
             }
             _ => self.parse_postfix_expr(),
         }
+    }
+
+    fn parse_include_expr(&mut self, kind: IncludeKind) -> Result<Expr> {
+        let token = self.advance().clone();
+        let path = if matches!(self.peek().kind, TokenKind::LeftParen) {
+            self.advance();
+            let path = self.parse_expr()?;
+            let right_span = self.expect_right_paren()?;
+            let span = combine_spans(token.span, right_span);
+            return Ok(Expr::Include {
+                kind,
+                path: Box::new(path),
+                span,
+            });
+        } else {
+            self.parse_assignment_expr()?
+        };
+        let span = combine_spans(token.span, path.span());
+        Ok(Expr::Include {
+            kind,
+            path: Box::new(path),
+            span,
+        })
     }
 
     fn parse_print_expr(&mut self) -> Result<Expr> {
@@ -2136,6 +2161,8 @@ impl Parser {
                 | TokenKind::Tilde
                 | TokenKind::At
                 | TokenKind::Print
+                | TokenKind::Include
+                | TokenKind::Require
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
                 | TokenKind::Backslash
@@ -2540,6 +2567,8 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Break => "break",
         TokenKind::Continue => "continue",
         TokenKind::Return => "return",
+        TokenKind::Include => "include",
+        TokenKind::Require => "require",
         TokenKind::Try => "try",
         TokenKind::Catch => "catch",
         TokenKind::Goto => "goto",
@@ -2803,6 +2832,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::Print {
             expression: value, ..
         }
+        | Expr::Include { path: value, .. }
         | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
@@ -3116,6 +3146,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             expression: expr, ..
         }
         | Expr::DynamicVariable { name: expr, .. }
+        | Expr::Include { path: expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
@@ -4011,6 +4042,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
             expression: target, ..
         }
         | Expr::DynamicVariable { name: target, .. }
+        | Expr::Include { path: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::Cast { expr: target, .. }
         | Expr::Grouped { expr: target, .. } => reject_append_array_read(target)?,
@@ -4091,6 +4123,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Assign { .. }
         | Expr::AssignRef { .. }
         | Expr::Print { .. }
+        | Expr::Include { .. }
         | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }

@@ -7,7 +7,7 @@ properties, inherited methods, property `??=`, loose object equality in
 `switch`, nested string-offset unset, braced interpolation, branch-condition
 assignment and named-argument reducers, scalar offset reducers, object
 `foreach`, class metadata, method callables/magic constants, cslashes, scalar
-variable variables, and COW evidence.
+variable variables, include return helpers, and COW evidence.
 
 ## Test Dashboard
 
@@ -49,8 +49,9 @@ reads/ordinary assignments with unsupported-name diagnostics, method callables,
 class/object method metadata and calls, `$this`, object `foreach`, scalar
 array-lvalue fatals with false-to-array deprecation, class/method predicates,
 static properties, property `??=`, method-scope magic constants, inherited
-public methods, loose object equality in braced `switch`, and nested
-string-offset unset errors.
+public methods, loose object equality in braced `switch`, nested string-offset
+unset errors, and compile-time-resolved statement-only `include`/`require`
+return propagation.
 
 ## Still Needed
 
@@ -60,16 +61,16 @@ interfaces/traits, broader inheritance, magic methods, property compounds
 beyond `??=`, static-property compound/null-coalescing lvalues, destructors,
 exceptions, broader magic constants, reflection, unsupported internals,
 64-bit operator exactness, destructuring `foreach`, remaining string sub-path
-scalar offset-lvalue parity, dynamic-variable array-offset lvalues, and broader
-file APIs.
+scalar offset-lvalue parity, dynamic-variable array-offset lvalues, dynamic
+include/include_once behavior, and broader file APIs.
 
 ## Verification
 
 Commands: focused Closure/`print`/interpolation/branch-condition assignment/
 named-argument/loose-object switch/addslashes/cslashes/object `foreach`/scalar
-offset/callable/metadata/scalar variable-variable tests; `cargo check`;
-`cargo test static_property --test compile_native`; `cargo fmt --check`;
-`cargo build --bin phpc`; exact `array_null_offset_deprecation.phpt` reducer;
-`cargo test`.
+offset/callable/metadata/scalar variable-variable/focused include parser and
+native reducers; `cargo check`; `cargo test static_property --test
+compile_native`; `cargo fmt --check`; `cargo build --bin phpc`; exact
+`array_null_offset_deprecation.phpt` reducer; `cargo test`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
 `.runtime/php-src-phpt`.
