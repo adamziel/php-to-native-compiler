@@ -1316,12 +1316,8 @@ impl Parser {
             return Ok(left);
         }
 
-        let operator = self.advance().clone();
-        let op = match operator.kind {
-            TokenKind::Equal => AssignmentOp::Assign,
-            TokenKind::QuestionQuestionEqual => AssignmentOp::CoalesceAssign,
-            _ => unreachable!("peek_is_expression_assignment_op guards assignment token"),
-        };
+        let operator = self.peek().clone();
+        let op = self.expect_assignment_op()?;
         let left_span = left.span();
         let target = assignment_target_from_expr(left).map_err(|_| {
             Diagnostic::new(
@@ -1329,7 +1325,7 @@ impl Parser {
                 Some(operator.span),
             )
         })?;
-        validate_coalesce_assignment_target(op, &target, operator.span)?;
+        validate_expression_assignment_target(op, &target, operator.span)?;
         if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             let source = self.parse_reference_source()?;
@@ -1357,12 +1353,8 @@ impl Parser {
     fn parse_assignment_value_expr(&mut self) -> Result<Expr> {
         let left = self.parse_binary_expr(SYMBOL_OR_PRECEDENCE)?;
         let value = if self.peek_is_expression_assignment_op() {
-            let operator = self.advance().clone();
-            let op = match operator.kind {
-                TokenKind::Equal => AssignmentOp::Assign,
-                TokenKind::QuestionQuestionEqual => AssignmentOp::CoalesceAssign,
-                _ => unreachable!("peek_is_expression_assignment_op guards assignment token"),
-            };
+            let operator = self.peek().clone();
+            let op = self.expect_assignment_op()?;
             let left_span = left.span();
             let target = assignment_target_from_expr(left).map_err(|_| {
                 Diagnostic::new(
@@ -1370,7 +1362,7 @@ impl Parser {
                     Some(operator.span),
                 )
             })?;
-            validate_coalesce_assignment_target(op, &target, operator.span)?;
+            validate_expression_assignment_target(op, &target, operator.span)?;
             if matches!(op, AssignmentOp::Assign)
                 && matches!(self.peek().kind, TokenKind::Ampersand)
             {
@@ -2274,10 +2266,7 @@ impl Parser {
     }
 
     fn peek_is_expression_assignment_op(&self) -> bool {
-        matches!(
-            self.peek().kind,
-            TokenKind::Equal | TokenKind::QuestionQuestionEqual
-        )
+        self.peek_is_assignment_op()
     }
 
     fn expect_equal(&mut self) -> Result<SourceSpan> {
@@ -3718,6 +3707,29 @@ fn validate_coalesce_assignment_target(
         )),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables and array/string offsets",
+            Some(span),
+        )),
+    }
+}
+
+fn validate_expression_assignment_target(
+    op: AssignmentOp,
+    target: &AssignmentTarget,
+    span: SourceSpan,
+) -> Result<()> {
+    validate_coalesce_assignment_target(op, target, span)?;
+
+    if matches!(op, AssignmentOp::Assign | AssignmentOp::CoalesceAssign) {
+        return Ok(());
+    }
+
+    match target {
+        AssignmentTarget::Variable { .. } => Ok(()),
+        AssignmentTarget::ArrayDim(_)
+        | AssignmentTarget::Property { .. }
+        | AssignmentTarget::StaticProperty { .. }
+        | AssignmentTarget::List(_) => Err(Diagnostic::new(
+            "compound assignment expressions currently support direct variables",
             Some(span),
         )),
     }

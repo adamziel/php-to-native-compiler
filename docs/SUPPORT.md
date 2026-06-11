@@ -35,6 +35,10 @@ supports in generated native binaries.
 - Assignment expressions for direct variables, array dimension/append lvalues,
   and list/short-array destructuring targets, including by-reference
   destructuring entries in the modeled reference-array subset.
+- Assignment expressions in branch and loop conditions for the currently
+  supported expression-assignment subset. Direct-variable compound condition
+  assignments read the current value, evaluate the right-hand side, write the
+  computed value, and branch on that assigned value's PHP truthiness.
 - Undefined direct variable reads emit a runtime warning with generated source
   path and line, then yield `null`.
 - Boxed scalar `+`, `-`, `*`, `**`, `/`, and `%` numeric arithmetic and `.`
@@ -467,7 +471,7 @@ supports in generated native binaries.
   comparison parse errors, and complete comparison parity for unsupported value
   types.
 - Unbraced switch bodies, alternate control-flow syntax,
-  branch-condition assignments, for-loop comma expressions and
+  for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics
   beyond the currently modeled level/context fatals and switch-target warning,
   labels/goto inside unsupported functions, classes, and `try`/`finally`

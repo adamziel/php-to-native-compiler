@@ -1024,6 +1024,40 @@ impl LoweringContext {
             }
         }
     }
+
+    fn lower_assignment_expr_value(
+        &mut self,
+        target: AssignmentTarget,
+        op: AssignmentOp,
+        value: &Expr,
+    ) -> (AssignmentOp, ValueExpr) {
+        match op {
+            AssignmentOp::Assign | AssignmentOp::CoalesceAssign => (op, self.lower_expr(value)),
+            AssignmentOp::AddAssign
+            | AssignmentOp::SubtractAssign
+            | AssignmentOp::MultiplyAssign
+            | AssignmentOp::PowerAssign
+            | AssignmentOp::DivideAssign
+            | AssignmentOp::ModuloAssign
+            | AssignmentOp::ConcatAssign
+            | AssignmentOp::BitwiseAndAssign
+            | AssignmentOp::BitwiseOrAssign
+            | AssignmentOp::BitwiseXorAssign
+            | AssignmentOp::ShiftLeftAssign
+            | AssignmentOp::ShiftRightAssign => match target {
+                AssignmentTarget::Variable { name, line } => (
+                    AssignmentOp::Assign,
+                    self.lower_assignment_value(&name, op, value, line),
+                ),
+                AssignmentTarget::ArrayDim { .. }
+                | AssignmentTarget::Property { .. }
+                | AssignmentTarget::StaticProperty { .. }
+                | AssignmentTarget::List(_) => {
+                    unreachable!("parser rejects compound assignment expression targets")
+                }
+            },
+        }
+    }
 }
 
 fn lower_compound_assignment(name: &str, line: usize, op: BinaryOp, right: ValueExpr) -> ValueExpr {
@@ -1054,11 +1088,15 @@ impl LoweringContext {
             Expr::AnonymousFunction(function) => self.lower_anonymous_function(function),
             Expr::Assign {
                 target, op, value, ..
-            } => ValueExpr::Assign {
-                target: self.lower_assignment_target(target),
-                op: *op,
-                value: Box::new(self.lower_expr(value)),
-            },
+            } => {
+                let target = self.lower_assignment_target(target);
+                let (op, value) = self.lower_assignment_expr_value(target.clone(), *op, value);
+                ValueExpr::Assign {
+                    target,
+                    op,
+                    value: Box::new(value),
+                }
+            }
             Expr::AssignRef { target, source, .. } => ValueExpr::AssignRef {
                 target: self.lower_assignment_target(target),
                 source: Box::new(self.lower_expr(source)),

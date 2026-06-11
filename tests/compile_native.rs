@@ -299,6 +299,43 @@ fn parser_accepts_direct_variable_compound_assignments() {
 }
 
 #[test]
+fn parser_accepts_assignment_expressions_in_branch_conditions() {
+    let program = parser::parse(
+        "<?php if ($value += 1) { echo $value; } while ($value .= \"x\") { break; } for (; $value ??= \"fallback\"; ) { break; }",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 3);
+
+    let Statement::If { condition, .. } = &program.statements[0] else {
+        panic!("expected if statement");
+    };
+    let Expr::Assign { op, .. } = condition else {
+        panic!("expected assignment expression in if condition");
+    };
+    assert_eq!(*op, AssignmentOp::AddAssign);
+
+    let Statement::While { condition, .. } = &program.statements[1] else {
+        panic!("expected while statement");
+    };
+    let Expr::Assign { op, .. } = condition else {
+        panic!("expected assignment expression in while condition");
+    };
+    assert_eq!(*op, AssignmentOp::ConcatAssign);
+
+    let Statement::For {
+        condition: Some(condition),
+        ..
+    } = &program.statements[2]
+    else {
+        panic!("expected for statement condition");
+    };
+    let Expr::Assign { op, .. } = condition else {
+        panic!("expected assignment expression in for condition");
+    };
+    assert_eq!(*op, AssignmentOp::CoalesceAssign);
+}
+
+#[test]
 fn parser_accepts_direct_variable_increment_decrement_statements() {
     let program = parser::parse("<?php $value = 1; $value++; ++$value; $value--; --$value; while ($value < 3) { $value++; }").unwrap();
     assert_eq!(program.statements.len(), 6);
@@ -9529,6 +9566,32 @@ fn compile_if_condition_evaluates_before_selected_branch_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         undefined_variable_warning(&input, "missing", 1)
+    );
+}
+
+#[test]
+fn compile_branch_condition_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-branch-condition-assignments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("branch-condition-assignments.php");
+    let output = root.join("branch-condition-assignments-bin");
+    fs::write(
+        &input,
+        "<?php if ($a = \"0\") { echo \"bad\\n\"; } else { echo \"if:$a\\n\"; } if ($b = \"ok\") { echo \"if:$b\\n\"; } $i = 0; while ($i += 1) { echo \"while:$i\\n\"; if ($i >= 2) { $i = -1; } } $j = 0; for (; $j += 1; ) { echo \"for:$j\\n\"; if ($j >= 2) { $j = -1; } } if ($cond += $missing) { echo \"bad\\n\"; } else { echo \"compound-false:$cond\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "if:0\nif:ok\nwhile:1\nwhile:2\nfor:1\nfor:2\ncompound-false:0\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        undefined_variable_warnings(&input, &[("cond", 1), ("missing", 1)])
     );
 }
 
