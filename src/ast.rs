@@ -114,6 +114,7 @@ pub enum Statement {
     Call {
         name: String,
         arguments: Vec<Expr>,
+        argument_names: Vec<Option<String>>,
         span: SourceSpan,
     },
     Echo {
@@ -332,22 +333,26 @@ pub enum Expr {
     Call {
         name: String,
         arguments: Vec<Expr>,
+        argument_names: Vec<Option<String>>,
         span: SourceSpan,
     },
     DynamicCall {
         callee: Box<Expr>,
         arguments: Vec<Expr>,
+        argument_names: Vec<Option<String>>,
         span: SourceSpan,
     },
     MethodCall {
         receiver: Box<Expr>,
         name: String,
         arguments: Vec<Expr>,
+        argument_names: Vec<Option<String>>,
         span: SourceSpan,
     },
     NewObject {
         class_name: String,
         arguments: Vec<Expr>,
+        argument_names: Vec<Option<String>>,
         span: SourceSpan,
     },
     PropertyFetch {

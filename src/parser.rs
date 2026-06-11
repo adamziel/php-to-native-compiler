@@ -1006,11 +1006,12 @@ impl Parser {
         let TokenKind::Identifier(name) = token.kind else {
             return Err(Diagnostic::new("expected function name", Some(token.span)));
         };
-        let (arguments, _) = self.parse_call_arguments()?;
+        let (arguments, argument_names, _) = self.parse_call_arguments()?;
         validate_mutating_array_internal_call(&name, &arguments, token.span)?;
         Ok(Statement::Call {
             name: name.to_ascii_lowercase(),
             arguments,
+            argument_names,
             span: token.span,
         })
     }
@@ -1201,12 +1202,13 @@ impl Parser {
         let TokenKind::Identifier(name) = token.kind else {
             return Err(Diagnostic::new("expected function name", Some(token.span)));
         };
-        let (arguments, _) = self.parse_call_arguments()?;
+        let (arguments, argument_names, _) = self.parse_call_arguments()?;
         validate_mutating_array_internal_call(&name, &arguments, token.span)?;
         self.expect_statement_terminator()?;
         Ok(Statement::Call {
             name: name.to_ascii_lowercase(),
             arguments,
+            argument_names,
             span: token.span,
         })
     }
@@ -1549,20 +1551,22 @@ impl Parser {
                         };
                         continue;
                     }
-                    let (arguments, right_span) = self.parse_call_arguments()?;
+                    let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
                     expr = Expr::MethodCall {
                         receiver: Box::new(expr),
                         name: name.to_ascii_lowercase(),
                         arguments,
+                        argument_names,
                         span: combine_spans(start_span, right_span),
                     };
                 }
                 TokenKind::LeftParen => {
                     let start_span = expr.span();
-                    let (arguments, right_span) = self.parse_call_arguments()?;
+                    let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
                     expr = Expr::DynamicCall {
                         callee: Box::new(expr),
                         arguments,
+                        argument_names,
                         span: combine_spans(start_span, right_span),
                     };
                 }
@@ -1605,13 +1609,15 @@ impl Parser {
                         "isset" => self.parse_isset_expr(token.span),
                         "empty" => self.parse_empty_expr(token.span),
                         _ => {
-                            let (arguments, right_span) = self.parse_call_arguments()?;
+                            let (arguments, argument_names, right_span) =
+                                self.parse_call_arguments()?;
                             validate_mutating_array_internal_call(
                                 &lowercase, &arguments, token.span,
                             )?;
                             Ok(Expr::Call {
                                 name: lowercase,
                                 arguments,
+                                argument_names,
                                 span: combine_spans(token.span, right_span),
                             })
                         }
@@ -1680,10 +1686,11 @@ impl Parser {
                 Some(scope_span),
             ));
         }
-        let (arguments, right_span) = self.parse_call_arguments()?;
+        let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
         Ok(Expr::Call {
             name: format!("{}::{}", class_name, member_name),
             arguments,
+            argument_names,
             span: combine_spans(class_span, right_span),
         })
     }
@@ -1691,16 +1698,17 @@ impl Parser {
     fn parse_new_object_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
         let (class_name, class_span) = self.parse_new_object_class_name()?;
         let mut span = combine_spans(start_span, class_span);
-        let arguments = if matches!(self.peek().kind, TokenKind::LeftParen) {
-            let (arguments, right_span) = self.parse_call_arguments()?;
+        let (arguments, argument_names) = if matches!(self.peek().kind, TokenKind::LeftParen) {
+            let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
             span = combine_spans(start_span, right_span);
-            arguments
+            (arguments, argument_names)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
         Ok(Expr::NewObject {
             class_name,
             arguments,
+            argument_names,
             span,
         })
     }
@@ -1819,7 +1827,8 @@ impl Parser {
     }
 
     fn parse_isset_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
-        let (targets, right_span) = self.parse_call_arguments()?;
+        let (targets, argument_names, right_span) = self.parse_call_arguments()?;
+        reject_named_language_construct_arguments(&argument_names, start_span)?;
         if targets.is_empty() {
             return Err(Diagnostic::new(
                 "isset() expects at least one argument",
@@ -1833,7 +1842,8 @@ impl Parser {
     }
 
     fn parse_empty_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
-        let (mut arguments, right_span) = self.parse_call_arguments()?;
+        let (mut arguments, argument_names, right_span) = self.parse_call_arguments()?;
+        reject_named_language_construct_arguments(&argument_names, start_span)?;
         if arguments.len() != 1 {
             return Err(Diagnostic::new(
                 "empty() expects exactly one argument",
@@ -1846,18 +1856,67 @@ impl Parser {
         })
     }
 
-    fn parse_call_arguments(&mut self) -> Result<(Vec<Expr>, SourceSpan)> {
+    fn parse_call_arguments(&mut self) -> Result<(Vec<Expr>, Vec<Option<String>>, SourceSpan)> {
         self.expect_left_paren()?;
         let mut arguments = Vec::new();
+        let mut argument_names = Vec::new();
+        let mut named_arguments = HashSet::new();
+        let mut seen_named_argument = false;
         if !matches!(self.peek().kind, TokenKind::RightParen) {
-            arguments.push(self.parse_expr()?);
+            let (name, argument, span) = self.parse_call_argument()?;
+            if let Some(name) = &name {
+                seen_named_argument = true;
+                if !named_arguments.insert(name.clone()) {
+                    return Err(Diagnostic::new(
+                        format!("Named parameter ${name} overwrites previous argument"),
+                        Some(span),
+                    ));
+                }
+            }
+            arguments.push(argument);
+            argument_names.push(name);
             while matches!(self.peek().kind, TokenKind::Comma) {
                 self.advance();
-                arguments.push(self.parse_expr()?);
+                let (name, argument, span) = self.parse_call_argument()?;
+                if let Some(name) = &name {
+                    seen_named_argument = true;
+                    if !named_arguments.insert(name.clone()) {
+                        return Err(Diagnostic::new(
+                            format!("Named parameter ${name} overwrites previous argument"),
+                            Some(span),
+                        ));
+                    }
+                } else if seen_named_argument {
+                    return Err(Diagnostic::new(
+                        "Cannot use positional argument after named argument",
+                        Some(span),
+                    ));
+                }
+                arguments.push(argument);
+                argument_names.push(name);
             }
         }
         let right_span = self.expect_right_paren()?;
-        Ok((arguments, right_span))
+        Ok((arguments, argument_names, right_span))
+    }
+
+    fn parse_call_argument(&mut self) -> Result<(Option<String>, Expr, SourceSpan)> {
+        if let TokenKind::Identifier(name) = &self.peek().kind {
+            if matches!(
+                self.tokens.get(self.index + 1).map(|token| &token.kind),
+                Some(TokenKind::Colon)
+            ) {
+                let name = name.clone();
+                let name_span = self.advance().span;
+                self.expect_colon()?;
+                let value = self.parse_expr()?;
+                return Ok((Some(name), value, name_span));
+            }
+        }
+
+        let value = self.parse_expr()?;
+        let span = value.span();
+        Ok((None, value, span))
     }
 
     fn try_parse_cast_prefix(&mut self) -> Result<Option<(CastKind, SourceSpan)>> {
@@ -2545,6 +2604,19 @@ fn is_unsupported_class_like_declaration(name: &str) -> bool {
 
 fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
+}
+
+fn reject_named_language_construct_arguments(
+    argument_names: &[Option<String>],
+    span: SourceSpan,
+) -> Result<()> {
+    if argument_names.iter().any(Option::is_some) {
+        return Err(Diagnostic::new(
+            "named arguments are unsupported for this language construct",
+            Some(span),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_class_names(classes: &[ClassDecl]) -> Result<()> {
@@ -3654,8 +3726,10 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
         Expr::Call {
             name,
             arguments,
+            argument_names,
             span,
         } if name.eq_ignore_ascii_case("list") => {
+            reject_named_language_construct_arguments(&argument_names, span)?;
             let elements = arguments
                 .into_iter()
                 .map(|argument| {

@@ -913,9 +913,11 @@ fn emit_instruction(
         Instruction::InternalCall {
             name,
             arguments,
+            argument_names,
             line,
         } => {
-            let result_temp = values.emit_internal_call(out, name, arguments, *line);
+            let result_temp =
+                values.emit_internal_call(out, name, arguments, argument_names, *line);
             out.push_str("    (void)");
             out.push_str(&result_temp);
             out.push_str(";\n");
@@ -1623,9 +1625,18 @@ fn collect_instruction_runtime_requirements(
             }
         }
         Instruction::InternalCall {
-            name, arguments, ..
+            name,
+            arguments,
+            argument_names,
+            ..
         } => {
-            collect_call_runtime_requirements(name, arguments, functions, requirements);
+            collect_call_runtime_requirements(
+                name,
+                arguments,
+                argument_names,
+                functions,
+                requirements,
+            );
         }
         Instruction::Return { value, .. } => {
             if let Some(value) = value {
@@ -1803,9 +1814,18 @@ fn collect_value_runtime_requirements(
             collect_value_runtime_requirements(expression, functions, requirements);
         }
         ValueExpr::InternalCall {
-            name, arguments, ..
+            name,
+            arguments,
+            argument_names,
+            ..
         } => {
-            collect_call_runtime_requirements(name, arguments, functions, requirements);
+            collect_call_runtime_requirements(
+                name,
+                arguments,
+                argument_names,
+                functions,
+                requirements,
+            );
         }
         ValueExpr::DynamicCall {
             callee, arguments, ..
@@ -1851,6 +1871,7 @@ fn collect_value_runtime_requirements(
 fn collect_call_runtime_requirements(
     name: &str,
     arguments: &[ValueExpr],
+    argument_names: &[Option<String>],
     functions: &[FunctionDecl],
     requirements: &mut RuntimeRequirements,
 ) {
@@ -1860,7 +1881,9 @@ fn collect_call_runtime_requirements(
     if is_generated_user_function_call(name, functions) {
         return;
     }
-    if is_direct_internal_helper_call(name, arguments.len()) {
+    if argument_names.iter().all(Option::is_none)
+        && is_direct_internal_helper_call(name, arguments.len())
+    {
         requirements.direct_internal_helpers = true;
         return;
     }
@@ -1881,6 +1904,59 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
         || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+}
+
+enum NamedArgumentBindingError {
+    Unknown(String),
+    Duplicate(String),
+}
+
+impl NamedArgumentBindingError {
+    fn message(&self) -> String {
+        match self {
+            NamedArgumentBindingError::Unknown(name) => {
+                format!("Unknown named parameter ${name}")
+            }
+            NamedArgumentBindingError::Duplicate(name) => {
+                format!("Named parameter ${name} overwrites previous argument")
+            }
+        }
+    }
+}
+
+fn bind_named_call_arguments(
+    parameters: &[crate::ir::FunctionParameter],
+    argument_names: &[Option<String>],
+) -> std::result::Result<Vec<usize>, NamedArgumentBindingError> {
+    let mut occupied_parameters = vec![false; parameters.len()];
+    let mut slots = Vec::with_capacity(argument_names.len());
+    for (argument_index, argument_name) in argument_names.iter().enumerate() {
+        let slot = if let Some(argument_name) = argument_name {
+            let Some(parameter_index) = parameters
+                .iter()
+                .position(|parameter| parameter.name == *argument_name)
+            else {
+                return Err(NamedArgumentBindingError::Unknown(argument_name.clone()));
+            };
+            if occupied_parameters[parameter_index] {
+                return Err(NamedArgumentBindingError::Duplicate(argument_name.clone()));
+            }
+            occupied_parameters[parameter_index] = true;
+            parameter_index
+        } else {
+            if argument_index < occupied_parameters.len() {
+                if occupied_parameters[argument_index] {
+                    return Err(NamedArgumentBindingError::Duplicate(
+                        parameters[argument_index].name.clone(),
+                    ));
+                }
+                occupied_parameters[argument_index] = true;
+            }
+            argument_index
+        };
+        slots.push(slot);
+    }
+    Ok(slots)
 }
 
 fn internal_call_may_invoke_callable(name: &str) -> bool {
@@ -3283,8 +3359,9 @@ impl ValueEmitter {
             ValueExpr::NewObject {
                 class_name,
                 arguments,
+                argument_names,
                 line,
-            } => self.emit_new_object(out, class_name, arguments, *line),
+            } => self.emit_new_object(out, class_name, arguments, argument_names, *line),
             ValueExpr::PropertyFetch {
                 receiver,
                 name,
@@ -3348,19 +3425,22 @@ impl ValueEmitter {
             ValueExpr::InternalCall {
                 name,
                 arguments,
+                argument_names,
                 line,
-            } => self.emit_internal_call(out, name, arguments, *line),
+            } => self.emit_internal_call(out, name, arguments, argument_names, *line),
             ValueExpr::DynamicCall {
                 callee,
                 arguments,
+                argument_names,
                 line,
-            } => self.emit_dynamic_call(out, callee, arguments, *line),
+            } => self.emit_dynamic_call(out, callee, arguments, argument_names, *line),
             ValueExpr::MethodCall {
                 receiver,
                 name,
                 arguments,
+                argument_names,
                 line,
-            } => self.emit_method_call(out, receiver, name, arguments, *line),
+            } => self.emit_method_call(out, receiver, name, arguments, argument_names, *line),
         }
     }
 
@@ -3413,8 +3493,18 @@ impl ValueEmitter {
         out: &mut String,
         class_name: &str,
         arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
         line: usize,
     ) -> String {
+        if argument_names.iter().any(Option::is_some) {
+            let result_temp = self.next_temp();
+            self.emit_fatal_value(
+                out,
+                &result_temp,
+                "named arguments currently support user-defined functions",
+            );
+            return result_temp;
+        }
         let mut argument_temps = Vec::with_capacity(arguments.len());
         for argument in arguments {
             argument_temps.push(self.emit_materialized_value(out, argument));
@@ -4435,10 +4525,11 @@ impl ValueEmitter {
         if let ValueExpr::InternalCall {
             name,
             arguments,
+            argument_names,
             line,
         } = source
         {
-            let result_temp = self.emit_internal_call(out, name, arguments, *line);
+            let result_temp = self.emit_internal_call(out, name, arguments, argument_names, *line);
             let reference_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&reference_temp);
@@ -4500,9 +4591,11 @@ impl ValueEmitter {
         out: &mut String,
         name: &str,
         arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
         line: usize,
     ) -> String {
-        if name.eq_ignore_ascii_case("count") && arguments.len() == 1 {
+        let has_named_arguments = argument_names.iter().any(Option::is_some);
+        if !has_named_arguments && name.eq_ignore_ascii_case("count") && arguments.len() == 1 {
             let argument_temp = self.emit_materialized_value(out, &arguments[0]);
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -4514,7 +4607,10 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        if name.eq_ignore_ascii_case("array_key_exists") && arguments.len() == 2 {
+        if !has_named_arguments
+            && name.eq_ignore_ascii_case("array_key_exists")
+            && arguments.len() == 2
+        {
             let key_temp = self.emit_materialized_value(out, &arguments[0]);
             let array_temp = self.emit_materialized_value(out, &arguments[1]);
             let result_temp = self.next_temp();
@@ -4532,15 +4628,38 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        if let Some(result_temp) = self.emit_variable_array_mutator_call(out, name, arguments, line)
-        {
-            return result_temp;
+        if !has_named_arguments {
+            if let Some(result_temp) =
+                self.emit_variable_array_mutator_call(out, name, arguments, line)
+            {
+                return result_temp;
+            }
         }
 
         let result_temp = self.next_temp();
         let direct_user = self
             .direct_user_function(name)
             .map(|(index, function)| (user_function_c_name(index), function.parameters.clone()));
+        if has_named_arguments {
+            if let Some((c_name, parameters)) = &direct_user {
+                return self.emit_named_user_call(
+                    out,
+                    &result_temp,
+                    name,
+                    c_name,
+                    parameters,
+                    arguments,
+                    argument_names,
+                    line,
+                );
+            }
+            self.emit_fatal_value(
+                out,
+                &result_temp,
+                "named arguments currently support user-defined functions",
+            );
+            return result_temp;
+        }
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -4616,13 +4735,112 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_named_user_call(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        name: &str,
+        c_name: &str,
+        parameters: &[crate::ir::FunctionParameter],
+        arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
+        line: usize,
+    ) -> String {
+        let argument_slots = match bind_named_call_arguments(parameters, argument_names) {
+            Ok(argument_slots) => argument_slots,
+            Err(error) => {
+                self.emit_fatal_value(out, result_temp, &error.message());
+                return result_temp.to_string();
+            }
+        };
+
+        let frame_len = argument_slots
+            .iter()
+            .copied()
+            .max()
+            .map(|slot| slot + 1)
+            .unwrap_or(arguments.len())
+            .max(arguments.len());
+        let mut slot_temps = vec![None; frame_len];
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            let slot_index = argument_slots[argument_index];
+            let by_ref_parameter = parameters
+                .get(slot_index)
+                .filter(|parameter| parameter.by_ref);
+            let temp = if let Some(parameter) = by_ref_parameter {
+                self.emit_by_ref_call_argument(out, argument, name, slot_index, &parameter.name)
+            } else {
+                self.emit_call_argument(out, name, argument_index, argument)
+            };
+            slot_temps[slot_index] = Some(temp.clone());
+            temps.push(temp);
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in slot_temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            if let Some(temp) = temp {
+                out.push_str("ptn_value_share(");
+                out.push_str(temp);
+                out.push(')');
+            } else {
+                out.push_str("ptn_null()");
+            }
+        }
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ");
+        out.push_str(c_name);
+        out.push_str("(&runtime, ptn_null(), ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..slot_temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp.to_string()
+    }
+
+    fn emit_fatal_value(&mut self, out: &mut String, result_temp: &str, message: &str) {
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    ptn_emit_type_error(&runtime.diagnostics, \"");
+        out.push_str(&c_string(message));
+        out.push_str("\");\n");
+        out.push_str("    exit(255);\n");
+    }
+
     fn emit_dynamic_call(
         &mut self,
         out: &mut String,
         callee: &ValueExpr,
         arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
         line: usize,
     ) -> String {
+        if argument_names.iter().any(Option::is_some) {
+            let result_temp = self.next_temp();
+            self.emit_fatal_value(
+                out,
+                &result_temp,
+                "named arguments currently support user-defined functions",
+            );
+            return result_temp;
+        }
         let callee_temp = self.emit_materialized_value(out, callee);
         let result_temp = self.next_temp();
         if arguments.is_empty() {
@@ -4861,8 +5079,18 @@ impl ValueEmitter {
         receiver: &ValueExpr,
         name: &str,
         arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
         line: usize,
     ) -> String {
+        if argument_names.iter().any(Option::is_some) {
+            let result_temp = self.next_temp();
+            self.emit_fatal_value(
+                out,
+                &result_temp,
+                "named arguments currently support user-defined functions",
+            );
+            return result_temp;
+        }
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let result_temp = self.next_temp();
         if arguments.is_empty() {

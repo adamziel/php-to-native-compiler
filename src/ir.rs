@@ -116,6 +116,7 @@ pub enum Instruction {
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
+        argument_names: Vec<Option<String>>,
         line: usize,
     },
     Return {
@@ -234,22 +235,26 @@ pub enum ValueExpr {
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
+        argument_names: Vec<Option<String>>,
         line: usize,
     },
     DynamicCall {
         callee: Box<ValueExpr>,
         arguments: Vec<ValueExpr>,
+        argument_names: Vec<Option<String>>,
         line: usize,
     },
     MethodCall {
         receiver: Box<ValueExpr>,
         name: String,
         arguments: Vec<ValueExpr>,
+        argument_names: Vec<Option<String>>,
         line: usize,
     },
     NewObject {
         class_name: String,
         arguments: Vec<ValueExpr>,
+        argument_names: Vec<Option<String>>,
         line: usize,
     },
     PropertyFetch {
@@ -618,6 +623,7 @@ impl LoweringContext {
                 Statement::Call {
                     name,
                     arguments,
+                    argument_names,
                     span,
                 } => {
                     instructions.push(Instruction::InternalCall {
@@ -626,6 +632,7 @@ impl LoweringContext {
                             .iter()
                             .map(|argument| self.lower_expr(argument))
                             .collect(),
+                        argument_names: argument_names.clone(),
                         line: span.line,
                     });
                 }
@@ -1138,6 +1145,7 @@ impl LoweringContext {
             Expr::Call {
                 name,
                 arguments,
+                argument_names,
                 span,
             } => ValueExpr::InternalCall {
                 name: name.clone(),
@@ -1145,11 +1153,13 @@ impl LoweringContext {
                     .iter()
                     .map(|argument| self.lower_expr(argument))
                     .collect(),
+                argument_names: argument_names.clone(),
                 line: span.line,
             },
             Expr::DynamicCall {
                 callee,
                 arguments,
+                argument_names,
                 span,
             } => ValueExpr::DynamicCall {
                 callee: Box::new(self.lower_expr(callee)),
@@ -1157,12 +1167,14 @@ impl LoweringContext {
                     .iter()
                     .map(|argument| self.lower_expr(argument))
                     .collect(),
+                argument_names: argument_names.clone(),
                 line: span.line,
             },
             Expr::MethodCall {
                 receiver,
                 name,
                 arguments,
+                argument_names,
                 span,
             } => ValueExpr::MethodCall {
                 receiver: Box::new(self.lower_expr(receiver)),
@@ -1171,11 +1183,13 @@ impl LoweringContext {
                     .iter()
                     .map(|argument| self.lower_expr(argument))
                     .collect(),
+                argument_names: argument_names.clone(),
                 line: span.line,
             },
             Expr::NewObject {
                 class_name,
                 arguments,
+                argument_names,
                 span,
             } => ValueExpr::NewObject {
                 class_name: class_name.clone(),
@@ -1183,6 +1197,7 @@ impl LoweringContext {
                     .iter()
                     .map(|argument| self.lower_expr(argument))
                     .collect(),
+                argument_names: argument_names.clone(),
                 line: span.line,
             },
             Expr::PropertyFetch {

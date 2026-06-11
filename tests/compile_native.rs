@@ -4517,6 +4517,85 @@ fn compile_user_function_parameters_and_return_to_native_binary() {
 }
 
 #[test]
+fn parser_accepts_named_arguments_on_calls() {
+    let program = parser::parse(
+        "<?php function pair($left, $right) { return $left . $right; } pair(right: 2, left: 1);",
+    )
+    .unwrap();
+    let Statement::Call { argument_names, .. } = &program.statements[0] else {
+        panic!("expected call statement");
+    };
+    assert_eq!(
+        argument_names,
+        &vec![Some("right".to_string()), Some("left".to_string())]
+    );
+}
+
+#[test]
+fn compile_user_function_named_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-named-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-named-arguments.php");
+    let output = root.join("user-function-named-arguments-bin");
+    fs::write(
+        &input,
+        "<?php
+function side($label) { echo \"arg:$label\\n\"; return $label; }
+function collect($left, $middle, $right) {
+    return $left . \"|\" . $middle . \"|\" . $right . \"|\" . func_num_args();
+}
+echo collect(right: side(\"R\"), left: side(\"L\"), middle: side(\"M\")), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "arg:R\narg:L\narg:M\nL|M|R|3\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_named_argument_diagnostics_to_native_binary() {
+    let cases = [
+        (
+            "unknown",
+            "<?php function target($first) { return $first; } target(missing: 1);",
+            "Fatal error: Unknown named parameter $missing\n",
+        ),
+        (
+            "duplicate",
+            "<?php function target($first, $second) { return $first; } target(\"positional\", first: \"named\");",
+            "Fatal error: Named parameter $first overwrites previous argument\n",
+        ),
+    ];
+
+    for (name, source, expected_stderr) in cases {
+        let root_name = format!("ptn-native-user-function-named-argument-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success());
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            expected_stderr
+        );
+    }
+}
+
+#[test]
 fn compile_user_function_extra_arguments_are_accepted_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-extra-arguments");
     fs::create_dir_all(&root).unwrap();
