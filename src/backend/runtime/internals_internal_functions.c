@@ -1402,6 +1402,47 @@ static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, con
     return ptn_bool(ends);
 }
 
+static PtnValue ptn_internal_str_repeat(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    int64_t repeat = ptn_value_to_integer(args[1]);
+    if (repeat < 0) {
+        ptn_string_operand_free(input);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "str_repeat(): Argument #2 ($times) must be greater than or equal to 0"
+        );
+    }
+    if (repeat == 0 || input.len == 0) {
+        ptn_string_operand_free(input);
+        char *empty = malloc(1);
+        if (empty == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        empty[0] = '\0';
+        return ptn_owned_string_len(empty, 0);
+    }
+
+    size_t times = (size_t)repeat;
+    if (input.len > SIZE_MAX / times || input.len * times == SIZE_MAX) {
+        ptn_string_operand_free(input);
+        ptn_abort_out_of_memory();
+    }
+    size_t output_len = input.len * times;
+    char *output = malloc(output_len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < times; i++) {
+        memcpy(output + (i * input.len), input.data, input.len);
+    }
+    output[output_len] = '\0';
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(output, output_len);
+}
+
 typedef struct {
     PtnStringOperand from;
     PtnStringOperand to;
@@ -3777,6 +3818,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "str_contains", 2, 2, ptn_internal_str_contains },
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
+        { "str_repeat", 2, 2, ptn_internal_str_repeat },
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
         { "strcmp", 2, 2, ptn_internal_strcmp },

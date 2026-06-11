@@ -191,7 +191,7 @@ supports in generated native binaries.
   `stripcslashes(expr);`, `addslashes(expr);`, `stripslashes(expr);`,
   `str_rot13(expr);`, `strcmp(expr, expr);`, `str_contains(expr, expr);`,
   `str_starts_with(expr, expr);`,
-  `str_ends_with(expr, expr);`, `quotemeta(expr);`,
+  `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
   `md5(expr[, raw_output]);`,
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
@@ -211,7 +211,7 @@ supports in generated native binaries.
   `stripcslashes(expr)`, `addslashes(expr)`, `stripslashes(expr)`,
   `str_rot13(expr)`, `strcmp(expr, expr)`, `str_contains(expr, expr)`,
   `str_starts_with(expr, expr)`,
-  `str_ends_with(expr, expr)`, `quotemeta(expr)`,
+  `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
   `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
@@ -273,6 +273,10 @@ supports in generated native binaries.
 - `str_starts_with()` and `str_ends_with()` over current boxed scalar values
   after scalar string conversion, returning whether the haystack has the
   requested prefix or suffix through the current C-string-backed value path.
+- `str_repeat()` over current boxed scalar values after scalar string
+  conversion, repeating the input by a count converted through the current
+  scalar integer conversion path and rejecting negative counts with the modeled
+  `ValueError` boundary.
 - `quotemeta()` over current boxed scalar values after scalar string
   conversion, prefixing `.`, `\`, `+`, `*`, `?`, `[`, `^`, `]`, `(`, `$`, and
   `)` bytes with backslashes through the current C-string-backed value path.

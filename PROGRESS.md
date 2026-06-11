@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T12:12Z
-Measured: `ptn-z3df` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T12:20Z
+Measured: `ptn-33f0` rebased after current `origin/master`; array null-offset
 diagnostic routing, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, loose object equality in
 `switch`, nested string-offset unset, braced interpolation, branch-condition
@@ -11,14 +11,14 @@ variable variables, include return helpers, array/object type predicates,
 runtime `define()` legacy flag parity, shared `error_reporting()` filtering,
 dirname edge PHPT rows, double-quoted high-byte hex/octal escapes, bounded
 PHPT, COW PHPT, byte-escape reducers, declared-function `continue`/`switch`
-warnings, and COW evidence.
+warnings, `str_repeat()`, and COW evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 396 | 396 | 0 |
+| Native compiled PHP snippets | 397 | 397 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 157 | 43 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -59,17 +59,17 @@ unset errors, compile-time-resolved statement-only `include`/`require` return
 propagation, `define()`'s legacy case-insensitive flag warning with
 case-sensitive runtime constants, `error_reporting()` mask filtering for
 modeled shared warning/deprecation/notice emitters, dirname
-empty/path-separator/embedded-NUL edges, and declared-function
-`continue`/`switch` warnings.
+empty/path-separator/embedded-NUL edges, declared-function `continue`/`switch`
+warnings, and `str_repeat()`.
 
 ## Still Needed
 
 Broader gaps are constructors, declared properties, non-public visibility,
-interfaces/traits, broader inheritance, magic methods, property compounds
-beyond `??=`, static-property compound/null-coalescing lvalues, destructors,
-exceptions, broader magic constants, reflection, unsupported internals,
-64-bit operator exactness, destructuring `foreach`, remaining string sub-path
-scalar offset-lvalue parity, dynamic-variable array-offset lvalues, dynamic
+interfaces/traits, broader inheritance, magic methods, property compounds beyond
+`??=`, static-property compound/null-coalescing lvalues, destructors,
+exceptions, broader magic constants, reflection, unsupported internals, 64-bit
+operator exactness, destructuring `foreach`, remaining string sub-path scalar
+offset-lvalue parity, dynamic-variable array-offset lvalues, dynamic
 include/include_once behavior, and broader file APIs.
 
 ## Verification
@@ -84,7 +84,8 @@ flag ordering reducer; `cargo fmt --check`; `cargo build --bin phpc`; exact
 suppression reducer; exact `array_count_values.phpt` row; dirname native and
 PHPT reducers; double-quoted byte escape reducer; targeted
 `bin2hex_basic.phpt`/`ord_basic.phpt`; declared-function
-continue-switch reducer; `cargo test`;
+continue-switch reducer; `str_repeat()` native reducer; internal redeclaration
+parser reducer; `cargo test`;
 `tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt`;
 `tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or

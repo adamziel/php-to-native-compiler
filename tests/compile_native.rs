@@ -886,6 +886,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function CHUNK_SPLIT($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function chunk_split()");
 
+    let error =
+        parser::parse("<?php function STR_REPEAT($value, $times) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function str_repeat()");
+
     let error = parser::parse("<?php function Strip_Tags($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strip_tags()");
 
@@ -3908,6 +3912,29 @@ fn compile_chunk_split_registry_and_scalar_conversion_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(8) \"12.34.5.\"\nstring(5) \"ab1c1\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_str_repeat_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-str-repeat-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-repeat-function.php");
+    let output = root.join("str-repeat-function-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(str_repeat(\"ab\", 3), str_repeat(\"x\", 0), str_repeat(7, \"2\"), function_exists(\"str_repeat\"), function_exists(\"STR_REPEAT\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(6) \"ababab\"\nstring(0) \"\"\nstring(2) \"77\"\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
