@@ -1,10 +1,12 @@
 # PTN Progress
 
-Refresh: 2026-06-11T16:47Z
-Measured: `ptn-dzgg` rebased on `origin/master` at `ff7801200`.
+Refresh: 2026-06-11T16:55Z
+Measured: `ptn-p0y1` rebased on `origin/master` at `160faa991`.
 `array_column()` support is integrated. `array_filter()` rejects unknown mode
-values with the modeled PHP `ValueError`. Foreach non-array diagnostics now
-spell boolean operands as `false given` or `true given` instead of `bool given`.
+values with the modeled PHP `ValueError`. Foreach non-array diagnostics spell
+boolean operands as `false given` or `true given`. Shared deprecation
+diagnostics now emit the PHP-style leading blank-line separator, including
+`array_key_exists()` null-key and string/cast deprecations.
 
 ## RC Surface
 
@@ -66,8 +68,13 @@ Freeze evidence: bounded `summary-20260611T161121Z.txt` (173/200), COW PHPT
 174/200. `ptn-lrty.7` reran `cargo fmt --check`, `cargo build --bin phpc`, the
 documented README demo loop, and `cargo test`. `ptn-en6v` verification covered
 `compile_array_filter_to_native_binary`, exact `array_filter_basic.phpt`,
-`cargo test`, native smoke, and post-merge COW gate. Focused `ptn-dzgg`
-verification covers `compile_foreach_non_array_diagnostics_include_source_path_to_native_binary`
-and exact `foreachLoop.003.phpt`; the final rebase verification is
-`cargo fmt --check`, `git diff --check origin/master..HEAD`, `cargo test`,
+`cargo test`, native smoke, and post-merge COW gate. `ptn-dzgg` verification
+covered `compile_foreach_non_array_diagnostics_include_source_path_to_native_binary`,
+exact `foreachLoop.003.phpt`, `cargo test`, native smoke, and post-merge COW
+gate. Focused `ptn-p0y1` verification covers
+`compile_array_key_exists_to_native_binary`,
+`compile_chr_out_of_range_deprecation_suppression_to_native_binary`, exact
+`array_key_exists.phpt`, `chr_out_of_range.phpt`, `ord_basic.phpt`, and
+`foreachLoop.001.phpt`; the final rebase verification is `cargo fmt --check`,
+`git diff --check origin/master..HEAD`, `cargo test`,
 `tools/run-native-smoke-matrix.sh`, and `tools/run-post-merge-cow-gate.sh`.

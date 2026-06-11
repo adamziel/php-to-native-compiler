@@ -177,8 +177,8 @@ Post-RC architecture remains explicit rather than hidden:
   modeled PHP `Error` through the runtime exception path.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
-  keys emit the current PHP-like deprecation boundary and canonicalize to the
-  empty string.
+  keys emit the current PHP-like deprecation boundary with the shared leading
+  diagnostic separator and canonicalize to the empty string.
 - `array_column()` over current ordered-array inputs, reading array entries or
   object properties by int/string column keys, returning whole rows for `null`
   column keys, optionally keying rows from an int/string index key, and using
@@ -648,8 +648,8 @@ Post-RC architecture remains explicit rather than hidden:
   complete reference identity, copy-on-write, and `var_dump()` reference
   identity beyond the currently modeled ordered-array, direct-reference, and
   `stdClass` public-property behavior.
-- Exact `array_key_exists()` diagnostic formatting parity, object property
-  checks, resources, references, and error-handler routing.
+- `array_key_exists()` object property checks, resources, references, and
+  error-handler routing.
 - String-offset append, compound assignment, property/reference `isset()`/
   `empty()` and null-coalescing semantics, and complete TypeError/exception
   parity for unsupported string offset key types.

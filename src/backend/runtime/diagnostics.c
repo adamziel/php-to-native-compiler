@@ -244,9 +244,7 @@ static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *mes
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
         return;
     }
-    if (diagnostics->emitted_deprecation) {
-        fputc('\n', stdout);
-    }
+    fputc('\n', stdout);
     diagnostics->emitted_deprecation = 1;
     fputs("Deprecated: ", stdout);
     fputs(message, stdout);
