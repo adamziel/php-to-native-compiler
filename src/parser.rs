@@ -3397,6 +3397,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "intval"
             | "chr"
             | "ord"
+            | "range"
             | "error_reporting"
             | "func_get_arg"
             | "func_get_args"

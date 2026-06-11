@@ -1163,6 +1163,55 @@ static PtnValue ptn_internal_array_reverse(PtnRuntime *runtime, size_t argc, con
     return result;
 }
 
+static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    int64_t start = ptn_value_to_integer(args[0]);
+    int64_t end = ptn_value_to_integer(args[1]);
+    int64_t step_value = argc >= 3 ? ptn_value_to_integer(args[2]) : 1;
+    uint64_t step = step_value < 0 ? (uint64_t)(-(step_value + 1)) + 1 : (uint64_t)step_value;
+    uint64_t distance = start <= end
+        ? (uint64_t)end - (uint64_t)start
+        : (uint64_t)start - (uint64_t)end;
+    if (step == 0 || (distance != 0 && step > distance)) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "range(): Argument #3 ($step) must not exceed the specified range"
+        );
+    }
+
+    uint64_t count = distance == 0 ? 1 : distance / step + 1;
+    if (count > (uint64_t)INT64_MAX || count > (uint64_t)SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int ascending = start <= end;
+    int64_t current = start;
+    for (uint64_t i = 0; i < count; i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_int(current));
+        if (i + 1 == count) {
+            break;
+        }
+        if (step > (uint64_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        int64_t signed_step = (int64_t)step;
+        if (ascending) {
+            if (current > INT64_MAX - signed_step) {
+                ptn_abort_out_of_memory();
+            }
+            current += signed_step;
+        } else {
+            if (current < INT64_MIN + signed_step) {
+                ptn_abort_out_of_memory();
+            }
+            current -= signed_step;
+        }
+    }
+    return result;
+}
+
 static void ptn_array_merge_recursive_into(PtnArray *target, PtnArray *source);
 
 static void ptn_array_merge_recursive_append(PtnArray *target, PtnValue value) {
@@ -3843,6 +3892,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "print_r", 1, 2, ptn_internal_print_r },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
+        { "range", 2, 3, ptn_internal_range },
         { "reset", 1, 1, ptn_internal_reset },
         { "rmdir", 1, 2, ptn_internal_rmdir },
         { "sha1", 1, 2, ptn_internal_sha1 },

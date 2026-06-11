@@ -364,6 +364,9 @@ supports in generated native binaries.
   payloads use the shared COW clone path.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
+- `range()` over current boxed integer-convertible start, end, and optional
+  step arguments, returning ordered arrays of integer values and throwing the
+  modeled `ValueError` for zero or out-of-range steps.
 - `array_merge_recursive()` and `array_replace_recursive()` over current boxed
   arrays, preserving ordered-map key behavior while cloning dereferenced values
   across COW boundaries.

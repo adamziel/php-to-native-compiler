@@ -8491,6 +8491,35 @@ var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'))
 }
 
 #[test]
+fn compile_range_integer_internal_to_native_binary() {
+    let root = temp_dir("ptn-native-range-integer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("range-integer.php");
+    let output = root.join("range-integer-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+print_r(range(1, 5, 2));\n\
+print_r(range(-1, -5, -2));\n\
+print_r(range(3, 3, 9));\n\
+try { range(1, 3, 0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { range(1, 3, 5); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists('range'), function_exists('RANGE'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Array\n(\n    [0] => 1\n    [1] => 3\n    [2] => 5\n)\nArray\n(\n    [0] => -1\n    [1] => -3\n    [2] => -5\n)\nArray\n(\n    [0] => 3\n)\nrange(): Argument #3 ($step) must not exceed the specified range\nrange(): Argument #3 ($step) must not exceed the specified range\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_predicates_use_generated_fast_paths() {
     let root = temp_dir("ptn-native-array-predicate-fast-paths");
     fs::create_dir_all(&root).unwrap();
