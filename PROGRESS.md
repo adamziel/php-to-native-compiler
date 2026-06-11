@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T14:32Z
-Measured: `ptn-a5yx` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T14:42Z
+Measured: `ptn-tf9u` rebased after current `origin/master`; array null-offset
 diagnostics, Closure captures, expression-form `print`, static properties,
 inherited methods, property `??=`, loose object `switch`, nested string-offset
 unset, braced interpolation, branch-condition assignment, named arguments,
@@ -11,21 +11,22 @@ scalar variable variables, include returns, array/object type predicates,
 `define()` legacy flag parity, shared `error_reporting()` filtering, dirname
 edges, high-byte string escapes, declared-function `continue`/`switch`
 warnings, `str_repeat()`, `array_fill()` including integer-key overflow parity,
-`array_flip()`, `array_change_key_case()`, braced-interpolation
-alternative-offset parse errors, `chr()` out-of-range deprecations with
-suppression coverage, integer `range()` default/descending-step coverage, plain
-heredoc/nowdoc string literals, and COW evidence are integrated.
+`array_flip()`, `array_change_key_case()`, `array_chunk()`,
+braced-interpolation alternative-offset parse errors, `chr()` out-of-range
+deprecations with suppression coverage, integer `range()` default/descending
+step coverage, plain heredoc/nowdoc string literals, and COW evidence are
+integrated.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 405 | 405 | 0 |
+| Native compiled PHP snippets | 406 | 406 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 166 | 34 |
+| PHPT bounded manifest | 200 | 169 | 31 |
 | PHPT Zend rows | 76 | 69 | 7 |
-| PHPT ext/standard rows | 77 | 61 | 16 |
+| PHPT ext/standard rows | 77 | 64 | 13 |
 | PHPT tests/basic+func+lang | 45 | 34 | 11 |
 | PHPT other rows | 2 | 2 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
@@ -41,7 +42,9 @@ Closure captures, magic constants, `func_*`, `print_r`, scalar diagnostics,
 array union, scalar type hints, by-reference returns, variadics/default
 parameters, `count()`, `??`, assignment expressions, named arguments,
 expression-form `print`, direct-variable numeric inc/dec statement and
-expression results, `@`, file predicates, selected array/string internals,
+expression results, `@`, file predicates, selected array/string internals
+including `array_fill()`, `array_flip()`, `array_change_key_case()`,
+`array_chunk()`, `array_count_values()`, `str_repeat()`, and integer `range()`,
 lvalue-reference calls, list/append assignment, scalar variable variables,
 method callables, `array_reduce()`/`array_walk()`, `stdClass`, class/object
 metadata, `$this`, object `foreach`, scalar array-lvalue fatals, static
@@ -64,9 +67,16 @@ parity, broader file APIs, and `chr()` float-to-int precision diagnostics.
 Commands: focused native/parser/phpc reducers for recent slices, including
 `compile_increment_and_decrement_expression_results_to_native_binary`,
 `compile_array_fill_to_native_binary`, `compile_array_flip_to_native_binary`,
-`compile_array_change_key_case_to_native_binary`, and
-`compile_plain_heredoc_values_to_native_binary`; exact PHPT rows listed in the
-prior merge notes; `cargo fmt --check`; `cargo build --bin phpc`; `cargo test`;
-`tools/run-phpt-manifest.sh tools/phpt-cow-manifest.txt`;
-`tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt`;
+`compile_array_change_key_case_to_native_binary`,
+`compile_array_chunk_to_native_binary`, and
+`compile_plain_heredoc_values_to_native_binary`; exact
+`array_null_offset_deprecation.phpt`, `array_count_values.phpt`,
+`array_fill.phpt`, `array_fill_basic.phpt`, `array_flip_basic.phpt`,
+`array_change_key_case.phpt`, `array_chunk_basic1.phpt`,
+`array_chunk_basic2.phpt`, `array_chunk2.phpt`,
+`alternative_offset_syntax_in_encaps_string.phpt`, `chr_out_of_range.phpt`,
+`ord_basic.phpt`, declared-function continue/switch rows, and
+`print_r_ints.phpt`; `cargo fmt --check`; `cargo build --bin phpc`;
+`cargo test`; `tools/run-bounded-phpt.sh tools/phpt-cow-manifest.txt`;
+`tools/run-bounded-phpt.sh tools/phpt-bounded-manifest.txt`;
 `tools/run-post-merge-cow-gate.sh`.

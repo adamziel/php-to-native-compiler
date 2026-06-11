@@ -205,8 +205,9 @@ supports in generated native binaries.
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
-  `count(expr);`, `array_count_values(expr);`, `array_fill(expr, expr, expr);`,
-  `array_change_key_case(expr[, expr]);`,
+  `count(expr);`, `array_chunk(expr, expr[, expr]);`,
+  `array_change_key_case(expr[, expr]);`, `array_count_values(expr);`,
+  `array_fill(expr, expr, expr);`,
   `array_values(expr);`, `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
   `in_array(expr, expr[, expr]);`,
@@ -227,9 +228,10 @@ supports in generated native binaries.
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_count_values(expr)`, `array_fill(expr, expr, expr)`,
-  `array_change_key_case(expr[, expr])`,
-  `array_values(expr)`, `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
+  `count(expr)`, `array_chunk(expr, expr[, expr])`,
+  `array_change_key_case(expr[, expr])`, `array_count_values(expr)`,
+  `array_fill(expr, expr, expr)`, `array_values(expr)`,
+  `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar plus array/object `is_*`
@@ -364,6 +366,12 @@ supports in generated native binaries.
 - `array_count_values()` over current boxed arrays, counting dereferenced
   integer and string values with PHP array-key canonicalization. Unsupported
   value types emit the modeled PHP warning boundary and are skipped.
+- `array_chunk()` over current boxed arrays, returning fresh ordered chunk
+  arrays. The chunk length uses the current scalar integer conversion path,
+  non-positive lengths throw the modeled PHP `ValueError`, values are cloned
+  from dereferenced entries, and the optional preserve-keys flag controls
+  whether original integer/string keys are cloned or each chunk is reindexed
+  from zero.
 - `array_fill()` over boxed start/count operands and mixed boxed values,
   returning a fresh ordered array keyed from the requested integer start.
   Negative counts throw the modeled PHP `ValueError`; filled array/object
