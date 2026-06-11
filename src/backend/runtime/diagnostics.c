@@ -149,6 +149,11 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->emitted_deprecation = 0;
     diagnostics->emitted_warning = 0;
     diagnostics->suppressed = 0;
+    diagnostics->error_reporting = PTN_E_ALL;
+}
+
+static PTN_UNUSED int ptn_diagnostics_should_emit(PtnDiagnosticSink *diagnostics, int64_t severity) {
+    return diagnostics->suppressed <= 0 && (diagnostics->error_reporting & severity) != 0;
 }
 
 static void ptn_emit_undefined_variable_warning(
@@ -157,7 +162,7 @@ static void ptn_emit_undefined_variable_warning(
     const char *path,
     size_t line
 ) {
-    if (diagnostics->suppressed > 0) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
@@ -236,7 +241,7 @@ static PTN_UNUSED void ptn_emit_type_error(PtnDiagnosticSink *diagnostics, const
 }
 
 static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
-    if (diagnostics->suppressed > 0) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
         return;
     }
     if (diagnostics->emitted_deprecation) {
@@ -251,7 +256,7 @@ static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *mes
 }
 
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
-    if (diagnostics->suppressed > 0) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
     fputs("Warning: ", stdout);
@@ -262,7 +267,7 @@ static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const ch
 }
 
 static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
-    if (diagnostics->suppressed > 0) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
         return;
     }
     fputs("Notice: Only variables should be assigned by reference in ptn on line ", stdout);
@@ -271,7 +276,7 @@ static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice(PtnD
 }
 
 static PTN_UNUSED void ptn_emit_only_variable_references_returned_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
-    if (diagnostics->suppressed > 0) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
         return;
     }
     fputs("Notice: Only variable references should be returned by reference in ptn on line ", stdout);
@@ -295,7 +300,7 @@ static void ptn_emit_constant_already_defined_warning(
     const char *name,
     size_t line
 ) {
-    if (diagnostics->suppressed > 0) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
     fputs("Warning: Constant ", stdout);
@@ -309,7 +314,7 @@ static PTN_UNUSED void ptn_emit_define_case_insensitive_ignored_warning(
     PtnDiagnosticSink *diagnostics,
     size_t line
 ) {
-    if (diagnostics->suppressed > 0) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
     fputs(

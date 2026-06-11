@@ -475,7 +475,67 @@ static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right) 
 
 static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out) {
     if (strcmp(name, "E_ERROR") == 0) {
-        *out = ptn_int(1);
+        *out = ptn_int(PTN_E_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "E_WARNING") == 0) {
+        *out = ptn_int(PTN_E_WARNING);
+        return 1;
+    }
+    if (strcmp(name, "E_PARSE") == 0) {
+        *out = ptn_int(PTN_E_PARSE);
+        return 1;
+    }
+    if (strcmp(name, "E_NOTICE") == 0) {
+        *out = ptn_int(PTN_E_NOTICE);
+        return 1;
+    }
+    if (strcmp(name, "E_CORE_ERROR") == 0) {
+        *out = ptn_int(PTN_E_CORE_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "E_CORE_WARNING") == 0) {
+        *out = ptn_int(PTN_E_CORE_WARNING);
+        return 1;
+    }
+    if (strcmp(name, "E_COMPILE_ERROR") == 0) {
+        *out = ptn_int(PTN_E_COMPILE_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "E_COMPILE_WARNING") == 0) {
+        *out = ptn_int(PTN_E_COMPILE_WARNING);
+        return 1;
+    }
+    if (strcmp(name, "E_USER_ERROR") == 0) {
+        *out = ptn_int(PTN_E_USER_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "E_USER_WARNING") == 0) {
+        *out = ptn_int(PTN_E_USER_WARNING);
+        return 1;
+    }
+    if (strcmp(name, "E_USER_NOTICE") == 0) {
+        *out = ptn_int(PTN_E_USER_NOTICE);
+        return 1;
+    }
+    if (strcmp(name, "E_STRICT") == 0) {
+        *out = ptn_int(PTN_E_STRICT);
+        return 1;
+    }
+    if (strcmp(name, "E_RECOVERABLE_ERROR") == 0) {
+        *out = ptn_int(PTN_E_RECOVERABLE_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "E_DEPRECATED") == 0) {
+        *out = ptn_int(PTN_E_DEPRECATED);
+        return 1;
+    }
+    if (strcmp(name, "E_USER_DEPRECATED") == 0) {
+        *out = ptn_int(PTN_E_USER_DEPRECATED);
+        return 1;
+    }
+    if (strcmp(name, "E_ALL") == 0) {
+        *out = ptn_int(PTN_E_ALL);
         return 1;
     }
     if (strcmp(name, "M_E") == 0) {

@@ -2029,7 +2029,7 @@ static void ptn_emit_file_warning(
         free(message);
         ptn_abort_out_of_memory();
     }
-    if (runtime->diagnostics.suppressed <= 0) {
+    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
         fputc('\n', stdout);
     }
     ptn_emit_warning(&runtime->diagnostics, message, line);
@@ -3509,11 +3509,12 @@ static PtnValue ptn_internal_count(PtnRuntime *runtime, size_t argc, const PtnVa
 }
 
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)argc;
-    (void)args;
     (void)line;
-    return ptn_int(0);
+    int64_t previous_level = runtime->diagnostics.error_reporting;
+    if (argc >= 1) {
+        runtime->diagnostics.error_reporting = ptn_value_to_integer(args[0]);
+    }
+    return ptn_int(previous_level);
 }
 
 static PtnCallFrame *ptn_current_call_frame(PtnRuntime *runtime, const char *function_name) {

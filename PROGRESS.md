@@ -1,21 +1,22 @@
 # PTN Progress
 
-Refresh: 2026-06-11T11:33Z
-Measured: `ptn-u9nh` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T11:43Z
+Measured: `ptn-hfpk` rebased after current `origin/master`; array null-offset
 diagnostic routing, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, loose object equality in
 `switch`, nested string-offset unset, braced interpolation, branch-condition
 assignment and named-argument reducers, scalar offset reducers, object
 `foreach`, class metadata, method callables/magic constants, cslashes, scalar
 variable variables, include return helpers, array/object type predicates,
-runtime `define()` legacy flag parity, and COW evidence.
+runtime `define()` legacy flag parity, shared `error_reporting()` filtering,
+and COW evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 392 | 392 | 0 |
+| Native compiled PHP snippets | 393 | 393 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -53,7 +54,8 @@ static properties, property `??=`, method-scope magic constants, inherited
 public methods, loose object equality in braced `switch`, nested string-offset
 unset errors, and compile-time-resolved statement-only `include`/`require`
 return propagation, and `define()`'s legacy case-insensitive flag warning with
-case-sensitive runtime constants.
+case-sensitive runtime constants, and `error_reporting()` mask filtering for
+modeled shared warning/deprecation/notice emitters.
 
 ## Still Needed
 
@@ -74,6 +76,7 @@ offset/callable/metadata/scalar variable-variable/focused include parser and
 native reducers/array-object-predicate tests; `cargo check`;
 `cargo test static_property --test compile_native`; runtime `define()` legacy
 flag ordering reducer; `cargo fmt --check`; `cargo build --bin phpc`; exact
-`array_null_offset_deprecation.phpt` reducer; `cargo test`.
+`array_null_offset_deprecation.phpt` reducer; focused `error_reporting()`
+suppression reducer; exact `array_count_values.phpt` row; `cargo test`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
 `.runtime/php-src-phpt`.

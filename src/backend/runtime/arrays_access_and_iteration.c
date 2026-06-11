@@ -117,7 +117,7 @@ static PTN_UNUSED void ptn_emit_array_runtime_diagnostic(const char *kind, const
 }
 
 static PTN_UNUSED void ptn_emit_array_runtime_warning(PtnRuntime *runtime, const char *message, size_t line) {
-    if (runtime->diagnostics.suppressed > 0) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
         return;
     }
     ptn_emit_array_runtime_diagnostic("Warning", message, line);
@@ -274,7 +274,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
 }
 
 static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtime, size_t line) {
-    if (runtime->diagnostics.suppressed > 0) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
         return;
     }
     fputc('\n', stdout);

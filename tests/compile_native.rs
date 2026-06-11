@@ -8213,6 +8213,40 @@ var_dump(function_exists(\"array_count_values\"), function_exists(\"ARRAY_COUNT_
 }
 
 #[test]
+fn compile_error_reporting_filters_internal_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-error-reporting-internal-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-reporting-internal-warnings.php");
+    let output = root.join("error-reporting-internal-warnings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(error_reporting());\n\
+var_dump(array_count_values([[], \"shown\"]));\n\
+var_dump(error_reporting(E_ERROR));\n\
+var_dump(error_reporting());\n\
+var_dump(array_count_values([[], \"hidden\"]));\n\
+var_dump(define(\"MASKED_DEFINE_FLAG\", 1, true), constant(\"MASKED_DEFINE_FLAG\"));\n\
+var_dump(error_reporting(E_ALL));\n\
+var_dump(error_reporting());\n\
+var_dump(array_count_values([[], \"shown-again\"]));\n\
+var_dump(define(\"SHOWN_DEFINE_FLAG\", 2, true), constant(\"SHOWN_DEFINE_FLAG\"));\n\
+var_dump(defined(\"E_WARNING\"), defined(\"E_ALL\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(32767)\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 3\narray(1) {\n  [\"shown\"]=>\n  int(1)\n}\nint(32767)\nint(1)\narray(1) {\n  [\"hidden\"]=>\n  int(1)\n}\nbool(true)\nint(1)\nint(1)\nint(32767)\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 10\narray(1) {\n  [\"shown-again\"]=>\n  int(1)\n}\nWarning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line 11\nbool(true)\nint(2)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_fill_keys_to_native_binary() {
     let root = temp_dir("ptn-native-array-fill-keys");
     fs::create_dir_all(&root).unwrap();

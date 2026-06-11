@@ -352,8 +352,10 @@ supports in generated native binaries.
 - `in_array()` over current boxed arrays, returning whether the needle matches
   any entry under loose or strict comparison. References are read through the
   same dereferencing path as other comparison internals.
-- `error_reporting()` currently accepts zero or one scalar argument and returns
-  a placeholder integer level. It does not configure diagnostic filtering yet.
+- `error_reporting()` accepts zero or one scalar argument, returns the previous
+  PHP-style mask on writes or current mask on reads, and filters the modeled
+  shared warning/deprecation/notice emitters. Expression-level `@` suppression
+  still stacks independently with the configured mask.
 - `gettype()` over current boxed values, returning `NULL`, `boolean`,
   `integer`, `double`, `string`, `array`, or `object` for the currently modeled
   scalar, array, `stdClass`, declared-object, Closure, and exception value
@@ -375,11 +377,12 @@ supports in generated native binaries.
 - `defined()` over global `const` declarations, constants created with
   `define()`, plus the current modeled constant registry, including `E_ERROR`,
   `PHP_EOL`, `DIRECTORY_SEPARATOR`,
-  `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
-  `NAN`, `M_PI`, and the modeled PHP math constants `M_E`, `M_LOG2E`,
-  `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`,
-  `M_SQRTPI`, `M_2_SQRTPI`, `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`,
-  and `M_SQRT3`. Other ordinary names report as undefined.
+  `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, the PHP
+  `E_*` error-reporting mask constants, `INF`, `NAN`, `M_PI`, and the modeled
+  PHP math constants `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`,
+  `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`,
+  `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, and `M_SQRT3`. Other ordinary
+  names report as undefined.
 - Duplicate global `const` declarations and `const` redeclarations after
   `define()` emit the modeled duplicate-constant warning boundary and preserve
   the original runtime constant value.
@@ -523,10 +526,10 @@ supports in generated native binaries.
 - Exact undefined-constant and unsupported-expression-statement diagnostics.
 - Namespace/class constants, global `const` duplicate diagnostics and ordering
   parity with runtime `define()`, and built-in PHP/extension constants other
-  than the currently modeled `E_ERROR`,
-  `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
-  `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
-  `M_*` constants in `defined()`/`constant()`.
+  than the currently modeled `E_*` error masks, `PHP_EOL`,
+  `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
+  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants
+  in `defined()`/`constant()`.
 - Function forms beyond top-level named declarations and the public class-method
   callable slice, plus the bounded `stdClass` public-property storage slice,
   including array/object default arguments, named arguments outside direct
@@ -604,7 +607,8 @@ supports in generated native binaries.
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
-- PHP-exact `error_reporting()` configuration/filtering behavior.
+- Complete PHP-exact `error_reporting()` coverage for diagnostic paths that
+  still bypass the shared warning/deprecation/notice emitters.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
 - PHP-exact version, SAPI, and extension metadata beyond the modeled CLI/core/
