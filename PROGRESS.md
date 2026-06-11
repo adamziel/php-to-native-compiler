@@ -1,21 +1,21 @@
 # PTN Progress
 
-Refresh: 2026-06-11T10:37Z
-Measured: `ptn-rx0r` rebased after current `origin/master`; array null-offset
+Refresh: 2026-06-11T11:33Z
+Measured: `ptn-u9nh` rebased after current `origin/master`; array null-offset
 diagnostic routing, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, loose object equality in
 `switch`, nested string-offset unset, braced interpolation, branch-condition
 assignment and named-argument reducers, scalar offset reducers, object
 `foreach`, class metadata, method callables/magic constants, cslashes, scalar
-variable variables, include return helpers, array/object type predicates, and
-COW evidence.
+variable variables, include return helpers, array/object type predicates,
+runtime `define()` legacy flag parity, and COW evidence.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 391 | 391 | 0 |
+| Native compiled PHP snippets | 392 | 392 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 153 | 47 |
 | PHPT Zend rows | 76 | 68 | 8 |
@@ -52,7 +52,8 @@ array-lvalue fatals with false-to-array deprecation, class/method predicates,
 static properties, property `??=`, method-scope magic constants, inherited
 public methods, loose object equality in braced `switch`, nested string-offset
 unset errors, and compile-time-resolved statement-only `include`/`require`
-return propagation.
+return propagation, and `define()`'s legacy case-insensitive flag warning with
+case-sensitive runtime constants.
 
 ## Still Needed
 
@@ -71,8 +72,8 @@ Commands: focused Closure/`print`/interpolation/branch-condition assignment/
 named-argument/loose-object switch/addslashes/cslashes/object `foreach`/scalar
 offset/callable/metadata/scalar variable-variable/focused include parser and
 native reducers/array-object-predicate tests; `cargo check`;
-`cargo test static_property --test compile_native`; `cargo fmt --check`;
-`cargo build --bin phpc`; exact
+`cargo test static_property --test compile_native`; runtime `define()` legacy
+flag ordering reducer; `cargo fmt --check`; `cargo build --bin phpc`; exact
 `array_null_offset_deprecation.phpt` reducer; `cargo test`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
 `.runtime/php-src-phpt`.

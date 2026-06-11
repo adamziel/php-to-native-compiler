@@ -6192,6 +6192,53 @@ var_dump(defined(\"USER_CONST\"), constant(\"USER_CONST\"), constant(1), constan
 }
 
 #[test]
+fn compile_define_legacy_case_insensitive_flag_is_ignored_with_warning() {
+    let root = temp_dir("ptn-native-define-legacy-case-flag");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("define-legacy-case-flag.php");
+    let output = root.join("define-legacy-case-flag-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function marker($label, $value) { echo $label, \"\\n\"; return $value; }\n\
+var_dump(define(marker(\"name\", \"CASE_ARG\"), marker(\"value\", 9), marker(\"flag\", true)));\n\
+var_dump(defined(\"CASE_ARG\"), defined(\"case_arg\"), constant(\"CASE_ARG\"));\n\
+define(\"DUP_ARG\", 1);\n\
+var_dump(define(marker(\"dup-name\", \"DUP_ARG\"), marker(\"dup-value\", 2), marker(\"dup-flag\", true)));\n\
+var_dump(constant(\"DUP_ARG\"));\n\
+var_dump(define(\"FALSE_FLAG\", 5, false), defined(\"false_flag\"), constant(\"FALSE_FLAG\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "name\n\
+value\n\
+flag\n\
+Warning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line 3\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+int(9)\n\
+dup-name\n\
+dup-value\n\
+dup-flag\n\
+Warning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line 6\n\
+Warning: Constant DUP_ARG already defined, this will be an error in PHP 9 in ptn on line 6\n\
+bool(false)\n\
+int(1)\n\
+bool(true)\n\
+bool(false)\n\
+int(5)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_duplicate_define_warns_and_preserves_original_constant() {
     let root = temp_dir("ptn-native-duplicate-define");
     fs::create_dir_all(&root).unwrap();

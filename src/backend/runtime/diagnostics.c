@@ -305,6 +305,21 @@ static void ptn_emit_constant_already_defined_warning(
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_define_case_insensitive_ignored_warning(
+    PtnDiagnosticSink *diagnostics,
+    size_t line
+) {
+    if (diagnostics->suppressed > 0) {
+        return;
+    }
+    fputs(
+        "Warning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line ",
+        stdout
+    );
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->symbols);
     runtime->global_symbols = &runtime->symbols;

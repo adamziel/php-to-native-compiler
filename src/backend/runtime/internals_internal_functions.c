@@ -3652,7 +3652,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "count", 1, 1, ptn_internal_count },
         { "current", 1, 1, ptn_internal_current },
         { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
-        { "define", 2, 2, ptn_internal_define },
+        { "define", 2, 3, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
         { "dirname", 1, 1, ptn_internal_dirname },
         { "end", 1, 1, ptn_internal_end },
@@ -3748,8 +3748,10 @@ static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
 }
 
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     char *name = ptn_value_to_string(args[0]);
+    if (argc >= 3 && ptn_is_truthy(args[2])) {
+        ptn_emit_define_case_insensitive_ignored_warning(&runtime->diagnostics, line);
+    }
     int did_define = ptn_runtime_define_constant_if_absent(runtime, name, args[1], line);
     free(name);
     return ptn_bool(did_define);

@@ -367,6 +367,9 @@ supports in generated native binaries.
   currently registered internal-function names.
 - `define()` creates runtime constants over the current boxed value subset,
   returning `false` with a warning when the requested name is already defined.
+  Its legacy third `$case_insensitive` argument is accepted for PHP 8 parity:
+  truthy values emit the modeled ignored-argument warning and all constants
+  remain case-sensitive.
 - `constant()` reads the same runtime and modeled built-in constant registry
   using the current scalar string-conversion result for the name.
 - `defined()` over global `const` declarations, constants created with
@@ -519,8 +522,8 @@ supports in generated native binaries.
 - Internal functions outside the registered internal-function subset.
 - Exact undefined-constant and unsupported-expression-statement diagnostics.
 - Namespace/class constants, global `const` duplicate diagnostics and ordering
-  parity with runtime `define()`, `define()`'s legacy case-insensitive flag, and
-  built-in PHP/extension constants other than the currently modeled `E_ERROR`,
+  parity with runtime `define()`, and built-in PHP/extension constants other
+  than the currently modeled `E_ERROR`,
   `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
   `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
   `M_*` constants in `defined()`/`constant()`.
