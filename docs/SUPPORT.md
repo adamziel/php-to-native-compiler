@@ -34,6 +34,10 @@ supports in generated native binaries.
   backslash, quote, dollar, `\xNN`, and octal byte sequences. Hex and octal
   escapes can produce high bytes in native string literals; octal overflow
   diagnostics are not yet modeled.
+- Plain heredoc and nowdoc literals with unindented closing labels are accepted
+  as string values when their bodies do not require interpolation. Heredoc
+  interpolation stops at an explicit unsupported diagnostic instead of being
+  silently treated as literal text.
 - Direct variable assignment and scalar reads through the generated runtime
   symbol table.
 - Variable-variable reads and ordinary assignments with `$$name`, `$$$name`,
@@ -555,6 +559,8 @@ supports in generated native binaries.
 - Remaining complex string interpolation forms, including object/property
   interpolation, variable variables, arbitrary expressions/calls, append
   offsets, and non-variable-root offsets.
+- Heredoc interpolation, flexible indentation, and exact label diagnostics
+  beyond the current plain heredoc/nowdoc string-literal slice.
 - Internal functions outside the registered internal-function subset.
 - Exact undefined-constant and unsupported-expression-statement diagnostics.
 - Namespace/class constants, global `const` duplicate diagnostics and ordering

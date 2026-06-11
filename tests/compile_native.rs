@@ -111,6 +111,28 @@ fn lexer_decodes_ascii_double_quoted_octal_and_hex_escapes() {
 }
 
 #[test]
+fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
+    let source = "<?php $left = <<<TXT\nHello\nTXT;\n$right = <<<'TXT'\n$literal\nTXT;\n";
+    let program = parser::parse(source).unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value == "Hello"));
+
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value == "$literal"));
+}
+
+#[test]
+fn lexer_rejects_interpolating_heredoc_bodies() {
+    let error = lexer::lex("<?php $value = <<<TXT\nHello $name\nTXT;\n").unwrap_err();
+    assert_eq!(error.message, "heredoc interpolation is unsupported");
+    assert_eq!(error.span.unwrap().line, 2);
+}
+
+#[test]
 fn lexer_accepts_keyword_boolean_operators() {
     let tokens = lexer::lex("<?php true and false or true xor false").unwrap();
     assert!(matches!(tokens[2].kind, TokenKind::KeywordAnd));
@@ -8516,6 +8538,38 @@ var_dump(function_exists('array_fill'), function_exists('ARRAY_FILL'));",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "array(0) {\n}\narray(2) {\n  [1]=>\n  string(1) \"x\"\n  [2]=>\n  string(1) \"x\"\n}\narray(2) {\n  [-1]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [0]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\narray_fill(): Argument #2 ($count) must be greater than or equal to 0\nCannot add element to the array as the next element is already occupied\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_plain_heredoc_values_to_native_binary() {
+    let root = temp_dir("ptn-native-plain-heredoc-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("plain-heredoc-values.php");
+    let output = root.join("plain-heredoc-values-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$heredoc = <<<HERE_DOC
+Hello
+HERE_DOC;
+$nowdoc = <<<'NOW_DOC'
+$literal
+NOW_DOC;
+var_dump(strlen($heredoc), $heredoc, $nowdoc);
+var_dump(array_fill(0, 2, $heredoc));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(5)\nstring(5) \"Hello\"\nstring(8) \"$literal\"\narray(2) {\n  [0]=>\n  string(5) \"Hello\"\n  [1]=>\n  string(5) \"Hello\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
