@@ -11,20 +11,22 @@ internals, top-level functions, includes resolved at compile time, copy-on-write
 array/reference slices, and public class/object shells. Public class support is
 bounded to top-level declarations with public methods, direct public static
 property reads/writes, public instance property reads/writes, and public
-property `??=`.
+property `??=`, plus public non-static `__construct` dispatch through the
+declared-method path.
 
 Post-RC architecture remains explicit rather than hidden:
 
-- Classes and inheritance: constructors, interfaces, traits, namespaces,
+- Classes and inheritance: interfaces, traits, namespaces,
   non-public/typed/promoted properties, broad metadata/reflection, destructors,
-  class constants, and complete inherited property/method resolution remain
-  outside the RC boundary.
+  old-style constructors, class constants, and complete visibility-aware
+  inherited property/method resolution remain outside the RC boundary.
 - Static properties: direct public static reads/writes are supported, but
   visibility, inheritance, late static binding, typed/default metadata, and
   static-property compound or null-coalescing lvalues are post-RC.
-- Magic methods: `__construct`, `__destruct`, `__get`, `__set`, `__isset`,
-  `__unset`, `__call`, `__callStatic`, `__invoke`, `__toString`, and related
-  dispatch hooks are unsupported.
+- Magic methods other than the supported public constructor hook:
+  `__destruct`, `__get`, `__set`, `__isset`, `__unset`, `__call`,
+  `__callStatic`, `__invoke`, `__toString`, and related dispatch hooks are
+  unsupported.
 - Non-static callables: direct object method calls and bounded
   `[$object, "method"]` callback dispatch work, but first-class callables,
   visibility-aware dispatch, magic dispatch, arbitrary dynamic instance method
@@ -552,6 +554,11 @@ Post-RC architecture remains explicit rather than hidden:
   recognized as the current built-in object shell. Declared instance methods
   can be called directly through object receivers and through
   `[$object, "method"]` callable values, including internal callback dispatch.
+  Public `__construct` methods in declared classes are invoked during
+  `new Class(...)` after declared property defaults are installed, using the
+  same method dispatch, `$this` binding, inherited public method lookup,
+  positional argument/default-parameter handling, and return-value cleanup as
+  other declared instance methods.
 - Public static property declarations in top-level classes, using the supported
   constant-expression default subset. Generated native code initializes
   declaration-backed static slots before top-level statements, supports
@@ -641,8 +648,9 @@ Post-RC architecture remains explicit rather than hidden:
   callable slice, plus the bounded `stdClass` public-property storage slice,
   including array/object default arguments, named arguments outside direct
   generated user-function calls, by-reference returns, nested or conditional
-  declarations, closures, full class metadata, namespaces, globals, static
-  locals, and remaining PHP-exact function return propagation.
+  declarations, closures, old-style constructor dispatch, full class metadata,
+  namespaces, globals, static locals, and remaining PHP-exact function return
+  propagation.
 - Type predicate coverage for resources and full PHP reference metadata.
 - Unsupported recursive arrays, full class/object metadata, resources,
   complete reference identity, copy-on-write, and `var_dump()` reference

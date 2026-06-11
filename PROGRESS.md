@@ -1,12 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-11T16:55Z
-Measured: `ptn-p0y1` rebased on `origin/master` at `160faa991`.
+Refresh: 2026-06-11T17:04Z
+Measured: `ptn-lrty.8` rebased on `origin/master` at `af152c9ed`.
 `array_column()` support is integrated. `array_filter()` rejects unknown mode
 values with the modeled PHP `ValueError`. Foreach non-array diagnostics spell
 boolean operands as `false given` or `true given`. Shared deprecation
-diagnostics now emit the PHP-style leading blank-line separator, including
-`array_key_exists()` null-key and string/cast deprecations.
+diagnostics emit the PHP-style leading blank-line separator. Declared public
+non-static `__construct` methods now run during `new Class(...)` after property
+defaults, using inherited public method lookup, ordinary `$this` binding,
+positional/default arguments, and return cleanup.
 
 ## RC Surface
 
@@ -16,10 +18,11 @@ values, variables/constants, strings, scalar operators, ordered arrays,
 selected standard internals, COW/reference slices, top-level functions,
 call-frame introspection, scalar type hints, bounded closures/callables,
 `stdClass`, public class/object shells, direct public static properties,
-public property writes/`??=`, inherited public methods, diagnostic filtering,
-plain heredoc/nowdoc literals, and string interpolation slices.
+public property writes/`??=`, inherited public methods, public constructor
+dispatch, diagnostic filtering, plain heredoc/nowdoc literals, and string
+interpolation slices.
 
-The demo corpus exercises scalar control flow, string internals, arrays plus
+The RC demo corpus exercises scalar control flow, string internals, arrays plus
 `array_combine`, `array_filter`, and `array_chunk`, top-level functions, public
 class/object shells, direct static properties, and public property `??=`.
 
@@ -28,7 +31,7 @@ class/object shells, direct static properties, and public property `??=`.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 451 | 451 | 0 |
+| Native/compiler Rust suite | 453 | 453 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 174 | 26 |
 | PHPT Zend rows | 76 | 69 | 7 |
@@ -44,19 +47,18 @@ class/object shells, direct static properties, and public property `??=`.
 - `ptn-lrty.5`: 13 numeric/operator/scalar-offset rows.
 - `ptn-lrty.3`: 6 array-internal rows; `array_column` is now covered.
 - `ptn-lrty.4`: 4 string/output rows.
-- `ptn-lrty.6` plus `ptn-r52`: 2 remaining control-flow/foreach/lang rows
-  after `foreachLoop.003.phpt` is covered by `ptn-dzgg`.
+- `ptn-lrty.6` plus `ptn-r52`: 2 control-flow/foreach/lang rows remain after
+  `foreachLoop.003.phpt` is covered.
 
 ## Post-RC Architecture
 
-Explicit follow-up work: full classes and inheritance, constructors/destructors,
-typed or non-public properties, interfaces/traits, namespaces, class constants,
-reflection, magic methods, broader static-property semantics, non-static
-callables beyond direct object calls and bounded `[$object, "method"]`,
-object destructuring, object `Traversable`, property compound lvalues beyond
-public property `??=`, static-property compound/null-coalescing lvalues,
-exceptions, resources, dynamic include/include_once behavior, heredoc
-interpolation/flexible indentation, unsupported internals, exact 64-bit
+Explicit follow-up work: full visibility/inheritance semantics, typed or
+non-public/promoted properties, interfaces/traits, namespaces, class constants,
+reflection, magic methods beyond public `__construct`, old-style constructors,
+destructors, broader static-property semantics, non-static callables beyond
+bounded dispatch, object destructuring/`Traversable`, property compound
+lvalues beyond public property `??=`, exceptions, resources, dynamic includes,
+heredoc interpolation/flexible indentation, unsupported internals, exact 64-bit
 operator/diagnostic parity, and remaining scalar offset-lvalue parity.
 
 ## Verification
@@ -64,17 +66,10 @@ operator/diagnostic parity, and remaining scalar offset-lvalue parity.
 Freeze evidence: bounded `summary-20260611T161121Z.txt` (173/200), COW PHPT
 `summary-20260611T160936Z.txt` (29/29), callback
 `summary-20260611T161926Z.txt` (2/2), native smoke, and post-merge COW gate.
-`ptn-qhla` adds `array_column_numeric_string_key.phpt`, bringing bounded to
-174/200. `ptn-lrty.7` reran `cargo fmt --check`, `cargo build --bin phpc`, the
-documented README demo loop, and `cargo test`. `ptn-en6v` verification covered
-`compile_array_filter_to_native_binary`, exact `array_filter_basic.phpt`,
-`cargo test`, native smoke, and post-merge COW gate. `ptn-dzgg` verification
-covered `compile_foreach_non_array_diagnostics_include_source_path_to_native_binary`,
-exact `foreachLoop.003.phpt`, `cargo test`, native smoke, and post-merge COW
-gate. Focused `ptn-p0y1` verification covers
-`compile_array_key_exists_to_native_binary`,
-`compile_chr_out_of_range_deprecation_suppression_to_native_binary`, exact
-`array_key_exists.phpt`, `chr_out_of_range.phpt`, `ord_basic.phpt`, and
-`foreachLoop.001.phpt`; the final rebase verification is `cargo fmt --check`,
-`git diff --check origin/master..HEAD`, `cargo test`,
-`tools/run-native-smoke-matrix.sh`, and `tools/run-post-merge-cow-gate.sh`.
+`ptn-qhla`, `ptn-en6v`, `ptn-dzgg`, and `ptn-p0y1` add the current
+array/foreach/deprecation rows. Focused `ptn-lrty.8` verification covers
+`compile_declared_class_constructor_to_native_binary` and
+`compile_inherited_declared_class_constructor_to_native_binary`; final rebase
+verification is `cargo fmt --check`, `git diff --check origin/master..HEAD`,
+`cargo test`, `tools/run-native-smoke-matrix.sh`, and
+`tools/run-post-merge-cow-gate.sh`.

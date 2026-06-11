@@ -5469,6 +5469,94 @@ var_dump($box->name);
 }
 
 #[test]
+fn compile_declared_class_constructor_to_native_binary() {
+    let root = temp_dir("ptn-native-declared-class-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("declared-class-constructor.php");
+    let output = root.join("declared-class-constructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public static $made = 0;
+    public $name = \"unset\";
+    public $count = 0;
+
+    public function __construct($name, $count = 1) {
+        $this->name = $name;
+        $this->count = $count;
+        self::$made = self::$made + 1;
+    }
+}
+
+$box = new Box(\"native\", 7);
+echo $box->name, \":\", $box->count, \":\", Box::$made, \"\\n\";
+$default = new Box(\"default\");
+echo $default->name, \":\", $default->count, \":\", Box::$made, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "native:7:1\ndefault:1:2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_new_shell(\"Box\")"));
+    assert!(c_source.contains("ptn_call_declared_method(&runtime"));
+    assert!(c_source.contains("\"__construct\""));
+}
+
+#[test]
+fn compile_inherited_declared_class_constructor_to_native_binary() {
+    let root = temp_dir("ptn-native-inherited-declared-class-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inherited-declared-class-constructor.php");
+    let output = root.join("inherited-declared-class-constructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class BaseBox {
+    public function __construct($name) {
+        $this->name = \"base:\" . $name;
+    }
+}
+
+class ChildBox extends BaseBox {
+    public function label() {
+        return $this->name;
+    }
+}
+
+$child = new ChildBox(\"inherited\");
+echo $child->label(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "base:inherited\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_new_shell(\"ChildBox\")"));
+    assert!(c_source.contains("BaseBox::__construct"));
+    assert!(c_source.contains("ptn_call_declared_method(&runtime"));
+}
+
+#[test]
 fn compile_declared_class_metadata_intrinsics_to_native_binary() {
     let root = temp_dir("ptn-native-declared-class-metadata-intrinsics");
     fs::create_dir_all(&root).unwrap();

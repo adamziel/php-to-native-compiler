@@ -842,6 +842,12 @@ fn class_method_lookup_chain<'a>(
     methods
 }
 
+fn class_has_constructor(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
+    class_method_lookup_chain(class, classes)
+        .iter()
+        .any(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
+}
+
 fn emit_method_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line) {\n",
@@ -4039,6 +4045,47 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &assigned_temp);
                 emit_value_cleanup(out, "    ", &value_temp);
+            }
+            if class_has_constructor(&declared_class, &self.classes) {
+                let constructor_result = self.next_temp();
+                if argument_temps.is_empty() {
+                    out.push_str("    PtnValue ");
+                    out.push_str(&constructor_result);
+                    out.push_str(" = ptn_call_declared_method(&runtime, ");
+                    out.push_str(&result_temp);
+                    out.push_str(", \"__construct\", 0, NULL, ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                } else {
+                    let args_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&args_temp);
+                    out.push_str("[] = { ");
+                    for (index, temp) in argument_temps.iter().enumerate() {
+                        if index > 0 {
+                            out.push_str(", ");
+                        }
+                        out.push_str("ptn_value_share(");
+                        out.push_str(temp);
+                        out.push(')');
+                    }
+                    out.push_str(" };\n");
+                    out.push_str("    PtnValue ");
+                    out.push_str(&constructor_result);
+                    out.push_str(" = ptn_call_declared_method(&runtime, ");
+                    out.push_str(&result_temp);
+                    out.push_str(", \"__construct\", ");
+                    out.push_str(&argument_temps.len().to_string());
+                    out.push_str(", ");
+                    out.push_str(&args_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    for index in 0..argument_temps.len() {
+                        emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+                    }
+                }
+                emit_value_cleanup(out, "    ", &constructor_result);
             }
         } else if argument_temps.is_empty() {
             out.push_str("    PtnValue ");
