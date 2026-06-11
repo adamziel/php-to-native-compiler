@@ -5591,6 +5591,41 @@ fn compile_chr_out_of_range_phpt_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_chr_out_of_range_deprecation_suppression_to_native_binary() {
+    let root = temp_dir("ptn-native-chr-out-of-range-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chr-out-of-range-deprecation.php");
+    let output = root.join("chr-out-of-range-deprecation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(\"\\xFF\" == chr(-1));\n\
+var_dump(\"\\0\" == chr(256));\n\
+error_reporting(E_ERROR);\n\
+var_dump(bin2hex(chr(-2)));\n\
+error_reporting(E_ALL);\n\
+var_dump(bin2hex(@chr(257)));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: chr(): Providing a value not in-between 0 and 255 is deprecated, this is because a byte value must be in the [0, 255] interval. The value used will be constrained using % 256 in ptn on line 2\n\
+bool(true)\n\
+\n\
+Deprecated: chr(): Providing a value not in-between 0 and 255 is deprecated, this is because a byte value must be in the [0, 255] interval. The value used will be constrained using % 256 in ptn on line 3\n\
+bool(true)\n\
+string(2) \"fe\"\n\
+string(2) \"01\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_chr_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chr-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
