@@ -10718,20 +10718,22 @@ var_dump($str);",
 }
 
 #[test]
-fn compile_nested_string_offset_assign_op_diagnostics_to_native_binary() {
-    let root = temp_dir("ptn-native-nested-string-offset-assign-op");
+fn compile_string_offset_assign_op_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-assign-op-diagnostics");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("nested-string-offset-assign-op.php");
-    let output = root.join("nested-string-offset-assign-op-bin");
+    let input = root.join("string-offset-assign-op-diagnostics.php");
+    let output = root.join("string-offset-assign-op-diagnostics-bin");
     fs::write(
         &input,
         "<?php\n\
 $str = \"abcd\";\n\
 try { $str[1] += 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $str[\"1str\"] += 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $str[\"foo\"] += 1; } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { $str[1][\"y\"] += 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { $str[\"2x\"][\"y\"] += 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { $str[\"1.5\"][\"y\"] += 1; } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
-echo \"Done\\n\";",
+var_dump($str);",
     )
     .unwrap();
 
@@ -10741,7 +10743,7 @@ echo \"Done\\n\";",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Cannot use assign-op operators with string offsets\nCannot use string offset as an array\n\nWarning: Illegal string offset \"2x\" in ptn on line 5\nCannot use string offset as an array\nCannot access offset of type string on string\nDone\n"
+        "Cannot use assign-op operators with string offsets\n\nWarning: Illegal string offset \"1str\" in ptn on line 4\nCannot use assign-op operators with string offsets\nCannot access offset of type string on string\nCannot use string offset as an array\n\nWarning: Illegal string offset \"2x\" in ptn on line 7\nCannot use string offset as an array\nCannot access offset of type string on string\nstring(4) \"abcd\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

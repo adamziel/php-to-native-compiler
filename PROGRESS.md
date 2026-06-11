@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T18:34Z
-Measured: `ptn-lu3y` rebased on `origin/master` at `958c7a1fd`.
+Refresh: 2026-06-11T18:43Z
+Measured: `ptn-3i3q` rebased on `origin/master` at `dbbf4b15e`.
 `array_column()` support is integrated. `array_filter()` rejects unknown mode
 values with the modeled PHP `ValueError`. Foreach non-array diagnostics spell
 boolean operands as `false given` or `true given`. Shared deprecation
@@ -14,15 +14,16 @@ through shared runtime helper paths. Inline HTML before, between, and after PHP
 blocks tokenizes/parses as output and lowers through the shared echo path.
 Common string/byte internals share modeled string-argument TypeErrors for
 array/object/closure/exception operands while preserving scalar, null, and
-embedded-NUL paths. Nested string-offset assign-op diagnostics now distinguish
+embedded-NUL paths. Nested string-offset assign-op diagnostics distinguish
 single-offset assign-op from nested string-offset-as-array access, and
-`Zend/tests/offset_assign.phpt` now passes. Public `__call` fallback is wired
-for missing direct object methods and supported object callable dispatch, and
-`is_callable()` validates the current string, closure, static-array, and
-object-array callable subset. `phpc -d precision=N` now drives scalar float
-stringification for generated native execution; exact `strlen.phpt` no longer
-has the float-length diff but still fails on object `__toString` and
-interpolation diagnostic ordering.
+single-offset string assign-op now runs the shared string-offset key diagnostic
+path before throwing. `Zend/tests/offset_assign.phpt` passes. Public `__call`
+fallback is wired for missing direct object methods and supported object
+callable dispatch, and `is_callable()` validates the current string, closure,
+static-array, and object-array callable subset. `phpc -d precision=N` now
+drives scalar float stringification for generated native execution; exact
+`strlen.phpt` no longer has the float-length diff but still fails on object
+`__toString` and interpolation diagnostic ordering.
 
 ## RC Surface
 
@@ -35,8 +36,8 @@ call-frame introspection, scalar type hints, bounded closures/callables,
 public property writes/`??=`, inherited public methods, public constructor
 dispatch, diagnostic filtering, catchable arithmetic `TypeError` boundaries,
 string-internal argument `TypeError` boundaries, inline HTML output across PHP
-blocks, nested string-offset assign-op diagnostics, public `__call` fallback
-for object calls/callables, `is_callable()` subset validation, `phpc -d
+blocks, string-offset assign-op diagnostics, public `__call` fallback for
+object calls/callables, `is_callable()` subset validation, `phpc -d
 precision=N` scalar float stringification, plain heredoc/nowdoc literals, and
 string interpolation slices.
 
@@ -88,18 +89,18 @@ inc/dec parity.
 
 ## Verification
 
-Evidence: bounded `summary-20260611T173953Z.txt` (180/200), COW PHPT
-`summary-20260611T160936Z.txt` (29/29), callback
+Evidence: bounded `summary-20260611T182854Z.txt` (180/200), COW PHPT
+`summary-20260611T182117Z.txt` (29/29), callback
 `summary-20260611T161926Z.txt` (2/2), native smoke, and post-merge COW gate.
 Earlier `ptn-lu3y` frontier evidence, bounded `summary-20260611T173724Z.txt`
 (179/200) and COW `run-20260611T174736Z.log` (29/29), is superseded by the
 current dashboard after subsequent RC slices. `ptn-qhla`, `ptn-en6v`,
 `ptn-dzgg`, `ptn-p0y1`, `ptn-lrty.8`, `ptn-29og`, `ptn-lrty.6`,
-`ptn-lrty.4`, `ptn-lrty.5`, `ptn-lrty.9`, and `ptn-wk0a` add the current
-array, foreach, deprecation, constructor, arithmetic, inline-HTML,
+`ptn-lrty.4`, `ptn-lrty.5`, `ptn-lrty.9`, `ptn-wk0a`, and `ptn-3i3q` add the
+current array, foreach, deprecation, constructor, arithmetic, inline-HTML,
 string-diagnostic, string-offset diagnostic, magic-callable, `is_callable()`,
-and float-precision rows. Focused `ptn-wk0a` verification covers
-`phpc_precision_ini_controls_scalar_float_stringification`,
-`compile_strlen_expression_to_native_binary`, and exact `strlen.phpt` residual
-diffs; final gates cover `cargo fmt --check`, `git diff --check`,
-`cargo test`, native smoke matrix, and post-merge COW gate.
+and float-precision rows. Focused `ptn-3i3q` verification covers
+`compile_string_offset_assign_op_diagnostics_to_native_binary` and exact
+`Zend/tests/offset_assign.phpt`; final gates cover `cargo fmt --check`,
+`git diff --check`, `cargo test`, bounded PHPT, native smoke matrix, and
+post-merge COW gate.

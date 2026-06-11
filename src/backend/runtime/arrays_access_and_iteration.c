@@ -1637,12 +1637,12 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
             ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
             return ptn_null();
         }
+        int64_t offset = 0;
+        if (!ptn_string_offset_from_value(runtime, segments[0].value, line, 0, &offset)) {
+            return ptn_null();
+        }
+        (void)offset;
         if (segment_count > 1) {
-            int64_t offset = 0;
-            if (!ptn_string_offset_from_value(runtime, segments[0].value, line, 0, &offset)) {
-                return ptn_null();
-            }
-            (void)offset;
             fflush(stdout);
             ptn_throw_exception_at(
                 runtime,

@@ -184,8 +184,10 @@ Post-RC architecture remains explicit rather than hidden:
   modeled illegal-offset warning and leave the string unchanged. The assigned
   value is converted to a string, empty string results throw `Error`, and
   multi-byte results emit the modeled first-byte warning before writing the
-  first byte. Direct and nested attempts to unset string offsets throw the
-  modeled PHP `Error` and leave the string unchanged.
+  first byte. String-offset compound assignment remains unsupported, but its
+  key uses the same string-offset conversion diagnostics before the modeled PHP
+  `Error`. Direct and nested attempts to unset string offsets throw the modeled
+  PHP `Error` and leave the string unchanged.
 - Attempts to create references to/from string offsets in supported reference
   lvalue positions, including array literal reference elements, raise the
   modeled PHP `Error` through the runtime exception path.
