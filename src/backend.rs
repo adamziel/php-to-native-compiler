@@ -1062,9 +1062,16 @@ fn emit_instruction(
                 } else {
                     out.push_str(binary_runtime_function(*op));
                     out.push('(');
+                    if binary_runtime_function_uses_context(*op) {
+                        out.push_str("&runtime, ");
+                    }
                     out.push_str(&current_temp);
                     out.push_str(", ");
                     out.push_str(&value_temp);
+                    if binary_runtime_function_uses_context(*op) {
+                        out.push_str(", ");
+                        out.push_str(&line.to_string());
+                    }
                     out.push(')');
                 }
                 out.push_str(";\n");
@@ -2569,6 +2576,17 @@ fn binary_runtime_function(op: BinaryOp) -> &'static str {
         | BinaryOp::Xor
         | BinaryOp::Or => unreachable!("not a direct binary runtime helper"),
     }
+}
+
+fn binary_runtime_function_uses_context(op: BinaryOp) -> bool {
+    matches!(
+        op,
+        BinaryOp::Add
+            | BinaryOp::Subtract
+            | BinaryOp::Multiply
+            | BinaryOp::Power
+            | BinaryOp::Divide
+    )
 }
 
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
@@ -4259,7 +4277,7 @@ impl ValueEmitter {
             | BinaryOp::BitwiseXor
             | BinaryOp::BitwiseOr
             | BinaryOp::ShiftLeft
-            | BinaryOp::ShiftRight => self.emit_runtime_binary(out, op, left, right),
+            | BinaryOp::ShiftRight => self.emit_runtime_binary(out, op, left, right, line),
             BinaryOp::Equal
             | BinaryOp::NotEqual
             | BinaryOp::Identical
@@ -4281,6 +4299,7 @@ impl ValueEmitter {
         op: BinaryOp,
         left: &ValueExpr,
         right: &ValueExpr,
+        line: usize,
     ) -> String {
         let left_temp = self.emit_materialized_value(out, left);
         let right_temp = self.emit_materialized_value(out, right);
@@ -4290,9 +4309,16 @@ impl ValueEmitter {
         out.push_str(" = ");
         out.push_str(binary_runtime_function(op));
         out.push('(');
+        if binary_runtime_function_uses_context(op) {
+            out.push_str("&runtime, ");
+        }
         out.push_str(&left_temp);
         out.push_str(", ");
         out.push_str(&right_temp);
+        if binary_runtime_function_uses_context(op) {
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+        }
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &left_temp);
         emit_value_cleanup(out, "    ", &right_temp);

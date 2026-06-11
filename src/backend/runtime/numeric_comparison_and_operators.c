@@ -374,6 +374,136 @@ static PTN_UNUSED int ptn_compare_spaceship(PtnValue left, PtnValue right) {
     return 1;
 }
 
+static PTN_UNUSED void ptn_emit_arithmetic_non_numeric_value_warning(PtnRuntime *runtime, size_t line) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    fputc('\n', stdout);
+    fputs("Warning: A non-numeric value encountered in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
+static PTN_UNUSED int ptn_arithmetic_string_to_number(
+    PtnString string,
+    PtnNumber *number,
+    int *has_trailing_non_numeric_data
+) {
+    const char *data = (const char *)string.data;
+    const char *limit = data + string.len;
+    const char *start = data;
+    while (start < limit && isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (start >= limit) {
+        return 0;
+    }
+
+    char *int_end = NULL;
+    errno = 0;
+    long long integer = strtoll(start, &int_end, 10);
+    int int_errno = errno;
+
+    char *float_end = NULL;
+    errno = 0;
+    double floating = strtod(start, &float_end);
+    if (float_end == start) {
+        return 0;
+    }
+
+    const char *end = float_end;
+    while (end < limit && isspace((unsigned char)*end)) {
+        end++;
+    }
+    *has_trailing_non_numeric_data = end < limit;
+
+    if (int_end == float_end && int_errno != ERANGE && !ptn_contains_float_marker(start, int_end)) {
+        *number = ptn_number_int((int64_t)integer);
+    } else {
+        *number = ptn_number_float(floating);
+    }
+    return 1;
+}
+
+static PTN_UNUSED int ptn_arithmetic_number(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnNumber *number
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            *number = ptn_number_int(0);
+            return 1;
+        case PTN_BOOL:
+            *number = ptn_number_int(value.as.boolean ? 1 : 0);
+            return 1;
+        case PTN_INT:
+            *number = ptn_number_int(value.as.integer);
+            return 1;
+        case PTN_FLOAT:
+            *number = ptn_number_float(value.as.floating);
+            return 1;
+        case PTN_STRING: {
+            int has_trailing_non_numeric_data = 0;
+            if (!ptn_arithmetic_string_to_number(value.as.string, number, &has_trailing_non_numeric_data)) {
+                return 0;
+            }
+            if (has_trailing_non_numeric_data) {
+                ptn_emit_arithmetic_non_numeric_value_warning(runtime, line);
+            }
+            return 1;
+        }
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_REFERENCE:
+            return 0;
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_throw_unsupported_operand_types(
+    PtnRuntime *runtime,
+    PtnValue left,
+    const char *operator,
+    PtnValue right,
+    size_t line
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Unsupported operand types: %s %s %s",
+        ptn_offset_container_type_name(left),
+        operator,
+        ptn_offset_container_type_name(right)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_arithmetic_operands(
+    PtnRuntime *runtime,
+    PtnValue left,
+    const char *operator,
+    PtnValue right,
+    size_t line,
+    PtnNumber *left_number,
+    PtnNumber *right_number
+) {
+    if (!ptn_arithmetic_number(runtime, left, line, left_number)) {
+        ptn_throw_unsupported_operand_types(runtime, left, operator, right, line);
+    }
+    if (!ptn_arithmetic_number(runtime, right, line, right_number)) {
+        ptn_throw_unsupported_operand_types(runtime, left, operator, right, line);
+    }
+}
+
 static PTN_UNUSED int ptn_fast_numeric_pair(PtnValue left, PtnValue right, double *left_number, double *right_number) {
     return ptn_fast_scalar_double(left, left_number) && ptn_fast_scalar_double(right, right_number);
 }
@@ -386,7 +516,7 @@ static PTN_UNUSED PtnValue ptn_add_integers(int64_t left, int64_t right) {
     return ptn_int(left + right);
 }
 
-static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_add(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type == PTN_ARRAY && right.type == PTN_ARRAY) {
@@ -405,8 +535,9 @@ static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {
         return ptn_float(left_fast_number + right_fast_number);
     }
 
-    PtnNumber left_number = ptn_to_number(left);
-    PtnNumber right_number = ptn_to_number(right);
+    PtnNumber left_number;
+    PtnNumber right_number;
+    ptn_arithmetic_operands(runtime, left, "+", right, line, &left_number, &right_number);
     if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(left_number.floating + right_number.floating);
     }
@@ -422,7 +553,7 @@ static PTN_UNUSED PtnValue ptn_subtract_integers(int64_t left, int64_t right) {
     return ptn_int(left - right);
 }
 
-static PTN_UNUSED PtnValue ptn_subtract(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_subtract(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
@@ -435,8 +566,9 @@ static PTN_UNUSED PtnValue ptn_subtract(PtnValue left, PtnValue right) {
         return ptn_float(left_fast_number - right_fast_number);
     }
 
-    PtnNumber left_number = ptn_to_number(left);
-    PtnNumber right_number = ptn_to_number(right);
+    PtnNumber left_number;
+    PtnNumber right_number;
+    ptn_arithmetic_operands(runtime, left, "-", right, line, &left_number, &right_number);
     if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(left_number.floating - right_number.floating);
     }
@@ -467,7 +599,7 @@ static PTN_UNUSED PtnValue ptn_multiply_integers(int64_t left, int64_t right) {
     return ptn_int(left * right);
 }
 
-static PTN_UNUSED PtnValue ptn_multiply(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_multiply(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
@@ -480,8 +612,9 @@ static PTN_UNUSED PtnValue ptn_multiply(PtnValue left, PtnValue right) {
         return ptn_float(left_fast_number * right_fast_number);
     }
 
-    PtnNumber left_number = ptn_to_number(left);
-    PtnNumber right_number = ptn_to_number(right);
+    PtnNumber left_number;
+    PtnNumber right_number;
+    ptn_arithmetic_operands(runtime, left, "*", right, line, &left_number, &right_number);
     if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(left_number.floating * right_number.floating);
     }
@@ -517,7 +650,7 @@ static PTN_UNUSED int ptn_integer_power_fits(int64_t base, int64_t exponent, int
     return 1;
 }
 
-static PTN_UNUSED PtnValue ptn_power(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
@@ -534,8 +667,9 @@ static PTN_UNUSED PtnValue ptn_power(PtnValue left, PtnValue right) {
         return ptn_float(pow(left_fast_number, right_fast_number));
     }
 
-    PtnNumber left_number = ptn_to_number(left);
-    PtnNumber right_number = ptn_to_number(right);
+    PtnNumber left_number;
+    PtnNumber right_number;
+    ptn_arithmetic_operands(runtime, left, "**", right, line, &left_number, &right_number);
     if (left_number.type == PTN_NUMBER_INT && right_number.type == PTN_NUMBER_INT) {
         int64_t integer_result = 0;
         if (ptn_integer_power_fits(left_number.integer, right_number.integer, &integer_result)) {
@@ -545,7 +679,7 @@ static PTN_UNUSED PtnValue ptn_power(PtnValue left, PtnValue right) {
     return ptn_float(pow(left_number.floating, right_number.floating));
 }
 
-static PTN_UNUSED PtnValue ptn_divide(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_divide(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
@@ -570,8 +704,9 @@ static PTN_UNUSED PtnValue ptn_divide(PtnValue left, PtnValue right) {
         return ptn_float(left_fast_number / right_fast_number);
     }
 
-    PtnNumber left_number = ptn_to_number(left);
-    PtnNumber right_number = ptn_to_number(right);
+    PtnNumber left_number;
+    PtnNumber right_number;
+    ptn_arithmetic_operands(runtime, left, "/", right, line, &left_number, &right_number);
     if (right_number.floating == 0.0) {
         ptn_abort_arithmetic_error("Division by zero");
     }

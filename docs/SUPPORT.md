@@ -98,7 +98,8 @@ Post-RC architecture remains explicit rather than hidden:
   the current float/float-string precision-loss deprecation boundary when a
   scalar operand loses precision while converting to an integer, and leading
   numeric strings with trailing non-numeric data emit the current non-numeric
-  warning boundary.
+  warning boundary. Non-numeric strings and mixed array operands for `+`, `-`,
+  `*`, `**`, and `/` throw modeled catchable PHP `TypeError` diagnostics.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,

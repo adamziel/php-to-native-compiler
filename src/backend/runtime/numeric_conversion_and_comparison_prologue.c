@@ -244,6 +244,22 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
     if (ptn_exception_name_equal(class_name, type_name)) {
         return 1;
     }
+    if (ptn_exception_name_equal(type_name, "Error")) {
+        return ptn_exception_name_equal(class_name, "Error") ||
+            ptn_exception_name_equal(class_name, "TypeError") ||
+            ptn_exception_name_equal(class_name, "ArgumentCountError") ||
+            ptn_exception_name_equal(class_name, "ValueError") ||
+            ptn_exception_name_equal(class_name, "ArithmeticError") ||
+            ptn_exception_name_equal(class_name, "DivisionByZeroError") ||
+            ptn_exception_name_equal(class_name, "AssertionError") ||
+            ptn_exception_name_equal(class_name, "ParseError");
+    }
+    if (ptn_exception_name_equal(type_name, "TypeError")) {
+        return ptn_exception_name_equal(class_name, "ArgumentCountError");
+    }
+    if (ptn_exception_name_equal(type_name, "ArithmeticError")) {
+        return ptn_exception_name_equal(class_name, "DivisionByZeroError");
+    }
     if (ptn_exception_name_equal(type_name, "Throwable")) {
         return 1;
     }
@@ -262,6 +278,7 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
 }
 
 static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
+    fflush(stdout);
     if (exception->path == NULL || exception->line == 0) {
         fputs("Fatal error: ", stderr);
         fputs(exception->message, stderr);
@@ -269,6 +286,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
         return;
     }
 
+    fputc('\n', stderr);
     fprintf(
         stderr,
         "Fatal error: Uncaught %s: %s in %s:%zu\n",

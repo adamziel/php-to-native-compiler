@@ -27,6 +27,8 @@ expected rows, or one-off outputs.
   declared public constructor dispatch through the method path.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
+- Arithmetic rejects non-numeric strings and mixed array operands with modeled
+  catchable `TypeError` diagnostics while preserving leading-numeric warnings.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for
   non-array operands in the current boxed value domain.
 - `array_chunk()` and `array_combine()` build fresh ordered arrays through the

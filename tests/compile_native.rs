@@ -13415,6 +13415,52 @@ fn compile_numeric_string_and_float_addition_to_native_binary() {
 }
 
 #[test]
+fn compile_arithmetic_rejects_non_numeric_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-arithmetic-non-numeric-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arithmetic-non-numeric-operands.php");
+    let output = root.join("arithmetic-non-numeric-operands-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { var_dump(\"abc\" + 1); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(1 + \"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump([1] + 2); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(\"abc\" * 2); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(\"123abc\" + \"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(\"123abc\" + 2);\n\
+var_dump(\"3.5x\" * 2);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Unsupported operand types: string + int\n\
+Unsupported operand types: int + string\n\
+Unsupported operand types: array + int\n\
+Unsupported operand types: string * int\n\
+\n\
+Warning: A non-numeric value encountered in ptn on line 6\n\
+Unsupported operand types: string + string\n\
+\n\
+Warning: A non-numeric value encountered in ptn on line 7\n\
+int(125)\n\
+\n\
+Warning: A non-numeric value encountered in ptn on line 8\n\
+float(7)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_add(&runtime, "));
+    assert!(c_source.contains("ptn_multiply(&runtime, "));
+}
+
+#[test]
 fn compile_common_scalar_numeric_paths_to_native_binary() {
     let root = temp_dir("ptn-native-common-scalar-numeric-paths");
     fs::create_dir_all(&root).unwrap();
