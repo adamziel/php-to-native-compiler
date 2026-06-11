@@ -145,7 +145,9 @@ Post-RC architecture remains explicit rather than hidden:
   native execution. Scalar float stringification for echo, string casts,
   concatenation, string internals such as `strlen()`, and `print_r()` uses that
   precision, defaulting to PHP's current 14 significant-digit boundary when the
-  setting is absent.
+  setting is absent. Scientific notation uses PHP-style uppercase `E`,
+  unpadded exponent widths, and decimal mantissas; non-finite values stringify
+  as `INF`, `-INF`, and `NAN`.
 - Removed `(real)` cast syntax is rejected with a source-spanned PHP-style
   parse error through `phpc`.
 - Removed `(unset)` cast syntax is rejected with a source-spanned PHP-style
@@ -777,11 +779,11 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `soundex()` locale/non-ASCII behavior plus resource/reference operand
   parity and object string conversion outside the current public declared
   `__toString()` support.
-- Exact non-finite formatting outside current scalar `var_dump()` output and
-  complete non-finite comparison parity for unsupported arrays, objects,
+- Complete non-finite comparison parity for unsupported arrays, objects,
   resources, and references.
-- Remaining PHP float precision and formatting edge cases for `var_dump()` or
-  `strlen()` input conversion.
+- Remaining PHP float precision and formatting edge cases plus
+  conversion-diagnostic parity outside the current scalar stringification and
+  `var_dump()` slices.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
 - Complete PHP-exact `error_reporting()` coverage for diagnostic paths that

@@ -4191,6 +4191,29 @@ fn var_dump_float_exponents_use_php_spelling_in_native_binary() {
 }
 
 #[test]
+fn scalar_float_stringification_uses_php_exponent_spelling_in_native_binary() {
+    let root = temp_dir("ptn-native-scalar-float-exponent-spelling");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-float-exponent-spelling.php");
+    let output = root.join("scalar-float-exponent-spelling-bin");
+    fs::write(
+        &input,
+        "<?php echo 9.2233720368548E+18, \"\\n\", 1.2e-5, \"\\n\", 1.0e17, \"\\n\"; echo INF, \" \", -INF, \" \", NAN, \"\\n\"; echo strlen(1.2e-5), \" \", strlen(1.0e17), \" \", strlen(INF), \" \", strlen(NAN), \"\\n\"; echo \"x\" . 1.0e17, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "9.2233720368548E+18\n1.2E-5\n1.0E+17\nINF -INF NAN\n6 7 3 3\nx1.0E+17\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_quotemeta_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-quotemeta-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

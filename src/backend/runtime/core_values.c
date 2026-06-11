@@ -358,11 +358,51 @@ static PTN_UNUSED int ptn_float_precision(void) {
     return precision;
 }
 
+static PTN_UNUSED void ptn_normalize_scalar_float_exponent(char *buffer) {
+    for (char *cursor = buffer; *cursor != '\0'; cursor++) {
+        if (*cursor == 'e' || *cursor == 'E') {
+            *cursor = 'E';
+            cursor++;
+            if (*cursor == '+' || *cursor == '-') {
+                cursor++;
+            }
+            while (*cursor == '0' && isdigit((unsigned char)cursor[1])) {
+                memmove(cursor, cursor + 1, strlen(cursor));
+            }
+            return;
+        }
+    }
+}
+
+static PTN_UNUSED void ptn_scalar_float_ensure_exponent_decimal(char *buffer) {
+    for (char *cursor = buffer; *cursor != '\0'; cursor++) {
+        if (*cursor == '.') {
+            return;
+        }
+        if (*cursor == 'E') {
+            size_t tail_len = strlen(cursor);
+            memmove(cursor + 2, cursor, tail_len + 1);
+            cursor[0] = '.';
+            cursor[1] = '0';
+            return;
+        }
+    }
+}
+
 static PTN_UNUSED void ptn_format_scalar_float(double value, char *buffer, size_t buffer_size) {
-    int written = snprintf(buffer, buffer_size, "%.*g", ptn_float_precision(), value);
+    int written;
+    if (isnan(value)) {
+        written = snprintf(buffer, buffer_size, "NAN");
+    } else if (isinf(value)) {
+        written = snprintf(buffer, buffer_size, signbit(value) ? "-INF" : "INF");
+    } else {
+        written = snprintf(buffer, buffer_size, "%.*g", ptn_float_precision(), value);
+    }
     if (written < 0 || (size_t)written >= buffer_size) {
         ptn_abort_out_of_memory();
     }
+    ptn_normalize_scalar_float_exponent(buffer);
+    ptn_scalar_float_ensure_exponent_decimal(buffer);
 }
 
 static PTN_UNUSED PtnValue ptn_null(void) {

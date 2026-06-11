@@ -1,27 +1,33 @@
 # PTN Progress
 
-Refresh: 2026-06-11T20:31Z
-Measured: `ptn-lrty.3` rebased on `origin/master` at `636306708`.
+Refresh: 2026-06-11T20:47Z
+Measured: `ptn-icd9` rebased on `origin/master` at `20b0eba2d`.
 
 Recent RC slices cover array/key canonicalization, foreach assignment targets,
 catchable arithmetic/assertion boundaries, public `__call`, public
 `__toString` string conversion, precision-driven float output, scalar
-`var_dump()` spelling, inline HTML, and string-offset diagnostics. This slice
-adds minimal resource values plus `fopen()`, `fclose()`, `is_resource()`, and
-`array_key_exists()` parity for `null` deprecation and resource-key integer
-casting.
+`var_dump()` spelling, inline HTML, and string-offset diagnostics.
+`ptn-lrty.3` adds minimal resource values plus `fopen()`, `fclose()`,
+`is_resource()`, and `array_key_exists()` parity for `null` deprecation and
+resource-key integer casting. `ptn-icd9` adds PHP-style scalar float exponent
+spelling for echo/casts/concatenation/string internals, so
+`tests/lang/operators/add_basiclong_64bit.phpt` passes.
+
+Exact `strlen.phpt` gets the object `__toString()` length right; it still
+fails on ordering/source-path parity for the `${str}` deprecation versus the
+undefined `$strS` warning.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 464 | 464 | 0 |
+| Native/compiler Rust suite | 465 | 465 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 186 | 14 |
+| PHPT bounded manifest | 200 | 187 | 13 |
 | PHPT Zend rows | 76 | 76 | 0 |
 | PHPT ext/standard rows | 77 | 69 | 8 |
-| PHPT tests/basic+func+lang | 45 | 39 | 6 |
+| PHPT tests/basic+func+lang | 45 | 40 | 5 |
 | PHPT other rows | 2 | 2 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
 | Post-merge COW gate | 25 | 25 | 0 |
@@ -35,23 +41,27 @@ casting.
   `strlen` diagnostic-order/source-path parity.
 - `ptn-lrty.6` plus `ptn-r52`: `tests/lang/024.phpt` remains at the
   dynamic-variable array-offset lvalue blocker.
-- `ptn-lrty.5`: 5 64-bit operator rows remain after object/array add
-  diagnostics and `add_variationStr` are covered.
+- `ptn-lrty.5`: 4 64-bit bitwise operator rows remain after object/array add
+  diagnostics, `add_variationStr`, and `add_basiclong_64bit` are covered.
 
 ## Verification
 
-Evidence: exact target PHPT rows
-`array_key_exists.phpt`, `array_key_exists_variation1.phpt`, and
-`array_key_exists_null_deprecation.phpt` pass 3/3. Bounded PHPT
-`summary-20260611T201728Z.txt` is 186/200. COW PHPT
-`summary-20260611T202912Z.txt` is 29/29. Callback PHPT
-`summary-20260611T203116Z.txt` is 2/2. `cargo fmt --check`,
-`cargo build --bin phpc`, `cargo test` with 464 native/compiler cases plus COW
-tails, native smoke 6/6, and post-merge COW 25/25 all pass.
+Evidence: exact target PHPT rows `array_key_exists.phpt`,
+`array_key_exists_variation1.phpt`, and
+`array_key_exists_null_deprecation.phpt` pass 3/3 for `ptn-lrty.3`; exact
+`tests/lang/operators/add_basiclong_64bit.phpt` passes for `ptn-icd9`.
+`ptn-lrty.3` bounded PHPT `summary-20260611T201728Z.txt` is 186/200, and
+`ptn-icd9` bounded PHPT `summary-20260611T202054Z.txt` is 186/200 on its
+pre-merge base, covering the complementary operator row. COW PHPT
+`summary-20260611T202912Z.txt` and `summary-20260611T203045Z.txt` are both
+29/29; callback PHPT `summary-20260611T203116Z.txt` is 2/2. `cargo fmt
+--check`, `git diff --check`, focused native coverage
+`scalar_float_stringification_uses_php_exponent_spelling_in_native_binary`,
+full `cargo test`, native smoke 6/6, and post-merge COW 25/25 pass.
 
 Follow-ups remain broad visibility/inheritance, typed/non-public/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,
 first-class callables, destructors, broader resources/exceptions, dynamic
 includes, heredoc interpolation, full unsupported-internal coverage, exact
-64-bit operator parity, scalar offset-lvalues, assertion configuration, and
-broader foreach destructuring/reference targets.
+64-bit bitwise operator parity, scalar offset-lvalues, assertion configuration,
+and broader foreach destructuring/reference targets.

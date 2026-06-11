@@ -31,6 +31,8 @@ expected rows, or one-off outputs.
   userland parameters cover the first COW/reference boundary slice.
 - Arithmetic rejects non-numeric strings and mixed array operands with modeled
   catchable `TypeError` diagnostics while preserving leading-numeric warnings.
+- Scalar float stringification honors `phpc -d precision=N` and PHP-style
+  exponent spelling across echo, casts, concatenation, and string internals.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for
   non-array operands in the current boxed value domain.
 - `array_chunk()` and `array_combine()` build fresh ordered arrays through the
