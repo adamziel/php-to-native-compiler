@@ -120,8 +120,8 @@ Current runtime/compiler slices:
   deprecation diagnostics; `chr` constructs one-byte strings from scalar
   integer conversion; `ord` observes the first byte of scalar string
   conversion; `error_reporting` currently accepts zero or one argument and
-  returns a placeholder reporting level; `gettype` and scalar `is_*` predicates
-  query the current boxed scalar/null value domain, while `is_finite`,
+  returns a placeholder reporting level; `gettype` and scalar plus
+  array/object `is_*` predicates query the current boxed value domain, while `is_finite`,
   `is_infinite`, and `is_nan` query modeled non-finite float constants;
   `function_exists` shares the registry lookup path; and `defined` checks
   global `const` declarations plus the modeled PHP `E_ERROR`, `PHP_EOL`,

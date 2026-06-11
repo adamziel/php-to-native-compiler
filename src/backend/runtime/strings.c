@@ -435,6 +435,15 @@ static PTN_UNUSED PtnValue ptn_is_type(PtnValue value, PtnType type) {
     return ptn_bool(ptn_value_deref(value).type == type);
 }
 
+static PTN_UNUSED PtnValue ptn_is_object(PtnValue value) {
+    value = ptn_value_deref(value);
+    return ptn_bool(
+        value.type == PTN_OBJECT ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_is_scalar(PtnValue value) {
     return ptn_bool(
         value.type == PTN_BOOL ||

@@ -2531,6 +2531,13 @@ static PtnValue ptn_internal_is_array(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_is_type(args[0], PTN_ARRAY);
 }
 
+static PtnValue ptn_internal_is_object(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_is_object(args[0]);
+}
+
 static PtnValue ptn_internal_is_bool(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -3679,6 +3686,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_long", 1, 1, ptn_internal_is_int },
         { "is_nan", 1, 1, ptn_internal_is_nan },
         { "is_null", 1, 1, ptn_internal_is_null },
+        { "is_object", 1, 1, ptn_internal_is_object },
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
         { "is_string", 1, 1, ptn_internal_is_string },
         { "key", 1, 1, ptn_internal_key },

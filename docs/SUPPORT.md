@@ -221,7 +221,8 @@ supports in generated native binaries.
   `array_replace_recursive(expr, ...)`,
   `in_array(expr, expr[, expr])`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
-  `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates, and
+  `error_reporting(expr)`, `gettype(expr)`, scalar plus array/object `is_*`
+  type predicates, and
   `array_key_exists(expr, expr)` in echo operands, assignments, binary
   operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
@@ -353,9 +354,12 @@ supports in generated native binaries.
   same dereferencing path as other comparison internals.
 - `error_reporting()` currently accepts zero or one scalar argument and returns
   a placeholder integer level. It does not configure diagnostic filtering yet.
-- `gettype()` over current boxed scalar values, returning `NULL`, `boolean`,
-  `integer`, `double`, or `string`.
-- Scalar type predicates over current boxed scalar values: `is_null()`,
+- `gettype()` over current boxed values, returning `NULL`, `boolean`,
+  `integer`, `double`, `string`, `array`, or `object` for the currently modeled
+  scalar, array, `stdClass`, declared-object, Closure, and exception value
+  domains.
+- Type predicates over current boxed scalar and selected non-scalar values:
+  `is_array()`, `is_object()`, `is_null()`,
   `is_bool()`, `is_int()`, `is_integer()`, `is_long()`, `is_float()`,
   `is_double()`, `is_string()`, `is_scalar()`, `is_finite()`,
   `is_infinite()`, and `is_nan()`.
@@ -526,7 +530,7 @@ supports in generated native binaries.
   generated user-function calls, by-reference returns, nested or conditional
   declarations, closures, full class metadata, namespaces, globals, static
   locals, and remaining PHP-exact function return propagation.
-- Type predicate coverage for arrays, objects, resources, and references.
+- Type predicate coverage for resources and full PHP reference metadata.
 - Unsupported recursive arrays, full class/object metadata, resources,
   complete reference identity, copy-on-write, and `var_dump()` reference
   identity beyond the currently modeled ordered-array, direct-reference, and

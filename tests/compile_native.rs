@@ -5343,6 +5343,45 @@ fn compile_scalar_type_internal_functions_to_native_binary() {
 }
 
 #[test]
+fn compile_array_object_type_predicates_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-type-predicates");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-type-predicates.php");
+    let output = root.join("array-object-type-predicates-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {}
+
+$items = [1, \"two\" => 2];
+$empty = [];
+$std = new stdClass;
+$box = new Box();
+$callback = function () { return 1; };
+
+var_dump(gettype($items), is_array($items), is_object($items));
+var_dump(gettype($empty), is_array($empty), is_object($empty));
+var_dump(gettype($std), is_array($std), is_object($std));
+var_dump(gettype($box), is_array($box), is_object($box));
+var_dump(gettype($callback), is_array($callback), is_object($callback));
+var_dump(is_array(null), is_object(null), is_array(42), is_object(42), is_array(\"x\"), is_object(\"x\"), is_array(true), is_object(true));
+var_dump(function_exists(\"is_array\"), function_exists(\"IS_OBJECT\"), function_exists(\"is_resource\"));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"array\"\nbool(true)\nbool(false)\nstring(5) \"array\"\nbool(true)\nbool(false)\nstring(6) \"object\"\nbool(false)\nbool(true)\nstring(6) \"object\"\nbool(false)\nbool(true)\nstring(6) \"object\"\nbool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_finite_infinite_nan_internal_functions_to_native_binary() {
     let root = temp_dir("ptn-native-finite-infinite-nan-functions");
     fs::create_dir_all(&root).unwrap();

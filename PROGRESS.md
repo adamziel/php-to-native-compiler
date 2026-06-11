@@ -7,7 +7,8 @@ properties, inherited methods, property `??=`, loose object equality in
 `switch`, nested string-offset unset, braced interpolation, branch-condition
 assignment and named-argument reducers, scalar offset reducers, object
 `foreach`, class metadata, method callables/magic constants, cslashes, scalar
-variable variables, include return helpers, and COW evidence.
+variable variables, include return helpers, array/object type predicates, and
+COW evidence.
 
 ## Test Dashboard
 
@@ -69,8 +70,9 @@ include/include_once behavior, and broader file APIs.
 Commands: focused Closure/`print`/interpolation/branch-condition assignment/
 named-argument/loose-object switch/addslashes/cslashes/object `foreach`/scalar
 offset/callable/metadata/scalar variable-variable/focused include parser and
-native reducers; `cargo check`; `cargo test static_property --test
-compile_native`; `cargo fmt --check`; `cargo build --bin phpc`; exact
+native reducers/array-object-predicate tests; `cargo check`;
+`cargo test static_property --test compile_native`; `cargo fmt --check`;
+`cargo build --bin phpc`; exact
 `array_null_offset_deprecation.phpt` reducer; `cargo test`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
 `.runtime/php-src-phpt`.
