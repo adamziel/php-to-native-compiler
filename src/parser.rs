@@ -3614,6 +3614,13 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
     )
 }
 
+fn is_single_array_path_mutation_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array_pop" | "array_shift"
+    )
+}
+
 fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -3637,6 +3644,24 @@ fn is_direct_variable_argument(expr: &Expr) -> bool {
         Expr::Grouped { expr, .. } => is_direct_variable_argument(expr),
         _ => false,
     }
+}
+
+fn is_variable_array_access_argument(expr: &Expr) -> bool {
+    match expr {
+        Expr::Variable(_, _) => true,
+        Expr::ArrayAccess { array, .. } => match array.as_ref() {
+            Expr::Variable(_, _) | Expr::ArrayAccess { .. } | Expr::Grouped { .. } => {
+                is_variable_array_access_argument(array)
+            }
+            _ => false,
+        },
+        Expr::Grouped { expr, .. } => is_variable_array_access_argument(expr),
+        _ => false,
+    }
+}
+
+fn is_array_cursor_mutation_argument(expr: &Expr) -> bool {
+    is_direct_variable_argument(expr) || is_variable_array_access_argument(expr)
 }
 
 fn validate_mutating_array_internal_call(
@@ -3673,7 +3698,7 @@ fn validate_mutating_array_internal_call(
         return Ok(());
     }
     if is_array_cursor_mutation_name(name) && arguments.len() == 1 {
-        if is_direct_variable_argument(&arguments[0]) {
+        if is_array_cursor_mutation_argument(&arguments[0]) {
             return Ok(());
         }
         return Err(Diagnostic::new(
@@ -3690,6 +3715,12 @@ fn validate_mutating_array_internal_call(
     }
 
     if is_direct_variable_argument(&arguments[0]) {
+        return Ok(());
+    }
+    if is_single_array_path_mutation_name(name)
+        && arguments.len() == 1
+        && is_variable_array_access_argument(&arguments[0])
+    {
         return Ok(());
     }
     Err(Diagnostic::new(

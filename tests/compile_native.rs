@@ -9691,6 +9691,17 @@ var_dump(array_shift($copy));\n\
 var_dump($copy_source[0]);\n\
 foreach ($copy_source as $sub) { array_shift($sub); }\n\
 var_dump($copy_source[1]);\n\
+$nested = [[1, 2, 3]];\n\
+var_dump(next($nested[0]));\n\
+var_dump(current($nested[0]));\n\
+var_dump(end($nested[0]));\n\
+var_dump(prev($nested[0]));\n\
+var_dump(reset($nested[0]));\n\
+$cursor_source = [[10, 20]];\n\
+$cursor_copy = $cursor_source;\n\
+var_dump(next($cursor_copy[0]));\n\
+var_dump(current($cursor_source[0]));\n\
+var_dump(current($cursor_copy[0]));\n\
 var_dump(function_exists(\"ARRAY_POP\"), function_exists(\"current\"), function_exists(\"end\"), function_exists(\"prev\"), function_exists(\"reset\"));",
     )
     .unwrap();
@@ -9701,9 +9712,48 @@ var_dump(function_exists(\"ARRAY_POP\"), function_exists(\"current\"), function_
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(5) \"apple\"\nstring(1) \"a\"\nstring(4) \"book\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(4) \"cook\"\nstring(1) \"c\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(4) \"cook\"\nbool(false)\nbool(false)\nNULL\nstring(5) \"apple\"\nstring(1) \"a\"\nbool(false)\nNULL\nbool(false)\nbool(false)\nbool(false)\nint(3)\nint(4)\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(4)\n  [3]=>\n  int(5)\n}\nstring(5) \"fubar\"\narray(2) {\n  [3]=>\n  string(3) \"foo\"\n  [4]=>\n  string(3) \"bar\"\n}\nstring(2) \"ex\"\narray(3) {\n  [0]=>\n  string(4) \"four\"\n  [1]=>\n  string(4) \"nine\"\n  [\"z\"]=>\n  string(3) \"zed\"\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(2) {\n  [0]=>\n  int(30)\n  [1]=>\n  int(40)\n}\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+        "string(5) \"apple\"\nstring(1) \"a\"\nstring(4) \"book\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(4) \"cook\"\nstring(1) \"c\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(4) \"cook\"\nbool(false)\nbool(false)\nNULL\nstring(5) \"apple\"\nstring(1) \"a\"\nbool(false)\nNULL\nbool(false)\nbool(false)\nbool(false)\nint(3)\nint(4)\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(4)\n  [3]=>\n  int(5)\n}\nstring(5) \"fubar\"\narray(2) {\n  [3]=>\n  string(3) \"foo\"\n  [4]=>\n  string(3) \"bar\"\n}\nstring(2) \"ex\"\narray(3) {\n  [0]=>\n  string(4) \"four\"\n  [1]=>\n  string(4) \"nine\"\n  [\"z\"]=>\n  string(3) \"zed\"\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(2) {\n  [0]=>\n  int(30)\n  [1]=>\n  int(40)\n}\nint(2)\nint(2)\nint(3)\nint(2)\nint(1)\nint(20)\nint(10)\nint(20)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_path_cursor_and_single_mutators_to_native_binary() {
+    let root = temp_dir("ptn-native-array-path-cursor-mutators");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-path-cursor-mutators.php");
+    let output = root.join("array-path-cursor-mutators-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [[1, 2, 3], [\"a\", \"b\"]];\n\
+var_dump(next($items[0]));\n\
+var_dump(array_shift($items[0]));\n\
+var_dump(current($items[0]));\n\
+var_dump(array_pop($items[1]));\n\
+var_dump($items);\n\
+$source = [[10, 20]];\n\
+$copy = $source;\n\
+var_dump(array_shift($copy[0]));\n\
+var_dump($source[0]);\n\
+var_dump($copy[0]);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\nint(1)\nint(2)\nstring(1) \"b\"\narray(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    int(2)\n    [1]=>\n    int(3)\n  }\n  [1]=>\n  array(1) {\n    [0]=>\n    string(1) \"a\"\n  }\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(1) {\n  [0]=>\n  int(20)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_next_path"));
+    assert!(c_source.contains("ptn_runtime_array_shift_path"));
+    assert!(c_source.contains("ptn_runtime_array_pop_path"));
 }
 
 #[test]
@@ -9711,7 +9761,6 @@ fn parser_rejects_temporary_array_cursor_mutation_calls() {
     for (source, function) in [
         ("<?php next([1, 2]);", "next"),
         ("<?php var_dump(reset(array(1, 2)));", "reset"),
-        ("<?php $items = [[1], [2]]; end($items[0]);", "end"),
         (
             "<?php $items = [1, 2]; var_dump(prev(current($items)));",
             "prev",
@@ -9731,6 +9780,7 @@ fn parser_rejects_temporary_array_cursor_mutation_calls() {
     }
 
     parser::parse("<?php $items = [1, 2]; next(($items));").unwrap();
+    parser::parse("<?php $items = [[1], [2]]; end($items[0]);").unwrap();
 }
 
 #[test]
@@ -9742,10 +9792,6 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php array_unshift([1], 2);", "array_unshift"),
         ("<?php ksort([3 => \"c\", 1 => \"a\"]);", "ksort"),
         ("<?php shuffle([1, 2, 3]);", "shuffle"),
-        (
-            "<?php $items = [[1], [2]]; array_pop($items[0]);",
-            "array_pop",
-        ),
         (
             "<?php $items = [[1], [2]]; var_dump(array_shift(current($items)));",
             "array_shift",
@@ -9773,6 +9819,8 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
     parser::parse("<?php $items = [1]; array_unshift(($items), 0);").unwrap();
     parser::parse("<?php $items = [2 => \"b\", 1 => \"a\"]; ksort(($items));").unwrap();
     parser::parse("<?php $items = [1, 2]; shuffle(($items));").unwrap();
+    parser::parse("<?php $items = [[1], [2]]; array_pop($items[0]);").unwrap();
+    parser::parse("<?php $items = [[1], [2]]; array_shift($items[0]);").unwrap();
 }
 
 #[test]

@@ -5694,16 +5694,15 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         line: usize,
     ) -> Option<String> {
-        let ValueExpr::Load {
-            name: variable_name,
-            ..
-        } = arguments.first()?
-        else {
-            return None;
+        let first_argument = arguments.first()?;
+        let variable_name = match first_argument {
+            ValueExpr::Load { name, .. } => Some(name.as_str()),
+            _ => None,
         };
 
         if name.eq_ignore_ascii_case("array_walk") && (arguments.len() == 2 || arguments.len() == 3)
         {
+            let variable_name = variable_name?;
             let array_temp = self.emit_materialized_value(out, &arguments[0]);
             let callback_temp = self.emit_materialized_value(out, &arguments[1]);
             let userdata_temp = arguments
@@ -5762,21 +5761,65 @@ impl ValueEmitter {
         };
 
         if let Some(helper) = helper {
-            let array_temp = self.emit_materialized_value(out, &arguments[0]);
-            let result_temp = self.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ");
-            out.push_str(helper);
-            out.push_str("(&runtime, \"");
-            out.push_str(&c_string(variable_name));
-            out.push_str("\", ");
-            out.push_str(&array_temp);
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &array_temp);
-            return Some(result_temp);
+            if let Some(variable_name) = variable_name {
+                let array_temp = self.emit_materialized_value(out, &arguments[0]);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(helper);
+                out.push_str("(&runtime, \"");
+                out.push_str(&c_string(variable_name));
+                out.push_str("\", ");
+                out.push_str(&array_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &array_temp);
+                return Some(result_temp);
+            }
+
+            if let Some(ReferenceTarget::ArrayDim(target)) =
+                reference_array_dim_target_from_value(first_argument)
+            {
+                let path_helper = if name.eq_ignore_ascii_case("array_pop") {
+                    Some("ptn_runtime_array_pop_path")
+                } else if name.eq_ignore_ascii_case("array_shift") {
+                    Some("ptn_runtime_array_shift_path")
+                } else if name.eq_ignore_ascii_case("next") {
+                    Some("ptn_runtime_array_next_path")
+                } else if name.eq_ignore_ascii_case("end") {
+                    Some("ptn_runtime_array_end_path")
+                } else if name.eq_ignore_ascii_case("prev") {
+                    Some("ptn_runtime_array_prev_path")
+                } else if name.eq_ignore_ascii_case("reset") {
+                    Some("ptn_runtime_array_reset_path")
+                } else {
+                    None
+                }?;
+                let path = emit_array_path_segments(out, self, &target.dimensions);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(path_helper);
+                out.push_str("(&runtime, \"");
+                out.push_str(&c_string(&target.array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&target.line.to_string());
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                return Some(result_temp);
+            }
+
+            return None;
         }
 
+        let variable_name = variable_name?;
         let helper = if name.eq_ignore_ascii_case("array_push") {
             Some("ptn_runtime_array_push_variable")
         } else if name.eq_ignore_ascii_case("array_unshift") {

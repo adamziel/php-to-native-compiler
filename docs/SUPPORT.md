@@ -207,18 +207,22 @@ Post-RC architecture remains explicit rather than hidden:
 - `in_array()` over current ordered-array values, using shared loose equality
   or strict identity comparison and dereferencing references in both the needle
   and haystack entries.
-- Array cursor reads and moves over direct variable ordered arrays through
-  `current()`, `key()`, `reset()`, `end()`, `next()`, and `prev()`. Cursor-moving
-  calls are currently limited to direct variable arguments; temporary arrays,
-  array offsets, and other non-variable cursor mutation targets fail before
-  code generation with an explicit unsupported diagnostic.
+- Array cursor reads and moves over ordered arrays through `current()`, `key()`,
+  `reset()`, `end()`, `next()`, and `prev()`. Cursor-moving calls support direct
+  variables and variable-root array paths such as `$items[0]`, detaching shared
+  nested array payloads before mutation; temporary arrays and other
+  non-variable-root cursor mutation targets fail before code generation with an
+  explicit unsupported diagnostic.
 - Mutating array internals `array_pop($array)`, `array_push($array, ...)`,
   `array_shift($array)`, `array_unshift($array, ...)`, `ksort($array)`, and
-  `shuffle($array)` over direct variable ordered arrays. These calls detach
-  shared array payloads before mutation; `ksort()` uses ascending default key
-  order, and `shuffle()` reindexes values with integer keys. Temporary arrays,
-  array offsets, and other non-direct-variable mutation targets fail before
-  code generation with an explicit unsupported diagnostic.
+  `shuffle($array)` over direct variable ordered arrays. One-argument
+  `array_pop()` and `array_shift()` also support variable-root array paths such
+  as `$items[0]`, detaching shared nested array payloads before mutation.
+  `ksort()` uses ascending default key order, and `shuffle()` reindexes values
+  with integer keys. Temporary arrays, array paths for variadic
+  `array_push()`/`array_unshift()`, array paths for `ksort()`/`shuffle()`, and
+  other non-direct-variable mutation targets fail before code generation with
+  an explicit unsupported diagnostic.
 - Remaining sort-family by-reference array mutators such as `sort()`,
   `asort()`, `krsort()`, `usort()`, and `array_multisort()` remain unsupported
   and fail before code generation with an explicit unsupported diagnostic.

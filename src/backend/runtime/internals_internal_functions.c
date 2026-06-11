@@ -642,6 +642,80 @@ static PtnArray *ptn_internal_expect_mutable_array_variable_arg(
     return ptn_array_detach_value(&runtime->symbols.items[index].value);
 }
 
+static PtnArray *ptn_internal_expect_mutable_array_path_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    const char *variable_name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnValue null_value = ptn_null();
+    if (segment_count == 0) {
+        PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, variable_name);
+        PtnValue value = slot == NULL ? null_value : *slot;
+        return ptn_internal_expect_mutable_array_variable_arg(
+            runtime,
+            function_name,
+            position,
+            argument_name,
+            variable_name,
+            value
+        );
+    }
+
+    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, variable_name);
+    if (slot == NULL) {
+        return ptn_internal_expect_array_arg(runtime, function_name, position, argument_name, null_value);
+    }
+
+    PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, function_name, position, argument_name, *slot_value);
+    array = ptn_array_detach_value(slot_value);
+
+    for (size_t i = 0; i < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            return ptn_internal_expect_array_arg(runtime, function_name, position, argument_name, null_value);
+        }
+        ptn_array_path_emit_null_key_deprecation(runtime, segment, line, 1);
+        PtnArrayKey key = ptn_array_key_from_value(segment->value);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+        ptn_array_key_free(key);
+        if (entry == NULL) {
+            return ptn_internal_expect_array_arg(runtime, function_name, position, argument_name, null_value);
+        }
+
+        PtnValue *entry_value = entry->value.type == PTN_REFERENCE
+            ? &entry->value.as.reference->value
+            : &entry->value;
+        if (i + 1 == segment_count) {
+            PtnArray *leaf = ptn_internal_expect_array_arg(
+                runtime,
+                function_name,
+                position,
+                argument_name,
+                *entry_value
+            );
+            (void)leaf;
+            return ptn_array_detach_value(entry_value);
+        }
+
+        array = ptn_internal_expect_array_arg(
+            runtime,
+            function_name,
+            position,
+            argument_name,
+            *entry_value
+        );
+        array = ptn_array_detach_value(entry_value);
+    }
+
+    return ptn_internal_expect_array_arg(runtime, function_name, position, argument_name, null_value);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_pop_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -650,6 +724,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_pop_variable(PtnRuntime *runtime, c
         "array",
         name,
         value
+    );
+    return ptn_array_pop_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_pop_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "array_pop",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
     );
     return ptn_array_pop_value(array);
 }
@@ -680,6 +774,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shift_variable(PtnRuntime *runtime,
         "array",
         name,
         value
+    );
+    return ptn_array_shift_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_shift_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "array_shift",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
     );
     return ptn_array_shift_value(array);
 }
@@ -740,6 +854,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_next_variable(PtnRuntime *runtime, 
     return ptn_array_next_value(array);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_next_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "next",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    return ptn_array_next_value(array);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_end_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -748,6 +882,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_end_variable(PtnRuntime *runtime, c
         "array",
         name,
         value
+    );
+    return ptn_array_end_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_end_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "end",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
     );
     return ptn_array_end_value(array);
 }
@@ -764,6 +918,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_prev_variable(PtnRuntime *runtime, 
     return ptn_array_prev_value(array);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_prev_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "prev",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    return ptn_array_prev_value(array);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_reset_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -772,6 +946,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_reset_variable(PtnRuntime *runtime,
         "array",
         name,
         value
+    );
+    return ptn_array_reset_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_reset_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "reset",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
     );
     return ptn_array_reset_value(array);
 }
