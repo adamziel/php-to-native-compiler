@@ -36,6 +36,7 @@ pub enum TokenKind {
     False,
     Null,
     Variable(String),
+    Dollar,
     Equal,
     DoubleArrow,
     DoubleColon,
@@ -861,6 +862,13 @@ impl<'a> Lexer<'a> {
                 Some(start),
             ));
         };
+        if first == '$' || first == '{' {
+            self.tokens.push(Token {
+                kind: TokenKind::Dollar,
+                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+            });
+            return Ok(());
+        }
         if !is_ident_start(first) {
             return Err(Diagnostic::new(
                 "expected variable name after `$`",

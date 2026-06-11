@@ -204,6 +204,10 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    DynamicVariable {
+        name: Box<ValueExpr>,
+        line: usize,
+    },
     Assign {
         target: AssignmentTarget,
         op: AssignmentOp,
@@ -316,6 +320,10 @@ pub struct ArrayDimTarget {
 pub enum AssignmentTarget {
     Variable {
         name: String,
+        line: usize,
+    },
+    DynamicVariable {
+        name: Box<ValueExpr>,
         line: usize,
     },
     ArrayDim {
@@ -848,6 +856,12 @@ impl LoweringContext {
                 name: name.clone(),
                 line: span.line,
             },
+            AstAssignmentTarget::DynamicVariable { name, span } => {
+                AssignmentTarget::DynamicVariable {
+                    name: Box::new(self.lower_expr(name)),
+                    line: span.line,
+                }
+            }
             AstAssignmentTarget::ArrayDim(target) => AssignmentTarget::ArrayDim {
                 array: target.array.clone(),
                 dimensions: target
@@ -1058,7 +1072,8 @@ impl LoweringContext {
                     AssignmentOp::Assign,
                     self.lower_assignment_value(&name, op, value, line),
                 ),
-                AssignmentTarget::ArrayDim { .. }
+                AssignmentTarget::DynamicVariable { .. }
+                | AssignmentTarget::ArrayDim { .. }
                 | AssignmentTarget::Property { .. }
                 | AssignmentTarget::StaticProperty { .. }
                 | AssignmentTarget::List(_) => {
@@ -1092,6 +1107,10 @@ impl LoweringContext {
             Expr::Null(_) => ValueExpr::Null,
             Expr::Variable(name, span) => ValueExpr::Load {
                 name: name.clone(),
+                line: span.line,
+            },
+            Expr::DynamicVariable { name, span } => ValueExpr::DynamicVariable {
+                name: Box::new(self.lower_expr(name)),
                 line: span.line,
             },
             Expr::AnonymousFunction(function) => self.lower_anonymous_function(function),

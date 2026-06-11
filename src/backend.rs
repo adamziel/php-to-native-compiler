@@ -1869,6 +1869,9 @@ fn collect_assignment_target_runtime_requirements(
 ) {
     match target {
         AssignmentTarget::Variable { .. } => {}
+        AssignmentTarget::DynamicVariable { name, .. } => {
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
         AssignmentTarget::ArrayDim { dimensions, .. } => {
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
@@ -1921,6 +1924,9 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Load { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => {}
+        ValueExpr::DynamicVariable { name, .. } => {
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
         ValueExpr::Assign { target, value, .. } => {
             collect_assignment_target_runtime_requirements(target, functions, requirements);
             collect_value_runtime_requirements(value, functions, requirements);
@@ -2511,9 +2517,9 @@ trait AssignmentTargetLine {
 impl AssignmentTargetLine for AssignmentTarget {
     fn line(&self) -> usize {
         match self {
-            AssignmentTarget::Variable { line, .. } | AssignmentTarget::ArrayDim { line, .. } => {
-                *line
-            }
+            AssignmentTarget::Variable { line, .. }
+            | AssignmentTarget::DynamicVariable { line, .. }
+            | AssignmentTarget::ArrayDim { line, .. } => *line,
             AssignmentTarget::Property { line, .. }
             | AssignmentTarget::StaticProperty { line, .. } => *line,
             AssignmentTarget::List(target) => target.line,
@@ -2536,6 +2542,7 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
         ListAssignmentElementTarget::Value(target) => match target.as_ref() {
             AssignmentTarget::List(target) => list_assignment_has_reference(target),
             AssignmentTarget::Variable { .. }
+            | AssignmentTarget::DynamicVariable { .. }
             | AssignmentTarget::ArrayDim { .. }
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::StaticProperty { .. } => false,
@@ -2557,6 +2564,9 @@ fn list_assignment_references_variable(target: &ListAssignmentTarget, name: &str
 fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) -> bool {
     match target {
         AssignmentTarget::Variable { name: target, .. } => target == name,
+        AssignmentTarget::DynamicVariable { name: target, .. } => {
+            value_mentions_variable(target, name)
+        }
         AssignmentTarget::ArrayDim { array, .. } => array == name,
         AssignmentTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
         AssignmentTarget::StaticProperty { .. } => false,
@@ -2574,6 +2584,7 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
 fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
     match value {
         ValueExpr::Load { name: target, .. } => target == name,
+        ValueExpr::DynamicVariable { name: target, .. } => value_mentions_variable(target, name),
         ValueExpr::Assign { target, value, .. } => {
             assignment_target_mentions_variable(target, name)
                 || value_mentions_variable(value, name)
@@ -2749,6 +2760,48 @@ impl ValueEmitter {
         }
     }
 
+    fn emit_dynamic_variable_name(
+        &mut self,
+        out: &mut String,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let value_temp = self.emit_materialized_value(out, name);
+        let name_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&name_temp);
+        out.push_str(" = ptn_dynamic_variable_name(&runtime, ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &value_temp);
+        name_temp
+    }
+
+    fn emit_dynamic_variable_read(
+        &mut self,
+        out: &mut String,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let name_temp = self.emit_dynamic_variable_name(out, name, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_read_variable(&runtime, ");
+        out.push_str(&name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    free(");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
+        result_temp
+    }
+
     fn emit_assignment(
         &mut self,
         out: &mut String,
@@ -2760,6 +2813,11 @@ impl ValueEmitter {
             match target {
                 AssignmentTarget::Variable { name, .. } => {
                     return self.emit_coalesce_assignment(out, name, value);
+                }
+                AssignmentTarget::DynamicVariable { .. } => {
+                    unreachable!(
+                        "parser rejects null coalescing assignment for dynamic variable targets"
+                    );
                 }
                 AssignmentTarget::ArrayDim {
                     array,
@@ -2790,6 +2848,27 @@ impl ValueEmitter {
 
         if let AssignmentTarget::List(target) = target {
             return self.emit_list_assignment(out, target, value);
+        }
+
+        if let AssignmentTarget::DynamicVariable { name, line } = target {
+            let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+            let value_temp = self.emit_materialized_value(out, value);
+            out.push_str("    ptn_runtime_write_variable(&runtime, ");
+            out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&value_temp);
+            out.push_str(");\n");
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_value_clone(ptn_value_deref(");
+            out.push_str(&value_temp);
+            out.push_str("));\n");
+            out.push_str("    free(");
+            out.push_str(&name_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &value_temp);
+            return result_temp;
         }
 
         if let AssignmentTarget::Property {
@@ -3005,6 +3084,9 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
+            AssignmentTarget::DynamicVariable { .. } => {
+                unreachable!("parser rejects by-reference assignment to dynamic variable targets");
+            }
             AssignmentTarget::ArrayDim {
                 array,
                 dimensions,
@@ -3051,6 +3133,24 @@ impl ValueEmitter {
                 out.push_str(" = ptn_value_clone(ptn_value_deref(");
                 out.push_str(value_temp);
                 out.push_str("));\n");
+                result_temp
+            }
+            AssignmentTarget::DynamicVariable { name, line } => {
+                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                out.push_str("    ptn_runtime_write_variable(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(value_temp);
+                out.push_str(");\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                out.push_str(value_temp);
+                out.push_str("));\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
                 result_temp
             }
             AssignmentTarget::ArrayDim {
@@ -3531,6 +3631,9 @@ impl ValueEmitter {
                 c_string(&self.source_file),
                 line
             ),
+            ValueExpr::DynamicVariable { name, line } => {
+                self.emit_dynamic_variable_read(out, name, *line)
+            }
             ValueExpr::Constant(name) => {
                 format!("ptn_read_constant(&runtime, \"{}\")", c_string(name))
             }
@@ -4616,6 +4719,7 @@ impl ValueEmitter {
                 | ValueExpr::Array(_)
                 | ValueExpr::Closure { .. }
                 | ValueExpr::ArrayAccess { .. }
+                | ValueExpr::DynamicVariable { .. }
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }
                 | ValueExpr::MethodCall { .. }

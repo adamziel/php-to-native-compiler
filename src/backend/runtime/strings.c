@@ -159,6 +159,46 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
     return ptn_duplicate_string(buffer);
 }
 
+static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_STRING && ptn_string_has_embedded_nul(value.as.string)) {
+        ptn_emit_type_error(
+            &runtime->diagnostics,
+            "Unsupported dynamic variable name containing embedded NUL"
+        );
+        exit(255);
+    }
+
+    switch (value.type) {
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+            return ptn_value_to_string(value);
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_REFERENCE:
+            break;
+    }
+
+    (void)line;
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Unsupported dynamic variable name of type %s",
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_type_error(&runtime->diagnostics, message);
+    exit(255);
+}
+
 static PTN_UNUSED char *ptn_callable_function_name(PtnValue callable) {
     callable = ptn_value_deref(callable);
     if (callable.type == PTN_ARRAY && callable.as.array->len == 2) {

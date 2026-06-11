@@ -32,6 +32,11 @@ supports in generated native binaries.
   reads, scalar string casts, and concatenation paths as ordinary expressions.
 - Direct variable assignment and scalar reads through the generated runtime
   symbol table.
+- Variable-variable reads and ordinary assignments with `$$name`, `$$$name`,
+  and `${expr}` over scalar runtime names. Dynamic names are converted through
+  the shared scalar string-conversion path for `null`, booleans, integers,
+  floats, and strings; arrays, objects, closures, exceptions, and embedded-NUL
+  string names stop at an explicit unsupported-name diagnostic.
 - Assignment expressions for direct variables, array dimension/append lvalues,
   and list/short-array destructuring targets, including by-reference
   destructuring entries in the modeled reference-array subset.
@@ -593,13 +598,13 @@ supports in generated native binaries.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for integer-only operator conversion diagnostics, including bitwise,
   shift, and modulo diagnostics.
-- Object, variable-variable, append-form null-coalescing, property
-  null-coalescing expressions/`isset()`/`empty()`, property compound-assignment
-  operators outside modeled public-property `??=`, and static-property
-  compound/null-coalescing lvalues outside modeled direct reads/writes.
+- Object, dynamic-variable array-offset lvalues, append-form null-coalescing,
+  property null-coalescing expressions/`isset()`/`empty()`, property
+  compound-assignment operators outside modeled public-property `??=`, and
+  static-property compound/null-coalescing lvalues outside modeled direct
+  reads/writes.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.
 - Arrays, references, copy-on-write, globals, superglobals, classes, objects,
-  resources, exceptions, variable variables, includes, and dynamic
-  fallback.
+  resources, exceptions, includes, and broader dynamic fallback.

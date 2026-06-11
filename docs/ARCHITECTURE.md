@@ -34,7 +34,8 @@ Current runtime/compiler slices:
   hexadecimal `0x`/`0X` spellings into the existing integer/float AST literal
   paths.
 - Direct variables lower to generated C `PtnRuntime` symbol-table load/store
-  calls.
+  calls. Scalar variable variables lower to explicit dynamic-name evaluation
+  followed by the same runtime symbol-table read/write helpers.
 - Direct variable reads pass through a runtime helper that emits a generic
   undefined-variable warning before yielding `null`.
 - Scalar binary `+`, `-`, `*`, `/`, `%`, `.`, `&`, `^`, `|`, `<<`, and `>>` expressions lower
@@ -75,7 +76,8 @@ Current runtime/compiler slices:
   variable-root array offsets lower to ordinary value-expression concatenation:
   literal string segments, runtime variable/array reads, scalar string casts,
   and the existing boxed concat helper. Object/property interpolation,
-  variable variables, and arbitrary expressions remain outside this slice.
+  variable-variable interpolation, and arbitrary expressions remain outside
+  this slice.
 - Increment/decrement expression contexts are rejected while full PHP
   pre/post-increment value semantics are unsupported, so statement-form direct
   variable support is not confused with expression result behavior.
@@ -233,5 +235,5 @@ Near-term architecture targets:
   exception/finally edges.
 - Full PHP increment/decrement semantics, including expression result values,
   strings, booleans, arrays/objects, references, and copy-on-write behavior.
-- Explicit fallback boundaries for `eval`, variable variables, and runtime
-  symbol mutation.
+- Explicit fallback boundaries for `eval`, broader runtime-generated symbols,
+  and runtime symbol mutation beyond scalar variable-variable names.

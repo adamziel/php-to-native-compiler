@@ -6,8 +6,8 @@ diagnostic routing, Closure captures, expression-form `print`, static
 properties, inherited methods, property `??=`, loose object equality in
 `switch`, nested string-offset unset, braced interpolation, branch-condition
 assignment and named-argument reducers, scalar offset reducers, object
-`foreach`, class metadata, method callables/magic constants, cslashes, and COW
-evidence.
+`foreach`, class metadata, method callables/magic constants, cslashes, scalar
+variable variables, and COW evidence.
 
 ## Test Dashboard
 
@@ -43,7 +43,8 @@ assignment expressions including direct-variable compound branch/loop
 conditions, direct user-function named arguments, expression-form `print`,
 expression-level `@`, directory/file
 predicates, array-path snapshots, selected array/string internals,
-lvalue-reference calls, list/append assignment, method callables,
+lvalue-reference calls, list/append assignment, scalar variable-variable
+reads/ordinary assignments with unsupported-name diagnostics, method callables,
 `array_reduce()`/`array_walk()`, `array_count_values()`, `stdClass`, declared
 class/object method metadata and calls, `$this`, object `foreach`, scalar
 array-lvalue fatals with false-to-array deprecation, class/method predicates,
@@ -59,14 +60,16 @@ interfaces/traits, broader inheritance, magic methods, property compounds
 beyond `??=`, static-property compound/null-coalescing lvalues, destructors,
 exceptions, broader magic constants, reflection, unsupported internals,
 64-bit operator exactness, destructuring `foreach`, remaining string sub-path
-scalar offset-lvalue parity, and broader file APIs.
+scalar offset-lvalue parity, dynamic-variable array-offset lvalues, and broader
+file APIs.
 
 ## Verification
 
 Commands: focused Closure/`print`/interpolation/branch-condition assignment/
 named-argument/loose-object switch/addslashes/cslashes/object `foreach`/scalar
-offset/callable/metadata tests; `cargo check`; `cargo test static_property
---test compile_native`; `cargo fmt --check`; `cargo build --bin phpc`; exact
-`array_null_offset_deprecation.phpt` reducer; `cargo test`.
+offset/callable/metadata/scalar variable-variable tests; `cargo check`;
+`cargo test static_property --test compile_native`; `cargo fmt --check`;
+`cargo build --bin phpc`; exact `array_null_offset_deprecation.phpt` reducer;
+`cargo test`.
 PHPT runners resolve php-src via `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
 `.runtime/php-src-phpt`.

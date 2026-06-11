@@ -12541,6 +12541,106 @@ fn compile_defined_and_undefined_variable_reads_to_native_binary() {
 }
 
 #[test]
+fn lexer_accepts_variable_variable_tokens() {
+    let tokens = lexer::lex("<?php $$name; ${$name};").unwrap();
+    assert!(matches!(tokens[1].kind, TokenKind::Dollar));
+    assert!(matches!(&tokens[2].kind, TokenKind::Variable(name) if name == "name"));
+    assert!(matches!(tokens[4].kind, TokenKind::Dollar));
+    assert!(matches!(tokens[5].kind, TokenKind::LeftBrace));
+    assert!(matches!(&tokens[6].kind, TokenKind::Variable(name) if name == "name"));
+    assert!(matches!(tokens[7].kind, TokenKind::RightBrace));
+}
+
+#[test]
+fn parser_accepts_dynamic_variable_reads_and_assignments() {
+    let program = parser::parse("<?php $$name = 1; echo ${$name};").unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected dynamic variable assignment expression");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::DynamicVariable { name, .. },
+            op: AssignmentOp::Assign,
+            ..
+        } if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::DynamicVariable { name, .. }
+            if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+    ));
+}
+
+#[test]
+fn compile_dynamic_variable_reads_and_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable.php");
+    let output = root.join("dynamic-variable-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function mark($value) { echo $value, \"\\n\"; return $value; }\n\
+$name = \"target\";\n\
+$target = \"initial\";\n\
+echo $$name, \"\\n\";\n\
+$$name = \"updated\";\n\
+echo $target, \"\\n\";\n\
+${\"other\"} = 7;\n\
+echo $other, \"\\n\";\n\
+$intName = 123;\n\
+${$intName} = \"number\";\n\
+echo ${\"123\"}, \"\\n\";\n\
+$boolName = true;\n\
+${$boolName} = \"truthy\";\n\
+echo ${\"1\"}, \"\\n\";\n\
+$nullName = null;\n\
+${$nullName} = \"empty\";\n\
+echo ${\"\"}, \"\\n\";\n\
+${mark(\"ordered\")} = mark(\"rhs\");\n\
+echo $ordered, \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "initial\nupdated\n7\nnumber\ntruthy\nempty\nordered\nrhs\nrhs\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn dynamic_variable_non_scalar_names_report_diagnostic() {
+    let root = temp_dir("ptn-native-dynamic-variable-unsupported-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-unsupported-name.php");
+    let output = root.join("dynamic-variable-unsupported-name-bin");
+    fs::write(&input, "<?php $name = []; echo $$name;").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Fatal error: Unsupported dynamic variable name of type array\n"
+    );
+}
+
+#[test]
 fn compile_many_runtime_symbols_to_native_binary() {
     let root = temp_dir("ptn-native-many-runtime-symbols");
     fs::create_dir_all(&root).unwrap();

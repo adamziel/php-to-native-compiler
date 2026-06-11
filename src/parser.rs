@@ -1616,6 +1616,7 @@ impl Parser {
             TokenKind::False => Ok(Expr::Bool(false, token.span)),
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::Dollar => self.parse_dynamic_variable_expr(token.span),
             TokenKind::Function => self.parse_anonymous_function_expr(token.span),
             TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Identifier(name) => {
@@ -1677,6 +1678,31 @@ impl Parser {
             TokenKind::LeftBracket => self.parse_array_literal(token.span),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
+    }
+
+    fn parse_dynamic_variable_expr(&mut self, dollar_span: SourceSpan) -> Result<Expr> {
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            self.advance();
+            let name = self.parse_expr()?;
+            let right_span = self.expect_right_brace()?;
+            return Ok(Expr::DynamicVariable {
+                name: Box::new(name),
+                span: combine_spans(dollar_span, right_span),
+            });
+        }
+
+        if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::Dollar) {
+            let name = self.parse_primary_expr()?;
+            return Ok(Expr::DynamicVariable {
+                span: combine_spans(dollar_span, name.span()),
+                name: Box::new(name),
+            });
+        }
+
+        Err(Diagnostic::new(
+            "expected variable name or braced expression after `$`",
+            Some(self.peek().span),
+        ))
     }
 
     fn parse_static_member_expr(
@@ -2100,6 +2126,7 @@ impl Parser {
                 | TokenKind::False
                 | TokenKind::Null
                 | TokenKind::Variable(_)
+                | TokenKind::Dollar
                 | TokenKind::Function
                 | TokenKind::New
                 | TokenKind::Identifier(_)
@@ -2528,6 +2555,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::False => "false",
         TokenKind::Null => "null",
         TokenKind::Variable(_) => "variable",
+        TokenKind::Dollar => "$",
         TokenKind::Equal => "=",
         TokenKind::DoubleArrow => "=>",
         TokenKind::DoubleColon => "::",
@@ -2727,6 +2755,7 @@ fn validate_recursive_reference_assignment_value(
 ) -> Result<()> {
     let variable = match target {
         AssignmentTarget::Variable { name, .. } => name,
+        AssignmentTarget::DynamicVariable { .. } => return Ok(()),
         AssignmentTarget::ArrayDim(target) => &target.array,
         AssignmentTarget::Property { .. } => return Ok(()),
         AssignmentTarget::StaticProperty { .. } => return Ok(()),
@@ -2776,6 +2805,9 @@ fn expr_array_literal_reference_to_variable(
         }
         | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
+        }
+        Expr::DynamicVariable { name, .. } => {
+            expr_array_literal_reference_to_variable(name, variable)
         }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
@@ -3083,6 +3115,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         Expr::Print {
             expression: expr, ..
         }
+        | Expr::DynamicVariable { name: expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
@@ -3719,6 +3752,9 @@ fn reference_array_dim_target_from_expr(
 fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
     match expr {
         Expr::Variable(name, span) => Ok(AssignmentTarget::Variable { name, span }),
+        Expr::DynamicVariable { name, span } => {
+            Ok(AssignmentTarget::DynamicVariable { name, span })
+        }
         Expr::ArrayAccess { .. } => Ok(AssignmentTarget::ArrayDim(array_dim_target_from_expr(
             expr,
         )?)),
@@ -3785,6 +3821,10 @@ fn validate_coalesce_assignment_target(
 
     match target {
         AssignmentTarget::Variable { .. } => Ok(()),
+        AssignmentTarget::DynamicVariable { .. } => Err(Diagnostic::new(
+            "null coalescing assignment currently supports direct variables and array/string offsets",
+            Some(span),
+        )),
         AssignmentTarget::ArrayDim(target) => {
             if target.dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
@@ -3819,7 +3859,8 @@ fn validate_expression_assignment_target(
 
     match target {
         AssignmentTarget::Variable { .. } => Ok(()),
-        AssignmentTarget::ArrayDim(_)
+        AssignmentTarget::DynamicVariable { .. }
+        | AssignmentTarget::ArrayDim(_)
         | AssignmentTarget::Property { .. }
         | AssignmentTarget::StaticProperty { .. }
         | AssignmentTarget::List(_) => Err(Diagnostic::new(
@@ -3842,6 +3883,12 @@ fn validate_reference_assignment_target_source(
                     Some(*span),
                 ));
             }
+        }
+        AssignmentTarget::DynamicVariable { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
         }
         AssignmentTarget::ArrayDim(target) => {
             if reference_source_is_variable(source, &target.array) {
@@ -3963,6 +4010,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::Print {
             expression: target, ..
         }
+        | Expr::DynamicVariable { name: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::Cast { expr: target, .. }
         | Expr::Grouped { expr: target, .. } => reject_append_array_read(target)?,
@@ -4039,6 +4087,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         }
         Expr::InterpolatedString(_, _)
         | Expr::Variable(_, _)
+        | Expr::DynamicVariable { .. }
         | Expr::Assign { .. }
         | Expr::AssignRef { .. }
         | Expr::Print { .. }

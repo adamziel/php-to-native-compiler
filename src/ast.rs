@@ -240,6 +240,10 @@ pub enum AssignmentTarget {
         name: String,
         span: SourceSpan,
     },
+    DynamicVariable {
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
     ArrayDim(ArrayDimTarget),
     Property {
         receiver: Box<Expr>,
@@ -317,6 +321,10 @@ pub enum Expr {
     Bool(bool, SourceSpan),
     Null(SourceSpan),
     Variable(String, SourceSpan),
+    DynamicVariable {
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
     AnonymousFunction(AnonymousFunction),
     Assign {
         target: AssignmentTarget,
@@ -498,6 +506,7 @@ impl Expr {
             | Expr::Bool(_, span)
             | Expr::Null(span)
             | Expr::Variable(_, span)
+            | Expr::DynamicVariable { span, .. }
             | Expr::Constant(_, span)
             | Expr::MagicConstant(_, span) => *span,
             Expr::AnonymousFunction(function) => function.span,
