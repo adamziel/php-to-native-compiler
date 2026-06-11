@@ -4181,6 +4181,17 @@ static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, co
     );
 }
 
+static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (ptn_is_truthy(args[0])) {
+        return ptn_bool(1);
+    }
+
+    char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("assertion failed");
+    ptn_throw_exception(runtime, "AssertionError", message);
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(const char *name);
@@ -4226,6 +4237,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
         { "array_walk", 2, 3, ptn_internal_array_walk },
+        { "assert", 1, 2, ptn_internal_assert },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "call_user_func", 1, PTN_VARIADIC_ARGS, ptn_internal_call_user_func },

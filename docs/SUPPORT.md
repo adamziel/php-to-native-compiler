@@ -498,6 +498,10 @@ Post-RC architecture remains explicit rather than hidden:
   method array callable values, including inherited public object methods,
   supported `__call` fallback, and the optional syntax-only flag. The third
   by-reference callable-name output parameter is not yet supported.
+- `assert()` over current boxed assertion expressions. Truthy assertions return
+  `true`; falsey assertions throw a modeled `AssertionError`. One-argument
+  direct calls carry a compiler-generated default assertion message from the
+  parsed expression tree.
 - `define()` creates runtime constants over the current boxed value subset,
   returning `false` with a warning when the requested name is already defined.
   Its legacy third `$case_insensitive` argument is accepted for PHP 8 parity:

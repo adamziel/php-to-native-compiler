@@ -762,13 +762,12 @@ impl<'a> LoweringContext<'a> {
                     argument_names,
                     span,
                 } => {
+                    let (arguments, argument_names) =
+                        self.lower_internal_call_arguments(name, arguments, argument_names);
                     instructions.push(Instruction::InternalCall {
                         name: name.clone(),
-                        arguments: arguments
-                            .iter()
-                            .map(|argument| self.lower_expr(argument))
-                            .collect(),
-                        argument_names: argument_names.clone(),
+                        arguments,
+                        argument_names,
                         line: span.line,
                     });
                 }
@@ -1314,15 +1313,16 @@ impl<'a> LoweringContext<'a> {
                 arguments,
                 argument_names,
                 span,
-            } => ValueExpr::InternalCall {
-                name: name.clone(),
-                arguments: arguments
-                    .iter()
-                    .map(|argument| self.lower_expr(argument))
-                    .collect(),
-                argument_names: argument_names.clone(),
-                line: span.line,
-            },
+            } => {
+                let (arguments, argument_names) =
+                    self.lower_internal_call_arguments(name, arguments, argument_names);
+                ValueExpr::InternalCall {
+                    name: name.clone(),
+                    arguments,
+                    argument_names,
+                    line: span.line,
+                }
+            }
             Expr::DynamicCall {
                 callee,
                 arguments,
@@ -1432,6 +1432,32 @@ impl<'a> LoweringContext<'a> {
             }
         }
     }
+
+    fn lower_internal_call_arguments(
+        &mut self,
+        name: &str,
+        arguments: &[Expr],
+        argument_names: &[Option<String>],
+    ) -> (Vec<ValueExpr>, Vec<Option<String>>) {
+        let mut lowered_arguments: Vec<_> = arguments
+            .iter()
+            .map(|argument| self.lower_expr(argument))
+            .collect();
+        let mut lowered_names = argument_names.to_vec();
+
+        if name.eq_ignore_ascii_case("assert")
+            && arguments.len() == 1
+            && argument_names.iter().all(Option::is_none)
+        {
+            lowered_arguments.push(ValueExpr::String(format!(
+                "assert({})",
+                assertion_expr_text(&arguments[0])
+            )));
+            lowered_names.push(None);
+        }
+
+        (lowered_arguments, lowered_names)
+    }
 }
 
 fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr {
@@ -1474,6 +1500,286 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
         };
     }
     expr
+}
+
+fn assertion_expr_text(expr: &Expr) -> String {
+    match expr {
+        Expr::String(value, _) => format!("{value:?}"),
+        Expr::InterpolatedString(_, _) => "\"\"".to_string(),
+        Expr::Int(value, _) => value.to_string(),
+        Expr::Float(value, _) => value.to_string(),
+        Expr::Bool(value, _) => value.to_string(),
+        Expr::Null(_) => "null".to_string(),
+        Expr::Variable(name, _) => format!("${name}"),
+        Expr::DynamicVariable { name, .. } => format!("$${}", assertion_expr_text(name)),
+        Expr::Constant(name, _) => name.clone(),
+        Expr::MagicConstant(kind, _) => assertion_magic_constant_text(*kind).to_string(),
+        Expr::IncDec {
+            name, op, result, ..
+        } => assertion_inc_dec_text(name, *op, *result),
+        Expr::Assign {
+            target, op, value, ..
+        } => format!(
+            "{} {} {}",
+            assertion_assignment_target_text(target),
+            assertion_assignment_op_text(*op),
+            assertion_expr_text(value)
+        ),
+        Expr::AssignRef { target, source, .. } => format!(
+            "{} =& {}",
+            assertion_assignment_target_text(target),
+            assertion_expr_text(source)
+        ),
+        Expr::Call {
+            name, arguments, ..
+        } => format!("{}({})", name, assertion_argument_list_text(arguments)),
+        Expr::DynamicCall {
+            callee, arguments, ..
+        } => format!(
+            "{}({})",
+            assertion_expr_text(callee),
+            assertion_argument_list_text(arguments)
+        ),
+        Expr::MethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => format!(
+            "{}->{}({})",
+            assertion_expr_text(receiver),
+            name,
+            assertion_argument_list_text(arguments)
+        ),
+        Expr::NewObject {
+            class_name,
+            arguments,
+            ..
+        } => format!(
+            "new {class_name}({})",
+            assertion_argument_list_text(arguments)
+        ),
+        Expr::PropertyFetch { receiver, name, .. } => {
+            format!("{}->{name}", assertion_expr_text(receiver))
+        }
+        Expr::StaticPropertyFetch {
+            class_name, name, ..
+        } => format!("{class_name}::${name}"),
+        Expr::Array { elements, .. } => format!(
+            "[{}]",
+            elements
+                .iter()
+                .map(assertion_array_element_text)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expr::ArrayAccess { array, index, .. } => {
+            let index = index
+                .as_ref()
+                .map(|index| assertion_expr_text(index))
+                .unwrap_or_default();
+            format!("{}[{index}]", assertion_expr_text(array))
+        }
+        Expr::Isset { targets, .. } => {
+            format!("isset({})", assertion_argument_list_text(targets))
+        }
+        Expr::Empty { target, .. } => format!("empty({})", assertion_expr_text(target)),
+        Expr::Print { expression, .. } => format!("print {}", assertion_expr_text(expression)),
+        Expr::Include { kind, path, .. } => {
+            format!(
+                "{} {}",
+                assertion_include_kind_text(*kind),
+                assertion_expr_text(path)
+            )
+        }
+        Expr::Unary { op, expr, .. } => {
+            format!(
+                "{}{}",
+                assertion_unary_op_text(*op),
+                assertion_expr_text(expr)
+            )
+        }
+        Expr::Cast { kind, expr, .. } => {
+            format!(
+                "({}) {}",
+                assertion_cast_kind_text(*kind),
+                assertion_expr_text(expr)
+            )
+        }
+        Expr::Binary {
+            op, left, right, ..
+        } => format!(
+            "{} {} {}",
+            assertion_expr_text(left),
+            assertion_binary_op_text(*op),
+            assertion_expr_text(right)
+        ),
+        Expr::Grouped { expr, .. } => format!("({})", assertion_expr_text(expr)),
+        Expr::AnonymousFunction(_) => "function()".to_string(),
+    }
+}
+
+fn assertion_argument_list_text(arguments: &[Expr]) -> String {
+    arguments
+        .iter()
+        .map(assertion_expr_text)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn assertion_array_element_text(element: &AstArrayElement) -> String {
+    let value = match &element.value {
+        AstArrayElementValue::Value(value) => assertion_expr_text(value),
+        AstArrayElementValue::Reference(target) => {
+            format!("&{}", assertion_reference_target_text(target))
+        }
+    };
+    if let Some(key) = &element.key {
+        format!("{} => {value}", assertion_expr_text(key))
+    } else {
+        value
+    }
+}
+
+fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
+    match target {
+        AstAssignmentTarget::Variable { name, .. } => format!("${name}"),
+        AstAssignmentTarget::DynamicVariable { name, .. } => {
+            format!("$${}", assertion_expr_text(name))
+        }
+        AstAssignmentTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
+        AstAssignmentTarget::Property { receiver, name, .. } => {
+            format!("{}->{name}", assertion_expr_text(receiver))
+        }
+        AstAssignmentTarget::StaticProperty {
+            class_name, name, ..
+        } => format!("{class_name}::${name}"),
+        AstAssignmentTarget::List(_) => "list(...)".to_string(),
+    }
+}
+
+fn assertion_array_dim_target_text(target: &AstArrayDimTarget) -> String {
+    let mut text = format!("${}", target.array);
+    for dimension in &target.dimensions {
+        let index = dimension
+            .as_ref()
+            .map(assertion_expr_text)
+            .unwrap_or_default();
+        text.push('[');
+        text.push_str(&index);
+        text.push(']');
+    }
+    text
+}
+
+fn assertion_reference_target_text(target: &AstReferenceTarget) -> String {
+    match target {
+        AstReferenceTarget::Variable { name, .. } => format!("${name}"),
+        AstReferenceTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
+    }
+}
+
+fn assertion_assignment_op_text(op: AssignmentOp) -> &'static str {
+    match op {
+        AssignmentOp::Assign => "=",
+        AssignmentOp::AddAssign => "+=",
+        AssignmentOp::SubtractAssign => "-=",
+        AssignmentOp::MultiplyAssign => "*=",
+        AssignmentOp::PowerAssign => "**=",
+        AssignmentOp::DivideAssign => "/=",
+        AssignmentOp::ModuloAssign => "%=",
+        AssignmentOp::ConcatAssign => ".=",
+        AssignmentOp::BitwiseAndAssign => "&=",
+        AssignmentOp::BitwiseOrAssign => "|=",
+        AssignmentOp::BitwiseXorAssign => "^=",
+        AssignmentOp::ShiftLeftAssign => "<<=",
+        AssignmentOp::ShiftRightAssign => ">>=",
+        AssignmentOp::CoalesceAssign => "??=",
+    }
+}
+
+fn assertion_binary_op_text(op: AstBinaryOp) -> &'static str {
+    match op {
+        AstBinaryOp::Add => "+",
+        AstBinaryOp::Subtract => "-",
+        AstBinaryOp::Multiply => "*",
+        AstBinaryOp::Power => "**",
+        AstBinaryOp::Divide => "/",
+        AstBinaryOp::Modulo => "%",
+        AstBinaryOp::Concat => ".",
+        AstBinaryOp::Coalesce => "??",
+        AstBinaryOp::ShiftLeft => "<<",
+        AstBinaryOp::ShiftRight => ">>",
+        AstBinaryOp::Equal => "==",
+        AstBinaryOp::NotEqual => "!=",
+        AstBinaryOp::Spaceship => "<=>",
+        AstBinaryOp::Identical => "===",
+        AstBinaryOp::NotIdentical => "!==",
+        AstBinaryOp::Less => "<",
+        AstBinaryOp::LessEqual => "<=",
+        AstBinaryOp::Greater => ">",
+        AstBinaryOp::GreaterEqual => ">=",
+        AstBinaryOp::BitwiseAnd => "&",
+        AstBinaryOp::BitwiseXor => "^",
+        AstBinaryOp::BitwiseOr => "|",
+        AstBinaryOp::And => "&&",
+        AstBinaryOp::Xor => "xor",
+        AstBinaryOp::Or => "||",
+    }
+}
+
+fn assertion_unary_op_text(op: AstUnaryOp) -> &'static str {
+    match op {
+        AstUnaryOp::Positive => "+",
+        AstUnaryOp::Negate => "-",
+        AstUnaryOp::Not => "!",
+        AstUnaryOp::BitwiseNot => "~",
+        AstUnaryOp::ErrorSuppress => "@",
+    }
+}
+
+fn assertion_inc_dec_text(name: &str, op: AstIncDecOp, result: AstIncDecResult) -> String {
+    let op = match op {
+        AstIncDecOp::Increment => "++",
+        AstIncDecOp::Decrement => "--",
+    };
+    match result {
+        AstIncDecResult::Pre => format!("{op}${name}"),
+        AstIncDecResult::Post => format!("${name}{op}"),
+    }
+}
+
+fn assertion_cast_kind_text(kind: AstCastKind) -> &'static str {
+    match kind {
+        AstCastKind::Int => "int",
+        AstCastKind::Integer => "integer",
+        AstCastKind::Float => "float",
+        AstCastKind::Double => "double",
+        AstCastKind::String => "string",
+        AstCastKind::Binary => "binary",
+        AstCastKind::Bool => "bool",
+        AstCastKind::Boolean => "boolean",
+    }
+}
+
+fn assertion_magic_constant_text(kind: AstMagicConstantKind) -> &'static str {
+    match kind {
+        AstMagicConstantKind::File => "__FILE__",
+        AstMagicConstantKind::Dir => "__DIR__",
+        AstMagicConstantKind::Line => "__LINE__",
+        AstMagicConstantKind::Function => "__FUNCTION__",
+        AstMagicConstantKind::Class => "__CLASS__",
+        AstMagicConstantKind::Method => "__METHOD__",
+        AstMagicConstantKind::Trait => "__TRAIT__",
+        AstMagicConstantKind::Namespace => "__NAMESPACE__",
+    }
+}
+
+fn assertion_include_kind_text(kind: crate::ast::IncludeKind) -> &'static str {
+    match kind {
+        crate::ast::IncludeKind::Include => "include",
+        crate::ast::IncludeKind::Require => "require",
+    }
 }
 
 fn lower_interpolated_array_access(

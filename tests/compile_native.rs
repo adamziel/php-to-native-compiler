@@ -6786,6 +6786,37 @@ fn compile_internal_function_registry_lookup_edges_to_native_binary() {
 }
 
 #[test]
+fn compile_assert_internal_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-internal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-internal.php");
+    let output = root.join("assert-internal-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    assert(false && ($a **= 2));
+} catch (AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', \"\\n\";
+}
+assert(true);
+var_dump(function_exists(\"assert\"));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "assert(): assert(false && ($a **= 2)) failed\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_int_constants_to_native_binary() {
     let root = temp_dir("ptn-native-php-int-constants");
     fs::create_dir_all(&root).unwrap();

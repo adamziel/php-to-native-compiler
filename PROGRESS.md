@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-11T18:52Z
-Measured: `ptn-v8dv` rebased on `origin/master` at `338ddcd7d`.
+Refresh: 2026-06-11T19:02Z
+Measured: `ptn-h1je` rebased on `origin/master` at `ed3c5e160`.
 `array_column()` support is integrated. `array_filter()` rejects unknown mode
 values with the modeled PHP `ValueError`. Foreach non-array diagnostics spell
 boolean operands as `false given` or `true given`. Shared deprecation
@@ -24,8 +24,10 @@ static-array, and object-array callable subset. `phpc -d precision=N` drives
 scalar float stringification for generated native execution, and `var_dump()`
 now uses PHP-style fixed spelling for integer-valued finite floats below
 `1e17` while preserving exponent spelling for large and non-integer exponent
-cases. Exact `strlen.phpt` still fails on object `__toString` and interpolation
-diagnostic ordering.
+cases. `assert()` is modeled as an internal that returns `true` for truthy
+assertions and throws catchable `AssertionError` with compiler-generated default
+assertion text for one-argument direct calls. Exact `strlen.phpt` still fails
+on object `__toString` and interpolation diagnostic ordering.
 
 ## RC Surface
 
@@ -41,7 +43,8 @@ string-internal argument `TypeError` boundaries, inline HTML output across PHP
 blocks, string-offset assign-op diagnostics, public `__call` fallback for
 object calls/callables, `is_callable()` subset validation, `phpc -d
 precision=N` scalar float stringification, current scalar `var_dump()` float
-spelling, plain heredoc/nowdoc literals, and string interpolation slices.
+spelling, `assert()`/`AssertionError`, plain heredoc/nowdoc literals, and
+string interpolation slices.
 
 The RC demo corpus exercises scalar control flow, string internals, arrays plus
 `array_combine`, `array_filter`, and `array_chunk`, top-level functions, public
@@ -52,10 +55,10 @@ class/object shells, direct static properties, and public property `??=`.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 460 | 460 | 0 |
+| Native/compiler Rust suite | 461 | 461 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 181 | 19 |
-| PHPT Zend rows | 76 | 73 | 3 |
+| PHPT bounded manifest | 200 | 182 | 18 |
+| PHPT Zend rows | 76 | 74 | 2 |
 | PHPT ext/standard rows | 77 | 68 | 9 |
 | PHPT tests/basic+func+lang | 45 | 38 | 7 |
 | PHPT other rows | 2 | 2 | 0 |
@@ -75,6 +78,8 @@ class/object shells, direct static properties, and public property `??=`.
 - `ptn-lrty.6` plus `ptn-r52`: 2 control-flow/foreach/lang rows remain after
   `foreachLoop.003.phpt` is covered; `tests/lang/024.phpt` now reaches the
   dynamic-variable array-offset lvalue blocker after inline HTML.
+- `ptn-h1je`: `Zend/tests/ast/zend-pow-assign.phpt` is covered by modeled
+  `assert()`; remaining Zend AST rows need unrelated language coverage.
 
 ## Post-RC Architecture
 
@@ -88,25 +93,28 @@ compound/static lvalues beyond public property `??=`, exceptions, resources,
 dynamic include/include_once behavior, heredoc interpolation/flexible
 indentation, unsupported internals, exact 64-bit operator/diagnostic parity,
 remaining scalar offset-lvalue parity, non-direct-variable or non-numeric
-inc/dec parity, and remaining PHP float formatting edge cases outside the
-current scalar `var_dump()` slice.
+inc/dec parity, remaining PHP float formatting edge cases outside the current
+scalar `var_dump()` slice, and advanced assertion configuration side effects
+beyond the current direct-call expression text.
 
 ## Verification
 
 Evidence: bounded base `summary-20260611T182854Z.txt` (180/200) plus exact
-`tests/lang/operators/add_variationStr.phpt`, COW PHPT
+`tests/lang/operators/add_variationStr.phpt` and
+`Zend/tests/ast/zend-pow-assign.phpt`, COW PHPT
 `summary-20260611T182117Z.txt` (29/29), callback
 `summary-20260611T161926Z.txt` (2/2), native smoke, and post-merge COW gate.
 Earlier `ptn-lu3y` frontier evidence, bounded `summary-20260611T173724Z.txt`
 (179/200) and COW `run-20260611T174736Z.log` (29/29), is superseded by the
 current dashboard after subsequent RC slices. `ptn-qhla`, `ptn-en6v`,
 `ptn-dzgg`, `ptn-p0y1`, `ptn-lrty.8`, `ptn-29og`, `ptn-lrty.6`,
-`ptn-lrty.4`, `ptn-lrty.5`, `ptn-lrty.9`, `ptn-wk0a`, `ptn-3i3q`, and
-`ptn-v8dv` add the current array, foreach, deprecation, constructor,
-arithmetic, inline-HTML, string-diagnostic, string-offset diagnostic,
-magic-callable, `is_callable()`, float-precision, and `var_dump()` float rows.
-Focused `ptn-v8dv` verification covers
-`var_dump_float_exponents_use_php_spelling_in_native_binary`, the `ptn-wk0a`
-precision reducer, and exact `tests/lang/operators/add_variationStr.phpt`;
-final gates cover `cargo fmt --check`, `git diff --check`, `cargo test`,
-native smoke matrix, and post-merge COW gate.
+`ptn-lrty.4`, `ptn-lrty.5`, `ptn-lrty.9`, `ptn-wk0a`, `ptn-3i3q`,
+`ptn-v8dv`, and `ptn-h1je` add the current array, foreach, deprecation,
+constructor, arithmetic, inline-HTML, string-diagnostic, string-offset
+diagnostic, magic-callable, `is_callable()`, float-precision, `var_dump()`
+float, and `assert()` rows. Focused `ptn-h1je` verification covers
+`compile_assert_internal_to_native_binary`, the `ptn-wk0a` precision reducer,
+the `ptn-3i3q` string-offset reducer, exact
+`Zend/tests/ast/zend-pow-assign.phpt`, and exact
+`Zend/tests/offset_assign.phpt`; final gates cover `cargo fmt --check`,
+`git diff --check`, `cargo test`, native smoke matrix, and post-merge COW gate.
