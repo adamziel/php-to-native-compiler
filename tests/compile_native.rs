@@ -19869,6 +19869,58 @@ string(17) \"resource (closed)\"\n"
 }
 
 #[test]
+fn compile_stream_get_meta_data_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-get-meta-data");
+    fs::create_dir_all(&root).unwrap();
+    let data = root.join("payload.txt");
+    fs::write(&data, "payload").unwrap();
+    let input = root.join("stream-get-meta-data.php");
+    let output = root.join("stream-get-meta-data-bin");
+    let data_path = data.to_string_lossy();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$fp = fopen(\"{}\", \"r\");\n\
+$meta = stream_get_meta_data($fp);\n\
+var_dump(function_exists(\"stream_get_meta_data\"));\n\
+var_dump($meta[\"timed_out\"], $meta[\"blocked\"], $meta[\"eof\"]);\n\
+var_dump($meta[\"wrapper_type\"], $meta[\"stream_type\"], $meta[\"mode\"]);\n\
+var_dump($meta[\"unread_bytes\"], $meta[\"seekable\"], str_contains($meta[\"uri\"], \"payload.txt\"));\n\
+var_dump(fclose($fp));\n\
+try {{\n\
+    stream_get_meta_data($fp);\n\
+}} catch (TypeError $e) {{\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}}",
+            data_path
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+string(9) \"plainfile\"\n\
+string(5) \"STDIO\"\n\
+string(1) \"r\"\n\
+int(0)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_namespaced_class_aliases_to_native_binary() {
     let root = temp_dir("ptn-native-namespace-class-aliases");
     fs::create_dir_all(&root).unwrap();

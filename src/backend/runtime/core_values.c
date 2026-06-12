@@ -319,6 +319,8 @@ struct PtnResource {
     int64_t id;
     const char *type_name;
     FILE *stream;
+    char *stream_uri;
+    char *stream_mode;
 };
 
 typedef struct {
@@ -402,6 +404,7 @@ static PtnCowDebugCounters ptn_cow_debug_counters;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
 static void ptn_abort_out_of_memory(void);
+static PTN_UNUSED char *ptn_duplicate_string(const char *string);
 static void ptn_symbols_free(PtnSymbolTable *symbols);
 static PTN_UNUSED void ptn_cow_debug_note_string_alloc(void);
 static PTN_UNUSED void ptn_cow_debug_note_string_free(void);
@@ -738,7 +741,7 @@ static PTN_UNUSED PtnValue ptn_exception_borrow(PtnException *exception) {
 
 static int64_t ptn_next_resource_id = 5;
 
-static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream) {
+static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char *uri, const char *mode) {
     PtnResource *resource = malloc(sizeof(PtnResource));
     if (resource == NULL) {
         if (stream != NULL) {
@@ -753,6 +756,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream) {
     resource->id = ptn_next_resource_id++;
     resource->type_name = "stream";
     resource->stream = stream;
+    resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
+    resource->stream_mode = mode == NULL ? NULL : ptn_duplicate_string(mode);
     return resource;
 }
 
@@ -786,6 +791,8 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
         return;
     }
     ptn_resource_close(resource);
+    free(resource->stream_uri);
+    free(resource->stream_mode);
     free(resource);
 }
 

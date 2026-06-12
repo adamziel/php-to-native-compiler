@@ -4188,6 +4188,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "file_exists"
             | "file_put_contents"
             | "fopen"
+            | "stream_get_meta_data"
             | "get_cfg_var"
             | "get_loaded_extensions"
             | "highlight_file"

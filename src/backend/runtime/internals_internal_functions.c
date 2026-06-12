@@ -5428,9 +5428,10 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_bool(0);
     }
 
+    PtnValue resource = ptn_resource(ptn_resource_new_stream(stream, path, mode));
     free(mode);
     free(path);
-    return ptn_resource(ptn_resource_new_stream(stream));
+    return resource;
 }
 
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -5456,6 +5457,59 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
     ptn_resource_close(value.as.resource);
     (void)line;
     return ptn_bool(1);
+}
+
+static void ptn_stream_meta_set(PtnArray *array, const char *key, PtnValue value) {
+    ptn_array_set_entry(array, ptn_array_string_key(key), value);
+}
+
+static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type != PTN_RESOURCE) {
+        char message[224];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "stream_get_meta_data(): Argument #1 ($stream) must be of type resource, %s given",
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (value.as.resource->stream == NULL) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource"
+        );
+        return ptn_null();
+    }
+
+    PtnResource *resource = value.as.resource;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_stream_meta_set(result.as.array, "timed_out", ptn_bool(0));
+    ptn_stream_meta_set(result.as.array, "blocked", ptn_bool(1));
+    ptn_stream_meta_set(result.as.array, "eof", ptn_bool(feof(resource->stream) != 0));
+    ptn_stream_meta_set(result.as.array, "wrapper_type", ptn_string("plainfile"));
+    ptn_stream_meta_set(result.as.array, "stream_type", ptn_string("STDIO"));
+    ptn_stream_meta_set(
+        result.as.array,
+        "mode",
+        ptn_owned_string(ptn_duplicate_string(resource->stream_mode == NULL ? "" : resource->stream_mode))
+    );
+    ptn_stream_meta_set(result.as.array, "unread_bytes", ptn_int(0));
+    ptn_stream_meta_set(result.as.array, "seekable", ptn_bool(1));
+    ptn_stream_meta_set(
+        result.as.array,
+        "uri",
+        ptn_owned_string(ptn_duplicate_string(resource->stream_uri == NULL ? "" : resource->stream_uri))
+    );
+    return result;
 }
 
 static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -7781,6 +7835,7 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     /* Keep sorted by ASCII case-insensitive name for ptn_find_internal_function. */
@@ -7948,6 +8003,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_shuffle", 1, 1, ptn_internal_str_shuffle },
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
         { "strcmp", 2, 2, ptn_internal_strcmp },
+        { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "stripslashes", 1, 1, ptn_internal_stripslashes },

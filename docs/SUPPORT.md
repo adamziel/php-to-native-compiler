@@ -429,6 +429,7 @@ Post-RC architecture remains explicit rather than hidden:
   `assert(expr[, description])`,
   `in_array(expr, expr[, expr])`,
   `fopen(expr, expr[, expr[, expr]])`, `fclose(expr)`,
+  `stream_get_meta_data(expr)`,
   `is_callable(expr[, syntax_only])`, `is_countable(expr)`, `is_finite(expr)`,
   `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar plus array/object/resource
@@ -777,7 +778,10 @@ Post-RC architecture remains explicit rather than hidden:
 - `fopen()` opens filesystem-backed streams through the shared resource value
   model, and `fclose()` closes those resources. Closed stream resources remain
   boxed values for `gettype()` and `var_dump()` but no longer satisfy
-  `is_resource()`.
+  `is_resource()`. `stream_get_meta_data()` reports the current file-stream
+  metadata slice for open `fopen()` streams: timeout/blocking/eof flags,
+  wrapper and stream type, original mode and URI, unread byte count, and
+  seekability.
 - `function_exists()` over generated user-function declarations, including
   resolved namespaced declarations, and the currently registered
   internal-function names.
@@ -1019,7 +1023,7 @@ Post-RC architecture remains explicit rather than hidden:
   declarations, closures, old-style constructor dispatch, full class metadata,
   globals, static locals, and remaining PHP-exact function return propagation.
 - Type predicate coverage for full PHP resource and reference metadata beyond
-  the current open-stream `is_resource()` slice.
+  the current open-stream `is_resource()` and file-stream metadata slices.
 - Unsupported recursive arrays, full class/object metadata, broad resources
   beyond the current stream slice, complete reference identity,
   copy-on-write, and `var_dump()` reference identity beyond the currently
