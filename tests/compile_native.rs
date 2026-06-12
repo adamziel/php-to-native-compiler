@@ -9283,6 +9283,7 @@ var_dump(function_exists('setlocale'), defined('LC_ALL'), defined('LC_NUMERIC'))
 echo gettype(LC_ALL), ' ', gettype(constant('LC_CTYPE')), ' ', gettype(LC_MESSAGES), \"\\n\";\n\
 var_dump(setlocale(LC_ALL, 'C'));\n\
 var_dump(setlocale(LC_ALL, 0));\n\
+var_dump(setlocale(LC_ALL, null));\n\
 var_dump(setlocale(LC_NUMERIC, 'POSIX'));\n\
 var_dump(setlocale(LC_ALL, ['missing_ptn_locale', 'C']));\n\
 var_dump(setlocale(LC_ALL, 'missing_ptn_locale'));\n",
@@ -9295,7 +9296,7 @@ var_dump(setlocale(LC_ALL, 'missing_ptn_locale'));\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\ninteger integer integer\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\n"
+        "bool(true)\nbool(true)\nbool(true)\ninteger integer integer\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

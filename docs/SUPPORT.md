@@ -902,6 +902,10 @@ Post-RC architecture remains explicit rather than hidden:
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `STR_PAD_LEFT`,
   `STR_PAD_RIGHT`, `STR_PAD_BOTH`, and modeled `LC_*` locale category
   constants. Other ordinary names report as undefined.
+- `setlocale()` accepts the standard C locale category constants for current
+  locale queries (`0`, `"0"`, and `null`), string locale names, variadic
+  fallback candidates, and ordered array candidates. It returns the first
+  successful libc locale string or `false` when no candidate applies.
 - Duplicate global `const` declarations and `const` redeclarations after
   `define()` emit the modeled duplicate-constant warning boundary and preserve
   the original runtime constant value.

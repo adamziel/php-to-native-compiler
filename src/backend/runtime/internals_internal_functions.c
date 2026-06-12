@@ -8440,12 +8440,21 @@ static char *ptn_setlocale_try_string(int category, const char *locale) {
 
 static char *ptn_setlocale_try_value(int category, PtnValue value) {
     value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        return ptn_setlocale_try_string(category, "0");
+    }
     if (value.type == PTN_ARRAY) {
         PtnArray *array = value.as.array;
         for (size_t i = 0; i < array->len; i++) {
-            char *locale = ptn_value_to_string(array->entries[i].value);
-            char *result = ptn_setlocale_try_string(category, locale);
-            free(locale);
+            PtnValue candidate = ptn_value_deref(array->entries[i].value);
+            char *result = NULL;
+            if (candidate.type == PTN_NULL) {
+                result = ptn_setlocale_try_string(category, "0");
+            } else {
+                char *locale = ptn_value_to_string(candidate);
+                result = ptn_setlocale_try_string(category, locale);
+                free(locale);
+            }
             if (result != NULL) {
                 return result;
             }
