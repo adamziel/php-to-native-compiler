@@ -52,8 +52,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   current boxed values.
 - `str_pad()` supports byte-length padding with pad constants; `strrev()`
   preserves embedded NULs; `basename()` handles binary-safe path segments and
-  suffix stripping; `crc32()` computes length-aware CRC-32 integers;
-  trim-family internals use PHP default bytes plus bounded charlists.
+  suffix stripping; `pathinfo()` returns binary-safe dirname/basename/
+  extension/filename components with `PATHINFO_*` flags; `crc32()` computes
+  length-aware CRC-32 integers; trim-family internals use PHP default bytes
+  plus bounded charlists.
 - `str_replace()` supports scalar byte replacement, writes the optional
   `$count` argument by reference, and throws PHP-style TypeErrors for invalid
   resource/object operands; array search/replace/subject forms remain bounded.

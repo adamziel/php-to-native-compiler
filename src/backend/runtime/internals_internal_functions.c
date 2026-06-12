@@ -6400,6 +6400,151 @@ static char *ptn_dirname_string(const char *path, size_t len, size_t *dirname_le
     return dirname;
 }
 
+typedef struct {
+    char *dirname;
+    size_t dirname_len;
+    size_t basename_start;
+    size_t basename_len;
+    size_t extension_start;
+    size_t extension_len;
+    size_t filename_len;
+    int has_extension;
+} PtnPathInfoParts;
+
+static PtnPathInfoParts ptn_pathinfo_parts(PtnStringOperand path) {
+    PtnPathInfoParts parts;
+    parts.dirname = ptn_dirname_string(path.data, path.len, &parts.dirname_len);
+
+    size_t end = path.len;
+    while (end > 0 && ptn_is_path_separator(path.data[end - 1])) {
+        end--;
+    }
+
+    size_t start = end;
+    while (start > 0 && !ptn_is_path_separator(path.data[start - 1])) {
+        start--;
+    }
+    parts.basename_start = start;
+    parts.basename_len = end - start;
+    parts.has_extension = 0;
+    parts.extension_start = start + parts.basename_len;
+    parts.extension_len = 0;
+    parts.filename_len = parts.basename_len;
+
+    size_t dot = SIZE_MAX;
+    for (size_t i = 0; i < parts.basename_len; i++) {
+        if (path.data[start + i] == '.') {
+            dot = i;
+        }
+    }
+    if (dot != SIZE_MAX) {
+        parts.has_extension = 1;
+        parts.extension_start = start + dot + 1;
+        parts.extension_len = parts.basename_len - dot - 1;
+        parts.filename_len = dot;
+    }
+
+    return parts;
+}
+
+static PtnValue ptn_pathinfo_owned_string(const char *data, size_t len) {
+    return ptn_owned_string_len(ptn_duplicate_string_len(data, len), len);
+}
+
+static void ptn_pathinfo_array_set_string(PtnValue *result, const char *key, const char *data, size_t len) {
+    ptn_array_set_entry(
+        result->as.array,
+        ptn_array_string_key(key),
+        ptn_pathinfo_owned_string(data, len)
+    );
+}
+
+static PtnValue ptn_internal_pathinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "pathinfo", 1, "path", args[0], line);
+    int64_t flags = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "pathinfo", 2, "flags", args[1], line)
+        : PTN_PATHINFO_ALL;
+
+    if (flags < PTN_PATHINFO_DIRNAME || flags > PTN_PATHINFO_ALL) {
+        ptn_string_operand_free(path);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "pathinfo(): Argument #2 ($flags) must be one of the PATHINFO_* constants"
+        );
+        return ptn_null();
+    }
+    if (
+        flags != PTN_PATHINFO_ALL &&
+        flags != PTN_PATHINFO_DIRNAME &&
+        flags != PTN_PATHINFO_BASENAME &&
+        flags != PTN_PATHINFO_EXTENSION &&
+        flags != PTN_PATHINFO_FILENAME
+    ) {
+        ptn_string_operand_free(path);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "pathinfo(): Argument #2 ($flags) must be only one of the PATHINFO_* constants"
+        );
+        return ptn_null();
+    }
+
+    PtnPathInfoParts parts = ptn_pathinfo_parts(path);
+    if (flags == PTN_PATHINFO_DIRNAME) {
+        PtnValue result = ptn_owned_string_len(parts.dirname, parts.dirname_len);
+        ptn_string_operand_free(path);
+        return result;
+    }
+    if (flags == PTN_PATHINFO_BASENAME) {
+        PtnValue result = ptn_pathinfo_owned_string(path.data + parts.basename_start, parts.basename_len);
+        free(parts.dirname);
+        ptn_string_operand_free(path);
+        return result;
+    }
+    if (flags == PTN_PATHINFO_EXTENSION) {
+        PtnValue result = ptn_pathinfo_owned_string(path.data + parts.extension_start, parts.extension_len);
+        free(parts.dirname);
+        ptn_string_operand_free(path);
+        return result;
+    }
+    if (flags == PTN_PATHINFO_FILENAME) {
+        PtnValue result = ptn_pathinfo_owned_string(path.data + parts.basename_start, parts.filename_len);
+        free(parts.dirname);
+        ptn_string_operand_free(path);
+        return result;
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (parts.dirname_len > 0) {
+        ptn_pathinfo_array_set_string(&result, "dirname", parts.dirname, parts.dirname_len);
+    }
+    ptn_pathinfo_array_set_string(
+        &result,
+        "basename",
+        path.data + parts.basename_start,
+        parts.basename_len
+    );
+    if (parts.has_extension) {
+        ptn_pathinfo_array_set_string(
+            &result,
+            "extension",
+            path.data + parts.extension_start,
+            parts.extension_len
+        );
+    }
+    ptn_pathinfo_array_set_string(
+        &result,
+        "filename",
+        path.data + parts.basename_start,
+        parts.filename_len
+    );
+
+    free(parts.dirname);
+    ptn_string_operand_free(path);
+    return result;
+}
+
 static const char *ptn_internal_string_arg_type_name(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -8364,6 +8509,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ob_get_contents", 0, 0, ptn_internal_ob_get_contents },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "ord", 1, 1, ptn_internal_ord },
+        { "pathinfo", 1, 2, ptn_internal_pathinfo },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "php_uname", 0, 1, ptn_internal_php_uname },

@@ -405,7 +405,7 @@ Post-RC architecture remains explicit rather than hidden:
   `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `quoted_printable_decode(expr)`,
-  `basename(expr[, suffix])`, `dirname(expr)`,
+  `basename(expr[, suffix])`, `dirname(expr)`, `pathinfo(expr[, flags])`,
   `highlight_string(expr[, return])`, `highlight_file(expr[, return])`,
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
@@ -632,6 +632,12 @@ Post-RC architecture remains explicit rather than hidden:
   embedded NUL bytes, platform directory separators, null-argument
   deprecations, and modeled TypeError diagnostics for array/object operands are
   handled through the runtime path.
+- `pathinfo()` over current boxed scalar values after scalar string conversion,
+  returning ordered dirname/basename/extension/filename arrays or individual
+  components selected by `PATHINFO_*` flags. Empty paths, trailing separators,
+  embedded NUL bytes, invalid flag `ValueError`s, null-argument deprecations,
+  and modeled TypeError diagnostics for array/object operands are handled
+  through the runtime path.
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
 - `str_replace()` over current scalar and stringable-object search,

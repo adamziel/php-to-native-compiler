@@ -634,6 +634,26 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_COUNT_RECURSIVE);
         return 1;
     }
+    if (strcmp(name, "PATHINFO_DIRNAME") == 0) {
+        *out = ptn_int(PTN_PATHINFO_DIRNAME);
+        return 1;
+    }
+    if (strcmp(name, "PATHINFO_BASENAME") == 0) {
+        *out = ptn_int(PTN_PATHINFO_BASENAME);
+        return 1;
+    }
+    if (strcmp(name, "PATHINFO_EXTENSION") == 0) {
+        *out = ptn_int(PTN_PATHINFO_EXTENSION);
+        return 1;
+    }
+    if (strcmp(name, "PATHINFO_FILENAME") == 0) {
+        *out = ptn_int(PTN_PATHINFO_FILENAME);
+        return 1;
+    }
+    if (strcmp(name, "PATHINFO_ALL") == 0) {
+        *out = ptn_int(PTN_PATHINFO_ALL);
+        return 1;
+    }
     if (strcmp(name, "M_E") == 0) {
         *out = ptn_float(2.718281828459045);
         return 1;

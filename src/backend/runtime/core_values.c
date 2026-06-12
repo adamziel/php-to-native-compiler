@@ -96,6 +96,11 @@ typedef struct {
 #define PTN_STR_PAD_BOTH 2
 #define PTN_COUNT_NORMAL 0
 #define PTN_COUNT_RECURSIVE 1
+#define PTN_PATHINFO_DIRNAME 1
+#define PTN_PATHINFO_BASENAME 2
+#define PTN_PATHINFO_EXTENSION 4
+#define PTN_PATHINFO_FILENAME 8
+#define PTN_PATHINFO_ALL 15
 #define PTN_DEFAULT_PRECISION 14
 
 typedef struct PtnArray PtnArray;

@@ -6545,6 +6545,94 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_pathinfo_components_and_flags_to_native_binary() {
+    let root = temp_dir("ptn-native-pathinfo-components-and-flags");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pathinfo.php");
+    let output = root.join("pathinfo-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(PATHINFO_DIRNAME, PATHINFO_BASENAME, PATHINFO_EXTENSION, PATHINFO_FILENAME, PATHINFO_ALL);
+var_dump(function_exists("pathinfo"), defined("PATHINFO_ALL"), constant("PATHINFO_FILENAME"));
+var_dump(pathinfo(""));
+var_dump(pathinfo("."));
+var_dump(pathinfo("/foo/bar.txt"));
+var_dump(pathinfo("/foo/bar", PATHINFO_EXTENSION));
+var_dump(pathinfo("/foo/bar.", PATHINFO_EXTENSION));
+echo bin2hex(pathinfo("foo" . chr(0) . "bar.txt", PATHINFO_FILENAME)), "\n";
+try {
+    pathinfo("x", PATHINFO_EXTENSION | PATHINFO_FILENAME);
+} catch (\ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    pathinfo("x", PATHINFO_ALL + 1);
+} catch (\ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    pathinfo([]);
+} catch (\TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "int(2)\n",
+            "int(4)\n",
+            "int(8)\n",
+            "int(15)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(8)\n",
+            "array(2) {\n",
+            "  [\"basename\"]=>\n",
+            "  string(0) \"\"\n",
+            "  [\"filename\"]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(4) {\n",
+            "  [\"dirname\"]=>\n",
+            "  string(1) \".\"\n",
+            "  [\"basename\"]=>\n",
+            "  string(1) \".\"\n",
+            "  [\"extension\"]=>\n",
+            "  string(0) \"\"\n",
+            "  [\"filename\"]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(4) {\n",
+            "  [\"dirname\"]=>\n",
+            "  string(4) \"/foo\"\n",
+            "  [\"basename\"]=>\n",
+            "  string(7) \"bar.txt\"\n",
+            "  [\"extension\"]=>\n",
+            "  string(3) \"txt\"\n",
+            "  [\"filename\"]=>\n",
+            "  string(3) \"bar\"\n",
+            "}\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "666f6f00626172\n",
+            "pathinfo(): Argument #2 ($flags) must be only one of the PATHINFO_* constants\n",
+            "pathinfo(): Argument #2 ($flags) must be one of the PATHINFO_* constants\n",
+            "pathinfo(): Argument #1 ($path) must be of type string, array given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_soundex_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-soundex-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
