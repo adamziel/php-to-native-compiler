@@ -735,7 +735,8 @@ static PTN_UNUSED PtnValue ptn_divide(PtnRuntime *runtime, PtnValue left, PtnVal
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
         if (right_integer == 0) {
-            ptn_abort_arithmetic_error("Division by zero");
+            ptn_throw_exception_at(runtime, "DivisionByZeroError", "Division by zero", runtime->source_path, line);
+            return ptn_null();
         }
         if (left_integer == INT64_MIN && right_integer == -1) {
             return ptn_float((double)left_integer / (double)right_integer);
@@ -750,7 +751,8 @@ static PTN_UNUSED PtnValue ptn_divide(PtnRuntime *runtime, PtnValue left, PtnVal
     double right_fast_number = 0.0;
     if (ptn_fast_numeric_pair(left, right, &left_fast_number, &right_fast_number)) {
         if (right_fast_number == 0.0) {
-            ptn_abort_arithmetic_error("Division by zero");
+            ptn_throw_exception_at(runtime, "DivisionByZeroError", "Division by zero", runtime->source_path, line);
+            return ptn_null();
         }
         return ptn_float(left_fast_number / right_fast_number);
     }
@@ -759,7 +761,8 @@ static PTN_UNUSED PtnValue ptn_divide(PtnRuntime *runtime, PtnValue left, PtnVal
     PtnNumber right_number;
     ptn_arithmetic_operands(runtime, left, "/", right, line, &left_number, &right_number);
     if (right_number.floating == 0.0) {
-        ptn_abort_arithmetic_error("Division by zero");
+        ptn_throw_exception_at(runtime, "DivisionByZeroError", "Division by zero", runtime->source_path, line);
+        return ptn_null();
     }
 
     if (left_number.type == PTN_NUMBER_INT && right_number.type == PTN_NUMBER_INT) {
@@ -964,13 +967,14 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
     return ptn_number_to_integer(number);
 }
 
-static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_modulo(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     int64_t left_fast_integer = 0;
     int64_t right_fast_integer = 0;
     if (ptn_fast_integer_value(left, &left_fast_integer) &&
         ptn_fast_integer_value(right, &right_fast_integer)) {
         if (right_fast_integer == 0) {
-            ptn_abort_arithmetic_error("Modulo by zero");
+            ptn_throw_exception_at(runtime, "DivisionByZeroError", "Modulo by zero", runtime->source_path, line);
+            return ptn_null();
         }
         if (left_fast_integer == INT64_MIN && right_fast_integer == -1) {
             return ptn_int(0);
@@ -978,10 +982,21 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
         return ptn_int(left_fast_integer % right_fast_integer);
     }
 
-    int64_t left_integer = ptn_value_to_integer_with_precision_deprecation(NULL, left);
-    int64_t right_integer = ptn_value_to_integer_with_precision_deprecation(NULL, right);
+    int64_t left_integer = ptn_value_to_integer_with_precision_deprecation_at(
+        &runtime->diagnostics,
+        left,
+        runtime->source_path,
+        line
+    );
+    int64_t right_integer = ptn_value_to_integer_with_precision_deprecation_at(
+        &runtime->diagnostics,
+        right,
+        runtime->source_path,
+        line
+    );
     if (right_integer == 0) {
-        ptn_abort_arithmetic_error("Modulo by zero");
+        ptn_throw_exception_at(runtime, "DivisionByZeroError", "Modulo by zero", runtime->source_path, line);
+        return ptn_null();
     }
     if (left_integer == INT64_MIN && right_integer == -1) {
         return ptn_int(0);

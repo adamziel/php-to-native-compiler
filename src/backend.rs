@@ -3784,9 +3784,12 @@ fn binary_runtime_function_uses_context(op: BinaryOp) -> bool {
             | BinaryOp::Multiply
             | BinaryOp::Power
             | BinaryOp::Divide
+            | BinaryOp::Modulo
             | BinaryOp::BitwiseAnd
             | BinaryOp::BitwiseXor
             | BinaryOp::BitwiseOr
+            | BinaryOp::ShiftLeft
+            | BinaryOp::ShiftRight
     )
 }
 

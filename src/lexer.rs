@@ -226,6 +226,7 @@ impl<'a> Lexer<'a> {
                 '<' if self.rest().starts_with("<<=") => {
                     self.push_fixed(TokenKind::ShiftLeftEqual, 3)
                 }
+                '<' if self.rest().starts_with("<>") => self.push_fixed(TokenKind::NotEqual, 2),
                 '<' if self.rest().starts_with("<=") => self.push_fixed(TokenKind::LessEqual, 2),
                 '<' if self.rest().starts_with("<<") => self.push_fixed(TokenKind::ShiftLeft, 2),
                 '<' => self.push_fixed(TokenKind::Less, 1),

@@ -1840,6 +1840,21 @@ fn parser_accepts_strict_identity_expressions() {
 }
 
 #[test]
+fn parser_accepts_alternate_not_equal_expression() {
+    let program = parser::parse("<?php echo 1 <> 2;").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Binary {
+            op: BinaryOp::NotEqual,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_array_literals_and_spaceship_expressions() {
     let program =
         parser::parse("<?php var_dump(array(1, \"2\" => 3, 4 => array(5)) <=> []);").unwrap();
@@ -15620,14 +15635,14 @@ fn compile_bitwise_shift_variation_str2_phpt_rows_to_native_binary() {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     let left_body =
         generated_c_static_function_body(&c_source, "static PTN_UNUSED PtnValue ptn_shift_left(");
-    assert!(left_body.contains("ptn_bitwise_integer_operand(left)"));
-    assert!(left_body.contains("ptn_shift_distance(right)"));
+    assert!(left_body.contains("ptn_bitwise_integer_operand_checked(runtime, left, line)"));
+    assert!(left_body.contains("ptn_shift_distance(runtime, right, line)"));
     let right_body =
         generated_c_static_function_body(&c_source, "static PTN_UNUSED PtnValue ptn_shift_right(");
-    assert!(right_body.contains("ptn_bitwise_integer_operand(left)"));
-    assert!(right_body.contains("ptn_shift_distance(right)"));
-    assert!(c_source.contains(" = ptn_shift_left("));
-    assert!(c_source.contains(" = ptn_shift_right("));
+    assert!(right_body.contains("ptn_bitwise_integer_operand_checked(runtime, left, line)"));
+    assert!(right_body.contains("ptn_shift_distance(runtime, right, line)"));
+    assert!(c_source.contains(" = ptn_shift_left(&runtime, "));
+    assert!(c_source.contains(" = ptn_shift_right(&runtime, "));
 }
 
 #[test]
@@ -15649,6 +15664,40 @@ fn compile_scalar_shift_compound_assignments_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Bitwise ops:\nint(3)\nint(1)\nint(2)\nint(6)\nint(1)\nModulo:\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_catches_operator_arithmetic_exceptions_to_native_binary() {
+    let root = temp_dir("ptn-native-operator-arithmetic-exceptions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("operator-arithmetic-exceptions.php");
+    let output = root.join("operator-arithmetic-exceptions-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { var_dump(1 / 0); } catch (\\Throwable $e) { echo get_class($e), ':', $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(1 % 0); } catch (\\DivisionByZeroError $e) { echo get_class($e), ':', $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(1 << -1); } catch (\\ArithmeticError $e) { echo get_class($e), ':', $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(1 >> -1); } catch (\\Throwable $e) { echo get_class($e), ':', $e->getMessage(), \"\\n\"; }\n\
+var_dump(1 <> 2);\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "DivisionByZeroError:Division by zero\n\
+DivisionByZeroError:Modulo by zero\n\
+ArithmeticError:Bit shift by negative number\n\
+ArithmeticError:Bit shift by negative number\n\
+bool(true)\n\
+after\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -19537,7 +19586,11 @@ fn compile_integer_operator_precision_deprecations_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "\nDeprecated: Implicit conversion from float 1.5 to int loses precision in ptn-generated-code on line 0\nint(3)\n\nDeprecated: Implicit conversion from float-string \"1.5\" to int loses precision in ptn-generated-code on line 0\nint(1)\n\nDeprecated: Implicit conversion from float 2.5 to int loses precision in ptn-generated-code on line 0\nint(1)\n\nDeprecated: Implicit conversion from float-string \"2.5\" to int loses precision in ptn-generated-code on line 0\nint(1)\n"
+        format!(
+            "\nDeprecated: Implicit conversion from float 1.5 to int loses precision in ptn-generated-code on line 0\nint(3)\n\nDeprecated: Implicit conversion from float-string \"1.5\" to int loses precision in ptn-generated-code on line 0\nint(1)\n\nDeprecated: Implicit conversion from float 2.5 to int loses precision in {} on line 1\nint(1)\n\nDeprecated: Implicit conversion from float-string \"2.5\" to int loses precision in {} on line 1\nint(1)\n",
+            input.display(),
+            input.display()
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -28,14 +28,17 @@ Zend/tests/ast/zend-pow-assign.phpt
 Zend/tests/bug69891.phpt
 Zend/tests/bug69892.phpt
 Zend/tests/bug69893.phpt
+Zend/tests/bug69957.phpt
 Zend/tests/bug77660.phpt
 Zend/tests/code_before_loop_var_free.phpt
+Zend/tests/compound_assign_with_numeric_strings.phpt
 Zend/tests/concat/concat_002.phpt
 Zend/tests/const_eval_and.phpt
 Zend/tests/constants/constants_001.phpt
 Zend/tests/constants/constants_008.phpt
 Zend/tests/constants/dir-constant-normal.phpt
 Zend/tests/constants/magic_const_in_global_scope.phpt
+Zend/tests/div_by_zero_compound_refcounted.phpt
 Zend/tests/duplicate_label_error.phpt
 Zend/tests/grammar/alternative_offset_syntax_compile_error_in_const_expr.phpt
 Zend/tests/grammar/alternative_offset_syntax_compile_error_outside_const_expr.phpt
@@ -258,6 +261,8 @@ tests/lang/operators/add_basiclong_64bit.phpt
 tests/lang/operators/add_variationStr.phpt
 tests/lang/operators/bitwiseAnd_basiclong_64bit.phpt
 tests/lang/operators/bitwiseAnd_variationStr.phpt
+tests/lang/operators/bitwiseShiftLeft_basiclong_64bit.phpt
+tests/lang/operators/bitwiseShiftRight_basiclong_64bit.phpt
 tests/lang/operators/bitwiseNot_basiclong_64bit.phpt
 tests/lang/operators/bitwiseNot_variationStr.phpt
 tests/lang/operators/bitwiseOr_basiclong_64bit.phpt
@@ -266,7 +271,10 @@ tests/lang/operators/bitwiseShiftLeft_variationStr2.phpt
 tests/lang/operators/bitwiseShiftRight_variationStr2.phpt
 tests/lang/operators/bitwiseXor_basiclong_64bit.phpt
 tests/lang/operators/bitwiseXor_variationStr.phpt
+tests/lang/operators/divide_basiclong_64bit.phpt
+tests/lang/operators/modulus_basiclong_64bit.phpt
 tests/lang/operators/nan-comparison-false.phpt
+tests/lang/operators/operator_notequals_basic.phpt
 tests/lang/operators/operator_spaceship_basic.phpt
 tests/output/sapi_windows_vt100_support_notwindows.phpt
 tests/strings/offsets_chaining_3.phpt

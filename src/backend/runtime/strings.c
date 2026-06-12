@@ -96,31 +96,32 @@ static PTN_UNUSED PtnValue ptn_bitwise_not(
     return ptn_int(~ptn_bitwise_integer_operand_checked(runtime, value, line));
 }
 
-static PTN_UNUSED int64_t ptn_shift_distance(PtnValue value) {
+static PTN_UNUSED int64_t ptn_shift_distance(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
-    int64_t distance = ptn_bitwise_integer_operand(value);
+    int64_t distance = ptn_bitwise_integer_operand_checked(runtime, value, line);
     if (distance < 0) {
-        ptn_abort_arithmetic_error("Bit shift by negative number");
+        ptn_throw_exception_at(runtime, "ArithmeticError", "Bit shift by negative number", runtime->source_path, line);
+        return 0;
     }
     return distance;
 }
 
-static PTN_UNUSED PtnValue ptn_shift_left(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_shift_left(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
-    uint64_t left_bits = (uint64_t)ptn_bitwise_integer_operand(left);
-    int64_t distance = ptn_shift_distance(right);
+    uint64_t left_bits = (uint64_t)ptn_bitwise_integer_operand_checked(runtime, left, line);
+    int64_t distance = ptn_shift_distance(runtime, right, line);
     if (distance >= 64) {
         return ptn_int(0);
     }
     return ptn_int((int64_t)(left_bits << (unsigned int)distance));
 }
 
-static PTN_UNUSED PtnValue ptn_shift_right(PtnValue left, PtnValue right) {
+static PTN_UNUSED PtnValue ptn_shift_right(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
-    int64_t left_integer = ptn_bitwise_integer_operand(left);
-    int64_t distance = ptn_shift_distance(right);
+    int64_t left_integer = ptn_bitwise_integer_operand_checked(runtime, left, line);
+    int64_t distance = ptn_shift_distance(runtime, right, line);
     if (distance >= 64) {
         return ptn_int(left_integer < 0 ? -1 : 0);
     }
