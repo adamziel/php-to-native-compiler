@@ -1320,9 +1320,27 @@ static PtnValue ptn_internal_ksort(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_bool(1);
 }
 
+static void ptn_internal_throw_sort_flags_unsupported(PtnRuntime *runtime, const char *name) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s() flags are unsupported; default regular value sorting is supported",
+        name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_throw_exception(runtime, "Error", "sort flags are unsupported; default regular value sorting is supported");
+        return;
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
 static PtnValue ptn_internal_asort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     (void)line;
+    if (argc >= 2) {
+        ptn_internal_throw_sort_flags_unsupported(runtime, "asort");
+        return ptn_null();
+    }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "asort", 1, "array", args[0]);
     ptn_array_asort_values(array);
     return ptn_bool(1);
@@ -1337,16 +1355,22 @@ static PtnValue ptn_internal_shuffle(PtnRuntime *runtime, size_t argc, const Ptn
 }
 
 static PtnValue ptn_internal_sort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     (void)line;
+    if (argc >= 2) {
+        ptn_internal_throw_sort_flags_unsupported(runtime, "sort");
+        return ptn_null();
+    }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "sort", 1, "array", args[0]);
     ptn_array_sort_values(array);
     return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_rsort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     (void)line;
+    if (argc >= 2) {
+        ptn_internal_throw_sort_flags_unsupported(runtime, "rsort");
+        return ptn_null();
+    }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "rsort", 1, "array", args[0]);
     ptn_array_rsort_values(array);
     return ptn_bool(1);
@@ -5735,7 +5759,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
         { "array_walk", 2, 3, ptn_internal_array_walk },
-        { "asort", 1, 1, ptn_internal_asort },
+        { "asort", 1, 2, ptn_internal_asort },
         { "assert", 1, 2, ptn_internal_assert },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
@@ -5815,11 +5839,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "range", 2, 3, ptn_internal_range },
         { "reset", 1, 1, ptn_internal_reset },
         { "rmdir", 1, 2, ptn_internal_rmdir },
-        { "rsort", 1, 1, ptn_internal_rsort },
+        { "rsort", 1, 2, ptn_internal_rsort },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
-        { "sort", 1, 1, ptn_internal_sort },
+        { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "sprintf", 1, PTN_VARIADIC_ARGS, ptn_internal_sprintf },
         { "sqrt", 1, 1, ptn_internal_sqrt },

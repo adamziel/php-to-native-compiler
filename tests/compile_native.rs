@@ -10963,6 +10963,74 @@ var_dump(function_exists(\"rsort\"));",
 }
 
 #[test]
+fn compile_dynamic_sort_flags_report_boundary_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-sort-flags");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-sort-flags.php");
+    let output = root.join("dynamic-sort-flags-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$sortItems = [3, 2, 1];\n\
+try {\n\
+    call_user_func(\"sort\", $sortItems, 0);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$asortItems = [\"b\" => 2, \"a\" => 1];\n\
+try {\n\
+    call_user_func(\"asort\", $asortItems, 0);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$rsortItems = [1, 2, 3];\n\
+try {\n\
+    call_user_func(\"rsort\", $rsortItems, 0);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump($sortItems, $asortItems, $rsortItems);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "sort() flags are unsupported; default regular value sorting is supported\n",
+            "asort() flags are unsupported; default regular value sorting is supported\n",
+            "rsort() flags are unsupported; default regular value sorting is supported\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(3)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"b\"]=>\n",
+            "  int(2)\n",
+            "  [\"a\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_unshift_mutates_direct_variable_and_detaches_cow_to_native_binary() {
     let root = temp_dir("ptn-native-array-unshift-cow");
     fs::create_dir_all(&root).unwrap();
