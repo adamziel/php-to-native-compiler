@@ -185,6 +185,7 @@ ext/standard/tests/strings/str_starts_with.phpt
 ext/standard/tests/strings/strtr_basic.phpt
 ext/standard/tests/strings/strip_tags.phpt
 ext/standard/tests/strings/strlen.phpt
+ext/standard/tests/strings/strncmp_basic.phpt
 ext/standard/tests/strings/substr_int_min.phpt
 ext/standard/tests/strings/trim_basic.phpt
 ext/standard/tests/versioning/php_sapi_name.phpt

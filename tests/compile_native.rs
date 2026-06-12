@@ -1319,6 +1319,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         parser::parse("<?php function StrCaseCmp($left, $right) { return 0; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strcasecmp()");
 
+    let error =
+        parser::parse("<?php function StrNCmp($left, $right, $length) { return 0; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strncmp()");
+
     let error = parser::parse("<?php function STRTOLOWER($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strtolower()");
 
@@ -4168,6 +4172,8 @@ echo str_pad(\"x\", 4, \"ab\", STR_PAD_LEFT), \" \", str_pad(\"x\", 4, \"ab\", S
 echo str_repeat(\"xy\", 3), \"|\", str_repeat(\"z\", 0), \"|\", chunk_split(str_repeat(\"X\", 6), 3, \"|\"), \"\\n\";\n\
 echo trim(\" \\tHi\\r\\n\"), \"|\", ltrim(\"==left\", \"=\"), \"|\", rtrim(\"right!!\", \"!\"), \"\\n\";\n\
 echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
+var_dump(strncmp(\"abc\", \"abd\", 3), strncmp(\"abc\", \"abd\", 2), strncmp(\"a\" . chr(0) . \"c\", \"a\" . chr(0) . \"d\", 3), strncmp(\"a\", \"a\" . chr(0), 2), strncmp(12345, \"123\", \"3\"), function_exists(\"strncmp\"), function_exists(\"STRNCMP\"));\n\
+try { strncmp(\"a\", \"b\", -1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), strtoupper(false), function_exists(\"str_pad\"), function_exists(\"STRCASECMP\"), defined(\"STR_PAD_BOTH\"));",
     )
     .unwrap();
@@ -4186,6 +4192,8 @@ abax xaba abxab\n\
 xyxyxy||XXX|XXX|\n\
 Hi|left|right\n\
 d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
+int(-1)\nint(0)\nint(-1)\nint(-1)\nint(0)\nbool(true)\nbool(true)\n\
+strncmp(): Argument #3 ($length) must be greater than or equal to 0\n\
 int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\n\
 bool(true)\nbool(true)\nbool(true)\n"
     );
@@ -4205,6 +4213,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_internal_str_contains",
         "ptn_internal_str_starts_with",
         "ptn_internal_str_ends_with",
+        "ptn_internal_strncmp",
         "ptn_internal_str_pad",
         "ptn_internal_strtolower",
         "ptn_internal_strtoupper",
@@ -4253,6 +4262,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_ascii_case_string(string.data, string.len, 0)",
         "ptn_ascii_case_string(string.data, string.len, 1)",
         "ptn_trim_string_value(input, charlist, trim_left, trim_right)",
+        "ptn_compare_string_prefix_bytes(",
         "ptn_string_buffer_append_repeated_pattern(&output, pad_string, left_len)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
@@ -4276,6 +4286,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "static char *ptn_rot13_string(",
         "static char *ptn_first_char_case_string(",
         "static char *ptn_ascii_case_string(",
+        "static int ptn_compare_string_prefix_bytes(",
         "static PtnValue ptn_internal_str_pad(",
         "static char *ptn_quotemeta_string(",
         "static char *ptn_chunk_split_string(",
