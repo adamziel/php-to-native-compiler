@@ -11075,6 +11075,7 @@ class Cr {
 $left = [new Cr(2), new Cr(5)];
 $right = [new Cr(2)];
 $result = array_udiff($left, $right, [\"Cr\", \"comp_func_cr\"]);
+echo var_export($result, true), \"\\n\";
 foreach ($result as $item) {
     echo $item->public_member, \"\\n\";
 }
@@ -11086,7 +11087,19 @@ foreach ($result as $item) {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "5\n");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array (\n",
+            "  1 => \n",
+            "  \\Cr::__set_state(array(\n",
+            "     'priv_member' => 5,\n",
+            "     'public_member' => 5,\n",
+            "  )),\n",
+            ")\n",
+            "5\n",
+        )
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
