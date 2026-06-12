@@ -732,8 +732,8 @@ Post-RC architecture remains explicit rather than hidden:
   convert to `0`; finite float and float-string operands that lose precision
   during integer conversion emit the modeled call-site deprecation and respect
   `error_reporting()`/`@` suppression. Non-finite floats and unsupported
-  array/object/resource operands throw the modeled integer-parameter
-  `TypeError`.
+  array/object/closure/exception/resource operands throw catchable `TypeError`
+  values through the shared integer-argument validation path.
 - `ord()` over current boxed scalar values after scalar string conversion,
   returning the first byte as an integer. Empty and multi-byte strings emit
   PHP-like deprecation diagnostics with the internal-call source line.

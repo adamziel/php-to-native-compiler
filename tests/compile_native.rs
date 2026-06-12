@@ -5727,6 +5727,55 @@ after\n"
 }
 
 #[test]
+fn compile_integer_internal_non_finite_float_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-integer-internal-non-finite-floats");
+    fs::create_dir_all(&root).unwrap();
+    let contents_path = root.join("contents.txt");
+    fs::write(&contents_path, "12345").unwrap();
+    let escaped_contents_path = contents_path
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'");
+    let input = root.join("integer-internal-non-finite-floats.php");
+    let output = root.join("integer-internal-non-finite-floats-bin");
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$filename = '{}';\n\
+foreach ([INF, -INF, NAN] as $value) {{\n\
+    try {{ chr($value); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+    try {{ intdiv($value, 1); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+    try {{ file_get_contents($filename, false, null, $value, 1); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+}}\n",
+            escaped_contents_path
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "chr(): Argument #1 ($codepoint) must be of type int, float given\n",
+            "intdiv(): Argument #1 ($num1) must be of type int, float given\n",
+            "file_get_contents(): Argument #4 ($offset) must be of type int, float given\n",
+            "chr(): Argument #1 ($codepoint) must be of type int, float given\n",
+            "intdiv(): Argument #1 ($num1) must be of type int, float given\n",
+            "file_get_contents(): Argument #4 ($offset) must be of type int, float given\n",
+            "chr(): Argument #1 ($codepoint) must be of type int, float given\n",
+            "intdiv(): Argument #1 ($num1) must be of type int, float given\n",
+            "file_get_contents(): Argument #4 ($offset) must be of type int, float given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn var_dump_float_exponents_use_php_spelling_in_native_binary() {
     let root = temp_dir("ptn-native-var-dump-float-exponents");
     fs::create_dir_all(&root).unwrap();
@@ -8466,18 +8515,30 @@ string(2) \"43\"\n"
 fn compile_chr_null_and_type_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-chr-null-and-type-diagnostics");
     fs::create_dir_all(&root).unwrap();
+    let resource_path = root.join("resource.txt");
+    fs::write(&resource_path, "resource").unwrap();
+    let escaped_resource_path = resource_path
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'");
     let input = root.join("chr-null-and-type-diagnostics.php");
     let output = root.join("chr-null-and-type-diagnostics-bin");
     fs::write(
         &input,
-        "<?php\n\
+        format!(
+            "<?php\n\
 var_dump(bin2hex(chr(null)));\n\
-try { var_dump(chr(INF)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
-try { var_dump(chr(NAN)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
-try { var_dump(chr([])); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
-try { var_dump(chr(new stdClass)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
-try { var_dump(chr(\"65x\")); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
-echo \"after\\n\";",
+try {{ var_dump(chr(INF)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ var_dump(chr(NAN)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ var_dump(chr([])); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ var_dump(chr(new stdClass)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ var_dump(chr(\"65x\")); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+$fp = fopen('{}', 'r');\n\
+try {{ var_dump(chr($fp)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+fclose($fp);\n",
+            escaped_resource_path
+        ),
     )
     .unwrap();
 
@@ -8494,7 +8555,7 @@ chr(): Argument #1 ($codepoint) must be of type int, float given\n\
 chr(): Argument #1 ($codepoint) must be of type int, array given\n\
 chr(): Argument #1 ($codepoint) must be of type int, stdClass given\n\
 chr(): Argument #1 ($codepoint) must be of type int, string given\n\
-after\n"
+chr(): Argument #1 ($codepoint) must be of type int, resource given\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
