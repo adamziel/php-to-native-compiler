@@ -3777,6 +3777,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_keys"
             | "array_merge"
             | "array_merge_recursive"
+            | "array_pad"
             | "array_pop"
             | "array_product"
             | "array_push"

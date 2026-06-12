@@ -312,7 +312,8 @@ Post-RC architecture remains explicit rather than hidden:
   `count(expr);`, `array_chunk(expr, expr[, expr]);`,
   `array_change_key_case(expr[, expr]);`, `array_column(expr, expr[, expr]);`,
   `array_combine(expr, expr);`, `array_count_values(expr);`,
-  `array_fill(expr, expr, expr);`, `array_filter(expr[, expr[, expr]]);`,
+  `array_fill(expr, expr, expr);`, `array_pad(expr, expr, expr);`,
+  `array_filter(expr[, expr[, expr]]);`,
   `array_keys(expr[, expr[, expr]]);`,
   `array_intersect(expr, ...);`, `array_intersect_assoc(expr, ...);`,
   `array_key_first(expr);`, `array_key_last(expr);`,
@@ -352,7 +353,8 @@ Post-RC architecture remains explicit rather than hidden:
   `count(expr)`, `array_chunk(expr, expr[, expr])`,
   `array_change_key_case(expr[, expr])`, `array_column(expr, expr[, expr])`,
   `array_combine(expr, expr)`, `array_count_values(expr)`,
-  `array_fill(expr, expr, expr)`, `array_filter(expr[, expr[, expr]])`,
+  `array_fill(expr, expr, expr)`, `array_pad(expr, expr, expr)`,
+  `array_filter(expr[, expr[, expr]])`,
   `array_keys(expr[, expr[, expr]])`,
   `array_intersect(expr, ...)`, `array_intersect_assoc(expr, ...)`,
   `array_key_first(expr)`, `array_key_last(expr)`,
@@ -578,6 +580,12 @@ Post-RC architecture remains explicit rather than hidden:
   returning a fresh ordered array keyed from the requested integer start.
   Negative counts throw the modeled PHP `ValueError`; filled array/object
   payloads use the shared COW clone path.
+- `array_pad()` over current boxed arrays, integer-convertible lengths, and
+  mixed pad values. No-op padding clones the original ordered map, positive
+  padding appends cloned pad values, negative padding prepends cloned pad
+  values, and source integer keys are reindexed only when padding occurs while
+  string keys stay ordered and preserved. Oversized requested lengths throw the
+  modeled PHP `ValueError`.
 - `array_filter()` over current boxed arrays, preserving original keys in a
   fresh ordered result. With a `null` callback it keeps values that are truthy
   under the shared PHP truthiness helper; otherwise it dispatches through the

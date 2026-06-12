@@ -10675,6 +10675,45 @@ var_dump(function_exists('array_fill'), function_exists('ARRAY_FILL'));",
 }
 
 #[test]
+fn compile_array_pad_to_native_binary() {
+    let root = temp_dir("ptn-native-array-pad");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-pad.php");
+    let output = root.join("array-pad-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$base = [\"s\" => \"S\", 4 => \"I\", \"t\" => \"T\"];\n\
+var_dump(array_pad([], 1, 0));\n\
+var_dump(array_pad([\"\", -1, 2.0], 5, 0));\n\
+var_dump(array_pad($base, 5, \"x\"));\n\
+var_dump(array_pad($base, -5, \"x\"));\n\
+$nested = [\"seed\"];\n\
+$padded = array_pad([\"left\" => $nested], 3, $nested);\n\
+$padded[0][] = \"pad\";\n\
+$padded[\"left\"][] = \"source\";\n\
+var_dump($padded, $nested);\n\
+var_dump(array_pad([2 => \"a\"], 1, \"x\"));\n\
+try { array_pad([], PHP_INT_MAX, 0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists('array_pad'), function_exists('ARRAY_PAD'));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  int(0)\n}\narray(5) {\n  [0]=>\n  string(0) \"\"\n  [1]=>\n  int(-1)\n  [2]=>\n  float(2)\n  [3]=>\n  int(0)\n  [4]=>\n  int(0)\n}\narray(5) {\n  [\"s\"]=>\n  string(1) \"S\"\n  [0]=>\n  string(1) \"I\"\n  [\"t\"]=>\n  string(1) \"T\"\n  [1]=>\n  string(1) \"x\"\n  [2]=>\n  string(1) \"x\"\n}\narray(5) {\n  [0]=>\n  string(1) \"x\"\n  [1]=>\n  string(1) \"x\"\n  [\"s\"]=>\n  string(1) \"S\"\n  [2]=>\n  string(1) \"I\"\n  [\"t\"]=>\n  string(1) \"T\"\n}\narray(3) {\n  [\"left\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(6) \"source\"\n  }\n  [0]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(3) \"pad\"\n  }\n  [1]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray(1) {\n  [2]=>\n  string(1) \"a\"\n}\narray_pad(): Argument #2 ($length) must not exceed the maximum allowed array size\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_pad"));
+}
+
+#[test]
 fn compile_plain_heredoc_values_to_native_binary() {
     let root = temp_dir("ptn-native-plain-heredoc-values");
     fs::create_dir_all(&root).unwrap();

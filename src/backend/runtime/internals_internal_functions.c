@@ -2664,6 +2664,86 @@ static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnVa
     return result;
 }
 
+static PtnArrayKey ptn_array_pad_source_key(PtnArrayKey source_key, int preserve_integer_keys, int64_t *next_integer_key) {
+    if (source_key.type == PTN_ARRAY_KEY_STRING || preserve_integer_keys) {
+        return ptn_array_key_clone(source_key);
+    }
+    if (*next_integer_key == INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    PtnArrayKey key = ptn_array_int_key(*next_integer_key);
+    *next_integer_key += 1;
+    return key;
+}
+
+static void ptn_array_pad_copy_source(
+    PtnArray *target,
+    PtnArray *source,
+    int preserve_integer_keys,
+    int64_t *next_integer_key
+) {
+    for (size_t i = 0; i < source->len; i++) {
+        PtnArrayEntry *entry = &source->entries[i];
+        ptn_array_set_entry(
+            target,
+            ptn_array_pad_source_key(entry->key, preserve_integer_keys, next_integer_key),
+            ptn_value_clone(ptn_array_reindexing_internal_value(entry->value))
+        );
+    }
+}
+
+static void ptn_array_pad_append_values(
+    PtnArray *target,
+    size_t count,
+    PtnValue value,
+    int64_t *next_integer_key
+) {
+    for (size_t i = 0; i < count; i++) {
+        if (*next_integer_key == INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            target,
+            ptn_array_int_key(*next_integer_key),
+            ptn_value_clone(value)
+        );
+        *next_integer_key += 1;
+    }
+}
+
+static PtnValue ptn_internal_array_pad(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_pad", 1, "array", args[0]);
+    int64_t length = ptn_value_to_integer(args[1]);
+    uint64_t requested = length < 0 ? (uint64_t)(-(length + 1)) + 1 : (uint64_t)length;
+    if (requested > 1048576ULL) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_pad(): Argument #2 ($length) must not exceed the maximum allowed array size"
+        );
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (requested <= array->len) {
+        int64_t next_integer_key = 0;
+        ptn_array_pad_copy_source(result.as.array, array, 1, &next_integer_key);
+        return result;
+    }
+
+    size_t padding = (size_t)(requested - array->len);
+    int64_t next_integer_key = 0;
+    if (length < 0) {
+        ptn_array_pad_append_values(result.as.array, padding, args[2], &next_integer_key);
+        ptn_array_pad_copy_source(result.as.array, array, 0, &next_integer_key);
+    } else {
+        ptn_array_pad_copy_source(result.as.array, array, 0, &next_integer_key);
+        ptn_array_pad_append_values(result.as.array, padding, args[2], &next_integer_key);
+    }
+    return result;
+}
+
 static void ptn_array_merge_append(PtnArray *target, PtnValue value) {
     PtnArrayKey key = ptn_array_int_key(target->next_auto_key);
     ptn_array_set_entry(target, key, ptn_value_clone(ptn_array_reindexing_internal_value(value)));
@@ -6136,6 +6216,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
         { "array_merge", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
+        { "array_pad", 3, 3, ptn_internal_array_pad },
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_product", 1, 1, ptn_internal_array_product },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },

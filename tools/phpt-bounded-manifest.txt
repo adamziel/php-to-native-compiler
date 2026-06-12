@@ -99,6 +99,7 @@ ext/standard/tests/array/array_count_values.phpt
 ext/standard/tests/array/array_fill.phpt
 ext/standard/tests/array/array_fill_basic.phpt
 ext/standard/tests/array/array_fill_keys.phpt
+ext/standard/tests/array/array_pad.phpt
 ext/standard/tests/array/array_filter_basic.phpt
 ext/standard/tests/array/array_flip_basic.phpt
 ext/standard/tests/array/array_key_exists.phpt
