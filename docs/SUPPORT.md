@@ -330,10 +330,13 @@ Post-RC architecture remains explicit rather than hidden:
   `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
   `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
-  `getmypid();`, `get_loaded_extensions([zend_extensions]);`,
-  `ob_get_contents();`, `php_sapi_name();`,
-  `phpversion([extension]);`, `zend_version();`, `intval(expr);`,
-  `chr(expr);`, `ord(expr);`,
+  `getmypid();`, `get_cfg_var(expr);`,
+  `get_loaded_extensions([zend_extensions]);`, `ini_get(expr);`,
+  `ob_get_contents();`, `php_ini_scanned_files();`, `php_sapi_name();`,
+  `php_uname([mode]);`, `phpversion([extension]);`, `preg_match(expr, expr);`,
+  `realpath(expr);`, `scandir(expr[, sorting_order[, context]]);`,
+  `str_replace(expr, expr, expr[, count]);`, `zend_version();`,
+  `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr[, mode]);`, `sizeof(expr[, mode]);`,
   `array_chunk(expr, expr[, expr]);`,
   `array_change_key_case(expr[, expr]);`, `array_column(expr, expr[, expr]);`,
@@ -378,10 +381,13 @@ Post-RC architecture remains explicit rather than hidden:
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
-  `getmypid()`, `get_loaded_extensions([zend_extensions])`,
-  `ob_get_contents()`, `php_sapi_name()`,
-  `phpversion([extension])`, `zend_version()`, `intval(expr)`, `chr(expr)`,
-  `ord(expr)`,
+  `getmypid()`, `get_cfg_var(expr)`,
+  `get_loaded_extensions([zend_extensions])`, `ini_get(expr)`,
+  `ob_get_contents()`, `php_ini_scanned_files()`, `php_sapi_name()`,
+  `php_uname([mode])`, `phpversion([extension])`, `preg_match(expr, expr)`,
+  `realpath(expr)`, `scandir(expr[, sorting_order[, context]])`,
+  `str_replace(expr, expr, expr[, count])`, `zend_version()`, `intval(expr)`,
+  `chr(expr)`, `ord(expr)`,
   `count(expr[, mode])`, `sizeof(expr[, mode])`,
   `array_chunk(expr, expr[, expr])`,
   `array_change_key_case(expr[, expr])`, `array_column(expr, expr[, expr])`,
@@ -594,13 +600,14 @@ Post-RC architecture remains explicit rather than hidden:
 - `php_sapi_name()` and the `PHP_SAPI` constant return the modeled CLI SAPI
   name.
 - `phpversion()` and the `PHP_VERSION` constant return the modeled PHP version
-  string. The optional
-  extension argument returns the same version for `core`, `standard`, and an
-  empty extension name, and `false` for unmodeled extension names.
+  string. The optional extension argument returns the same version for `core`,
+  `date`, `pcre`, `standard`, and an empty extension name, and `false` for
+  unmodeled extension names.
 - `zend_version()` returns the modeled Zend Engine version string.
 - `get_loaded_extensions()` returns the modeled loaded extension names
-  `Core` and `standard`; `get_loaded_extensions(true)` returns an empty array
-  because Zend extensions are outside the current runtime boundary.
+  `Core`, `date`, `pcre`, and `standard`; `get_loaded_extensions(true)`
+  returns an empty array because Zend extensions are outside the current
+  runtime boundary.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and

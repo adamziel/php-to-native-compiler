@@ -1,3 +1,7 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -15,7 +19,14 @@
 #include <direct.h>
 #include <process.h>
 #else
+#include <dirent.h>
+#include <regex.h>
+#include <sys/utsname.h>
 #include <unistd.h>
+#endif
+
+#if !defined(_WIN32)
+extern char *realpath(const char *path, char *resolved_path);
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -28,9 +39,38 @@
 #pragma GCC diagnostic ignored "-Wclobbered"
 #endif
 
+#if defined(_WIN32)
+#define REG_EXTENDED 0
+#define REG_ICASE 0
+typedef struct {
+    size_t re_nsub;
+} regex_t;
+typedef struct {
+    int rm_so;
+    int rm_eo;
+} regmatch_t;
+#endif
+
 #define PTN_PHP_VERSION "8.4.0"
-#define PTN_ZEND_VERSION "4.4.0"
 #define PTN_PHP_SAPI_NAME "cli"
+#define PTN_ZEND_VERSION "4.4.0"
+#define PTN_PHP_EXTENSION_DIR "."
+#if defined(_WIN32)
+#define PTN_PHP_OS "WINNT"
+#define PTN_PHP_SHLIB_SUFFIX "dll"
+#elif defined(__APPLE__)
+#define PTN_PHP_OS "Darwin"
+#define PTN_PHP_SHLIB_SUFFIX "dylib"
+#elif defined(__linux__)
+#define PTN_PHP_OS "Linux"
+#define PTN_PHP_SHLIB_SUFFIX "so"
+#elif defined(__FreeBSD__)
+#define PTN_PHP_OS "FreeBSD"
+#define PTN_PHP_SHLIB_SUFFIX "so"
+#else
+#define PTN_PHP_OS "Unknown"
+#define PTN_PHP_SHLIB_SUFFIX "so"
+#endif
 #define PTN_ARRAY_INDEX_MIN_ENTRIES 16
 #define PTN_SYMBOL_INDEX_MIN_ENTRIES 16
 #define PTN_E_ERROR 1

@@ -674,6 +674,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_string(PTN_PHP_SAPI_NAME);
         return 1;
     }
+    if (strcmp(name, "PHP_OS") == 0) {
+        *out = ptn_string(PTN_PHP_OS);
+        return 1;
+    }
+    if (strcmp(name, "PHP_SHLIB_SUFFIX") == 0) {
+        *out = ptn_string(PTN_PHP_SHLIB_SUFFIX);
+        return 1;
+    }
     if (strcmp(name, "PHP_EOL") == 0) {
         *out = ptn_string("\n");
         return 1;

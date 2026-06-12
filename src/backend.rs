@@ -699,6 +699,13 @@ fn by_ref_parameter_for_argument(
         .map(|(_, parameter)| parameter)
 }
 
+fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&'static str> {
+    if name.eq_ignore_ascii_case("preg_match") && argument_index == 2 {
+        return Some("matches");
+    }
+    None
+}
+
 fn emit_include_helpers(
     out: &mut String,
     includes: &[IncludeFile],
@@ -7259,6 +7266,16 @@ impl ValueEmitter {
                     name,
                     argument_index,
                     &parameter.name,
+                ));
+            } else if let Some(parameter_name) =
+                internal_by_ref_parameter_name(name, argument_index)
+            {
+                temps.push(self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    name,
+                    argument_index,
+                    parameter_name,
                 ));
             } else {
                 temps.push(self.emit_call_argument(out, name, argument_index, argument));

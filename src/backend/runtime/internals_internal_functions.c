@@ -4152,6 +4152,315 @@ static PtnValue ptn_internal_strtr(PtnRuntime *runtime, size_t argc, const PtnVa
     return result;
 }
 
+static const char *ptn_find_bytes(
+    const char *haystack,
+    size_t haystack_len,
+    const char *needle,
+    size_t needle_len
+) {
+    if (needle_len == 0 || needle_len > haystack_len) {
+        return NULL;
+    }
+    size_t last = haystack_len - needle_len;
+    for (size_t offset = 0; offset <= last; offset++) {
+        if (memcmp(haystack + offset, needle, needle_len) == 0) {
+            return haystack + offset;
+        }
+    }
+    return NULL;
+}
+
+static PtnValue ptn_internal_str_replace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnStringOperand search = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand replace = ptn_value_to_string_operand(args[1]);
+    PtnStringOperand subject = ptn_value_to_string_operand(args[2]);
+    int64_t replacement_count = 0;
+
+    PtnValue result;
+    if (search.len == 0) {
+        result = ptn_owned_string_len(
+            ptn_duplicate_string_len(subject.data, subject.len),
+            subject.len
+        );
+    } else {
+        PtnStringBuffer output;
+        ptn_string_buffer_init(&output);
+        size_t offset = 0;
+        while (offset < subject.len) {
+            const char *matched = ptn_find_bytes(
+                subject.data + offset,
+                subject.len - offset,
+                search.data,
+                search.len
+            );
+            if (matched == NULL) {
+                ptn_string_buffer_append_len(&output, subject.data + offset, subject.len - offset);
+                break;
+            }
+            size_t prefix_len = (size_t)(matched - (subject.data + offset));
+            ptn_string_buffer_append_len(&output, subject.data + offset, prefix_len);
+            ptn_string_buffer_append_len(&output, replace.data, replace.len);
+            offset += prefix_len + search.len;
+            replacement_count++;
+        }
+        result = ptn_owned_string_len(output.data, output.len);
+    }
+
+    if (argc >= 4 && args[3].type == PTN_REFERENCE) {
+        PtnValue count_value = ptn_int(replacement_count);
+        ptn_reference_assign(args[3].as.reference, count_value);
+    }
+
+    ptn_string_operand_free(search);
+    ptn_string_operand_free(replace);
+    ptn_string_operand_free(subject);
+    return result;
+}
+
+static int ptn_regex_is_escaped(const char *data, size_t index) {
+    size_t slash_count = 0;
+    while (index > 0 && data[index - 1] == '\\') {
+        slash_count++;
+        index--;
+    }
+    return (slash_count % 2) != 0;
+}
+
+static int ptn_regex_delimiter_end(PtnStringOperand pattern, size_t *end_out) {
+    if (pattern.len < 2) {
+        return 0;
+    }
+    char delimiter = pattern.data[0];
+    if (isalnum((unsigned char)delimiter) || delimiter == '\\' || isspace((unsigned char)delimiter)) {
+        return 0;
+    }
+    for (size_t i = pattern.len - 1; i > 0; i--) {
+        if (pattern.data[i] == delimiter && !ptn_regex_is_escaped(pattern.data, i)) {
+            *end_out = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_regex_char_is_posix_special(char byte) {
+    switch (byte) {
+        case '.':
+        case '^':
+        case '$':
+        case '*':
+        case '+':
+        case '?':
+        case '(':
+        case ')':
+        case '[':
+        case ']':
+        case '{':
+        case '}':
+        case '|':
+        case '\\':
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static void ptn_capture_map_push(size_t **capture_map, size_t *capture_count, size_t group_index) {
+    size_t new_count = *capture_count + 1;
+    size_t *new_map = realloc(*capture_map, new_count * sizeof(size_t));
+    if (new_map == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    new_map[*capture_count] = group_index;
+    *capture_map = new_map;
+    *capture_count = new_count;
+}
+
+static char *ptn_pcre_pattern_to_posix(
+    PtnStringOperand pattern,
+    int *flags_out,
+    size_t **capture_map_out,
+    size_t *capture_count_out
+) {
+    size_t end = 0;
+    if (!ptn_regex_delimiter_end(pattern, &end)) {
+        return NULL;
+    }
+
+    *flags_out = REG_EXTENDED;
+    for (size_t i = end + 1; i < pattern.len; i++) {
+        if (pattern.data[i] == 'i') {
+            *flags_out |= REG_ICASE;
+        }
+    }
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t *capture_map = NULL;
+    size_t capture_count = 0;
+    size_t posix_group_index = 0;
+    int in_char_class = 0;
+    char delimiter = pattern.data[0];
+    for (size_t i = 1; i < end; i++) {
+        char byte = pattern.data[i];
+        if (byte == '\\' && i + 1 < end) {
+            char next = pattern.data[++i];
+            switch (next) {
+                case 'd':
+                    ptn_string_buffer_append(&output, "[0-9]");
+                    break;
+                case 's':
+                    ptn_string_buffer_append(&output, "[[:space:]]");
+                    break;
+                case 'w':
+                    ptn_string_buffer_append(&output, "[A-Za-z0-9_]");
+                    break;
+                case 'n':
+                    ptn_string_buffer_append_char(&output, '\n');
+                    break;
+                case 'r':
+                    ptn_string_buffer_append_char(&output, '\r');
+                    break;
+                case 't':
+                    ptn_string_buffer_append_char(&output, '\t');
+                    break;
+                default:
+                    if (next == delimiter || !ptn_regex_char_is_posix_special(next)) {
+                        ptn_string_buffer_append_char(&output, next);
+                    } else {
+                        ptn_string_buffer_append_char(&output, '\\');
+                        ptn_string_buffer_append_char(&output, next);
+                    }
+                    break;
+            }
+            continue;
+        }
+
+        if (byte == '[') {
+            in_char_class = 1;
+            ptn_string_buffer_append_char(&output, byte);
+            continue;
+        }
+        if (byte == ']') {
+            in_char_class = 0;
+            ptn_string_buffer_append_char(&output, byte);
+            continue;
+        }
+
+        if (!in_char_class && byte == '(') {
+            posix_group_index++;
+            if (i + 2 < end && pattern.data[i + 1] == '?' && pattern.data[i + 2] == ':') {
+                ptn_string_buffer_append_char(&output, '(');
+                i += 2;
+                continue;
+            }
+            ptn_capture_map_push(&capture_map, &capture_count, posix_group_index);
+        }
+
+        ptn_string_buffer_append_char(&output, byte);
+    }
+    *capture_map_out = capture_map;
+    *capture_count_out = capture_count;
+    return output.data;
+}
+
+static void ptn_preg_match_assign_matches(
+    PtnValue matches_arg,
+    const char *subject,
+    regmatch_t *matches,
+    size_t *capture_map,
+    size_t capture_count
+) {
+    if (matches_arg.type != PTN_REFERENCE) {
+        return;
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i <= capture_count; i++) {
+        size_t match_index = i == 0 ? 0 : capture_map[i - 1];
+        PtnValue value;
+        if (matches[match_index].rm_so < 0 || matches[match_index].rm_eo < matches[match_index].rm_so) {
+            value = ptn_string("");
+        } else {
+            size_t start = (size_t)matches[match_index].rm_so;
+            size_t len = (size_t)(matches[match_index].rm_eo - matches[match_index].rm_so);
+            value = ptn_owned_string_len(ptn_duplicate_string_len(subject + start, len), len);
+        }
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), value);
+    }
+    ptn_reference_assign(matches_arg.as.reference, result);
+    ptn_value_destroy(&result);
+}
+
+static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand pattern = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand subject = ptn_value_to_string_operand(args[1]);
+    int regex_flags = 0;
+    size_t *capture_map = NULL;
+    size_t capture_count = 0;
+    char *posix_pattern = ptn_pcre_pattern_to_posix(pattern, &regex_flags, &capture_map, &capture_count);
+    if (posix_pattern == NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        ptn_emit_warning(&runtime->diagnostics, "preg_match(): Compilation failed", line);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    free(posix_pattern);
+    free(capture_map);
+    ptn_string_operand_free(pattern);
+    ptn_string_operand_free(subject);
+    ptn_emit_warning(&runtime->diagnostics, "preg_match(): regex matching is unsupported on this platform", line);
+    return ptn_bool(0);
+#else
+    regex_t regex;
+    int compile_result = regcomp(&regex, posix_pattern, regex_flags);
+    free(posix_pattern);
+    if (compile_result != 0) {
+        free(capture_map);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        ptn_emit_warning(&runtime->diagnostics, "preg_match(): Compilation failed", line);
+        return ptn_bool(0);
+    }
+
+    size_t match_count = regex.re_nsub + 1;
+    regmatch_t *matches = calloc(match_count, sizeof(regmatch_t));
+    if (matches == NULL) {
+        regfree(&regex);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        ptn_abort_out_of_memory();
+    }
+    char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
+    int exec_result = regexec(&regex, subject_c, match_count, matches, 0);
+    int matched = exec_result == 0;
+    if (argc >= 3) {
+        if (matched) {
+            ptn_preg_match_assign_matches(args[2], subject_c, matches, capture_map, capture_count);
+        } else if (args[2].type == PTN_REFERENCE) {
+            PtnValue empty_matches = ptn_array_from_literal_entries(0, NULL);
+            ptn_reference_assign(args[2].as.reference, empty_matches);
+            ptn_value_destroy(&empty_matches);
+        }
+    }
+
+    free(subject_c);
+    free(matches);
+    free(capture_map);
+    regfree(&regex);
+    ptn_string_operand_free(pattern);
+    ptn_string_operand_free(subject);
+    return ptn_int(matched ? 1 : 0);
+#endif
+}
+
 static int ptn_quotemeta_needs_escape(unsigned char byte) {
     switch (byte) {
         case '.':
@@ -5017,6 +5326,28 @@ static PtnValue ptn_internal_file_exists(PtnRuntime *runtime, size_t argc, const
     return ptn_path_predicate(runtime, "file_exists", args[0], line, ptn_path_exists_c);
 }
 
+static PtnValue ptn_internal_realpath(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "realpath(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    char *resolved = _fullpath(NULL, path, 0);
+#else
+    char *resolved = realpath(path, NULL);
+#endif
+    free(path);
+    if (resolved == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(resolved);
+}
+
 static PtnValue ptn_internal_is_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     return ptn_path_predicate(runtime, "is_dir", args[0], line, ptn_path_is_directory_c);
@@ -5025,6 +5356,73 @@ static PtnValue ptn_internal_is_dir(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_is_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     return ptn_path_predicate(runtime, "is_file", args[0], line, ptn_path_is_regular_file_c);
+}
+
+static int ptn_scandir_name_compare(const void *left, const void *right) {
+    const char *left_name = *(const char * const *)left;
+    const char *right_name = *(const char * const *)right;
+    return strcmp(left_name, right_name);
+}
+
+static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "scandir(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    ptn_emit_file_warning(runtime, "scandir", path, "directory scanning is unsupported on this platform", line);
+    free(path);
+    return ptn_bool(0);
+#else
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        ptn_emit_file_warning(runtime, "scandir", path, strerror(errno), line);
+        free(path);
+        return ptn_bool(0);
+    }
+
+    char **names = NULL;
+    size_t len = 0;
+    size_t capacity = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (len == capacity) {
+            size_t new_capacity = capacity == 0 ? 16 : capacity * 2;
+            if (new_capacity < capacity) {
+                closedir(dir);
+                free(path);
+                ptn_abort_out_of_memory();
+            }
+            char **new_names = realloc(names, new_capacity * sizeof(char *));
+            if (new_names == NULL) {
+                closedir(dir);
+                free(path);
+                ptn_abort_out_of_memory();
+            }
+            names = new_names;
+            capacity = new_capacity;
+        }
+        names[len++] = ptn_duplicate_string(entry->d_name);
+    }
+    closedir(dir);
+    free(path);
+    qsort(names, len, sizeof(char *), ptn_scandir_name_compare);
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < len; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_owned_string(names[i]));
+    }
+    free(names);
+    return result;
+#endif
 }
 
 static PtnValue ptn_internal_mkdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -6310,17 +6708,44 @@ static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const Pt
 #endif
 }
 
-static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
-    int zend_extensions = argc >= 1 && ptn_is_truthy(args[0]);
-    PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    if (zend_extensions) {
-        return result;
+static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (value.len != literal_len) {
+        return 0;
     }
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("standard"));
-    return result;
+    for (size_t i = 0; i < literal_len; i++) {
+        if (tolower((unsigned char)value.data[i]) != tolower((unsigned char)literal[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
+    return ptn_string_operand_ascii_case_equal(extension, "Core") ||
+        ptn_string_operand_ascii_case_equal(extension, "date") ||
+        ptn_string_operand_ascii_case_equal(extension, "pcre") ||
+        ptn_string_operand_ascii_case_equal(extension, "standard");
+}
+
+static int ptn_ini_value(PtnStringOperand option, PtnValue *out) {
+    if (ptn_string_operand_ascii_case_equal(option, "date.timezone")) {
+        *out = ptn_string("UTC");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "extension_dir")) {
+        *out = ptn_string(PTN_PHP_EXTENSION_DIR);
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
+        *out = ptn_string("1000000");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "precision")) {
+        *out = ptn_string("14");
+        return 1;
+    }
+    return 0;
 }
 
 static PtnValue ptn_internal_php_sapi_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -6329,6 +6754,14 @@ static PtnValue ptn_internal_php_sapi_name(PtnRuntime *runtime, size_t argc, con
     (void)args;
     (void)line;
     return ptn_string(PTN_PHP_SAPI_NAME);
+}
+
+static PtnValue ptn_internal_zend_version(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_string(PTN_ZEND_VERSION);
 }
 
 static PtnValue ptn_internal_phpversion(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -6341,8 +6774,7 @@ static PtnValue ptn_internal_phpversion(PtnRuntime *runtime, size_t argc, const 
     PtnStringOperand extension = ptn_value_to_string_operand(args[0]);
     int modeled_extension =
         extension.data[0] == '\0' ||
-        ptn_ascii_case_equal(extension.data, "core") ||
-        ptn_ascii_case_equal(extension.data, "standard");
+        ptn_is_modeled_extension_operand(extension);
     ptn_string_operand_free(extension);
     if (modeled_extension) {
         return ptn_string(PTN_PHP_VERSION);
@@ -6350,12 +6782,122 @@ static PtnValue ptn_internal_phpversion(PtnRuntime *runtime, size_t argc, const 
     return ptn_bool(0);
 }
 
-static PtnValue ptn_internal_zend_version(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static PtnValue ptn_internal_php_uname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    char mode = 'a';
+    if (argc >= 1) {
+        PtnStringOperand mode_operand = ptn_value_to_string_operand(args[0]);
+        if (mode_operand.len > 0) {
+            mode = (char)tolower((unsigned char)mode_operand.data[0]);
+        }
+        ptn_string_operand_free(mode_operand);
+    }
+
+#if defined(_WIN32)
+    const char *system_name = PTN_PHP_OS;
+    const char *node_name = "";
+    const char *release = "";
+    const char *version = "";
+    const char *machine = "";
+#else
+    struct utsname info;
+    if (uname(&info) != 0) {
+        return ptn_string(PTN_PHP_OS);
+    }
+    const char *system_name = info.sysname;
+    const char *node_name = info.nodename;
+    const char *release = info.release;
+    const char *version = info.version;
+    const char *machine = info.machine;
+#endif
+
+    switch (mode) {
+        case 's':
+            return ptn_string(system_name);
+        case 'n':
+            return ptn_string(node_name);
+        case 'r':
+            return ptn_string(release);
+        case 'v':
+            return ptn_string(version);
+        case 'm':
+            return ptn_string(machine);
+        case 'a':
+        default: {
+            PtnStringBuffer buffer;
+            ptn_string_buffer_init(&buffer);
+            ptn_string_buffer_append(&buffer, system_name);
+            ptn_string_buffer_append_char(&buffer, ' ');
+            ptn_string_buffer_append(&buffer, node_name);
+            ptn_string_buffer_append_char(&buffer, ' ');
+            ptn_string_buffer_append(&buffer, release);
+            ptn_string_buffer_append_char(&buffer, ' ');
+            ptn_string_buffer_append(&buffer, version);
+            ptn_string_buffer_append_char(&buffer, ' ');
+            ptn_string_buffer_append(&buffer, machine);
+            return ptn_owned_string_len(buffer.data, buffer.len);
+        }
+    }
+}
+
+static PtnValue ptn_internal_ini_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringOperand option = ptn_value_to_string_operand(args[0]);
+    PtnValue value;
+    int found = ptn_ini_value(option, &value);
+    ptn_string_operand_free(option);
+    return found ? value : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_get_cfg_var(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringOperand option = ptn_value_to_string_operand(args[0]);
+    if (ptn_string_operand_ascii_case_equal(option, "cfg_file_path")) {
+        ptn_string_operand_free(option);
+        return ptn_bool(0);
+    }
+    PtnValue value;
+    int found = ptn_ini_value(option, &value);
+    ptn_string_operand_free(option);
+    return found ? value : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_php_ini_scanned_files(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
     (void)args;
     (void)line;
-    return ptn_string(PTN_ZEND_VERSION);
+    return ptn_string("");
+}
+
+static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    int zend_extensions = argc >= 1 && ptn_is_truthy(args[0]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (zend_extensions) {
+        return result;
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("date"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("pcre"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("standard"));
+    return result;
+}
+
+static PtnValue ptn_internal_extension_loaded(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringOperand extension = ptn_value_to_string_operand(args[0]);
+    int loaded = ptn_is_modeled_extension_operand(extension);
+    ptn_string_operand_free(extension);
+    return ptn_bool(loaded);
 }
 
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
@@ -6815,6 +7357,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "dirname", 1, 1, ptn_internal_dirname },
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
+        { "extension_loaded", 1, 1, ptn_internal_extension_loaded },
         { "fclose", 1, 1, ptn_internal_fclose },
         { "fdiv", 2, 2, ptn_internal_fdiv },
         { "file_exists", 1, 1, ptn_internal_file_exists },
@@ -6825,6 +7368,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
         { "function_exists", 1, 1, ptn_internal_function_exists },
+        { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 1, 1, ptn_internal_get_class },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "getmypid", 0, 0, ptn_internal_getmypid },
@@ -6836,6 +7380,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "highlight_string", 1, 2, ptn_internal_highlight_string },
         { "implode", 1, 2, ptn_internal_implode },
         { "in_array", 2, 3, ptn_internal_in_array },
+        { "ini_get", 1, 1, ptn_internal_ini_get },
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
         { "is_array", 1, 1, ptn_internal_is_array },
@@ -6872,19 +7417,24 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ob_get_contents", 0, 0, ptn_internal_ob_get_contents },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "ord", 1, 1, ptn_internal_ord },
+        { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
+        { "php_uname", 0, 1, ptn_internal_php_uname },
         { "phpversion", 0, 1, ptn_internal_phpversion },
         { "pi", 0, 0, ptn_internal_pi },
         { "pow", 2, 2, ptn_internal_pow },
+        { "preg_match", 2, 5, ptn_internal_preg_match },
         { "prev", 1, 1, ptn_internal_prev },
         { "print_r", 1, 2, ptn_internal_print_r },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "range", 2, 3, ptn_internal_range },
+        { "realpath", 1, 1, ptn_internal_realpath },
         { "reset", 1, 1, ptn_internal_reset },
         { "rmdir", 1, 2, ptn_internal_rmdir },
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
+        { "scandir", 1, 3, ptn_internal_scandir },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
@@ -6897,6 +7447,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
         { "str_pad", 2, 4, ptn_internal_str_pad },
         { "str_repeat", 2, 2, ptn_internal_str_repeat },
+        { "str_replace", 3, 4, ptn_internal_str_replace },
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "str_shuffle", 1, 1, ptn_internal_str_shuffle },
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
