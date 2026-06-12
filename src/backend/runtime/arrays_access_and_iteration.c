@@ -299,6 +299,19 @@ static PTN_UNUSED int ptn_object_has_public_property_slot(
     return entry != NULL;
 }
 
+static PTN_UNUSED int ptn_object_public_property_slot_exists(
+    PtnObject *object,
+    const char *property
+) {
+    if (object == NULL || property == NULL) {
+        return 0;
+    }
+    PtnArrayKey key = ptn_array_string_key(property);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    return entry != NULL;
+}
+
 static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     PtnRuntime *runtime,
     PtnObject *object,

@@ -8218,12 +8218,14 @@ static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
+static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -8372,6 +8374,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "prev", 1, 1, ptn_internal_prev },
         { "print_r", 1, 2, ptn_internal_print_r },
         { "printf", 1, PTN_VARIADIC_ARGS, ptn_internal_printf },
+        { "property_exists", 2, 2, ptn_internal_property_exists },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "range", 2, 3, ptn_internal_range },
@@ -8754,6 +8757,74 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
     int exists = ptn_internal_class_method_exists(class_name, method_name);
     free(method_name);
     free(class_name);
+    return ptn_bool(exists);
+}
+
+static const char *ptn_property_exists_target_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_BOOL) {
+        return value.as.boolean ? "true" : "false";
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static void ptn_throw_property_exists_target_type_error(PtnRuntime *runtime, PtnValue value) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "property_exists(): Argument #1 ($object_or_class) must be of type object|string, %s given",
+        ptn_property_exists_target_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue target = ptn_value_deref(args[0]);
+    if (
+        target.type != PTN_OBJECT &&
+        target.type != PTN_STRING &&
+        target.type != PTN_CLOSURE &&
+        target.type != PTN_EXCEPTION
+    ) {
+        ptn_throw_property_exists_target_type_error(runtime, target);
+        return ptn_null();
+    }
+
+    PtnStringOperand property_operand = ptn_internal_expect_string_arg(
+        runtime,
+        "property_exists",
+        2,
+        "property",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(property_operand);
+        return ptn_null();
+    }
+    char *property_name = ptn_duplicate_string_len(property_operand.data, property_operand.len);
+
+    int exists = 0;
+    if (target.type == PTN_OBJECT) {
+        exists = ptn_declared_class_property_exists(target.as.object->class_name, property_name) ||
+            ptn_object_public_property_slot_exists(target.as.object, property_name);
+    } else if (target.type == PTN_STRING) {
+        char *class_name = ptn_value_to_string(target);
+        exists = ptn_declared_class_property_exists(class_name, property_name);
+        free(class_name);
+    } else if (target.type == PTN_CLOSURE) {
+        exists = ptn_declared_class_property_exists("Closure", property_name);
+    } else if (target.type == PTN_EXCEPTION) {
+        exists = ptn_declared_class_property_exists(target.as.exception->class_name, property_name);
+    }
+
+    free(property_name);
+    ptn_string_operand_free(property_operand);
     return ptn_bool(exists);
 }
 

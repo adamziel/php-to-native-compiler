@@ -15,7 +15,8 @@ probes, direct static-property `??=`, public instance property reads/writes,
 public property `??=`, read-side property `isset()`/`empty()`/`??` probes, and
 bounded private instance-property declarations read/written from
 declaring-class methods, declared private/protected instance-property metadata
-for initialization and dump labels, and public non-static
+for initialization, dump labels, and `property_exists()` checks, inherited
+static method calls through declared class names, and public non-static
 `__construct` dispatch through the declared-method path.
 
 Post-RC architecture remains explicit rather than hidden:
@@ -23,7 +24,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Classes and inheritance: interfaces, traits, full visibility-aware/typed/
   promoted properties, broad metadata/reflection, destructors, old-style
   constructors, class constants, and complete inherited property/method
-  resolution remain outside the RC boundary.
+  resolution beyond the current declared-method and metadata slices remain
+  outside the RC boundary.
 - Namespaces: unbracketed namespace declarations, qualified names, and simple
   class/function/constant imports are supported for the current top-level
   function/constant and declared-class subset. Bracketed namespace blocks,
@@ -31,9 +33,9 @@ Post-RC architecture remains explicit rather than hidden:
   namespace/class constants, and namespace-sensitive reflection remain
   post-RC.
 - Static properties: direct public static reads/writes and `??=` are
-  supported, but visibility, inheritance, late static binding, typed/default
-  metadata, and static-property compound lvalues outside `??=` and inc/dec are
-  post-RC.
+  supported, and `property_exists()` can inspect the current declared static
+  property metadata. Visibility, late static binding, typed/default metadata,
+  and static-property compound lvalues outside `??=` and inc/dec are post-RC.
 - Magic methods: public declared instance `__construct` is supported during
   object construction, and public declared instance `__call` is supported as a
   fallback for direct object calls and supported object callable dispatch when
@@ -826,6 +828,11 @@ Post-RC architecture remains explicit rather than hidden:
 - `function_exists()` over generated user-function declarations, including
   resolved namespaced declarations, and the currently registered
   internal-function names.
+- `property_exists()` over current object-or-class operands, including
+  declared instance/static property metadata with inherited-private exclusion
+  and stdClass dynamic property slots. Invalid non-object/non-string first
+  operands throw modeled `TypeError`s; property-name arguments use the current
+  weak string-argument coercion path.
 - `is_callable()` over current string, closure, static method array, and object
   method array callable values, including inherited public object methods,
   supported `__call` fallback, and the optional syntax-only flag. The third
@@ -926,18 +933,20 @@ Post-RC architecture remains explicit rather than hidden:
 - Top-level class declarations, including resolved namespaced class names, with
   public static and instance methods in the current function subset. Static
   methods are registered in the callable table under `Class::method`, can be
-  called directly with `Class::method(...)`, and can be used by dynamic calls
-  or internal callbacks through `"Class::method"` and `["Class", "method"]`
-  callable values. Declared class names and declared method names are exposed
-  through bounded `class_exists()` and
+  called directly with `Class::method(...)`, including inherited static
+  methods resolved through the current declared-method lookup, and can be used
+  by dynamic calls or internal callbacks through `"Class::method"` and
+  `["Class", "method"]` callable values. Declared class names and declared
+  method names are exposed through bounded `class_exists()` and
   `method_exists()` metadata, with case-insensitive lookup and `stdClass`
-  recognized as the current built-in object shell. Object class names are
-  exposed through bounded `get_class($object)` for current object, closure, and
-  exception values; non-object operands throw a modeled `TypeError`. Declared
-  and inherited public instance methods can be called directly through object
-  receivers and through `[$object, "method"]` callable values, including
-  internal callback dispatch. Public `__construct` methods in declared classes
-  are invoked
+  recognized as the current built-in object shell. Declared instance/static
+  property names are exposed through bounded `property_exists()` metadata.
+  Object class names are exposed through bounded `get_class($object)` for
+  current object, closure, and exception values; non-object operands throw a
+  modeled `TypeError`. Declared and inherited public instance methods can be
+  called directly through object receivers and through `[$object, "method"]`
+  callable values, including internal callback dispatch. Public `__construct`
+  methods in declared classes are invoked
   during `new Class(...)` after declared property defaults are installed,
   using the same method dispatch, `$this` binding, inherited public method
   lookup, positional argument/default-parameter handling, and return-value
@@ -956,8 +965,9 @@ Post-RC architecture remains explicit rather than hidden:
   expression-form `??` over declared-class static properties, and supports
   direct static-property null coalescing assignment `Class::$name ??= expr` and
   `self::$name ??= expr` with quiet reads and lazy right-hand evaluation.
-  Ordinary undeclared static property reads/writes and inc/dec throw modeled
-  PHP `Error` diagnostics.
+  `property_exists()` sees declared static properties through class metadata
+  using the same inherited-private exclusion as PHP. Ordinary undeclared static
+  property reads/writes and inc/dec throw modeled PHP `Error` diagnostics.
 - `new stdClass` and declared-class object shells, boxed object handles, public
   dynamic property reads/writes such as `$object->name`, and public declared
   instance properties with supported constant defaults. Object assignment
@@ -972,11 +982,12 @@ Post-RC architecture remains explicit rather than hidden:
   pre/post inc/dec uses the modeled property
   read/write path. Declared private/protected instance properties are
   initialized with the same storage path and preserve metadata for `var_dump()`
-  private/protected labels. Private declared properties are read/written from
-  methods of their declaring class and rejected for outside reads/writes with
-  modeled `Error`; full protected visibility, inherited property resolution,
-  typed properties, constructor promotion, magic, destructors, and
-  reflection property metadata remain outside this support boundary.
+  private/protected labels and `property_exists()` checks. Private declared
+  properties are read/written from methods of their declaring class and
+  rejected for outside reads/writes with modeled `Error`; full protected
+  visibility, inherited property resolution beyond current metadata checks,
+  typed properties, constructor promotion, magic, destructors, and reflection
+  property metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined

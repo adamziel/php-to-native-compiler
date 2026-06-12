@@ -58,7 +58,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_dir,
     );
     if runtime_requirements.internal_function_dispatch {
-        emit_user_function_dispatch(&mut out, &module.functions);
+        emit_user_function_dispatch(&mut out, &module.functions, &module.classes);
     }
     emit_class_metadata_helpers(&mut out, &module.classes);
     if runtime_requirements.internal_function_dispatch {
@@ -884,7 +884,11 @@ fn type_hint_scalar_cast_helper(type_hint: Option<TypeHint>) -> Option<&'static 
     }
 }
 
-fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
+fn emit_user_function_dispatch(
+    out: &mut String,
+    functions: &[FunctionDecl],
+    classes: &[ClassDecl],
+) {
     out.push_str("\nstatic int ptn_user_function_exists(const char *name) {\n");
     if functions.iter().all(|function| {
         function.is_anonymous || (function.class_name.is_some() && !function.is_static)
@@ -965,6 +969,23 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
         out.push_str("(runtime, ptn_null(), argc, args, line);\n");
         out.push_str("    }\n");
     }
+    for class in classes {
+        for method in class_method_lookup_chain(class, classes) {
+            if !method.is_static {
+                continue;
+            }
+            out.push_str("    if (ptn_ascii_case_equal(name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("::");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("        *found = 1;\n");
+            out.push_str("        return ");
+            out.push_str(&user_function_c_name(method.function_index));
+            out.push_str("(runtime, ptn_null(), argc, args, line);\n");
+            out.push_str("    }\n");
+        }
+    }
     out.push_str("    *found = 0;\n");
     out.push_str("    return ptn_null();\n");
     out.push_str("}\n");
@@ -1037,6 +1058,42 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_property_exists(const char *class_name, const char *property_name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for property in class_property_exists_chain(class, classes) {
+            if property.visibility == PropertyVisibility::Private
+                && !property
+                    .declaring_class
+                    .eq_ignore_ascii_case(class.name.as_str())
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(property.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
@@ -1168,6 +1225,58 @@ fn class_method_lookup_chain<'a>(
         &mut methods,
     );
     methods
+}
+
+struct ClassPropertyExistsEntry<'a> {
+    declaring_class: &'a str,
+    name: &'a str,
+    visibility: PropertyVisibility,
+}
+
+fn class_property_exists_chain<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Vec<ClassPropertyExistsEntry<'a>> {
+    fn collect<'a>(
+        class: &'a ClassDecl,
+        classes: &'a [ClassDecl],
+        seen_classes: &mut HashSet<String>,
+        properties: &mut Vec<ClassPropertyExistsEntry<'a>>,
+    ) {
+        let lookup_name = class.name.to_ascii_lowercase();
+        if !seen_classes.insert(lookup_name) {
+            return;
+        }
+        properties.extend(
+            class
+                .properties
+                .iter()
+                .map(|property| ClassPropertyExistsEntry {
+                    declaring_class: class.name.as_str(),
+                    name: property.name.as_str(),
+                    visibility: property.visibility,
+                }),
+        );
+        properties.extend(class.static_properties.iter().map(|property| {
+            ClassPropertyExistsEntry {
+                declaring_class: class.name.as_str(),
+                name: property.name.as_str(),
+                visibility: property.visibility,
+            }
+        }));
+
+        let Some(parent_name) = &class.parent_name else {
+            return;
+        };
+        if let Some(parent) = class_by_name(classes, parent_name) {
+            collect(parent, classes, seen_classes, properties);
+        }
+    }
+
+    let mut properties = Vec::new();
+    let mut seen_classes = HashSet::new();
+    collect(class, classes, &mut seen_classes, &mut properties);
+    properties
 }
 
 fn class_property_initialization_chain(

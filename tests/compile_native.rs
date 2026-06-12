@@ -1452,6 +1452,11 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         .unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function method_exists()");
 
+    let error =
+        parser::parse("<?php function Property_Exists($object, $property) { return false; }")
+            .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function property_exists()");
+
     let error = parser::parse("<?php function is_callable($value) { return false; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function is_callable()");
 
@@ -18319,6 +18324,103 @@ echo Counter::$value, \"\\n\";
     assert!(c_source.contains("ptn_runtime_define_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+}
+
+#[test]
+fn compile_property_exists_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-property-exists-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-exists-metadata.php");
+    let output = root.join("property-exists-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class Base {
+    private $basePrivate = 1;
+    protected $shared = 2;
+    public static $baseStatic = 3;
+    private static $hiddenStatic = 4;
+
+    public static function inheritedProbe() {
+        return property_exists(\"Child\", \"baseStatic\");
+    }
+}
+
+class Child extends Base {
+    private $childPrivate = 5;
+    public $visible = 6;
+    public static $childStatic = 7;
+}
+
+$child = new Child();
+$child->dynamic = 8;
+$std = new stdClass();
+$std->value = null;
+
+var_dump(function_exists(\"property_exists\"));
+var_dump(Child::inheritedProbe());
+var_dump(property_exists(\"Base\", \"basePrivate\"));
+var_dump(property_exists(\"Child\", \"basePrivate\"));
+var_dump(property_exists(\"Child\", \"shared\"));
+var_dump(property_exists(\"Child\", \"baseStatic\"));
+var_dump(property_exists(\"Child\", \"hiddenStatic\"));
+var_dump(property_exists(\"Child\", \"childPrivate\"));
+var_dump(property_exists(\"stdClass\", \"value\"));
+var_dump(property_exists($child, \"childPrivate\"));
+var_dump(property_exists($child, \"basePrivate\"));
+var_dump(property_exists($child, \"shared\"));
+var_dump(property_exists($child, \"baseStatic\"));
+var_dump(property_exists($child, \"dynamic\"));
+var_dump(property_exists($std, \"value\"));
+var_dump(property_exists($std, \"missing\"));
+
+try {
+    var_dump(property_exists(1, \"value\"));
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    var_dump(property_exists(\"Child\", new stdClass()));
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "property_exists(): Argument #1 ($object_or_class) must be of type object|string, int given\n",
+            "property_exists(): Argument #2 ($property) must be of type string, stdClass given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_exists"));
+    assert!(c_source.contains("ptn_object_public_property_slot_exists"));
 }
 
 #[test]

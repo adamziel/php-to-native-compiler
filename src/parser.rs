@@ -4325,6 +4325,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "debug_zval_dump"
             | "is_callable"
             | "method_exists"
+            | "property_exists"
     )
 }
 

@@ -16,7 +16,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Top-level functions and declared methods include magic constants, call-frame
   introspection, scalar and void return type hints, array defaults,
   by-reference returns, typed coercion, constructor dispatch, public destructor
-  dispatch, and metadata intrinsics.
+  dispatch, inherited static call dispatch, and metadata intrinsics.
 - Includes share caller file scope and return values; bounded dynamic
   include/require dispatch uses canonical once guards when candidate string
   paths are statically enumerable.
@@ -40,7 +40,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `assert()` throws catchable `AssertionError`; bounded `highlight_file()`
   shares file-return paths.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,
-  `zend_version()`, `PHP_VERSION`, `PHP_SAPI`, and `get_loaded_extensions()`.
+  `zend_version()`, `PHP_VERSION`, `PHP_SAPI`, `get_loaded_extensions()`,
+  and bounded class/property existence checks.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable and variable-root array/append compounds share boxed
@@ -58,9 +59,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   resource/object operands; array search/replace/subject forms remain bounded.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
-  slots distinct from child public redeclarations; public `__destruct()` runs
-  on last-reference release and shutdown. Full visibility and inheritance
-  remain bounded.
+  slots distinct from child public redeclarations; `property_exists()` covers
+  the current declared/static property metadata and stdClass dynamic slots.
+  Public `__destruct()` runs on last-reference release and shutdown. Full
+  visibility and inheritance remain bounded.
 - Static properties support reads/writes, `??=`, plus quiet `isset()`,
   `empty()`, and `??`.
 - Public class constants support scalar/array defaults, direct

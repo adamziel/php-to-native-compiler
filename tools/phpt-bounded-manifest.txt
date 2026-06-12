@@ -63,6 +63,8 @@ Zend/tests/numeric_strings/string_offset.phpt
 Zend/tests/oct_whitespace.phpt
 Zend/tests/offset_assign.phpt
 Zend/tests/or_001.phpt
+Zend/tests/property_exists.phpt
+Zend/tests/property_exists_basic.phpt
 Zend/tests/str_offset_001.phpt
 Zend/tests/string_offset_int_min_max.phpt
 Zend/tests/switch/034.phpt
