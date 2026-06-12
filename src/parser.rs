@@ -3673,6 +3673,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "str_repeat"
             | "stripcslashes"
             | "stripslashes"
+            | "strtolower"
+            | "strtoupper"
             | "quotemeta"
             | "chunk_split"
             | "strip_tags"

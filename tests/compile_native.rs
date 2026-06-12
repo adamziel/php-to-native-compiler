@@ -1227,6 +1227,12 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         .unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function str_ends_with()");
 
+    let error = parser::parse("<?php function STRTOLOWER($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strtolower()");
+
+    let error = parser::parse("<?php function StrToUpper($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strtoupper()");
+
     let error = parser::parse("<?php function Quoted_Printable_Decode($value) { return $value; }")
         .unwrap_err();
     assert_eq!(
@@ -3853,11 +3859,12 @@ fn compile_string_internals_use_direct_string_operand_fast_paths_to_native_binar
         "<?php\n\
 echo strlen(\"abcdef\"), \" \", strcmp(\"abc\", \"abd\"), \" \", str_contains(\"abcdef\", \"cd\"), \" \", str_starts_with(\"abcdef\", \"ab\"), \" \", str_ends_with(\"abcdef\", \"ef\"), \"\\n\";\n\
 echo str_rot13(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \" \", bin2hex(\"Az\"), \" \", quotemeta(\"a.b\"), \" \", chunk_split(\"abcd\", 2, \"|\"), \"\\n\";\n\
+echo bin2hex(strtolower(\"Az\" . chr(0) . \"Q\" . chr(255))), \" \", bin2hex(strtoupper(\"az\" . chr(0) . \"q\" . chr(255))), \"\\n\";\n\
 echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
 echo bin2hex(strip_tags(\"<b>A</b>\" . chr(0) . \"<i>B</i>\")), \" \", soundex(\"A\" . chr(0) . \"B\"), \"\\n\";\n\
 echo str_repeat(\"xy\", 3), \"|\", str_repeat(\"z\", 0), \"|\", chunk_split(str_repeat(\"X\", 6), 3, \"|\"), \"\\n\";\n\
 echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
-var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2));",
+var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), strtoupper(false));",
     )
     .unwrap();
 
@@ -3868,11 +3875,12 @@ var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2));",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "6 -1 1 1 1\nnop cde 417a a\\.b ab|cd|\n\
+617a0071ff 415a0051ff\n\
 x A R163 65 5 255 8\n\
 4142 A100\n\
 xyxyxy||XXX|XXX|\n\
 d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
-int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
+int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -3889,6 +3897,8 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
         "ptn_internal_str_contains",
         "ptn_internal_str_starts_with",
         "ptn_internal_str_ends_with",
+        "ptn_internal_strtolower",
+        "ptn_internal_strtoupper",
         "ptn_internal_quotemeta",
         "ptn_internal_chunk_split",
         "ptn_internal_str_repeat",
@@ -3922,6 +3932,8 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
 
     for expected_call in [
         "ptn_rot13_string(string.data, string.len)",
+        "ptn_ascii_case_string(string.data, string.len, 0)",
+        "ptn_ascii_case_string(string.data, string.len, 1)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
         "ptn_dirname_string(path.data, path.len, &dirname_len)",
@@ -3942,6 +3954,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
 
     for marker in [
         "static char *ptn_rot13_string(",
+        "static char *ptn_ascii_case_string(",
         "static char *ptn_quotemeta_string(",
         "static char *ptn_chunk_split_string(",
         "static char *ptn_strip_tags_string(",

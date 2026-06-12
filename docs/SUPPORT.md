@@ -293,7 +293,8 @@ Post-RC architecture remains explicit rather than hidden:
   `stripcslashes(expr);`, `addslashes(expr);`, `stripslashes(expr);`,
   `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
-  `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`, `quotemeta(expr);`,
+  `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`,
+  `strtolower(expr);`, `strtoupper(expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
   `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
   `md5(expr[, raw_output]);`,
@@ -328,7 +329,8 @@ Post-RC architecture remains explicit rather than hidden:
   `stripcslashes(expr)`, `addslashes(expr)`, `stripslashes(expr)`,
   `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
-  `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`, `quotemeta(expr)`,
+  `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`,
+  `strtolower(expr)`, `strtoupper(expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
   `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
   `md5(expr[, raw_output])`,
@@ -433,10 +435,11 @@ Post-RC architecture remains explicit rather than hidden:
   closures, and exceptions throw the modeled `TypeError` boundary for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
-  `strtr()`, `quotemeta()`, `chunk_split()` string/separator arguments,
-  `strip_tags()`, `md5()`, `sha1()`, `substr()`, `addcslashes()`,
-  `addslashes()`, `stripcslashes()`, `stripslashes()`, `bin2hex()`,
-  `hex2bin()`, `quoted_printable_decode()`, `soundex()`, and `ord()`.
+  `strtr()`, `strtolower()`, `strtoupper()`, `quotemeta()`, `chunk_split()`
+  string/separator arguments, `strip_tags()`, `md5()`, `sha1()`, `substr()`,
+  `addcslashes()`, `addslashes()`, `stripcslashes()`, `stripslashes()`,
+  `bin2hex()`, `hex2bin()`, `quoted_printable_decode()`, `soundex()`, and
+  `ord()`.
 - `str_rot13()` over current boxed scalar values after scalar string conversion,
   returning ASCII ROT13 output while leaving non-letters unchanged.
 - `str_shuffle()` over current boxed scalar values after scalar string
@@ -454,6 +457,8 @@ Post-RC architecture remains explicit rather than hidden:
   conversion, repeating the input by a count converted through the current
   scalar integer conversion path and rejecting negative counts with the modeled
   `ValueError` boundary.
+- `strtolower()` and `strtoupper()` over current boxed scalar values after
+  scalar string conversion, mapping ASCII letters and preserving other bytes.
 - `quotemeta()` over current boxed scalar values after scalar string
   conversion, prefixing `.`, `\`, `+`, `*`, `?`, `[`, `^`, `]`, `(`, `$`, and
   `)` bytes with backslashes through the current C-string-backed value path.
