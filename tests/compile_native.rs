@@ -1282,6 +1282,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function NatSort($array) { return true; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function natsort()");
 
+    let error = parser::parse("<?php function StrRev($string) { return $string; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strrev()");
+
     let error =
         parser::parse("<?php function array_combine($keys, $values) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_combine()");
@@ -3913,6 +3916,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         "ptn_internal_str_ends_with",
         "ptn_internal_strtolower",
         "ptn_internal_strtoupper",
+        "ptn_internal_strrev",
         "ptn_internal_quotemeta",
         "ptn_internal_chunk_split",
         "ptn_internal_str_repeat",
@@ -3998,6 +4002,33 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         soundex_body.contains("first < string.len") && soundex_body.contains("i < string.len"),
         "soundex should iterate using the known operand length"
     );
+}
+
+#[test]
+fn compile_strrev_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-strrev");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strrev.php");
+    let output = root.join("strrev-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(strrev(\"Hello\"));\n\
+var_dump(bin2hex(strrev(\"A\" . chr(0) . \"B\")));\n\
+var_dump(strrev(12345));\n\
+var_dump(function_exists(\"strrev\"), function_exists(\"STRREV\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"olleH\"\nstring(6) \"420041\"\nstring(5) \"54321\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

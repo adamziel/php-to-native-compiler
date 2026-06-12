@@ -3269,6 +3269,22 @@ static PtnValue ptn_internal_str_shuffle(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string_len(shuffled, len);
 }
 
+static PtnValue ptn_internal_strrev(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "strrev", 1, "string", args[0], line);
+    char *reversed = malloc(string.len + 1);
+    if (reversed == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < string.len; i++) {
+        reversed[i] = string.data[string.len - 1 - i];
+    }
+    reversed[string.len] = '\0';
+    size_t len = string.len;
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(reversed, len);
+}
+
 static char *ptn_ascii_case_string(const char *string, size_t len, int uppercase) {
     char *mapped = malloc(len + 1);
     if (mapped == NULL) {
@@ -6047,6 +6063,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "stripslashes", 1, 1, ptn_internal_stripslashes },
         { "strlen", 1, 1, ptn_internal_strlen },
+        { "strrev", 1, 1, ptn_internal_strrev },
         { "strtolower", 1, 1, ptn_internal_strtolower },
         { "strtoupper", 1, 1, ptn_internal_strtoupper },
         { "strtr", 2, 3, ptn_internal_strtr },

@@ -4,17 +4,15 @@ PTN compiles a PHP subset into native binaries:
 
 `PHP source -> lexer/parser -> AST -> IR -> C runtime -> native executable`
 
-Rule: implement reusable PHP semantics. Do not special-case PHPT filenames,
-rows, or outputs.
+Rule: implement reusable PHP semantics; do not special-case PHPT rows.
 
 ## Shape
 
 - Rust crate and `phpc` compiler binary.
 - Boxed C runtime for PHP-like values.
-- Native tests cover parser, IR, backend, runtime, and PHP behavior.
-- Strings cover direct and braced interpolation, legacy `${name}`
-  deprecations, common/control escapes, hex/octal byte escapes, and inline HTML
-  through shared output paths.
+- Native tests cover parser, backend, runtime, and PHP behavior.
+- Strings cover interpolation, legacy `${name}` deprecations, common/control
+  escapes, hex/octal byte escapes, and inline HTML output.
 - Top-level functions and declared methods include magic constants, call-frame
   introspection, scalar type hints, array defaults, by-reference returns, typed
   coercion, and constructor dispatch/metadata intrinsics.
@@ -50,7 +48,9 @@ rows, or outputs.
 - Direct variable and variable-root array/append compound assignments share
   boxed operators and return assigned values.
 - `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
-  covers the current `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
+  covers `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
+- `strrev()` reverses current length-aware string operands without losing
+  embedded NUL bytes.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, and quiet `isset()`, `empty()`, and `??`; full visibility and
   inheritance remain bounded.

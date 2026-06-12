@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T08:10Z
-Measured: `ptn-dxf5` rebased after `origin/master` `e8ffd566d`.
+Refresh: 2026-06-12T08:17Z
+Measured: `ptn-r2yu` rebased after `origin/master` `d3c3760c3`.
 
 Recent RC slices cover property/static-property inc/dec
 statements/expressions, scalar/string inc/dec value semantics, dynamic-variable
@@ -15,8 +15,8 @@ probes, direct array mutators including default
 flag diagnostics, set operations, `array_udiff*()`, exact `strings/004`,
 `strings/006`, and `tests/lang/024`, highlight output paths,
 `join()`/`implode()`, scalar `sprintf()`, `array_product()`, `array_keys()`,
-`array_key_first()`/`array_key_last()`, catchable `intdiv()` exceptions, and
-ASCII case string internals.
+`array_key_first()`/`array_key_last()`, catchable `intdiv()` exceptions,
+ASCII case string internals, and `strrev()`.
 
 Recent movers include exact string/lang/array rows, `array_udiff*()`,
 dynamic-root array/string-offset writes/unsets, object `var_export()`,
@@ -25,14 +25,15 @@ sort/asort/arsort/ksort/krsort/rsort/natsort, sort flag diagnostics, offset
 compound assignments, property/static inc/dec, `array_product()`,
 `array_keys()` loose and strict value filtering,
 `array_key_first()`/`array_key_last()`, exact `intdiv()` exceptions, ASCII
-`strtolower()`/`strtoupper()`, and key-preserving natural `natsort()`.
+`strtolower()`/`strtoupper()`, key-preserving natural `natsort()`, and
+binary-safe `strrev()`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 527 | 527 | 0 |
+| Native/compiler Rust suite | 528 | 528 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 204 | 204 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
@@ -55,7 +56,7 @@ probes, public constructors, class/object metadata intrinsics, `is_callable()`,
 assertions, heredoc/nowdoc, interpolation, streams, `pow()`, `array_merge()`,
 `join()`/`implode()`, scalar `sprintf()`, ASCII case string internals,
 `array_product()`, `array_keys()`, `array_key_first()`/`array_key_last()`,
-`call_user_func_array()`,
+`strrev()`, `call_user_func_array()`,
 CLI/error-reporting wiring, highlight output paths,
 scalar/array/current-object `var_export()`, direct array mutators including
 `sort()`/`asort()`/`arsort()`/`ksort()`/`krsort()`/`rsort()`/`natsort()`, set
@@ -72,9 +73,10 @@ array/string-offset writes and unsets.
 
 Verification: `ptn-ggz7` passed fmt, build, focused key-boundary coverage, and
 `cargo test` with native/compiler 526/526 plus COW/doc-tests. `ptn-dxf5` adds
-default `natsort()` coverage. Final gates are fmt, build, focused
-parser/native `natsort()` coverage, and `cargo test` with native/compiler
-527/527 plus COW/doc-tests.
+default `natsort()` coverage and passed `cargo test` with native/compiler
+527/527 plus COW/doc-tests. `ptn-r2yu` adds binary-safe `strrev()`. Final
+gates are fmt, build, focused native/parser coverage, and `cargo test` with
+native/compiler 528/528 plus COW/doc-tests.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

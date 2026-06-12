@@ -296,7 +296,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`,
-  `strtolower(expr);`, `strtoupper(expr);`, `quotemeta(expr);`,
+  `strtolower(expr);`, `strtoupper(expr);`, `strrev(expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
   `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
   `md5(expr[, raw_output]);`,
@@ -335,7 +335,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`,
-  `strtolower(expr)`, `strtoupper(expr)`, `quotemeta(expr)`,
+  `strtolower(expr)`, `strtoupper(expr)`, `strrev(expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
   `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
   `md5(expr[, raw_output])`,
@@ -467,6 +467,8 @@ Post-RC architecture remains explicit rather than hidden:
   `ValueError` boundary.
 - `strtolower()` and `strtoupper()` over current boxed scalar values after
   scalar string conversion, mapping ASCII letters and preserving other bytes.
+- `strrev()` over current boxed scalar values after scalar string conversion,
+  reversing bytes while preserving explicit string length and embedded NULs.
 - `quotemeta()` over current boxed scalar values after scalar string
   conversion, prefixing `.`, `\`, `+`, `*`, `?`, `[`, `^`, `]`, `(`, `$`, and
   `)` bytes with backslashes through the current C-string-backed value path.
