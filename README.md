@@ -45,7 +45,8 @@ rows, or outputs.
 - `pow()` uses the same boxed numeric exponentiation helper as `**`, and
   `call_user_func_array()` expands ordered arrays through callable dispatch.
 - `assert()` throws catchable `AssertionError` values with compiler-generated
-  default messages for direct calls.
+  default messages for direct calls; bounded `highlight_file()` shares
+  file-return paths.
 - `ksort()` and `shuffle()` mutate direct variable arrays through the shared
   ordered-array COW path, and `str_shuffle()` shuffles scalar strings by byte.
 - Basic stream resources from `fopen()`/`fclose()` are boxed runtime values with
