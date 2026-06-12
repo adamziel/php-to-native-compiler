@@ -6434,6 +6434,51 @@ var_dump(function_exists(\"dirname\"), function_exists(\"DIRNAME\"));\n",
 }
 
 #[test]
+fn compile_basename_binary_safe_suffix_to_native_binary() {
+    let root = temp_dir("ptn-native-basename-binary-safe-suffix");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("basename.php");
+    let output = root.join("basename-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(basename("bar"));
+var_dump(basename("/foo/bar"));
+var_dump(basename("/foo/bar/"));
+var_dump(basename("bar.gz", ".gz"));
+var_dump(basename("/.gz", ".gz"));
+var_dump(basename("bar.gz", "bar.gz"));
+var_dump(basename("foo\\", "\\"));
+echo bin2hex(basename("foo".chr(0)."bar.gz", ".gz")), "\n";
+var_dump(basename(12345));
+var_dump(function_exists("basename"), function_exists("BASENAME"));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"string(3) \"bar\"\n\
+string(3) \"bar\"\n\
+string(3) \"bar\"\n\
+string(3) \"bar\"\n\
+string(3) \".gz\"\n\
+string(6) \"bar.gz\"\n\
+string(3) \"foo\"\n\
+666f6f00626172\n\
+string(5) \"12345\"\n\
+bool(true)\n\
+bool(true)\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_soundex_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-soundex-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

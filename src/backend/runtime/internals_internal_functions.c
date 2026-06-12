@@ -5854,6 +5854,37 @@ static int ptn_path_is_separator(char byte) {
     return 0;
 }
 
+static PtnValue ptn_internal_basename(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "basename", 1, "path", args[0], line);
+    PtnStringOperand suffix = argc >= 2
+        ? ptn_internal_expect_string_arg(runtime, "basename", 2, "suffix", args[1], line)
+        : ptn_string_operand_borrowed("");
+
+    size_t end = path.len;
+    while (end > 0 && ptn_path_is_separator(path.data[end - 1])) {
+        end--;
+    }
+
+    size_t start = end;
+    while (start > 0 && !ptn_path_is_separator(path.data[start - 1])) {
+        start--;
+    }
+
+    size_t basename_len = end - start;
+    if (
+        suffix.len != 0 &&
+        suffix.len < basename_len &&
+        memcmp(path.data + start + basename_len - suffix.len, suffix.data, suffix.len) == 0
+    ) {
+        basename_len -= suffix.len;
+    }
+
+    char *basename = ptn_duplicate_string_len(path.data + start, basename_len);
+    ptn_string_operand_free(suffix);
+    ptn_string_operand_free(path);
+    return ptn_owned_string_len(basename, basename_len);
+}
+
 static int ptn_stat_path(const char *path, struct stat *info) {
     return stat(path, info);
 }
@@ -8053,6 +8084,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "arsort", 1, 2, ptn_internal_arsort },
         { "asort", 1, 2, ptn_internal_asort },
         { "assert", 1, 2, ptn_internal_assert },
+        { "basename", 1, 2, ptn_internal_basename },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "call_user_func", 1, PTN_VARIADIC_ARGS, ptn_internal_call_user_func },

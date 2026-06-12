@@ -49,8 +49,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   scalar strings, bounded `sprintf()`/`printf()` cover common formats, and
   `json_encode()` covers current boxed values.
 - `str_pad()` supports byte-length padding with pad constants; `strrev()`
-  preserves embedded NULs; trim-family internals use PHP default bytes plus
-  bounded charlists.
+  preserves embedded NULs; `basename()` handles binary-safe path segments and
+  suffix stripping; trim-family internals use PHP default bytes plus bounded
+  charlists.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
   slots distinct from child public redeclarations; public `__destruct()` runs

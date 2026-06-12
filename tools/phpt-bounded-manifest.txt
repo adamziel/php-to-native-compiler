@@ -149,6 +149,7 @@ ext/standard/tests/strings/006.phpt
 ext/standard/tests/strings/add-and-stripcslashes.phpt
 ext/standard/tests/strings/add-and-stripslashes.phpt
 ext/standard/tests/strings/addslashes_basic.phpt
+ext/standard/tests/strings/basename.phpt
 ext/standard/tests/strings/bin2hex.phpt
 ext/standard/tests/strings/bin2hex_001.phpt
 ext/standard/tests/strings/bin2hex_basic.phpt

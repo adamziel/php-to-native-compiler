@@ -398,7 +398,8 @@ Post-RC architecture remains explicit rather than hidden:
   `printf(expr, ...)`, `json_encode(expr[, expr[, expr]])`,
   `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
-  `hex2bin(expr)`, `quoted_printable_decode(expr)`, `dirname(expr)`,
+  `hex2bin(expr)`, `quoted_printable_decode(expr)`,
+  `basename(expr[, suffix])`, `dirname(expr)`,
   `highlight_string(expr[, return])`, `highlight_file(expr[, return])`,
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
@@ -776,6 +777,9 @@ Post-RC architecture remains explicit rather than hidden:
   PHP-style mask on writes or current mask on reads, and filters the modeled
   shared warning/deprecation/notice emitters. Expression-level `@` suppression
   still stacks independently with the configured mask.
+- `basename()` strips trailing platform path separators from the current
+  binary-safe string path, returns the final path segment, and removes a
+  matching non-empty suffix only when the suffix is shorter than that segment.
 - `gettype()` over current boxed values, returning `NULL`, `boolean`,
   `integer`, `double`, `string`, `array`, `object`, `resource`, or
   `resource (closed)` for the currently modeled scalar, array, object,

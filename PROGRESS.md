@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T20:33Z
-Measured: `ptn-9838` rebased on current `origin/master` `5b2e051e`.
+Refresh: 2026-06-12T21:39Z
+Measured: `ptn-xlc0` rebased on current `origin/master` `a89a563b2`.
 
 Recent RC slices cover public class constants, embedded-NUL `var_export()`,
 `explode()`, `strrchr()`, namespaced internal fallback, static-property `??=`,
@@ -11,9 +11,9 @@ properties, inherited parent-private slots, public `__destruct()` dispatch,
 quiet probes, array mutators, sort flags, set operations, `array_udiff*()`,
 `join()`/`implode()`, bounded `sprintf()`/`printf()`, `json_encode()`,
 `array_is_list()`, `array_search()`, `array_slice()`, `array_pad()`,
-`array_reverse()`, `count()`/`sizeof()`, `str_pad()`, `str_shuffle()`,
-`strtr()`, `chunk_split()`, `file_get_contents()`, `strcasecmp()`,
-string-internal object/closure given-type diagnostics,
+`array_reverse()`, `count()`/`sizeof()`, `basename()`, `str_pad()`,
+`str_shuffle()`, `strtr()`, `chunk_split()`, `file_get_contents()`,
+`strcasecmp()`, string-internal object/closure given-type diagnostics,
 `abs()`/`sqrt()`/`fdiv()` TypeErrors, ASCII case/trim, PHP/CLI/Zend metadata,
 `php_uname()`, `ReflectionFunction`, namespaces, foreach list destructuring,
 dynamic include/require dispatch, return-only `void` declarations, and
@@ -21,19 +21,20 @@ file-stream `stream_get_meta_data()` metadata.
 
 Recent movers include bounded binary-safe `file_get_contents()` reads with
 offset/length handling, length-aware scalar `strrchr()` support, ASCII
-case-insensitive `strcasecmp()` comparison, file-stream metadata arrays, and
-dynamic-root `??=` reducers.
+case-insensitive `strcasecmp()` comparison, binary-safe `basename()` path
+segment and suffix handling, file-stream metadata arrays, and dynamic-root
+`??=` reducers.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 577 | 577 | 0 |
+| Native/compiler Rust suite | 578 | 578 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 230 | 230 | 0 |
+| PHPT bounded manifest | 231 | 231 | 0 |
 | PHPT Zend rows | 80 | 80 | 0 |
-| PHPT ext/standard rows | 100 | 100 | 0 |
+| PHPT ext/standard rows | 101 | 101 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT tests/basic+func+lang | 45 | 45 | 0 |
 | PHPT other rows | 5 | 5 | 0 |
@@ -54,21 +55,21 @@ callability/countability, assertions, namespaces/imports, streams and
 file-stream metadata, file reads/writes, array/string/numeric helpers through
 `array_udiff*()`, `array_is_list()`, `count()`/`sizeof()`, `json_encode()`,
 `printf()`, `chunk_split()`, `fdiv()`, `explode()`, `strrchr()`,
-`strcasecmp()`, shared string-internal diagnostics, highlight paths,
-`var_export()`, array mutators, inc/dec, foreach destructuring,
+`strcasecmp()`, `basename()`, shared string-internal diagnostics, highlight
+paths, `var_export()`, array mutators, inc/dec, foreach destructuring,
 dynamic-variable writes/unsets, and array/string-offset compound/null
 coalescing assignments.
 
 ## Remaining Bounded Failures
 
-- None in the current 230-row bounded manifest.
+- None in the current 231-row bounded manifest.
 
 ## Verification
 
-Current slice verification: `cargo fmt --check`; focused `strcasecmp()` native
-and parser tests 2/2; focused `strcasecmp` PHPT row 1/1; full `cargo test`
-577/577; bounded PHPT manifest 230/230; PHPT COW manifest 29/29; post-merge
-COW gate 17/17 oracle, 3/3 notice, 6/6 diagnostics.
+Current slice verification: `cargo fmt --check`; focused `basename()` native
+test 1/1; focused `basename.phpt` 1/1; full `cargo test` 578/578; bounded
+PHPT manifest 231/231; PHPT COW manifest 29/29; post-merge COW gate 17/17
+oracle, 3/3 notice, 6/6 diagnostics.
 
 Follow-ups remain destructor visibility/exception/reference/global edges,
 typed/promoted properties, interfaces/traits, bracketed/grouped namespaces,
@@ -76,5 +77,5 @@ broader fallback/reflection, magic methods, first-class callables, dynamic
 includes, unsupported internals, scalar offset-lvalues, assertion config,
 binary-safe array keys, class-constant edges, dynamic-variable by-reference
 lvalues, append-form `??=`, remaining embedded-NUL internals, inc/dec
-Unicode/reference/COW diagnostics, object IDs, broader `chr()`/`abs()` edges,
-`sqrt()` non-finite edges, and object/reference targets.
+Unicode/reference/COW diagnostics, object IDs, broader numeric/string edges,
+locale constants/`setlocale()`, and object/reference targets.
