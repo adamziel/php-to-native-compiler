@@ -586,12 +586,15 @@ Post-RC architecture remains explicit rather than hidden:
   throw catchable `TypeError` values.
 - `abs()` over current boxed scalar values after scalar numeric conversion,
   returning boxed integer or float magnitudes and emitting the modeled
-  PHP null-deprecation boundary.
+  PHP null-deprecation boundary; unsupported operands and malformed numeric
+  strings raise catchable `TypeError` diagnostics.
 - `sqrt()` over current boxed scalar values after scalar numeric conversion,
-  returning a boxed float.
+  returning a boxed float; unsupported operands and malformed numeric strings
+  raise catchable `TypeError` diagnostics.
 - `fdiv()` over current boxed scalar values after scalar numeric conversion,
   returning boxed floating-point division results, including zero divisors,
-  signed zeroes, infinities, and `NAN`.
+  signed zeroes, infinities, and `NAN`; unsupported operands and malformed
+  numeric strings raise catchable `TypeError` diagnostics.
 - `intdiv()` over current boxed scalar values after scalar integer conversion,
   returning a boxed integer quotient for supported non-zero divisors. Zero
   divisors throw catchable `DivisionByZeroError` values, and the
@@ -1051,12 +1054,10 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `chr()` diagnostics for null, non-finite floats, and unsupported
   array/object/resource/reference operands.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
-- Exact `abs()` diagnostics for unsupported array/object/resource/reference
-  operands and complete overflow parity beyond the current boxed numeric path.
+- Exact `abs()` complete overflow parity beyond the current boxed numeric path.
 - `count()` support for `Countable` objects and exact non-array diagnostics.
-- Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
-- Exact `fdiv()` unsupported-type diagnostics for arrays, objects, resources,
-  and references.
+- Complete `sqrt()` negative/non-finite float parity beyond the current scalar
+  numeric path.
 - Exact diagnostics and full precision/range parity for `intval()`, `bindec()`,
   `hexdec()`, and `octdec()` on remaining very large or unsupported values.
 - Exact `hex2bin()` warning text/file-name parity plus resource/reference

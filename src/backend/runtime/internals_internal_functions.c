@@ -6498,11 +6498,12 @@ static int ptn_numeric_arg_string_to_double(PtnString string, double *out) {
     return 1;
 }
 
-static double ptn_internal_expect_numeric_arg(
+static PtnNumber ptn_internal_expect_number_arg(
     PtnRuntime *runtime,
     const char *function_name,
     size_t position,
     const char *argument_name,
+    const char *expected_type,
     PtnValue value,
     size_t line
 ) {
@@ -6513,27 +6514,28 @@ static double ptn_internal_expect_numeric_arg(
             int written = snprintf(
                 message,
                 sizeof(message),
-                "%s(): Passing null to parameter #%zu ($%s) of type int|float is deprecated",
+                "%s(): Passing null to parameter #%zu ($%s) of type %s is deprecated",
                 function_name,
                 position,
-                argument_name
+                argument_name,
+                expected_type
             );
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
             ptn_emit_deprecation(&runtime->diagnostics, message, line);
-            return 0.0;
+            return ptn_number_int(0);
         }
         case PTN_BOOL:
-            return value.as.boolean ? 1.0 : 0.0;
+            return ptn_number_int(value.as.boolean ? 1 : 0);
         case PTN_INT:
-            return (double)value.as.integer;
+            return ptn_number_int(value.as.integer);
         case PTN_FLOAT:
-            return value.as.floating;
+            return ptn_number_float(value.as.floating);
         case PTN_STRING: {
             double number = 0.0;
             if (ptn_numeric_arg_string_to_double(value.as.string, &number)) {
-                return number;
+                return ptn_string_to_number((const char *)value.as.string.data);
             }
             break;
         }
@@ -6550,17 +6552,56 @@ static double ptn_internal_expect_numeric_arg(
     int written = snprintf(
         message,
         sizeof(message),
-        "%s(): Argument #%zu ($%s) must be of type int|float, %s given",
+        "%s(): Argument #%zu ($%s) must be of type %s, %s given",
         function_name,
         position,
         argument_name,
+        expected_type,
         ptn_numeric_arg_type_name(value)
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception(runtime, "TypeError", message);
-    return 0.0;
+    return ptn_number_int(0);
+}
+
+static double ptn_internal_expect_numeric_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_internal_expect_number_arg(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        "int|float",
+        value,
+        line
+    ).floating;
+}
+
+static double ptn_internal_expect_float_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_internal_expect_number_arg(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        "float",
+        value,
+        line
+    ).floating;
 }
 
 static int64_t ptn_internal_expect_integer_arg(
@@ -6652,17 +6693,16 @@ static PtnValue ptn_internal_floor(PtnRuntime *runtime, size_t argc, const PtnVa
 }
 
 static PtnValue ptn_internal_abs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    if (args[0].type == PTN_NULL) {
-        ptn_emit_array_runtime_diagnostic(
-            "Deprecated",
-            "abs(): Passing null to parameter #1 ($num) of type int|float is deprecated",
-            line
-        );
-    }
-
-    PtnNumber number = ptn_to_number(args[0]);
+    PtnNumber number = ptn_internal_expect_number_arg(
+        runtime,
+        "abs",
+        1,
+        "num",
+        "int|float",
+        args[0],
+        line
+    );
     if (number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(fabs(number.floating));
     }
@@ -6676,18 +6716,14 @@ static PtnValue ptn_internal_abs(PtnRuntime *runtime, size_t argc, const PtnValu
 }
 
 static PtnValue ptn_internal_sqrt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    return ptn_float(sqrt(ptn_value_to_double(args[0])));
+    return ptn_float(sqrt(ptn_internal_expect_float_arg(runtime, "sqrt", 1, "num", args[0], line)));
 }
 
 static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    double dividend = ptn_value_to_double(args[0]);
-    double divisor = ptn_value_to_double(args[1]);
+    double dividend = ptn_internal_expect_float_arg(runtime, "fdiv", 1, "num1", args[0], line);
+    double divisor = ptn_internal_expect_float_arg(runtime, "fdiv", 2, "num2", args[1], line);
     return ptn_float(dividend / divisor);
 }
 

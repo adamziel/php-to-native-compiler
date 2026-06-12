@@ -5176,6 +5176,64 @@ fn compile_fdiv_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_numeric_internals_reject_unsupported_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-numeric-internal-operand-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("numeric-internal-operand-diagnostics.php");
+    let output = root.join("numeric-internal-operand-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { var_dump(abs([])); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(abs(new stdClass)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(abs(\"9x\")); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(sqrt([])); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(sqrt(new stdClass)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(sqrt(\"9x\")); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(fdiv([], 1)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(fdiv(1, [])); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(fdiv(\"9x\", 1)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(fdiv(1, new stdClass)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(abs(\"9\"));\n\
+var_dump(abs(\"9.5\"));\n\
+var_dump(sqrt(\"9\"));\n\
+var_dump(sqrt(-1));\n\
+var_dump(fdiv(\"9\", \"2\"));\n\
+var_dump(fdiv(true, 2));\n\
+var_dump(fdiv(0.0, 0.0));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "abs(): Argument #1 ($num) must be of type int|float, array given\n",
+            "abs(): Argument #1 ($num) must be of type int|float, stdClass given\n",
+            "abs(): Argument #1 ($num) must be of type int|float, string given\n",
+            "sqrt(): Argument #1 ($num) must be of type float, array given\n",
+            "sqrt(): Argument #1 ($num) must be of type float, stdClass given\n",
+            "sqrt(): Argument #1 ($num) must be of type float, string given\n",
+            "fdiv(): Argument #1 ($num1) must be of type float, array given\n",
+            "fdiv(): Argument #2 ($num2) must be of type float, array given\n",
+            "fdiv(): Argument #1 ($num1) must be of type float, string given\n",
+            "fdiv(): Argument #2 ($num2) must be of type float, stdClass given\n",
+            "int(9)\n",
+            "float(9.5)\n",
+            "float(3)\n",
+            "float(NAN)\n",
+            "float(4.5)\n",
+            "float(0.5)\n",
+            "float(NAN)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intdiv_internal_function_to_native_binary() {
     let root = temp_dir("ptn-native-intdiv-function");
     fs::create_dir_all(&root).unwrap();
