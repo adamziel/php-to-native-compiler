@@ -13092,6 +13092,47 @@ var_dump(function_exists(\"var_export\"), function_exists(\"array_diff\"), funct
 }
 
 #[test]
+fn compile_var_export_embedded_nul_strings_to_native_binary() {
+    let root = temp_dir("ptn-native-var-export-embedded-nul-strings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-export-embedded-nul-strings.php");
+    let output = root.join("var-export-embedded-nul-strings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$nul = chr(0);\n\
+$cases = [\"\", $nul, \"a\" . $nul, $nul . \"b\", \"a\" . $nul . \"b\", \"a\" . $nul . $nul . \"b\"];\n\
+echo var_export($cases, true), \"\\n\";\n\
+$explodeShape = [\"a\", \"b\" . $nul . \"d\", \"f\", \"1\", \"d\"];\n\
+echo md5(var_export($explodeShape, true)), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array (\n",
+            "  0 => '',\n",
+            "  1 => '' . \"\\0\" . '',\n",
+            "  2 => 'a' . \"\\0\" . '',\n",
+            "  3 => '' . \"\\0\" . 'b',\n",
+            "  4 => 'a' . \"\\0\" . 'b',\n",
+            "  5 => 'a' . \"\\0\" . '' . \"\\0\" . 'b',\n",
+            ")\n",
+            "d6bee42a771449205344c0938ad4f035\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_var_export_append_string"));
+}
+
+#[test]
 fn compile_var_export_objects_to_native_binary() {
     let root = temp_dir("ptn-native-var-export-objects");
     fs::create_dir_all(&root).unwrap();

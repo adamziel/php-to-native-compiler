@@ -466,8 +466,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `var_export()` output for current boxed null, boolean, integer, float, string,
   ordered-array values, declared object shells through
   `\Class::__set_state(array(...))`, and `stdClass` through `(object)
-  array(...)`, including nested arrays/objects and string-return mode through
-  the optional second argument.
+  array(...)`, including nested arrays/objects, embedded-NUL string escaping as
+  single-quoted segments concatenated with `"\0"`, and string-return mode
+  through the optional second argument.
 - `strlen()` over current boxed scalar values and objects with a public
   declared `__toString()` after shared string conversion.
 - Bounded `highlight_string()` and `highlight_file()` use the current
@@ -996,9 +997,9 @@ Post-RC architecture remains explicit rather than hidden:
   TypeError/exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime values and embedded NUL string array keys,
   `var_dump()` string
-  length/output, `var_export()`, `strlen()`, `str_rot13()`, `strcmp()`,
-  `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `quotemeta()`,
-  `trim()`, `ltrim()`, `rtrim()`, `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
+  length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
+  `hex2bin()`, `str_contains()`, `quotemeta()`, `trim()`, `ltrim()`,
+  `rtrim()`, `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
   `stripcslashes()`, `md5()`, `sha1()`, `substr()`, `soundex()`, `ord()`, or
   bitwise string results.
 - Exact `strcmp()` resource/reference operand parity and object string

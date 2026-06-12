@@ -43,7 +43,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `sort()`, `rsort()`, and `shuffle()` use ordered-array/COW paths; direct
   regular sort-family calls also accept an explicit `SORT_REGULAR` flag.
 - `var_export()` covers scalars, arrays, declared objects through
-  `__set_state(array(...))`, and `stdClass` through `(object) array(...)`.
+  `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
+  embedded-NUL string escaping.
 - `pow()` uses the same boxed numeric exponentiation helper as `**`, and
   `call_user_func_array()` expands ordered arrays through callable dispatch.
 - `assert()` throws catchable `AssertionError` values with compiler-generated

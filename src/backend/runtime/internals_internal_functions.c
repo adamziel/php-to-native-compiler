@@ -706,7 +706,11 @@ static PtnValue ptn_internal_print_r(PtnRuntime *runtime, size_t argc, const Ptn
 
 static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value, size_t indent);
 
-static void ptn_var_export_append_string(PtnStringBuffer *buffer, const char *data, size_t len) {
+static void ptn_var_export_append_single_quoted_string(
+    PtnStringBuffer *buffer,
+    const char *data,
+    size_t len
+) {
     ptn_string_buffer_append_char(buffer, '\'');
     for (size_t i = 0; i < len; i++) {
         unsigned char byte = (unsigned char)data[i];
@@ -716,6 +720,24 @@ static void ptn_var_export_append_string(PtnStringBuffer *buffer, const char *da
         ptn_string_buffer_append_char(buffer, (char)byte);
     }
     ptn_string_buffer_append_char(buffer, '\'');
+}
+
+static void ptn_var_export_append_string(PtnStringBuffer *buffer, const char *data, size_t len) {
+    size_t segment_start = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (data[i] != '\0') {
+            continue;
+        }
+        ptn_var_export_append_single_quoted_string(buffer, data + segment_start, i - segment_start);
+        ptn_string_buffer_append(buffer, " . \"\\0\" . ");
+        segment_start = i + 1;
+    }
+    size_t segment_len = len - segment_start;
+    ptn_var_export_append_single_quoted_string(
+        buffer,
+        segment_len == 0 ? data : data + segment_start,
+        segment_len
+    );
 }
 
 static void ptn_var_export_append_key(PtnStringBuffer *buffer, PtnArrayKey key) {
