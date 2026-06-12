@@ -327,6 +327,7 @@ Post-RC architecture remains explicit rather than hidden:
   `lcfirst(expr);`, `quotemeta(expr);`,
   `trim(expr[, expr]);`, `ltrim(expr[, expr]);`, `rtrim(expr[, expr]);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
+  `explode(expr, expr[, expr]);`,
   `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
   `printf(expr, ...);`, `json_encode(expr[, expr[, expr]]);`,
   `md5(expr[, raw_output]);`,
@@ -381,6 +382,7 @@ Post-RC architecture remains explicit rather than hidden:
   `lcfirst(expr)`, `quotemeta(expr)`,
   `trim(expr[, expr])`, `ltrim(expr[, expr])`, `rtrim(expr[, expr])`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
+  `explode(expr, expr[, expr])`,
   `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
   `printf(expr, ...)`, `json_encode(expr[, expr[, expr]])`,
   `md5(expr[, raw_output])`,
@@ -509,6 +511,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strtr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,
   `strtolower()`,
   `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
+  `explode()` separator/string arguments,
   `trim()`/`ltrim()`/`rtrim()` string and characters arguments,
   `strip_tags()`, `md5()`, `sha1()`, `substr()`,
   `addcslashes()`, `addslashes()`, `stripcslashes()`, `stripslashes()`,
@@ -555,6 +558,11 @@ Post-RC architecture remains explicit rather than hidden:
   conversion path. The defaults are length `76` and ending `"\r\n"`. Input and
   ending bytes are length-aware, including embedded NUL bytes, and empty input
   returns the ending string like PHP.
+- `explode()` over current boxed scalar separator and string values after
+  scalar string conversion, returning ordered arrays of length-aware string
+  segments. Empty separators throw the modeled PHP `ValueError`; positive,
+  zero, and negative limits follow PHP's bounded split and tail-dropping
+  behavior.
 - `strip_tags()` over current boxed scalar values after scalar string
   conversion, removing complete `<...>`, `<?...?>`, `<%...%>`, and HTML
   comment tag regions through the current C-string-backed value path.

@@ -18,59 +18,40 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   by-reference returns, typed coercion, constructor dispatch, public destructor
   dispatch, and metadata intrinsics.
 - Includes share caller file scope and return values; bounded dynamic
-  include/require path expressions dispatch to compiled helpers when all
-  candidate string paths are statically enumerable, with include-once guards
-  keyed by canonical compiled include files.
+  include/require dispatch uses canonical once guards when candidate string
+  paths are statically enumerable.
 - Unbracketed namespaces resolve current top-level functions/constants/classes,
-  qualified names, `__NAMESPACE__`, and simple class/function/const imports.
-- Full and short ternary expressions lower through the boxed value path with
-  lazy branch evaluation; unparenthesized nested ternaries remain an explicit
-  diagnostic boundary.
-- Direct variable references, array element references, and by-reference
-  userland parameters cover the first COW/reference boundary slice.
-- Dynamic variable roots support scalar reads/writes, array/string-offset
-  writes, unsets, compound assignments, and inc/dec expression targets through
-  shared symbol-table and array-path helpers.
-- Arithmetic models non-numeric string/array `TypeError` diagnostics while
-  preserving leading-numeric warnings.
-- Scalar float stringification honors `phpc -d precision=N` and PHP-style
-  exponent spelling across output and string conversions.
-- Array internals including set operations, `count()`/`sizeof()` with current
-  array modes, `array_chunk()`, `array_combine()`, `array_filter()`,
-  `array_key_exists()`, `array_keys()`, key-boundary
-  probes, `array_is_list()`, `array_merge()`, `array_pad()`, `array_pop()`,
-  `array_product()`, `array_push()`, `array_shift()`, `array_unshift()`,
-  `array_search()`, `arsort()`, `asort()`, `krsort()`, `ksort()`,
-  `natcasesort()`, `natsort()`, `sort()`, `rsort()`, and `shuffle()` use
-  ordered-array/COW paths; direct regular sort-family calls also accept an
-  explicit `SORT_REGULAR` flag.
+  qualified names, `__NAMESPACE__`, and simple imports.
+- Full and short ternaries lower through lazy boxed branches; unparenthesized
+  nested ternaries remain diagnostic.
+- Direct references and by-reference parameters cover the first COW/reference
+  slice; dynamic roots support reads/writes, array/string-offset writes,
+  unsets, compounds, and inc/dec targets.
+- Arithmetic models non-numeric string/array `TypeError`s while preserving
+  leading-numeric warnings; float stringification honors `phpc -d precision=N`
+  and PHP-style exponent spelling.
+- Array internals cover set/key/list/search/slice/pad/product/fill/filter/
+  chunk/merge helpers, `count()`/`sizeof()` modes, and sort mutators through
+  ordered-array/COW paths.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string escaping.
-- `pow()` uses the same boxed numeric exponentiation helper as `**`, and
-  `call_user_func_array()` expands ordered arrays through callable dispatch.
-- `assert()` throws catchable `AssertionError` values with compiler-generated
-  default messages for direct calls; bounded `highlight_file()` shares
-  file-return paths.
-- Modeled version/SAPI metadata includes `phpversion()`, `php_sapi_name()`,
-  `zend_version()`, `PHP_VERSION`, `PHP_SAPI`, and `get_loaded_extensions()`
-  for the current CLI/core/standard boundary.
-- Direct variable, array-offset, property, and static-property
-  increment/decrement support statement and expression pre/post forms over
-  boxed numeric values, null, booleans, numeric strings, and alphanumeric
-  string increment.
-- Direct variable and variable-root array/append compound assignments share
-  boxed operators and return assigned values.
-- `join()` concatenates ordered-array values, bounded scalar `sprintf()`/
-  `printf()` cover common formats, and `json_encode()` covers scalar/object/
-  array values in the current boxed subset.
-- `str_pad()` supports byte-length padding with pad constants.
-- `zend_version()` reports the modeled Zend Engine version alongside the
-  existing CLI PHP version metadata.
-- `strrev()` reverses current length-aware string operands without losing
-  embedded NUL bytes.
-- `trim()`, `ltrim()`, and `rtrim()` use length-aware operands, PHP default
-  bytes, and bounded charlists.
+- `pow()` uses the boxed exponentiation helper, and `call_user_func_array()`
+  expands ordered arrays through callable dispatch.
+- `assert()` throws catchable `AssertionError`; bounded `highlight_file()`
+  shares file-return paths.
+- Modeled metadata includes `phpversion()`, `php_sapi_name()`,
+  `zend_version()`, `PHP_VERSION`, `PHP_SAPI`, and `get_loaded_extensions()`.
+- Direct variable, array-offset, property, and static-property inc/dec support
+  statement and expression pre/post forms over boxed PHP values.
+- Direct variable and variable-root array/append compounds share boxed
+  operators and return assigned values.
+- `join()` concatenates ordered-array values, `explode()` splits length-aware
+  scalar strings, bounded `sprintf()`/`printf()` cover common formats, and
+  `json_encode()` covers current boxed values.
+- `str_pad()` supports byte-length padding with pad constants; `strrev()`
+  preserves embedded NULs; trim-family internals use PHP default bytes plus
+  bounded charlists.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
   slots distinct from child public redeclarations; public `__destruct()` runs
@@ -80,19 +61,16 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `empty()`, and `??`.
 - Public class constants support scalar/array defaults, direct
   `Class::CONST`/`self::CONST` reads, and `constant()`/`defined()` lookup;
-  typed, non-public, inherited, and dynamic-name constants remain bounded.
-- Stream resources from `fopen()`/`fclose()` are boxed with type, dump,
-  and array-key cast behavior.
+  typed/non-public/inherited/dynamic constants remain bounded.
+- Stream resources from `fopen()`/`fclose()` are boxed with type, dump, and
+  array-key cast behavior.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 
 ## Status
 
-- `PROGRESS.md`: compact test and porting dashboard.
-- `STATUS.md`: current operating status.
-- `progress.md`, `progress.html`, `STATUS.html`: short generated mirrors.
-
-Keep each under 500 words.
+- `PROGRESS.md`: compact test/porting dashboard.
+- `STATUS.md` and generated mirrors: current operating status.
 
 ## Commands
 
@@ -104,17 +82,3 @@ cargo build --bin phpc
 tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
 tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
 ```
-
-## RC Demo
-
-```bash
-cargo build --bin phpc
-for f in examples/rc/*.php; do
-  echo "== $f =="
-  target/debug/phpc "$f"
-done
-```
-
-RC examples exercise scalar control flow, arrays/internals, user functions,
-public object shells, static/instance properties including static-property
-`??=`, public property `??=`, and property/static inc/dec.

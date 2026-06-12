@@ -4224,6 +4224,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "natcasesort"
             | "natsort"
             | "error_reporting"
+            | "explode"
             | "func_get_arg"
             | "func_get_args"
             | "func_num_args"

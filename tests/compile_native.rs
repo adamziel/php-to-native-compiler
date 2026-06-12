@@ -1296,6 +1296,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     assert_eq!(error.message, "Cannot redeclare function chunk_split()");
 
     let error =
+        parser::parse("<?php function Explode($separator, $string) { return []; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function explode()");
+
+    let error =
         parser::parse("<?php function STR_REPEAT($value, $times) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function str_repeat()");
 
@@ -4588,6 +4592,86 @@ echo strlen($binary), \" \", bin2hex($binary), \"\\n\";",
     assert!(execution.status.success());
     assert_eq!(execution.stdout, b"string(4) \"????\"\n2 7c00\n".to_vec());
     assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
+fn compile_explode_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-explode-internal-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("explode.php");
+    let output = root.join("explode-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$parts = explode(':', 'a:b::c');\n\
+var_dump($parts);\n\
+var_dump(explode(':', 'a:b', 0));\n\
+var_dump(explode(':', 'a:b::c', 3));\n\
+var_dump(explode(':', 'a:b::c', -1));\n\
+var_dump(explode(':', 'abc', -1));\n\
+var_dump(explode('a', ''));\n\
+echo bin2hex(explode(chr(0), 'a' . chr(0) . 'b' . chr(0) . 'c')[1]), \"\\n\";\n\
+try { explode('', 'abc'); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists('explode'), function_exists('EXPLODE'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  string(0) \"\"\n",
+            "  [3]=>\n",
+            "  string(1) \"c\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(3) \"a:b\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  string(2) \":c\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "62\n",
+            "explode(): Argument #1 ($separator) must not be empty, use str_split() to split a string into characters\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_explode("));
+    let body = generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_explode(");
+    assert!(body.contains("ptn_internal_expect_string_arg"));
+    assert!(!body.contains("strtok"));
 }
 
 #[test]

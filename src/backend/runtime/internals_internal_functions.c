@@ -3516,6 +3516,116 @@ static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int((int64_t)len);
 }
 
+static size_t ptn_explode_find_separator(
+    PtnStringOperand string,
+    PtnStringOperand separator,
+    size_t start
+) {
+    if (separator.len == 0 || start > string.len || separator.len > string.len - start) {
+        return SIZE_MAX;
+    }
+
+    for (size_t offset = start; offset <= string.len - separator.len; offset++) {
+        if (memcmp(string.data + offset, separator.data, separator.len) == 0) {
+            return offset;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static size_t ptn_explode_piece_count(PtnStringOperand string, PtnStringOperand separator) {
+    size_t count = 1;
+    size_t start = 0;
+    for (;;) {
+        size_t offset = ptn_explode_find_separator(string, separator, start);
+        if (offset == SIZE_MAX) {
+            return count;
+        }
+        if (count == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        count++;
+        start = offset + separator.len;
+    }
+}
+
+static size_t ptn_explode_negative_limit_omit_count(int64_t limit) {
+    if (limit == INT64_MIN) {
+        return SIZE_MAX;
+    }
+    return (size_t)(-limit);
+}
+
+static void ptn_explode_append_segment(
+    PtnValue *result,
+    PtnStringOperand string,
+    size_t start,
+    size_t len,
+    size_t index
+) {
+    if (index > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    char *segment = ptn_duplicate_string_len(string.data + start, len);
+    ptn_array_set_entry(
+        result->as.array,
+        ptn_array_int_key((int64_t)index),
+        ptn_owned_string_len(segment, len)
+    );
+}
+
+static PtnValue ptn_internal_explode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand separator = ptn_internal_expect_string_arg(runtime, "explode", 1, "separator", args[0], line);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "explode", 2, "string", args[1], line);
+    if (separator.len == 0) {
+        ptn_string_operand_free(separator);
+        ptn_string_operand_free(string);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "explode(): Argument #1 ($separator) must not be empty, use str_split() to split a string into characters"
+        );
+        return ptn_null();
+    }
+
+    int64_t limit = argc >= 3 ? ptn_value_to_integer(args[2]) : INT64_MAX;
+    if (limit == 0) {
+        limit = 1;
+    }
+
+    size_t piece_count = ptn_explode_piece_count(string, separator);
+    size_t emit_count = piece_count;
+    if (limit > 0 && (uint64_t)limit < (uint64_t)piece_count) {
+        emit_count = (size_t)limit;
+    } else if (limit < 0) {
+        size_t omit_count = ptn_explode_negative_limit_omit_count(limit);
+        emit_count = omit_count >= piece_count ? 0 : piece_count - omit_count;
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t start = 0;
+    for (size_t index = 0; index < emit_count; index++) {
+        size_t segment_start = start;
+        size_t segment_len = string.len - segment_start;
+        if (limit < 0 || index + 1 < emit_count) {
+            size_t offset = ptn_explode_find_separator(string, separator, segment_start);
+            if (offset != SIZE_MAX) {
+                segment_len = offset - segment_start;
+                start = offset + separator.len;
+            } else {
+                start = string.len;
+            }
+        } else {
+            start = string.len;
+        }
+        ptn_explode_append_segment(&result, string, segment_start, segment_len, index);
+    }
+
+    ptn_string_operand_free(separator);
+    ptn_string_operand_free(string);
+    return result;
+}
+
 static PtnValue ptn_internal_implode_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -7718,6 +7828,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "dirname", 1, 1, ptn_internal_dirname },
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
+        { "explode", 2, 3, ptn_internal_explode },
         { "extension_loaded", 1, 1, ptn_internal_extension_loaded },
         { "fclose", 1, 1, ptn_internal_fclose },
         { "fdiv", 2, 2, ptn_internal_fdiv },
