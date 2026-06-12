@@ -302,7 +302,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`,
   `strtolower(expr);`, `strtoupper(expr);`, `strrev(expr);`, `ucfirst(expr);`,
-  `quotemeta(expr);`,
+  `lcfirst(expr);`, `quotemeta(expr);`,
   `trim(expr[, expr]);`, `ltrim(expr[, expr]);`, `rtrim(expr[, expr]);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
   `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
@@ -345,7 +345,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`,
   `strtolower(expr)`, `strtoupper(expr)`, `strrev(expr)`, `ucfirst(expr)`,
-  `quotemeta(expr)`,
+  `lcfirst(expr)`, `quotemeta(expr)`,
   `trim(expr[, expr])`, `ltrim(expr[, expr])`, `rtrim(expr[, expr])`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
   `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
@@ -455,8 +455,8 @@ Post-RC architecture remains explicit rather than hidden:
   closures, and exceptions throw the modeled `TypeError` boundary for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
-  `strtr()`, `strrev()`, `ucfirst()`, `strtolower()`, `strtoupper()`,
-  `quotemeta()`, `chunk_split()` string/separator arguments,
+  `strtr()`, `strrev()`, `ucfirst()`, `lcfirst()`, `strtolower()`,
+  `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
   `trim()`/`ltrim()`/`rtrim()` string and characters arguments,
   `strip_tags()`, `md5()`, `sha1()`, `substr()`,
   `addcslashes()`, `addslashes()`, `stripcslashes()`, `stripslashes()`,
@@ -483,8 +483,9 @@ Post-RC architecture remains explicit rather than hidden:
   scalar string conversion, mapping ASCII letters and preserving other bytes.
 - `strrev()` over current boxed scalar values after scalar string conversion,
   reversing bytes while preserving explicit string length and embedded NULs.
-- `ucfirst()` over current boxed scalar values after scalar string conversion,
-  uppercasing an initial ASCII lowercase byte and preserving remaining bytes.
+- `ucfirst()` and `lcfirst()` over current boxed scalar values after scalar
+  string conversion, mapping the initial ASCII byte to upper/lowercase and
+  preserving remaining bytes.
 - `trim()`, `ltrim()`, and `rtrim()` over current boxed scalar values after
   scalar string conversion. The default PHP trim bytes are modeled, and the
   optional characters argument supports literal byte sets plus ascending

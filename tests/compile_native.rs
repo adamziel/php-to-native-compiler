@@ -1295,6 +1295,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function UcFirst($string) { return $string; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function ucfirst()");
 
+    let error = parser::parse("<?php function LcFirst($string) { return $string; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function lcfirst()");
+
     let error =
         parser::parse("<?php function array_combine($keys, $values) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_combine()");
@@ -3893,7 +3896,7 @@ fn compile_string_internals_use_direct_string_operand_fast_paths_to_native_binar
         "<?php\n\
 echo strlen(\"abcdef\"), \" \", strcmp(\"abc\", \"abd\"), \" \", str_contains(\"abcdef\", \"cd\"), \" \", str_starts_with(\"abcdef\", \"ab\"), \" \", str_ends_with(\"abcdef\", \"ef\"), \"\\n\";\n\
 echo str_rot13(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \" \", bin2hex(\"Az\"), \" \", quotemeta(\"a.b\"), \" \", chunk_split(\"abcd\", 2, \"|\"), \"\\n\";\n\
-echo bin2hex(strtolower(\"Az\" . chr(0) . \"Q\" . chr(255))), \" \", bin2hex(strtoupper(\"az\" . chr(0) . \"q\" . chr(255))), \"\\n\";\n\
+echo bin2hex(strtolower(\"Az\" . chr(0) . \"Q\" . chr(255))), \" \", bin2hex(strtoupper(\"az\" . chr(0) . \"q\" . chr(255))), \" \", bin2hex(lcfirst(\"Az\" . chr(0) . \"Q\" . chr(255))), \"\\n\";\n\
 echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
 echo bin2hex(strip_tags(\"<b>A</b>\" . chr(0) . \"<i>B</i>\")), \" \", soundex(\"A\" . chr(0) . \"B\"), \"\\n\";\n\
 echo str_repeat(\"xy\", 3), \"|\", str_repeat(\"z\", 0), \"|\", chunk_split(str_repeat(\"X\", 6), 3, \"|\"), \"\\n\";\n\
@@ -3910,7 +3913,7 @@ var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), str
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "6 -1 1 1 1\nnop cde 417a a\\.b ab|cd|\n\
-617a0071ff 415a0051ff\n\
+617a0071ff 415a0051ff 617a0051ff\n\
 x A R163 65 5 255 8\n\
 4142 A100\n\
 xyxyxy||XXX|XXX|\n\
@@ -3940,6 +3943,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         "ptn_internal_rtrim",
         "ptn_internal_strrev",
         "ptn_internal_ucfirst",
+        "ptn_internal_lcfirst",
         "ptn_internal_quotemeta",
         "ptn_internal_chunk_split",
         "ptn_internal_str_repeat",
@@ -3975,6 +3979,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
     for expected_call in [
         "ptn_rot13_string(string.data, string.len)",
         "ptn_first_char_case_string(string.data, string.len, 1)",
+        "ptn_first_char_case_string(string.data, string.len, 0)",
         "ptn_ascii_case_string(string.data, string.len, 0)",
         "ptn_ascii_case_string(string.data, string.len, 1)",
         "ptn_trim_string_value(input, charlist, trim_left, trim_right)",
@@ -4143,6 +4148,41 @@ var_dump(function_exists(\"ucfirst\"), function_exists(\"UCFIRST\"));",
 string(5) \"Hello\"\n\
 string(6) \"1hello\"\n\
 string(6) \"41007a\"\n\
+string(5) \"12345\"\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_lcfirst_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-lcfirst");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lcfirst.php");
+    let output = root.join("lcfirst-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(lcfirst(\"Hello\"));\n\
+var_dump(lcfirst(\"hello\"));\n\
+var_dump(lcfirst(\"1Hello\"));\n\
+var_dump(bin2hex(lcfirst(\"A\" . chr(0) . \"Z\")));\n\
+var_dump(lcfirst(12345));\n\
+var_dump(function_exists(\"lcfirst\"), function_exists(\"LCFIRST\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"hello\"\n\
+string(5) \"hello\"\n\
+string(6) \"1Hello\"\n\
+string(6) \"61005a\"\n\
 string(5) \"12345\"\n\
 bool(true)\n\
 bool(true)\n"

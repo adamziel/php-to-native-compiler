@@ -3428,6 +3428,15 @@ static PtnValue ptn_internal_ucfirst(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string_len(mapped, len);
 }
 
+static PtnValue ptn_internal_lcfirst(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "lcfirst", 1, "string", args[0], line);
+    char *mapped = ptn_first_char_case_string(string.data, string.len, 0);
+    size_t len = string.len;
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(mapped, len);
+}
+
 static char *ptn_ascii_case_string(const char *string, size_t len, int uppercase) {
     char *mapped = malloc(len + 1);
     if (mapped == NULL) {
@@ -6382,6 +6391,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "key", 1, 1, ptn_internal_key },
         { "krsort", 1, 2, ptn_internal_krsort },
         { "ksort", 1, 2, ptn_internal_ksort },
+        { "lcfirst", 1, 1, ptn_internal_lcfirst },
         { "ltrim", 1, 2, ptn_internal_ltrim },
         { "md5", 1, 2, ptn_internal_md5 },
         { "method_exists", 2, 2, ptn_internal_method_exists },
