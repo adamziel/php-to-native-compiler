@@ -4825,6 +4825,13 @@ static PtnValue ptn_internal_is_object(PtnRuntime *runtime, size_t argc, const P
     return ptn_is_object(args[0]);
 }
 
+static PtnValue ptn_internal_is_countable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_is_type(args[0], PTN_ARRAY);
+}
+
 static PtnValue ptn_internal_is_bool(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -6162,6 +6169,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_array", 1, 1, ptn_internal_is_array },
         { "is_bool", 1, 1, ptn_internal_is_bool },
         { "is_callable", 1, 2, ptn_internal_is_callable },
+        { "is_countable", 1, 1, ptn_internal_is_countable },
         { "is_dir", 1, 1, ptn_internal_is_dir },
         { "is_double", 1, 1, ptn_internal_is_float },
         { "is_file", 1, 1, ptn_internal_is_file },

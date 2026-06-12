@@ -3734,6 +3734,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "is_null"
             | "is_bool"
             | "is_object"
+            | "is_countable"
             | "is_resource"
             | "is_dir"
             | "is_file"

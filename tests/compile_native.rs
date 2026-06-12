@@ -1310,6 +1310,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function array_values($array) { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_values()");
 
+    let error = parser::parse("<?php function is_countable($value) { return false; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function is_countable()");
+
     let error =
         parser::parse("<?php function IN_ARRAY($needle, $haystack) { return true; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function in_array()");
@@ -6933,6 +6936,67 @@ var_dump(function_exists(\"is_array\"), function_exists(\"IS_OBJECT\"), function
         "string(5) \"array\"\nbool(true)\nbool(false)\nstring(5) \"array\"\nbool(true)\nbool(false)\nstring(6) \"object\"\nbool(false)\nbool(true)\nstring(6) \"object\"\nbool(false)\nbool(true)\nstring(6) \"object\"\nbool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_is_countable_current_value_subset_to_native_binary() {
+    let root = temp_dir("ptn-native-is-countable-current-subset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("is-countable-current-subset.php");
+    let output = root.join("is-countable-current-subset-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {}
+
+$items = [1, 2, 3];
+$alias =& $items;
+$nested = [[\"x\" => 1]];
+$box = new Box();
+$std = new stdClass;
+$callback = function () { return 1; };
+
+var_dump(is_countable($items));
+var_dump(is_countable($alias));
+var_dump(is_countable($nested[0]));
+var_dump(is_countable($box));
+var_dump(is_countable($std));
+var_dump(is_countable($callback));
+var_dump(is_countable(null), is_countable(false), is_countable(1), is_countable(\"x\"));
+if (is_countable($items)) {
+    var_dump(count($items));
+}
+var_dump(function_exists(\"is_countable\"), function_exists(\"IS_COUNTABLE\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "int(3)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_is_countable"));
 }
 
 #[test]
