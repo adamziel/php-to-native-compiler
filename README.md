@@ -76,6 +76,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
   `pcre`, and `standard` extension surface plus the supported ini keys; set
   `PTN_PHPT_CLASSIFY=0` for raw php-src `run-tests.php` pass-through.
+- Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from
+  `Zend/tests`, `ext/standard/tests`, and core `tests`, recording the php-src
+  corpus revision plus pass/fail/skip/warn counts without requiring all rows to
+  pass.
 
 ## Status
 
@@ -95,4 +99,6 @@ cargo build --bin phpc
 tools/update-progress-mirrors.sh
 tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
 tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
+tools/run-phpt-baseline.sh --generate-only
+tools/run-phpt-baseline.sh --tier 1000
 ```

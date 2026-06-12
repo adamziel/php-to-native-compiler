@@ -55,6 +55,16 @@ ptn_fetch_php_src_checkout() {
   mv "$tmp" "$target"
 }
 
+ptn_phpt_corpus_revision() {
+  local corpus=$1
+
+  if [[ -d "$corpus/.git" ]] && command -v git >/dev/null 2>&1; then
+    git -C "$corpus" rev-parse HEAD 2>/dev/null && return 0
+  fi
+
+  printf 'unknown\n'
+}
+
 ptn_resolve_phpt_corpus() {
   local repo_root=$1
   local explicit=${PHP_SRC_PHPT:-}

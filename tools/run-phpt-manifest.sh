@@ -6,6 +6,7 @@ manifest="${1:-$repo_root/tools/phpt-manifest-200.txt}"
 source "$repo_root/tools/phpt-corpus.sh"
 source "$repo_root/tools/phpt-classifier.sh"
 php_src="$(ptn_resolve_phpt_corpus "$repo_root")"
+corpus_revision="$(ptn_phpt_corpus_revision "$php_src")"
 log_dir="$repo_root/.runtime/phpt-progress"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 log="$log_dir/run-$stamp.log"
@@ -143,7 +144,7 @@ summary="$(awk '
 
 {
   echo
-  echo "[ptn-patrol] commit=$(git rev-parse --short HEAD) manifest=$resolved_manifest runnable_manifest=$runnable_manifest selected=$total_rows runnable=${#paths[@]} excluded=$excluded_rows elapsed=${elapsed}s status=$run_status"
+  echo "[ptn-patrol] commit=$(git rev-parse --short HEAD) corpus_revision=$corpus_revision manifest=$resolved_manifest runnable_manifest=$runnable_manifest selected=$total_rows runnable=${#paths[@]} excluded=$excluded_rows elapsed=${elapsed}s status=$run_status"
   if [[ -n "$summary" ]]; then
     echo "[ptn-patrol] $summary"
   fi

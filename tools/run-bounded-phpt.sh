@@ -6,6 +6,7 @@ manifest=${1:-$repo_root/tools/phpt-bounded-manifest.txt}
 source "$repo_root/tools/phpt-corpus.sh"
 source "$repo_root/tools/phpt-classifier.sh"
 php_src="$(ptn_resolve_phpt_corpus "$repo_root")"
+corpus_revision="$(ptn_phpt_corpus_revision "$php_src")"
 out_dir=${PHPT_PROGRESS_DIR:-$repo_root/.runtime/phpt-progress}
 
 if [[ ! -f "$manifest" ]]; then
@@ -236,6 +237,7 @@ aggregate_run_status=0
     echo "PHPT bounded patrol $timestamp"
     echo "commit: $commit"
     echo "corpus: $php_src"
+    echo "corpus-revision: $corpus_revision"
     echo "manifest: $resolved_manifest"
     echo "runnable-manifest: $runnable_manifest"
     echo "command: cargo build --bin phpc; PHPC_BIN=\"$phpc_bin\" php $php_src/run-tests.php -q -p \"$phpc_bin\" <bucket manifest paths>"

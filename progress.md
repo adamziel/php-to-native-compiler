@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T01:46Z
+Last refresh: 2026-06-13T01:54Z
 Source: `PROGRESS.md`
-Measured: `ptn-jzgh` rebased on current `origin/master` `52de5ad8a`.
+Measured: `ptn-98d8.1` rebased on current `origin/master` `3b520ef7c`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 580/580; Native smoke matrix 6/6; PHPT bounded manifest 231/233; PHPT Zend rows 80/80; PHPT ext/standard rows 103/103.
 
