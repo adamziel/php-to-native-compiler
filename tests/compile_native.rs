@@ -2499,6 +2499,54 @@ echo Counter::$value;",
 }
 
 #[test]
+fn parser_accepts_static_property_null_coalescing_assignment() {
+    let program = parser::parse(
+        "<?php
+class Counter {
+    public static $value;
+}
+Counter::$value ??= 5;
+echo Counter::$value ??= 6;",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected static property null coalescing assignment statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target:
+                AssignmentTarget::StaticProperty {
+                    class_name,
+                    name,
+                    ..
+                },
+            op: AssignmentOp::CoalesceAssign,
+            ..
+        } if class_name == "Counter" && name == "value"
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected static property null coalescing assignment echo");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Assign {
+            target:
+                AssignmentTarget::StaticProperty {
+                    class_name,
+                    name,
+                    ..
+                },
+            op: AssignmentOp::CoalesceAssign,
+            ..
+        } if class_name == "Counter" && name == "value"
+    ));
+}
+
+#[test]
 fn parser_accepts_property_and_static_property_increment_targets() {
     let program = parser::parse(
         "<?php
@@ -17404,6 +17452,63 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_read_static_property_quiet(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
+}
+
+#[test]
+fn compile_static_property_null_coalescing_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-coalesce-assign");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-coalesce-assign.php");
+    let output = root.join("static-property-coalesce-assign-bin");
+    fs::write(
+        &input,
+        "<?php
+class Counter {
+    public static $nullish = null;
+    public static $hit = \"kept\";
+    public static $selfValue;
+
+    public static function initSelf() {
+        var_dump(self::$selfValue ??= rhs(\"self\"));
+        var_dump(self::$selfValue ??= rhs(\"self-hit\"));
+    }
+}
+
+function rhs($label) {
+    echo \"rhs:$label\\n\";
+    return $label;
+}
+
+var_dump(Counter::$nullish ??= rhs(\"nullish\"));
+var_dump(Counter::$hit ??= rhs(\"hit\"));
+var_dump(Counter::$nullish, Counter::$hit);
+Counter::initSelf();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "rhs:nullish\n",
+            "string(7) \"nullish\"\n",
+            "string(4) \"kept\"\n",
+            "string(7) \"nullish\"\n",
+            "string(4) \"kept\"\n",
+            "rhs:self\n",
+            "string(4) \"self\"\n",
+            "string(4) \"self\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_static_property_quiet(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
 }
 
 #[test]

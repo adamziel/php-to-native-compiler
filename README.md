@@ -69,8 +69,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, and quiet `isset()`, `empty()`, and `??`; full visibility and
   inheritance remain bounded.
-- Static properties support reads/writes plus quiet `isset()`, `empty()`, and
-  `??`.
+- Static properties support reads/writes, `??=`, plus quiet `isset()`,
+  `empty()`, and `??`.
 - Stream resources from `fopen()`/`fclose()` are boxed with type, dump,
   and array-key cast behavior.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
@@ -106,5 +106,5 @@ done
 ```
 
 RC examples exercise scalar control flow, arrays/internals, user functions,
-public object shells, static/instance properties, `??=`, and property/static
-inc/dec.
+public object shells, static/instance properties including static-property
+`??=`, public property `??=`, and property/static inc/dec.

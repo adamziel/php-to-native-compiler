@@ -11,8 +11,8 @@ internals, top-level functions, includes resolved at compile time, copy-on-write
 array/reference slices, and public class/object shells. Public class support is
 bounded to top-level declarations with public methods, direct public static
 property reads/writes, read-side static property `isset()`/`empty()`/`??`
-probes, public instance property reads/writes, and public property `??=`
-plus read-side property `isset()`/`empty()`/`??` probes,
+probes, direct static-property `??=`, public instance property reads/writes,
+public property `??=`, read-side property `isset()`/`empty()`/`??` probes, and
 bounded private instance-property declarations read/written from
 declaring-class methods, declared private/protected instance-property metadata
 for initialization and dump labels, and public non-static
@@ -30,9 +30,10 @@ Post-RC architecture remains explicit rather than hidden:
   grouped imports, namespace fallback parity for arbitrary userland symbols,
   namespace/class constants, and namespace-sensitive reflection remain
   post-RC.
-- Static properties: direct public static reads/writes are supported, but
-  visibility, inheritance, late static binding, typed/default metadata, and
-  static-property compound or null-coalescing-assignment lvalues are post-RC.
+- Static properties: direct public static reads/writes and `??=` are
+  supported, but visibility, inheritance, late static binding, typed/default
+  metadata, and static-property compound lvalues outside `??=` and inc/dec are
+  post-RC.
 - Magic methods: public declared instance `__construct` is supported during
   object construction, and public declared instance `__call` is supported as a
   fallback for direct object calls and supported object callable dispatch when
@@ -853,9 +854,11 @@ Post-RC architecture remains explicit rather than hidden:
   declaration-backed static slots before top-level statements, supports
   `Class::$name` reads, writes, and pre/post inc/dec, resolves `self::$name`
   inside declared methods, quiet-probes `isset()`, `empty()`, and
-  expression-form `??` over declared-class static properties, and throws modeled
-  PHP `Error` diagnostics for ordinary undeclared static property reads/writes
-  and inc/dec.
+  expression-form `??` over declared-class static properties, and supports
+  direct static-property null coalescing assignment `Class::$name ??= expr` and
+  `self::$name ??= expr` with quiet reads and lazy right-hand evaluation.
+  Ordinary undeclared static property reads/writes and inc/dec throw modeled
+  PHP `Error` diagnostics.
 - `new stdClass` and declared-class object shells, boxed object handles, public
   dynamic property reads/writes such as `$object->name`, and public declared
   instance properties with supported constant defaults. Object assignment
@@ -1069,8 +1072,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Object lvalues, dynamic-variable array-offset compound/null-coalescing/
   by-reference lvalues, append-form null-coalescing, property reference
   targets, property compound-assignment operators outside modeled
-  public-property `??=`, and static-property compound/null-coalescing-assignment
-  lvalues outside modeled direct reads/writes/inc/dec and read-side quiet probes.
+  public-property `??=`, and static-property compound-assignment lvalues
+  outside modeled direct reads/writes/`??=`/inc/dec and read-side quiet probes.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.
