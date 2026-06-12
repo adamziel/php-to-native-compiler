@@ -387,9 +387,10 @@ Post-RC architecture remains explicit rather than hidden:
   ordered-array formatting, nested arrays, and string-return mode through the
   optional second argument.
 - `var_export()` output for current boxed null, boolean, integer, float, string,
-  ordered-array, and object values, including nested arrays/objects,
-  string-return mode through the optional second argument, and PHP-style object
-  `\Class::__set_state(array(...))` formatting.
+  ordered-array values, declared object shells through
+  `\Class::__set_state(array(...))`, and `stdClass` through `(object)
+  array(...)`, including nested arrays/objects and string-return mode through
+  the optional second argument.
 - `strlen()` over current boxed scalar values and objects with a public
   declared `__toString()` after shared string conversion.
 - Bounded `highlight_string()` and `highlight_file()` use the current

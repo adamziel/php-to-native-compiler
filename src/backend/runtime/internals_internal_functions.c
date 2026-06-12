@@ -615,6 +615,11 @@ static void ptn_var_export_append_key(PtnStringBuffer *buffer, PtnArrayKey key) 
     }
 }
 
+static int ptn_var_export_is_complex_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_ARRAY || value.type == PTN_OBJECT;
+}
+
 static void ptn_var_export_append_array(PtnStringBuffer *buffer, PtnArray *array, size_t indent) {
     ptn_string_buffer_append(buffer, "array (\n");
     for (size_t i = 0; i < array->len; i++) {
@@ -623,7 +628,30 @@ static void ptn_var_export_append_array(PtnStringBuffer *buffer, PtnArray *array
         ptn_string_buffer_append_indent(buffer, indent + 2);
         ptn_var_export_append_key(buffer, entry->key);
         ptn_string_buffer_append(buffer, " => ");
-        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+        if (ptn_var_export_is_complex_value(entry_value)) {
+            ptn_string_buffer_append_char(buffer, '\n');
+            ptn_string_buffer_append_indent(buffer, indent + 2);
+        }
+        ptn_var_export_append_value(buffer, entry_value, indent + 2);
+        ptn_string_buffer_append(buffer, ",\n");
+    }
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append_char(buffer, ')');
+}
+
+static void ptn_var_export_append_object_state_array(
+    PtnStringBuffer *buffer,
+    PtnArray *properties,
+    size_t indent
+) {
+    ptn_string_buffer_append(buffer, "array(\n");
+    for (size_t i = 0; i < properties->len; i++) {
+        PtnArrayEntry *entry = &properties->entries[i];
+        PtnValue entry_value = ptn_value_deref(entry->value);
+        ptn_string_buffer_append_indent(buffer, indent + 3);
+        ptn_var_export_append_key(buffer, entry->key);
+        ptn_string_buffer_append(buffer, " => ");
+        if (ptn_var_export_is_complex_value(entry_value)) {
             ptn_string_buffer_append_char(buffer, '\n');
             ptn_string_buffer_append_indent(buffer, indent + 2);
         }
@@ -635,28 +663,17 @@ static void ptn_var_export_append_array(PtnStringBuffer *buffer, PtnArray *array
 }
 
 static void ptn_var_export_append_object(PtnStringBuffer *buffer, PtnObject *object, size_t indent) {
-    ptn_string_buffer_append_char(buffer, '\\');
-    ptn_string_buffer_append(buffer, object->class_name);
-    ptn_string_buffer_append(buffer, "::__set_state(array(");
-    PtnArray *properties = object->properties;
-    if (properties->len != 0) {
-        ptn_string_buffer_append_char(buffer, '\n');
+    if (strcmp(object->class_name, "stdClass") == 0) {
+        ptn_string_buffer_append(buffer, "(object) ");
+    } else {
+        ptn_string_buffer_append_char(buffer, '\\');
+        ptn_string_buffer_append(buffer, object->class_name);
+        ptn_string_buffer_append(buffer, "::__set_state(");
     }
-    for (size_t i = 0; i < properties->len; i++) {
-        PtnArrayEntry *entry = &properties->entries[i];
-        PtnValue entry_value = ptn_value_deref(entry->value);
-        ptn_string_buffer_append_indent(buffer, indent + 3);
-        ptn_var_export_append_key(buffer, entry->key);
-        ptn_string_buffer_append(buffer, " => ");
-        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
-            ptn_string_buffer_append_char(buffer, '\n');
-            ptn_string_buffer_append_indent(buffer, indent + 3);
-        }
-        ptn_var_export_append_value(buffer, entry_value, indent + 3);
-        ptn_string_buffer_append(buffer, ",\n");
+    ptn_var_export_append_object_state_array(buffer, object->properties, indent);
+    if (strcmp(object->class_name, "stdClass") != 0) {
+        ptn_string_buffer_append_char(buffer, ')');
     }
-    ptn_string_buffer_append_indent(buffer, indent);
-    ptn_string_buffer_append(buffer, "))");
 }
 
 static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value, size_t indent) {
