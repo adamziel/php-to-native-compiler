@@ -2422,16 +2422,8 @@ class Box {
 }
 
 #[test]
-fn parser_rejects_unsupported_non_public_static_members_and_methods() {
+fn parser_rejects_unsupported_non_public_methods() {
     let cases = [
-        (
-            "<?php class Box { private static $secret = 4; }",
-            "non-public static properties are unsupported",
-        ),
-        (
-            "<?php class Box { protected static $guarded; }",
-            "non-public static properties are unsupported",
-        ),
         (
             "<?php class Box { private function secret() {} }",
             "non-public class methods are unsupported",
@@ -2472,6 +2464,40 @@ echo $box->reveal();",
         program.classes[0].properties[1].visibility,
         PropertyVisibility::Private
     );
+}
+
+#[test]
+fn parser_accepts_declared_non_public_property_metadata() {
+    let program = parser::parse(
+        "<?php
+class Box {
+    private $secret = 1, $other;
+    protected static $shared = 2;
+}
+",
+    )
+    .unwrap();
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].properties.len(), 2);
+    assert_eq!(
+        program.classes[0].properties[0].visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(
+        program.classes[0].properties[1].visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(program.classes[0].static_properties.len(), 1);
+    assert_eq!(
+        program.classes[0].static_properties[0].visibility,
+        PropertyVisibility::Protected
+    );
+}
+
+#[test]
+fn parser_rejects_non_public_methods_before_visibility_dispatch() {
+    let error = parser::parse("<?php class Box { private function hidden() {} }").unwrap_err();
+    assert_eq!(error.message, "non-public class methods are unsupported");
 }
 
 #[test]
@@ -16074,6 +16100,65 @@ var_dump($object);
         "object(stdClass)#1 (1) {\n  [\"value\"]=>\n  string(7) \"visible\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_declared_non_public_property_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-non-public-property-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-public-property-metadata.php");
+    let output = root.join("non-public-property-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class Secret {
+    private $hidden;
+    protected $shared = 8;
+    public $visible = \"ok\";
+    function __construct($value) {
+        $this->hidden = $value;
+    }
+    public function expose() {
+        return $this->hidden . \":\" . $this->shared . \":\" . $this->visible;
+    }
+}
+$object = new Secret(7);
+echo $object->expose(), \"\\n\";
+var_dump($object);
+echo var_export($object, true), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "7:8:ok\n",
+            "object(Secret)#1 (3) {\n",
+            "  [\"hidden\":\"Secret\":private]=>\n",
+            "  int(7)\n",
+            "  [\"shared\":protected]=>\n",
+            "  int(8)\n",
+            "  [\"visible\"]=>\n",
+            "  string(2) \"ok\"\n",
+            "}\n",
+            "\\Secret::__set_state(array(\n",
+            "   'hidden' => 7,\n",
+            "   'shared' => 8,\n",
+            "   'visible' => 'ok',\n",
+            "))\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_declare_property(&runtime"));
+    assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
+    assert!(c_source.contains("PTN_PROPERTY_PROTECTED"));
 }
 
 #[test]

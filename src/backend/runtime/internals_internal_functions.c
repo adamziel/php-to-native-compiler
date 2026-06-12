@@ -209,6 +209,28 @@ static void ptn_dump_seen_arrays_pop(PtnDumpSeenArrays *seen) {
     }
 }
 
+static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        printf("[%lld]=>\n", (long long)key.as.integer);
+        return;
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, key.as.string);
+    if (metadata == NULL || metadata->visibility == PTN_PROPERTY_PUBLIC) {
+        printf("[\"%s\"]=>\n", key.as.string);
+        return;
+    }
+    if (metadata->visibility == PTN_PROPERTY_PROTECTED) {
+        printf("[\"%s\":protected]=>\n", key.as.string);
+        return;
+    }
+    printf(
+        "[\"%s\":\"%s\":private]=>\n",
+        key.as.string,
+        metadata->declaring_class
+    );
+}
+
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen) {
     int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
     if (value.type == PTN_REFERENCE) {
@@ -270,17 +292,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             for (size_t i = 0; i < properties->len; i++) {
                 ptn_var_dump_indent(indent + 1);
                 PtnArrayKey key = properties->entries[i].key;
-                if (key.type == PTN_ARRAY_KEY_INT) {
-                    printf("[%lld]=>\n", (long long)key.as.integer);
-                } else {
-                    const char *private_class =
-                        ptn_declared_private_property_class(object->class_name, key.as.string);
-                    if (private_class != NULL) {
-                        printf("[\"%s\":\"%s\":private]=>\n", key.as.string, private_class);
-                    } else {
-                        printf("[\"%s\"]=>\n", key.as.string);
-                    }
-                }
+                ptn_var_dump_object_property_key(object, key);
                 ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
             }
             ptn_var_dump_indent(indent);
@@ -383,17 +395,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             for (size_t i = 0; i < properties->len; i++) {
                 ptn_var_dump_indent(indent + 1);
                 PtnArrayKey key = properties->entries[i].key;
-                if (key.type == PTN_ARRAY_KEY_INT) {
-                    printf("[%lld]=>\n", (long long)key.as.integer);
-                } else {
-                    const char *private_class =
-                        ptn_declared_private_property_class(object->class_name, key.as.string);
-                    if (private_class != NULL) {
-                        printf("[\"%s\":\"%s\":private]=>\n", key.as.string, private_class);
-                    } else {
-                        printf("[\"%s\"]=>\n", key.as.string);
-                    }
-                }
+                ptn_var_dump_object_property_key(object, key);
                 ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
             }
             ptn_var_dump_indent(indent);
@@ -621,7 +623,7 @@ static void ptn_var_export_append_array(PtnStringBuffer *buffer, PtnArray *array
         ptn_string_buffer_append_indent(buffer, indent + 2);
         ptn_var_export_append_key(buffer, entry->key);
         ptn_string_buffer_append(buffer, " => ");
-        if (entry_value.type == PTN_ARRAY) {
+        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
             ptn_string_buffer_append_char(buffer, '\n');
             ptn_string_buffer_append_indent(buffer, indent + 2);
         }
@@ -635,10 +637,26 @@ static void ptn_var_export_append_array(PtnStringBuffer *buffer, PtnArray *array
 static void ptn_var_export_append_object(PtnStringBuffer *buffer, PtnObject *object, size_t indent) {
     ptn_string_buffer_append_char(buffer, '\\');
     ptn_string_buffer_append(buffer, object->class_name);
-    ptn_string_buffer_append(buffer, "::__set_state(");
-    PtnValue properties = ptn_array(object->properties);
-    ptn_var_export_append_value(buffer, properties, indent);
-    ptn_string_buffer_append_char(buffer, ')');
+    ptn_string_buffer_append(buffer, "::__set_state(array(");
+    PtnArray *properties = object->properties;
+    if (properties->len != 0) {
+        ptn_string_buffer_append_char(buffer, '\n');
+    }
+    for (size_t i = 0; i < properties->len; i++) {
+        PtnArrayEntry *entry = &properties->entries[i];
+        PtnValue entry_value = ptn_value_deref(entry->value);
+        ptn_string_buffer_append_indent(buffer, indent + 3);
+        ptn_var_export_append_key(buffer, entry->key);
+        ptn_string_buffer_append(buffer, " => ");
+        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+            ptn_string_buffer_append_char(buffer, '\n');
+            ptn_string_buffer_append_indent(buffer, indent + 3);
+        }
+        ptn_var_export_append_value(buffer, entry_value, indent + 3);
+        ptn_string_buffer_append(buffer, ",\n");
+    }
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, "))");
 }
 
 static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value, size_t indent) {

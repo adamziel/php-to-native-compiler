@@ -41,6 +41,7 @@ impl Default for PropertyVisibility {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticPropertyDecl {
     pub name: String,
+    pub visibility: PropertyVisibility,
     pub value: Option<Expr>,
     pub span: SourceSpan,
 }

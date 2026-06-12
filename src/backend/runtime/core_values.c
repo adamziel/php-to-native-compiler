@@ -148,6 +148,18 @@ struct PtnReference {
     PtnValue value;
 };
 
+typedef enum {
+    PTN_PROPERTY_PUBLIC,
+    PTN_PROPERTY_PROTECTED,
+    PTN_PROPERTY_PRIVATE
+} PtnPropertyVisibility;
+
+typedef struct {
+    char *name;
+    char *declaring_class;
+    PtnPropertyVisibility visibility;
+} PtnObjectPropertyMetadata;
+
 typedef struct {
     int exists;
     PtnValue value;
@@ -194,6 +206,9 @@ struct PtnObject {
     size_t refcount;
     char *class_name;
     PtnArray *properties;
+    PtnObjectPropertyMetadata *property_metadata;
+    size_t property_metadata_len;
+    size_t property_metadata_capacity;
 };
 
 typedef struct {

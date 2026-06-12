@@ -5271,12 +5271,14 @@ impl ValueEmitter {
                 let assigned_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&assigned_temp);
-                out.push_str(" = ptn_object_write_property(&runtime, ");
+                out.push_str(" = ptn_object_declare_property(&runtime, ");
                 out.push_str(&result_temp);
                 out.push_str(", \"");
                 out.push_str(&c_string(&property.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&declared_class.name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(Some(&declared_class.name)));
+                out.push_str(c_property_visibility(property.visibility));
                 out.push_str(", ");
                 out.push_str(&value_temp);
                 out.push_str(", ");
@@ -7134,6 +7136,14 @@ fn c_optional_string(value: Option<&str>) -> String {
     match value {
         Some(value) => format!("\"{}\"", c_string(value)),
         None => "NULL".to_string(),
+    }
+}
+
+fn c_property_visibility(visibility: PropertyVisibility) -> &'static str {
+    match visibility {
+        PropertyVisibility::Public => "PTN_PROPERTY_PUBLIC",
+        PropertyVisibility::Protected => "PTN_PROPERTY_PROTECTED",
+        PropertyVisibility::Private => "PTN_PROPERTY_PRIVATE",
     }
 }
 

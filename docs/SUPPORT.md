@@ -12,17 +12,16 @@ array/reference slices, and public class/object shells. Public class support is
 bounded to top-level declarations with public methods, direct public static
 property reads/writes, public instance property reads/writes, and public
 property `??=`, bounded private instance-property declarations read/written
-from declaring-class methods, protected instance-property declarations
-initialized for current in-class use, and public non-static `__construct`
-dispatch through the declared-method path.
+from declaring-class methods, declared private/protected instance-property
+metadata for initialization and dump labels, and public non-static
+`__construct` dispatch through the declared-method path.
 
 Post-RC architecture remains explicit rather than hidden:
 
 - Classes and inheritance: interfaces, traits, namespaces,
   full visibility-aware/typed/promoted properties, broad metadata/reflection,
-  destructors, old-style constructors, class constants, and complete
-  visibility-aware inherited property/method resolution remain outside the RC
-  boundary.
+  destructors, old-style constructors, class constants, and complete inherited
+  property/method resolution remain outside the RC boundary.
 - Static properties: direct public static reads/writes are supported, but
   visibility, inheritance, late static binding, typed/default metadata, and
   static-property compound or null-coalescing lvalues are post-RC.
@@ -165,6 +164,10 @@ Post-RC architecture remains explicit rather than hidden:
   PHP-style parse error through `phpc`.
 - Unterminated block comments are rejected with a source-spanned PHP-style
   parse error through `phpc`.
+- Simple full ternaries `condition ? if_true : if_false` and short ternaries
+  `condition ?: if_false` evaluate the condition once, only evaluate the
+  selected branch, and return boxed branch values through the shared value
+  path.
 - Unparenthesized nested ternary expressions are rejected with
   PHP-style source-spanned fatal diagnostics for the currently modeled
   forbidden associativity forms.
@@ -384,8 +387,9 @@ Post-RC architecture remains explicit rather than hidden:
   ordered-array formatting, nested arrays, and string-return mode through the
   optional second argument.
 - `var_export()` output for current boxed null, boolean, integer, float, string,
-  and ordered-array values, including nested arrays and string-return mode
-  through the optional second argument.
+  ordered-array, and object values, including nested arrays/objects,
+  string-return mode through the optional second argument, and PHP-style object
+  `\Class::__set_state(array(...))` formatting.
 - `strlen()` over current boxed scalar values and objects with a public
   declared `__toString()` after shared string conversion.
 - Bounded `highlight_string()` and `highlight_file()` use the current
@@ -713,13 +717,12 @@ Post-RC architecture remains explicit rather than hidden:
   can flow through generated user functions and string-callable
   `call_user_func()` dispatch. Public property null coalescing assignment
   `$object->name ??= expr` quiet-reads the property and lazily evaluates the
-  right-hand expression. Private declared instance properties in top-level
-  classes are initialized with supported defaults, read/written from methods of
-  their declaring class, rejected for outside reads/writes with modeled
-  `Error`, and labeled as private in `var_dump()` output. Protected instance
-  declarations are accepted and initialized for current in-class use, but
-  PHP-exact protected visibility, inherited property resolution, dump/export
-  metadata, typed properties, constructor promotion, magic, destructors, and
+  right-hand expression. Declared private/protected instance properties are
+  initialized with the same storage path and preserve metadata for `var_dump()`
+  private/protected labels. Private declared properties are read/written from
+  methods of their declaring class and rejected for outside reads/writes with
+  modeled `Error`; full protected visibility, inherited property resolution,
+  typed properties, constructor promotion, magic, destructors, and
   reflection property metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently

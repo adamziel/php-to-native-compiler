@@ -369,7 +369,67 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(const char *class_name) {
     object->refcount = 1;
     object->class_name = ptn_duplicate_string(class_name);
     object->properties = properties.as.array;
+    object->property_metadata = NULL;
+    object->property_metadata_len = 0;
+    object->property_metadata_capacity = 0;
     return ptn_object(object);
+}
+
+static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_property_metadata(
+    PtnObject *object,
+    const char *property
+) {
+    if (object == NULL || property == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        if (strcmp(object->property_metadata[i].name, property) == 0) {
+            return &object->property_metadata[i];
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED void ptn_object_register_property_metadata(
+    PtnObject *object,
+    const char *property,
+    const char *declaring_class,
+    PtnPropertyVisibility visibility
+) {
+    if (object == NULL || property == NULL || declaring_class == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        if (strcmp(object->property_metadata[i].name, property) == 0) {
+            free(object->property_metadata[i].declaring_class);
+            object->property_metadata[i].declaring_class = ptn_duplicate_string(declaring_class);
+            object->property_metadata[i].visibility = visibility;
+            return;
+        }
+    }
+    if (object->property_metadata_len == object->property_metadata_capacity) {
+        size_t new_capacity = object->property_metadata_capacity == 0
+            ? 4
+            : object->property_metadata_capacity * 2;
+        if (new_capacity < object->property_metadata_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnObjectPropertyMetadata)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnObjectPropertyMetadata *new_metadata = realloc(
+            object->property_metadata,
+            new_capacity * sizeof(PtnObjectPropertyMetadata)
+        );
+        if (new_metadata == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        object->property_metadata = new_metadata;
+        object->property_metadata_capacity = new_capacity;
+    }
+    PtnObjectPropertyMetadata *metadata =
+        &object->property_metadata[object->property_metadata_len++];
+    metadata->name = ptn_duplicate_string(property);
+    metadata->declaring_class = ptn_duplicate_string(declaring_class);
+    metadata->visibility = visibility;
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {
@@ -446,6 +506,11 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         return;
     }
     free(object->class_name);
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        free(object->property_metadata[i].name);
+        free(object->property_metadata[i].declaring_class);
+    }
+    free(object->property_metadata);
     ptn_array_free(object->properties);
     free(object);
 }

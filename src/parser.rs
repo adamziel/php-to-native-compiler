@@ -58,10 +58,20 @@ struct ForeachVariable {
     span: SourceSpan,
 }
 
-#[derive(Default)]
 struct ClassModifiers {
     is_static: bool,
     visibility: PropertyVisibility,
+    visibility_span: Option<SourceSpan>,
+}
+
+impl Default for ClassModifiers {
+    fn default() -> Self {
+        Self {
+            is_static: false,
+            visibility: PropertyVisibility::Public,
+            visibility_span: None,
+        }
+    }
 }
 
 enum ParsedClassMember {
@@ -201,14 +211,8 @@ impl Parser {
         }
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
             if modifiers.is_static {
-                if !matches!(modifiers.visibility, PropertyVisibility::Public) {
-                    return Err(Diagnostic::new(
-                        "non-public static properties are unsupported",
-                        Some(self.peek().span),
-                    ));
-                }
                 return Ok(ParsedClassMember::StaticProperties(
-                    self.parse_static_property_declarations()?,
+                    self.parse_static_property_declarations(modifiers.visibility)?,
                 ));
             }
             return Ok(ParsedClassMember::Properties(
@@ -221,10 +225,10 @@ impl Parser {
                 Some(self.peek().span),
             ));
         }
-        if !matches!(modifiers.visibility, PropertyVisibility::Public) {
+        if modifiers.visibility != PropertyVisibility::Public {
             return Err(Diagnostic::new(
                 "non-public class methods are unsupported",
-                Some(self.peek().span),
+                modifiers.visibility_span,
             ));
         }
         Ok(ParsedClassMember::Method(
@@ -241,6 +245,7 @@ impl Parser {
             match modifier.to_ascii_lowercase().as_str() {
                 "public" => {
                     modifiers.visibility = PropertyVisibility::Public;
+                    modifiers.visibility_span = Some(self.peek().span);
                     self.advance();
                 }
                 "static" => {
@@ -249,10 +254,12 @@ impl Parser {
                 }
                 "private" => {
                     modifiers.visibility = PropertyVisibility::Private;
+                    modifiers.visibility_span = Some(self.peek().span);
                     self.advance();
                 }
                 "protected" => {
                     modifiers.visibility = PropertyVisibility::Protected;
+                    modifiers.visibility_span = Some(self.peek().span);
                     self.advance();
                 }
                 "abstract" => {
@@ -270,11 +277,14 @@ impl Parser {
         Ok(modifiers)
     }
 
-    fn parse_static_property_declarations(&mut self) -> Result<Vec<StaticPropertyDecl>> {
-        let mut properties = vec![self.parse_static_property_declaration()?];
+    fn parse_static_property_declarations(
+        &mut self,
+        visibility: PropertyVisibility,
+    ) -> Result<Vec<StaticPropertyDecl>> {
+        let mut properties = vec![self.parse_static_property_declaration(visibility)?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
-            properties.push(self.parse_static_property_declaration()?);
+            properties.push(self.parse_static_property_declaration(visibility)?);
         }
         self.expect_semicolon()?;
         Ok(properties)
@@ -322,7 +332,10 @@ impl Parser {
         })
     }
 
-    fn parse_static_property_declaration(&mut self) -> Result<StaticPropertyDecl> {
+    fn parse_static_property_declaration(
+        &mut self,
+        visibility: PropertyVisibility,
+    ) -> Result<StaticPropertyDecl> {
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new(
@@ -345,6 +358,7 @@ impl Parser {
         };
         Ok(StaticPropertyDecl {
             name,
+            visibility,
             value,
             span: token.span,
         })
@@ -3081,6 +3095,18 @@ fn expr_array_literal_reference_to_variable(
         Expr::Array { elements, .. } => elements
             .iter()
             .find_map(|element| array_element_reference_to_variable(element, variable)),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => expr_array_literal_reference_to_variable(condition, variable)
+            .or_else(|| {
+                if_true
+                    .as_deref()
+                    .and_then(|if_true| expr_array_literal_reference_to_variable(if_true, variable))
+            })
+            .or_else(|| expr_array_literal_reference_to_variable(if_false, variable)),
         Expr::Assign { value, .. }
         | Expr::AssignRef { source: value, .. }
         | Expr::Print {
@@ -3093,18 +3119,6 @@ fn expr_array_literal_reference_to_variable(
         Expr::DynamicVariable { name, .. } => {
             expr_array_literal_reference_to_variable(name, variable)
         }
-        Expr::Ternary {
-            condition,
-            if_true,
-            if_false,
-            ..
-        } => expr_array_literal_reference_to_variable(condition, variable)
-            .or_else(|| {
-                if_true
-                    .as_ref()
-                    .and_then(|if_true| expr_array_literal_reference_to_variable(if_true, variable))
-            })
-            .or_else(|| expr_array_literal_reference_to_variable(if_false, variable)),
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
         | Expr::Int(_, _)
@@ -4686,6 +4700,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         Expr::Binary { left, right, .. } => {
             is_supported_global_const_expr(left) && is_supported_global_const_expr(right)
         }
+        Expr::Ternary { .. } => false,
         Expr::InterpolatedString(_, _)
         | Expr::Variable(_, _)
         | Expr::DynamicVariable { .. }
@@ -4703,8 +4718,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::StaticPropertyFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
-        | Expr::Empty { .. }
-        | Expr::Ternary { .. } => false,
+        | Expr::Empty { .. } => false,
     }
 }
 

@@ -349,6 +349,27 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_object_declare_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *declaring_class,
+    PtnPropertyVisibility visibility,
+    PtnValue value,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_OBJECT) {
+        ptn_object_register_property_metadata(
+            receiver.as.object,
+            property,
+            declaring_class,
+            visibility
+        );
+    }
+    return ptn_object_write_property(runtime, receiver, property, declaring_class, value, line);
+}
+
 static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtime, size_t line) {
     if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
         return;

@@ -69,6 +69,7 @@ pub enum PropertyVisibility {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticPropertyDecl {
     pub name: String,
+    pub visibility: PropertyVisibility,
     pub value: Option<ValueExpr>,
 }
 
@@ -686,6 +687,7 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|property| StaticPropertyDecl {
                 name: property.name.clone(),
+                visibility: lower_property_visibility(property.visibility),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
             })
             .collect();

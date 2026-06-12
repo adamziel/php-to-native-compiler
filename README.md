@@ -12,44 +12,46 @@ rows, or outputs.
 - Rust crate and `phpc` compiler binary.
 - Boxed C runtime for PHP-like values.
 - Native tests for parser, IR, backend, runtime, and PHP behavior.
-- Strings cover interpolation, common/control escapes, hex/octal byte escapes,
-  and inline HTML output through shared lowering paths.
-- User functions and declared class methods include scoped magic constants,
-  call-frame introspection, scalar type hints, literal-array defaults,
-  by-reference return aliases, typed coercion, and public constructors.
-- Direct variable/array references and by-reference userland parameters cover
-  the first COW/reference boundary slice.
-- Dynamic variable roots support scalar writes plus simple array/string-offset
-  writes and unsets through shared symbol-table and array-path helpers.
-- Arithmetic models non-numeric string and array `TypeError` diagnostics while
-  preserving leading-numeric warnings.
+- Strings cover direct and braced interpolation, legacy `${name}`
+  deprecations, common/control escapes, hex/octal byte escapes, and inline HTML
+  through shared output paths.
+- Top-level user functions and declared class methods include scoped magic
+  constants, call-frame introspection, scalar type hints, literal-array
+  defaults, by-reference return aliases, typed coercion, and public constructor
+  dispatch.
 - Full and short ternary expressions lower through the boxed value path with
   lazy branch evaluation; unparenthesized nested ternaries remain an explicit
   diagnostic boundary.
+- Direct variable references, array element references, and by-reference
+  userland parameters cover the first COW/reference boundary slice.
+- Dynamic variable roots support scalar reads/writes, simple array/string-offset
+  writes and unsets, and current inc/dec expression targets through shared
+  symbol-table and array-path helpers.
+- Arithmetic models non-numeric string and array `TypeError` diagnostics while
+  preserving leading-numeric warnings.
 - Scalar float stringification honors `phpc -d precision=N` and PHP-style
   exponent spelling across echo, casts, concatenation, and string internals.
-- `array_chunk()`, `array_combine()`, `array_merge()`, and array set-operation
-  internals build fresh ordered arrays through the shared array runtime.
-- `array_filter()` preserves keys while filtering arrays by PHP truthiness or
-  modeled callbacks.
-- `array_key_exists()` handles current ordered arrays, including `null`
-  key deprecation and resource-key integer casting.
+- Array internals including set operations, `array_chunk()`, `array_combine()`,
+  `array_filter()`, `array_key_exists()`, `array_merge()`, `array_pop()`,
+  `array_push()`, `array_shift()`, `array_unshift()`, `ksort()`, and `shuffle()`
+  use shared ordered-array and COW paths.
+- `var_export()` covers scalars, arrays, and current object values using
+  PHP-style `__set_state(array(...))` formatting.
 - `pow()` uses the same boxed numeric exponentiation helper as `**`, and
   `call_user_func_array()` expands ordered arrays through callable dispatch.
 - `assert()` throws catchable `AssertionError` values with compiler-generated
   default messages for direct calls; bounded `highlight_file()` shares
   file-return paths.
-- `ksort()` and `shuffle()` mutate direct variable arrays through the shared
-  ordered-array COW path, and `str_shuffle()` shuffles scalar strings by byte.
 - Direct variable and array-offset increment/decrement support statement and
   expression pre/post forms over the current boxed numeric slice.
 - `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
   covers the current `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
-- Basic stream resources are boxed values with current type/dump/key casts.
 - Declared instance properties accept public, protected, and private
-  declarations with supported constant defaults; current object storage installs
-  them uniformly, while full visibility enforcement and PHP-exact property
-  metadata remain outside this slice.
+  declarations with supported constant defaults. Current object storage installs
+  them uniformly and preserves dump metadata for private/protected labels; full
+  visibility/inheritance semantics remain bounded.
+- Basic stream resources from `fopen()`/`fclose()` are boxed runtime values with
+  current type, dump, and array-key cast behavior.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 
