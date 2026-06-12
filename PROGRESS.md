@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T12:06Z
-Measured: `ptn-oo7z` rebased after `origin/master` `e4334a324`.
+Refresh: 2026-06-12T12:31Z
+Measured: `ptn-upc8` rebased after `origin/master` `a2a6d502a`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
 array/string-offset writes and unsets, array/append compound assignments,
@@ -12,22 +12,23 @@ property/static probes, direct array mutators including
 `array_udiff*()`, exact string/lang rows, highlight output paths,
 `join()`/`implode()`, `sprintf()`, `array_product()`, key helpers,
 `array_search()`, `array_slice()`, `array_pad()`, catchable `intdiv()`,
-ASCII string internals through `ucfirst()`/`lcfirst()` and trim-family
-reducers, `ceil()`/`floor()` numeric diagnostics, `is_countable()`, and the
-first unbracketed namespace/name-resolution slice.
+ASCII string internals through case and trim reducers, `ceil()`/`floor()`
+numeric diagnostics, `is_countable()`, unbracketed namespace/name resolution,
+and foreach list destructuring with reference elements.
 
 Recent movers include dynamic-root offset writes/unsets, property/static quiet
 probes and inc/dec, direct sort-family mutators and flag diagnostics, array
-key/search/slice/pad helpers, catchable `intdiv()`, ASCII case and trim
-reducers, `ceil()`/`floor()` `TypeError` parity, `is_countable()`, and
-namespace PHPT rows `ns_001`, `ns_002`, `ns_003`, and `ns_014`.
+key/search/slice/pad helpers, catchable `intdiv()`, ASCII case and trim reducers,
+`ceil()`/`floor()` `TypeError` parity, `is_countable()`, namespace PHPT rows
+`ns_001`, `ns_002`, `ns_003`, `ns_014`, and foreach destructuring lowered
+through reusable list-assignment/reference paths.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 542 | 542 | 0 |
+| Native/compiler Rust suite | 545 | 545 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 214 | 214 | 0 |
 | PHPT Zend rows | 80 | 80 | 0 |
@@ -35,7 +36,7 @@ namespace PHPT rows `ns_001`, `ns_002`, `ns_003`, and `ns_014`.
 | PHPT tests/basic+func+lang | 45 | 45 | 0 |
 | PHPT other rows | 2 | 2 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
-| Post-merge COW gate | 25 | 25 | 0 |
+| Post-merge COW gate | 26 | 26 | 0 |
 | PHPT callback manifest | 2 | 2 | 0 |
 
 ## RC Surface
@@ -47,12 +48,11 @@ functions, call-frame introspection, scalar type hints, bounded closures,
 `stdClass`, public class/object shells, declared properties, quiet probes,
 metadata intrinsics, `is_callable()`, `is_countable()`, assertions,
 interpolation, unbracketed namespaces, simple imports, streams, `pow()`,
-`array_merge()`, `array_pad()`, `array_slice()`, `strrev()`, `ucfirst()`,
-`lcfirst()`, trim-family internals, `array_search()`, `call_user_func_array()`,
+`array_merge()`, `array_pad()`, `array_slice()`, `strrev()`, first-byte case
+helpers, trim-family internals, `array_search()`, `call_user_func_array()`,
 highlight output paths, `var_export()`, direct array mutators including
-`natcasesort()`, explicit regular sort flags, set operations, inc/dec, and
-dynamic-variable
-array/string-offset writes.
+`natcasesort()`, explicit regular sort flags, set operations, inc/dec, foreach
+destructuring, and dynamic-variable array/string-offset writes.
 
 ## Remaining Bounded Failures
 
@@ -64,12 +64,13 @@ Verification: recent slices added `array_search()`, `natcasesort()`,
 `ceil()`/`floor()` diagnostics, `is_countable()`, `ucfirst()`, `lcfirst()`,
 `array_pad()`, `array_slice()`, explicit regular sort flags, trim-family byte
 charlists, and namespace parser/resolver coverage with focused namespace PHPT
-rows 4/4.
+rows 4/4. `ptn-upc8` adds foreach list destructuring and reference-element
+coverage in native tests and the post-merge COW gate.
 
 Follow-ups remain visibility/inheritance metadata, typed/promoted properties,
 interfaces/traits, bracketed/grouped namespace forms, namespace fallback
 parity, reflection, remaining magic methods, first-class callables, destructors,
 dynamic includes, unsupported internals, scalar offset-lvalues, assertion
 configuration, binary-safe array keys, inc/dec Unicode/reference/COW/
-diagnostic edges, object metadata/IDs/visibility edges, and broader foreach
-destructuring or reference targets.
+diagnostic edges, object metadata/IDs/visibility edges, and broader
+foreach/object/reference targets.

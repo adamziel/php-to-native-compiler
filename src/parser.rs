@@ -1366,22 +1366,10 @@ impl Parser {
             by_ref = true;
             span = self.advance().span;
         }
-        if matches!(self.peek().kind, TokenKind::LeftBracket) {
-            return Err(Diagnostic::new(
-                "foreach destructuring is unsupported",
-                Some(self.peek().span),
-            ));
-        }
         let target_expr = self.parse_expr()?;
         let target_span = target_expr.span();
         let target = assignment_target_from_expr(target_expr)
             .map_err(|_| Diagnostic::new("expected foreach variable", Some(target_span)))?;
-        if matches!(target, AssignmentTarget::List(_)) {
-            return Err(Diagnostic::new(
-                "foreach destructuring is unsupported",
-                Some(assignment_target_span(&target)),
-            ));
-        }
         if by_ref {
             validate_foreach_by_reference_target(&target, span)?;
         }

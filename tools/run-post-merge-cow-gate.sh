@@ -29,6 +29,8 @@ USAGE
 oracle_cases=(
     foreach_value_snapshot_appends
     foreach_value_nested_local_mutation
+    foreach_list_destructuring
+    foreach_list_reference_elements
     foreach_by_ref_mutates_slots
     foreach_by_ref_live_appends
     function_return_array_temp
@@ -52,7 +54,6 @@ notice_cases=(
 
 diagnostic_cases=(
     unsupported_foreach_reference_key
-    unsupported_foreach_destructuring
     unsupported_by_reference_return
     unsupported_recursive_array_append_self
     unsupported_recursive_array_element_literal_self
@@ -67,6 +68,12 @@ coverage() {
             ;;
         foreach_value_nested_local_mutation)
             printf 'by-value foreach nested element writes detach loop values\n'
+            ;;
+        foreach_list_destructuring)
+            printf 'by-value foreach destructures nested/keyed list targets\n'
+            ;;
+        foreach_list_reference_elements)
+            printf 'foreach destructuring reference elements bind row slots\n'
             ;;
         foreach_by_ref_mutates_slots)
             printf 'by-reference foreach mutates source slots\n'
@@ -119,9 +126,6 @@ coverage() {
         unsupported_foreach_reference_key)
             printf 'diagnostic: foreach key binding cannot be by reference\n'
             ;;
-        unsupported_foreach_destructuring)
-            printf 'diagnostic: foreach destructuring remains explicit unsupported behavior\n'
-            ;;
         unsupported_by_reference_return)
             printf 'diagnostic: non-lvalue by-reference returns remain explicit unsupported behavior\n'
             ;;
@@ -168,6 +172,30 @@ foreach ($rows as $row) {
     $row[] = "local";
 }
 echo $rows[0]["v"], ":", $rows[1]["v"], ":", count($rows[0]), "\n";
+PHP
+            ;;
+        foreach_list_destructuring)
+            cat >"$path" <<'PHP'
+<?php
+$pairs = [["left", ["inner"]], ["right", ["next"]]];
+foreach ($pairs as [$a, [$b]]) {
+    echo $a, ":", $b, "\n";
+}
+$keyed = [["name" => "Ada", "meta" => ["id" => 10]], ["name" => "Lin", "meta" => ["id" => 20]]];
+foreach ($keyed as ["name" => $name, "meta" => ["id" => $id]]) {
+    echo $name, "#", $id, "\n";
+}
+PHP
+            ;;
+        foreach_list_reference_elements)
+            cat >"$path" <<'PHP'
+<?php
+$items = [[1], [2]];
+foreach ($items as [&$slot]) {
+    $slot += 10;
+}
+unset($slot);
+echo $items[0][0], ":", $items[1][0], "\n";
 PHP
             ;;
         foreach_by_ref_mutates_slots)
@@ -384,14 +412,6 @@ foreach ($items as &$key => $value) {
 }
 PHP
             ;;
-        unsupported_foreach_destructuring)
-            cat >"$path" <<'PHP'
-<?php
-foreach ([[1]] as [$value]) {
-    echo $value;
-}
-PHP
-            ;;
         unsupported_by_reference_return)
             cat >"$path" <<'PHP'
 <?php
@@ -511,9 +531,6 @@ expected_diagnostic() {
     case "$1" in
         unsupported_foreach_reference_key)
             printf 'Key element cannot be a reference\n'
-            ;;
-        unsupported_foreach_destructuring)
-            printf 'foreach destructuring is unsupported\n'
             ;;
         unsupported_by_reference_return)
             printf 'by-reference return requires a variable or array element\n'

@@ -590,13 +590,60 @@ fn parser_accepts_by_reference_foreach_value_binding() {
 }
 
 #[test]
+fn parser_accepts_foreach_list_destructuring_bindings() {
+    let program = parser::parse(
+        "<?php foreach ($items as [$value, \"name\" => $named, [&$ref]]) { echo $value; }",
+    )
+    .unwrap();
+
+    let Statement::Foreach {
+        key,
+        value,
+        value_by_ref,
+        ..
+    } = &program.statements[0]
+    else {
+        panic!("expected foreach statement");
+    };
+    assert_eq!(key, &None);
+    assert!(!*value_by_ref);
+
+    let AssignmentTarget::List(target) = value else {
+        panic!("expected foreach destructuring target");
+    };
+    assert_eq!(target.elements.len(), 3);
+    assert!(target.elements[0].key.is_none());
+    assert!(matches!(
+        &target.elements[0].target,
+        ListAssignmentElementTarget::Value(target)
+            if matches!(target.as_ref(), AssignmentTarget::Variable { name, .. } if name == "value")
+    ));
+    assert!(matches!(
+        &target.elements[1].target,
+        ListAssignmentElementTarget::Value(target)
+            if matches!(target.as_ref(), AssignmentTarget::Variable { name, .. } if name == "named")
+    ));
+    let ListAssignmentElementTarget::Value(nested) = &target.elements[2].target else {
+        panic!("expected nested list target");
+    };
+    let AssignmentTarget::List(nested) = nested.as_ref() else {
+        panic!("expected nested list target");
+    };
+    assert!(matches!(
+        &nested.elements[0].target,
+        ListAssignmentElementTarget::Reference(ReferenceTarget::Variable { name, .. })
+            if name == "ref"
+    ));
+}
+
+#[test]
 fn parser_rejects_unsupported_foreach_bindings() {
     let by_ref_key =
         parser::parse("<?php foreach ($items as &$key => $value) { echo $value; }").unwrap_err();
     assert_eq!(by_ref_key.message, "Key element cannot be a reference");
 
     let destructuring =
-        parser::parse("<?php foreach ($items as [$value]) { echo $value; }").unwrap_err();
+        parser::parse("<?php foreach ($items as &[$value]) { echo $value; }").unwrap_err();
     assert_eq!(
         destructuring.message,
         "foreach destructuring is unsupported"
@@ -9849,6 +9896,74 @@ echo $alias, \":\", $result[0], \":\", $result[1], \"\\n\";",
         "two:two:extra\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_list_destructuring_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-list-destructuring");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-list-destructuring.php");
+    let output = root.join("foreach-list-destructuring-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$pairs = [[\"left\", [\"inner\"]], [\"right\", [\"next\"]]];\n\
+foreach ($pairs as [$a, [$b]]) {\n\
+    echo $a, \":\", $b, \"\\n\";\n\
+}\n\
+$keyed = [[\"name\" => \"Ada\", \"meta\" => [\"id\" => 10]], [\"name\" => \"Lin\", \"meta\" => [\"id\" => 20]]];\n\
+foreach ($keyed as [\"name\" => $name, \"meta\" => [\"id\" => $id]]) {\n\
+    echo $name, \"#\", $id, \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "left:inner\nright:next\nAda#10\nLin#20\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_iterator_current_value"));
+    assert!(c_source.contains("ptn_array_read(&runtime"));
+}
+
+#[test]
+fn compile_foreach_list_reference_elements_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-list-reference-elements");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-list-reference-elements.php");
+    let output = root.join("foreach-list-reference-elements-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [[1], [2]];\n\
+foreach ($items as [&$slot]) {\n\
+    $slot += 10;\n\
+}\n\
+unset($slot);\n\
+var_dump($items);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  array(1) {\n    [0]=>\n    int(11)\n  }\n  [1]=>\n  array(1) {\n    [0]=>\n    int(12)\n  }\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_reference_for_array_value_dim"));
+    assert!(c_source.contains("ptn_runtime_bind_variable_reference(&runtime, \"slot\""));
 }
 
 #[test]

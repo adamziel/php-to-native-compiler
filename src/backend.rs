@@ -1784,10 +1784,12 @@ fn emit_instruction(
                 emit_value_cleanup(out, "        ", &key_temp);
             }
             let value_temp = values.next_temp();
+            let value_needs_reference = *value_by_ref
+                || matches!(value, AssignmentTarget::List(target) if list_assignment_has_reference(target));
             out.push_str("        PtnValue ");
             out.push_str(&value_temp);
             out.push_str(" = ");
-            if *value_by_ref {
+            if value_needs_reference {
                 out.push_str("ptn_array_iterator_current_reference(&");
             } else {
                 out.push_str("ptn_array_iterator_current_value(&");
