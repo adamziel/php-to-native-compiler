@@ -10983,6 +10983,72 @@ echo var_export($std, true), \"\\n\";",
 }
 
 #[test]
+fn compile_var_export_object_properties_with_nested_arrays_to_native_binary() {
+    let root = temp_dir("ptn-native-var-export-object-property-arrays");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-export-object-property-arrays.php");
+    let output = root.join("var-export-object-property-arrays-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Cr {\n\
+    private $priv_member;\n\
+    public $public_member;\n\
+\n\
+    public function __construct($value) {\n\
+        $this->priv_member = $value;\n\
+        $this->public_member = [$value];\n\
+    }\n\
+}\n\
+\n\
+$items = [\"0.1\" => new Cr(9), 0 => new Cr(23)];\n\
+echo var_export($items, true), \";\\n\";\n\
+echo var_export(new Cr(5), true), \";\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array (\n",
+            "  '0.1' => \n",
+            "  \\Cr::__set_state(array(\n",
+            "     'priv_member' => 9,\n",
+            "     'public_member' => \n",
+            "    array (\n",
+            "      0 => 9,\n",
+            "    ),\n",
+            "  )),\n",
+            "  0 => \n",
+            "  \\Cr::__set_state(array(\n",
+            "     'priv_member' => 23,\n",
+            "     'public_member' => \n",
+            "    array (\n",
+            "      0 => 23,\n",
+            "    ),\n",
+            "  )),\n",
+            ");\n",
+            "\\Cr::__set_state(array(\n",
+            "   'priv_member' => 5,\n",
+            "   'public_member' => \n",
+            "  array (\n",
+            "    0 => 5,\n",
+            "  ),\n",
+            "));\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_var_export"));
+    assert!(c_source.contains("__set_state"));
+}
+
+#[test]
 fn compile_array_udiff_static_method_private_property_ternary_reducer_to_native_binary() {
     let root = temp_dir("ptn-native-array-udiff-private-property-ternary");
     fs::create_dir_all(&root).unwrap();
