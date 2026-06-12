@@ -346,6 +346,18 @@ impl IncludeCollector {
                 self.collect_expr(left, source_file, source_dir)?;
                 self.collect_expr(right, source_file, source_dir)
             }
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                ..
+            } => {
+                self.collect_expr(condition, source_file, source_dir)?;
+                if let Some(if_true) = if_true {
+                    self.collect_expr(if_true, source_file, source_dir)?;
+                }
+                self.collect_expr(if_false, source_file, source_dir)
+            }
             Expr::String(_, _)
             | Expr::InterpolatedString(_, _)
             | Expr::Int(_, _)

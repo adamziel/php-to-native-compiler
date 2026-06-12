@@ -10,9 +10,10 @@ use crate::ast::{
     ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
-    Program, ReferenceTarget as AstReferenceTarget, Statement,
-    StringInterpolationIndex as AstStringInterpolationIndex, StringPart as AstStringPart,
-    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
+    Program, PropertyVisibility as AstPropertyVisibility, ReferenceTarget as AstReferenceTarget,
+    Statement, StringInterpolationIndex as AstStringInterpolationIndex,
+    StringPart as AstStringPart, TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
+    UnsetTarget as AstUnsetTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,6 +62,7 @@ pub struct PropertyDecl {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyVisibility {
     Public,
+    Protected,
     Private,
 }
 
@@ -336,6 +338,12 @@ pub enum ValueExpr {
         op: BinaryOp,
         left: Box<ValueExpr>,
         right: Box<ValueExpr>,
+        line: usize,
+    },
+    Ternary {
+        condition: Box<ValueExpr>,
+        if_true: Option<Box<ValueExpr>>,
+        if_false: Box<ValueExpr>,
         line: usize,
     },
 }
@@ -997,6 +1005,14 @@ fn lower_closure_capture(capture: &AstClosureUseCapture) -> ClosureCapture {
     }
 }
 
+fn lower_property_visibility(visibility: AstPropertyVisibility) -> PropertyVisibility {
+    match visibility {
+        AstPropertyVisibility::Public => PropertyVisibility::Public,
+        AstPropertyVisibility::Protected => PropertyVisibility::Protected,
+        AstPropertyVisibility::Private => PropertyVisibility::Private,
+    }
+}
+
 fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
     match type_hint {
         AstTypeHint::Null => TypeHint::Null,
@@ -1004,13 +1020,6 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::Float => TypeHint::Float,
         AstTypeHint::String => TypeHint::String,
         AstTypeHint::Bool => TypeHint::Bool,
-    }
-}
-
-fn lower_property_visibility(visibility: crate::ast::PropertyVisibility) -> PropertyVisibility {
-    match visibility {
-        crate::ast::PropertyVisibility::Public => PropertyVisibility::Public,
-        crate::ast::PropertyVisibility::Private => PropertyVisibility::Private,
     }
 }
 
@@ -1480,6 +1489,19 @@ impl<'a> LoweringContext<'a> {
                 right: Box::new(self.lower_expr(right)),
                 line: span.line,
             },
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                span,
+            } => ValueExpr::Ternary {
+                condition: Box::new(self.lower_expr(condition)),
+                if_true: if_true
+                    .as_ref()
+                    .map(|if_true| Box::new(self.lower_expr(if_true))),
+                if_false: Box::new(self.lower_expr(if_false)),
+                line: span.line,
+            },
             Expr::Grouped { expr, .. } => self.lower_expr(expr),
         }
     }
@@ -1688,6 +1710,27 @@ fn assertion_expr_text(expr: &Expr) -> String {
             assertion_binary_op_text(*op),
             assertion_expr_text(right)
         ),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            if let Some(if_true) = if_true {
+                format!(
+                    "{} ? {} : {}",
+                    assertion_expr_text(condition),
+                    assertion_expr_text(if_true),
+                    assertion_expr_text(if_false)
+                )
+            } else {
+                format!(
+                    "{} ?: {}",
+                    assertion_expr_text(condition),
+                    assertion_expr_text(if_false)
+                )
+            }
+        }
         Expr::Grouped { expr, .. } => format!("({})", assertion_expr_text(expr)),
         Expr::AnonymousFunction(_) => "function()".to_string(),
     }

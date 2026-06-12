@@ -805,6 +805,49 @@ fn parser_reports_unexpected_tokens_with_parse_error_spans() {
 }
 
 #[test]
+fn parser_accepts_ternary_expressions() {
+    let program = parser::parse("<?php echo $a > $b ? 1 : -1, $name ?: \"fallback\";").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert_eq!(expressions.len(), 2);
+
+    let Expr::Ternary {
+        condition,
+        if_true,
+        if_false,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected full ternary expression");
+    };
+    assert!(matches!(
+        condition.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Greater,
+            ..
+        }
+    ));
+    assert!(matches!(if_true.as_deref(), Some(Expr::Int(1, _))));
+    assert!(matches!(
+        if_false.as_ref(),
+        Expr::Unary {
+            op: UnaryOp::Negate,
+            ..
+        }
+    ));
+
+    let Expr::Ternary {
+        if_true, if_false, ..
+    } = &expressions[1]
+    else {
+        panic!("expected short ternary expression");
+    };
+    assert!(if_true.is_none());
+    assert!(matches!(if_false.as_ref(), Expr::String(value, _) if value == "fallback"));
+}
+
+#[test]
 fn parser_rejects_unparenthesized_nested_ternaries() {
     let full = parser::parse("<?php\n\n1 ? 2 : 3 ? 4 : 5;").unwrap_err();
     assert_eq!(
@@ -2306,6 +2349,71 @@ echo $box->name;",
         Some(Expr::Int(2, _))
     ));
     assert!(program.classes[0].properties[2].value.is_none());
+    assert_eq!(
+        program.classes[0].properties[0].visibility,
+        PropertyVisibility::Public
+    );
+}
+
+#[test]
+fn parser_accepts_declared_non_public_instance_properties() {
+    let program = parser::parse(
+        "<?php
+class Box {
+    private $secret = 4;
+    protected $guarded;
+    public $public = 1;
+}
+",
+    )
+    .unwrap();
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].properties.len(), 3);
+    assert_eq!(
+        program.classes[0].properties[0].visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(
+        program.classes[0].properties[1].visibility,
+        PropertyVisibility::Protected
+    );
+    assert_eq!(
+        program.classes[0].properties[2].visibility,
+        PropertyVisibility::Public
+    );
+    assert!(matches!(
+        program.classes[0].properties[0].value,
+        Some(Expr::Int(4, _))
+    ));
+    assert!(program.classes[0].properties[1].value.is_none());
+}
+
+#[test]
+fn parser_rejects_unsupported_non_public_static_members_and_methods() {
+    let cases = [
+        (
+            "<?php class Box { private static $secret = 4; }",
+            "non-public static properties are unsupported",
+        ),
+        (
+            "<?php class Box { protected static $guarded; }",
+            "non-public static properties are unsupported",
+        ),
+        (
+            "<?php class Box { private function secret() {} }",
+            "non-public class methods are unsupported",
+        ),
+        (
+            "<?php class Box { protected function guarded() {} }",
+            "non-public class methods are unsupported",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message);
+        assert_eq!(error.kind, DiagnosticKind::Fatal);
+    }
 }
 
 #[test]
@@ -6135,6 +6243,43 @@ var_dump($box->reveal());
 }
 
 #[test]
+fn compile_declared_non_public_instance_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-declared-non-public-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("declared-non-public-properties.php");
+    let output = root.join("declared-non-public-properties-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    private $secret = 1;
+    protected $guarded = 2;
+
+    public function __construct($extra) {
+        $this->secret = $this->secret + $extra;
+        $this->guarded = $this->guarded + $extra;
+    }
+
+    public function total() {
+        return $this->secret + $this->guarded;
+    }
+}
+
+$box = new Box(3);
+echo $box->total(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "9\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_declared_class_constructor_to_native_binary() {
     let root = temp_dir("ptn-native-declared-class-constructor");
     fs::create_dir_all(&root).unwrap();
@@ -7706,6 +7851,41 @@ fn compile_boolean_short_circuit_ops_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "|1||1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_ternary_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-ternary-expressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ternary-expressions.php");
+    let output = root.join("ternary-expressions-bin");
+    fs::write(
+        &input,
+        "<?php
+function fail() {
+    echo \"bad\";
+    return \"bad\";
+}
+
+echo true ? \"yes\" : fail(), \"\\n\";
+echo false ? fail() : \"no\", \"\\n\";
+$value = \"keep\";
+echo $value ?: fail(), \"\\n\";
+$value = \"\";
+echo $value ?: \"fallback\", \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "yes\nno\nkeep\nfallback\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -10671,6 +10851,48 @@ var_dump(function_exists(\"var_export\"), function_exists(\"array_diff\"), funct
     assert!(c_source.contains("ptn_internal_var_export"));
     assert!(c_source.contains("ptn_internal_array_diff"));
     assert!(c_source.contains("ptn_internal_array_intersect"));
+}
+
+#[test]
+fn compile_array_udiff_static_method_private_property_ternary_reducer_to_native_binary() {
+    let root = temp_dir("ptn-native-array-udiff-private-property-ternary");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-udiff-private-property-ternary.php");
+    let output = root.join("array-udiff-private-property-ternary-bin");
+    fs::write(
+        &input,
+        "<?php
+class Cr {
+    private $priv_member;
+    public $public_member;
+
+    public function __construct($value) {
+        $this->priv_member = $value;
+        $this->public_member = $value;
+    }
+
+    public static function comp_func_cr($a, $b) {
+        if ($a->priv_member === $b->priv_member) return 0;
+        return ($a->priv_member > $b->priv_member) ? 1 : -1;
+    }
+}
+
+$left = [new Cr(2), new Cr(5)];
+$right = [new Cr(2)];
+$result = array_udiff($left, $right, [\"Cr\", \"comp_func_cr\"]);
+foreach ($result as $item) {
+    echo $item->public_member, \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "5\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

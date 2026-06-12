@@ -28,6 +28,7 @@ pub struct PropertyDecl {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyVisibility {
     Public,
+    Protected,
     Private,
 }
 
@@ -470,6 +471,12 @@ pub enum Expr {
         right: Box<Expr>,
         span: SourceSpan,
     },
+    Ternary {
+        condition: Box<Expr>,
+        if_true: Option<Box<Expr>>,
+        if_false: Box<Expr>,
+        span: SourceSpan,
+    },
     Grouped {
         expr: Box<Expr>,
         span: SourceSpan,
@@ -585,7 +592,9 @@ impl Expr {
             Expr::Print { span, .. } => *span,
             Expr::Include { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
-            Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,
+            Expr::Binary { span, .. } | Expr::Ternary { span, .. } | Expr::Grouped { span, .. } => {
+                *span
+            }
         }
     }
 }

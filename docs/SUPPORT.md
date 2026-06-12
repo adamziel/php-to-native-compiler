@@ -11,16 +11,18 @@ internals, top-level functions, includes resolved at compile time, copy-on-write
 array/reference slices, and public class/object shells. Public class support is
 bounded to top-level declarations with public methods, direct public static
 property reads/writes, public instance property reads/writes, and public
-property `??=`, plus bounded private instance-property declarations read/written
-from declaring-class methods, and public non-static `__construct` dispatch
-through the declared-method path.
+property `??=`, bounded private instance-property declarations read/written
+from declaring-class methods, protected instance-property declarations
+initialized for current in-class use, and public non-static `__construct`
+dispatch through the declared-method path.
 
 Post-RC architecture remains explicit rather than hidden:
 
 - Classes and inheritance: interfaces, traits, namespaces,
-  protected/typed/promoted properties, broad metadata/reflection, destructors,
-  old-style constructors, class constants, and complete visibility-aware
-  inherited property/method resolution remain outside the RC boundary.
+  full visibility-aware/typed/promoted properties, broad metadata/reflection,
+  destructors, old-style constructors, class constants, and complete
+  visibility-aware inherited property/method resolution remain outside the RC
+  boundary.
 - Static properties: direct public static reads/writes are supported, but
   visibility, inheritance, late static binding, typed/default metadata, and
   static-property compound or null-coalescing lvalues are post-RC.
@@ -160,7 +162,7 @@ Post-RC architecture remains explicit rather than hidden:
   PHP-style parse error through `phpc`.
 - Unterminated block comments are rejected with a source-spanned PHP-style
   parse error through `phpc`.
-- Unparenthesized nested ternary expression statements are rejected with
+- Unparenthesized nested ternary expressions are rejected with
   PHP-style source-spanned fatal diagnostics for the currently modeled
   forbidden associativity forms.
 - Magic constants `__LINE__`, `__FILE__`, and `__DIR__`, plus global-scope
@@ -241,6 +243,10 @@ Post-RC architecture remains explicit rather than hidden:
   left operand uses the same quiet lookup path as `isset()`/`empty()`, returns
   present non-`null` values without evaluating the right operand, and evaluates
   the right operand only for missing or `null` left values.
+- Full ternary `condition ? if_true : if_false` and short ternary
+  `condition ?: if_false` expressions over the current boxed expression subset.
+  Conditions use PHP truthiness, only the selected arm is evaluated, and short
+  ternary evaluates the condition expression once before reusing it when truthy.
 - Boxed scalar and literal-array comparison operators `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, and `<=>`. Strict array identity compares type, key
   order, key type, and value. Numeric comparisons involving `NAN` are treated
@@ -707,9 +713,11 @@ Post-RC architecture remains explicit rather than hidden:
   right-hand expression. Private declared instance properties in top-level
   classes are initialized with supported defaults, read/written from methods of
   their declaring class, rejected for outside reads/writes with modeled
-  `Error`, and labeled as private in `var_dump()` output. Protected, typed,
-  inherited, constructor-promoted, magic, destructor, and reflection property
-  metadata remain outside this support boundary.
+  `Error`, and labeled as private in `var_dump()` output. Protected instance
+  declarations are accepted and initialized for current in-class use, but
+  PHP-exact protected visibility, inherited property resolution, dump/export
+  metadata, typed properties, constructor promotion, magic, destructors, and
+  reflection property metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
@@ -746,8 +754,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Increment/decrement targets beyond direct variables and variable-root array
   offsets, including append offsets, dynamic-variable array offsets, temporary
   array reads, properties, and static properties.
-- Keyword boolean tails after direct assignment statements, ternary expressions
-  beyond the modeled nested associativity diagnostics, PHP-exact chained
+- Keyword boolean tails after direct assignment statements, ternary precedence
+  edges beyond the modeled nested associativity diagnostics, PHP-exact chained
   comparison parse errors, and complete comparison parity for unsupported value
   types.
 - Unbraced switch bodies, alternate control-flow syntax,

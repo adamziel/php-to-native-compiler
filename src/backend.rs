@@ -2409,6 +2409,18 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::IncDec { target, .. } => {
             collect_inc_dec_target_legacy_dollar_brace_deprecations(target, deprecations);
         }
+        ValueExpr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(condition, deprecations);
+            if let Some(if_true) = if_true {
+                collect_value_legacy_dollar_brace_deprecations(if_true, deprecations);
+            }
+            collect_value_legacy_dollar_brace_deprecations(if_false, deprecations);
+        }
         ValueExpr::String(_)
         | ValueExpr::Int(_)
         | ValueExpr::Float(_)
@@ -2796,6 +2808,18 @@ fn collect_value_runtime_requirements(
         ValueExpr::Binary { left, right, .. } => {
             collect_value_runtime_requirements(left, functions, requirements);
             collect_value_runtime_requirements(right, functions, requirements);
+        }
+        ValueExpr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            collect_value_runtime_requirements(condition, functions, requirements);
+            if let Some(if_true) = if_true {
+                collect_value_runtime_requirements(if_true, functions, requirements);
+            }
+            collect_value_runtime_requirements(if_false, functions, requirements);
         }
     }
 }
@@ -3563,6 +3587,18 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         }
         ValueExpr::Binary { left, right, .. } => {
             value_mentions_variable(left, name) || value_mentions_variable(right, name)
+        }
+        ValueExpr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            value_mentions_variable(condition, name)
+                || if_true
+                    .as_ref()
+                    .is_some_and(|if_true| value_mentions_variable(if_true, name))
+                || value_mentions_variable(if_false, name)
         }
         ValueExpr::String(_)
         | ValueExpr::Int(_)
@@ -4531,6 +4567,12 @@ impl ValueEmitter {
                 right,
                 line,
             } => self.emit_binary(out, *op, left, right, *line),
+            ValueExpr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                ..
+            } => self.emit_ternary(out, condition, if_true.as_deref(), if_false),
             ValueExpr::Unary { op, expr, line } => {
                 if matches!(op, UnaryOp::ErrorSuppress) {
                     let saved_temp = self.next_temp();
@@ -5259,6 +5301,67 @@ impl ValueEmitter {
             BinaryOp::And | BinaryOp::Or => self.emit_short_circuit(out, op, left, right),
             BinaryOp::Coalesce => self.emit_coalesce(out, left, right),
         }
+    }
+
+    fn emit_ternary(
+        &mut self,
+        out: &mut String,
+        condition: &ValueExpr,
+        if_true: Option<&ValueExpr>,
+        if_false: &ValueExpr,
+    ) -> String {
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+
+        if let Some(if_true) = if_true {
+            let predicate = self.emit_condition(out, condition);
+            out.push_str("    if (");
+            out.push_str(&predicate);
+            out.push_str(") {\n");
+            let true_temp = self.emit_materialized_value(out, if_true);
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(&true_temp);
+            out.push_str(";\n");
+            out.push_str("    } else {\n");
+            let false_temp = self.emit_materialized_value(out, if_false);
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(&false_temp);
+            out.push_str(";\n");
+            out.push_str("    }\n");
+            return result_temp;
+        }
+
+        let condition_temp = self.emit_materialized_value(out, condition);
+        let predicate_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&predicate_temp);
+        out.push_str(" = ptn_is_truthy(");
+        out.push_str(&condition_temp);
+        out.push_str(");\n");
+        out.push_str("    if (");
+        out.push_str(&predicate_temp);
+        out.push_str(") {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&condition_temp);
+        out.push_str(";\n");
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &condition_temp);
+        let false_temp = self.emit_materialized_value(out, if_false);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&false_temp);
+        out.push_str(";\n");
+        out.push_str("    }\n");
+        result_temp
     }
 
     fn emit_runtime_binary(
@@ -6040,6 +6143,7 @@ impl ValueEmitter {
                 | ValueExpr::DynamicVariable { .. }
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }
+                | ValueExpr::Ternary { .. }
                 | ValueExpr::MethodCall { .. }
                 | ValueExpr::StaticPropertyFetch { .. }
                 | ValueExpr::Include { .. }

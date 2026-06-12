@@ -201,7 +201,7 @@ impl Parser {
         }
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
             if modifiers.is_static {
-                if modifiers.visibility != PropertyVisibility::Public {
+                if !matches!(modifiers.visibility, PropertyVisibility::Public) {
                     return Err(Diagnostic::new(
                         "non-public static properties are unsupported",
                         Some(self.peek().span),
@@ -221,7 +221,7 @@ impl Parser {
                 Some(self.peek().span),
             ));
         }
-        if modifiers.visibility != PropertyVisibility::Public {
+        if !matches!(modifiers.visibility, PropertyVisibility::Public) {
             return Err(Diagnostic::new(
                 "non-public class methods are unsupported",
                 Some(self.peek().span),
@@ -252,10 +252,8 @@ impl Parser {
                     self.advance();
                 }
                 "protected" => {
-                    return Err(Diagnostic::new(
-                        "protected class members are unsupported",
-                        Some(self.peek().span),
-                    ));
+                    modifiers.visibility = PropertyVisibility::Protected;
+                    self.advance();
                 }
                 "abstract" => {
                     return Err(Diagnostic::new(
@@ -1544,7 +1542,11 @@ impl Parser {
     }
 
     fn parse_assignment_expr(&mut self) -> Result<Expr> {
-        let left = self.parse_binary_expr(0)?;
+        let left = self.parse_ternary_expr(0)?;
+        self.parse_assignment_expr_from_left(left)
+    }
+
+    fn parse_assignment_expr_from_left(&mut self, left: Expr) -> Result<Expr> {
         if !self.peek_is_expression_assignment_op() {
             reject_append_array_read(&left)?;
             return Ok(left);
@@ -1585,46 +1587,8 @@ impl Parser {
     }
 
     fn parse_assignment_value_expr(&mut self) -> Result<Expr> {
-        let left = self.parse_binary_expr(SYMBOL_OR_PRECEDENCE)?;
-        let value = if self.peek_is_expression_assignment_op() {
-            let operator = self.peek().clone();
-            let op = self.expect_assignment_op()?;
-            let left_span = left.span();
-            let target = assignment_target_from_expr(left).map_err(|_| {
-                Diagnostic::new(
-                    "assignment expression target must be a variable, array dimension, or list",
-                    Some(operator.span),
-                )
-            })?;
-            validate_expression_assignment_target(op, &target, operator.span)?;
-            if matches!(op, AssignmentOp::Assign)
-                && matches!(self.peek().kind, TokenKind::Ampersand)
-            {
-                self.advance();
-                let source = self.parse_reference_source()?;
-                validate_reference_assignment_target_source(&target, &source, operator.span)?;
-                let span = combine_spans(left_span, source.span());
-                return Ok(Expr::AssignRef {
-                    target,
-                    source: Box::new(source),
-                    span,
-                });
-            }
-            let right = self.parse_assignment_expr()?;
-            if matches!(op, AssignmentOp::Assign) {
-                validate_recursive_reference_assignment_value(&target, &right)?;
-            }
-            let span = combine_spans(left_span, right.span());
-            Expr::Assign {
-                target,
-                op,
-                value: Box::new(right),
-                span,
-            }
-        } else {
-            reject_append_array_read(&left)?;
-            left
-        };
+        let left = self.parse_ternary_expr(SYMBOL_OR_PRECEDENCE)?;
+        let value = self.parse_assignment_expr_from_left(left)?;
         if self.peek_is_keyword_boolean_operator() {
             return Err(Diagnostic::new(
                 "assignment expressions with keyword boolean operators are unsupported",
@@ -1632,6 +1596,49 @@ impl Parser {
             ));
         }
         Ok(value)
+    }
+
+    fn parse_assignment_expr_without_ternary(&mut self, binary_min_precedence: u8) -> Result<Expr> {
+        let left = self.parse_binary_expr(binary_min_precedence)?;
+        self.parse_assignment_expr_from_left(left)
+    }
+
+    fn parse_ternary_expr(&mut self, binary_min_precedence: u8) -> Result<Expr> {
+        let condition = self.parse_binary_expr(binary_min_precedence)?;
+        if !matches!(self.peek().kind, TokenKind::Question) {
+            return Ok(condition);
+        }
+
+        let question = self.advance().clone();
+        let (if_true, first_is_short) = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            (None, true)
+        } else {
+            let value = self.parse_assignment_expr_without_ternary(0)?;
+            if matches!(self.peek().kind, TokenKind::Question) {
+                return Err(Diagnostic::new(
+                    nested_ternary_message(false, self.peek_next_is_colon()),
+                    Some(question.span),
+                ));
+            }
+            self.expect_colon()?;
+            (Some(Box::new(value)), false)
+        };
+        let if_false = self.parse_assignment_expr_without_ternary(0)?;
+        if matches!(self.peek().kind, TokenKind::Question) {
+            return Err(Diagnostic::new(
+                nested_ternary_message(first_is_short, self.peek_next_is_colon()),
+                Some(question.span),
+            ));
+        }
+
+        let span = combine_spans(condition.span(), if_false.span());
+        Ok(Expr::Ternary {
+            condition: Box::new(condition),
+            if_true,
+            if_false: Box::new(if_false),
+            span,
+        })
     }
 
     fn parse_binary_expr(&mut self, min_precedence: u8) -> Result<Expr> {
@@ -2390,11 +2397,7 @@ impl Parser {
 
         self.parse_expr()?;
         if matches!(self.peek().kind, TokenKind::Question) {
-            let message = match (first_is_short, self.peek_next_is_colon()) {
-                (true, _) => "Unparenthesized `a ?: b ? c : d` is not supported. Use either `(a ?: b) ? c : d` or `a ?: (b ? c : d)`",
-                (false, true) => "Unparenthesized `a ? b : c ?: d` is not supported. Use either `(a ? b : c) ?: d` or `a ? b : (c ?: d)`",
-                (false, false) => "Unparenthesized `a ? b : c ? d : e` is not supported. Use either `(a ? b : c) ? d : e` or `a ? b : (c ? d : e)`",
-            };
+            let message = nested_ternary_message(first_is_short, self.peek_next_is_colon());
             return Err(Diagnostic::new(message, Some(question.span)));
         }
 
@@ -2797,6 +2800,14 @@ fn syntax_error_unexpected(token: &Token, expecting: Option<&str>) -> Diagnostic
     Diagnostic::parse_error(message, Some(token.span))
 }
 
+fn nested_ternary_message(first_is_short: bool, second_is_short: bool) -> &'static str {
+    match (first_is_short, second_is_short) {
+        (true, _) => "Unparenthesized `a ?: b ? c : d` is not supported. Use either `(a ?: b) ? c : d` or `a ?: (b ? c : d)`",
+        (false, true) => "Unparenthesized `a ? b : c ?: d` is not supported. Use either `(a ? b : c) ?: d` or `a ? b : (c ?: d)`",
+        (false, false) => "Unparenthesized `a ? b : c ? d : e` is not supported. Use either `(a ? b : c) ? d : e` or `a ? b : (c ? d : e)`",
+    }
+}
+
 fn describe_unexpected_token(token: &Token) -> String {
     match &token.kind {
         TokenKind::Identifier(name) => format!("identifier \"{name}\""),
@@ -3104,6 +3115,18 @@ fn expr_array_literal_reference_to_variable(
         Expr::DynamicVariable { name, .. } => {
             expr_array_literal_reference_to_variable(name, variable)
         }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => expr_array_literal_reference_to_variable(condition, variable)
+            .or_else(|| {
+                if_true
+                    .as_ref()
+                    .and_then(|if_true| expr_array_literal_reference_to_variable(if_true, variable))
+            })
+            .or_else(|| expr_array_literal_reference_to_variable(if_false, variable)),
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
         | Expr::Int(_, _)
@@ -3443,6 +3466,18 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             validate_anonymous_functions_in_expr(left, functions)?;
             validate_anonymous_functions_in_expr(right, functions)?;
         }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            validate_anonymous_functions_in_expr(condition, functions)?;
+            if let Some(if_true) = if_true {
+                validate_anonymous_functions_in_expr(if_true, functions)?;
+            }
+            validate_anonymous_functions_in_expr(if_false, functions)?;
+        }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
         | Expr::Int(_, _)
@@ -3574,6 +3609,18 @@ fn validate_reference_assignment_source_expr(
         Expr::Grouped { expr, .. } => validate_reference_assignment_source_expr(expr, functions),
         Expr::Print { expression, .. } => {
             validate_reference_assignment_source_expr(expression, functions)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            validate_reference_assignment_source_expr(condition, functions)?;
+            if let Some(if_true) = if_true {
+                validate_reference_assignment_source_expr(if_true, functions)?;
+            }
+            validate_reference_assignment_source_expr(if_false, functions)
         }
         Expr::Call { .. } => Ok(()),
         _ => Ok(()),
@@ -4503,6 +4550,18 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::IncDec { target, .. } => {
             reject_append_array_read_in_inc_dec_target(target)?;
         }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            reject_append_array_read(condition)?;
+            if let Some(if_true) = if_true {
+                reject_append_array_read(if_true)?;
+            }
+            reject_append_array_read(if_false)?;
+        }
         Expr::InterpolatedString(_, _)
         | Expr::AnonymousFunction(_)
         | Expr::String(_, _)
@@ -4606,7 +4665,8 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::StaticPropertyFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
-        | Expr::Empty { .. } => false,
+        | Expr::Empty { .. }
+        | Expr::Ternary { .. } => false,
     }
 }
 
