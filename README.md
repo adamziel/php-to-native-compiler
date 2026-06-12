@@ -1,10 +1,10 @@
 # PTN From Scratch
 
-PTN compiles a PHP subset into native binaries:
+PTN compiles PHP subsets into native binaries:
 
 `PHP source -> lexer/parser -> AST -> IR -> C runtime -> native executable`
 
-Rule: implement reusable PHP semantics; do not special-case PHPT rows.
+Rule: implement reusable PHP semantics; no PHPT row special-cases.
 
 ## Shape
 
@@ -29,7 +29,7 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
 - Dynamic variable roots support scalar reads/writes, array/string-offset
   writes and unsets, and inc/dec expression targets through shared
   symbol-table and array-path helpers.
-- Arithmetic models non-numeric string and array `TypeError` diagnostics while
+- Arithmetic models non-numeric string/array `TypeError` diagnostics while
   preserving leading-numeric warnings.
 - Scalar float stringification honors `phpc -d precision=N` and PHP-style
   exponent spelling across output and string conversions.
@@ -45,8 +45,7 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
 - `pow()` uses the same boxed numeric exponentiation helper as `**`, and
   `call_user_func_array()` expands ordered arrays through callable dispatch.
 - `assert()` throws catchable `AssertionError` values with compiler-generated
-  default messages for direct calls; bounded `highlight_file()` shares
-  file-return paths.
+  direct-call messages; bounded `highlight_file()` shares file-return paths.
 - Direct variable, array-offset, property, and static-property
   increment/decrement support statement and expression pre/post forms over
   boxed numeric values, null, booleans, numeric strings, and alphanumeric
@@ -55,10 +54,11 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
   boxed operators and return assigned values.
 - `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
   covers `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
-- `strrev()` reverses current length-aware string operands without losing
+- `str_pad()` supports byte-length padding with pad constants, and
+  `strrev()` reverses current length-aware string operands without losing
   embedded NUL bytes.
-- `trim()`, `ltrim()`, and `rtrim()` use length-aware scalar string operands
-  with PHP default trim bytes and bounded byte-range charlists.
+- `trim()`, `ltrim()`, and `rtrim()` use length-aware operands, PHP default
+  bytes, and bounded charlists.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, and quiet `isset()`, `empty()`, and `??`; full visibility and
   inheritance remain bounded.
@@ -75,7 +75,7 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
 - `STATUS.md`: current operating status.
 - `progress.md`, `progress.html`, `STATUS.html`: short generated mirrors.
 
-Keep each under 500 words; progress patrol refreshes them periodically.
+Keep each under 500 words.
 
 ## Commands
 
@@ -98,7 +98,6 @@ for f in examples/rc/*.php; do
 done
 ```
 
-The corpus exercises the current RC surface: scalar control flow, arrays and
-internal functions, user functions, public class/object shells, direct static
-properties, declared instance-property defaults, public property `??=`, and
-property/static-property inc/dec.
+RC examples exercise scalar control flow, arrays/internals, user functions,
+public object shells, static/instance properties, `??=`, and property/static
+inc/dec.

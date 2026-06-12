@@ -3701,6 +3701,80 @@ static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, con
     return ptn_bool(ends);
 }
 
+static void ptn_string_buffer_append_repeated_pattern(PtnStringBuffer *buffer, PtnStringOperand pattern, size_t len) {
+    size_t remaining = len;
+    while (remaining > 0) {
+        size_t chunk_len = pattern.len < remaining ? pattern.len : remaining;
+        ptn_string_buffer_append_len(buffer, pattern.data, chunk_len);
+        remaining -= chunk_len;
+    }
+}
+
+static PtnValue ptn_internal_str_pad(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "str_pad", 1, "string", args[0], line);
+    int64_t length = ptn_value_to_integer(args[1]);
+    PtnStringOperand pad_string = argc >= 3
+        ? ptn_internal_expect_string_arg(runtime, "str_pad", 3, "pad_string", args[2], line)
+        : ptn_string_operand_borrowed(" ");
+
+    if (pad_string.len == 0) {
+        ptn_string_operand_free(input);
+        ptn_string_operand_free(pad_string);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "str_pad(): Argument #3 ($pad_string) must not be empty"
+        );
+        return ptn_null();
+    }
+
+    int64_t pad_type = argc >= 4 ? ptn_value_to_integer(args[3]) : PTN_STR_PAD_RIGHT;
+    if (pad_type != PTN_STR_PAD_LEFT &&
+        pad_type != PTN_STR_PAD_RIGHT &&
+        pad_type != PTN_STR_PAD_BOTH) {
+        ptn_string_operand_free(input);
+        ptn_string_operand_free(pad_string);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "str_pad(): Argument #4 ($pad_type) must be STR_PAD_LEFT, STR_PAD_RIGHT, or STR_PAD_BOTH"
+        );
+        return ptn_null();
+    }
+
+    if (length <= 0 || (uint64_t)length <= (uint64_t)input.len) {
+        char *copy = ptn_duplicate_string_len(input.data, input.len);
+        size_t copy_len = input.len;
+        ptn_string_operand_free(input);
+        ptn_string_operand_free(pad_string);
+        return ptn_owned_string_len(copy, copy_len);
+    }
+
+    size_t target_len = (size_t)length;
+    size_t pad_len = target_len - input.len;
+    size_t left_len = 0;
+    size_t right_len = 0;
+    if (pad_type == PTN_STR_PAD_LEFT) {
+        left_len = pad_len;
+    } else if (pad_type == PTN_STR_PAD_RIGHT) {
+        right_len = pad_len;
+    } else {
+        left_len = pad_len / 2;
+        right_len = pad_len - left_len;
+    }
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    ptn_string_buffer_reserve(&output, target_len);
+    ptn_string_buffer_append_repeated_pattern(&output, pad_string, left_len);
+    ptn_string_buffer_append_len(&output, input.data, input.len);
+    ptn_string_buffer_append_repeated_pattern(&output, pad_string, right_len);
+
+    ptn_string_operand_free(input);
+    ptn_string_operand_free(pad_string);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
 static PtnValue ptn_internal_str_repeat(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "str_repeat", 1, "string", args[0], line);
@@ -6586,6 +6660,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "str_contains", 2, 2, ptn_internal_str_contains },
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
+        { "str_pad", 2, 4, ptn_internal_str_pad },
         { "str_repeat", 2, 2, ptn_internal_str_repeat },
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "str_shuffle", 1, 1, ptn_internal_str_shuffle },

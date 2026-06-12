@@ -3975,6 +3975,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "str_contains"
             | "str_starts_with"
             | "str_ends_with"
+            | "str_pad"
             | "str_repeat"
             | "strrev"
             | "stripcslashes"

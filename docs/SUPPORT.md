@@ -316,7 +316,8 @@ Post-RC architecture remains explicit rather than hidden:
   `stripcslashes(expr);`, `addslashes(expr);`, `stripslashes(expr);`,
   `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
-  `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`,
+  `str_ends_with(expr, expr);`, `str_pad(expr, expr[, expr[, expr]]);`,
+  `str_repeat(expr, expr);`,
   `strtolower(expr);`, `strtoupper(expr);`, `strrev(expr);`, `ucfirst(expr);`,
   `lcfirst(expr);`, `quotemeta(expr);`,
   `trim(expr[, expr]);`, `ltrim(expr[, expr]);`, `rtrim(expr[, expr]);`,
@@ -360,7 +361,8 @@ Post-RC architecture remains explicit rather than hidden:
   `stripcslashes(expr)`, `addslashes(expr)`, `stripslashes(expr)`,
   `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
-  `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`,
+  `str_ends_with(expr, expr)`, `str_pad(expr, expr[, expr[, expr]])`,
+  `str_repeat(expr, expr)`,
   `strtolower(expr)`, `strtoupper(expr)`, `strrev(expr)`, `ucfirst(expr)`,
   `lcfirst(expr)`, `quotemeta(expr)`,
   `trim(expr[, expr])`, `ltrim(expr[, expr])`, `rtrim(expr[, expr])`,
@@ -473,7 +475,8 @@ Post-RC architecture remains explicit rather than hidden:
   closures, and exceptions throw the modeled `TypeError` boundary for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
-  `strtr()`, `strrev()`, `ucfirst()`, `lcfirst()`, `strtolower()`,
+  `strtr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,
+  `strtolower()`,
   `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
   `trim()`/`ltrim()`/`rtrim()` string and characters arguments,
   `strip_tags()`, `md5()`, `sha1()`, `substr()`,
@@ -493,6 +496,10 @@ Post-RC architecture remains explicit rather than hidden:
 - `str_starts_with()` and `str_ends_with()` over current boxed scalar values
   after scalar string conversion, returning whether the haystack has the
   requested prefix or suffix through the current C-string-backed value path.
+- `str_pad()` over current boxed scalar values after scalar string conversion,
+  padding by byte length with optional pad string and `STR_PAD_LEFT`,
+  `STR_PAD_RIGHT`, or `STR_PAD_BOTH` mode constants. Empty pad strings and
+  invalid pad modes throw the modeled `ValueError` boundary.
 - `str_repeat()` over current boxed scalar values after scalar string
   conversion, repeating the input by a count converted through the current
   scalar integer conversion path and rejecting negative counts with the modeled
@@ -724,8 +731,9 @@ Post-RC architecture remains explicit rather than hidden:
   PHP math constants `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`,
   `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`,
   `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, `M_SQRT3`,
-  `ARRAY_FILTER_USE_BOTH`, and `ARRAY_FILTER_USE_KEY`. Other ordinary names
-  report as undefined.
+  `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `STR_PAD_LEFT`,
+  `STR_PAD_RIGHT`, and `STR_PAD_BOTH`. Other ordinary names report as
+  undefined.
 - Duplicate global `const` declarations and `const` redeclarations after
   `define()` emit the modeled duplicate-constant warning boundary and preserve
   the original runtime constant value.
@@ -916,8 +924,9 @@ Post-RC architecture remains explicit rather than hidden:
   runtime `define()`, and built-in PHP/extension constants other than the
   currently modeled `E_*` error masks, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
-  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants
-  in `defined()`/`constant()`.
+  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, modeled PHP math `M_*` constants,
+  array-filter mode constants, and `STR_PAD_*` constants in
+  `defined()`/`constant()`.
 - Function forms beyond top-level named declarations and the public class-method
   callable slice, plus the bounded `stdClass` public-property storage slice,
   including array/object default arguments, named arguments outside direct
@@ -952,6 +961,9 @@ Post-RC architecture remains explicit rather than hidden:
   conversion outside the current public declared `__toString()` support.
 - Exact `str_starts_with()`/`str_ends_with()` resource/reference operand parity
   and object string conversion outside the current public declared
+  `__toString()` support.
+- Exact `str_pad()` resource/reference operand parity, oversized allocation
+  diagnostics, and object string conversion outside the current public declared
   `__toString()` support.
 - Exact `quotemeta()` resource/reference operand parity and object string
   conversion outside the current public declared `__toString()` support.

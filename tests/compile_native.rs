@@ -3946,10 +3946,11 @@ echo str_rot13(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \" \", bin2hex(\"Az\")
 echo bin2hex(strtolower(\"Az\" . chr(0) . \"Q\" . chr(255))), \" \", bin2hex(strtoupper(\"az\" . chr(0) . \"q\" . chr(255))), \" \", bin2hex(lcfirst(\"Az\" . chr(0) . \"Q\" . chr(255))), \"\\n\";\n\
 echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
 echo bin2hex(strip_tags(\"<b>A</b>\" . chr(0) . \"<i>B</i>\")), \" \", soundex(\"A\" . chr(0) . \"B\"), \"\\n\";\n\
+echo str_pad(\"x\", 4, \"ab\", STR_PAD_LEFT), \" \", str_pad(\"x\", 4, \"ab\", STR_PAD_RIGHT), \" \", str_pad(\"x\", 5, \"ab\", STR_PAD_BOTH), \"\\n\";\n\
 echo str_repeat(\"xy\", 3), \"|\", str_repeat(\"z\", 0), \"|\", chunk_split(str_repeat(\"X\", 6), 3, \"|\"), \"\\n\";\n\
 echo trim(\" \\tHi\\r\\n\"), \"|\", ltrim(\"==left\", \"=\"), \"|\", rtrim(\"right!!\", \"!\"), \"\\n\";\n\
 echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
-var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), strtoupper(false));",
+var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), strtoupper(false), function_exists(\"str_pad\"), defined(\"STR_PAD_BOTH\"));",
     )
     .unwrap();
 
@@ -3963,10 +3964,12 @@ var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), str
 617a0071ff 415a0051ff 617a0051ff\n\
 x A R163 65 5 255 8\n\
 4142 A100\n\
+abax xaba abxab\n\
 xyxyxy||XXX|XXX|\n\
 Hi|left|right\n\
 d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
-int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\n"
+int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\n\
+bool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -3983,6 +3986,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         "ptn_internal_str_contains",
         "ptn_internal_str_starts_with",
         "ptn_internal_str_ends_with",
+        "ptn_internal_str_pad",
         "ptn_internal_strtolower",
         "ptn_internal_strtoupper",
         "ptn_internal_trim",
@@ -4030,6 +4034,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         "ptn_ascii_case_string(string.data, string.len, 0)",
         "ptn_ascii_case_string(string.data, string.len, 1)",
         "ptn_trim_string_value(input, charlist, trim_left, trim_right)",
+        "ptn_string_buffer_append_repeated_pattern(&output, pad_string, left_len)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
         "ptn_dirname_string(path.data, path.len, &dirname_len)",
@@ -4052,6 +4057,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         "static char *ptn_rot13_string(",
         "static char *ptn_first_char_case_string(",
         "static char *ptn_ascii_case_string(",
+        "static PtnValue ptn_internal_str_pad(",
         "static char *ptn_quotemeta_string(",
         "static char *ptn_chunk_split_string(",
         "static char *ptn_strip_tags_string(",
@@ -4136,6 +4142,46 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_str_pad_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-str-pad");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-pad.php");
+    let output = root.join("str-pad-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(STR_PAD_LEFT, STR_PAD_RIGHT, STR_PAD_BOTH);\n\
+var_dump(str_pad(\"pad\", 6));\n\
+var_dump(str_pad(\"pad\", 6, \"01\", STR_PAD_LEFT));\n\
+var_dump(str_pad(\"pad\", 6, \"01\", STR_PAD_RIGHT));\n\
+var_dump(str_pad(\"pad\", 8, \"01\", STR_PAD_BOTH));\n\
+var_dump(bin2hex(str_pad(\"A\" . chr(0) . \"B\", 6, chr(255), STR_PAD_BOTH)));\n\
+try { str_pad(\"pad\", 6, \"\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { str_pad(\"pad\", 6, \".\", 99); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"str_pad\"), function_exists(\"STR_PAD\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(1)\nint(2)\n\
+string(6) \"pad   \"\n\
+string(6) \"010pad\"\n\
+string(6) \"pad010\"\n\
+string(8) \"01pad010\"\n\
+string(12) \"ff410042ffff\"\n\
+str_pad(): Argument #3 ($pad_string) must not be empty\n\
+str_pad(): Argument #4 ($pad_type) must be STR_PAD_LEFT, STR_PAD_RIGHT, or STR_PAD_BOTH\n\
+bool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

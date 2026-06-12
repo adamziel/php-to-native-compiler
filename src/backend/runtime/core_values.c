@@ -50,6 +50,9 @@
 #define PTN_E_ALL 32767
 #define PTN_ARRAY_FILTER_USE_BOTH 1
 #define PTN_ARRAY_FILTER_USE_KEY 2
+#define PTN_STR_PAD_LEFT 0
+#define PTN_STR_PAD_RIGHT 1
+#define PTN_STR_PAD_BOTH 2
 #define PTN_DEFAULT_PRECISION 14
 
 typedef struct PtnArray PtnArray;
