@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T06:55Z
-Measured: `ptn-n6db` rebased after `origin/master` `bbde91f1d`.
+Refresh: 2026-06-12T07:02Z
+Measured: `ptn-rq8k` rebased after `origin/master` `1313d16b9`.
 
 Recent RC slices cover property/static-property inc/dec
 statements/expressions, scalar/string inc/dec value semantics, dynamic-variable
@@ -13,7 +13,8 @@ metadata, full/short lazy ternaries, PHP-style object `var_export()`, bounded
 probes, direct array mutators including default `sort()`/`asort()`/`rsort()`,
 sort flag diagnostics, set operations, `array_udiff*()`, exact
 `strings/004`, `strings/006`, and `tests/lang/024`, highlight output paths,
-`join()`/`implode()`, scalar `sprintf()`, and `array_product()`.
+`join()`/`implode()`, scalar `sprintf()`, `array_product()`, and catchable
+`intdiv()` zero-divisor/overflow exceptions.
 
 Recent movers include exact string/lang/array rows, `array_udiff*()`,
 dynamic-root array/string-offset writes and unsets, object `var_export()`,
@@ -22,14 +23,15 @@ sort flag diagnostics, offset compound assignments, and property/static inc/dec.
 `ptn-e69a` adds null, boolean, numeric-string, alphanumeric-string,
 dynamic-root, array-offset, property/static-property, and catchable non-scalar
 inc/dec value coverage. `ptn-n6db` adds the adjacent boxed `array_product()`
-reducer path.
+reducer path. `ptn-rq8k` brings exact `ext/standard/tests/math/intdiv.phpt`
+exception behavior.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 520 | 520 | 0 |
+| Native/compiler Rust suite | 521 | 521 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 200 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
@@ -65,10 +67,10 @@ array/string-offset writes and unsets.
 
 ## Verification
 
-Verification: `ptn-e69a` passed fmt, build, focused scalar/string inc/dec, and
-`cargo test` with native/compiler 519/519 plus COW/doc-tests. `ptn-n6db` adds
-focused `array_product()` native coverage; final gates are fmt, build, the
-focused reducer, and `cargo test` with native/compiler 520/520.
+Verification: `ptn-n6db` passed fmt, build, focused `array_product()`, and
+`cargo test` with native/compiler 520/520 plus COW/doc-tests. `ptn-rq8k` adds
+focused native `intdiv` coverage; final gates are fmt, build, the focused
+reducer, and `cargo test` with native/compiler 521/521.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

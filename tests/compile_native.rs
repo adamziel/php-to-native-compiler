@@ -4700,6 +4700,42 @@ fn compile_intdiv_float_precision_diagnostic_to_native_binary() {
 }
 
 #[test]
+fn compile_intdiv_exception_edges_are_catchable_to_native_binary() {
+    let root = temp_dir("ptn-native-intdiv-exception-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intdiv-exception-edges.php");
+    let output = root.join("intdiv-exception-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    var_dump(intdiv(PHP_INT_MIN, -1));\n\
+} catch (\\ArithmeticError $e) {\n\
+    echo get_class($e), ':', $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump(intdiv(1, 0));\n\
+} catch (\\ArithmeticError $e) {\n\
+    echo get_class($e), ':', $e->getMessage(), \"\\n\";\n\
+}\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ArithmeticError:Division of PHP_INT_MIN by -1 is not an integer\n\
+DivisionByZeroError:Division by zero\n\
+after\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn var_dump_float_exponents_use_php_spelling_in_native_binary() {
     let root = temp_dir("ptn-native-var-dump-float-exponents");
     fs::create_dir_all(&root).unwrap();

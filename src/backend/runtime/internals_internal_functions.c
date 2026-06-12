@@ -5300,10 +5300,12 @@ static PtnValue ptn_internal_intdiv(PtnRuntime *runtime, size_t argc, const PtnV
     int64_t dividend = ptn_value_to_integer_with_precision_deprecation(&runtime->diagnostics, args[0]);
     int64_t divisor = ptn_value_to_integer_with_precision_deprecation(&runtime->diagnostics, args[1]);
     if (divisor == 0) {
-        ptn_abort_arithmetic_error("Division by zero");
+        ptn_throw_exception(runtime, "DivisionByZeroError", "Division by zero");
+        return ptn_null();
     }
     if (dividend == INT64_MIN && divisor == -1) {
-        ptn_abort_arithmetic_error("Division of PHP_INT_MIN by -1 is not an integer");
+        ptn_throw_exception(runtime, "ArithmeticError", "Division of PHP_INT_MIN by -1 is not an integer");
+        return ptn_null();
     }
     return ptn_int(dividend / divisor);
 }
