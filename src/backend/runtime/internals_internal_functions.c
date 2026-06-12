@@ -5450,6 +5450,26 @@ static PtnValue ptn_internal_md5(PtnRuntime *runtime, size_t argc, const PtnValu
     return ptn_digest_value(digest, sizeof(digest), raw_output);
 }
 
+static uint32_t ptn_crc32_bytes(const unsigned char *input, size_t input_len) {
+    uint32_t crc = UINT32_C(0xffffffff);
+    for (size_t i = 0; i < input_len; i++) {
+        crc ^= (uint32_t)input[i];
+        for (size_t bit = 0; bit < 8; bit++) {
+            uint32_t mask = -(crc & UINT32_C(1));
+            crc = (crc >> 1) ^ (UINT32_C(0xedb88320) & mask);
+        }
+    }
+    return crc ^ UINT32_C(0xffffffff);
+}
+
+static PtnValue ptn_internal_crc32(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "crc32", 1, "string", args[0], line);
+    uint32_t checksum = ptn_crc32_bytes((const unsigned char *)input.data, input.len);
+    ptn_string_operand_free(input);
+    return ptn_int((int64_t)checksum);
+}
+
 static void ptn_sha1_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[20]) {
     size_t padded_len = input_len + 1;
     while ((padded_len % 64) != 56) {
@@ -8271,6 +8291,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "class_exists", 1, 2, ptn_internal_class_exists },
         { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 2, ptn_internal_count },
+        { "crc32", 1, 1, ptn_internal_crc32 },
         { "current", 1, 1, ptn_internal_current },
         { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
         { "define", 2, 3, ptn_internal_define },

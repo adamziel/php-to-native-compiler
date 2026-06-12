@@ -340,6 +340,7 @@ Post-RC architecture remains explicit rather than hidden:
   `explode(expr, expr[, expr]);`,
   `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
   `printf(expr, ...);`, `json_encode(expr[, expr[, expr]]);`,
+  `crc32(expr);`,
   `md5(expr[, raw_output]);`,
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
   `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr);`,
@@ -398,6 +399,7 @@ Post-RC architecture remains explicit rather than hidden:
   `explode(expr, expr[, expr])`,
   `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
   `printf(expr, ...)`, `json_encode(expr[, expr[, expr]])`,
+  `crc32(expr)`,
   `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `quoted_printable_decode(expr)`,
@@ -531,7 +533,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
   `explode()` separator/string arguments,
   `trim()`/`ltrim()`/`rtrim()` string and characters arguments,
-  `strip_tags()`, `md5()`, `sha1()`, `substr()`,
+  `strip_tags()`, `crc32()`, `md5()`, `sha1()`, `substr()`,
   `addcslashes()`, `addslashes()`, `stripcslashes()`, `stripslashes()`,
   `bin2hex()`, `hex2bin()`, `quoted_printable_decode()`, `soundex()`, and
   `ord()`.
@@ -595,6 +597,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `strip_tags()` over current boxed scalar values after scalar string
   conversion, removing complete `<...>`, `<?...?>`, `<%...%>`, and HTML
   comment tag regions through the current C-string-backed value path.
+- `crc32()` over current boxed scalar values after scalar string conversion,
+  returning the unsigned CRC-32 checksum in the current integer value and
+  preserving embedded NUL bytes through the length-aware string path.
 - `md5()` and `sha1()` over current boxed scalar values after scalar string
   conversion, returning lowercase hexadecimal digest output, or raw digest
   bytes when the optional `raw_output` argument is truthy and the current
@@ -1123,8 +1128,9 @@ Post-RC architecture remains explicit rather than hidden:
   full length/flag behavior, binary-string edges, and unsupported operand
   diagnostics beyond the current bounded scalar subset.
 - `md5()`/`sha1()` raw binary output containing NUL bytes, embedded-NUL input
-  parity, plus resource/reference operand parity and object string conversion
-  outside the current public declared `__toString()` support.
+  parity, plus `crc32()`/`md5()`/`sha1()` resource/reference operand parity and
+  object string conversion outside the current public declared `__toString()`
+  support.
 - Exact `substr()` binary-string behavior for embedded NUL bytes and
   resource/reference operand parity plus object string conversion outside the
   current public declared `__toString()` support.

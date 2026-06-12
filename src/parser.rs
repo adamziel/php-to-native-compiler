@@ -4168,6 +4168,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "quotemeta"
             | "chunk_split"
             | "strip_tags"
+            | "crc32"
             | "md5"
             | "sha1"
             | "sha1_file"
