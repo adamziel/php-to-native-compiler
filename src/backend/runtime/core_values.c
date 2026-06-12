@@ -29,6 +29,7 @@
 #endif
 
 #define PTN_PHP_VERSION "8.4.0"
+#define PTN_ZEND_VERSION "4.4.0"
 #define PTN_PHP_SAPI_NAME "cli"
 #define PTN_ARRAY_INDEX_MIN_ENTRIES 16
 #define PTN_SYMBOL_INDEX_MIN_ENTRIES 16

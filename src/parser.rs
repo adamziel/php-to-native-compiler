@@ -4018,6 +4018,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "getmypid"
             | "php_sapi_name"
             | "phpversion"
+            | "zend_version"
             | "print_r"
             | "var_export"
             | "bindec"

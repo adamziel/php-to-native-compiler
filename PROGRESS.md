@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T14:32Z
-Measured: `ptn-ibol` rebased after `origin/master` `e954e9b26`.
+Refresh: 2026-06-12T14:38Z
+Measured: `ptn-4kry` rebased after `origin/master` `79b142756`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
 array/string-offset writes and unsets, array/append compound assignments,
@@ -12,18 +12,19 @@ string/lang rows, highlight output paths, `join()`/`implode()`, `sprintf()`,
 `array_product()`, key helpers, `array_search()`, `array_slice()`,
 `array_pad()`, `str_pad()`, catchable `intdiv()` plus unsupported-operand
 TypeErrors, ASCII case/trim reducers, length-aware `chunk_split()`
-empty-input endings, `ceil()`/`floor()` diagnostics, `is_countable()`,
-first `ReflectionFunction` metadata backed by generated user-function metadata
-plus the internal registry, unbracketed namespaces, foreach list destructuring
-with reference elements, and bounded dynamic include/require path dispatch.
+empty-input endings, modeled CLI/Zend version metadata, `ceil()`/`floor()`
+diagnostics, `is_countable()`, first `ReflectionFunction` metadata backed by
+generated user-function metadata plus the internal registry, unbracketed
+namespaces, foreach list destructuring with reference elements, and bounded
+dynamic include/require path dispatch.
 
 Recent movers include dynamic-root offset writes/unsets, property/static quiet
 probes and inc/dec, direct sort-family mutators and flag diagnostics, array
 key/search/slice/pad helpers, byte-length `str_pad()` modes and `STR_PAD_*`
 constants, catchable `intdiv()` unsupported-operand TypeErrors, ASCII case and
-trim reducers, `chunk_split()` empty-input binary endings, `ceil()`/`floor()`
-`TypeError` parity, namespace PHPT rows `ns_001`, `ns_002`, `ns_003`,
-`ns_014`, foreach destructuring paths, include PHPT rows,
+trim reducers, `chunk_split()` empty-input binary endings, `zend_version()`,
+`ceil()`/`floor()` `TypeError` parity, namespace PHPT rows `ns_001`, `ns_002`,
+`ns_003`, `ns_014`, foreach destructuring paths, include PHPT rows,
 `ext/standard/tests/strings/str_pad`,
 `ext/standard/tests/strings/chunk_split_variation7`, ReflectionFunction names,
 namespace/short-name probes, internal/user flags, parameter counts, variadic
@@ -56,13 +57,14 @@ internals, COW/reference slices, user functions, call-frame introspection,
 scalar type hints, bounded closures, `stdClass`, public class/object shells,
 declared properties, quiet probes, metadata intrinsics, `ReflectionFunction`
 metadata probes, `is_callable()`, `is_countable()`, assertions,
-interpolation, unbracketed namespaces, simple imports, streams, `pow()`,
-`array_merge()`, `array_pad()`, `str_pad()`, `array_slice()`, `strrev()`,
-first-byte case helpers, trim-family internals, length-aware `chunk_split()`
-empty-input endings, `array_search()`, `call_user_func_array()`, catchable
-`intdiv()` integer-operand TypeErrors, highlight output paths, `var_export()`,
-direct array mutators including `natcasesort()`, explicit regular sort flags,
-set operations, inc/dec, foreach destructuring, dynamic-variable
+interpolation, unbracketed namespaces, simple imports, streams, modeled CLI
+version metadata, `zend_version()`, `pow()`, `array_merge()`, `array_pad()`,
+`str_pad()`, `array_slice()`, `strrev()`, first-byte case helpers,
+trim-family internals, length-aware `chunk_split()` empty-input endings,
+`array_search()`, `call_user_func_array()`, catchable `intdiv()`
+integer-operand TypeErrors, highlight output paths, `var_export()`, direct
+array mutators including `natcasesort()`, explicit regular sort flags, set
+operations, inc/dec, foreach destructuring, dynamic-variable
 array/string-offset writes, and include helpers sharing caller file scope and
 return values.
 
@@ -81,7 +83,8 @@ modeled `str_pad()` plus `ext/standard/tests/strings/str_pad.phpt`,
 `chunk_split("", ..., "|".chr(0))` plus
 `ext/standard/tests/strings/chunk_split_variation7.phpt`, focused `intdiv()`
 unsupported-operand `TypeError` coverage, callback/reflection manifest
-coverage 4/4, and stdin/process-substitution manifest smoke checks.
+coverage 4/4, stdin/process-substitution manifest smoke checks, and focused
+`zend_version()` registry/redeclaration coverage.
 
 Follow-ups remain visibility/inheritance metadata, typed/promoted properties,
 interfaces/traits, bracketed/grouped namespace forms, namespace fallback

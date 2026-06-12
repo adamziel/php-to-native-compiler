@@ -6226,6 +6226,14 @@ static PtnValue ptn_internal_phpversion(PtnRuntime *runtime, size_t argc, const 
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_zend_version(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_string(PTN_ZEND_VERSION);
+}
+
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
     int value = -1;
     if (byte >= '0' && byte <= '9') {
@@ -6772,6 +6780,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "unlink", 1, 1, ptn_internal_unlink },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "var_export", 1, 2, ptn_internal_var_export },
+        { "zend_version", 0, 0, ptn_internal_zend_version },
     };
     *count = sizeof(functions) / sizeof(functions[0]);
     return functions;

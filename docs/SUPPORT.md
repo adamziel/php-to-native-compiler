@@ -331,7 +331,8 @@ Post-RC architecture remains explicit rather than hidden:
   `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `ob_get_contents();`, `php_sapi_name();`,
-  `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
+  `phpversion([extension]);`, `zend_version();`, `intval(expr);`,
+  `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_chunk(expr, expr[, expr]);`,
   `array_change_key_case(expr[, expr]);`, `array_column(expr, expr[, expr]);`,
   `array_combine(expr, expr);`, `array_count_values(expr);`,
@@ -376,7 +377,8 @@ Post-RC architecture remains explicit rather than hidden:
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
   `getmypid()`, `ob_get_contents()`, `php_sapi_name()`,
-  `phpversion([extension])`, `intval(expr)`, `chr(expr)`, `ord(expr)`,
+  `phpversion([extension])`, `zend_version()`, `intval(expr)`, `chr(expr)`,
+  `ord(expr)`,
   `count(expr)`, `array_chunk(expr, expr[, expr])`,
   `array_change_key_case(expr[, expr])`, `array_column(expr, expr[, expr])`,
   `array_combine(expr, expr)`, `array_count_values(expr)`,
@@ -589,6 +591,7 @@ Post-RC architecture remains explicit rather than hidden:
 - `phpversion()` returns the modeled PHP version string. The optional
   extension argument returns the same version for `core`, `standard`, and an
   empty extension name, and `false` for unmodeled extension names.
+- `zend_version()` returns the modeled Zend Engine version string.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and

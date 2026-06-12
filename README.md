@@ -55,7 +55,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
   covers `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
 - `str_pad()` supports byte-length padding with pad constants, and
-  `strrev()` reverses current length-aware string operands without losing
+- `zend_version()` reports the modeled Zend Engine version alongside the
+  existing CLI PHP version metadata.
+- `strrev()` reverses current length-aware string operands without losing
   embedded NUL bytes.
 - `trim()`, `ltrim()`, and `rtrim()` use length-aware operands, PHP default
   bytes, and bounded charlists.
