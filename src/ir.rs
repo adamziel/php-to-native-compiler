@@ -145,6 +145,11 @@ pub enum Instruction {
         dimensions: Vec<ValueExpr>,
         line: usize,
     },
+    UnsetDynamicArrayDim {
+        name: ValueExpr,
+        dimensions: Vec<ValueExpr>,
+        line: usize,
+    },
     DefineConstant {
         name: String,
         value: ValueExpr,
@@ -1204,6 +1209,18 @@ impl<'a> LoweringContext<'a> {
                     })
                     .collect(),
                 line: target.span.line,
+            },
+            AstUnsetTarget::DynamicArrayDim {
+                name,
+                dimensions,
+                span,
+            } => Instruction::UnsetDynamicArrayDim {
+                name: self.lower_expr(name),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| self.lower_expr(dimension))
+                    .collect(),
+                line: span.line,
             },
         }
     }

@@ -95,6 +95,9 @@ Post-RC architecture remains explicit rather than hidden:
   unsupported-name diagnostic. Dynamic-root array/string-offset writes such as
   `${$name}[$key] = $value` evaluate the dynamic name and offset expressions
   before the right-hand side, then reuse the shared array-path write helper.
+  Dynamic-root array/string-offset unsets such as `unset(${$name}[$key])`
+  evaluate the dynamic name and offset expressions through the same path-unset
+  helper used by direct array/string-offset unsets.
 - Assignment expressions for direct variables, array dimension/append lvalues,
   and list/short-array destructuring targets, including by-reference
   destructuring entries in the modeled reference-array subset.
@@ -900,7 +903,7 @@ Post-RC architecture remains explicit rather than hidden:
   overflow parity for remaining integer-only operator conversion diagnostics,
   including shift and modulo diagnostics.
 - Object lvalues, dynamic-variable array-offset compound/null-coalescing/
-  by-reference/unset lvalues, append-form null-coalescing, property
+  by-reference lvalues, append-form null-coalescing, property
   null-coalescing expressions/`isset()`/`empty()`, property compound-assignment
   operators outside modeled public-property `??=`, and static-property
   compound/null-coalescing lvalues outside modeled direct reads/writes.

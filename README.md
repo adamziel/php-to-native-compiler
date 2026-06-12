@@ -19,8 +19,8 @@ rows, or outputs.
   by-reference return aliases, typed coercion, and public constructors.
 - Direct variable/array references and by-reference userland parameters cover
   the first COW/reference boundary slice.
-- Dynamic variable roots support scalar and simple array/string-offset writes
-  through shared symbol-table and array-path helpers.
+- Dynamic variable roots support scalar writes plus simple array/string-offset
+  writes and unsets through shared symbol-table and array-path helpers.
 - Arithmetic models non-numeric string and array `TypeError` diagnostics while
   preserving leading-numeric warnings.
 - Full and short ternary expressions lower through the boxed value path with

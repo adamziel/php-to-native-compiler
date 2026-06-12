@@ -15715,6 +15715,36 @@ fn parser_accepts_dynamic_variable_array_dimension_assignments() {
 }
 
 #[test]
+fn parser_accepts_dynamic_variable_array_dimension_unsets() {
+    let program = parser::parse("<?php unset(${$name}[\"key\"], ${$$name}[0][\"leaf\"]);").unwrap();
+    assert_eq!(program.statements.len(), 1);
+
+    let Statement::Unset { targets, .. } = &program.statements[0] else {
+        panic!("expected unset statement");
+    };
+    assert_eq!(targets.len(), 2);
+    assert!(matches!(
+        &targets[0],
+        UnsetTarget::DynamicArrayDim {
+            name,
+            dimensions,
+            ..
+        } if dimensions.len() == 1
+            && matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+            && matches!(&dimensions[0], Expr::String(value, _) if value == "key")
+    ));
+    assert!(matches!(
+        &targets[1],
+        UnsetTarget::DynamicArrayDim {
+            name,
+            dimensions,
+            ..
+        } if dimensions.len() == 2
+            && matches!(name.as_ref(), Expr::DynamicVariable { .. })
+    ));
+}
+
+#[test]
 fn compile_dynamic_variable_reads_and_assignments_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-variable");
     fs::create_dir_all(&root).unwrap();
@@ -15799,6 +15829,53 @@ echo $ordered[\"key\"], \"\\n\";\n",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dynamic_variable_name(&runtime"));
     assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, ptn_tmp_"));
+}
+
+#[test]
+fn compile_dynamic_variable_array_dimension_unsets_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable-array-dim-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-array-dim-unset.php");
+    let output = root.join("dynamic-variable-array-dim-unset-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function mark($value) { echo $value, \"\\n\"; return $value; }\n\
+$name = \"items\";\n\
+$items = [\"keep\" => \"yes\", \"drop\" => \"gone\", \"nested\" => [\"x\" => 1, \"gone\" => 2]];\n\
+unset(${$name}[\"drop\"], ${$name}[\"nested\"][\"gone\"]);\n\
+var_dump(array_key_exists(\"drop\", $items), array_key_exists(\"gone\", $items[\"nested\"]), $items[\"keep\"], $items[\"nested\"][\"x\"]);\n\
+$textName = \"text\";\n\
+$text = \"abc\";\n\
+try { unset(${$textName}[1]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$ordered = [\"key\" => \"value\"];\n\
+unset(${mark(\"ordered\")}[mark(\"key\")]);\n\
+var_dump(array_key_exists(\"key\", $ordered));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(3) \"yes\"\n",
+            "int(1)\n",
+            "Cannot unset string offsets\n",
+            "ordered\n",
+            "key\n",
+            "bool(false)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_variable_name(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_path_unset(&runtime, ptn_tmp_"));
 }
 
 #[test]

@@ -134,8 +134,19 @@ impl IncludeCollector {
             }
             Statement::Unset { targets, .. } => {
                 for target in targets {
-                    if let UnsetTarget::ArrayDim(target) = target {
-                        self.collect_array_dim_target(target, source_file, source_dir)?;
+                    match target {
+                        UnsetTarget::ArrayDim(target) => {
+                            self.collect_array_dim_target(target, source_file, source_dir)?;
+                        }
+                        UnsetTarget::DynamicArrayDim {
+                            name, dimensions, ..
+                        } => {
+                            self.collect_expr(name, source_file, source_dir)?;
+                            for dimension in dimensions {
+                                self.collect_expr(dimension, source_file, source_dir)?;
+                            }
+                        }
+                        UnsetTarget::Variable { .. } => {}
                     }
                 }
                 Ok(())

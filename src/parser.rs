@@ -1466,16 +1466,7 @@ impl Parser {
         let target = self.parse_expr()?;
         match target {
             Expr::Variable(name, span) => Ok(UnsetTarget::Variable { name, span }),
-            Expr::ArrayAccess { .. } => {
-                let target = array_dim_target_from_expr(target)?;
-                if target.dimensions.iter().any(Option::is_none) {
-                    return Err(Diagnostic::new(
-                        "append array access is unsupported in unset targets",
-                        Some(target.span),
-                    ));
-                }
-                Ok(UnsetTarget::ArrayDim(target))
-            }
+            Expr::ArrayAccess { .. } => unset_array_dim_target_from_expr(target),
             _ => Err(Diagnostic::new(
                 "unsupported unset target",
                 Some(target.span()),
@@ -4116,6 +4107,51 @@ fn array_dim_target_from_expr(expr: Expr) -> Result<ArrayDimTarget> {
                 dimensions.reverse();
                 return Ok(ArrayDimTarget {
                     array,
+                    dimensions,
+                    span: combine_spans(variable_span, span),
+                });
+            }
+            _ => {
+                return Err(Diagnostic::new(
+                    "unsupported array dimension target",
+                    Some(current.span()),
+                ));
+            }
+        }
+    }
+}
+
+fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
+    let span = expr.span();
+    let mut dimensions = Vec::new();
+    let mut current = expr;
+    loop {
+        match current {
+            Expr::ArrayAccess { array, index, .. } => {
+                let Some(index) = index else {
+                    return Err(Diagnostic::new(
+                        "append array access is unsupported in unset targets",
+                        Some(span),
+                    ));
+                };
+                dimensions.push(*index);
+                current = *array;
+            }
+            Expr::Variable(array, variable_span) => {
+                dimensions.reverse();
+                return Ok(UnsetTarget::ArrayDim(ArrayDimTarget {
+                    array,
+                    dimensions: dimensions.into_iter().map(Some).collect(),
+                    span: combine_spans(variable_span, span),
+                }));
+            }
+            Expr::DynamicVariable {
+                name,
+                span: variable_span,
+            } => {
+                dimensions.reverse();
+                return Ok(UnsetTarget::DynamicArrayDim {
+                    name,
                     dimensions,
                     span: combine_spans(variable_span, span),
                 });

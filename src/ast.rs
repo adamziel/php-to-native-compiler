@@ -333,7 +333,15 @@ pub enum IncDecTarget {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnsetTarget {
-    Variable { name: String, span: SourceSpan },
+    Variable {
+        name: String,
+        span: SourceSpan,
+    },
+    DynamicArrayDim {
+        name: Box<Expr>,
+        dimensions: Vec<Expr>,
+        span: SourceSpan,
+    },
     ArrayDim(ArrayDimTarget),
 }
 

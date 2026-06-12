@@ -1428,6 +1428,29 @@ fn emit_instruction(
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
         }
+        Instruction::UnsetDynamicArrayDim {
+            name,
+            dimensions,
+            line,
+        } => {
+            let name_temp = values.emit_dynamic_variable_name(out, name, *line);
+            let path = emit_array_unset_path_segments(out, values, dimensions);
+            out.push_str("    ptn_runtime_array_path_unset(&runtime, ");
+            out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    free(");
+            out.push_str(&name_temp);
+            out.push_str(");\n");
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+        }
         Instruction::InternalCall {
             name,
             arguments,
@@ -2155,6 +2178,14 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
             }
         }
+        Instruction::UnsetDynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+            for dimension in dimensions {
+                collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+            }
+        }
         Instruction::InternalCall { arguments, .. } => {
             for argument in arguments {
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
@@ -2535,6 +2566,14 @@ fn collect_instruction_runtime_requirements(
         }
         Instruction::UnsetVariable { .. } => {}
         Instruction::UnsetArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                collect_value_runtime_requirements(dimension, functions, requirements);
+            }
+        }
+        Instruction::UnsetDynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            collect_value_runtime_requirements(name, functions, requirements);
             for dimension in dimensions {
                 collect_value_runtime_requirements(dimension, functions, requirements);
             }
