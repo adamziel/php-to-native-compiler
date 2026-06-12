@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T07:39Z
-Measured: `ptn-9b9n` rebased after `origin/master` `e6e175b45`.
+Refresh: 2026-06-12T08:05Z
+Measured: `ptn-sct3` rebased after `origin/master` `04cc2abbf`.
 
 Recent RC slices cover property/static-property inc/dec
 statements/expressions, scalar/string inc/dec value semantics, dynamic-variable
@@ -30,11 +30,11 @@ and strict value filtering, exact `intdiv()` exceptions, and ASCII
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 524 | 524 | 0 |
+| Native/compiler Rust suite | 525 | 525 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 200 | 200 | 0 |
+| PHPT bounded manifest | 204 | 204 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
-| PHPT ext/standard rows | 77 | 77 | 0 |
+| PHPT ext/standard rows | 81 | 81 | 0 |
 | PHPT tests/basic+func+lang | 45 | 45 | 0 |
 | PHPT other rows | 2 | 2 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
@@ -63,15 +63,16 @@ array/string-offset writes and unsets.
 
 ## Remaining Bounded Failures
 
-- None in the current 200-row bounded manifest.
+- None in the current 204-row bounded manifest.
 
 ## Verification
 
 Verification: `ptn-vc6f` passed fmt, build, focused ASCII case coverage, and
 `cargo test` with native/compiler 523/523 plus COW/doc-tests. `ptn-9b9n` adds
-focused `array_keys()` native/parser coverage; final gates are fmt, build,
-focused coverage, and `cargo test` with native/compiler 524/524 plus
-COW/doc-tests.
+focused `array_keys()` native/parser coverage. `ptn-sct3` keeps the adjacent
+ordered-array `array_keys()` reducer/filter edge coverage. Final gates are fmt,
+build, focused coverage, exact `array_keys` PHPT rows 4/4, and `cargo test`
+with native/compiler 525/525 plus COW/doc-tests.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

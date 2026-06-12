@@ -1268,7 +1268,7 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         "Cannot redeclare function array_key_exists()"
     );
 
-    let error = parser::parse("<?php function array_keys($array) { return []; }").unwrap_err();
+    let error = parser::parse("<?php function Array_Keys($array) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_keys()");
 
     let error =
@@ -11489,6 +11489,80 @@ var_dump(function_exists(\"array_reverse\"), function_exists(\"ARRAY_REVERSE\"))
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_reverse"));
     assert!(c_source.contains("ptn_array_reindexing_internal_value"));
+}
+
+#[test]
+fn compile_array_keys_filter_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-array-keys-filter-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-keys-filter-edges.php");
+    let output = root.join("array-keys-filter-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"a\" => 1, \"b\" => \"1\", 4 => false, \"05\" => null, 5 => [1], \"x\" => 1];\n\
+var_dump(array_keys($items));\n\
+var_dump(array_keys($items, 1));\n\
+var_dump(array_keys($items, \"1\", true));\n\
+var_dump(array_keys($items, null));\n\
+var_dump(array_keys($items, [1], true));\n\
+var_dump(function_exists(\"array_keys\"), function_exists(\"ARRAY_KEYS\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(6) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  int(4)\n",
+            "  [3]=>\n",
+            "  string(2) \"05\"\n",
+            "  [4]=>\n",
+            "  int(5)\n",
+            "  [5]=>\n",
+            "  string(1) \"x\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  string(1) \"x\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(1) \"b\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(4)\n",
+            "  [1]=>\n",
+            "  string(2) \"05\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(5)\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_keys"));
+    assert!(c_source.contains("ptn_compare_identical"));
+    assert!(c_source.contains("ptn_compare_equal"));
 }
 
 #[test]

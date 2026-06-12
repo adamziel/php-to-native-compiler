@@ -104,6 +104,10 @@ ext/standard/tests/array/array_flip_basic.phpt
 ext/standard/tests/array/array_key_exists.phpt
 ext/standard/tests/array/array_key_exists_basic.phpt
 ext/standard/tests/array/array_key_exists_variation1.phpt
+ext/standard/tests/array/array_keys_basic.phpt
+ext/standard/tests/array/array_keys_variation_002.phpt
+ext/standard/tests/array/array_keys_variation_003.phpt
+ext/standard/tests/array/array_keys_variation_004.phpt
 ext/standard/tests/directory/directory_constants.phpt
 ext/standard/tests/general_functions/002.phpt
 ext/standard/tests/general_functions/006.phpt
