@@ -12,7 +12,7 @@ resolved_manifest="$log_dir/manifest-$stamp.txt"
 
 if [[ "$manifest" == "-" ]]; then
   manifest_input="/dev/stdin"
-elif [[ -r "$manifest" ]]; then
+elif [[ -r "$manifest" && ! -d "$manifest" ]]; then
   manifest_input="$manifest"
 else
   echo "manifest not readable: $manifest" >&2

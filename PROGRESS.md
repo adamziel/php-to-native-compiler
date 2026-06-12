@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T14:44Z
-Measured: `ptn-0o0i` rebased after `origin/master` `2c4951b7`.
+Refresh: 2026-06-12T14:49Z
+Measured: `ptn-fqj1` rebased after `origin/master` `8e69762c8`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
 array/string-offset writes and unsets, array/append compound assignments,
@@ -29,7 +29,7 @@ PHPT rows `ns_001`, `ns_002`, `ns_003`, `ns_014`, foreach destructuring paths,
 include PHPT rows, `ext/standard/tests/strings/str_pad`,
 `ext/standard/tests/strings/chunk_split_variation7`, ReflectionFunction names,
 namespace/short-name probes, internal/user flags, parameter counts, variadic
-status, and manifest tooling that accepts `-` stdin plus readable
+status, and manifest tooling that accepts `-` stdin plus readable fd-backed
 process-substitution inputs.
 
 ## Dashboard
