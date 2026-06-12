@@ -1,0 +1,2 @@
+tests/lang/include_variation1.phpt
+Zend/tests/constants/dir-constant-includes.phpt

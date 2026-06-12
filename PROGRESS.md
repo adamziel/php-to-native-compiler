@@ -1,34 +1,34 @@
 # PTN Progress
 
-Refresh: 2026-06-12T12:31Z
-Measured: `ptn-upc8` rebased after `origin/master` `a2a6d502a`.
+Refresh: 2026-06-12T12:44Z
+Measured: `ptn-zzf8` rebased after `origin/master` `df8d783d7`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
 array/string-offset writes and unsets, array/append compound assignments,
 bounded private properties, object `var_export()`, `get_class()`, quiet
-property/static probes, direct array mutators including
-`sort()`/`asort()`/`arsort()`/`ksort()`/`krsort()`/`rsort()`/`natsort()`/
-`natcasesort()`, explicit regular sort flags, set operations,
-`array_udiff*()`, exact string/lang rows, highlight output paths,
-`join()`/`implode()`, `sprintf()`, `array_product()`, key helpers,
-`array_search()`, `array_slice()`, `array_pad()`, catchable `intdiv()`,
-ASCII string internals through case and trim reducers, `ceil()`/`floor()`
-numeric diagnostics, `is_countable()`, unbracketed namespace/name resolution,
-and foreach list destructuring with reference elements.
+property/static probes, direct array mutators including the sort family,
+explicit regular sort flags, set operations, `array_udiff*()`, exact
+string/lang rows, highlight output paths, `join()`/`implode()`, `sprintf()`,
+`array_product()`, key helpers, `array_search()`, `array_slice()`,
+`array_pad()`, catchable `intdiv()`, ASCII case/trim reducers,
+`ceil()`/`floor()` diagnostics, `is_countable()`, unbracketed namespaces,
+foreach list destructuring with reference elements, and bounded dynamic
+include/require path dispatch.
 
 Recent movers include dynamic-root offset writes/unsets, property/static quiet
 probes and inc/dec, direct sort-family mutators and flag diagnostics, array
-key/search/slice/pad helpers, catchable `intdiv()`, ASCII case and trim reducers,
-`ceil()`/`floor()` `TypeError` parity, `is_countable()`, namespace PHPT rows
-`ns_001`, `ns_002`, `ns_003`, `ns_014`, and foreach destructuring lowered
-through reusable list-assignment/reference paths.
+key/search/slice/pad helpers, catchable `intdiv()`, ASCII case and trim
+reducers, `ceil()`/`floor()` `TypeError` parity, `is_countable()`, namespace
+PHPT rows `ns_001`, `ns_002`, `ns_003`, `ns_014`, foreach destructuring via
+reusable list-assignment/reference paths, and include PHPT rows
+`tests/lang/include_variation1` plus `Zend/tests/constants/dir-constant-includes`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 545 | 545 | 0 |
+| Native/compiler Rust suite | 546 | 546 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 214 | 214 | 0 |
 | PHPT Zend rows | 80 | 80 | 0 |
@@ -38,21 +38,24 @@ through reusable list-assignment/reference paths.
 | PHPT COW manifest | 29 | 29 | 0 |
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT callback manifest | 2 | 2 | 0 |
+| PHPT include manifest | 2 | 2 | 0 |
 
 ## RC Surface
 
 Parser/IR/C backend, boxed values, variables/constants, strings, scalar
 operators, ternary expressions, ordered arrays, `foreach`, branch/loop/switch,
-compile-time includes, selected internals, COW/reference slices, user
-functions, call-frame introspection, scalar type hints, bounded closures,
-`stdClass`, public class/object shells, declared properties, quiet probes,
-metadata intrinsics, `is_callable()`, `is_countable()`, assertions,
-interpolation, unbracketed namespaces, simple imports, streams, `pow()`,
-`array_merge()`, `array_pad()`, `array_slice()`, `strrev()`, first-byte case
-helpers, trim-family internals, `array_search()`, `call_user_func_array()`,
-highlight output paths, `var_export()`, direct array mutators including
-`natcasesort()`, explicit regular sort flags, set operations, inc/dec, foreach
-destructuring, and dynamic-variable array/string-offset writes.
+compile-time includes, bounded dynamic include/require path dispatch, selected
+internals, COW/reference slices, user functions, call-frame introspection,
+scalar type hints, bounded closures, `stdClass`, public class/object shells,
+declared properties, quiet probes, metadata intrinsics, `is_callable()`,
+`is_countable()`, assertions, interpolation, unbracketed namespaces, simple
+imports, streams, `pow()`, `array_merge()`, `array_pad()`, `array_slice()`,
+`strrev()`, first-byte case helpers, trim-family internals, `array_search()`,
+`call_user_func_array()`, highlight output paths, `var_export()`, direct array
+mutators including `natcasesort()`, explicit regular sort flags, set
+operations, inc/dec, foreach destructuring, dynamic-variable
+array/string-offset writes, and include helpers sharing caller file scope and
+return values.
 
 ## Remaining Bounded Failures
 
@@ -63,14 +66,14 @@ destructuring, and dynamic-variable array/string-offset writes.
 Verification: recent slices added `array_search()`, `natcasesort()`,
 `ceil()`/`floor()` diagnostics, `is_countable()`, `ucfirst()`, `lcfirst()`,
 `array_pad()`, `array_slice()`, explicit regular sort flags, trim-family byte
-charlists, and namespace parser/resolver coverage with focused namespace PHPT
-rows 4/4. `ptn-upc8` adds foreach list destructuring and reference-element
-coverage in native tests and the post-merge COW gate.
+charlists, namespace parser/resolver coverage with focused namespace PHPT rows
+4/4, foreach list destructuring/reference-element coverage, and include PHPT
+manifest coverage 2/2.
 
 Follow-ups remain visibility/inheritance metadata, typed/promoted properties,
 interfaces/traits, bracketed/grouped namespace forms, namespace fallback
 parity, reflection, remaining magic methods, first-class callables, destructors,
-dynamic includes, unsupported internals, scalar offset-lvalues, assertion
-configuration, binary-safe array keys, inc/dec Unicode/reference/COW/
-diagnostic edges, object metadata/IDs/visibility edges, and broader
-foreach/object/reference targets.
+fully dynamic includes outside bounded path sets, `include_once`/`require_once`,
+unsupported internals, scalar offset-lvalues, assertion configuration,
+binary-safe array keys, inc/dec Unicode/reference/COW/diagnostic edges, object
+metadata/IDs/visibility edges, and broader foreach/object/reference targets.

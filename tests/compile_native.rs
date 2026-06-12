@@ -14503,6 +14503,45 @@ fn compile_include_return_value_and_output_to_native_binary() {
 }
 
 #[test]
+fn compile_bounded_dynamic_include_paths_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-include-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let base = root.join("base.php");
+    let alt = root.join("alt.php");
+    let output = root.join("dynamic-include-paths-bin");
+    fs::write(
+        &base,
+        "<?php echo \"base:$outer\\n\"; $seen = \"base\"; return \"B\";",
+    )
+    .unwrap();
+    fs::write(
+        &alt,
+        "<?php echo \"alt:$outer\\n\"; $seen = \"alt\"; return \"A\";",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php $outer = \"scope\"; $use_alt = false; $value = include (__DIR__ . ($use_alt ? \"/alt.php\" : \"/base.php\")); echo \"value=$value seen=$seen\\n\"; $use_alt = true; $value = require (__DIR__ . ($use_alt ? \"/alt.php\" : \"/base.php\")); echo \"value=$value seen=$seen\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "base:scope\nvalue=B seen=base\nalt:scope\nvalue=A seen=alt\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_resolve_path"));
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("ptn_include_file_1(&runtime)"));
+}
+
+#[test]
 fn compile_expression_statements_evaluate_and_discard_to_native_binary() {
     let root = temp_dir("ptn-native-expression-statements");
     fs::create_dir_all(&root).unwrap();

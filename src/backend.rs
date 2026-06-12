@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::ast::AssignmentOp;
+use crate::ast::{AssignmentOp, IncludeKind};
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
@@ -32,6 +32,9 @@ pub fn emit_c(module: &Module) -> String {
     emit_private_property_metadata_prototype(&mut out);
     emit_runtime(&mut out, &runtime_requirements);
     emit_include_prototypes(&mut out, &module.includes);
+    if !module.includes.is_empty() {
+        emit_include_runtime_helpers(&mut out);
+    }
     emit_user_function_prototypes(
         &mut out,
         &module.functions,
@@ -49,6 +52,7 @@ pub fn emit_c(module: &Module) -> String {
         &mut out,
         &module.classes,
         &module.functions,
+        &module.includes,
         &module.source_file,
         &module.source_dir,
     );
@@ -81,6 +85,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_dir,
         &module.functions,
         &module.classes,
+        &module.includes,
     );
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
     emit_static_property_initializers(&mut out, &mut values, &module.classes);
@@ -114,6 +119,82 @@ fn emit_include_prototypes(out: &mut String, includes: &[IncludeFile]) {
         out.push_str(&include_c_name(index));
         out.push_str("(PtnRuntime *include_runtime);\n");
     }
+}
+
+fn emit_include_runtime_helpers(out: &mut String) {
+    out.push_str("\nstatic PTN_UNUSED int ptn_include_path_is_absolute(PtnStringOperand path) {\n");
+    out.push_str("#if defined(_WIN32)\n");
+    out.push_str(
+        "    return path.len > 0 && (path.data[0] == '/' || path.data[0] == '\\\\' || (path.len >= 3 && isalpha((unsigned char)path.data[0]) && path.data[1] == ':' && (path.data[2] == '/' || path.data[2] == '\\\\')));\n",
+    );
+    out.push_str("#else\n");
+    out.push_str("    return path.len > 0 && path.data[0] == '/';\n");
+    out.push_str("#endif\n");
+    out.push_str("}\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED char *ptn_include_resolve_path(const char *source_dir, PtnStringOperand path) {\n",
+    );
+    out.push_str("    if (memchr(path.data, '\\0', path.len) != NULL) {\n");
+    out.push_str("        return NULL;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_include_path_is_absolute(path) || source_dir == NULL || source_dir[0] == '\\0') {\n");
+    out.push_str("        return ptn_duplicate_string_len(path.data, path.len);\n");
+    out.push_str("    }\n");
+    out.push_str("    size_t dir_len = strlen(source_dir);\n");
+    out.push_str("    int needs_separator = dir_len > 0 && source_dir[dir_len - 1] != '/';\n");
+    out.push_str("    size_t len = dir_len + (needs_separator ? 1 : 0) + path.len;\n");
+    out.push_str("    char *resolved = malloc(len + 1);\n");
+    out.push_str("    if (resolved == NULL) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    memcpy(resolved, source_dir, dir_len);\n");
+    out.push_str("    size_t offset = dir_len;\n");
+    out.push_str("    if (needs_separator) {\n");
+    out.push_str("        resolved[offset++] = '/';\n");
+    out.push_str("    }\n");
+    out.push_str("    memcpy(resolved + offset, path.data, path.len);\n");
+    out.push_str("    resolved[len] = '\\0';\n");
+    out.push_str("    return resolved;\n");
+    out.push_str("}\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_compiled_include_path_error(PtnRuntime *runtime, const char *kind, size_t line, int required) {\n",
+    );
+    out.push_str("    char message[96];\n");
+    out.push_str("    int written = snprintf(message, sizeof(message), \"%s(): Filename contains null byte\", kind);\n");
+    out.push_str("    if (written < 0 || (size_t)written >= sizeof(message)) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_emit_warning(&runtime->diagnostics, message, line);\n");
+    out.push_str("    if (required) {\n");
+    out.push_str("        ptn_emit_type_error(&runtime->diagnostics, \"Failed opening required compiled include\");\n");
+    out.push_str("        exit(255);\n");
+    out.push_str("    }\n");
+    out.push_str("    return ptn_bool(0);\n");
+    out.push_str("}\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_compiled_include_failure(PtnRuntime *runtime, const char *kind, const char *path, size_t line, int required) {\n",
+    );
+    out.push_str("    int needed = snprintf(NULL, 0, \"%s(%s): compiled include target is not available\", kind, path);\n");
+    out.push_str("    if (needed < 0) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    char *message = malloc((size_t)needed + 1);\n");
+    out.push_str("    if (message == NULL) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    int written = snprintf(message, (size_t)needed + 1, \"%s(%s): compiled include target is not available\", kind, path);\n");
+    out.push_str("    if (written < 0 || written != needed) {\n");
+    out.push_str("        free(message);\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_emit_warning(&runtime->diagnostics, message, line);\n");
+    out.push_str("    free(message);\n");
+    out.push_str("    if (required) {\n");
+    out.push_str("        ptn_emit_type_error(&runtime->diagnostics, \"Failed opening required compiled include\");\n");
+    out.push_str("        exit(255);\n");
+    out.push_str("    }\n");
+    out.push_str("    return ptn_bool(0);\n");
+    out.push_str("}\n");
 }
 
 #[derive(Default)]
@@ -216,6 +297,7 @@ fn emit_user_functions(
     out: &mut String,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
+    includes: &[IncludeFile],
     source_file: &str,
     source_dir: &str,
 ) {
@@ -279,8 +361,14 @@ fn emit_user_functions(
             out.push_str("    ptn_runtime_import_closure_captures(&runtime, receiver);\n");
         }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
-        let mut values =
-            ValueEmitter::new_for_function(source_file, source_dir, functions, classes, function);
+        let mut values = ValueEmitter::new_for_function(
+            source_file,
+            source_dir,
+            functions,
+            classes,
+            includes,
+            function,
+        );
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             if parameter.is_variadic {
                 emit_variadic_parameter_binding(out, function, parameter_index, parameter);
@@ -629,6 +717,7 @@ fn emit_include_helpers(
             &include.source_dir,
             functions,
             classes,
+            includes,
         );
         let mut control_targets = Vec::new();
         let return_label = values.next_label("ptn_include_return");
@@ -1999,6 +2088,17 @@ fn include_c_name(index: usize) -> String {
     format!("ptn_include_file_{index}")
 }
 
+fn include_kind_text(kind: IncludeKind) -> &'static str {
+    match kind {
+        IncludeKind::Include => "include",
+        IncludeKind::Require => "require",
+    }
+}
+
+fn include_kind_is_required(kind: IncludeKind) -> bool {
+    matches!(kind, IncludeKind::Require)
+}
+
 struct ControlTarget {
     break_label: String,
     continue_label: String,
@@ -2433,6 +2533,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::Print { expression } => {
             collect_value_legacy_dollar_brace_deprecations(expression, deprecations);
         }
+        ValueExpr::Include { path, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(path, deprecations);
+        }
         ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
             for argument in arguments {
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
@@ -2490,7 +2593,6 @@ fn collect_value_legacy_dollar_brace_deprecations(
         | ValueExpr::Load { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. }
-        | ValueExpr::Include { .. }
         | ValueExpr::StaticPropertyFetch { .. } => {}
     }
 }
@@ -2844,7 +2946,9 @@ fn collect_value_runtime_requirements(
         ValueExpr::Print { expression } => {
             collect_value_runtime_requirements(expression, functions, requirements);
         }
-        ValueExpr::Include { .. } => {}
+        ValueExpr::Include { path, .. } => {
+            collect_value_runtime_requirements(path, functions, requirements);
+        }
         ValueExpr::InternalCall {
             name,
             arguments,
@@ -3540,6 +3644,7 @@ struct ValueEmitter {
     current_function_return_by_ref: bool,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
+    includes: Vec<IncludeFile>,
 }
 
 struct ConcatOperand<'a> {
@@ -3698,7 +3803,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
             .any(|target| value_mentions_variable(target, name)),
         ValueExpr::Empty { target } => value_mentions_variable(target, name),
         ValueExpr::Print { expression } => value_mentions_variable(expression, name),
-        ValueExpr::Include { .. } => false,
+        ValueExpr::Include { path, .. } => value_mentions_variable(path, name),
         ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
             arguments
                 .iter()
@@ -3759,12 +3864,14 @@ impl ValueEmitter {
         source_dir: &str,
         functions: &[FunctionDecl],
         classes: &[ClassDecl],
+        includes: &[IncludeFile],
     ) -> Self {
         Self::new_with_scope(
             source_file,
             source_dir,
             functions,
             classes,
+            includes,
             None,
             None,
             None,
@@ -3777,6 +3884,7 @@ impl ValueEmitter {
         source_dir: &str,
         functions: &[FunctionDecl],
         classes: &[ClassDecl],
+        includes: &[IncludeFile],
         function: &FunctionDecl,
     ) -> Self {
         let function_magic_name = function
@@ -3788,6 +3896,7 @@ impl ValueEmitter {
             source_dir,
             functions,
             classes,
+            includes,
             Some(function_magic_name),
             Some(function.name.as_str()),
             function.class_name.as_deref(),
@@ -3800,6 +3909,7 @@ impl ValueEmitter {
         source_dir: &str,
         functions: &[FunctionDecl],
         classes: &[ClassDecl],
+        includes: &[IncludeFile],
         current_function_name: Option<&str>,
         current_method_name: Option<&str>,
         current_class_name: Option<&str>,
@@ -3816,6 +3926,7 @@ impl ValueEmitter {
             current_function_return_by_ref,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
+            includes: includes.to_vec(),
         }
     }
 
@@ -4976,15 +5087,12 @@ impl ValueEmitter {
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
             ValueExpr::Empty { target } => self.emit_empty(out, target),
             ValueExpr::Print { expression } => self.emit_print(out, expression),
-            ValueExpr::Include { index, .. } => {
-                let result_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ");
-                out.push_str(&include_c_name(*index));
-                out.push_str("(&runtime);\n");
-                result_temp
-            }
+            ValueExpr::Include {
+                kind,
+                path,
+                candidates,
+                line,
+            } => self.emit_include(out, *kind, path, candidates, *line),
             ValueExpr::Load { name, line } => format!(
                 "ptn_runtime_read_variable(&runtime, \"{}\", \"{}\", {})",
                 c_string(name),
@@ -5073,6 +5181,116 @@ impl ValueEmitter {
                 argument_names,
                 line,
             } => self.emit_method_call(out, receiver, name, arguments, argument_names, *line),
+        }
+    }
+
+    fn emit_include(
+        &mut self,
+        out: &mut String,
+        kind: IncludeKind,
+        path: &ValueExpr,
+        candidates: &[usize],
+        line: usize,
+    ) -> String {
+        let path_temp = self.emit_materialized_value(out, path);
+        let operand_temp = self.next_temp();
+        out.push_str("    PtnStringOperand ");
+        out.push_str(&operand_temp);
+        out.push_str(" = ptn_value_to_string_operand_with_runtime(&runtime, ");
+        out.push_str(&path_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        let resolved_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&resolved_temp);
+        out.push_str(" = ptn_include_resolve_path(\"");
+        out.push_str(&c_string(&self.source_dir));
+        out.push_str("\", ");
+        out.push_str(&operand_temp);
+        out.push_str(");\n");
+        out.push_str("    ptn_string_operand_free(");
+        out.push_str(&operand_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &path_temp);
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(0);\n");
+        out.push_str("    if (");
+        out.push_str(&resolved_temp);
+        out.push_str(" == NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_compiled_include_path_error(&runtime, \"");
+        out.push_str(include_kind_text(kind));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(", ");
+        out.push_str(if include_kind_is_required(kind) {
+            "1"
+        } else {
+            "0"
+        });
+        out.push_str(");\n");
+        for candidate in candidates {
+            out.push_str("    } else if (");
+            self.emit_include_candidate_condition(out, &resolved_temp, *candidate);
+            out.push_str(") {\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(&include_c_name(*candidate));
+            out.push_str("(&runtime);\n");
+        }
+        out.push_str("    } else {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_compiled_include_failure(&runtime, \"");
+        out.push_str(include_kind_text(kind));
+        out.push_str("\", ");
+        out.push_str(&resolved_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", ");
+        out.push_str(if include_kind_is_required(kind) {
+            "1"
+        } else {
+            "0"
+        });
+        out.push_str(");\n");
+        out.push_str("    }\n");
+        out.push_str("    if (");
+        out.push_str(&resolved_temp);
+        out.push_str(" != NULL) {\n");
+        out.push_str("        free(");
+        out.push_str(&resolved_temp);
+        out.push_str(");\n");
+        out.push_str("    }\n");
+        result_temp
+    }
+
+    fn emit_include_candidate_condition(
+        &self,
+        out: &mut String,
+        resolved_temp: &str,
+        candidate: usize,
+    ) {
+        let include = &self.includes[candidate];
+        if include.path_aliases.is_empty() {
+            out.push('0');
+            return;
+        }
+        for (index, alias) in include.path_aliases.iter().enumerate() {
+            if index > 0 {
+                out.push_str(" || ");
+            }
+            out.push_str("strcmp(");
+            out.push_str(resolved_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(alias));
+            out.push_str("\") == 0");
         }
     }
 

@@ -7,7 +7,7 @@ use crate::ast::{
     CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
     ClosureUseCapture as AstClosureUseCapture, Expr, FunctionParameter as AstFunctionParameter,
     IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
-    ListAssignmentElement as AstListAssignmentElement,
+    IncludeKind as AstIncludeKind, ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
     Program, PropertyVisibility as AstPropertyVisibility, ReferenceTarget as AstReferenceTarget,
@@ -30,6 +30,7 @@ pub struct Module {
 pub struct IncludeFile {
     pub source_file: String,
     pub source_dir: String,
+    pub path_aliases: Vec<String>,
     pub instructions: Vec<Instruction>,
 }
 
@@ -37,10 +38,11 @@ pub struct IncludeFile {
 pub struct IncludeSource {
     pub source_file: String,
     pub source_dir: String,
+    pub path_aliases: Vec<String>,
     pub program: Program,
 }
 
-pub type IncludeResolutionMap = HashMap<(String, usize, usize), usize>;
+pub type IncludeResolutionMap = HashMap<(String, usize, usize), Vec<usize>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDecl {
@@ -292,7 +294,9 @@ pub enum ValueExpr {
         expression: Box<ValueExpr>,
     },
     Include {
-        index: usize,
+        kind: AstIncludeKind,
+        path: Box<ValueExpr>,
+        candidates: Vec<usize>,
         line: usize,
     },
     InternalCall {
@@ -646,6 +650,7 @@ impl<'a> LoweringContext<'a> {
         IncludeFile {
             source_file: include.source_file.clone(),
             source_dir: include.source_dir.clone(),
+            path_aliases: include.path_aliases.clone(),
             instructions,
         }
     }
@@ -1463,8 +1468,10 @@ impl<'a> LoweringContext<'a> {
             Expr::Print { expression, .. } => ValueExpr::Print {
                 expression: Box::new(self.lower_expr(expression)),
             },
-            Expr::Include { span, .. } => ValueExpr::Include {
-                index: self.include_index(*span),
+            Expr::Include { kind, path, span } => ValueExpr::Include {
+                kind: *kind,
+                path: Box::new(self.lower_expr(path)),
+                candidates: self.include_candidates(*span),
                 line: span.line,
             },
             Expr::Call {
@@ -1582,10 +1589,10 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
-    fn include_index(&self, span: crate::diagnostic::SourceSpan) -> usize {
+    fn include_candidates(&self, span: crate::diagnostic::SourceSpan) -> Vec<usize> {
         self.include_resolutions
             .get(&(self.source_file.clone(), span.byte_start, span.byte_end))
-            .copied()
+            .cloned()
             .expect("include expressions require include-aware lowering")
     }
 

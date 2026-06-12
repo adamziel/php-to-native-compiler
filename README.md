@@ -16,6 +16,9 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
 - Top-level functions and declared methods include magic constants, call-frame
   introspection, scalar type hints, array defaults, by-reference returns, typed
   coercion, and constructor dispatch/metadata intrinsics.
+- Includes share caller file scope and return values; bounded dynamic
+  include/require path expressions dispatch to compiled helpers when all
+  candidate string paths are statically enumerable.
 - Unbracketed namespaces resolve current top-level functions/constants/classes,
   qualified names, `__NAMESPACE__`, and simple class/function/const imports.
 - Full and short ternary expressions lower through the boxed value path with
@@ -82,6 +85,7 @@ tools/run-native-smoke-matrix.sh
 tools/run-post-merge-cow-gate.sh
 cargo build --bin phpc
 tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
+tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
 ```
 
 ## RC Demo

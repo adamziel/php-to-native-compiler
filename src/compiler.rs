@@ -12,6 +12,8 @@ use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{lower_with_source_and_includes, IncludeResolutionMap, IncludeSource};
 use crate::parser::parse;
 
+const MAX_BOUNDED_INCLUDE_CANDIDATES: usize = 32;
+
 #[derive(Debug, Clone)]
 pub struct CompileOptions {
     pub emit_c: bool,
@@ -281,10 +283,10 @@ impl IncludeCollector {
     fn collect_expr(&mut self, expr: &Expr, source_file: &str, source_dir: &str) -> Result<()> {
         match expr {
             Expr::Include { path, span, .. } => {
-                let index = self.resolve_include(path, *span, source_file, source_dir)?;
+                let candidates = self.resolve_include(path, *span, source_file, source_dir)?;
                 self.resolutions.insert(
                     (source_file.to_string(), span.byte_start, span.byte_end),
-                    index,
+                    candidates,
                 );
                 Ok(())
             }
@@ -464,14 +466,30 @@ impl IncludeCollector {
         span: crate::diagnostic::SourceSpan,
         source_file: &str,
         source_dir: &str,
-    ) -> Result<usize> {
-        let include_path = static_include_path(path, source_file, source_dir).ok_or_else(|| {
+    ) -> Result<Vec<usize>> {
+        let include_paths = bounded_include_paths(path, source_file, source_dir).ok_or_else(|| {
             Diagnostic::new(
-                "dynamic include paths are unsupported; use a compile-time string path",
+                "dynamic include paths are unsupported; use a compile-time string path or bounded conditional of compile-time string paths",
                 Some(path.span()),
             )
         })?;
-        let resolved_path = resolve_include_path(&include_path, source_dir);
+        let mut candidates = Vec::new();
+        for include_path in include_paths {
+            let index = self.resolve_include_candidate(&include_path, span, source_dir)?;
+            if !candidates.contains(&index) {
+                candidates.push(index);
+            }
+        }
+        Ok(candidates)
+    }
+
+    fn resolve_include_candidate(
+        &mut self,
+        include_path: &str,
+        span: crate::diagnostic::SourceSpan,
+        source_dir: &str,
+    ) -> Result<usize> {
+        let resolved_path = resolve_include_path(include_path, source_dir);
         let canonical_path = fs::canonicalize(&resolved_path).map_err(|error| {
             Diagnostic::new(
                 format!(
@@ -481,8 +499,10 @@ impl IncludeCollector {
                 Some(span),
             )
         })?;
-        if let Some(index) = self.by_path.get(&canonical_path) {
-            return Ok(*index);
+        let path_aliases = include_path_aliases(&resolved_path, &canonical_path);
+        if let Some(index) = self.by_path.get(&canonical_path).copied() {
+            self.add_path_aliases(index, path_aliases);
+            return Ok(index);
         }
 
         let source = fs::read_to_string(&canonical_path).map_err(|error| {
@@ -512,30 +532,76 @@ impl IncludeCollector {
         self.sources.push(IncludeSource {
             source_file: source_file.clone(),
             source_dir: source_dir.clone(),
+            path_aliases,
             program: program.clone(),
         });
         self.collect_program(&program, &source_file, &source_dir)?;
         Ok(index)
     }
+
+    fn add_path_aliases(&mut self, index: usize, aliases: Vec<String>) {
+        let source = &mut self.sources[index];
+        for alias in aliases {
+            if !source.path_aliases.contains(&alias) {
+                source.path_aliases.push(alias);
+            }
+        }
+    }
 }
 
-fn static_include_path(expr: &Expr, source_file: &str, source_dir: &str) -> Option<String> {
+fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Option<Vec<String>> {
     match expr {
-        Expr::String(value, _) => Some(value.clone()),
-        Expr::MagicConstant(MagicConstantKind::File, _) => Some(source_file.to_string()),
-        Expr::MagicConstant(MagicConstantKind::Dir, _) => Some(source_dir.to_string()),
+        Expr::String(value, _) => Some(vec![value.clone()]),
+        Expr::MagicConstant(MagicConstantKind::File, _) => Some(vec![source_file.to_string()]),
+        Expr::MagicConstant(MagicConstantKind::Dir, _) => Some(vec![source_dir.to_string()]),
         Expr::Binary {
             op: BinaryOp::Concat,
             left,
             right,
             ..
         } => {
-            let mut value = static_include_path(left, source_file, source_dir)?;
-            value.push_str(&static_include_path(right, source_file, source_dir)?);
-            Some(value)
+            let left_paths = bounded_include_paths(left, source_file, source_dir)?;
+            let right_paths = bounded_include_paths(right, source_file, source_dir)?;
+            if left_paths.len().saturating_mul(right_paths.len()) > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                return None;
+            }
+            let mut paths = Vec::new();
+            for left_path in &left_paths {
+                for right_path in &right_paths {
+                    let mut path = left_path.clone();
+                    path.push_str(right_path);
+                    push_unique_string(&mut paths, path);
+                }
+            }
+            Some(paths)
         }
-        Expr::Grouped { expr, .. } => static_include_path(expr, source_file, source_dir),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            let mut paths = Vec::new();
+            let true_expr = if_true.as_deref().unwrap_or(condition);
+            for path in bounded_include_paths(true_expr, source_file, source_dir)? {
+                push_unique_string(&mut paths, path);
+            }
+            for path in bounded_include_paths(if_false, source_file, source_dir)? {
+                push_unique_string(&mut paths, path);
+            }
+            if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                return None;
+            }
+            Some(paths)
+        }
+        Expr::Grouped { expr, .. } => bounded_include_paths(expr, source_file, source_dir),
         _ => None,
+    }
+}
+
+fn push_unique_string(strings: &mut Vec<String>, value: String) {
+    if !strings.contains(&value) {
+        strings.push(value);
     }
 }
 
@@ -546,4 +612,11 @@ fn resolve_include_path(path: &str, source_dir: &str) -> PathBuf {
     } else {
         Path::new(source_dir).join(path)
     }
+}
+
+fn include_path_aliases(resolved_path: &Path, canonical_path: &Path) -> Vec<String> {
+    let mut aliases = Vec::new();
+    push_unique_string(&mut aliases, resolved_path.to_string_lossy().into_owned());
+    push_unique_string(&mut aliases, canonical_path.to_string_lossy().into_owned());
+    aliases
 }
