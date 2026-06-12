@@ -2246,10 +2246,26 @@ fn collect_inc_dec_target_legacy_dollar_brace_deprecations(
     target: &IncDecTarget,
     deprecations: &mut Vec<LegacyDollarBraceDeprecation>,
 ) {
-    if let IncDecTarget::ArrayDim { dimensions, .. } = target {
-        for dimension in dimensions {
-            if let Some(dimension) = dimension {
-                collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+    match target {
+        IncDecTarget::Variable { .. } => {}
+        IncDecTarget::DynamicVariable { name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
+        IncDecTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+        }
+        IncDecTarget::ArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
             }
         }
     }
@@ -2683,10 +2699,26 @@ fn collect_inc_dec_target_runtime_requirements(
     functions: &[FunctionDecl],
     requirements: &mut RuntimeRequirements,
 ) {
-    if let IncDecTarget::ArrayDim { dimensions, .. } = target {
-        for dimension in dimensions {
-            if let Some(dimension) = dimension {
-                collect_value_runtime_requirements(dimension, functions, requirements);
+    match target {
+        IncDecTarget::Variable { .. } => {}
+        IncDecTarget::DynamicVariable { name, .. } => {
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
+        IncDecTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            collect_value_runtime_requirements(name, functions, requirements);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
+            }
+        }
+        IncDecTarget::ArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
             }
         }
     }
@@ -3211,6 +3243,9 @@ fn emit_increment_statement(
             emit_value_cleanup(out, "    ", &current_temp);
             emit_value_cleanup(out, "    ", &result_temp);
         }
+        IncDecTarget::DynamicVariable { .. } | IncDecTarget::DynamicArrayDim { .. } => {
+            unreachable!("parser restricts statement inc/dec targets")
+        }
         IncDecTarget::ArrayDim {
             array, dimensions, ..
         } => {
@@ -3509,6 +3544,19 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
 fn inc_dec_target_mentions_variable(target: &IncDecTarget, name: &str) -> bool {
     match target {
         IncDecTarget::Variable { name: target, .. } => target == name,
+        IncDecTarget::DynamicVariable { name: target, .. } => value_mentions_variable(target, name),
+        IncDecTarget::DynamicArrayDim {
+            name: target,
+            dimensions,
+            ..
+        } => {
+            value_mentions_variable(target, name)
+                || dimensions.iter().any(|dimension| {
+                    dimension
+                        .as_ref()
+                        .is_some_and(|dimension| value_mentions_variable(dimension, name))
+                })
+        }
         IncDecTarget::ArrayDim {
             array, dimensions, ..
         } => {
@@ -4889,6 +4937,132 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &current_temp);
+
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
+            IncDecTarget::DynamicVariable {
+                name,
+                line: target_line,
+            } => {
+                let name_temp = self.emit_dynamic_variable_name(out, name, *target_line);
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_runtime_read_variable(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(inc_dec_runtime_function(op));
+                out.push('(');
+                out.push_str(&current_temp);
+                out.push_str(");\n");
+                out.push_str("    ptn_runtime_write_variable(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &current_temp);
+
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
+            IncDecTarget::DynamicArrayDim {
+                name,
+                dimensions,
+                line: target_line,
+            } => {
+                let name_temp = self.emit_dynamic_variable_name(out, name, *target_line);
+                out.push_str("    ptn_runtime_array_warn_missing_base_for_assign_op(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let path = emit_array_path_segments(out, self, dimensions);
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(inc_dec_runtime_function(op));
+                out.push('(');
+                out.push_str(&current_temp);
+                out.push_str(");\n");
+                out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &current_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
 
                 if let Some(old_temp) = old_temp {
                     emit_value_cleanup(out, "    ", &result_temp);

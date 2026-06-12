@@ -569,6 +569,15 @@ pub enum IncDecTarget {
         name: String,
         line: usize,
     },
+    DynamicVariable {
+        name: Box<ValueExpr>,
+        line: usize,
+    },
+    DynamicArrayDim {
+        name: Box<ValueExpr>,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
     ArrayDim {
         array: String,
         dimensions: Vec<Option<ValueExpr>>,
@@ -1093,6 +1102,26 @@ impl<'a> LoweringContext<'a> {
         match target {
             AstIncDecTarget::Variable { name, span } => IncDecTarget::Variable {
                 name: name.clone(),
+                line: span.line,
+            },
+            AstIncDecTarget::DynamicVariable { name, span } => IncDecTarget::DynamicVariable {
+                name: Box::new(self.lower_expr(name)),
+                line: span.line,
+            },
+            AstIncDecTarget::DynamicArrayDim {
+                name,
+                dimensions,
+                span,
+            } => IncDecTarget::DynamicArrayDim {
+                name: Box::new(self.lower_expr(name)),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
                 line: span.line,
             },
             AstIncDecTarget::ArrayDim(target) => IncDecTarget::ArrayDim {
@@ -1814,6 +1843,8 @@ fn assertion_reference_target_text(target: &AstReferenceTarget) -> String {
 fn assertion_inc_dec_target_text(target: &AstIncDecTarget) -> String {
     match target {
         AstIncDecTarget::Variable { name, .. } => format!("${name}"),
+        AstIncDecTarget::DynamicVariable { .. } => "${...}".to_string(),
+        AstIncDecTarget::DynamicArrayDim { .. } => "${...}[...]".to_string(),
         AstIncDecTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
     }
 }

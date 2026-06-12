@@ -315,7 +315,19 @@ pub enum ReferenceTarget {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum IncDecTarget {
-    Variable { name: String, span: SourceSpan },
+    Variable {
+        name: String,
+        span: SourceSpan,
+    },
+    DynamicVariable {
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
+    DynamicArrayDim {
+        name: Box<Expr>,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     ArrayDim(ArrayDimTarget),
 }
 

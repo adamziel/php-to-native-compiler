@@ -762,6 +762,39 @@ fn parser_accepts_array_offset_increment_and_decrement_expression_targets() {
 }
 
 #[test]
+fn parser_accepts_dynamic_increment_and_decrement_expression_targets() {
+    let program = parser::parse("<?php echo ++$$name, ${$name}[$key]--;").unwrap();
+
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::IncDec {
+            target: IncDecTarget::DynamicVariable { name, .. },
+            op: IncDecOp::Increment,
+            result: IncDecResult::Pre,
+            ..
+        } if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::IncDec {
+            target:
+                IncDecTarget::DynamicArrayDim {
+                    name,
+                    dimensions,
+                    ..
+                },
+            op: IncDecOp::Decrement,
+            result: IncDecResult::Post,
+            ..
+        } if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+            && dimensions.len() == 1
+    ));
+}
+
+#[test]
 fn parser_rejects_invalid_increment_and_decrement_expression_targets() {
     let invalid_prefix = parser::parse("<?php echo ++1;").unwrap_err();
     assert!(invalid_prefix
@@ -12870,6 +12903,37 @@ fn compile_array_offset_increment_and_decrement_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "2:2\n2:3\n2\n5\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_inc_dec_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-inc-dec-expressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-inc-dec-expressions.php");
+    let output = root.join("dynamic-inc-dec-expressions-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$varName = \"counter\";\n\
+$counter = 9;\n\
+echo ++$$varName, \":\", $counter, \"\\n\";\n\
+echo ${$varName}--, \":\", $counter, \"\\n\";\n\
+$arrayName = \"items\";\n\
+$items = [\"k\" => 3];\n\
+echo ${$arrayName}[\"k\"]++, \":\", $items[\"k\"], \"\\n\";\n\
+echo --${$arrayName}[\"k\"], \":\", $items[\"k\"], \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "10:10\n10:9\n3:4\n3:3\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

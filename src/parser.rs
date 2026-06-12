@@ -1790,27 +1790,14 @@ impl Parser {
             TokenKind::MinusMinus => IncDecOp::Decrement,
             _ => return Err(Diagnostic::new("expected increment", Some(op_token.span))),
         };
-        let variable = self.advance().clone();
-        let TokenKind::Variable(name) = variable.kind else {
-            return Err(Diagnostic::new(
-                "increment/decrement expression target must be a variable",
-                Some(variable.span),
-            ));
-        };
-        let target = if matches!(self.peek().kind, TokenKind::LeftBracket) {
-            IncDecTarget::ArrayDim(self.parse_array_dim_target(name, variable.span)?)
-        } else {
-            IncDecTarget::Variable {
-                name,
-                span: variable.span,
-            }
-        };
+        let target = inc_dec_target_from_expr(self.parse_postfix_expr()?, op_token.span)?;
         reject_append_array_read_in_inc_dec_target(&target)?;
+        let target_span = inc_dec_target_span(&target);
         Ok(Expr::IncDec {
             target,
             op,
             result: IncDecResult::Pre,
-            span: combine_spans(op_token.span, variable.span),
+            span: combine_spans(op_token.span, target_span),
         })
     }
 
@@ -3382,6 +3369,20 @@ fn validate_anonymous_functions_in_inc_dec_target(
 ) -> Result<()> {
     match target {
         IncDecTarget::Variable { .. } => Ok(()),
+        IncDecTarget::DynamicVariable { name, .. } => {
+            validate_anonymous_functions_in_expr(name, functions)
+        }
+        IncDecTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            validate_anonymous_functions_in_expr(name, functions)?;
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    validate_anonymous_functions_in_expr(dimension, functions)?;
+                }
+            }
+            Ok(())
+        }
         IncDecTarget::ArrayDim(target) => {
             for dimension in &target.dimensions {
                 if let Some(dimension) = dimension {
@@ -4130,20 +4131,30 @@ fn array_dim_target_from_expr(expr: Expr) -> Result<ArrayDimTarget> {
 }
 
 fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTarget> {
-    match expr {
-        Expr::Variable(name, span) => Ok(IncDecTarget::Variable { name, span }),
-        Expr::Grouped { expr, .. } => inc_dec_target_from_expr(*expr, op_span),
-        array_expr @ Expr::ArrayAccess { .. } => Ok(IncDecTarget::ArrayDim(
-            array_dim_target_from_expr(array_expr).map_err(|_| {
-                Diagnostic::new(
-                    "increment/decrement expression target must be a variable or array offset",
-                    Some(op_span),
-                )
-            })?,
-        )),
-        other => Err(Diagnostic::new(
+    let target = assignment_target_from_expr(expr).map_err(|_| {
+        Diagnostic::new(
             "increment/decrement expression target must be a variable or array offset",
-            Some(other.span()),
+            Some(op_span),
+        )
+    })?;
+    match target {
+        AssignmentTarget::Variable { name, span } => Ok(IncDecTarget::Variable { name, span }),
+        AssignmentTarget::DynamicVariable { name, span } => {
+            Ok(IncDecTarget::DynamicVariable { name, span })
+        }
+        AssignmentTarget::ArrayDim(target) => Ok(IncDecTarget::ArrayDim(target)),
+        AssignmentTarget::DynamicArrayDim {
+            name,
+            dimensions,
+            span,
+        } => Ok(IncDecTarget::DynamicArrayDim {
+            name,
+            dimensions,
+            span,
+        }),
+        _ => Err(Diagnostic::new(
+            "increment/decrement expression target must be a variable or array offset",
+            Some(assignment_target_span(&target)),
         )),
     }
 }
@@ -4151,6 +4162,8 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
 fn inc_dec_target_span(target: &IncDecTarget) -> SourceSpan {
     match target {
         IncDecTarget::Variable { span, .. } => *span,
+        IncDecTarget::DynamicVariable { span, .. } => *span,
+        IncDecTarget::DynamicArrayDim { span, .. } => *span,
         IncDecTarget::ArrayDim(target) => target.span,
     }
 }
@@ -4577,17 +4590,34 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
 }
 
 fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<()> {
-    if let IncDecTarget::ArrayDim(target) = target {
-        for dimension in &target.dimensions {
-            if let Some(dimension) = dimension {
-                reject_append_array_read(dimension)?;
-            } else {
-                return Err(Diagnostic::new(
-                    "increment/decrement cannot use append array access",
-                    Some(target.span),
-                ));
+    match target {
+        IncDecTarget::ArrayDim(target) => {
+            for dimension in &target.dimensions {
+                if let Some(dimension) = dimension {
+                    reject_append_array_read(dimension)?;
+                } else {
+                    return Err(Diagnostic::new(
+                        "increment/decrement cannot use append array access",
+                        Some(target.span),
+                    ));
+                }
             }
         }
+        IncDecTarget::DynamicArrayDim {
+            dimensions, span, ..
+        } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    reject_append_array_read(dimension)?;
+                } else {
+                    return Err(Diagnostic::new(
+                        "increment/decrement cannot use append array access",
+                        Some(*span),
+                    ));
+                }
+            }
+        }
+        IncDecTarget::Variable { .. } | IncDecTarget::DynamicVariable { .. } => {}
     }
     Ok(())
 }
