@@ -5069,6 +5069,47 @@ after\n"
 }
 
 #[test]
+fn compile_intdiv_unsupported_operands_are_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-intdiv-unsupported-operands");
+    fs::create_dir_all(&root).unwrap();
+    let data = root.join("payload.txt");
+    fs::write(&data, "payload").unwrap();
+    let input = root.join("intdiv-unsupported-operands.php");
+    let output = root.join("intdiv-unsupported-operands-bin");
+    let data_path = data.to_string_lossy();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+try {{ var_dump(intdiv([], 2)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ var_dump(intdiv(6, new stdClass)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+$fp = fopen(\"{}\", \"r\");\n\
+try {{ var_dump(intdiv($fp, 2)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ var_dump(intdiv(\"9x\", 2)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ var_dump(intdiv(6, [])); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+echo \"after\\n\";",
+            data_path
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "intdiv(): Argument #1 ($num1) must be of type int, array given\n\
+intdiv(): Argument #2 ($num2) must be of type int, stdClass given\n\
+intdiv(): Argument #1 ($num1) must be of type int, resource given\n\
+intdiv(): Argument #1 ($num1) must be of type int, string given\n\
+intdiv(): Argument #2 ($num2) must be of type int, array given\n\
+after\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn var_dump_float_exponents_use_php_spelling_in_native_binary() {
     let root = temp_dir("ptn-native-var-dump-float-exponents");
     fs::create_dir_all(&root).unwrap();

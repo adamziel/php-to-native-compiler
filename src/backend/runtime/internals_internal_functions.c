@@ -6028,6 +6028,84 @@ static double ptn_internal_expect_numeric_arg(
     return 0.0;
 }
 
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL: {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Passing null to parameter #%zu ($%s) of type int is deprecated",
+                function_name,
+                position,
+                argument_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_deprecation(&runtime->diagnostics, message, line);
+            return 0;
+        }
+        case PTN_BOOL:
+            return value.as.boolean ? 1 : 0;
+        case PTN_INT:
+            return value.as.integer;
+        case PTN_FLOAT:
+            if (ptn_float_to_int_loses_precision(value.as.floating)) {
+                ptn_emit_float_to_int_precision_deprecation(&runtime->diagnostics, value.as.floating);
+            }
+            return (int64_t)value.as.floating;
+        case PTN_STRING: {
+            PtnNumber number;
+            int has_trailing_non_numeric_data = 0;
+            if (
+                ptn_arithmetic_string_to_number(value.as.string, &number, &has_trailing_non_numeric_data) &&
+                !has_trailing_non_numeric_data
+            ) {
+                if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
+                    ptn_emit_float_string_to_int_precision_deprecation(
+                        &runtime->diagnostics,
+                        (const char *)value.as.string.data
+                    );
+                }
+                return ptn_number_to_integer(number);
+            }
+            break;
+        }
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            break;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type int, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_numeric_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
 static PtnValue ptn_internal_ceil(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     return ptn_float(ceil(ptn_internal_expect_numeric_arg(runtime, "ceil", 1, "num", args[0], line)));
@@ -6080,9 +6158,8 @@ static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnVal
 
 static PtnValue ptn_internal_intdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    int64_t dividend = ptn_value_to_integer_with_precision_deprecation(&runtime->diagnostics, args[0]);
-    int64_t divisor = ptn_value_to_integer_with_precision_deprecation(&runtime->diagnostics, args[1]);
+    int64_t dividend = ptn_internal_expect_integer_arg(runtime, "intdiv", 1, "num1", args[0], line);
+    int64_t divisor = ptn_internal_expect_integer_arg(runtime, "intdiv", 2, "num2", args[1], line);
     if (divisor == 0) {
         ptn_throw_exception(runtime, "DivisionByZeroError", "Division by zero");
         return ptn_null();

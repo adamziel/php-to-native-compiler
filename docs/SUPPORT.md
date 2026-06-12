@@ -578,6 +578,8 @@ Post-RC architecture remains explicit rather than hidden:
   returning a boxed integer quotient for supported non-zero divisors. Zero
   divisors throw catchable `DivisionByZeroError` values, and the
   `PHP_INT_MIN / -1` overflow edge throws a catchable `ArithmeticError`.
+  Unsupported array, object, closure, exception, and resource operands throw
+  catchable `TypeError` values with PHP-style integer parameter diagnostics.
 - `pi()` returns the modeled boxed float value of the `M_PI` constant.
 - `pow()` calls the same boxed numeric exponentiation helper as the `**`
   operator.
@@ -1009,8 +1011,6 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
 - Exact `fdiv()` unsupported-type diagnostics for arrays, objects, resources,
   and references.
-- Exact `intdiv()` diagnostics for unsupported array/object/resource/reference
-  operands.
 - Exact diagnostics and full precision/range parity for `intval()`, `bindec()`,
   `hexdec()`, and `octdec()` on remaining very large or unsupported values.
 - Exact `hex2bin()` warning text/file-name parity plus resource/reference
