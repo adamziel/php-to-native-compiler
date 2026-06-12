@@ -5,8 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
-    IncDecResult, IncludeKind, ListAssignmentElementTarget, MagicConstantKind, ReferenceTarget,
-    Statement, StringInterpolationIndex, StringPart, TypeHint, UnaryOp, UnsetTarget,
+    IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElementTarget, MagicConstantKind,
+    ReferenceTarget, Statement, StringInterpolationIndex, StringPart, TypeHint, UnaryOp,
+    UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -371,19 +372,19 @@ fn parser_accepts_direct_variable_increment_decrement_statements() {
 
     assert!(matches!(
         &program.statements[5],
-        Statement::ArrayAssign {
-            op: AssignmentOp::AddAssign,
-            value: Expr::Int(1, _),
+        Statement::Increment {
+            target: IncDecTarget::ArrayDim(target),
+            op: IncDecOp::Increment,
             ..
-        }
+        } if target.array == "items" && target.dimensions.len() == 1
     ));
     assert!(matches!(
         &program.statements[6],
-        Statement::ArrayAssign {
-            op: AssignmentOp::SubtractAssign,
-            value: Expr::Int(1, _),
+        Statement::Increment {
+            target: IncDecTarget::ArrayDim(target),
+            op: IncDecOp::Decrement,
             ..
-        }
+        } if target.array == "items" && target.dimensions.len() == 1
     ));
 
     let Statement::While { body, .. } = &program.statements[7] else {
@@ -680,7 +681,7 @@ fn parser_accepts_direct_variable_increment_and_decrement_expression_contexts() 
     assert!(matches!(
         &expressions[0],
         Expr::IncDec {
-            name,
+            target: IncDecTarget::Variable { name, .. },
             op: IncDecOp::Increment,
             result: IncDecResult::Pre,
             ..
@@ -689,7 +690,7 @@ fn parser_accepts_direct_variable_increment_and_decrement_expression_contexts() 
     assert!(matches!(
         &expressions[1],
         Expr::IncDec {
-            name,
+            target: IncDecTarget::Variable { name, .. },
             op: IncDecOp::Decrement,
             result: IncDecResult::Post,
             ..
@@ -725,16 +726,52 @@ fn parser_accepts_direct_variable_increment_and_decrement_expression_contexts() 
 }
 
 #[test]
-fn parser_rejects_non_variable_increment_and_decrement_expression_targets() {
+fn parser_accepts_array_offset_increment_and_decrement_expression_targets() {
+    let program = parser::parse("<?php echo ++$items[$key], $items[0]--; $items[$key]++;").unwrap();
+
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::IncDec {
+            target: IncDecTarget::ArrayDim(target),
+            op: IncDecOp::Increment,
+            result: IncDecResult::Pre,
+            ..
+        } if target.array == "items" && target.dimensions.len() == 1
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::IncDec {
+            target: IncDecTarget::ArrayDim(target),
+            op: IncDecOp::Decrement,
+            result: IncDecResult::Post,
+            ..
+        } if target.array == "items" && target.dimensions.len() == 1
+    ));
+
+    assert!(matches!(
+        &program.statements[1],
+        Statement::Increment {
+            target: IncDecTarget::ArrayDim(target),
+            op: IncDecOp::Increment,
+            ..
+        } if target.array == "items" && target.dimensions.len() == 1
+    ));
+}
+
+#[test]
+fn parser_rejects_invalid_increment_and_decrement_expression_targets() {
     let invalid_prefix = parser::parse("<?php echo ++1;").unwrap_err();
     assert!(invalid_prefix
         .message
         .contains("increment/decrement expression target must be a variable"));
 
-    let invalid_postfix = parser::parse("<?php echo $items[0]++;").unwrap_err();
+    let invalid_postfix = parser::parse("<?php echo [1][0]++;").unwrap_err();
     assert!(invalid_postfix
         .message
-        .contains("increment/decrement expression target must be a variable"));
+        .contains("increment/decrement expression target must be a variable or array offset"));
 }
 
 #[test]
@@ -12489,6 +12526,29 @@ fn compile_increment_and_decrement_expression_results_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "2:2\n2:3\n2:2\n2:1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_offset_increment_and_decrement_to_native_binary() {
+    let root = temp_dir("ptn-native-array-offset-inc-dec");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-offset-inc-dec.php");
+    let output = root.join("array-offset-inc-dec-bin");
+    fs::write(
+        &input,
+        "<?php $items = []; $key = 'count'; $items[$key] = 1; echo ++$items[$key], ':', $items[$key], \"\\n\"; echo $items[$key]++, ':', $items[$key], \"\\n\"; $items[$key]--; echo $items[$key], \"\\n\"; $nested = [[\"n\" => 4]]; $nested[0][\"n\"]++; echo $nested[0][\"n\"], \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2:2\n2:3\n2\n5\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -3,10 +3,11 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClosureUseCapture,
-    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncludeKind,
-    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    MethodDecl, Program, PropertyDecl, ReferenceTarget, Statement, StaticPropertyDecl,
-    StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget,
+    IncludeKind, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
+    MagicConstantKind, MethodDecl, Program, PropertyDecl, ReferenceTarget, Statement,
+    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp,
+    UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -638,7 +639,10 @@ impl Parser {
                 self.advance();
                 self.expect_statement_terminator()?;
                 return Ok(Statement::Increment {
-                    name,
+                    target: IncDecTarget::Variable {
+                        name,
+                        span: token.span,
+                    },
                     op: IncDecOp::Increment,
                     span: token.span,
                 });
@@ -647,7 +651,10 @@ impl Parser {
                 self.advance();
                 self.expect_statement_terminator()?;
                 return Ok(Statement::Increment {
-                    name,
+                    target: IncDecTarget::Variable {
+                        name,
+                        span: token.span,
+                    },
                     op: IncDecOp::Decrement,
                     span: token.span,
                 });
@@ -657,14 +664,27 @@ impl Parser {
         if matches!(self.peek().kind, TokenKind::LeftBracket) {
             let target = self.parse_array_dim_target(name, token.span)?;
             match self.peek().kind {
-                TokenKind::PlusPlus | TokenKind::MinusMinus => {
-                    let op_token = self.advance().clone();
+                TokenKind::PlusPlus => {
+                    self.advance();
                     self.expect_statement_terminator()?;
-                    return Ok(array_dim_inc_dec_statement(
+                    let target = IncDecTarget::ArrayDim(target);
+                    reject_append_array_read_in_inc_dec_target(&target)?;
+                    return Ok(Statement::Increment {
                         target,
-                        op_token.kind,
-                        combine_spans(token.span, op_token.span),
-                    ));
+                        op: IncDecOp::Increment,
+                        span: token.span,
+                    });
+                }
+                TokenKind::MinusMinus => {
+                    self.advance();
+                    self.expect_statement_terminator()?;
+                    let target = IncDecTarget::ArrayDim(target);
+                    reject_append_array_read_in_inc_dec_target(&target)?;
+                    return Ok(Statement::Increment {
+                        target,
+                        op: IncDecOp::Decrement,
+                        span: token.span,
+                    });
                 }
                 _ => {}
             }
@@ -807,18 +827,18 @@ impl Parser {
         let TokenKind::Variable(name) = variable.kind else {
             return Err(Diagnostic::new("expected variable", Some(variable.span)));
         };
-        if matches!(self.peek().kind, TokenKind::LeftBracket) {
-            let target = self.parse_array_dim_target(name, variable.span)?;
-            self.expect_statement_terminator()?;
-            return Ok(array_dim_inc_dec_statement(
-                target,
-                op_token.kind,
-                combine_spans(op_token.span, variable.span),
-            ));
-        }
+        let target = if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            IncDecTarget::ArrayDim(self.parse_array_dim_target(name, variable.span)?)
+        } else {
+            IncDecTarget::Variable {
+                name,
+                span: variable.span,
+            }
+        };
+        reject_append_array_read_in_inc_dec_target(&target)?;
         self.expect_statement_terminator()?;
         Ok(Statement::Increment {
-            name,
+            target,
             op,
             span: op_token.span,
         })
@@ -1073,11 +1093,43 @@ impl Parser {
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new("expected variable", Some(token.span)));
         };
+        if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            let target = self.parse_array_dim_target(name, token.span)?;
+            return match self.peek().kind {
+                TokenKind::PlusPlus => {
+                    self.advance();
+                    let target = IncDecTarget::ArrayDim(target);
+                    reject_append_array_read_in_inc_dec_target(&target)?;
+                    Ok(Statement::Increment {
+                        target,
+                        op: IncDecOp::Increment,
+                        span: token.span,
+                    })
+                }
+                TokenKind::MinusMinus => {
+                    self.advance();
+                    let target = IncDecTarget::ArrayDim(target);
+                    reject_append_array_read_in_inc_dec_target(&target)?;
+                    Ok(Statement::Increment {
+                        target,
+                        op: IncDecOp::Decrement,
+                        span: token.span,
+                    })
+                }
+                _ => Err(Diagnostic::new(
+                    "array offset for clauses currently support increment/decrement updates",
+                    Some(target.span),
+                )),
+            };
+        }
         match self.peek().kind {
             TokenKind::PlusPlus => {
                 self.advance();
                 Ok(Statement::Increment {
-                    name,
+                    target: IncDecTarget::Variable {
+                        name,
+                        span: token.span,
+                    },
                     op: IncDecOp::Increment,
                     span: token.span,
                 })
@@ -1085,7 +1137,10 @@ impl Parser {
             TokenKind::MinusMinus => {
                 self.advance();
                 Ok(Statement::Increment {
-                    name,
+                    target: IncDecTarget::Variable {
+                        name,
+                        span: token.span,
+                    },
                     op: IncDecOp::Decrement,
                     span: token.span,
                 })
@@ -1114,16 +1169,17 @@ impl Parser {
         let TokenKind::Variable(name) = variable.kind else {
             return Err(Diagnostic::new("expected variable", Some(variable.span)));
         };
-        if matches!(self.peek().kind, TokenKind::LeftBracket) {
-            let target = self.parse_array_dim_target(name, variable.span)?;
-            return Ok(array_dim_inc_dec_statement(
-                target,
-                op_token.kind,
-                combine_spans(op_token.span, variable.span),
-            ));
-        }
+        let target = if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            IncDecTarget::ArrayDim(self.parse_array_dim_target(name, variable.span)?)
+        } else {
+            IncDecTarget::Variable {
+                name,
+                span: variable.span,
+            }
+        };
+        reject_append_array_read_in_inc_dec_target(&target)?;
         Ok(Statement::Increment {
-            name,
+            target,
             op,
             span: op_token.span,
         })
@@ -1709,8 +1765,17 @@ impl Parser {
                 Some(variable.span),
             ));
         };
+        let target = if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            IncDecTarget::ArrayDim(self.parse_array_dim_target(name, variable.span)?)
+        } else {
+            IncDecTarget::Variable {
+                name,
+                span: variable.span,
+            }
+        };
+        reject_append_array_read_in_inc_dec_target(&target)?;
         Ok(Expr::IncDec {
-            name,
+            target,
             op,
             result: IncDecResult::Pre,
             span: combine_spans(op_token.span, variable.span),
@@ -1785,17 +1850,14 @@ impl Parser {
                             return Err(Diagnostic::new("expected increment", Some(op_token.span)));
                         }
                     };
-                    let Expr::Variable(name, variable_span) = expr else {
-                        return Err(Diagnostic::new(
-                            "increment/decrement expression target must be a variable",
-                            Some(op_token.span),
-                        ));
-                    };
+                    let target = inc_dec_target_from_expr(expr, op_token.span)?;
+                    reject_append_array_read_in_inc_dec_target(&target)?;
+                    let target_span = inc_dec_target_span(&target);
                     expr = Expr::IncDec {
-                        name,
+                        target,
                         op,
                         result: IncDecResult::Post,
-                        span: combine_spans(variable_span, op_token.span),
+                        span: combine_spans(target_span, op_token.span),
                     };
                 }
                 _ => break,
@@ -3252,16 +3314,35 @@ fn validate_anonymous_functions_in_statements(
             }
             Statement::Return { value: None, .. }
             | Statement::Empty { .. }
-            | Statement::Increment { .. }
             | Statement::Unset { .. }
             | Statement::Break { .. }
             | Statement::Continue { .. }
             | Statement::Label { .. }
             | Statement::Goto { .. }
             | Statement::InlineHtml { .. } => {}
+            Statement::Increment { target, .. } => {
+                validate_anonymous_functions_in_inc_dec_target(target, functions)?;
+            }
         }
     }
     Ok(())
+}
+
+fn validate_anonymous_functions_in_inc_dec_target(
+    target: &IncDecTarget,
+    functions: &[FunctionDecl],
+) -> Result<()> {
+    match target {
+        IncDecTarget::Variable { .. } => Ok(()),
+        IncDecTarget::ArrayDim(target) => {
+            for dimension in &target.dimensions {
+                if let Some(dimension) = dimension {
+                    validate_anonymous_functions_in_expr(dimension, functions)?;
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl]) -> Result<()> {
@@ -3273,6 +3354,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             validate_anonymous_functions_in_statements(&function.body, functions)?;
             validate_reference_assignment_sources(&function.body, functions)?;
             validate_goto_labels(&function.body)?;
+        }
+        Expr::IncDec { target, .. } => {
+            validate_anonymous_functions_in_inc_dec_target(target, functions)?;
         }
         Expr::Assign { value, .. } => {
             validate_anonymous_functions_in_expr(value, functions)?;
@@ -3341,7 +3425,6 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         | Expr::Bool(_, _)
         | Expr::Null(_)
         | Expr::Variable(_, _)
-        | Expr::IncDec { .. }
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _) => {}
     }
@@ -3974,6 +4057,32 @@ fn array_dim_target_from_expr(expr: Expr) -> Result<ArrayDimTarget> {
     }
 }
 
+fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTarget> {
+    match expr {
+        Expr::Variable(name, span) => Ok(IncDecTarget::Variable { name, span }),
+        Expr::Grouped { expr, .. } => inc_dec_target_from_expr(*expr, op_span),
+        array_expr @ Expr::ArrayAccess { .. } => Ok(IncDecTarget::ArrayDim(
+            array_dim_target_from_expr(array_expr).map_err(|_| {
+                Diagnostic::new(
+                    "increment/decrement expression target must be a variable or array offset",
+                    Some(op_span),
+                )
+            })?,
+        )),
+        other => Err(Diagnostic::new(
+            "increment/decrement expression target must be a variable or array offset",
+            Some(other.span()),
+        )),
+    }
+}
+
+fn inc_dec_target_span(target: &IncDecTarget) -> SourceSpan {
+    match target {
+        IncDecTarget::Variable { span, .. } => *span,
+        IncDecTarget::ArrayDim(target) => target.span,
+    }
+}
+
 fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
     let span = expr.span();
     match expr {
@@ -4366,6 +4475,9 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
             reject_append_array_read(left)?;
             reject_append_array_read(right)?;
         }
+        Expr::IncDec { target, .. } => {
+            reject_append_array_read_in_inc_dec_target(target)?;
+        }
         Expr::InterpolatedString(_, _)
         | Expr::AnonymousFunction(_)
         | Expr::String(_, _)
@@ -4374,9 +4486,24 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::Bool(_, _)
         | Expr::Null(_)
         | Expr::Variable(_, _)
-        | Expr::IncDec { .. }
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _) => {}
+    }
+    Ok(())
+}
+
+fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<()> {
+    if let IncDecTarget::ArrayDim(target) = target {
+        for dimension in &target.dimensions {
+            if let Some(dimension) = dimension {
+                reject_append_array_read(dimension)?;
+            } else {
+                return Err(Diagnostic::new(
+                    "increment/decrement cannot use append array access",
+                    Some(target.span),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -4409,24 +4536,6 @@ fn lower_string_interpolation_index(
         TokenStringInterpolationIndex::String(value) => StringInterpolationIndex::String(value),
         TokenStringInterpolationIndex::Int(value) => StringInterpolationIndex::Int(value),
         TokenStringInterpolationIndex::Variable(name) => StringInterpolationIndex::Variable(name),
-    }
-}
-
-fn array_dim_inc_dec_statement(
-    target: ArrayDimTarget,
-    op: TokenKind,
-    span: SourceSpan,
-) -> Statement {
-    let assignment_op = match op {
-        TokenKind::PlusPlus => AssignmentOp::AddAssign,
-        TokenKind::MinusMinus => AssignmentOp::SubtractAssign,
-        _ => unreachable!("array dimension inc/dec op must be ++ or --"),
-    };
-    Statement::ArrayAssign {
-        target,
-        op: assignment_op,
-        value: Expr::Int(1, span),
-        span,
     }
 }
 

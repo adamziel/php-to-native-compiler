@@ -1,7 +1,6 @@
 # PTN From Scratch
 
-PTN compiles a growing PHP subset into native binaries through the
-compiler/runtime path:
+PTN compiles a growing PHP subset into native binaries:
 
 `PHP source -> lexer/parser -> AST -> IR -> C runtime -> native executable`
 
@@ -20,13 +19,9 @@ rows, or outputs.
   octal byte escapes.
 - Inline HTML before, between, and after PHP blocks lowers through the shared
   output path.
-- Top-level user functions and declared class methods include scoped magic
-  constants for their supported scope plus `func_num_args()`,
-  `func_get_arg()`, and `func_get_args()` call-frame introspection, scalar type
-  hints, literal-array default parameters, and by-reference return aliases for
-  variables, one-level array elements, local lifetimes, typed coercion,
-  plain-assignment separation, and declared public constructor dispatch through
-  the method path.
+- User functions and declared class methods include scoped magic constants,
+  call-frame introspection, scalar type hints, literal-array defaults,
+  by-reference return aliases, typed coercion, and public constructors.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
 - Dynamic variable roots support scalar and simple array/string-offset writes
@@ -51,10 +46,14 @@ rows, or outputs.
   file-return paths.
 - `ksort()` and `shuffle()` mutate direct variable arrays through the shared
   ordered-array COW path, and `str_shuffle()` shuffles scalar strings by byte.
-- Basic stream resources from `fopen()`/`fclose()` are boxed runtime values with
-  `gettype()`, `is_resource()`, `var_dump()`, and array-key cast behavior.
-- Bounded PHPT telemetry from a php-src checkout resolved by `PHP_SRC_PHPT`,
-  `/home/claude/php-src-phpt`, or the `.runtime/php-src-phpt` cache.
+- Direct variable and variable-root array-offset increment/decrement support
+  statement and expression pre/post forms over the current boxed numeric slice.
+- `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
+  covers the current `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
+- Basic stream resources from `fopen()`/`fclose()` are boxed values with
+  `gettype()`, `is_resource()`, `var_dump()`, and array-key casts.
+- Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
+  `.runtime/php-src-phpt`.
 
 ## Status Files
 

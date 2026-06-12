@@ -634,10 +634,11 @@ Post-RC architecture remains explicit rather than hidden:
   and condition use the currently supported scalar expression and statement
   subset. The body executes once before the first condition check.
 - `for (init; condition; update) statement` loops where init and update clauses
-  use direct variable assignment, direct increment/decrement, or simple
-  internal-call statements, conditions use the currently supported scalar
-  expression subset, and the body is either a braced block or one supported
-  statement. Missing conditions are treated as true.
+  use direct variable assignment, direct variable or variable-root array-offset
+  increment/decrement, or simple internal-call statements, conditions use the
+  currently supported scalar expression subset, and the body is either a
+  braced block or one supported statement. Missing conditions are treated as
+  true.
 - `foreach (expr as target) statement` and
   `foreach (expr as key_target => value_target) statement` loops over current
   boxed ordered arrays. The iterable expression is evaluated once, array
@@ -719,15 +720,11 @@ Post-RC architecture remains explicit rather than hidden:
   `{}` offsets inside braced string interpolation report the current PHP
   unexpected-token parse error. Unsupported class members and class-constant
   fetch syntax are recognized and reported as class metadata boundaries.
-- Direct variable increment/decrement over current boxed integer and float
-  values. Statement forms `$name++;`, `++$name;`, `$name--;`, and `--$name;`
-  write the updated value. Expression forms such as `++$name`, `$name++`,
-  `--$name`, and `$name--` return the PHP pre/post result value while applying
-  the same side effect.
-- Statement-form array dimension increment/decrement over variable-root array
-  paths such as `$items[$key]++;` and `--$items[0];`. The parser lowers these
-  forms through the same array-path compound-assignment helpers as `+= 1` and
-  `-= 1`.
+- Direct variable and variable-root array-offset increment/decrement over
+  current boxed integer and float values. Statement forms such as `$name++;`
+  and `$items[$key]--;` write the updated value. Expression forms such as
+  `++$name`, `$name++`, `++$items[$key]`, and `$items[$key]--` return the PHP
+  pre/post result value while applying the same side effect.
 
 ## Not Yet Supported
 
@@ -740,8 +737,9 @@ Post-RC architecture remains explicit rather than hidden:
   invalid numeric-separator/radix diagnostic parity beyond invalid legacy
   octal integers, remaining unsupported grammar-site parse-error wording, and
   exact scalar cast overflow behavior.
-- Increment/decrement expression targets beyond direct variables, and property
-  or static-property increment/decrement targets.
+- Increment/decrement targets beyond direct variables and variable-root array
+  offsets, including append offsets, dynamic-variable array offsets, temporary
+  array reads, properties, and static properties.
 - Keyword boolean tails after direct assignment statements, ternary expressions
   beyond the modeled nested associativity diagnostics, PHP-exact chained
   comparison parse errors, and complete comparison parity for unsupported value
@@ -762,7 +760,8 @@ Post-RC architecture remains explicit rather than hidden:
   copy-on-write, and exceptions.
 - PHP-exact increment/decrement semantics for null, booleans, strings, arrays,
   objects, references, copy-on-write, and diagnostics beyond the current
-  integer/float direct-variable expression slice.
+  integer/float direct-variable and variable-root array-offset expression
+  slice.
 - Inline HTML before `<?php` or between PHP blocks.
 - Remaining complex string interpolation forms, including object/property
   interpolation, variable variables, arbitrary expressions/calls, append
@@ -804,6 +803,9 @@ Post-RC architecture remains explicit rather than hidden:
   bitwise string results.
 - Exact `strcmp()` resource/reference operand parity and object string
   conversion outside the current public declared `__toString()` support.
+- Exact `join()`/`implode()` diagnostics, resource/reference operand parity,
+  and object string conversion outside the current public declared
+  `__toString()` support.
 - Exact `str_contains()` resource/reference operand parity and object string
   conversion outside the current public declared `__toString()` support.
 - Exact `str_starts_with()`/`str_ends_with()` resource/reference operand parity
@@ -831,6 +833,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `addslashes()`/`stripslashes()` resource/reference operand parity and
   object string conversion outside the current public declared `__toString()`
   support.
+- Complete `sprintf()` formatter coverage, including positional arguments,
+  full length/flag behavior, binary-string edges, and unsupported operand
+  diagnostics beyond the current bounded scalar subset.
 - `md5()`/`sha1()` raw binary output containing NUL bytes, embedded-NUL input
   parity, plus resource/reference operand parity and object string conversion
   outside the current public declared `__toString()` support.

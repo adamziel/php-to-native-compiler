@@ -10,9 +10,9 @@ use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
-    FunctionParameter, IncDecOp, IncDecResult, IncludeFile, Instruction, ListAssignmentElement,
-    ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind, Module, ReferenceTarget,
-    TypeHint, UnaryOp, ValueExpr,
+    FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, Instruction,
+    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
+    Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -1356,35 +1356,8 @@ fn emit_instruction(
             out.push_str(", 0);\n");
             emit_value_cleanup(out, "    ", &emitted_value);
         }
-        Instruction::Increment { name, op, line } => {
-            let current_temp = values.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&current_temp);
-            out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", \"");
-            out.push_str(&c_string(source_path));
-            out.push_str("\", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            let result_temp = values.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ");
-            out.push_str(match op {
-                IncDecOp::Increment => "ptn_increment_numeric",
-                IncDecOp::Decrement => "ptn_decrement_numeric",
-            });
-            out.push('(');
-            out.push_str(&current_temp);
-            out.push_str(");\n");
-            out.push_str("    ptn_runtime_write_variable(&runtime, \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", ");
-            out.push_str(&result_temp);
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &current_temp);
-            emit_value_cleanup(out, "    ", &result_temp);
+        Instruction::Increment { target, op, line } => {
+            emit_increment_statement(out, values, target, *op, *line, source_path);
         }
         Instruction::UnsetVariable { name } => {
             out.push_str("    ptn_runtime_unset_variable(&runtime, \"");
@@ -2202,8 +2175,10 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
                 collect_instructions_legacy_dollar_brace_deprecations(&case.body, deprecations);
             }
         }
-        Instruction::Increment { .. }
-        | Instruction::UnsetVariable { .. }
+        Instruction::Increment { target, .. } => {
+            collect_inc_dec_target_legacy_dollar_brace_deprecations(target, deprecations);
+        }
+        Instruction::UnsetVariable { .. }
         | Instruction::Break { .. }
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
@@ -2218,6 +2193,19 @@ fn collect_array_dim_target_legacy_dollar_brace_deprecations(
     for dimension in &target.dimensions {
         if let Some(dimension) = dimension {
             collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+        }
+    }
+}
+
+fn collect_inc_dec_target_legacy_dollar_brace_deprecations(
+    target: &IncDecTarget,
+    deprecations: &mut Vec<LegacyDollarBraceDeprecation>,
+) {
+    if let IncDecTarget::ArrayDim { dimensions, .. } = target {
+        for dimension in dimensions {
+            if let Some(dimension) = dimension {
+                collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+            }
         }
     }
 }
@@ -2373,6 +2361,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
             collect_value_legacy_dollar_brace_deprecations(left, deprecations);
             collect_value_legacy_dollar_brace_deprecations(right, deprecations);
         }
+        ValueExpr::IncDec { target, .. } => {
+            collect_inc_dec_target_legacy_dollar_brace_deprecations(target, deprecations);
+        }
         ValueExpr::String(_)
         | ValueExpr::Int(_)
         | ValueExpr::Float(_)
@@ -2380,7 +2371,6 @@ fn collect_value_legacy_dollar_brace_deprecations(
         | ValueExpr::Null
         | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
-        | ValueExpr::IncDec { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. }
         | ValueExpr::Include { .. }
@@ -2467,7 +2457,9 @@ fn collect_instruction_runtime_requirements(
             }
             collect_value_runtime_requirements(source, functions, requirements);
         }
-        Instruction::Increment { .. } => {}
+        Instruction::Increment { target, .. } => {
+            collect_inc_dec_target_runtime_requirements(target, functions, requirements);
+        }
         Instruction::UnsetVariable { .. } => {}
         Instruction::UnsetArrayDim { dimensions, .. } => {
             for dimension in dimensions {
@@ -2629,6 +2621,20 @@ fn collect_assignment_target_runtime_requirements(
     }
 }
 
+fn collect_inc_dec_target_runtime_requirements(
+    target: &IncDecTarget,
+    functions: &[FunctionDecl],
+    requirements: &mut RuntimeRequirements,
+) {
+    if let IncDecTarget::ArrayDim { dimensions, .. } = target {
+        for dimension in dimensions {
+            if let Some(dimension) = dimension {
+                collect_value_runtime_requirements(dimension, functions, requirements);
+            }
+        }
+    }
+}
+
 fn collect_value_runtime_requirements(
     value: &ValueExpr,
     functions: &[FunctionDecl],
@@ -2642,10 +2648,12 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Null
         | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
-        | ValueExpr::IncDec { .. }
         | ValueExpr::LegacyDollarBraceStringVariable { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => {}
+        ValueExpr::IncDec { target, .. } => {
+            collect_inc_dec_target_runtime_requirements(target, functions, requirements);
+        }
         ValueExpr::DynamicVariable { name, .. } => {
             collect_value_runtime_requirements(name, functions, requirements);
         }
@@ -3091,6 +3099,100 @@ fn emit_label_reference(out: &mut String, label: &str) {
     out.push_str("; }\n");
 }
 
+fn inc_dec_runtime_function(op: IncDecOp) -> &'static str {
+    match op {
+        IncDecOp::Increment => "ptn_increment_numeric",
+        IncDecOp::Decrement => "ptn_decrement_numeric",
+    }
+}
+
+fn emit_increment_statement(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    target: &IncDecTarget,
+    op: IncDecOp,
+    line: usize,
+    source_path: &str,
+) {
+    match target {
+        IncDecTarget::Variable { name, .. } => {
+            let current_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&current_temp);
+            out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(source_path));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            let result_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(inc_dec_runtime_function(op));
+            out.push('(');
+            out.push_str(&current_temp);
+            out.push_str(");\n");
+            out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&result_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &current_temp);
+            emit_value_cleanup(out, "    ", &result_temp);
+        }
+        IncDecTarget::ArrayDim {
+            array, dimensions, ..
+        } => {
+            out.push_str("    ptn_runtime_array_warn_missing_base_for_assign_op(&runtime, \"");
+            out.push_str(&c_string(array));
+            out.push_str("\", \"");
+            out.push_str(&c_string(source_path));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            let path = emit_array_path_segments(out, values, dimensions);
+            let current_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&current_temp);
+            out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, \"");
+            out.push_str(&c_string(array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            let result_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(inc_dec_runtime_function(op));
+            out.push('(');
+            out.push_str(&current_temp);
+            out.push_str(");\n");
+            out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
+            out.push_str(&c_string(array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&result_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &current_temp);
+            emit_value_cleanup(out, "    ", &result_temp);
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+        }
+    }
+}
+
 fn emit_value_cleanup(out: &mut String, indent: &str, value: &str) {
     out.push_str(indent);
     out.push_str("ptn_value_drop(&");
@@ -3335,12 +3437,28 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
     }
 }
 
+fn inc_dec_target_mentions_variable(target: &IncDecTarget, name: &str) -> bool {
+    match target {
+        IncDecTarget::Variable { name: target, .. } => target == name,
+        IncDecTarget::ArrayDim {
+            array, dimensions, ..
+        } => {
+            array == name
+                || dimensions.iter().any(|dimension| {
+                    dimension
+                        .as_ref()
+                        .is_some_and(|dimension| value_mentions_variable(dimension, name))
+                })
+        }
+    }
+}
+
 fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
     match value {
         ValueExpr::Load { name: target, .. } => target == name,
         ValueExpr::LegacyDollarBraceStringVariable { name: target, .. } => target == name,
         ValueExpr::DynamicVariable { name: target, .. } => value_mentions_variable(target, name),
-        ValueExpr::IncDec { name: target, .. } => target == name,
+        ValueExpr::IncDec { target, .. } => inc_dec_target_mentions_variable(target, name),
         ValueExpr::Assign { target, value, .. } => {
             assignment_target_mentions_variable(target, name)
                 || value_mentions_variable(value, name)
@@ -4565,11 +4683,11 @@ impl ValueEmitter {
                 self.emit_dynamic_variable_read(out, name, *line)
             }
             ValueExpr::IncDec {
-                name,
+                target,
                 op,
                 result,
                 line,
-            } => self.emit_inc_dec_expression(out, name, *op, *result, *line),
+            } => self.emit_inc_dec_expression(out, target, *op, *result, *line),
             ValueExpr::Constant(name) => {
                 format!("ptn_read_constant(&runtime, \"{}\")", c_string(name))
             }
@@ -4636,57 +4754,125 @@ impl ValueEmitter {
     fn emit_inc_dec_expression(
         &mut self,
         out: &mut String,
-        name: &str,
+        target: &IncDecTarget,
         op: IncDecOp,
         result: IncDecResult,
         line: usize,
     ) -> String {
-        let current_temp = self.next_temp();
-        out.push_str("    PtnValue ");
-        out.push_str(&current_temp);
-        out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
-        out.push_str(&c_string(name));
-        out.push_str("\", \"");
-        out.push_str(&c_string(&self.source_file));
-        out.push_str("\", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
+        match target {
+            IncDecTarget::Variable { name, .. } => {
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
 
-        let old_temp = if matches!(result, IncDecResult::Post) {
-            let old_temp = self.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&old_temp);
-            out.push_str(" = ptn_value_clone(ptn_value_deref(");
-            out.push_str(&current_temp);
-            out.push_str("));\n");
-            Some(old_temp)
-        } else {
-            None
-        };
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
 
-        let result_temp = self.next_temp();
-        out.push_str("    PtnValue ");
-        out.push_str(&result_temp);
-        out.push_str(" = ");
-        out.push_str(match op {
-            IncDecOp::Increment => "ptn_increment_numeric",
-            IncDecOp::Decrement => "ptn_decrement_numeric",
-        });
-        out.push('(');
-        out.push_str(&current_temp);
-        out.push_str(");\n");
-        out.push_str("    ptn_runtime_write_variable(&runtime, \"");
-        out.push_str(&c_string(name));
-        out.push_str("\", ");
-        out.push_str(&result_temp);
-        out.push_str(");\n");
-        emit_value_cleanup(out, "    ", &current_temp);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(inc_dec_runtime_function(op));
+                out.push('(');
+                out.push_str(&current_temp);
+                out.push_str(");\n");
+                out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&result_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &current_temp);
 
-        if let Some(old_temp) = old_temp {
-            emit_value_cleanup(out, "    ", &result_temp);
-            old_temp
-        } else {
-            result_temp
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
+            IncDecTarget::ArrayDim {
+                array, dimensions, ..
+            } => {
+                out.push_str("    ptn_runtime_array_warn_missing_base_for_assign_op(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let path = emit_array_path_segments(out, self, dimensions);
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(inc_dec_runtime_function(op));
+                out.push('(');
+                out.push_str(&current_temp);
+                out.push_str(");\n");
+                out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &current_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
         }
     }
 

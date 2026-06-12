@@ -6,7 +6,7 @@ use crate::ast::{
     AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
     CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
     ClosureUseCapture as AstClosureUseCapture, Expr, FunctionParameter as AstFunctionParameter,
-    IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult,
+    IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
     ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
@@ -124,7 +124,7 @@ pub enum Instruction {
         source: ValueExpr,
     },
     Increment {
-        name: String,
+        target: IncDecTarget,
         op: IncDecOp,
         line: usize,
     },
@@ -242,7 +242,7 @@ pub enum ValueExpr {
         line: usize,
     },
     IncDec {
-        name: String,
+        target: IncDecTarget,
         op: IncDecOp,
         result: IncDecResult,
         line: usize,
@@ -548,6 +548,19 @@ struct LoweringContext<'a> {
     include_resolutions: &'a IncludeResolutionMap,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum IncDecTarget {
+    Variable {
+        name: String,
+        line: usize,
+    },
+    ArrayDim {
+        array: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
+}
+
 impl<'a> LoweringContext<'a> {
     fn new(
         program: &Program,
@@ -740,9 +753,9 @@ impl<'a> LoweringContext<'a> {
                         source: self.lower_expr(source),
                     });
                 }
-                Statement::Increment { name, op, span } => {
+                Statement::Increment { target, op, span } => {
                     instructions.push(Instruction::Increment {
-                        name: name.clone(),
+                        target: self.lower_inc_dec_target(target),
                         op: lower_inc_dec_op(*op),
                         line: span.line,
                     });
@@ -1052,6 +1065,28 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
+    fn lower_inc_dec_target(&mut self, target: &AstIncDecTarget) -> IncDecTarget {
+        match target {
+            AstIncDecTarget::Variable { name, span } => IncDecTarget::Variable {
+                name: name.clone(),
+                line: span.line,
+            },
+            AstIncDecTarget::ArrayDim(target) => IncDecTarget::ArrayDim {
+                array: target.array.clone(),
+                dimensions: target
+                    .dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: target.span.line,
+            },
+        }
+    }
+
     fn lower_list_assignment_target(
         &mut self,
         target: &AstListAssignmentTarget,
@@ -1269,12 +1304,12 @@ impl<'a> LoweringContext<'a> {
             },
             Expr::AnonymousFunction(function) => self.lower_anonymous_function(function),
             Expr::IncDec {
-                name,
+                target,
                 op,
                 result,
                 span,
             } => ValueExpr::IncDec {
-                name: name.clone(),
+                target: self.lower_inc_dec_target(target),
                 op: lower_inc_dec_op(*op),
                 result: lower_inc_dec_result(*result),
                 line: span.line,
@@ -1539,8 +1574,8 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::Constant(name, _) => name.clone(),
         Expr::MagicConstant(kind, _) => assertion_magic_constant_text(*kind).to_string(),
         Expr::IncDec {
-            name, op, result, ..
-        } => assertion_inc_dec_text(name, *op, *result),
+            target, op, result, ..
+        } => assertion_inc_dec_text(target, *op, *result),
         Expr::Assign {
             target, op, value, ..
         } => format!(
@@ -1718,6 +1753,13 @@ fn assertion_reference_target_text(target: &AstReferenceTarget) -> String {
     }
 }
 
+fn assertion_inc_dec_target_text(target: &AstIncDecTarget) -> String {
+    match target {
+        AstIncDecTarget::Variable { name, .. } => format!("${name}"),
+        AstIncDecTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
+    }
+}
+
 fn assertion_assignment_op_text(op: AssignmentOp) -> &'static str {
     match op {
         AssignmentOp::Assign => "=",
@@ -1777,14 +1819,19 @@ fn assertion_unary_op_text(op: AstUnaryOp) -> &'static str {
     }
 }
 
-fn assertion_inc_dec_text(name: &str, op: AstIncDecOp, result: AstIncDecResult) -> String {
+fn assertion_inc_dec_text(
+    target: &AstIncDecTarget,
+    op: AstIncDecOp,
+    result: AstIncDecResult,
+) -> String {
     let op = match op {
         AstIncDecOp::Increment => "++",
         AstIncDecOp::Decrement => "--",
     };
+    let target = assertion_inc_dec_target_text(target);
     match result {
-        AstIncDecResult::Pre => format!("{op}${name}"),
-        AstIncDecResult::Post => format!("${name}{op}"),
+        AstIncDecResult::Pre => format!("{op}{target}"),
+        AstIncDecResult::Post => format!("{target}{op}"),
     }
 }
 

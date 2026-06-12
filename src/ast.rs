@@ -116,7 +116,7 @@ pub enum Statement {
         span: SourceSpan,
     },
     Increment {
-        name: String,
+        target: IncDecTarget,
         op: IncDecOp,
         span: SourceSpan,
     },
@@ -300,6 +300,12 @@ pub enum ReferenceTarget {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum IncDecTarget {
+    Variable { name: String, span: SourceSpan },
+    ArrayDim(ArrayDimTarget),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnsetTarget {
     Variable { name: String, span: SourceSpan },
     ArrayDim(ArrayDimTarget),
@@ -356,7 +362,7 @@ pub enum Expr {
     },
     AnonymousFunction(AnonymousFunction),
     IncDec {
-        name: String,
+        target: IncDecTarget,
         op: IncDecOp,
         result: IncDecResult,
         span: SourceSpan,
