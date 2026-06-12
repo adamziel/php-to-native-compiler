@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T04:00Z
-Measured: `ptn-wrom` integrated after `origin/master` `f5c46dc8a`.
+Refresh: 2026-06-12T04:11Z
+Measured: `ptn-5xx7` integrated after `origin/master` `5c66f7d7d`.
 
 Recent RC slices cover dynamic-variable array/string-offset writes and unsets,
 array-offset inc/dec statements and expressions including dynamic roots,
@@ -18,14 +18,15 @@ Recent PHPT movers: `ptn-dcyl` exact `strings/006`, `ptn-e3zm` focused
 array/string-offset unsets, `ptn-ir7c` exact `array/007`, and `ptn-juzx`
 refined object `var_export()` for declared objects, `stdClass`, and nested
 object arrays; `ptn-wrom` adds focused coverage for declared-object property
-arrays nested inside `var_export()` output.
+arrays nested inside `var_export()` output, and `ptn-5xx7` pins same-class
+static private-property comparison with protected metadata export.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 507 | 507 | 0 |
+| Native/compiler Rust suite | 508 | 508 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 200 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
@@ -64,6 +65,8 @@ post-merge COW gate 25/25. This slice adds focused object `var_export()` tests
 and native/compiler 506/506 after rebase.
 `ptn-wrom` adds focused nested-property object `var_export()` coverage and
 native/compiler 507/507 after rebase.
+`ptn-5xx7` adds focused static private-property/protected export coverage and
+native/compiler 508/508 after rebase.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

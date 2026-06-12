@@ -16298,6 +16298,83 @@ echo var_export($object, true), \"\\n\";
 }
 
 #[test]
+fn compile_non_public_property_static_compare_and_export_to_native_binary() {
+    let root = temp_dir("ptn-native-non-public-property-static-compare");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-public-property-static-compare.php");
+    let output = root.join("non-public-property-static-compare-bin");
+    fs::write(
+        &input,
+        "<?php
+class Secret {
+    private $value;
+    protected $token = \"seed\";
+    public $label;
+
+    public function __construct($value) {
+        $this->value = $value;
+        $this->label = \"box\";
+    }
+
+    public static function compare($left, $right) {
+        return $left->value === $right->value;
+    }
+
+    public function update($value) {
+        $this->token = $value;
+        return $this->token;
+    }
+}
+
+$a = new Secret(4);
+$b = new Secret(4);
+var_dump(Secret::compare($a, $b));
+var_dump($a->update(\"changed\"));
+var_dump($a);
+echo var_export($a, true), \"\\n\";
+try {
+    var_dump($a->value);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(7) \"changed\"\n",
+            "object(Secret)#1 (3) {\n",
+            "  [\"value\":\"Secret\":private]=>\n",
+            "  int(4)\n",
+            "  [\"token\":protected]=>\n",
+            "  string(7) \"changed\"\n",
+            "  [\"label\"]=>\n",
+            "  string(3) \"box\"\n",
+            "}\n",
+            "\\Secret::__set_state(array(\n",
+            "   'value' => 4,\n",
+            "   'token' => 'changed',\n",
+            "   'label' => 'box',\n",
+            "))\n",
+            "Cannot access private property Secret::$value\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_declare_property(&runtime"));
+    assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
+    assert!(c_source.contains("PTN_PROPERTY_PROTECTED"));
+}
+
+#[test]
 fn compile_stream_resources_to_native_binary() {
     let root = temp_dir("ptn-native-stream-resources");
     fs::create_dir_all(&root).unwrap();
