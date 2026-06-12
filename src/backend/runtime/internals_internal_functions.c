@@ -980,6 +980,19 @@ static PTN_UNUSED PtnValue ptn_runtime_array_sort_variable(PtnRuntime *runtime, 
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_rsort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "rsort",
+        1,
+        "array",
+        name,
+        value
+    );
+    ptn_array_rsort_values(array);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_shuffle_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -1328,6 +1341,14 @@ static PtnValue ptn_internal_sort(PtnRuntime *runtime, size_t argc, const PtnVal
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "sort", 1, "array", args[0]);
     ptn_array_sort_values(array);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_rsort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "rsort", 1, "array", args[0]);
+    ptn_array_rsort_values(array);
     return ptn_bool(1);
 }
 
@@ -5794,6 +5815,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "range", 2, 3, ptn_internal_range },
         { "reset", 1, 1, ptn_internal_reset },
         { "rmdir", 1, 2, ptn_internal_rmdir },
+        { "rsort", 1, 1, ptn_internal_rsort },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },

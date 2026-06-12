@@ -3778,6 +3778,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_values"
             | "shuffle"
             | "sort"
+            | "rsort"
             | "current"
             | "end"
             | "key"
@@ -3808,6 +3809,7 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
             | "array_unshift"
             | "asort"
             | "ksort"
+            | "rsort"
             | "shuffle"
             | "sort"
     )
@@ -3823,8 +3825,7 @@ fn is_single_array_path_mutation_name(name: &str) -> bool {
 fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "rsort"
-            | "arsort"
+        "arsort"
             | "krsort"
             | "natsort"
             | "natcasesort"
@@ -3866,6 +3867,19 @@ fn validate_mutating_array_internal_call(
     arguments: &[Expr],
     call_span: SourceSpan,
 ) -> Result<()> {
+    if (name.eq_ignore_ascii_case("sort")
+        || name.eq_ignore_ascii_case("asort")
+        || name.eq_ignore_ascii_case("rsort"))
+        && arguments.len() > 1
+    {
+        let normalized = name.to_ascii_lowercase();
+        return Err(Diagnostic::new(
+            format!(
+                "{normalized}() currently supports default SORT_REGULAR semantics only; sort flags are unsupported"
+            ),
+            Some(arguments.get(1).map_or(call_span, Expr::span)),
+        ));
+    }
     if is_unsupported_sort_family_mutation_name(name) {
         let normalized = name.to_ascii_lowercase();
         if arguments.is_empty() {
@@ -3889,17 +3903,6 @@ fn validate_mutating_array_internal_call(
                 "{normalized}() requires a direct variable array argument; sort-family array mutation targets are unsupported"
             ),
             Some(arguments.first().map_or(call_span, Expr::span)),
-        ));
-    }
-    if (name.eq_ignore_ascii_case("sort") || name.eq_ignore_ascii_case("asort"))
-        && arguments.len() > 1
-    {
-        let normalized = name.to_ascii_lowercase();
-        return Err(Diagnostic::new(
-            format!(
-                "{normalized}() currently supports the default comparison mode; sort flags are unsupported"
-            ),
-            Some(arguments.get(1).map_or(call_span, Expr::span)),
         ));
     }
     if arguments.is_empty() {

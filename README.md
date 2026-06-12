@@ -34,7 +34,7 @@ rows, or outputs.
 - Array internals including set operations, `array_chunk()`, `array_combine()`,
   `array_filter()`, `array_key_exists()`, `array_merge()`, `array_pop()`,
   `array_push()`, `array_shift()`, `array_unshift()`, `asort()`, `ksort()`,
-  `sort()`, and `shuffle()` use shared ordered-array and COW paths.
+  `sort()`, `rsort()`, and `shuffle()` use shared ordered-array and COW paths.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, and `stdClass` through `(object) array(...)`.
 - `pow()` uses the same boxed numeric exponentiation helper as `**`, and
@@ -53,7 +53,7 @@ rows, or outputs.
   `isset()`, `empty()`, and expression-form `??` probes; full visibility and
   inheritance remain bounded.
 - Basic stream resources from `fopen()`/`fclose()` are boxed runtime values with
-  current type, dump, and array-key cast behavior.
+  type, dump, and array-key cast behavior.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 

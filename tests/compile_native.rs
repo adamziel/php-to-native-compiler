@@ -10642,6 +10642,7 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php ksort([3 => \"c\", 1 => \"a\"]);", "ksort"),
         ("<?php shuffle([1, 2, 3]);", "shuffle"),
         ("<?php sort([3, 2, 1]);", "sort"),
+        ("<?php rsort([3, 2, 1]);", "rsort"),
         (
             "<?php $items = [[1], [2]]; var_dump(array_shift(current($items)));",
             "array_shift",
@@ -10671,6 +10672,7 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
     parser::parse("<?php $items = [2 => \"b\", 1 => \"a\"]; ksort(($items));").unwrap();
     parser::parse("<?php $items = [1, 2]; shuffle(($items));").unwrap();
     parser::parse("<?php $items = [3, 2, 1]; sort(($items));").unwrap();
+    parser::parse("<?php $items = [3, 2, 1]; rsort(($items));").unwrap();
     parser::parse("<?php $items = [[1], [2]]; array_pop($items[0]);").unwrap();
     parser::parse("<?php $items = [[1], [2]]; array_shift($items[0]);").unwrap();
 }
@@ -10715,6 +10717,23 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
             "unexpected diagnostic for {function}: {}",
             error.message
         );
+    }
+
+    for (source, function) in [
+        (
+            "<?php $items = [3, 2, 1]; sort($items, SORT_STRING);",
+            "sort",
+        ),
+        (
+            "<?php $items = [3, 2, 1]; rsort($items, SORT_STRING);",
+            "rsort",
+        ),
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert!(error.message.contains(&format!(
+            "{function}() currently supports default SORT_REGULAR"
+        )));
+        assert!(error.message.contains("sort flags are unsupported"));
     }
 }
 
@@ -10891,6 +10910,56 @@ var_dump(function_exists(\"sort\"), function_exists(\"SORT\"));",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_sort_variable"));
     assert!(c_source.contains("ptn_array_sort_values"));
+}
+
+#[test]
+fn compile_rsort_mutates_direct_variable_and_detaches_cow_to_native_binary() {
+    let root = temp_dir("ptn-native-rsort-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("rsort-cow.php");
+    let output = root.join("rsort-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = [\"b\" => 3, \"a\" => 1, \"c\" => 2];\n\
+$copy = $source;\n\
+var_dump(rsort($copy));\n\
+foreach ($copy as $key => $value) {\n\
+    echo $key, \"=\", $value, \"\\n\";\n\
+}\n\
+echo $source[\"b\"], \":\", $source[\"a\"], \":\", $source[\"c\"], \"\\n\";\n\
+$words = [\"pear\", \"apple\", \"banana\"];\n\
+rsort($words);\n\
+foreach ($words as $word) {\n\
+    echo $word, \"\\n\";\n\
+}\n\
+var_dump(function_exists(\"rsort\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "0=3\n",
+            "1=2\n",
+            "2=1\n",
+            "3:1:2\n",
+            "pear\n",
+            "banana\n",
+            "apple\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_rsort_variable"));
+    assert!(c_source.contains("ptn_array_rsort_values"));
 }
 
 #[test]

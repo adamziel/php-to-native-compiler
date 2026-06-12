@@ -231,20 +231,20 @@ Post-RC architecture remains explicit rather than hidden:
   explicit unsupported diagnostic.
 - Mutating array internals `array_pop($array)`, `array_push($array, ...)`,
   `array_shift($array)`, `array_unshift($array, ...)`, `asort($array)`,
-  `ksort($array)`, `sort($array)`, and `shuffle($array)` over direct variable
-  ordered arrays.
-  One-argument
-  `array_pop()` and `array_shift()` also support variable-root array paths such
-  as `$items[0]`, detaching shared nested array payloads before mutation.
-  `asort()` uses default ascending value order while preserving keys, `ksort()`
-  uses ascending default key order, `sort()` uses default ascending value order
-  and reindexes values with integer keys, and `shuffle()` reindexes values with
-  integer keys. Temporary arrays, array paths for variadic
-  `array_push()`/`array_unshift()`, array paths for `asort()`/`ksort()`/
-  `sort()`/`shuffle()`, and other non-direct-variable mutation targets fail
-  before code generation with an explicit unsupported diagnostic.
-- `sort()`/`asort()` flags and remaining sort-family by-reference array
-  mutators such as `arsort()`, `krsort()`, `usort()`, and
+  `ksort($array)`, `sort($array)`, `rsort($array)`, and `shuffle($array)` over
+  direct variable ordered arrays. One-argument `array_pop()` and
+  `array_shift()` also support variable-root array paths such as `$items[0]`,
+  detaching shared nested array payloads before mutation. `asort()` uses
+  default ascending value order while preserving keys, `ksort()` uses ascending
+  default key order, `sort()` uses default ascending value order, `rsort()` uses
+  default descending value order, and the reindexing value mutators use integer
+  keys. `shuffle()` also reindexes values with integer keys. Temporary arrays,
+  array paths for variadic `array_push()`/`array_unshift()`, array paths for
+  `asort()`/`ksort()`/`sort()`/`rsort()`/`shuffle()`, and other non-direct
+  variable mutation targets fail before code generation with an explicit
+  unsupported diagnostic.
+- `sort()`/`asort()`/`rsort()` flags and remaining sort-family by-reference
+  array mutators such as `arsort()`, `krsort()`, `usort()`, and
   `array_multisort()` remain unsupported and fail before code generation with
   an explicit unsupported diagnostic.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string

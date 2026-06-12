@@ -1169,6 +1169,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "next",
         "prev",
         "reset",
+        "rsort",
         "shuffle",
         "sort",
     ] {
@@ -3372,6 +3373,7 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
             | "next"
             | "prev"
             | "reset"
+            | "rsort"
             | "shuffle"
             | "sort"
     )
@@ -7171,6 +7173,8 @@ impl ValueEmitter {
                 Some("ptn_runtime_array_shuffle_variable")
             } else if name.eq_ignore_ascii_case("sort") {
                 Some("ptn_runtime_array_sort_variable")
+            } else if name.eq_ignore_ascii_case("rsort") {
+                Some("ptn_runtime_array_rsort_variable")
             } else {
                 None
             }
