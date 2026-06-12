@@ -998,9 +998,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `trim()`/`ltrim()`/`rtrim()` malformed-charlist warning parity plus
   resource/reference operand parity and object string conversion outside the
   current public declared `__toString()` support.
-- Exact `chunk_split()` non-positive length exception parity plus
-  resource/reference operand parity and object string conversion outside the
-  current public declared `__toString()` support.
+- Exact `chunk_split()` resource/reference operand parity and object string
+  conversion outside the current public declared `__toString()` support.
 - Exact `strip_tags()` binary-string behavior, allowed-tags argument support,
   malformed/incomplete tag parity, plus resource/reference operand parity and
   object string conversion outside the current public declared `__toString()`

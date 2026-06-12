@@ -5271,7 +5271,10 @@ fn compile_chunk_split_registry_and_scalar_conversion_to_native_binary() {
     let output = root.join("chunk-split-registry-bin");
     fs::write(
         &input,
-        "<?php var_dump(chunk_split(12345, 2, \".\"), chunk_split(\"abc\", \"2\", true), function_exists(\"chunk_split\"), function_exists(\"CHUNK_SPLIT\"));",
+        "<?php\n\
+var_dump(chunk_split(12345, 2, \".\"), chunk_split(\"abc\", \"2\", true), function_exists(\"chunk_split\"), function_exists(\"CHUNK_SPLIT\"));\n\
+try { chunk_split(\"abc\", 0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { chunk_split(\"abc\", -1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n",
     )
     .unwrap();
 
@@ -5281,7 +5284,7 @@ fn compile_chunk_split_registry_and_scalar_conversion_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(8) \"12.34.5.\"\nstring(5) \"ab1c1\"\nbool(true)\nbool(true)\n"
+        "string(8) \"12.34.5.\"\nstring(5) \"ab1c1\"\nbool(true)\nbool(true)\nchunk_split(): Argument #2 ($length) must be greater than 0\nchunk_split(): Argument #2 ($length) must be greater than 0\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

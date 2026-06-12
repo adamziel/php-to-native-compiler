@@ -4575,7 +4575,11 @@ static PtnValue ptn_internal_chunk_split(PtnRuntime *runtime, size_t argc, const
     int64_t chunk_len_value = argc >= 2 ? ptn_value_to_integer(args[1]) : 76;
     if (chunk_len_value <= 0) {
         ptn_string_operand_free(input);
-        ptn_abort_arithmetic_error("chunk_split(): Argument #2 ($length) must be greater than 0");
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "chunk_split(): Argument #2 ($length) must be greater than 0"
+        );
     }
     PtnStringOperand ending;
     if (argc >= 3) {

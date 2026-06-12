@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T15:03Z
-Measured: `ptn-mxlw` rebased after `origin/master` `c920bbb80`.
+Refresh: 2026-06-12T15:12Z
+Measured: `ptn-4lg4` rebased after `origin/master` `e43c291a0`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
 array/string-offset writes and unsets, array/append compound assignments,
@@ -11,14 +11,14 @@ explicit regular sort flags, set operations, `array_udiff*()`, exact
 string/lang rows, highlight output paths, `join()`/`implode()`, `sprintf()`,
 `array_product()`, key helpers, `array_search()`, `array_slice()`,
 `array_pad()`, `count()`/`sizeof()` normal and recursive modes, `str_pad()`,
-catchable `intdiv()` plus unsupported-operand TypeErrors, ASCII case/trim
-reducers, length-aware `chunk_split()` empty-input endings, modeled
-PHP/CLI/Zend metadata, PHPT runner environment probes, `ceil()`/`floor()`
-diagnostics, `is_countable()`, `chr()` finite float/float-string precision
-diagnostics, first `ReflectionFunction` metadata backed by generated
-user-function metadata plus the internal registry, unbracketed namespaces,
-foreach list destructuring with reference elements, and bounded dynamic
-include/require path dispatch.
+catchable `intdiv()` plus unsupported-operand TypeErrors, catchable
+`chunk_split()` length `ValueError`, ASCII case/trim reducers, length-aware
+`chunk_split()` empty-input endings, modeled PHP/CLI/Zend metadata, PHPT runner
+environment probes, `ceil()`/`floor()` diagnostics, `is_countable()`, `chr()`
+finite float/float-string precision diagnostics, first `ReflectionFunction`
+metadata backed by generated user-function metadata plus the internal registry,
+unbracketed namespaces, foreach list destructuring with reference elements, and
+bounded dynamic include/require path dispatch.
 
 Recent movers include dynamic-root offset writes/unsets, property/static quiet
 probes and inc/dec, direct sort-family mutators and flag diagnostics, array
@@ -26,15 +26,15 @@ key/search/slice/pad helpers, shared `count()`/`sizeof()` optional-mode
 dispatch, `COUNT_NORMAL`/`COUNT_RECURSIVE` constants, recursive array counting
 with recursion warnings, invalid-mode `ValueError`s, byte-length `str_pad()`
 modes and `STR_PAD_*` constants, catchable `intdiv()` unsupported-operand
-TypeErrors, ASCII case and trim reducers, `chunk_split()` empty-input binary
-endings, `phpversion()`, `php_sapi_name()`, `zend_version()`, `PHP_VERSION`,
-`PHP_SAPI`, `PHP_OS`, `PHP_SHLIB_SUFFIX`, `get_loaded_extensions()`,
-`extension_loaded()`, `ini_get()`, `get_cfg_var()`, `php_ini_scanned_files()`,
-`php_uname()`, `realpath()`, `scandir()`, `preg_match()`, `str_replace()`,
-`chr()` call-site precision deprecations, `ceil()`/`floor()` `TypeError`
-parity, namespace PHPT rows `ns_001`, `ns_002`, `ns_003`, `ns_014`, foreach
-destructuring paths, include PHPT rows,
-`ext/standard/tests/array/count_basic`,
+TypeErrors, catchable `chunk_split()` length diagnostics, ASCII case and trim
+reducers, `chunk_split()` empty-input binary endings, `phpversion()`,
+`php_sapi_name()`, `zend_version()`, `PHP_VERSION`, `PHP_SAPI`, `PHP_OS`,
+`PHP_SHLIB_SUFFIX`, `get_loaded_extensions()`, `extension_loaded()`,
+`ini_get()`, `get_cfg_var()`, `php_ini_scanned_files()`, `php_uname()`,
+`realpath()`, `scandir()`, `preg_match()`, `str_replace()`, `chr()` call-site
+precision deprecations, `ceil()`/`floor()` `TypeError` parity, namespace PHPT
+rows `ns_001`, `ns_002`, `ns_003`, `ns_014`, foreach destructuring paths,
+include PHPT rows, `ext/standard/tests/array/count_basic`,
 `ext/standard/tests/array/sizeof_basic2`, `ext/standard/tests/strings/str_pad`,
 `ext/standard/tests/strings/chunk_split_variation7`, ReflectionFunction names,
 namespace/short-name probes, internal/user flags, parameter counts, variadic
@@ -71,13 +71,14 @@ unbracketed namespaces, simple imports, streams, modeled PHP/CLI/Zend version
 metadata, PHPT runner environment probes, `get_loaded_extensions()`, `pow()`,
 `array_merge()`, `array_pad()`, `count()`/`sizeof()`, `str_pad()`,
 `array_slice()`, `strrev()`, first-byte case helpers, trim-family internals,
-length-aware `chunk_split()` empty-input endings, `chr()` call-site precision
-deprecations, `array_search()`, `call_user_func_array()`, catchable `intdiv()`
-integer-operand TypeErrors, highlight output paths, `var_export()`, direct
-array mutators including `natcasesort()`, explicit regular sort flags, set
-operations, inc/dec, foreach destructuring, dynamic-variable
-array/string-offset writes, include helpers sharing caller file scope and
-return values, and CLI/extension metadata probes used by the PHPT runner.
+length-aware `chunk_split()` empty-input endings, catchable `chunk_split()`
+length errors, `chr()` call-site precision deprecations, `array_search()`,
+`call_user_func_array()`, catchable `intdiv()` integer-operand TypeErrors,
+highlight output paths, `var_export()`, direct array mutators including
+`natcasesort()`, explicit regular sort flags, set operations, inc/dec, foreach
+destructuring, dynamic-variable array/string-offset writes, include helpers
+sharing caller file scope and return values, and CLI/extension metadata probes
+used by the PHPT runner.
 
 ## Remaining Bounded Failures
 
@@ -87,10 +88,11 @@ return values, and CLI/extension metadata probes used by the PHPT runner.
 
 Verification: recent slices added `array_search()`, `natcasesort()`,
 `ceil()`/`floor()` diagnostics, `is_countable()`, `ucfirst()`, `lcfirst()`,
-`array_pad()`, `array_slice()`, explicit regular sort flags, trim-family byte
-charlists, namespace parser/resolver PHPT rows 4/4, foreach list
-destructuring/reference-element coverage, include PHPT manifest coverage 2/2,
-modeled `str_pad()` plus `ext/standard/tests/strings/str_pad.phpt`,
+`array_pad()`, `array_slice()`, catchable `chunk_split()` length `ValueError`,
+explicit regular sort flags, trim-family byte charlists, namespace
+parser/resolver PHPT rows 4/4, foreach list destructuring/reference-element
+coverage, include PHPT manifest coverage 2/2, modeled `str_pad()` plus
+`ext/standard/tests/strings/str_pad.phpt`,
 `chunk_split("", ..., "|".chr(0))` plus
 `ext/standard/tests/strings/chunk_split_variation7.phpt`, focused `intdiv()`
 unsupported-operand `TypeError` coverage, callback/reflection manifest
