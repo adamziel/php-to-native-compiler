@@ -1272,6 +1272,14 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     assert_eq!(error.message, "Cannot redeclare function array_keys()");
 
     let error =
+        parser::parse("<?php function Array_Key_First($array) { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_key_first()");
+
+    let error =
+        parser::parse("<?php function Array_Key_Last($array) { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_key_last()");
+
+    let error =
         parser::parse("<?php function array_combine($keys, $values) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_combine()");
 
@@ -9983,6 +9991,41 @@ try { array_key_exists(\"public_var\", new KeyCheck); } catch (TypeError $e) { e
         "bool(true)\nbool(false)\n\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nCannot access offset of type array on array\narray_key_exists(): Argument #2 ($array) must be of type array, KeyCheck given\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_key_first_and_last_to_native_binary() {
+    let root = temp_dir("ptn-native-array-key-first-last");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-key-first-last.php");
+    let output = root.join("array-key-first-last-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$empty = [];\n\
+var_dump(array_key_first($empty), array_key_last($empty));\n\
+$items = [2 => 'a', '02' => 'b', 3 => 'c'];\n\
+var_dump(array_key_first($items), array_key_last($items));\n\
+$value = 'x';\n\
+$refs = ['first' => &$value, 'last' => 'y'];\n\
+var_dump(array_key_first($refs), array_key_last($refs));\n\
+var_dump(function_exists('array_key_first'), function_exists('ARRAY_KEY_LAST'));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "NULL\nNULL\nint(2)\nint(3)\nstring(5) \"first\"\nstring(4) \"last\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_key_first"));
+    assert!(c_source.contains("ptn_internal_array_key_last"));
 }
 
 #[test]

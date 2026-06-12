@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T08:05Z
-Measured: `ptn-sct3` rebased after `origin/master` `04cc2abbf`.
+Refresh: 2026-06-12T08:02Z
+Measured: `ptn-ggz7` rebased after `origin/master` `9582cd7d9`.
 
 Recent RC slices cover property/static-property inc/dec
 statements/expressions, scalar/string inc/dec value semantics, dynamic-variable
@@ -15,14 +15,15 @@ probes, direct array mutators including default
 diagnostics, set operations, `array_udiff*()`, exact `strings/004`,
 `strings/006`, and `tests/lang/024`, highlight output paths,
 `join()`/`implode()`, scalar `sprintf()`, `array_product()`, `array_keys()`,
-catchable `intdiv()` exceptions, and ASCII case string internals.
+`array_key_first()`/`array_key_last()`, catchable `intdiv()` exceptions, and
+ASCII case string internals.
 
 Recent movers include exact string/lang/array rows, `array_udiff*()`,
 dynamic-root array/string-offset writes/unsets, object `var_export()`,
 `get_class()` metadata, property/static quiet probes, default
 sort/asort/arsort/ksort/krsort/rsort, sort flag diagnostics, offset compound
-assignments, property/static inc/dec, `array_product()`, `array_keys()` loose
-and strict value filtering, exact `intdiv()` exceptions, and ASCII
+assignments, property/static inc/dec, `array_product()`, `array_keys()`,
+`array_key_first()`/`array_key_last()`, exact `intdiv()` exceptions, and ASCII
 `strtolower()`/`strtoupper()` behavior.
 
 ## Dashboard
@@ -30,7 +31,7 @@ and strict value filtering, exact `intdiv()` exceptions, and ASCII
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 525 | 525 | 0 |
+| Native/compiler Rust suite | 526 | 526 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 204 | 204 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
@@ -52,7 +53,8 @@ declared instance-property defaults and metadata, property/static-property quiet
 probes, public constructors, class/object metadata intrinsics, `is_callable()`,
 assertions, heredoc/nowdoc, interpolation, streams, `pow()`, `array_merge()`,
 `join()`/`implode()`, scalar `sprintf()`, ASCII case string internals,
-`array_product()`, `array_keys()`, `call_user_func_array()`,
+`array_product()`, `array_keys()`, `array_key_first()`/`array_key_last()`,
+`call_user_func_array()`,
 CLI/error-reporting wiring, highlight output paths,
 scalar/array/current-object `var_export()`, direct array mutators including
 `sort()`/`asort()`/`arsort()`/`ksort()`/`krsort()`/`rsort()`, set operations,
@@ -67,12 +69,12 @@ array/string-offset writes and unsets.
 
 ## Verification
 
-Verification: `ptn-vc6f` passed fmt, build, focused ASCII case coverage, and
-`cargo test` with native/compiler 523/523 plus COW/doc-tests. `ptn-9b9n` adds
-focused `array_keys()` native/parser coverage. `ptn-sct3` keeps the adjacent
-ordered-array `array_keys()` reducer/filter edge coverage. Final gates are fmt,
-build, focused coverage, exact `array_keys` PHPT rows 4/4, and `cargo test`
-with native/compiler 525/525 plus COW/doc-tests.
+Verification: `ptn-sct3` passed fmt, build, focused `array_keys()` coverage,
+exact `array_keys` PHPT rows 4/4, and `cargo test` with native/compiler
+525/525 plus COW/doc-tests. `ptn-ggz7` adds
+`array_key_first()`/`array_key_last()` coverage. Final gates are fmt, build,
+focused native/parser coverage, and `cargo test` with native/compiler 526/526
+plus COW/doc-tests.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

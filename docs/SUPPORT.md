@@ -312,6 +312,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_fill(expr, expr, expr);`, `array_filter(expr[, expr[, expr]]);`,
   `array_keys(expr[, expr[, expr]]);`,
   `array_intersect(expr, ...);`, `array_intersect_assoc(expr, ...);`,
+  `array_key_first(expr);`, `array_key_last(expr);`,
   `array_udiff(expr, expr, callback);`,
   `array_udiff_assoc(expr, expr, callback);`,
   `array_udiff_uassoc(expr, expr, callback, callback);`,
@@ -350,6 +351,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_fill(expr, expr, expr)`, `array_filter(expr[, expr[, expr]])`,
   `array_keys(expr[, expr[, expr]])`,
   `array_intersect(expr, ...)`, `array_intersect_assoc(expr, ...)`,
+  `array_key_first(expr)`, `array_key_last(expr)`,
   `array_udiff(expr, expr, callback)`,
   `array_udiff_assoc(expr, expr, callback)`,
   `array_udiff_uassoc(expr, expr, callback, callback)`,
@@ -571,6 +573,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `array_flip()` over current boxed arrays, flipping dereferenced integer and
   string values into ordered-map keys and using the original keys as values.
   Unsupported value types emit the modeled PHP warning boundary and are skipped.
+- `array_key_first()` and `array_key_last()` over current boxed arrays,
+  returning the first or last ordered integer/string key, or `null` for empty
+  arrays.
 - `array_change_key_case()` over current boxed arrays, preserving integer keys,
   converting string keys through ASCII lower/upper casing, and cloning
   dereferenced values into a fresh ordered array. The optional case flag accepts
