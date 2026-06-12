@@ -18200,6 +18200,113 @@ string(17) \"resource (closed)\"\n"
 }
 
 #[test]
+fn compile_namespaced_class_aliases_to_native_binary() {
+    let root = temp_dir("ptn-native-namespace-class-aliases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespace-class-aliases.php");
+    let output = root.join("namespace-class-aliases-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace test\ns1;
+
+class Foo {
+    function __construct() { echo __CLASS__, "\n"; }
+    function bar() { echo __CLASS__, "\n"; }
+    static function baz() { echo __CLASS__, "\n"; }
+}
+
+use test\ns1\Foo as Bar;
+use test\ns1 as ns2;
+use test\ns1;
+
+$x = new Foo;
+$x->bar();
+Foo::baz();
+$y = new \test\ns1\Foo;
+$y->bar();
+\test\ns1\Foo::baz();
+Bar::baz();
+ns2\Foo::baz();
+ns1\Foo::baz();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "test\\ns1\\Foo\n",
+            "test\\ns1\\Foo\n",
+            "test\\ns1\\Foo\n",
+            "test\\ns1\\Foo\n",
+            "test\\ns1\\Foo\n",
+            "test\\ns1\\Foo\n",
+            "test\\ns1\\Foo\n",
+            "test\\ns1\\Foo\n",
+            "test\\ns1\\Foo\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("test\\\\ns1\\\\Foo"));
+}
+
+#[test]
+fn compile_namespaced_function_and_constant_imports_to_native_binary() {
+    let root = temp_dir("ptn-native-namespace-function-constant-imports");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespace-function-constant-imports.php");
+    let output = root.join("namespace-function-constant-imports-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace Lib\Tools;
+
+const MARK = "const\n";
+
+function mark($value) {
+    return __NAMESPACE__ . ":" . $value . "\n";
+}
+
+namespace App;
+
+use function Lib\Tools\mark as label;
+use const Lib\Tools\MARK as IMPORTED_MARK;
+
+echo label("call");
+echo IMPORTED_MARK;
+echo strlen("abc"), ":", PHP_INT_SIZE, "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Lib\\Tools:call\nconst\n3:8\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_rejects_namespace_after_function_declaration() {
+    let error = parser::parse("<?php function foo() {} namespace Bar;").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Namespace declaration statement has to be the very first statement or after any declare call in the script"
+    );
+}
+
+#[test]
 fn unsupported_internal_functions_fail_in_generated_runtime() {
     let root = temp_dir("ptn-native-unsupported-internal-function");
     fs::create_dir_all(&root).unwrap();

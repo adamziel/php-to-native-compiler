@@ -41,6 +41,11 @@ pub fn parse(source: &str) -> Result<Program> {
         index: 0,
         block_depth: 0,
         function_depth: 0,
+        current_namespace: None,
+        seen_namespace_declaration: false,
+        class_aliases: HashMap::new(),
+        function_aliases: HashMap::new(),
+        constant_aliases: HashMap::new(),
     }
     .parse_program()
 }
@@ -50,6 +55,33 @@ struct Parser {
     index: usize,
     block_depth: usize,
     function_depth: usize,
+    current_namespace: Option<String>,
+    seen_namespace_declaration: bool,
+    class_aliases: HashMap<String, String>,
+    function_aliases: HashMap<String, String>,
+    constant_aliases: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NameResolution {
+    Unqualified,
+    Qualified,
+    FullyQualified,
+    NamespaceRelative,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedName {
+    name: String,
+    span: SourceSpan,
+    resolution: NameResolution,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UseDeclarationKind {
+    Class,
+    Function,
+    Constant,
 }
 
 struct ForeachVariable {
@@ -98,7 +130,19 @@ impl Parser {
             if matches!(self.peek().kind, TokenKind::Eof) {
                 break;
             }
-            if self.peek_starts_function_decl() {
+            if token_is_identifier_named(self.peek(), "namespace") {
+                if !self.seen_namespace_declaration
+                    && (!classes.is_empty() || !functions.is_empty() || !statements.is_empty())
+                {
+                    return Err(Diagnostic::new(
+                        "Namespace declaration statement has to be the very first statement or after any declare call in the script",
+                        Some(self.peek().span),
+                    ));
+                }
+                self.parse_namespace_declaration()?;
+            } else if token_is_identifier_named(self.peek(), "use") {
+                self.parse_use_declarations()?;
+            } else if self.peek_starts_function_decl() {
                 functions.push(self.parse_function_decl()?);
             } else if token_is_identifier_named(self.peek(), "class") {
                 classes.push(self.parse_class_decl()?);
@@ -139,6 +183,280 @@ impl Parser {
         })
     }
 
+    fn parse_namespace_declaration(&mut self) -> Result<()> {
+        self.advance();
+        let namespace = if matches!(
+            self.peek().kind,
+            TokenKind::Semicolon | TokenKind::LeftBrace
+        ) {
+            None
+        } else {
+            Some(self.parse_namespace_name()?)
+        };
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            return Err(Diagnostic::new(
+                "bracketed namespace declarations are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        self.expect_semicolon()?;
+        self.current_namespace = namespace;
+        self.seen_namespace_declaration = true;
+        self.clear_namespace_imports();
+        Ok(())
+    }
+
+    fn parse_namespace_name(&mut self) -> Result<String> {
+        let parsed = self.parse_name("expected namespace name")?;
+        match parsed.resolution {
+            NameResolution::Unqualified | NameResolution::Qualified => Ok(parsed.name),
+            NameResolution::FullyQualified => Err(Diagnostic::new(
+                "namespace declarations cannot use fully qualified names",
+                Some(parsed.span),
+            )),
+            NameResolution::NamespaceRelative => Err(Diagnostic::new(
+                "namespace declarations cannot use namespace-relative names",
+                Some(parsed.span),
+            )),
+        }
+    }
+
+    fn parse_use_declarations(&mut self) -> Result<()> {
+        let use_span = self.advance().span;
+        if self.block_depth != 0 || self.function_depth != 0 {
+            return Err(Diagnostic::new(
+                "use declarations must be at top level",
+                Some(use_span),
+            ));
+        }
+        let kind = if matches!(self.peek().kind, TokenKind::Function) {
+            self.advance();
+            UseDeclarationKind::Function
+        } else if matches!(self.peek().kind, TokenKind::Const) {
+            self.advance();
+            UseDeclarationKind::Constant
+        } else {
+            UseDeclarationKind::Class
+        };
+        loop {
+            self.parse_use_import(kind)?;
+            if !matches!(self.peek().kind, TokenKind::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        self.expect_semicolon()?;
+        Ok(())
+    }
+
+    fn parse_use_import(&mut self, kind: UseDeclarationKind) -> Result<()> {
+        let target = self.parse_name("expected imported name")?;
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            return Err(Diagnostic::new(
+                "grouped use declarations are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        let alias = if matches!(self.peek().kind, TokenKind::As) {
+            self.advance();
+            let token = self.advance().clone();
+            let TokenKind::Identifier(alias) = token.kind else {
+                return Err(Diagnostic::new("expected import alias", Some(token.span)));
+            };
+            alias
+        } else {
+            target
+                .name
+                .rsplit('\\')
+                .next()
+                .unwrap_or(&target.name)
+                .to_string()
+        };
+        let target_name = match target.resolution {
+            NameResolution::FullyQualified => target.name,
+            NameResolution::NamespaceRelative => self.qualify_current_namespace(&target.name),
+            NameResolution::Unqualified | NameResolution::Qualified => target.name,
+        };
+        let alias_key = alias.to_ascii_lowercase();
+        match kind {
+            UseDeclarationKind::Class => {
+                self.class_aliases.insert(alias_key, target_name);
+            }
+            UseDeclarationKind::Function => {
+                self.function_aliases.insert(alias_key, target_name);
+            }
+            UseDeclarationKind::Constant => {
+                self.constant_aliases.insert(alias_key, target_name);
+            }
+        }
+        Ok(())
+    }
+
+    fn clear_namespace_imports(&mut self) {
+        self.class_aliases.clear();
+        self.function_aliases.clear();
+        self.constant_aliases.clear();
+    }
+
+    fn parse_declaration_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
+        let parsed = self.parse_name(expected)?;
+        match parsed.resolution {
+            NameResolution::Unqualified => {
+                let name = self.qualify_current_namespace(&parsed.name);
+                Ok((name, parsed.span))
+            }
+            _ => Err(Diagnostic::new(
+                "declarations must use unqualified names",
+                Some(parsed.span),
+            )),
+        }
+    }
+
+    fn parse_resolved_class_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
+        let parsed = self.parse_name(expected)?;
+        let span = parsed.span;
+        Ok((self.resolve_class_name(&parsed), span))
+    }
+
+    fn parse_resolved_function_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
+        let parsed = self.parse_name(expected)?;
+        let span = parsed.span;
+        Ok((self.resolve_function_name(&parsed), span))
+    }
+
+    fn parse_name(&mut self, expected: &str) -> Result<ParsedName> {
+        let leading_backslash = matches!(self.peek().kind, TokenKind::Backslash);
+        let start_span = if leading_backslash {
+            Some(self.advance().span)
+        } else {
+            None
+        };
+        let first_token = self.advance().clone();
+        let TokenKind::Identifier(first_segment) = first_token.kind else {
+            return Err(Diagnostic::new(expected, Some(first_token.span)));
+        };
+        self.parse_name_from_first(first_segment, first_token.span, start_span, expected)
+    }
+
+    fn parse_name_from_first(
+        &mut self,
+        first_segment: String,
+        first_span: SourceSpan,
+        leading_span: Option<SourceSpan>,
+        expected: &str,
+    ) -> Result<ParsedName> {
+        let mut span = leading_span
+            .map(|span| combine_spans(span, first_span))
+            .unwrap_or(first_span);
+        let mut segments = vec![first_segment];
+        while matches!(self.peek().kind, TokenKind::Backslash) {
+            self.advance();
+            let segment_token = self.advance().clone();
+            let TokenKind::Identifier(segment) = segment_token.kind else {
+                return Err(Diagnostic::new(expected, Some(segment_token.span)));
+            };
+            span = combine_spans(span, segment_token.span);
+            segments.push(segment);
+        }
+        let leading_backslash = leading_span.is_some();
+        let namespace_relative = !leading_backslash
+            && segments
+                .first()
+                .is_some_and(|segment| segment.eq_ignore_ascii_case("namespace"));
+        let resolution = if leading_backslash {
+            NameResolution::FullyQualified
+        } else if namespace_relative {
+            NameResolution::NamespaceRelative
+        } else if segments.len() == 1 {
+            NameResolution::Unqualified
+        } else {
+            NameResolution::Qualified
+        };
+        let name_segments = if namespace_relative {
+            &segments[1..]
+        } else {
+            &segments[..]
+        };
+        Ok(ParsedName {
+            name: name_segments.join("\\"),
+            span,
+            resolution,
+        })
+    }
+
+    fn qualify_current_namespace(&self, name: &str) -> String {
+        match self.current_namespace.as_deref() {
+            Some(namespace) if !namespace.is_empty() && !name.is_empty() => {
+                format!("{namespace}\\{name}")
+            }
+            _ => name.to_string(),
+        }
+    }
+
+    fn resolve_class_name(&self, parsed: &ParsedName) -> String {
+        match parsed.resolution {
+            NameResolution::FullyQualified => parsed.name.clone(),
+            NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
+            NameResolution::Unqualified | NameResolution::Qualified => {
+                self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
+            }
+        }
+    }
+
+    fn resolve_function_name(&self, parsed: &ParsedName) -> String {
+        let resolved = match parsed.resolution {
+            NameResolution::FullyQualified => parsed.name.clone(),
+            NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
+            NameResolution::Unqualified => {
+                let alias_key = parsed.name.to_ascii_lowercase();
+                if let Some(target) = self.function_aliases.get(&alias_key) {
+                    target.clone()
+                } else if is_modeled_internal_function_name(&alias_key) {
+                    alias_key
+                } else {
+                    self.qualify_current_namespace(&parsed.name)
+                }
+            }
+            NameResolution::Qualified => self.qualify_current_namespace(&parsed.name),
+        };
+        resolved.to_ascii_lowercase()
+    }
+
+    fn resolve_constant_name(&self, parsed: &ParsedName) -> String {
+        match parsed.resolution {
+            NameResolution::FullyQualified => parsed.name.clone(),
+            NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
+            NameResolution::Unqualified => {
+                let alias_key = parsed.name.to_ascii_lowercase();
+                if let Some(target) = self.constant_aliases.get(&alias_key) {
+                    target.clone()
+                } else if is_modeled_global_constant_name(&parsed.name) {
+                    parsed.name.clone()
+                } else {
+                    self.qualify_current_namespace(&parsed.name)
+                }
+            }
+            NameResolution::Qualified => self.qualify_current_namespace(&parsed.name),
+        }
+    }
+
+    fn resolve_aliasable_name(&self, name: &str, aliases: &HashMap<String, String>) -> String {
+        let mut parts = name.split('\\');
+        let Some(first) = parts.next() else {
+            return self.qualify_current_namespace(name);
+        };
+        let suffix = parts.collect::<Vec<_>>().join("\\");
+        if let Some(target) = aliases.get(&first.to_ascii_lowercase()) {
+            if suffix.is_empty() {
+                target.clone()
+            } else {
+                format!("{target}\\{suffix}")
+            }
+        } else {
+            self.qualify_current_namespace(name)
+        }
+    }
+
     fn parse_class_decl(&mut self) -> Result<ClassDecl> {
         let class_token = self.advance().clone();
         let TokenKind::Identifier(keyword) = &class_token.kind else {
@@ -148,23 +466,13 @@ impl Parser {
             return Err(Diagnostic::new("expected class", Some(class_token.span)));
         }
 
-        let name_token = self.advance().clone();
-        let TokenKind::Identifier(class_name) = name_token.kind else {
-            return Err(Diagnostic::new(
-                "expected class name",
-                Some(name_token.span),
-            ));
-        };
+        let (class_name, _) = self.parse_declaration_name("expected class name")?;
         let parent_name = if token_is_identifier_named(self.peek(), "extends") {
             self.advance();
-            let parent_token = self.advance().clone();
-            let TokenKind::Identifier(parent_name) = parent_token.kind else {
-                return Err(Diagnostic::new(
-                    "expected parent class name",
-                    Some(parent_token.span),
-                ));
-            };
-            Some(parent_name)
+            Some(
+                self.parse_resolved_class_name("expected parent class name")?
+                    .0,
+            )
         } else {
             None
         };
@@ -471,13 +779,7 @@ impl Parser {
         } else {
             false
         };
-        let name_token = self.advance().clone();
-        let TokenKind::Identifier(name) = name_token.kind else {
-            return Err(Diagnostic::new(
-                "expected function name",
-                Some(name_token.span),
-            ));
-        };
+        let (name, _) = self.parse_declaration_name("expected function name")?;
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
@@ -923,10 +1225,7 @@ impl Parser {
     }
 
     fn parse_const_declaration(&mut self) -> Result<ConstDeclaration> {
-        let token = self.advance().clone();
-        let TokenKind::Identifier(name) = token.kind else {
-            return Err(Diagnostic::new("expected constant name", Some(token.span)));
-        };
+        let (name, token_span) = self.parse_declaration_name("expected constant name")?;
         self.expect_equal()?;
         let value = self.parse_expr()?;
         if !is_supported_global_const_expr(&value) {
@@ -938,7 +1237,7 @@ impl Parser {
         Ok(ConstDeclaration {
             name,
             value,
-            span: token.span,
+            span: token_span,
         })
     }
 
@@ -1201,17 +1500,14 @@ impl Parser {
     }
 
     fn parse_call_clause(&mut self) -> Result<Statement> {
-        let token = self.advance().clone();
-        let TokenKind::Identifier(name) = token.kind else {
-            return Err(Diagnostic::new("expected function name", Some(token.span)));
-        };
+        let (name, token_span) = self.parse_resolved_function_name("expected function name")?;
         let (arguments, argument_names, _) = self.parse_call_arguments()?;
-        validate_mutating_array_internal_call(&name, &arguments, token.span)?;
+        validate_mutating_array_internal_call(&name, &arguments, token_span)?;
         Ok(Statement::Call {
-            name: name.to_ascii_lowercase(),
+            name,
             arguments,
             argument_names,
-            span: token.span,
+            span: token_span,
         })
     }
 
@@ -1370,18 +1666,9 @@ impl Parser {
     }
 
     fn parse_catch_type_name(&mut self) -> Result<String> {
-        let leading_backslash = matches!(self.peek().kind, TokenKind::Backslash);
-        if leading_backslash {
-            self.advance();
-        }
-        let token = self.advance().clone();
-        let TokenKind::Identifier(name) = token.kind else {
-            return Err(Diagnostic::new(
-                "expected catch type name",
-                Some(token.span),
-            ));
-        };
-        Ok(name)
+        Ok(self
+            .parse_resolved_class_name("expected catch type name")?
+            .0)
     }
 
     fn parse_goto(&mut self) -> Result<Statement> {
@@ -1408,18 +1695,15 @@ impl Parser {
     }
 
     fn parse_call_statement(&mut self) -> Result<Statement> {
-        let token = self.advance().clone();
-        let TokenKind::Identifier(name) = token.kind else {
-            return Err(Diagnostic::new("expected function name", Some(token.span)));
-        };
+        let (name, span) = self.parse_resolved_function_name("expected function name")?;
         let (arguments, argument_names, _) = self.parse_call_arguments()?;
-        validate_mutating_array_internal_call(&name, &arguments, token.span)?;
+        validate_mutating_array_internal_call(&name, &arguments, span)?;
         self.expect_statement_terminator()?;
         Ok(Statement::Call {
-            name: name.to_ascii_lowercase(),
+            name,
             arguments,
             argument_names,
-            span: token.span,
+            span,
         })
     }
 
@@ -1886,51 +2170,97 @@ impl Parser {
             TokenKind::Function => self.parse_anonymous_function_expr(token.span),
             TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Identifier(name) => {
-                let lowercase = name.to_ascii_lowercase();
+                let parsed_name =
+                    self.parse_name_from_first(name, token.span, None, "expected name")?;
+                let unqualified = matches!(parsed_name.resolution, NameResolution::Unqualified);
+                let lowercase = parsed_name.name.to_ascii_lowercase();
                 if matches!(self.peek().kind, TokenKind::DoubleColon) {
-                    self.parse_static_member_expr(name, token.span)
+                    let class_name = self.resolve_class_name(&parsed_name);
+                    self.parse_static_member_expr(class_name, parsed_name.span)
                 } else if matches!(self.peek().kind, TokenKind::LeftParen) {
-                    match lowercase.as_str() {
-                        "array" => self.parse_long_array_literal(token.span),
-                        "isset" => self.parse_isset_expr(token.span),
-                        "empty" => self.parse_empty_expr(token.span),
+                    match (unqualified, lowercase.as_str()) {
+                        (true, "array") => self.parse_long_array_literal(parsed_name.span),
+                        (true, "isset") => self.parse_isset_expr(parsed_name.span),
+                        (true, "empty") => self.parse_empty_expr(parsed_name.span),
                         _ => {
                             let (arguments, argument_names, right_span) =
                                 self.parse_call_arguments()?;
+                            let resolved_name = self.resolve_function_name(&parsed_name);
                             validate_mutating_array_internal_call(
-                                &lowercase, &arguments, token.span,
+                                &resolved_name,
+                                &arguments,
+                                parsed_name.span,
                             )?;
                             Ok(Expr::Call {
-                                name: lowercase,
+                                name: resolved_name,
                                 arguments,
                                 argument_names,
-                                span: combine_spans(token.span, right_span),
+                                span: combine_spans(parsed_name.span, right_span),
                             })
                         }
                     }
-                } else if let Some(kind) = magic_constant_kind(&name) {
-                    Ok(Expr::MagicConstant(kind, token.span))
+                } else if unqualified
+                    && lowercase == "__namespace__"
+                    && self.current_namespace.is_some()
+                {
+                    Ok(Expr::String(
+                        self.current_namespace.clone().unwrap_or_default(),
+                        parsed_name.span,
+                    ))
+                } else if unqualified {
+                    if let Some(kind) = magic_constant_kind(&parsed_name.name) {
+                        Ok(Expr::MagicConstant(kind, parsed_name.span))
+                    } else {
+                        Ok(Expr::Constant(
+                            self.resolve_constant_name(&parsed_name),
+                            parsed_name.span,
+                        ))
+                    }
                 } else {
-                    Ok(Expr::Constant(name, token.span))
+                    Ok(Expr::Constant(
+                        self.resolve_constant_name(&parsed_name),
+                        parsed_name.span,
+                    ))
                 }
             }
             TokenKind::Backslash => {
-                let name_token = self.advance().clone();
-                let TokenKind::Identifier(name) = name_token.kind else {
+                let first_token = self.advance().clone();
+                let TokenKind::Identifier(first_segment) = first_token.kind else {
                     return Err(Diagnostic::new(
-                        "expected fully qualified constant name",
-                        Some(name_token.span),
+                        "expected fully qualified name",
+                        Some(first_token.span),
                     ));
                 };
+                let parsed_name = self.parse_name_from_first(
+                    first_segment,
+                    first_token.span,
+                    Some(token.span),
+                    "expected fully qualified name",
+                )?;
                 if matches!(self.peek().kind, TokenKind::DoubleColon) {
                     return self.parse_static_member_expr(
-                        name,
-                        combine_spans(token.span, name_token.span),
+                        self.resolve_class_name(&parsed_name),
+                        parsed_name.span,
                     );
                 }
+                if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
+                    let resolved_name = self.resolve_function_name(&parsed_name);
+                    validate_mutating_array_internal_call(
+                        &resolved_name,
+                        &arguments,
+                        parsed_name.span,
+                    )?;
+                    return Ok(Expr::Call {
+                        name: resolved_name,
+                        arguments,
+                        argument_names,
+                        span: combine_spans(parsed_name.span, right_span),
+                    });
+                }
                 Ok(Expr::Constant(
-                    name,
-                    combine_spans(token.span, name_token.span),
+                    self.resolve_constant_name(&parsed_name),
+                    parsed_name.span,
                 ))
             }
             TokenKind::LeftParen => {
@@ -2025,20 +2355,7 @@ impl Parser {
     }
 
     fn parse_new_object_class_name(&mut self) -> Result<(String, SourceSpan)> {
-        let leading_backslash = matches!(self.peek().kind, TokenKind::Backslash);
-        let start_span = if leading_backslash {
-            Some(self.advance().span)
-        } else {
-            None
-        };
-        let token = self.advance().clone();
-        let TokenKind::Identifier(name) = token.kind else {
-            return Err(Diagnostic::new("expected class name", Some(token.span)));
-        };
-        let span = start_span
-            .map(|span| combine_spans(span, token.span))
-            .unwrap_or(token.span);
-        Ok((name, span))
+        self.parse_resolved_class_name("expected class name")
     }
 
     fn reject_unsupported_class_like_declaration(&mut self) -> Result<Statement> {
@@ -3809,6 +4126,57 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "str_shuffle"
             | "strtr"
             | "unlink"
+    )
+}
+
+fn is_modeled_global_constant_name(name: &str) -> bool {
+    matches!(
+        name,
+        "E_ERROR"
+            | "E_WARNING"
+            | "E_PARSE"
+            | "E_NOTICE"
+            | "E_CORE_ERROR"
+            | "E_CORE_WARNING"
+            | "E_COMPILE_ERROR"
+            | "E_COMPILE_WARNING"
+            | "E_USER_ERROR"
+            | "E_USER_WARNING"
+            | "E_USER_NOTICE"
+            | "E_STRICT"
+            | "E_RECOVERABLE_ERROR"
+            | "E_DEPRECATED"
+            | "E_USER_DEPRECATED"
+            | "E_ALL"
+            | "CASE_LOWER"
+            | "CASE_UPPER"
+            | "ARRAY_FILTER_USE_BOTH"
+            | "ARRAY_FILTER_USE_KEY"
+            | "M_E"
+            | "M_LOG2E"
+            | "M_LOG10E"
+            | "M_LN2"
+            | "M_LN10"
+            | "PHP_INT_MIN"
+            | "PHP_INT_MAX"
+            | "PHP_INT_SIZE"
+            | "PHP_EOL"
+            | "DIRECTORY_SEPARATOR"
+            | "PATH_SEPARATOR"
+            | "INF"
+            | "NAN"
+            | "M_PI"
+            | "M_PI_2"
+            | "M_PI_4"
+            | "M_1_PI"
+            | "M_2_PI"
+            | "M_SQRTPI"
+            | "M_2_SQRTPI"
+            | "M_LNPI"
+            | "M_EULER"
+            | "M_SQRT2"
+            | "M_SQRT1_2"
+            | "M_SQRT3"
     )
 }
 

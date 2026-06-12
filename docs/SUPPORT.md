@@ -20,10 +20,16 @@ for initialization and dump labels, and public non-static
 
 Post-RC architecture remains explicit rather than hidden:
 
-- Classes and inheritance: interfaces, traits, namespaces,
-  full visibility-aware/typed/promoted properties, broad metadata/reflection,
-  destructors, old-style constructors, class constants, and complete inherited
-  property/method resolution remain outside the RC boundary.
+- Classes and inheritance: interfaces, traits, full visibility-aware/typed/
+  promoted properties, broad metadata/reflection, destructors, old-style
+  constructors, class constants, and complete inherited property/method
+  resolution remain outside the RC boundary.
+- Namespaces: unbracketed namespace declarations, qualified names, and simple
+  class/function/constant imports are supported for the current top-level
+  function/constant and declared-class subset. Bracketed namespace blocks,
+  grouped imports, namespace fallback parity for arbitrary userland symbols,
+  namespace/class constants, and namespace-sensitive reflection remain
+  post-RC.
 - Static properties: direct public static reads/writes are supported, but
   visibility, inheritance, late static binding, typed/default metadata, and
   static-property compound or null-coalescing-assignment lvalues are post-RC.
@@ -57,10 +63,20 @@ Post-RC architecture remains explicit rather than hidden:
   comments end at a newline or at a trailing `?>` close tag.
 - A `?>` close tag that ends PHP mode and emits following inline output, with
   one immediately following newline swallowed.
-- Global-scope `const NAME = expr;` declarations for the currently supported
-  constant-expression subset. Declared constants are visible to bare constant
-  reads, `defined()`, and `constant()`. Duplicate declarations emit the modeled
-  warning boundary and preserve the original value.
+- Global-scope and unbracketed namespace-scope `const NAME = expr;`
+  declarations for the currently supported constant-expression subset.
+  Declared constants are visible to bare constant reads, `defined()`, and
+  `constant()` under their resolved names. Duplicate declarations emit the
+  modeled warning boundary and preserve the original value.
+- Unbracketed `namespace Name\Parts;` declarations establish the lexical
+  namespace for subsequent top-level declarations and statements.
+  `__NAMESPACE__` yields that lexical namespace string. The namespace
+  declaration must be the first declaration-bearing statement in the file.
+- Simple `use Name\Parts as Alias;`, `use function Name\Parts as alias;`, and
+  `use const Name\Parts as ALIAS;` declarations resolve aliases for the
+  current namespace. Class imports apply to unqualified names and to the first
+  segment of qualified class names; function and constant imports apply to
+  unqualified calls/reads in the current supported subset.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
 - Statement-form expressions over the currently supported expression subset.
@@ -177,11 +193,11 @@ Post-RC architecture remains explicit rather than hidden:
   PHP-style source-spanned fatal diagnostics for the currently modeled
   forbidden associativity forms.
 - Magic constants `__LINE__`, `__FILE__`, and `__DIR__`, plus global-scope
-  `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
-  `__NAMESPACE__` empty-string behavior. Top-level functions expose
-  `__FUNCTION__` and `__METHOD__`; declared class methods expose
-  `__FUNCTION__`, `__METHOD__`, and `__CLASS__` for the current method scope.
-  Traits, namespaces, includes, and eval remain outside this boundary.
+  `__FUNCTION__`, `__METHOD__`, `__CLASS__`, and `__TRAIT__` empty-string
+  behavior. `__NAMESPACE__` exposes the current unbracketed lexical namespace.
+  Top-level functions expose `__FUNCTION__` and `__METHOD__`; declared class
+  methods expose `__FUNCTION__`, `__METHOD__`, and `__CLASS__` for the current
+  method scope. Traits, includes, and eval remain outside this boundary.
 - Short array literals `[...]` and long-form `array(...)` literals with
   optional scalar keys, automatic integer keys, integer-string key
   canonicalization, insertion order, and duplicate-key replacement in the
@@ -671,8 +687,9 @@ Post-RC architecture remains explicit rather than hidden:
   model, and `fclose()` closes those resources. Closed stream resources remain
   boxed values for `gettype()` and `var_dump()` but no longer satisfy
   `is_resource()`.
-- `function_exists()` over generated user-function declarations and the
-  currently registered internal-function names.
+- `function_exists()` over generated user-function declarations, including
+  resolved namespaced declarations, and the currently registered
+  internal-function names.
 - `is_callable()` over current string, closure, static method array, and object
   method array callable values, including inherited public object methods,
   supported `__call` fallback, and the optional syntax-only flag. The third
@@ -764,12 +781,13 @@ Post-RC architecture remains explicit rather than hidden:
   generated main function, including source-spanned fatal diagnostics for
   undefined target labels, duplicate labels, and `goto` jumps into active loop
   or switch scopes.
-- Top-level class declarations with public static and instance methods in the
-  current function subset. Static methods are registered in the callable table
-  under `Class::method`, can be called directly with `Class::method(...)`, and
-  can be used by dynamic calls or internal callbacks through `"Class::method"`
-  and `["Class", "method"]` callable values. Declared class names and declared
-  method names are exposed through bounded `class_exists()` and
+- Top-level class declarations, including resolved namespaced class names, with
+  public static and instance methods in the current function subset. Static
+  methods are registered in the callable table under `Class::method`, can be
+  called directly with `Class::method(...)`, and can be used by dynamic calls
+  or internal callbacks through `"Class::method"` and `["Class", "method"]`
+  callable values. Declared class names and declared method names are exposed
+  through bounded `class_exists()` and
   `method_exists()` metadata, with case-insensitive lookup and `stdClass`
   recognized as the current built-in object shell. Object class names are
   exposed through bounded `get_class($object)` for current object, closure, and
@@ -887,9 +905,10 @@ Post-RC architecture remains explicit rather than hidden:
   beyond the current plain heredoc/nowdoc string-literal slice.
 - Internal functions outside the registered internal-function subset.
 - Exact undefined-constant and unsupported-expression-statement diagnostics.
-- Namespace/class constants, global `const` duplicate diagnostics and ordering
-  parity with runtime `define()`, and built-in PHP/extension constants other
-  than the currently modeled `E_*` error masks, `PHP_EOL`,
+- Class constants, namespace fallback parity for arbitrary userland functions
+  and constants, global `const` duplicate diagnostics and ordering parity with
+  runtime `define()`, and built-in PHP/extension constants other than the
+  currently modeled `E_*` error masks, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants
   in `defined()`/`constant()`.
@@ -898,8 +917,7 @@ Post-RC architecture remains explicit rather than hidden:
   including array/object default arguments, named arguments outside direct
   generated user-function calls, by-reference returns, nested or conditional
   declarations, closures, old-style constructor dispatch, full class metadata,
-  namespaces, globals, static locals, and remaining PHP-exact function return
-  propagation.
+  globals, static locals, and remaining PHP-exact function return propagation.
 - Type predicate coverage for full PHP resource and reference metadata beyond
   the current open-stream `is_resource()` slice.
 - Unsupported recursive arrays, full class/object metadata, broad resources
@@ -999,8 +1017,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
 - Statement-form `(void) expr;` casts.
-- Scope-aware magic constants inside traits, namespaces, includes, and eval
-  contexts.
+- Scope-aware magic constants inside traits, includes, and eval contexts, plus
+  remaining namespace-sensitive reflection and metadata parity.
 - PHP-exact file names, line numbers, custom error-handler routing, and
   overflow parity for remaining integer-only operator conversion diagnostics,
   including shift and modulo diagnostics.

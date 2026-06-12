@@ -52,6 +52,10 @@ Zend/tests/jump/jump08.phpt
 Zend/tests/jump/jump09.phpt
 Zend/tests/jump/jump10.phpt
 Zend/tests/jump/jump14.phpt
+Zend/tests/namespaces/ns_001.phpt
+Zend/tests/namespaces/ns_002.phpt
+Zend/tests/namespaces/ns_003.phpt
+Zend/tests/namespaces/ns_014.phpt
 Zend/tests/not_001.phpt
 Zend/tests/numeric_literal_separator/numeric_literal_separator_001.phpt
 Zend/tests/numeric_strings/array_offset.phpt

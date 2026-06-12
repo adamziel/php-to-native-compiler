@@ -16,6 +16,8 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
 - Top-level functions and declared methods include magic constants, call-frame
   introspection, scalar type hints, array defaults, by-reference returns, typed
   coercion, and constructor dispatch/metadata intrinsics.
+- Unbracketed namespaces resolve current top-level functions/constants/classes,
+  qualified names, `__NAMESPACE__`, and simple class/function/const imports.
 - Full and short ternary expressions lower through the boxed value path with
   lazy branch evaluation; unparenthesized nested ternaries remain an explicit
   diagnostic boundary.
