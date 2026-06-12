@@ -678,9 +678,12 @@ Post-RC architecture remains explicit rather than hidden:
 - `chr()` over current boxed scalar values after scalar integer conversion,
   returning a one-byte string with byte values constrained modulo 256 and
   emitting the modeled out-of-range deprecation for integers outside
-  `[0, 255]`. Finite float and float-string operands that lose precision during
-  integer conversion emit the modeled call-site deprecation and respect
-  `error_reporting()`/`@` suppression.
+  `[0, 255]`. Null operands emit the modeled PHP parameter deprecation and
+  convert to `0`; finite float and float-string operands that lose precision
+  during integer conversion emit the modeled call-site deprecation and respect
+  `error_reporting()`/`@` suppression. Non-finite floats and unsupported
+  array/object/resource operands throw the modeled integer-parameter
+  `TypeError`.
 - `ord()` over current boxed scalar values after scalar string conversion,
   returning the first byte as an integer. Empty and multi-byte strings emit
   PHP-like deprecation diagnostics with the internal-call source line.
@@ -1118,8 +1121,7 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `substr()` binary-string behavior for embedded NUL bytes and
   resource/reference operand parity plus object string conversion outside the
   current public declared `__toString()` support.
-- Exact `chr()` diagnostics for null, non-finite floats, and unsupported
-  array/object/resource/reference operands.
+- Exact `chr()` diagnostics for remaining strict-types/reference operand edges.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
 - Exact `abs()` complete overflow parity beyond the current boxed numeric path.
 - `count()` support for `Countable` objects and exact non-array diagnostics.

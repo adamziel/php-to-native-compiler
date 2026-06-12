@@ -7343,6 +7343,17 @@ static int64_t ptn_internal_expect_integer_arg(
     const char *argument_name,
     PtnValue value,
     size_t line
+);
+
+static int64_t ptn_internal_expect_integer_arg_with_precision_location(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    const char *precision_path,
+    size_t precision_line
 ) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -7367,8 +7378,23 @@ static int64_t ptn_internal_expect_integer_arg(
         case PTN_INT:
             return value.as.integer;
         case PTN_FLOAT:
+            if (!isfinite(value.as.floating)) {
+                break;
+            }
             if (ptn_float_to_int_loses_precision(value.as.floating)) {
-                ptn_emit_float_to_int_precision_deprecation(&runtime->diagnostics, value.as.floating);
+                if (precision_path == NULL) {
+                    ptn_emit_float_to_int_precision_deprecation(
+                        &runtime->diagnostics,
+                        value.as.floating
+                    );
+                } else {
+                    ptn_emit_float_to_int_precision_deprecation_at(
+                        &runtime->diagnostics,
+                        value.as.floating,
+                        precision_path,
+                        precision_line
+                    );
+                }
             }
             return (int64_t)value.as.floating;
         case PTN_STRING: {
@@ -7378,11 +7404,23 @@ static int64_t ptn_internal_expect_integer_arg(
                 ptn_arithmetic_string_to_number(value.as.string, &number, &has_trailing_non_numeric_data) &&
                 !has_trailing_non_numeric_data
             ) {
+                if (number.type == PTN_NUMBER_FLOAT && !isfinite(number.floating)) {
+                    break;
+                }
                 if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
-                    ptn_emit_float_string_to_int_precision_deprecation(
-                        &runtime->diagnostics,
-                        (const char *)value.as.string.data
-                    );
+                    if (precision_path == NULL) {
+                        ptn_emit_float_string_to_int_precision_deprecation(
+                            &runtime->diagnostics,
+                            (const char *)value.as.string.data
+                        );
+                    } else {
+                        ptn_emit_float_string_to_int_precision_deprecation_at(
+                            &runtime->diagnostics,
+                            (const char *)value.as.string.data,
+                            precision_path,
+                            precision_line
+                        );
+                    }
                 }
                 return ptn_number_to_integer(number);
             }
@@ -7412,6 +7450,26 @@ static int64_t ptn_internal_expect_integer_arg(
     }
     ptn_throw_exception(runtime, "TypeError", message);
     return 0;
+}
+
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_internal_expect_integer_arg_with_precision_location(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        value,
+        line,
+        NULL,
+        0
+    );
 }
 
 static PtnValue ptn_internal_ceil(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -7864,9 +7922,13 @@ static PtnValue ptn_internal_intval(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    int64_t integer = ptn_value_to_integer_with_precision_deprecation_at(
-        &runtime->diagnostics,
+    int64_t integer = ptn_internal_expect_integer_arg_with_precision_location(
+        runtime,
+        "chr",
+        1,
+        "codepoint",
         args[0],
+        line,
         "ptn",
         line
     );

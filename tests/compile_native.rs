@@ -5584,6 +5584,8 @@ $fp = fopen(\"{}\", \"r\");\n\
 try {{ var_dump(intdiv($fp, 2)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
 try {{ var_dump(intdiv(\"9x\", 2)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
 try {{ var_dump(intdiv(6, [])); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ var_dump(intdiv(INF, 1)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ var_dump(intdiv(1, NAN)); }} catch (\\TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
 echo \"after\\n\";",
             data_path
         ),
@@ -5601,6 +5603,8 @@ intdiv(): Argument #2 ($num2) must be of type int, stdClass given\n\
 intdiv(): Argument #1 ($num1) must be of type int, resource given\n\
 intdiv(): Argument #1 ($num1) must be of type int, string given\n\
 intdiv(): Argument #2 ($num2) must be of type int, array given\n\
+intdiv(): Argument #1 ($num1) must be of type int, float given\n\
+intdiv(): Argument #2 ($num2) must be of type int, float given\n\
 after\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -8250,6 +8254,43 @@ Deprecated: Implicit conversion from float-string \"65.7\" to int loses precisio
 string(2) \"41\"\n\
 string(2) \"42\"\n\
 string(2) \"43\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_chr_null_and_type_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-chr-null-and-type-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chr-null-and-type-diagnostics.php");
+    let output = root.join("chr-null-and-type-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(bin2hex(chr(null)));\n\
+try { var_dump(chr(INF)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(chr(NAN)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(chr([])); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(chr(new stdClass)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(chr(\"65x\")); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: chr(): Passing null to parameter #1 ($codepoint) of type int is deprecated in ptn on line 2\n\
+string(2) \"00\"\n\
+chr(): Argument #1 ($codepoint) must be of type int, float given\n\
+chr(): Argument #1 ($codepoint) must be of type int, float given\n\
+chr(): Argument #1 ($codepoint) must be of type int, array given\n\
+chr(): Argument #1 ($codepoint) must be of type int, stdClass given\n\
+chr(): Argument #1 ($codepoint) must be of type int, string given\n\
+after\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

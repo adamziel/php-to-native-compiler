@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T22:39Z
-Measured: `ptn-zo6k` rebased on current `origin/master` `19e5bf705`.
+Refresh: 2026-06-13T00:16Z
+Measured: `ptn-jbqd` rebased on current `origin/master` `490a8c41e`.
 
 Recent RC slices cover public class constants, embedded-NUL `var_export()`,
 `explode()`, `strncmp()`, `strrchr()`, namespaced internal fallback,
@@ -13,23 +13,23 @@ operations, `array_udiff*()`, `join()`/`implode()`, bounded
 `sprintf()`/`printf()`, `json_encode()`, `array_is_list()`, `array_search()`,
 `array_slice()`, `array_pad()`, `array_reverse()`, `count()`/`sizeof()`,
 `basename()`, `str_pad()`, `str_shuffle()`, `strtr()`, `chunk_split()`,
-`file_get_contents()`, `strcasecmp()`, string-internal object/closure
-given-type diagnostics, `abs()`/`sqrt()`/`fdiv()` TypeErrors, ASCII case/trim,
-PHP/CLI/Zend metadata, `php_uname()`, `ReflectionFunction`, namespaces,
-foreach list destructuring, dynamic include/require dispatch, return-only
-`void` declarations, and file-stream `stream_get_meta_data()` metadata.
+`file_get_contents()`, `strcasecmp()`, `chr()` null/non-finite/unsupported
+operand diagnostics, string-internal object/closure given-type diagnostics,
+`abs()`/`sqrt()`/`fdiv()` TypeErrors, ASCII case/trim, PHP/CLI/Zend metadata,
+`php_uname()`, `ReflectionFunction`, namespaces, foreach list destructuring,
+dynamic include/require dispatch, return-only `void` declarations, and
+file-stream `stream_get_meta_data()` metadata.
 
-Recent movers include binary-safe `basename()` segment/suffix handling,
-bounded `file_get_contents()` reads, length-aware scalar `strncmp()` and
-`strrchr()` support, ASCII case-insensitive `strcasecmp()` comparison,
-file-stream metadata arrays, and dynamic-root `??=` reducers.
+Recent movers include `chr()` integer diagnostics, `strncmp()`/`strrchr()`,
+`basename()`, `file_get_contents()`, `strcasecmp()`, streams, and dynamic-root
+`??=` reducers.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 578 | 578 | 0 |
+| Native/compiler Rust suite | 579 | 579 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 232 | 232 | 0 |
 | PHPT Zend rows | 80 | 80 | 0 |
@@ -54,10 +54,10 @@ callability/countability, assertions, namespaces/imports, streams and
 file-stream metadata, file reads/writes, array/string/numeric helpers through
 `array_udiff*()`, `array_is_list()`, `count()`/`sizeof()`, `json_encode()`,
 `printf()`, `chunk_split()`, `fdiv()`, `explode()`, `strcasecmp()`,
-`strncmp()`, `strrchr()`, `basename()`, shared string-internal diagnostics,
-highlight paths, `var_export()`, array mutators, inc/dec, foreach
-destructuring, dynamic-variable writes/unsets, and array/string-offset
-compound/null coalescing assignments.
+`strncmp()`, `strrchr()`, `basename()`, `chr()` integer-argument diagnostics,
+shared string-internal diagnostics, highlight paths, `var_export()`, array
+mutators, inc/dec, foreach destructuring, dynamic-variable writes/unsets, and
+array/string-offset compound/null coalescing assignments.
 
 ## Remaining Bounded Failures
 
@@ -66,9 +66,9 @@ compound/null coalescing assignments.
 ## Verification
 
 Current slice verification: `git diff --check`; `cargo fmt --check`;
-focused `strncmp()` native/parser tests 2/2; focused `strncmp_basic.phpt`
-1/1; full `cargo test` 578/578; bounded PHPT 232/232 after a clean rerun;
-PHPT COW 29/29; post-merge COW 17/17 oracle, 3/3 notice, 6/6 diagnostics.
+focused `chr` 7/7 and `intdiv` 4/4; full `cargo test` 579/579 plus
+auxiliary/doc tests; bounded PHPT 232/232; PHPT COW 29/29; post-merge COW
+17/17 oracle, 3/3 notice, 6/6 diagnostics.
 
 Follow-ups remain destructor visibility/exception/reference/global edges,
 typed/promoted properties, interfaces/traits, bracketed/grouped namespaces,
@@ -76,5 +76,6 @@ broader fallback/reflection, magic methods, first-class callables, dynamic
 includes, unsupported internals, scalar offset-lvalues, assertion config,
 binary-safe array keys, class-constant edges, dynamic-variable by-reference
 lvalues, append-form `??=`, remaining embedded-NUL internals, inc/dec
-Unicode/reference/COW diagnostics, object IDs, broader numeric/string edges,
-locale constants/`setlocale()`, and object/reference targets.
+Unicode/reference/COW diagnostics, object IDs, strict/reference `chr()` edges,
+broader numeric/string edges, locale constants/`setlocale()`, and
+object/reference targets.
