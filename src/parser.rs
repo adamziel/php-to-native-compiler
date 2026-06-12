@@ -860,18 +860,7 @@ impl Parser {
             TokenKind::MinusMinus => IncDecOp::Decrement,
             _ => return Err(Diagnostic::new("expected increment", Some(op_token.span))),
         };
-        let variable = self.advance().clone();
-        let TokenKind::Variable(name) = variable.kind else {
-            return Err(Diagnostic::new("expected variable", Some(variable.span)));
-        };
-        let target = if matches!(self.peek().kind, TokenKind::LeftBracket) {
-            IncDecTarget::ArrayDim(self.parse_array_dim_target(name, variable.span)?)
-        } else {
-            IncDecTarget::Variable {
-                name,
-                span: variable.span,
-            }
-        };
+        let target = inc_dec_target_from_expr(self.parse_postfix_expr()?, op_token.span)?;
         reject_append_array_read_in_inc_dec_target(&target)?;
         self.expect_statement_terminator()?;
         Ok(Statement::Increment {
@@ -1202,18 +1191,7 @@ impl Parser {
             TokenKind::MinusMinus => IncDecOp::Decrement,
             _ => return Err(Diagnostic::new("expected increment", Some(op_token.span))),
         };
-        let variable = self.advance().clone();
-        let TokenKind::Variable(name) = variable.kind else {
-            return Err(Diagnostic::new("expected variable", Some(variable.span)));
-        };
-        let target = if matches!(self.peek().kind, TokenKind::LeftBracket) {
-            IncDecTarget::ArrayDim(self.parse_array_dim_target(name, variable.span)?)
-        } else {
-            IncDecTarget::Variable {
-                name,
-                span: variable.span,
-            }
-        };
+        let target = inc_dec_target_from_expr(self.parse_postfix_expr()?, op_token.span)?;
         reject_append_array_read_in_inc_dec_target(&target)?;
         Ok(Statement::Increment {
             target,
@@ -3396,6 +3374,10 @@ fn validate_anonymous_functions_in_inc_dec_target(
             }
             Ok(())
         }
+        IncDecTarget::Property { receiver, .. } => {
+            validate_anonymous_functions_in_expr(receiver, functions)
+        }
+        IncDecTarget::StaticProperty { .. } => Ok(()),
     }
 }
 
@@ -4156,7 +4138,7 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
 fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTarget> {
     let target = assignment_target_from_expr(expr).map_err(|_| {
         Diagnostic::new(
-            "increment/decrement expression target must be a variable or array offset",
+            "increment/decrement expression target must be a variable, array offset, or property",
             Some(op_span),
         )
     })?;
@@ -4175,8 +4157,26 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
             dimensions,
             span,
         }),
+        AssignmentTarget::Property {
+            receiver,
+            name,
+            span,
+        } => Ok(IncDecTarget::Property {
+            receiver,
+            name,
+            span,
+        }),
+        AssignmentTarget::StaticProperty {
+            class_name,
+            name,
+            span,
+        } => Ok(IncDecTarget::StaticProperty {
+            class_name,
+            name,
+            span,
+        }),
         _ => Err(Diagnostic::new(
-            "increment/decrement expression target must be a variable or array offset",
+            "increment/decrement expression target must be a variable, array offset, or property",
             Some(assignment_target_span(&target)),
         )),
     }
@@ -4188,6 +4188,8 @@ fn inc_dec_target_span(target: &IncDecTarget) -> SourceSpan {
         IncDecTarget::DynamicVariable { span, .. } => *span,
         IncDecTarget::DynamicArrayDim { span, .. } => *span,
         IncDecTarget::ArrayDim(target) => target.span,
+        IncDecTarget::Property { span, .. } => *span,
+        IncDecTarget::StaticProperty { span, .. } => *span,
     }
 }
 
@@ -4640,7 +4642,10 @@ fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<(
                 }
             }
         }
-        IncDecTarget::Variable { .. } | IncDecTarget::DynamicVariable { .. } => {}
+        IncDecTarget::Property { receiver, .. } => reject_append_array_read(receiver)?,
+        IncDecTarget::Variable { .. }
+        | IncDecTarget::DynamicVariable { .. }
+        | IncDecTarget::StaticProperty { .. } => {}
     }
     Ok(())
 }

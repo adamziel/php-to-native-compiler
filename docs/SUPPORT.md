@@ -43,9 +43,10 @@ Post-RC architecture remains explicit rather than hidden:
   instance method metadata remain post-RC.
 - Object destructuring and object `Traversable` remain unsupported; current
   destructuring support is array/list lvalues.
-- Property compound lvalues remain post-RC except public property `??=`:
-  property `+=`, `.=` and other compounds, property inc/dec, nested/dynamic
-  property lvalues, and static-property compounds are unsupported.
+- Property compound lvalues remain post-RC except public property `??=` and
+  modeled property/static-property inc/dec: property `+=`, `.=` and other
+  compounds, nested/dynamic property lvalues, and static-property compounds
+  outside inc/dec are unsupported.
 
 ## Supported
 
@@ -717,9 +718,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Public static property declarations in top-level classes, using the supported
   constant-expression default subset. Generated native code initializes
   declaration-backed static slots before top-level statements, supports
-  `Class::$name` reads and writes, resolves `self::$name` inside declared
-  methods, and throws modeled PHP `Error` diagnostics for undeclared static
-  properties.
+  `Class::$name` reads, writes, and pre/post inc/dec, resolves `self::$name`
+  inside declared methods, and throws modeled PHP `Error` diagnostics for
+  undeclared static properties.
 - `new stdClass` and declared-class object shells, boxed object handles, public
   dynamic property reads/writes such as `$object->name`, and public declared
   instance properties with supported constant defaults. Object assignment
@@ -730,13 +731,14 @@ Post-RC architecture remains explicit rather than hidden:
   `$object->name ??= expr` quiet-reads the property and lazily evaluates the
   right-hand expression. Property `isset()`, `empty()`, and expression-form
   `??` quiet-probe the current object property storage; inaccessible private
-  declared properties behave as missing outside their declaring class. Declared
-  private/protected instance properties are initialized with the same storage
-  path and preserve metadata for `var_dump()` private/protected labels. Private
-  declared properties are read/written from methods of their declaring class
-  and rejected for outside reads/writes with modeled `Error`; full protected
-  visibility, inherited property resolution, typed properties, constructor
-  promotion, magic, destructors, and
+  declared properties behave as missing outside their declaring class. Property
+  pre/post inc/dec uses the modeled property
+  read/write path. Declared private/protected instance properties are
+  initialized with the same storage path and preserve metadata for `var_dump()`
+  private/protected labels. Private declared properties are read/written from
+  methods of their declaring class and rejected for outside reads/writes with
+  modeled `Error`; full protected visibility, inherited property resolution,
+  typed properties, constructor promotion, magic, destructors, and
   reflection property metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
@@ -923,7 +925,7 @@ Post-RC architecture remains explicit rather than hidden:
   by-reference lvalues, append-form null-coalescing, property reference
   targets, property compound-assignment operators outside modeled
   public-property `??=`, and static-property compound/null-coalescing lvalues
-  outside modeled direct reads/writes.
+  outside modeled direct reads/writes/inc/dec.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.

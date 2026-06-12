@@ -24,8 +24,8 @@ rows, or outputs.
   diagnostic boundary.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
-- Dynamic variable roots support scalar reads/writes, simple array/string-offset
-  writes and unsets, and current inc/dec expression targets through shared
+- Dynamic variable roots support scalar reads/writes, array/string-offset
+  writes and unsets, and inc/dec expression targets through shared
   symbol-table and array-path helpers.
 - Arithmetic models non-numeric string and array `TypeError` diagnostics while
   preserving leading-numeric warnings.
@@ -88,4 +88,5 @@ done
 
 The corpus exercises the current RC surface: scalar control flow, arrays and
 internal functions, user functions, public class/object shells, direct static
-properties, declared instance-property defaults, and public property `??=`.
+properties, declared instance-property defaults, public property `??=`, and
+property/static-property inc/dec.

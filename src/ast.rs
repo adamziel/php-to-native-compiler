@@ -330,6 +330,16 @@ pub enum IncDecTarget {
         span: SourceSpan,
     },
     ArrayDim(ArrayDimTarget),
+    Property {
+        receiver: Box<Expr>,
+        name: String,
+        span: SourceSpan,
+    },
+    StaticProperty {
+        class_name: String,
+        name: String,
+        span: SourceSpan,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -589,6 +589,16 @@ pub enum IncDecTarget {
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
+    Property {
+        receiver: Box<ValueExpr>,
+        name: String,
+        line: usize,
+    },
+    StaticProperty {
+        class_name: String,
+        name: String,
+        line: usize,
+    },
 }
 
 impl<'a> LoweringContext<'a> {
@@ -1143,6 +1153,24 @@ impl<'a> LoweringContext<'a> {
                     })
                     .collect(),
                 line: target.span.line,
+            },
+            AstIncDecTarget::Property {
+                receiver,
+                name,
+                span,
+            } => IncDecTarget::Property {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: name.clone(),
+                line: span.line,
+            },
+            AstIncDecTarget::StaticProperty {
+                class_name,
+                name,
+                span,
+            } => IncDecTarget::StaticProperty {
+                class_name: class_name.clone(),
+                name: name.clone(),
+                line: span.line,
             },
         }
     }
@@ -1865,6 +1893,12 @@ fn assertion_inc_dec_target_text(target: &AstIncDecTarget) -> String {
         AstIncDecTarget::DynamicVariable { .. } => "${...}".to_string(),
         AstIncDecTarget::DynamicArrayDim { .. } => "${...}[...]".to_string(),
         AstIncDecTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
+        AstIncDecTarget::Property { receiver, name, .. } => {
+            format!("{}->{name}", assertion_expr_text(receiver))
+        }
+        AstIncDecTarget::StaticProperty {
+            class_name, name, ..
+        } => format!("{class_name}::${name}"),
     }
 }
 

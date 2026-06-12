@@ -1,9 +1,10 @@
 # PTN Progress
 
-Refresh: 2026-06-12T05:07Z
-Measured: `ptn-du2g` rebased after `origin/master` `1c786c9ba`.
+Refresh: 2026-06-12T05:15Z
+Measured: `ptn-6c76` rebased after `origin/master` `35ea8f08c`.
 
-Recent RC slices cover dynamic-variable array/string-offset writes and unsets,
+Recent RC slices cover property/static-property inc/dec statements and
+expressions, dynamic-variable array/string-offset writes and unsets,
 array-offset inc/dec statements/expressions, variable-root array/append
 compound assignment expressions, bounded private instance-property access,
 protected/private dump metadata, full/short lazy ternaries, PHP-style object
@@ -17,18 +18,18 @@ Recent PHPT movers: `ptn-dcyl` exact `strings/006`, `ptn-e3zm`
 `array_udiff*()`, `ptn-bhp6` exact `strings/004`, `ptn-e3ha`
 `tests/lang/024` via `${expr}[key] = value`, `ptn-y5na` dynamic-root
 array/string-offset unsets, `ptn-ir7c` exact `array/007`, and `ptn-juzx`
-refined object `var_export()` for declared objects, `stdClass`, and nested
-object arrays; `ptn-wrom` adds declared-object property arrays, `ptn-5xx7`
-pins non-public export parity, `ptn-geav` adds `get_class()`, `ptn-if1w` adds
-quiet property probes, `ptn-9x8x` adds default `sort()`, and `ptn-du2g` adds
-array-offset compound assignment expression coverage.
+refined object `var_export()`; `ptn-wrom` adds declared-object property
+arrays, `ptn-5xx7` pins non-public export parity, `ptn-geav` adds
+`get_class()`, `ptn-if1w` quiet property probes, `ptn-9x8x` default `sort()`,
+`ptn-du2g` offset compound assignment expressions, and `ptn-6c76`
+property/static-property inc/dec coverage.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 512 | 512 | 0 |
+| Native/compiler Rust suite | 514 | 514 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 200 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
@@ -53,8 +54,9 @@ assertions, heredoc/nowdoc, interpolation, streams, `pow()`, `array_merge()`,
 CLI/error-reporting wiring, highlight output paths, scalar/array/current-object
 `var_export()`, direct array mutators including `sort()`, set operations,
 array-offset inc/dec statements/expressions, variable-root array/append
-compound assignment expressions, dynamic inc/dec expressions, and
-dynamic-variable array/string-offset writes and unsets.
+compound assignment expressions, property/static-property inc/dec
+statements/expressions, dynamic inc/dec expressions, and dynamic-variable
+array/string-offset writes and unsets.
 
 ## Remaining Bounded Failures
 
@@ -63,13 +65,14 @@ dynamic-variable array/string-offset writes and unsets.
 ## Verification
 
 Recent baseline: `cargo fmt --check`, full `cargo test` with native/compiler
-510/510, exact `array/007.phpt`, bounded PHPT 200/200, COW PHPT 29/29, and
-post-merge COW gate 25/25. `ptn-du2g` final checks include focused parser and
-native array-offset compound assignment expression coverage plus full
-`cargo test` with native/compiler 512/512.
+512/512, exact `array/007.phpt`, bounded PHPT 200/200, COW PHPT 29/29, and
+post-merge COW gate 25/25. `ptn-6c76` final checks include focused
+property/static-property inc/dec parser/native coverage plus full `cargo test`
+with native/compiler 514/514.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,
 first-class callables, destructors, dynamic includes, unsupported internals,
-scalar offset-lvalues, assertion configuration, non-numeric/property/static
-inc/dec, and broader foreach destructuring/reference targets.
+scalar offset-lvalues, assertion configuration, non-numeric inc/dec edges,
+object metadata/IDs/visibility edges, and broader foreach destructuring or
+reference targets.

@@ -802,9 +802,9 @@ fn parser_rejects_invalid_increment_and_decrement_expression_targets() {
         .contains("increment/decrement expression target must be a variable"));
 
     let invalid_postfix = parser::parse("<?php echo [1][0]++;").unwrap_err();
-    assert!(invalid_postfix
-        .message
-        .contains("increment/decrement expression target must be a variable or array offset"));
+    assert!(invalid_postfix.message.contains(
+        "increment/decrement expression target must be a variable, array offset, or property"
+    ));
 }
 
 #[test]
@@ -2394,6 +2394,74 @@ echo Counter::$value;",
             ..
         } if class_name == "Counter" && name == "value"
     ));
+}
+
+#[test]
+fn parser_accepts_property_and_static_property_increment_targets() {
+    let program = parser::parse(
+        "<?php
+class Counter {
+    public static $value = 1;
+}
+$object = new stdClass;
+$object->value++;
+++$object->value;
+Counter::$value--;
+--Counter::$value;
+",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 5);
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected postfix property increment expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::IncDec {
+            target: IncDecTarget::Property { name, .. },
+            op: IncDecOp::Increment,
+            result: IncDecResult::Post,
+            ..
+        } if name == "value"
+    ));
+
+    let Statement::Increment { target, op, .. } = &program.statements[2] else {
+        panic!("expected prefix property increment statement");
+    };
+    assert!(matches!(target, IncDecTarget::Property { name, .. } if name == "value"));
+    assert_eq!(*op, IncDecOp::Increment);
+
+    let Statement::Expression { expression, .. } = &program.statements[3] else {
+        panic!("expected postfix static-property decrement expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::IncDec {
+            target:
+                IncDecTarget::StaticProperty {
+                    class_name,
+                    name,
+                    ..
+                },
+            op: IncDecOp::Decrement,
+            result: IncDecResult::Post,
+            ..
+        } if class_name == "Counter" && name == "value"
+    ));
+
+    let Statement::Increment { target, op, .. } = &program.statements[4] else {
+        panic!("expected prefix static-property decrement statement");
+    };
+    assert!(matches!(
+        target,
+        IncDecTarget::StaticProperty {
+            class_name,
+            name,
+            ..
+        } if class_name == "Counter" && name == "value"
+    ));
+    assert_eq!(*op, IncDecOp::Decrement);
 }
 
 #[test]
@@ -15226,6 +15294,66 @@ echo Counter::$value, \"\\n\";
     assert!(c_source.contains("ptn_runtime_define_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+}
+
+#[test]
+fn compile_property_and_static_property_inc_dec_to_native_binary() {
+    let root = temp_dir("ptn-native-property-static-inc-dec");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-static-inc-dec.php");
+    let output = root.join("property-static-inc-dec-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public $value = 1;
+    private $secret = 4;
+    public static $count = 1;
+
+    public function bump() {
+        var_dump($this->secret++);
+        var_dump(++$this->secret);
+    }
+
+    public static function bumpStatic() {
+        var_dump(self::$count++);
+        var_dump(++self::$count);
+    }
+}
+
+$box = new Box();
+var_dump($box->value++);
+var_dump($box->value);
+var_dump(++$box->value);
+$box->value--;
+var_dump($box->value);
+$box->bump();
+var_dump(Box::$count++);
+var_dump(++Box::$count);
+Box::$count--;
+var_dump(Box::$count);
+Box::bumpStatic();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\nint(3)\nint(2)\nint(4)\nint(6)\nint(1)\nint(3)\nint(2)\nint(2)\nint(4)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_read_property(&runtime"));
+    assert!(c_source.contains("ptn_object_write_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+    assert!(c_source.contains("ptn_increment_numeric"));
+    assert!(c_source.contains("ptn_decrement_numeric"));
 }
 
 #[test]

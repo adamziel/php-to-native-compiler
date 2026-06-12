@@ -2300,6 +2300,10 @@ fn collect_inc_dec_target_legacy_dollar_brace_deprecations(
                 }
             }
         }
+        IncDecTarget::Property { receiver, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+        }
+        IncDecTarget::StaticProperty { .. } => {}
     }
 }
 
@@ -2761,6 +2765,10 @@ fn collect_inc_dec_target_runtime_requirements(
                 }
             }
         }
+        IncDecTarget::Property { receiver, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+        }
+        IncDecTarget::StaticProperty { .. } => {}
     }
 }
 
@@ -3334,6 +3342,11 @@ fn emit_increment_statement(
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
         }
+        IncDecTarget::Property { .. } | IncDecTarget::StaticProperty { .. } => {
+            let result_temp =
+                values.emit_inc_dec_expression(out, target, op, IncDecResult::Pre, line);
+            emit_value_cleanup(out, "    ", &result_temp);
+        }
     }
 }
 
@@ -3626,6 +3639,10 @@ fn inc_dec_target_mentions_variable(target: &IncDecTarget, name: &str) -> bool {
                         .is_some_and(|dimension| value_mentions_variable(dimension, name))
                 })
         }
+        IncDecTarget::Property {
+            receiver: target, ..
+        } => value_mentions_variable(target, name),
+        IncDecTarget::StaticProperty { .. } => false,
     }
 }
 
@@ -5281,6 +5298,123 @@ impl ValueEmitter {
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
+
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
+            IncDecTarget::Property { receiver, name, .. } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_object_read_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(inc_dec_runtime_function(op));
+                out.push('(');
+                out.push_str(&current_temp);
+                out.push_str(");\n");
+                let assigned_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_object_write_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &assigned_temp);
+                emit_value_cleanup(out, "    ", &current_temp);
+                emit_value_cleanup(out, "    ", &receiver_temp);
+
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
+            IncDecTarget::StaticProperty {
+                class_name, name, ..
+            } => {
+                let resolved_class_name = self.static_property_class_name(class_name);
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(inc_dec_runtime_function(op));
+                out.push('(');
+                out.push_str(&current_temp);
+                out.push_str(");\n");
+                let assigned_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &assigned_temp);
+                emit_value_cleanup(out, "    ", &current_temp);
 
                 if let Some(old_temp) = old_temp {
                     emit_value_cleanup(out, "    ", &result_temp);
