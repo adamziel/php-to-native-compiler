@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T14:09Z
-Measured: `ptn-dfh5` rebased after `origin/master` `c8df2dc1`.
+Refresh: 2026-06-12T14:24Z
+Measured: `ptn-qmwy` rebased after `origin/master` `774b20033`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
 array/string-offset writes and unsets, array/append compound assignments,
@@ -13,8 +13,9 @@ string/lang rows, highlight output paths, `join()`/`implode()`, `sprintf()`,
 `array_pad()`, `str_pad()`, catchable `intdiv()` plus unsupported-operand
 TypeErrors, ASCII case/trim reducers, length-aware `chunk_split()`
 empty-input endings, `ceil()`/`floor()` diagnostics, `is_countable()`,
-unbracketed namespaces, foreach list destructuring with reference elements,
-and bounded dynamic include/require path dispatch.
+first `ReflectionFunction` metadata backed by generated user-function metadata
+plus the internal registry, unbracketed namespaces, foreach list destructuring
+with reference elements, and bounded dynamic include/require path dispatch.
 
 Recent movers include dynamic-root offset writes/unsets, property/static quiet
 probes and inc/dec, direct sort-family mutators and flag diagnostics, array
@@ -23,15 +24,17 @@ constants, catchable `intdiv()` unsupported-operand TypeErrors, ASCII case and
 trim reducers, `chunk_split()` empty-input binary endings, `ceil()`/`floor()`
 `TypeError` parity, namespace PHPT rows `ns_001`, `ns_002`, `ns_003`,
 `ns_014`, foreach destructuring paths, include PHPT rows,
-`ext/standard/tests/strings/str_pad`, and
-`ext/standard/tests/strings/chunk_split_variation7`.
+`ext/standard/tests/strings/str_pad`,
+`ext/standard/tests/strings/chunk_split_variation7`, and ReflectionFunction
+names, namespace/short-name probes, internal/user flags, parameter counts, and
+variadic status.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 549 | 549 | 0 |
+| Native/compiler Rust suite | 550 | 550 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 216 | 216 | 0 |
 | PHPT Zend rows | 80 | 80 | 0 |
@@ -40,7 +43,7 @@ trim reducers, `chunk_split()` empty-input binary endings, `ceil()`/`floor()`
 | PHPT other rows | 2 | 2 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
 | Post-merge COW gate | 26 | 26 | 0 |
-| PHPT callback manifest | 2 | 2 | 0 |
+| PHPT callback manifest | 4 | 4 | 0 |
 | PHPT include manifest | 2 | 2 | 0 |
 
 ## RC Surface
@@ -50,16 +53,17 @@ operators, ternary expressions, ordered arrays, `foreach`, branch/loop/switch,
 compile-time includes, bounded dynamic include/require path dispatch, selected
 internals, COW/reference slices, user functions, call-frame introspection,
 scalar type hints, bounded closures, `stdClass`, public class/object shells,
-declared properties, quiet probes, metadata intrinsics, `is_callable()`,
-`is_countable()`, assertions, interpolation, unbracketed namespaces, simple
-imports, streams, `pow()`, `array_merge()`, `array_pad()`, `str_pad()`,
-`array_slice()`, `strrev()`, first-byte case helpers, trim-family internals,
-length-aware `chunk_split()` empty-input endings, `array_search()`,
-`call_user_func_array()`, catchable `intdiv()` integer-operand TypeErrors,
-highlight output paths, `var_export()`, direct array mutators including
-`natcasesort()`, explicit regular sort flags, set operations, inc/dec, foreach
-destructuring, dynamic-variable array/string-offset writes, and include helpers
-sharing caller file scope and return values.
+declared properties, quiet probes, metadata intrinsics, `ReflectionFunction`
+metadata probes, `is_callable()`, `is_countable()`, assertions,
+interpolation, unbracketed namespaces, simple imports, streams, `pow()`,
+`array_merge()`, `array_pad()`, `str_pad()`, `array_slice()`, `strrev()`,
+first-byte case helpers, trim-family internals, length-aware `chunk_split()`
+empty-input endings, `array_search()`, `call_user_func_array()`, catchable
+`intdiv()` integer-operand TypeErrors, highlight output paths, `var_export()`,
+direct array mutators including `natcasesort()`, explicit regular sort flags,
+set operations, inc/dec, foreach destructuring, dynamic-variable
+array/string-offset writes, and include helpers sharing caller file scope and
+return values.
 
 ## Remaining Bounded Failures
 
@@ -74,13 +78,15 @@ charlists, namespace parser/resolver PHPT rows 4/4, foreach list
 destructuring/reference-element coverage, include PHPT manifest coverage 2/2,
 modeled `str_pad()` plus `ext/standard/tests/strings/str_pad.phpt`,
 `chunk_split("", ..., "|".chr(0))` plus
-`ext/standard/tests/strings/chunk_split_variation7.phpt`, and focused
-`intdiv()` unsupported-operand `TypeError` coverage.
+`ext/standard/tests/strings/chunk_split_variation7.phpt`, focused `intdiv()`
+unsupported-operand `TypeError` coverage, and callback/reflection manifest
+coverage 4/4.
 
 Follow-ups remain visibility/inheritance metadata, typed/promoted properties,
 interfaces/traits, bracketed/grouped namespace forms, namespace fallback
-parity, reflection, remaining magic methods, first-class callables, destructors,
-fully dynamic includes outside bounded path sets, `include_once`/`require_once`,
-unsupported internals, scalar offset-lvalues, assertion configuration,
-binary-safe array keys, inc/dec Unicode/reference/COW/diagnostic edges, object
-metadata/IDs/visibility edges, and broader foreach/object/reference targets.
+parity, broader reflection classes/parameters/methods, magic methods,
+first-class callables, destructors, dynamic includes outside bounded path sets,
+`include_once`/`require_once`, unsupported internals, scalar offset-lvalues,
+assertion config, binary-safe array keys, inc/dec Unicode/reference/COW/
+diagnostics, object IDs/visibility, and broader foreach/object/reference
+targets.

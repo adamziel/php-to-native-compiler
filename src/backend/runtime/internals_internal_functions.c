@@ -6593,6 +6593,7 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(const char *name);
+static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
@@ -6796,6 +6797,220 @@ static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
     return NULL;
 }
 
+static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunction *function) {
+    if (function == NULL) {
+        return ptn_function_metadata_not_found();
+    }
+    int is_variadic = function->max_args == PTN_VARIADIC_ARGS;
+    size_t parameter_count = is_variadic ? function->min_args : function->max_args;
+    return ptn_function_metadata_found(
+        function->name,
+        1,
+        parameter_count,
+        function->min_args,
+        is_variadic
+    );
+}
+
+static PtnFunctionMetadata ptn_find_function_metadata(const char *name) {
+    PtnFunctionMetadata metadata = ptn_user_function_metadata(name);
+    if (metadata.found) {
+        return metadata;
+    }
+    return ptn_internal_function_metadata(ptn_find_internal_function(name));
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionFunction");
+}
+
+static int ptn_internal_class_exists_name(const char *class_name) {
+    return ptn_internal_class_name_is_reflection_function(class_name);
+}
+
+static int ptn_reflection_function_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getNamespaceName")
+        || ptn_ascii_case_equal(method_name, "getNumberOfParameters")
+        || ptn_ascii_case_equal(method_name, "getNumberOfRequiredParameters")
+        || ptn_ascii_case_equal(method_name, "getShortName")
+        || ptn_ascii_case_equal(method_name, "inNamespace")
+        || ptn_ascii_case_equal(method_name, "isInternal")
+        || ptn_ascii_case_equal(method_name, "isUserDefined")
+        || ptn_ascii_case_equal(method_name, "isVariadic");
+}
+
+static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name) {
+    if (ptn_internal_class_name_is_reflection_function(class_name)) {
+        return ptn_reflection_function_method_exists(method_name);
+    }
+    return ptn_declared_class_method_exists(class_name, method_name);
+}
+
+typedef struct {
+    PtnFunctionMetadata metadata;
+} PtnReflectionFunctionData;
+
+static void ptn_reflection_function_data_free(void *data) {
+    free(data);
+}
+
+static PtnReflectionFunctionData *ptn_reflection_function_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_reflection_function(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionFunction object");
+        return NULL;
+    }
+    return (PtnReflectionFunctionData *)receiver.as.object->native_data;
+}
+
+static PtnValue ptn_reflection_function_string_before_last_namespace_separator(const char *name) {
+    const char *last_separator = strrchr(name, '\\');
+    if (last_separator == NULL) {
+        return ptn_string("");
+    }
+    size_t len = (size_t)(last_separator - name);
+    return ptn_owned_string_len(ptn_duplicate_string_len(name, len), len);
+}
+
+static PtnValue ptn_reflection_function_string_after_last_namespace_separator(const char *name) {
+    const char *last_separator = strrchr(name, '\\');
+    const char *short_name = last_separator == NULL ? name : last_separator + 1;
+    return ptn_owned_string(ptn_duplicate_string(short_name));
+}
+
+static PtnValue ptn_reflection_function_size_result(size_t value) {
+    if (value > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)value);
+}
+
+static void ptn_reflection_function_check_no_arguments(PtnRuntime *runtime, const char *method_name, size_t argc) {
+    if (argc == 0) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionFunction::%s() expects exactly 0 arguments, %zu given",
+        method_name,
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_function_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionFunction::__construct() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    char *name = ptn_value_to_string(args[0]);
+    PtnFunctionMetadata metadata = ptn_find_function_metadata(name);
+    if (!metadata.found) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Function %s() does not exist",
+            name
+        );
+        free(name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ReflectionException", message);
+        return ptn_null();
+    }
+    free(name);
+
+    PtnReflectionFunctionData *data = malloc(sizeof(PtnReflectionFunctionData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->metadata = metadata;
+
+    PtnValue object = ptn_object_new_shell("ReflectionFunction");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_reflection_function_data_free;
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    ptn_reflection_function_check_no_arguments(runtime, name, argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnReflectionFunctionData *data = ptn_reflection_function_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    PtnFunctionMetadata metadata = data->metadata;
+    if (ptn_ascii_case_equal(name, "getName")) {
+        return ptn_owned_string(ptn_duplicate_string(metadata.name));
+    }
+    if (ptn_ascii_case_equal(name, "getNamespaceName")) {
+        return ptn_reflection_function_string_before_last_namespace_separator(metadata.name);
+    }
+    if (ptn_ascii_case_equal(name, "getNumberOfParameters")) {
+        return ptn_reflection_function_size_result(metadata.parameter_count);
+    }
+    if (ptn_ascii_case_equal(name, "getNumberOfRequiredParameters")) {
+        return ptn_reflection_function_size_result(metadata.required_parameter_count);
+    }
+    if (ptn_ascii_case_equal(name, "getShortName")) {
+        return ptn_reflection_function_string_after_last_namespace_separator(metadata.name);
+    }
+    if (ptn_ascii_case_equal(name, "inNamespace")) {
+        return ptn_bool(strchr(metadata.name, '\\') != NULL);
+    }
+    if (ptn_ascii_case_equal(name, "isInternal")) {
+        return ptn_bool(metadata.is_internal);
+    }
+    if (ptn_ascii_case_equal(name, "isUserDefined")) {
+        return ptn_bool(!metadata.is_internal);
+    }
+    if (ptn_ascii_case_equal(name, "isVariadic")) {
+        return ptn_bool(metadata.is_variadic);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     char *name = ptn_value_to_string(args[0]);
     if (argc >= 3 && ptn_is_truthy(args[2])) {
@@ -6820,7 +7035,7 @@ static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, cons
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
-    int exists = ptn_declared_class_exists(name);
+    int exists = ptn_declared_class_exists(name) || ptn_internal_class_exists_name(name);
     free(name);
     return ptn_bool(exists);
 }
@@ -6891,7 +7106,7 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
         class_name = ptn_value_to_string(target);
     }
     char *method_name = ptn_value_to_string(args[1]);
-    int exists = ptn_declared_class_method_exists(class_name, method_name);
+    int exists = ptn_internal_class_method_exists(class_name, method_name);
     free(method_name);
     free(class_name);
     return ptn_bool(exists);

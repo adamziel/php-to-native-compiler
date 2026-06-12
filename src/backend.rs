@@ -206,6 +206,9 @@ struct RuntimeRequirements {
 }
 
 fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
+    if requirements.internal_function_dispatch {
+        out.push_str("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1\n");
+    }
     let runtime_c = runtime::runtime_c();
     let direct_helpers = runtime_chunk_range(
         runtime_c,
@@ -859,6 +862,42 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str("\nstatic PtnFunctionMetadata ptn_user_function_metadata(const char *name) {\n");
+    if functions.iter().all(|function| {
+        function.is_anonymous || (function.class_name.is_some() && !function.is_static)
+    }) {
+        out.push_str("    (void)name;\n");
+    }
+    for function in functions {
+        if function.is_anonymous || (function.class_name.is_some() && !function.is_static) {
+            continue;
+        }
+        let required_parameter_count = function
+            .parameters
+            .iter()
+            .filter(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+            .count();
+        let is_variadic = function
+            .parameters
+            .iter()
+            .any(|parameter| parameter.is_variadic);
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_function_metadata_found(\"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\", 0, ");
+        out.push_str(&function.parameters.len().to_string());
+        out.push_str(", ");
+        out.push_str(&required_parameter_count.to_string());
+        out.push_str(", ");
+        out.push_str(if is_variadic { "1" } else { "0" });
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_function_metadata_not_found();\n");
+    out.push_str("}\n");
+
     out.push_str(
         "\nstatic PtnValue ptn_call_user_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line, int *found) {\n",
     );
@@ -1152,7 +1191,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
-    out.push_str("        int valid = ptn_declared_class_method_exists(scope.as.object->class_name, method_name) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
+    out.push_str("        int valid = ptn_internal_class_method_exists(scope.as.object->class_name, method_name) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        return valid;\n");
     out.push_str("    }\n");
@@ -2985,9 +3024,17 @@ fn collect_value_runtime_requirements(
             }
             requirements.method_dispatch = true;
         }
-        ValueExpr::NewObject { arguments, .. } => {
+        ValueExpr::NewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
             for argument in arguments {
                 collect_value_runtime_requirements(argument, functions, requirements);
+            }
+            if class_name.eq_ignore_ascii_case("ReflectionFunction") {
+                requirements.internal_function_dispatch = true;
+                requirements.method_dispatch = true;
             }
         }
         ValueExpr::PropertyFetch { receiver, .. } => {

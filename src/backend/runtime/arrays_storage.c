@@ -372,6 +372,8 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(const char *class_name) {
     object->property_metadata = NULL;
     object->property_metadata_len = 0;
     object->property_metadata_capacity = 0;
+    object->native_data = NULL;
+    object->native_data_free = NULL;
     return ptn_object(object);
 }
 
@@ -504,6 +506,9 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     object->refcount--;
     if (object->refcount != 0) {
         return;
+    }
+    if (object->native_data_free != NULL) {
+        object->native_data_free(object->native_data);
     }
     free(object->class_name);
     for (size_t i = 0; i < object->property_metadata_len; i++) {

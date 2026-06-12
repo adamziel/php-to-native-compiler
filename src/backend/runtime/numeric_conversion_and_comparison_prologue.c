@@ -535,6 +535,7 @@ static PTN_UNUSED PtnValue ptn_call_method(
 ) {
     (void)args;
     (void)line;
+    receiver = ptn_value_deref(receiver);
     if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "getMessage")) {
         if (argc != 0) {
             ptn_throw_exception(
@@ -545,6 +546,15 @@ static PTN_UNUSED PtnValue ptn_call_method(
         }
         return ptn_owned_string(ptn_duplicate_string(receiver.as.exception->message));
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_reflection_function(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_reflection_function_call_method(runtime, receiver, name, argc, args, line);
+    }
+#endif
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
 }

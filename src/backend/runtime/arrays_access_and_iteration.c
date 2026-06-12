@@ -170,6 +170,11 @@ static PTN_UNUSED PtnValue ptn_new_object(
 ) {
     (void)args;
     (void)line;
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_internal_class_name_is_reflection_function(class_name)) {
+        return ptn_reflection_function_new(runtime, argc, args, line);
+    }
+#endif
     if (!ptn_class_name_is_stdclass(class_name)) {
         char message[192];
         int written = snprintf(message, sizeof(message), "Class \"%s\" not found", class_name);

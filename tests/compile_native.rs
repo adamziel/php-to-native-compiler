@@ -7020,6 +7020,84 @@ var_dump(function_exists(\"get_class\"));
 }
 
 #[test]
+fn compile_reflection_function_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-function-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-metadata.php");
+    let output = root.join("reflection-function-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace A\\B;
+
+function foo($first, $second = null, ...$rest) {
+}
+
+$internal = new \\ReflectionFunction(\"sort\");
+var_dump($internal->getName());
+var_dump($internal->isInternal());
+var_dump($internal->isUserDefined());
+var_dump($internal->inNamespace());
+var_dump($internal->getNamespaceName());
+var_dump($internal->getShortName());
+var_dump($internal->isVariadic());
+var_dump($internal->getNumberOfParameters());
+var_dump($internal->getNumberOfRequiredParameters());
+
+$user = new \\ReflectionFunction(\"A\\\\B\\\\foo\");
+var_dump($user->getName());
+var_dump($user->isInternal());
+var_dump($user->isUserDefined());
+var_dump($user->inNamespace());
+var_dump($user->getNamespaceName());
+var_dump($user->getShortName());
+var_dump($user->isVariadic());
+var_dump($user->getNumberOfParameters());
+var_dump($user->getNumberOfRequiredParameters());
+var_dump(\\class_exists(\"ReflectionFunction\"));
+var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(4) \"sort\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(0) \"\"\n",
+            "string(4) \"sort\"\n",
+            "bool(false)\n",
+            "int(2)\n",
+            "int(1)\n",
+            "string(7) \"A\\B\\foo\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(3) \"A\\B\"\n",
+            "string(3) \"foo\"\n",
+            "bool(true)\n",
+            "int(3)\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_user_function_metadata"));
+    assert!(c_source.contains("ptn_reflection_function_new"));
+    assert!(c_source.contains("ptn_reflection_function_call_method"));
+}
+
+#[test]
 fn compile_inherited_public_instance_methods_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-public-instance-methods");
     fs::create_dir_all(&root).unwrap();

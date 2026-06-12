@@ -163,6 +163,8 @@ typedef struct {
     PtnPropertyVisibility visibility;
 } PtnObjectPropertyMetadata;
 
+typedef void (*PtnObjectNativeDataFree)(void *data);
+
 typedef struct {
     int exists;
     PtnValue value;
@@ -212,7 +214,18 @@ struct PtnObject {
     PtnObjectPropertyMetadata *property_metadata;
     size_t property_metadata_len;
     size_t property_metadata_capacity;
+    void *native_data;
+    PtnObjectNativeDataFree native_data_free;
 };
+
+typedef struct {
+    int found;
+    const char *name;
+    int is_internal;
+    size_t parameter_count;
+    size_t required_parameter_count;
+    int is_variadic;
+} PtnFunctionMetadata;
 
 typedef struct {
     int has_key;
@@ -368,6 +381,53 @@ typedef struct {
 } PtnInternalFunction;
 
 #define PTN_VARIADIC_ARGS ((size_t)-1)
+
+static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
+    PtnFunctionMetadata metadata;
+    metadata.found = 0;
+    metadata.name = NULL;
+    metadata.is_internal = 0;
+    metadata.parameter_count = 0;
+    metadata.required_parameter_count = 0;
+    metadata.is_variadic = 0;
+    return metadata;
+}
+
+static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
+    const char *name,
+    int is_internal,
+    size_t parameter_count,
+    size_t required_parameter_count,
+    int is_variadic
+) {
+    PtnFunctionMetadata metadata;
+    metadata.found = 1;
+    metadata.name = name;
+    metadata.is_internal = is_internal;
+    metadata.parameter_count = parameter_count;
+    metadata.required_parameter_count = required_parameter_count;
+    metadata.is_variadic = is_variadic;
+    return metadata;
+}
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
+static PTN_UNUSED PtnValue ptn_reflection_function_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+#endif
 
 static PTN_UNUSED int ptn_float_precision(void) {
     static int initialized = 0;
