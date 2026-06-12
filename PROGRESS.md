@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T05:15Z
-Measured: `ptn-6c76` rebased after `origin/master` `35ea8f08c`.
+Refresh: 2026-06-12T05:26Z
+Measured: `ptn-cbp8` integrated after `origin/master` `dd59efdec`.
 
 Recent RC slices cover property/static-property inc/dec statements and
 expressions, dynamic-variable array/string-offset writes and unsets,
@@ -21,8 +21,9 @@ array/string-offset unsets, `ptn-ir7c` exact `array/007`, and `ptn-juzx`
 refined object `var_export()`; `ptn-wrom` adds declared-object property
 arrays, `ptn-5xx7` pins non-public export parity, `ptn-geav` adds
 `get_class()`, `ptn-if1w` quiet property probes, `ptn-9x8x` default `sort()`,
-`ptn-du2g` offset compound assignment expressions, and `ptn-6c76`
-property/static-property inc/dec coverage.
+`ptn-du2g` offset compound assignment expressions, `ptn-6c76`
+property/static-property inc/dec coverage, and `ptn-cbp8` sort flag/dynamic
+call coverage.
 
 ## Dashboard
 
@@ -67,8 +68,9 @@ array/string-offset writes and unsets.
 Recent baseline: `cargo fmt --check`, full `cargo test` with native/compiler
 512/512, exact `array/007.phpt`, bounded PHPT 200/200, COW PHPT 29/29, and
 post-merge COW gate 25/25. `ptn-6c76` final checks include focused
-property/static-property inc/dec parser/native coverage plus full `cargo test`
-with native/compiler 514/514.
+property/static-property inc/dec coverage. `ptn-cbp8` final checks include
+focused sort flag/dynamic-call coverage plus full `cargo test` with
+native/compiler 514/514.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

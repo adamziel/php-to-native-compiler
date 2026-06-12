@@ -241,9 +241,9 @@ Post-RC architecture remains explicit rather than hidden:
   `array_push()`/`array_unshift()`, array paths for `ksort()`/`sort()`/
   `shuffle()`, and other non-direct-variable mutation targets fail before code
   generation with an explicit unsupported diagnostic.
-- Remaining sort-family by-reference array mutators such as `asort()`,
-  `krsort()`, `usort()`, and `array_multisort()` remain unsupported and fail
-  before code generation with an explicit unsupported diagnostic.
+- `sort()` flags and remaining sort-family by-reference array mutators such as
+  `asort()`, `krsort()`, `usort()`, and `array_multisort()` remain unsupported
+  and fail before code generation with an explicit unsupported diagnostic.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
   offset reads, property reads, and currently supported value expressions.
   Variable, offset, and property operands use a quiet existence lookup: missing

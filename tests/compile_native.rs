@@ -10677,6 +10677,11 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
 fn parser_rejects_unsupported_sort_family_array_mutators() {
     for (source, function, target_message) in [
         (
+            "<?php $items = [3, 2, 1]; sort($items, SORT_REGULAR);",
+            "sort",
+            "sort flags are unsupported",
+        ),
+        (
             "<?php $items = [[3, 2, 1]]; asort($items[0]);",
             "asort",
             "sort-family array mutation targets are unsupported",
@@ -10785,19 +10790,22 @@ fn compile_sort_mutates_direct_variable_and_detaches_cow_to_native_binary() {
     fs::write(
         &input,
         "<?php\n\
-$source = [\"b\" => 3, \"a\" => 1, \"c\" => 2];\n\
-$copy = $source;\n\
+$items = [3 => \"c\", 1 => \"a\", 2 => \"b\"];\n\
+$copy = $items;\n\
 var_dump(sort($copy));\n\
+echo key($items), \":\", key($copy), \":\", $items[3], \":\", $copy[0], \":\", $copy[2], \"\\n\";\n\
 foreach ($copy as $key => $value) {\n\
     echo $key, \"=\", $value, \"\\n\";\n\
 }\n\
-echo $source[\"b\"], \":\", $source[\"a\"], \":\", $source[\"c\"], \"\\n\";\n\
-$words = [\"pear\", \"apple\", \"banana\"];\n\
-sort($words);\n\
-foreach ($words as $word) {\n\
-    echo $word, \"\\n\";\n\
-}\n\
-var_dump(function_exists(\"sort\"));",
+$numbers = [100, 33, 555, 22];\n\
+var_dump(sort($numbers));\n\
+echo $numbers[0], \":\", $numbers[1], \":\", $numbers[2], \":\", $numbers[3], \"\\n\";\n\
+$dynamic = \"sort\";\n\
+$source = [3, 1, 2];\n\
+$dynamic_copy = $source;\n\
+var_dump($dynamic($dynamic_copy));\n\
+echo count($source), \":\", count($dynamic_copy), \":\", $source[0], \":\", $dynamic_copy[0], \":\", $dynamic_copy[2], \"\\n\";\n\
+var_dump(function_exists(\"sort\"), function_exists(\"SORT\"));",
     )
     .unwrap();
 
@@ -10809,13 +10817,15 @@ var_dump(function_exists(\"sort\"));",
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "bool(true)\n",
-            "0=1\n",
-            "1=2\n",
-            "2=3\n",
-            "3:1:2\n",
-            "apple\n",
-            "banana\n",
-            "pear\n",
+            "3:0:c:a:c\n",
+            "0=a\n",
+            "1=b\n",
+            "2=c\n",
+            "bool(true)\n",
+            "22:33:100:555\n",
+            "bool(true)\n",
+            "3:3:3:1:3\n",
+            "bool(true)\n",
             "bool(true)\n"
         )
     );

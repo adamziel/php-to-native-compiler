@@ -3884,6 +3884,12 @@ fn validate_mutating_array_internal_call(
             Some(arguments.first().map_or(call_span, Expr::span)),
         ));
     }
+    if name.eq_ignore_ascii_case("sort") && arguments.len() > 1 {
+        return Err(Diagnostic::new(
+            "sort() currently supports the default comparison mode; sort flags are unsupported",
+            Some(arguments.get(1).map_or(call_span, Expr::span)),
+        ));
+    }
     if arguments.is_empty() {
         return Ok(());
     }
