@@ -954,6 +954,19 @@ static PTN_UNUSED PtnValue ptn_runtime_array_ksort_variable(PtnRuntime *runtime,
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_krsort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "krsort",
+        1,
+        "array",
+        name,
+        value
+    );
+    ptn_array_krsort_entries(array);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_asort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -1325,14 +1338,6 @@ static PtnValue ptn_internal_array_shift(PtnRuntime *runtime, size_t argc, const
     return ptn_array_shift_value(array);
 }
 
-static PtnValue ptn_internal_ksort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)line;
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "ksort", 1, "array", args[0]);
-    ptn_array_ksort_entries(array);
-    return ptn_bool(1);
-}
-
 static void ptn_internal_throw_sort_flags_unsupported(PtnRuntime *runtime, const char *name) {
     char message[128];
     int written = snprintf(
@@ -1346,6 +1351,28 @@ static void ptn_internal_throw_sort_flags_unsupported(PtnRuntime *runtime, const
         return;
     }
     ptn_throw_exception(runtime, "Error", message);
+}
+
+static PtnValue ptn_internal_ksort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (argc >= 2) {
+        ptn_internal_throw_sort_flags_unsupported(runtime, "ksort");
+        return ptn_null();
+    }
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "ksort", 1, "array", args[0]);
+    ptn_array_ksort_entries(array);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_krsort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (argc >= 2) {
+        ptn_internal_throw_sort_flags_unsupported(runtime, "krsort");
+        return ptn_null();
+    }
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "krsort", 1, "array", args[0]);
+    ptn_array_krsort_entries(array);
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_asort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -5872,7 +5899,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_string", 1, 1, ptn_internal_is_string },
         { "join", 1, 2, ptn_internal_join },
         { "key", 1, 1, ptn_internal_key },
-        { "ksort", 1, 1, ptn_internal_ksort },
+        { "krsort", 1, 2, ptn_internal_krsort },
+        { "ksort", 1, 2, ptn_internal_ksort },
         { "md5", 1, 2, ptn_internal_md5 },
         { "method_exists", 2, 2, ptn_internal_method_exists },
         { "mkdir", 1, 4, ptn_internal_mkdir },

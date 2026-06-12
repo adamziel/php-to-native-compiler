@@ -3718,6 +3718,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "range"
             | "arsort"
             | "asort"
+            | "krsort"
             | "ksort"
             | "error_reporting"
             | "func_get_arg"
@@ -3811,6 +3812,7 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
             | "array_unshift"
             | "arsort"
             | "asort"
+            | "krsort"
             | "ksort"
             | "rsort"
             | "shuffle"
@@ -3828,7 +3830,7 @@ fn is_single_array_path_mutation_name(name: &str) -> bool {
 fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "krsort" | "natsort" | "natcasesort" | "usort" | "uasort" | "uksort" | "array_multisort"
+        "natsort" | "natcasesort" | "usort" | "uasort" | "uksort" | "array_multisort"
     )
 }
 
@@ -3863,11 +3865,10 @@ fn validate_mutating_array_internal_call(
     arguments: &[Expr],
     call_span: SourceSpan,
 ) -> Result<()> {
-    if (name.eq_ignore_ascii_case("sort")
-        || name.eq_ignore_ascii_case("arsort")
-        || name.eq_ignore_ascii_case("asort")
-        || name.eq_ignore_ascii_case("rsort"))
-        && arguments.len() > 1
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
+        "arsort" | "asort" | "krsort" | "ksort" | "rsort" | "sort"
+    ) && arguments.len() > 1
     {
         let normalized = name.to_ascii_lowercase();
         return Err(Diagnostic::new(

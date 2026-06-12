@@ -1166,6 +1166,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "arsort",
         "asort",
         "end",
+        "krsort",
         "ksort",
         "next",
         "prev",
@@ -3375,6 +3376,7 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
             | "arsort"
             | "asort"
             | "end"
+            | "krsort"
             | "ksort"
             | "next"
             | "prev"
@@ -7246,6 +7248,8 @@ impl ValueEmitter {
                 Some("ptn_runtime_array_arsort_variable")
             } else if name.eq_ignore_ascii_case("asort") {
                 Some("ptn_runtime_array_asort_variable")
+            } else if name.eq_ignore_ascii_case("krsort") {
+                Some("ptn_runtime_array_krsort_variable")
             } else if name.eq_ignore_ascii_case("ksort") {
                 Some("ptn_runtime_array_ksort_variable")
             } else if name.eq_ignore_ascii_case("next") {
@@ -7256,6 +7260,8 @@ impl ValueEmitter {
                 Some("ptn_runtime_array_prev_variable")
             } else if name.eq_ignore_ascii_case("reset") {
                 Some("ptn_runtime_array_reset_variable")
+            } else if name.eq_ignore_ascii_case("rsort") {
+                Some("ptn_runtime_array_rsort_variable")
             } else if name.eq_ignore_ascii_case("shuffle") {
                 Some("ptn_runtime_array_shuffle_variable")
             } else if name.eq_ignore_ascii_case("sort") {

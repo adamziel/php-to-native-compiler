@@ -231,21 +231,23 @@ Post-RC architecture remains explicit rather than hidden:
   non-variable-root cursor mutation targets fail before code generation with an
   explicit unsupported diagnostic.
 - Mutating array internals `array_pop($array)`, `array_push($array, ...)`,
-  `array_shift($array)`, `array_unshift($array, ...)`, `arsort($array)`,
-  `asort($array)`, `ksort($array)`, `sort($array)`, `rsort($array)`, and
-  `shuffle($array)` over direct variable ordered arrays. One-argument
-  `array_pop()` and
-  `array_shift()` also support variable-root array paths such as `$items[0]`,
-  detaching shared nested array payloads before mutation. `asort()`/`arsort()`
-  use ascending/descending value order while preserving keys, `ksort()` uses
-  ascending default key order, `sort()`/`rsort()` use ascending/descending value
-  order while reindexing values with integer keys, and `shuffle()` reindexes.
-  Temporary arrays, array paths for variadic `array_push()`/`array_unshift()`,
-  array paths for `arsort()`/`asort()`/`ksort()`/`sort()`/`rsort()`/`shuffle()`,
-  and other non-direct variable mutation targets fail before code generation
-  with an explicit unsupported diagnostic.
-- `sort()`/`arsort()`/`asort()`/`rsort()` flags and remaining sort-family
-  by-reference array mutators such as `krsort()`, `usort()`, and
+  `array_shift($array)`, `array_unshift($array, ...)`, `asort($array)`,
+  `arsort($array)`, `ksort($array)`, `krsort($array)`, `sort($array)`,
+  `rsort($array)`, and `shuffle($array)` over direct variable ordered arrays.
+  One-argument
+  `array_pop()` and `array_shift()` also support variable-root array paths such
+  as `$items[0]`, detaching shared nested array payloads before mutation.
+  `asort()`/`arsort()` use default ascending/descending value order while
+  preserving keys, `ksort()`/`krsort()` use default ascending/descending key
+  order, `sort()`/`rsort()` use default ascending/descending value order and
+  reindex values with integer keys, and `shuffle()` reindexes values with
+  integer keys. Temporary arrays, array paths for variadic
+  `array_push()`/`array_unshift()`, array paths for `asort()`/`ksort()`/
+  `sort()`/`arsort()`/`krsort()`/`rsort()`/`shuffle()`, and other
+  non-direct-variable mutation targets fail before code generation with an
+  explicit unsupported diagnostic.
+- Sort flags and remaining sort-family by-reference array mutators such as
+  `natsort()`, `natcasesort()`, `usort()`, `uasort()`, `uksort()`, and
   `array_multisort()` remain unsupported and fail before code generation with
   an explicit unsupported diagnostic.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
