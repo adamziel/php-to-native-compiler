@@ -50,6 +50,7 @@ pub struct ClassDecl {
     pub parent_name: Option<String>,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
+    pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<MethodDecl>,
 }
 
@@ -73,6 +74,13 @@ pub struct StaticPropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub value: Option<ValueExpr>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassConstantDecl {
+    pub name: String,
+    pub visibility: PropertyVisibility,
+    pub value: ValueExpr,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -330,6 +338,11 @@ pub enum ValueExpr {
         line: usize,
     },
     StaticPropertyFetch {
+        class_name: String,
+        name: String,
+        line: usize,
+    },
+    ClassConstantFetch {
         class_name: String,
         name: String,
         line: usize,
@@ -706,6 +719,15 @@ impl<'a> LoweringContext<'a> {
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
             })
             .collect();
+        let constants = class
+            .constants
+            .iter()
+            .map(|constant| ClassConstantDecl {
+                name: constant.name.clone(),
+                visibility: lower_property_visibility(constant.visibility),
+                value: self.lower_expr(&constant.value),
+            })
+            .collect();
         let methods = class
             .methods
             .iter()
@@ -741,6 +763,7 @@ impl<'a> LoweringContext<'a> {
             parent_name: class.parent_name.clone(),
             properties,
             static_properties,
+            constants,
             methods,
         }
     }
@@ -1551,6 +1574,15 @@ impl<'a> LoweringContext<'a> {
                 name: name.clone(),
                 line: span.line,
             },
+            Expr::ClassConstantFetch {
+                class_name,
+                name,
+                span,
+            } => ValueExpr::ClassConstantFetch {
+                class_name: class_name.clone(),
+                name: name.clone(),
+                line: span.line,
+            },
             Expr::Unary { op, expr, span } => ValueExpr::Unary {
                 op: lower_unary_op(*op),
                 expr: Box::new(self.lower_expr(expr)),
@@ -1744,6 +1776,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::StaticPropertyFetch {
             class_name, name, ..
         } => format!("{class_name}::${name}"),
+        Expr::ClassConstantFetch {
+            class_name, name, ..
+        } => format!("{class_name}::{name}"),
         Expr::Array { elements, .. } => format!(
             "[{}]",
             elements

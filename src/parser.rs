@@ -2,12 +2,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
-    AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClosureUseCapture,
-    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget,
-    IncludeKind, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
-    MagicConstantKind, MethodDecl, Program, PropertyDecl, PropertyVisibility, ReferenceTarget,
-    Statement, StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint,
-    UnaryOp, UnsetTarget,
+    AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassConstantDecl, ClassDecl,
+    ClosureUseCapture, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
+    IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElement, ListAssignmentElementTarget,
+    ListAssignmentTarget, MagicConstantKind, MethodDecl, Program, PropertyDecl, PropertyVisibility,
+    ReferenceTarget, Statement, StaticPropertyDecl, StringInterpolationIndex, StringPart,
+    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -110,6 +110,7 @@ enum ParsedClassMember {
     Method(MethodDecl),
     Properties(Vec<PropertyDecl>),
     StaticProperties(Vec<StaticPropertyDecl>),
+    Constants(Vec<ClassConstantDecl>),
 }
 
 impl Parser {
@@ -154,6 +155,7 @@ impl Parser {
         validate_parent_class_names(&classes)?;
         for class in &classes {
             validate_method_names(class)?;
+            validate_class_constant_names(class)?;
             for method in &class.methods {
                 if method.return_by_ref {
                     validate_by_reference_returns_in_statements(
@@ -486,6 +488,7 @@ impl Parser {
         self.expect_left_brace()?;
         let mut properties = Vec::new();
         let mut static_properties = Vec::new();
+        let mut constants = Vec::new();
         let mut methods = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             match self.parse_class_member()? {
@@ -496,6 +499,9 @@ impl Parser {
                 ParsedClassMember::StaticProperties(properties) => {
                     static_properties.extend(properties);
                 }
+                ParsedClassMember::Constants(parsed_constants) => {
+                    constants.extend(parsed_constants);
+                }
             }
         }
         self.expect_right_brace()?;
@@ -504,6 +510,7 @@ impl Parser {
             parent_name,
             properties,
             static_properties,
+            constants,
             methods,
             span: class_token.span,
         })
@@ -512,9 +519,20 @@ impl Parser {
     fn parse_class_member(&mut self) -> Result<ParsedClassMember> {
         let modifiers = self.parse_class_modifiers()?;
         if matches!(self.peek().kind, TokenKind::Const) {
-            return Err(Diagnostic::new(
-                CLASS_CONSTANT_FETCH_UNSUPPORTED,
-                Some(self.peek().span),
+            if modifiers.is_static {
+                return Err(Diagnostic::new(
+                    "static class constants are unsupported",
+                    Some(self.peek().span),
+                ));
+            }
+            if modifiers.visibility != PropertyVisibility::Public {
+                return Err(Diagnostic::new(
+                    "non-public class constants are unsupported",
+                    modifiers.visibility_span,
+                ));
+            }
+            return Ok(ParsedClassMember::Constants(
+                self.parse_class_constant_declarations(modifiers.visibility)?,
             ));
         }
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
@@ -596,6 +614,56 @@ impl Parser {
         }
         self.expect_semicolon()?;
         Ok(properties)
+    }
+
+    fn parse_class_constant_declarations(
+        &mut self,
+        visibility: PropertyVisibility,
+    ) -> Result<Vec<ClassConstantDecl>> {
+        self.expect_const()?;
+        let mut constants = vec![self.parse_class_constant_declaration(visibility)?];
+        while matches!(self.peek().kind, TokenKind::Comma) {
+            self.advance();
+            constants.push(self.parse_class_constant_declaration(visibility)?);
+        }
+        self.expect_const_statement_terminator()?;
+        Ok(constants)
+    }
+
+    fn parse_class_constant_declaration(
+        &mut self,
+        visibility: PropertyVisibility,
+    ) -> Result<ClassConstantDecl> {
+        let looks_like_typed_constant = (self.peek_is_type_hint()
+            || matches!(self.peek().kind, TokenKind::Identifier(_)))
+            && matches!(self.peek_next().kind, TokenKind::Identifier(_));
+        if looks_like_typed_constant {
+            return Err(Diagnostic::new(
+                "typed class constants are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            return Err(Diagnostic::new(
+                "expected class constant name",
+                Some(token.span),
+            ));
+        };
+        self.expect_equal()?;
+        let value = self.parse_expr()?;
+        if !is_supported_global_const_expr(&value) {
+            return Err(Diagnostic::new(
+                "class constant value must be a supported constant expression",
+                Some(value.span()),
+            ));
+        }
+        Ok(ClassConstantDecl {
+            name,
+            visibility,
+            value,
+            span: token.span,
+        })
     }
 
     fn parse_property_declarations(
@@ -2312,10 +2380,11 @@ impl Parser {
             ));
         };
         if !matches!(self.peek().kind, TokenKind::LeftParen) {
-            return Err(Diagnostic::new(
-                CLASS_CONSTANT_FETCH_UNSUPPORTED,
-                Some(scope_span),
-            ));
+            return Ok(Expr::ClassConstantFetch {
+                class_name,
+                name: member_name,
+                span: combine_spans(class_span, member.span),
+            });
         }
         let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
         Ok(Expr::Call {
@@ -3302,6 +3371,22 @@ fn validate_method_names(class: &ClassDecl) -> Result<()> {
     Ok(())
 }
 
+fn validate_class_constant_names(class: &ClassDecl) -> Result<()> {
+    let mut names = HashSet::new();
+    for constant in &class.constants {
+        if !names.insert(constant.name.clone()) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot redefine class constant {}::{}",
+                    class.name, constant.name
+                ),
+                Some(constant.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 struct LabelInfo {
     control_path: Vec<usize>,
@@ -3425,6 +3510,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::NewObject { .. }
         | Expr::PropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. }
@@ -3728,7 +3814,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         Expr::PropertyFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
         }
-        Expr::StaticPropertyFetch { .. } => {}
+        Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -4725,6 +4811,10 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             name,
             span,
         }),
+        Expr::ClassConstantFetch { span, .. } => Err(Diagnostic::new(
+            "class constant fetch is not a writable target",
+            Some(span),
+        )),
         Expr::Array { elements, span } => Ok(AssignmentTarget::List(
             list_assignment_target_from_array_elements(elements, span)?,
         )),
@@ -5012,7 +5102,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::PropertyFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
-        Expr::StaticPropertyFetch { .. } => {}
+        Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -5178,6 +5268,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::NewObject { .. }
         | Expr::PropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,

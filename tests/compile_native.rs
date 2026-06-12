@@ -2444,42 +2444,109 @@ fn parser_accepts_global_const_declarations() {
 }
 
 #[test]
-fn parser_rejects_class_constant_fetches_with_explicit_diagnostics() {
-    let cases = [
-        ("array value", "<?php\n$haystack = [Sample::A];"),
-        ("fully qualified", "<?php\nvar_dump(\\Sample::A);"),
-        ("array key", "<?php\n$map = [Sample::A => true];"),
-        ("self fetch", "<?php\nreturn self::VALUE;"),
-    ];
+fn parser_accepts_class_constant_metadata_and_fetches() {
+    let program = parser::parse(
+        "<?php
+class Sample {
+    const A = 1, B = [\"x\" => 2];
+    public const Label = \"ok\";
 
-    for (name, source) in cases {
-        let error = parser::parse(source).unwrap_err();
-        assert_eq!(
-            error.message,
-            "class constant fetches are unsupported; class constants and enum cases require class metadata",
-            "{name}"
-        );
-        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
-        let span = error.span.unwrap();
-        let scope_offset = source.find("::").unwrap();
-        assert_eq!(span.byte_start, scope_offset, "{name}");
-        assert_eq!(span.byte_end, scope_offset + 2, "{name}");
-    }
+    public static function value() { return self::A; }
+}
+$haystack = [Sample::A];
+$map = [Sample::A => Sample::B];
+echo \\Sample::Label;",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].constants.len(), 3);
+    assert_eq!(program.classes[0].constants[0].name, "A");
+    assert_eq!(
+        program.classes[0].constants[0].visibility,
+        PropertyVisibility::Public
+    );
+    assert!(matches!(
+        program.classes[0].constants[0].value,
+        Expr::Int(1, _)
+    ));
+    assert!(matches!(
+        program.classes[0].constants[1].value,
+        Expr::Array { ref elements, .. } if elements.len() == 1
+    ));
+    assert!(matches!(
+        program.classes[0].methods[0].body[0],
+        Statement::Return {
+            value:
+                Some(Expr::ClassConstantFetch {
+                    ref class_name,
+                    ref name,
+                    ..
+                }),
+            ..
+        } if class_name == "self" && name == "A"
+    ));
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Assign {
+            value:
+                Expr::Array {
+                    elements,
+                    ..
+                },
+            ..
+        } if matches!(
+            &elements[0].value,
+            ArrayElementValue::Value(Expr::ClassConstantFetch { class_name, name, .. })
+                if class_name == "Sample" && name == "A"
+        )
+    ));
+    assert!(matches!(
+        &program.statements[2],
+        Statement::Echo { expressions, .. }
+            if matches!(
+                &expressions[0],
+                Expr::ClassConstantFetch { class_name, name, .. }
+                    if class_name == "Sample" && name == "Label"
+            )
+    ));
 }
 
 #[test]
-fn parser_maps_in_array_enum_reducer_past_class_constant_syntax() {
+fn parser_accepts_in_array_class_constant_reducer_syntax() {
     let source = "<?php
 $haystack = [Sample::A];
 $needle = Sample::B;
 var_dump(in_array($needle, $haystack, true));";
-    let error = parser::parse(source).unwrap_err();
-    assert_eq!(
-        error.message,
-        "class constant fetches are unsupported; class constants and enum cases require class metadata"
-    );
-    assert_eq!(error.kind, DiagnosticKind::Fatal);
-    assert_eq!(error.span.unwrap().line, 2);
+    let program = parser::parse(source).unwrap();
+    assert_eq!(program.statements.len(), 3);
+}
+
+#[test]
+fn parser_rejects_unsupported_class_constant_boundaries() {
+    let cases = [
+        (
+            "non-public",
+            "<?php class Sample { private const A = 1; }",
+            "non-public class constants are unsupported",
+        ),
+        (
+            "typed",
+            "<?php class Sample { public const int A = 1; }",
+            "typed class constants are unsupported",
+        ),
+        (
+            "dynamic name",
+            "<?php $name = 'A'; echo Sample::{$name};",
+            "class constant fetches are unsupported; class constants and enum cases require class metadata",
+        ),
+    ];
+
+    for (name, source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{name}");
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
+    }
 }
 
 #[test]
@@ -2882,11 +2949,6 @@ class Child extends Base {
 #[test]
 fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
     let cases = [
-        (
-            "class constant",
-            "<?php\nclass Sample { const A = 1; }",
-            "class constant fetches are unsupported; class constants and enum cases require class metadata",
-        ),
         (
             "enum",
             "<?php\nenum Sample { case A; }",
@@ -17468,6 +17530,62 @@ var_dump(isset($declared->secret), empty($declared->secret), $declared->secret ?
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_object_property_probe_quiet(&runtime"));
+}
+
+#[test]
+fn compile_class_constant_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-class-constant-reads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-constant-reads.php");
+    let output = root.join("class-constant-reads-bin");
+    fs::write(
+        &input,
+        "<?php
+class Sample {
+    const X = 42, Data = [\"answer\" => 42];
+    public const Label = \"hello\";
+
+    public static function label() {
+        return self::Label;
+    }
+}
+
+echo Sample::X, \"\\n\";
+var_dump(Sample::Data);
+echo Sample::label(), \"\\n\";
+var_dump(defined(\"sample::Label\"), constant(\"sample::Label\"));
+try {
+    var_dump(Sample::label);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "42\n",
+            "array(1) {\n",
+            "  [\"answer\"]=>\n",
+            "  int(42)\n",
+            "}\n",
+            "hello\n",
+            "bool(true)\n",
+            "string(5) \"hello\"\n",
+            "Undefined constant Sample::label\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_define_class_constant(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_class_constant(&runtime"));
 }
 
 #[test]

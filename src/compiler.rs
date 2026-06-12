@@ -381,7 +381,8 @@ impl IncludeCollector {
             | Expr::IncDec { .. }
             | Expr::Constant(_, _)
             | Expr::MagicConstant(_, _)
-            | Expr::StaticPropertyFetch { .. } => Ok(()),
+            | Expr::StaticPropertyFetch { .. }
+            | Expr::ClassConstantFetch { .. } => Ok(()),
         }
     }
 

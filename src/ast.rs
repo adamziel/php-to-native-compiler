@@ -13,6 +13,7 @@ pub struct ClassDecl {
     pub parent_name: Option<String>,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
+    pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<MethodDecl>,
     pub span: SourceSpan,
 }
@@ -43,6 +44,14 @@ pub struct StaticPropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub value: Option<Expr>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassConstantDecl {
+    pub name: String,
+    pub visibility: PropertyVisibility,
+    pub value: Expr,
     pub span: SourceSpan,
 }
 
@@ -462,6 +471,11 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    ClassConstantFetch {
+        class_name: String,
+        name: String,
+        span: SourceSpan,
+    },
     Array {
         elements: Vec<ArrayElement>,
         span: SourceSpan,
@@ -617,7 +631,8 @@ impl Expr {
             | Expr::MethodCall { span, .. }
             | Expr::NewObject { span, .. }
             | Expr::PropertyFetch { span, .. }
-            | Expr::StaticPropertyFetch { span, .. } => *span,
+            | Expr::StaticPropertyFetch { span, .. }
+            | Expr::ClassConstantFetch { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,

@@ -861,11 +861,56 @@ static PTN_UNUSED void ptn_format_var_dump_float(double value, char *buffer, siz
     ptn_var_dump_ensure_exponent_decimal(buffer);
 }
 
+static PTN_UNUSED int ptn_ascii_case_equal_n(const char *left, const char *right, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char l = (unsigned char)left[i];
+        unsigned char r = (unsigned char)right[i];
+        if (tolower(l) != tolower(r)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PTN_UNUSED int ptn_runtime_class_constant_value(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue *out
+) {
+    const char *separator = strstr(name, "::");
+    if (separator == NULL || separator == name || separator[2] == '\0') {
+        return 0;
+    }
+
+    size_t class_len = (size_t)(separator - name);
+    const char *constant_name = separator + 2;
+    PtnSymbolTable *constants = ptn_runtime_class_constant_table(runtime);
+    for (size_t i = 0; i < constants->len; i++) {
+        const char *stored_name = constants->items[i].name;
+        const char *stored_separator = strstr(stored_name, "::");
+        if (stored_separator == NULL || (size_t)(stored_separator - stored_name) != class_len) {
+            continue;
+        }
+        if (!ptn_ascii_case_equal_n(stored_name, name, class_len)) {
+            continue;
+        }
+        if (strcmp(stored_separator + 2, constant_name) != 0) {
+            continue;
+        }
+        *out = ptn_value_borrow(constants->items[i].value);
+        return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
     if (ptn_symbols_get(runtime->constants, name, out)) {
         return 1;
     }
-    return ptn_builtin_constant_value(name, out);
+    if (ptn_builtin_constant_value(name, out)) {
+        return 1;
+    }
+    return ptn_runtime_class_constant_value(runtime, name, out);
 }
 
 static PTN_UNUSED int ptn_runtime_constant_is_defined(PtnRuntime *runtime, const char *name) {

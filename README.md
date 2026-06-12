@@ -73,6 +73,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   inheritance remain bounded.
 - Static properties support reads/writes, `??=`, plus quiet `isset()`,
   `empty()`, and `??`.
+- Public class constants support scalar/array defaults, direct
+  `Class::CONST`/`self::CONST` reads, and `constant()`/`defined()` lookup;
+  typed, non-public, inherited, and dynamic-name constants remain bounded.
 - Stream resources from `fopen()`/`fclose()` are boxed with type, dump,
   and array-key cast behavior.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or

@@ -89,6 +89,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
     );
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
+    emit_class_constant_initializers(&mut out, &mut values, &module.classes);
     emit_static_property_initializers(&mut out, &mut values, &module.classes);
     for warning in collect_module_control_warnings(module) {
         emit_control_warning(
@@ -782,6 +783,26 @@ fn emit_static_property_initializers(
             out.push_str(&c_string(&class.name));
             out.push_str("\", \"");
             out.push_str(&c_string(&property.name));
+            out.push_str("\", ");
+            out.push_str(&value_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &value_temp);
+        }
+    }
+}
+
+fn emit_class_constant_initializers(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    classes: &[ClassDecl],
+) {
+    for class in classes {
+        for constant in &class.constants {
+            let value_temp = values.emit_materialized_value(out, &constant.value);
+            out.push_str("    ptn_runtime_define_class_constant(&runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&constant.name));
             out.push_str("\", ");
             out.push_str(&value_temp);
             out.push_str(");\n");
@@ -2286,6 +2307,9 @@ fn collect_module_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(value, &mut deprecations);
             }
         }
+        for constant in &class.constants {
+            collect_value_legacy_dollar_brace_deprecations(&constant.value, &mut deprecations);
+        }
     }
     for function in &module.functions {
         for parameter in &function.parameters {
@@ -2655,7 +2679,8 @@ fn collect_value_legacy_dollar_brace_deprecations(
         | ValueExpr::Load { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. }
-        | ValueExpr::StaticPropertyFetch { .. } => {}
+        | ValueExpr::StaticPropertyFetch { .. }
+        | ValueExpr::ClassConstantFetch { .. } => {}
     }
 }
 
@@ -2676,6 +2701,13 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
             if let Some(value) = &property.value {
                 collect_value_runtime_requirements(value, &module.functions, &mut requirements);
             }
+        }
+        for constant in &class.constants {
+            collect_value_runtime_requirements(
+                &constant.value,
+                &module.functions,
+                &mut requirements,
+            );
         }
     }
     for include in &module.includes {
@@ -3063,7 +3095,7 @@ fn collect_value_runtime_requirements(
         ValueExpr::PropertyFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
-        ValueExpr::StaticPropertyFetch { .. } => {}
+        ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => {}
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             collect_value_runtime_requirements(expr, functions, requirements);
         }
@@ -3898,7 +3930,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .any(|argument| value_mentions_variable(argument, name))
         }
         ValueExpr::PropertyFetch { receiver, .. } => value_mentions_variable(receiver, name),
-        ValueExpr::StaticPropertyFetch { .. } => false,
+        ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => false,
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             value_mentions_variable(expr, name)
         }
@@ -4016,6 +4048,10 @@ impl ValueEmitter {
         self.declared_class_name(class_name)
             .unwrap_or(class_name)
             .to_string()
+    }
+
+    fn static_member_class_name(&self, class_name: &str) -> String {
+        self.static_property_class_name(class_name)
     }
 
     fn direct_user_function(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
@@ -5158,6 +5194,11 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_static_property_fetch(out, class_name, name, *line),
+            ValueExpr::ClassConstantFetch {
+                class_name,
+                name,
+                line,
+            } => self.emit_class_constant_fetch(out, class_name, name, *line),
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
             ValueExpr::Empty { target } => self.emit_empty(out, target),
             ValueExpr::Print { expression } => self.emit_print(out, expression),
@@ -5996,6 +6037,27 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_class_constant_fetch(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &str,
+        line: usize,
+    ) -> String {
+        let resolved_class_name = self.static_member_class_name(class_name);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
@@ -7139,6 +7201,7 @@ impl ValueEmitter {
                 | ValueExpr::Ternary { .. }
                 | ValueExpr::MethodCall { .. }
                 | ValueExpr::StaticPropertyFetch { .. }
+                | ValueExpr::ClassConstantFetch { .. }
                 | ValueExpr::Include { .. }
         ) {
             return self.emit_value(out, value);

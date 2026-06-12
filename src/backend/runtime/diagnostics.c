@@ -345,6 +345,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->global_symbols = &runtime->symbols;
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = &runtime->owned_constants;
+    ptn_symbols_init(&runtime->owned_class_constants);
+    runtime->class_constants = &runtime->owned_class_constants;
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = &runtime->owned_static_properties;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);

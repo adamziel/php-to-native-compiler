@@ -358,6 +358,8 @@ struct PtnRuntime {
     PtnSymbolTable *global_symbols;
     PtnSymbolTable owned_constants;
     PtnSymbolTable *constants;
+    PtnSymbolTable owned_class_constants;
+    PtnSymbolTable *class_constants;
     PtnSymbolTable owned_static_properties;
     PtnSymbolTable *static_properties;
     PtnDiagnosticSink diagnostics;
