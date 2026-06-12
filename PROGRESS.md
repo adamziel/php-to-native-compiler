@@ -1,14 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-12T10:17Z
-Measured: `ptn-k0tw` rebased after `origin/master` `740eddde4`.
+Refresh: 2026-06-12T10:35Z
+Measured: `ptn-qmtv` rebased after `origin/master` `65e45c926`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
 array/string-offset writes and unsets, array/append compound assignments,
 bounded private properties, object `var_export()`, `get_class()`, quiet
 property/static probes, direct array mutators including
 `sort()`/`asort()`/`arsort()`/`ksort()`/`krsort()`/`rsort()`/`natsort()`/
-`natcasesort()`, set operations, `array_udiff*()`, exact string/lang rows,
+`natcasesort()`, explicit `SORT_REGULAR`/`0` flags for the regular direct
+sort-family subset, set operations, `array_udiff*()`, exact string/lang rows,
 highlight output paths, `join()`/`implode()`, `sprintf()`, `array_product()`,
 `array_keys()`, key-boundary helpers, `array_search()`, `array_pad()`,
 catchable `intdiv()`, ASCII case string internals, `strrev()`, `ucfirst()`,
@@ -23,14 +24,15 @@ sort flag diagnostics, offset compounds, property/static inc/dec,
 `intdiv()` exceptions, ASCII case conversion, key-preserving natural
 `natsort()`/`natcasesort()`, binary-safe `strrev()`, first-byte `ucfirst()`,
 `ceil()`/`floor()` invalid numeric-string/unsupported-operand `TypeError`
-parity, and the current boxed-array `is_countable()` predicate.
+parity, current boxed-array `is_countable()`, and explicit regular direct sort
+flags.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 535 | 535 | 0 |
+| Native/compiler Rust suite | 536 | 536 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 206 | 206 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
@@ -52,8 +54,9 @@ metadata intrinsics, `is_callable()`, `is_countable()`, assertions,
 interpolation, streams, `pow()`, `array_merge()`, `array_pad()`, `strrev()`,
 `ucfirst()`, `array_search()`,
 `call_user_func_array()`, highlight output paths, `var_export()`, direct array
-mutators including `natcasesort()`, set operations, inc/dec
-statements/expressions, and dynamic-variable array/string-offset writes.
+mutators including `natcasesort()`, explicit regular direct sort flags, set
+operations, inc/dec statements/expressions, and dynamic-variable
+array/string-offset writes.
 
 ## Remaining Bounded Failures
 
@@ -61,21 +64,11 @@ statements/expressions, and dynamic-variable array/string-offset writes.
 
 ## Verification
 
-Verification: `ptn-uvy0` passed fmt, build, focused `array_search()` coverage,
-focused `array_search1.phpt`, and `cargo test` with native/compiler 529/529
-plus COW/doc-tests. `ptn-h0ig` adds adjacent `array_search()` coverage.
-`ptn-t6qd` adds `natcasesort()` plus
-`ext/standard/tests/array/sort/natcasesort_basic.phpt`. Final gates passed:
-fmt, build, focused parser/native/PHPT `natcasesort()` coverage, and
-`cargo test` with native/compiler 531/531 plus COW/doc-tests. `ptn-ah6f`
-adds `ceil()`/`floor()` numeric-argument diagnostics and targeted
-`ext/standard/tests/math/floorceil.phpt` coverage after rebase. `ptn-4ngk`
-adds current boxed-array `is_countable()` coverage. Focused parser/native
-reducers passed, `cargo test` passed with native/compiler 533/533 plus
-COW/doc-tests, bounded PHPT passed 205/205, COW PHPT passed 29/29, and the
-post-merge COW gate passed 25/25. `ptn-6cxf` adds modeled `ucfirst()` and
-`ext/standard/tests/strings/ucfirst.phpt`. `ptn-k0tw` adds modeled
-`array_pad()` and `ext/standard/tests/array/array_pad.phpt`.
+Verification: recent merged slices added `array_search()`, `natcasesort()`,
+`ceil()`/`floor()` numeric diagnostics, current boxed-array `is_countable()`,
+modeled `ucfirst()`, and modeled `array_pad()` with their focused PHPT/native
+coverage. `ptn-qmtv` adds explicit `SORT_REGULAR`/`0` direct sort-family flags
+for the regular mutator subset.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

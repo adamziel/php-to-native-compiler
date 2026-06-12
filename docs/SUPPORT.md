@@ -245,14 +245,18 @@ Post-RC architecture remains explicit rather than hidden:
   string value order while preserving keys, with `natcasesort()` comparing
   ASCII letters case-insensitively, and `shuffle()` reindexes values with
   integer keys.
+  Direct `sort()`/`rsort()`/`asort()`/`arsort()`/`ksort()`/`krsort()` calls
+  accept omitted flags, `SORT_REGULAR`, or literal `0`, all of which use the
+  same regular-sort helper path.
   Temporary arrays, array paths for variadic
   `array_push()`/`array_unshift()`, array paths for `asort()`/`ksort()`/
   `sort()`/`arsort()`/`krsort()`/`rsort()`/`natsort()`/`natcasesort()`/
   `shuffle()`, and other non-direct-variable mutation targets fail before code
   generation with an explicit unsupported diagnostic.
-- Sort flags and remaining sort-family by-reference array mutators such as
-  `usort()`, `uasort()`, `uksort()`, and `array_multisort()` remain unsupported
-  and fail before code generation with an explicit unsupported diagnostic.
+- Other sort flags, `natsort()` extra flags, dynamic flagged sort-family calls,
+  and remaining sort-family by-reference array mutators such as `usort()`,
+  `uasort()`, `uksort()`, and `array_multisort()` remain unsupported and fail
+  with an explicit unsupported diagnostic.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
   offset reads, property reads, static property reads, and currently supported
   value expressions. Variable, offset, property, and static-property operands

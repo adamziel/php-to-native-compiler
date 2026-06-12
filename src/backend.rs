@@ -7243,7 +7243,12 @@ impl ValueEmitter {
             return Some(result_temp);
         }
 
-        let helper = if arguments.len() == 1 {
+        let sort_regular_flag_argument = arguments.len() == 2
+            && matches!(
+                name.to_ascii_lowercase().as_str(),
+                "arsort" | "asort" | "krsort" | "ksort" | "rsort" | "sort"
+            );
+        let helper = if arguments.len() == 1 || sort_regular_flag_argument {
             if name.eq_ignore_ascii_case("array_pop") {
                 Some("ptn_runtime_array_pop_variable")
             } else if name.eq_ignore_ascii_case("array_shift") {

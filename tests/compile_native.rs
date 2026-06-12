@@ -11161,40 +11161,28 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
 
 #[test]
 fn parser_rejects_unsupported_sort_family_array_mutators() {
+    for source in [
+        "<?php $items = [3, 2, 1]; sort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; arsort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; asort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; ksort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; krsort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; rsort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; sort($items, 0);",
+        "<?php $items = [3, 2, 1]; sort($items, (SORT_REGULAR));",
+    ] {
+        parser::parse(source).unwrap();
+    }
+
     for (source, function, target_message) in [
-        (
-            "<?php $items = [3, 2, 1]; sort($items, SORT_REGULAR);",
-            "sort",
-            "sort flags are unsupported",
-        ),
-        (
-            "<?php $items = [3, 2, 1]; arsort($items, SORT_REGULAR);",
-            "arsort",
-            "sort flags are unsupported",
-        ),
-        (
-            "<?php $items = [3, 2, 1]; asort($items, SORT_REGULAR);",
-            "asort",
-            "sort flags are unsupported",
-        ),
-        (
-            "<?php $items = [3, 2, 1]; ksort($items, SORT_REGULAR);",
-            "ksort",
-            "sort flags are unsupported",
-        ),
-        (
-            "<?php $items = [3, 2, 1]; krsort($items, SORT_REGULAR);",
-            "krsort",
-            "sort flags are unsupported",
-        ),
-        (
-            "<?php $items = [3, 2, 1]; rsort($items, SORT_REGULAR);",
-            "rsort",
-            "sort flags are unsupported",
-        ),
         (
             "<?php $items = [[3, 2, 1]]; asort($items[0]);",
             "asort",
+            "non-variable array mutation targets are unsupported",
+        ),
+        (
+            "<?php sort([3, 2, 1], SORT_REGULAR);",
+            "sort",
             "non-variable array mutation targets are unsupported",
         ),
         (
@@ -11234,6 +11222,10 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
     for (source, function) in [
         (
             "<?php $items = [3, 2, 1]; sort($items, SORT_STRING);",
+            "sort",
+        ),
+        (
+            "<?php $items = [3, 2, 1]; sort($items, sort_regular);",
             "sort",
         ),
         (
@@ -11709,6 +11701,76 @@ var_dump(function_exists(\"sort\"), function_exists(\"SORT\"));",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_sort_variable"));
     assert!(c_source.contains("ptn_array_sort_values"));
+}
+
+#[test]
+fn compile_sort_regular_flags_to_native_binary() {
+    let root = temp_dir("ptn-native-sort-regular-flags");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sort-regular-flags.php");
+    let output = root.join("sort-regular-flags-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$sort = [3, 1, 2];\n\
+var_dump(sort($sort, SORT_REGULAR));\n\
+echo implode(\",\", $sort), \"\\n\";\n\
+$asort = [\"b\" => 2, \"a\" => 1];\n\
+var_dump(asort($asort, SORT_REGULAR));\n\
+foreach ($asort as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+$arsort = [\"b\" => 2, \"a\" => 1];\n\
+var_dump(arsort($arsort, SORT_REGULAR));\n\
+foreach ($arsort as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+$ksort = [3 => \"c\", 1 => \"a\"];\n\
+var_dump(ksort($ksort, SORT_REGULAR));\n\
+foreach ($ksort as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+$krsort = [3 => \"c\", 1 => \"a\"];\n\
+var_dump(krsort($krsort, SORT_REGULAR));\n\
+foreach ($krsort as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+$rsort = [1, 3, 2];\n\
+var_dump(rsort($rsort, 0));\n\
+echo implode(\",\", $rsort), \"\\n\";\n\
+var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "1,2,3\n",
+            "bool(true)\n",
+            "a=1\n",
+            "b=2\n",
+            "bool(true)\n",
+            "b=2\n",
+            "a=1\n",
+            "bool(true)\n",
+            "1=a\n",
+            "3=c\n",
+            "bool(true)\n",
+            "3=c\n",
+            "1=a\n",
+            "bool(true)\n",
+            "3,2,1\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "int(0)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_sort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_asort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_arsort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_ksort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_krsort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_rsort_variable"));
 }
 
 #[test]
