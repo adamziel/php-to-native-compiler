@@ -1388,9 +1388,10 @@ impl<'a> LoweringContext<'a> {
                     AssignmentOp::Assign,
                     self.lower_assignment_value(&name, op, value, line),
                 ),
-                AssignmentTarget::ArrayDim { .. } => (op, self.lower_expr(value)),
+                AssignmentTarget::ArrayDim { .. } | AssignmentTarget::DynamicArrayDim { .. } => {
+                    (op, self.lower_expr(value))
+                }
                 AssignmentTarget::DynamicVariable { .. }
-                | AssignmentTarget::DynamicArrayDim { .. }
                 | AssignmentTarget::Property { .. }
                 | AssignmentTarget::StaticProperty { .. }
                 | AssignmentTarget::List(_) => {

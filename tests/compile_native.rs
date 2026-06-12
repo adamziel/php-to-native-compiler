@@ -18924,6 +18924,46 @@ var_dump(array_key_exists(\"key\", $ordered));\n",
 }
 
 #[test]
+fn compile_dynamic_variable_array_dimension_compound_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable-array-dim-compound");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-array-dim-compound.php");
+    let output = root.join("dynamic-variable-array-dim-compound-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function mark($value) { echo $value, \"\\n\"; return $value; }\n\
+$name = \"items\";\n\
+$items = [\"count\" => 1, \"text\" => \"a\", \"nested\" => [\"n\" => 2]];\n\
+${$name}[\"count\"] += 4;\n\
+echo $items[\"count\"], \"\\n\";\n\
+echo (${$name}[\"count\"] *= 2), \":\", $items[\"count\"], \"\\n\";\n\
+${mark(\"items\")}[mark(\"text\")] .= mark(\"b\");\n\
+echo $items[\"text\"], \"\\n\";\n\
+${$name}[\"nested\"][\"n\"] **= 3;\n\
+echo $items[\"nested\"][\"n\"], \"\\n\";\n\
+${$name}[mark(\"count\")] += ($items[\"count\"] = 1);\n\
+echo $items[\"count\"], \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "5\n10:10\nitems\ntext\nb\nab\n8\ncount\n2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_variable_name(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_path_read_for_assign_op(&runtime, ptn_tmp_"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_from_assign_op(&runtime, ptn_tmp_"));
+}
+
+#[test]
 fn dynamic_variable_non_scalar_names_report_diagnostic() {
     let root = temp_dir("ptn-native-dynamic-variable-unsupported-name");
     fs::create_dir_all(&root).unwrap();

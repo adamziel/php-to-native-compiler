@@ -4183,20 +4183,82 @@ impl ValueEmitter {
             let name_temp = self.emit_dynamic_variable_name(out, name, *line);
             let path = emit_array_path_segments(out, self, dimensions);
             let value_temp = self.emit_materialized_value(out, value);
-            let snapshot_temp = self.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&snapshot_temp);
-            out.push_str(" = ptn_value_snapshot_for_array_path_write(");
-            out.push_str(&value_temp);
-            out.push_str(");\n");
-            out.push_str("    ptn_runtime_array_path_set(&runtime, ");
+            let mut current_cleanup_temp = None;
+            let stored_temp = if let Some(op) = assignment_compound_binary_op(op) {
+                out.push_str("    ptn_runtime_array_warn_missing_base_for_assign_op(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                if matches!(op, BinaryOp::Concat) {
+                    out.push_str("ptn_concat(&runtime, ");
+                    out.push_str(&current_temp);
+                    out.push_str(", ");
+                    out.push_str(&value_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(")");
+                } else {
+                    out.push_str(binary_runtime_function(op));
+                    out.push('(');
+                    if binary_runtime_function_uses_context(op) {
+                        out.push_str("&runtime, ");
+                    }
+                    out.push_str(&current_temp);
+                    out.push_str(", ");
+                    out.push_str(&value_temp);
+                    if binary_runtime_function_uses_context(op) {
+                        out.push_str(", ");
+                        out.push_str(&line.to_string());
+                    }
+                    out.push(')');
+                }
+                out.push_str(";\n");
+                current_cleanup_temp = Some(current_temp);
+                result_temp
+            } else {
+                let snapshot_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&snapshot_temp);
+                out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+                out.push_str(&value_temp);
+                out.push_str(");\n");
+                snapshot_temp
+            };
+            out.push_str("    ");
+            out.push_str(if assignment_compound_binary_op(op).is_some() {
+                "ptn_runtime_array_path_set_from_assign_op"
+            } else {
+                "ptn_runtime_array_path_set"
+            });
+            out.push_str("(&runtime, ");
             out.push_str(&name_temp);
             out.push_str(", ");
             out.push_str(&path.name);
             out.push_str(", ");
             out.push_str(&path.len.to_string());
             out.push_str(", ");
-            out.push_str(&snapshot_temp);
+            out.push_str(&stored_temp);
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
@@ -4204,12 +4266,15 @@ impl ValueEmitter {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_value_clone(");
-            out.push_str(&snapshot_temp);
+            out.push_str(&stored_temp);
             out.push_str(");\n");
             out.push_str("    free(");
             out.push_str(&name_temp);
             out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &snapshot_temp);
+            if let Some(current_temp) = current_cleanup_temp {
+                emit_value_cleanup(out, "    ", &current_temp);
+            }
+            emit_value_cleanup(out, "    ", &stored_temp);
             emit_value_cleanup(out, "    ", &value_temp);
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);

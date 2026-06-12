@@ -4964,9 +4964,8 @@ fn validate_expression_assignment_target(
 
     match target {
         AssignmentTarget::Variable { .. } => Ok(()),
-        AssignmentTarget::ArrayDim(_) => Ok(()),
+        AssignmentTarget::ArrayDim(_) | AssignmentTarget::DynamicArrayDim { .. } => Ok(()),
         AssignmentTarget::DynamicVariable { .. }
-        | AssignmentTarget::DynamicArrayDim { .. }
         | AssignmentTarget::Property { .. }
         | AssignmentTarget::StaticProperty { .. }
         | AssignmentTarget::List(_) => Err(Diagnostic::new(

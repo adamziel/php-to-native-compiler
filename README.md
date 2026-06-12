@@ -28,8 +28,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
 - Dynamic variable roots support scalar reads/writes, array/string-offset
-  writes and unsets, and inc/dec expression targets through shared
-  symbol-table and array-path helpers.
+  writes, unsets, compound assignments, and inc/dec expression targets through
+  shared symbol-table and array-path helpers.
 - Arithmetic models non-numeric string/array `TypeError` diagnostics while
   preserving leading-numeric warnings.
 - Scalar float stringification honors `phpc -d precision=N` and PHP-style
