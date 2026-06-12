@@ -1845,15 +1845,109 @@ static PtnValue ptn_internal_rsort(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_bool(1);
 }
 
+static const char *ptn_array_aggregate_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_EXCEPTION) {
+        return value.as.exception->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static void ptn_array_aggregate_warn_unsupported(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *operation_name,
+    PtnValue value,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): %s is not supported on type %s",
+        function_name,
+        operation_name,
+        ptn_array_aggregate_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        fputc('\n', stdout);
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static PtnNumber ptn_array_aggregate_number(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *operation_name,
+    PtnValue value,
+    int product_mode,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+            return ptn_to_number(value);
+        case PTN_STRING:
+            if (!ptn_string_has_embedded_nul(value.as.string)) {
+                double unused = 0.0;
+                if (ptn_is_numeric_string((const char *)value.as.string.data, &unused)) {
+                    return ptn_string_to_number((const char *)value.as.string.data);
+                }
+            }
+            ptn_array_aggregate_warn_unsupported(runtime, function_name, operation_name, value, line);
+            return ptn_number_int(0);
+        case PTN_RESOURCE:
+            ptn_array_aggregate_warn_unsupported(runtime, function_name, operation_name, value, line);
+            return ptn_number_int(value.as.resource->id);
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+            ptn_array_aggregate_warn_unsupported(runtime, function_name, operation_name, value, line);
+            return ptn_number_int(product_mode ? 1 : 0);
+        case PTN_REFERENCE:
+            return ptn_number_int(0);
+    }
+    return ptn_number_int(0);
+}
+
+static int ptn_int64_add_overflows(int64_t left, int64_t right, int64_t *result) {
+    if ((right > 0 && left > INT64_MAX - right) || (right < 0 && left < INT64_MIN - right)) {
+        return 1;
+    }
+    *result = left + right;
+    return 0;
+}
+
+static int ptn_int64_multiply_overflows(int64_t left, int64_t right, int64_t *result) {
+    long double product = (long double)left * (long double)right;
+    if (product > (long double)INT64_MAX || product < (long double)INT64_MIN) {
+        return 1;
+    }
+    *result = left * right;
+    return 0;
+}
+
 static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_sum", 1, "array", args[0]);
     int use_float = 0;
     int64_t integer_sum = 0;
     double float_sum = 0.0;
     for (size_t i = 0; i < array->len; i++) {
-        PtnNumber number = ptn_to_number(array->entries[i].value);
+        PtnNumber number = ptn_array_aggregate_number(runtime, "array_sum", "Addition", array->entries[i].value, 0, line);
         if (number.type == PTN_NUMBER_FLOAT) {
             if (!use_float) {
                 float_sum = (double)integer_sum;
@@ -1863,7 +1957,13 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
         } else if (use_float) {
             float_sum += (double)number.integer;
         } else {
-            integer_sum += number.integer;
+            int64_t next_sum = 0;
+            if (ptn_int64_add_overflows(integer_sum, number.integer, &next_sum)) {
+                float_sum = (double)integer_sum + (double)number.integer;
+                use_float = 1;
+            } else {
+                integer_sum = next_sum;
+            }
         }
     }
     return use_float ? ptn_float(float_sum) : ptn_int(integer_sum);
@@ -1871,13 +1971,12 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
 
 static PtnValue ptn_internal_array_product(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_product", 1, "array", args[0]);
     int use_float = 0;
     int64_t integer_product = 1;
     double float_product = 1.0;
     for (size_t i = 0; i < array->len; i++) {
-        PtnNumber number = ptn_to_number(array->entries[i].value);
+        PtnNumber number = ptn_array_aggregate_number(runtime, "array_product", "Multiplication", array->entries[i].value, 1, line);
         if (number.type == PTN_NUMBER_FLOAT) {
             if (!use_float) {
                 float_product = (double)integer_product;
@@ -1887,7 +1986,13 @@ static PtnValue ptn_internal_array_product(PtnRuntime *runtime, size_t argc, con
         } else if (use_float) {
             float_product *= (double)number.integer;
         } else {
-            integer_product *= number.integer;
+            int64_t next_product = 0;
+            if (ptn_int64_multiply_overflows(integer_product, number.integer, &next_product)) {
+                float_product = (double)integer_product * (double)number.integer;
+                use_float = 1;
+            } else {
+                integer_product = next_product;
+            }
         }
     }
     return use_float ? ptn_float(float_product) : ptn_int(integer_product);

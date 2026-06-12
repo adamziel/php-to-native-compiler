@@ -654,6 +654,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PATHINFO_ALL);
         return 1;
     }
+    if (strcmp(name, "STDIN") == 0) {
+        *out = ptn_standard_stream_resource_value(1);
+        return 1;
+    }
+    if (strcmp(name, "STDOUT") == 0) {
+        *out = ptn_standard_stream_resource_value(2);
+        return 1;
+    }
+    if (strcmp(name, "STDERR") == 0) {
+        *out = ptn_standard_stream_resource_value(3);
+        return 1;
+    }
     if (strcmp(name, "M_E") == 0) {
         *out = ptn_float(2.718281828459045);
         return 1;

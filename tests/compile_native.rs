@@ -10912,6 +10912,59 @@ var_dump(function_exists('array_product'), function_exists('ARRAY_PRODUCT'));",
 }
 
 #[test]
+fn compile_array_sum_product_warning_and_overflow_parity_to_native_binary() {
+    let root = temp_dir("ptn-native-array-sum-product-warning-overflow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-sum-product-warning-overflow.php");
+    let output = root.join("array-sum-product-warning-overflow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Box { public $value; public function __construct($value) { $this->value = $value; } }\n\
+var_dump(defined(\"STDERR\"), STDERR);\n\
+var_dump(array_sum([\"apple\", [1], new Box(1), STDERR]));\n\
+var_dump(array_product([[1], new Box(1), STDERR]));\n\
+var_dump(is_float(array_sum([PHP_INT_MAX, 1])));\n\
+var_dump(is_float(array_product([PHP_INT_MAX, 2])));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+resource(3) of type (stream)\n\
+\n\
+Warning: array_sum(): Addition is not supported on type string in ptn on line 4\n\
+\n\
+Warning: array_sum(): Addition is not supported on type array in ptn on line 4\n\
+\n\
+Warning: array_sum(): Addition is not supported on type Box in ptn on line 4\n\
+\n\
+Warning: array_sum(): Addition is not supported on type resource in ptn on line 4\n\
+int(3)\n\
+\n\
+Warning: array_product(): Multiplication is not supported on type array in ptn on line 5\n\
+\n\
+Warning: array_product(): Multiplication is not supported on type Box in ptn on line 5\n\
+\n\
+Warning: array_product(): Multiplication is not supported on type resource in ptn on line 5\n\
+int(3)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_aggregate_number"));
+    assert!(c_source.contains("ptn_int64_multiply_overflows"));
+    assert!(c_source.contains("ptn_standard_stream_resource_value"));
+}
+
+#[test]
 fn compile_strtr_dereferences_replacement_array_entries_to_native_binary() {
     let root = temp_dir("ptn-native-strtr-reference-map");
     fs::create_dir_all(&root).unwrap();

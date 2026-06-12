@@ -326,6 +326,7 @@ struct PtnResource {
     FILE *stream;
     char *stream_uri;
     char *stream_mode;
+    int persistent;
 };
 
 typedef struct {
@@ -763,11 +764,15 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->stream = stream;
     resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
     resource->stream_mode = mode == NULL ? NULL : ptn_duplicate_string(mode);
+    resource->persistent = 0;
     return resource;
 }
 
 static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
     if (resource == NULL) {
+        return;
+    }
+    if (resource->persistent) {
         return;
     }
     if (resource->refcount == SIZE_MAX) {
@@ -780,12 +785,18 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
     if (resource == NULL || resource->stream == NULL) {
         return;
     }
+    if (resource->persistent) {
+        return;
+    }
     fclose(resource->stream);
     resource->stream = NULL;
 }
 
 static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
     if (resource == NULL) {
+        return;
+    }
+    if (resource->persistent) {
         return;
     }
     if (resource->refcount == 0) {
@@ -806,6 +817,24 @@ static PTN_UNUSED PtnValue ptn_resource(PtnResource *resource) {
     value.type = PTN_RESOURCE;
     value.owned = 1;
     value.as.resource = resource;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
+    static PtnResource stdin_resource = { SIZE_MAX, 1, "stream", NULL, NULL, NULL, 1 };
+    static PtnResource stdout_resource = { SIZE_MAX, 2, "stream", NULL, NULL, NULL, 1 };
+    static PtnResource stderr_resource = { SIZE_MAX, 3, "stream", NULL, NULL, NULL, 1 };
+    PtnResource *resource = &stdin_resource;
+    if (id == 2) {
+        resource = &stdout_resource;
+    } else if (id == 3) {
+        resource = &stderr_resource;
+    }
+    resource->stream = id == 1 ? stdin : (id == 2 ? stdout : stderr);
+    resource->stream_uri = id == 1 ? "php://stdin" : (id == 2 ? "php://stdout" : "php://stderr");
+    resource->stream_mode = id == 1 ? "r" : "w";
+    PtnValue value = ptn_resource(resource);
+    value.owned = 0;
     return value;
 }
 

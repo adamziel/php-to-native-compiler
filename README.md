@@ -29,9 +29,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Arithmetic models non-numeric string/array `TypeError`s while preserving
   leading-numeric warnings; float stringification honors `phpc -d precision=N`
   and PHP-style exponent spelling.
-- Array internals cover set/key/list/search/slice/pad/reverse/product/fill/
-  filter/chunk/merge helpers, `count()`/`sizeof()` modes, and sort mutators
-  through ordered-array/COW paths.
+- Array internals cover set/key/list/search/slice/pad/reverse/sum/product/
+  fill/filter/chunk/merge helpers, sum/product warning and overflow parity,
+  `count()`/`sizeof()` modes, and sort mutators through ordered-array/COW
+  paths.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string escaping.
@@ -70,9 +71,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Public class constants support scalar/array defaults, direct
   `Class::CONST`/`self::CONST` reads, and `constant()`/`defined()` lookup;
   typed/non-public/inherited/dynamic constants remain bounded.
-- Stream resources from `fopen()`/`fclose()` are boxed with type, dump, and
-  array-key cast behavior; `file_get_contents()` reads filesystem paths into
-  binary-safe strings with bounded offset/length handling.
+- Stream resources from `STDIN`/`STDOUT`/`STDERR` and `fopen()`/`fclose()` are
+  boxed with type, dump, and array-key cast behavior; `file_get_contents()`
+  reads filesystem paths into binary-safe strings with bounded offset/length
+  handling.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 - PHPT runners preclassify broad rows before execution and write selected,
