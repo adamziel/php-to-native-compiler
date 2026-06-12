@@ -84,11 +84,14 @@ Post-RC architecture remains explicit rather than hidden:
   silently treated as literal text.
 - Direct variable assignment and scalar reads through the generated runtime
   symbol table.
-- Variable-variable reads and ordinary assignments with `$$name`, `$$$name`,
-  and `${expr}` over scalar runtime names. Dynamic names are converted through
-  the shared scalar string-conversion path for `null`, booleans, integers,
-  floats, and strings; arrays, objects, closures, exceptions, and embedded-NUL
-  string names stop at an explicit unsupported-name diagnostic.
+- Variable-variable reads, ordinary assignments, and simple array-offset writes
+  with `$$name`, `$$$name`, and `${expr}` over scalar runtime names. Dynamic
+  names are converted through the shared scalar string-conversion path for
+  `null`, booleans, integers, floats, and strings; arrays, objects, closures,
+  exceptions, and embedded-NUL string names stop at an explicit
+  unsupported-name diagnostic. Dynamic-root array-offset writes such as
+  `${$name}[$key] = $value` evaluate the dynamic name and offset expressions
+  before the right-hand side, then reuse the shared array-path write helper.
 - Assignment expressions for direct variables, array dimension/append lvalues,
   and list/short-array destructuring targets, including by-reference
   destructuring entries in the modeled reference-array subset.
@@ -877,11 +880,11 @@ Post-RC architecture remains explicit rather than hidden:
 - PHP-exact file names, line numbers, custom error-handler routing, and
   overflow parity for remaining integer-only operator conversion diagnostics,
   including shift and modulo diagnostics.
-- Object, dynamic-variable array-offset lvalues, append-form null-coalescing,
-  property null-coalescing expressions/`isset()`/`empty()`, property
-  compound-assignment operators outside modeled public-property `??=`, and
-  static-property compound/null-coalescing lvalues outside modeled direct
-  reads/writes.
+- Object lvalues, dynamic-variable array-offset compound/null-coalescing/
+  by-reference lvalues, append-form null-coalescing, property null-coalescing
+  expressions/`isset()`/`empty()`, property compound-assignment operators
+  outside modeled public-property `??=`, and static-property
+  compound/null-coalescing lvalues outside modeled direct reads/writes.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.

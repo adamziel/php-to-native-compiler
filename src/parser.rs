@@ -2962,6 +2962,7 @@ fn validate_recursive_reference_assignment_value(
     let variable = match target {
         AssignmentTarget::Variable { name, .. } => name,
         AssignmentTarget::DynamicVariable { .. } => return Ok(()),
+        AssignmentTarget::DynamicArrayDim { .. } => return Ok(()),
         AssignmentTarget::ArrayDim(target) => &target.array,
         AssignmentTarget::Property { .. } => return Ok(()),
         AssignmentTarget::StaticProperty { .. } => return Ok(()),
@@ -4027,9 +4028,7 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
         Expr::DynamicVariable { name, span } => {
             Ok(AssignmentTarget::DynamicVariable { name, span })
         }
-        Expr::ArrayAccess { .. } => Ok(AssignmentTarget::ArrayDim(array_dim_target_from_expr(
-            expr,
-        )?)),
+        Expr::ArrayAccess { .. } => assignment_array_dim_target_from_expr(expr),
         Expr::PropertyFetch {
             receiver,
             name,
@@ -4082,10 +4081,50 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
     }
 }
 
+fn assignment_array_dim_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
+    let span = expr.span();
+    let mut dimensions = Vec::new();
+    let mut current = expr;
+    loop {
+        match current {
+            Expr::ArrayAccess { array, index, .. } => {
+                dimensions.push(index.map(|index| *index));
+                current = *array;
+            }
+            Expr::Variable(array, variable_span) => {
+                dimensions.reverse();
+                return Ok(AssignmentTarget::ArrayDim(ArrayDimTarget {
+                    array,
+                    dimensions,
+                    span: combine_spans(variable_span, span),
+                }));
+            }
+            Expr::DynamicVariable {
+                name,
+                span: variable_span,
+            } => {
+                dimensions.reverse();
+                return Ok(AssignmentTarget::DynamicArrayDim {
+                    name,
+                    dimensions,
+                    span: combine_spans(variable_span, span),
+                });
+            }
+            _ => {
+                return Err(Diagnostic::new(
+                    "unsupported assignment target",
+                    Some(current.span()),
+                ));
+            }
+        }
+    }
+}
+
 fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
     match target {
         AssignmentTarget::Variable { span, .. }
         | AssignmentTarget::DynamicVariable { span, .. }
+        | AssignmentTarget::DynamicArrayDim { span, .. }
         | AssignmentTarget::Property { span, .. }
         | AssignmentTarget::StaticProperty { span, .. } => *span,
         AssignmentTarget::ArrayDim(target) => target.span,
@@ -4120,6 +4159,10 @@ fn validate_coalesce_assignment_target(
         AssignmentTarget::Variable { .. } => Ok(()),
         AssignmentTarget::DynamicVariable { .. } => Err(Diagnostic::new(
             "null coalescing assignment currently supports direct variables and array/string offsets",
+            Some(span),
+        )),
+        AssignmentTarget::DynamicArrayDim { .. } => Err(Diagnostic::new(
+            "null coalescing assignment currently supports direct variable-root array/string offsets",
             Some(span),
         )),
         AssignmentTarget::ArrayDim(target) => {
@@ -4157,6 +4200,7 @@ fn validate_expression_assignment_target(
     match target {
         AssignmentTarget::Variable { .. } => Ok(()),
         AssignmentTarget::DynamicVariable { .. }
+        | AssignmentTarget::DynamicArrayDim { .. }
         | AssignmentTarget::ArrayDim(_)
         | AssignmentTarget::Property { .. }
         | AssignmentTarget::StaticProperty { .. }
@@ -4182,6 +4226,12 @@ fn validate_reference_assignment_target_source(
             }
         }
         AssignmentTarget::DynamicVariable { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
+        }
+        AssignmentTarget::DynamicArrayDim { .. } => {
             return Err(Diagnostic::new(
                 "unsupported by-reference assignment target",
                 Some(span),

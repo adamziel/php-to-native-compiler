@@ -12,7 +12,7 @@ rows, or outputs.
 
 - Rust crate and `phpc` compiler binary.
 - Boxed C runtime for PHP-like values.
-- Native execution tests for parser, IR, backend, runtime, and PHP behavior.
+- Native tests for parser, IR, backend, runtime, and PHP behavior.
 - Double-quoted interpolation covers direct `$name`, simple `$items[$key]`
   offsets, braced `{$name}`/`{$items['key']}`, and deprecated legacy
   `${name}` variables.
@@ -21,7 +21,7 @@ rows, or outputs.
 - Inline HTML before, between, and after PHP blocks lowers through the shared
   output path.
 - Top-level user functions and declared class methods include scoped magic
-  constant coverage for their current supported scope plus `func_num_args()`,
+  constants for their supported scope plus `func_num_args()`,
   `func_get_arg()`, and `func_get_args()` call-frame introspection, scalar type
   hints, literal-array default parameters, and by-reference return aliases for
   variables, one-level array elements, local lifetimes, typed coercion,
@@ -29,12 +29,14 @@ rows, or outputs.
   the method path.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
+- Dynamic variable roots support scalar and simple array-offset writes through
+  shared symbol-table and array-path helpers.
 - Arithmetic rejects non-numeric strings and mixed array operands with modeled
   catchable `TypeError` diagnostics while preserving leading-numeric warnings.
 - Scalar float stringification honors `phpc -d precision=N` and PHP-style
   exponent spelling across echo, casts, concatenation, and string internals.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for
-  non-array operands in the current boxed value domain.
+  non-array operands in the boxed value domain.
 - `array_chunk()`, `array_combine()`, `array_merge()`, and array set-operation
   internals build fresh ordered arrays through the shared array runtime.
 - `array_filter()` preserves keys while filtering arrays by PHP truthiness or
@@ -86,5 +88,3 @@ done
 The corpus exercises the current RC surface: scalar control flow, arrays and
 internal functions, user functions, public class/object shells, direct static
 properties, and public property `??=`.
-
-Detailed history lives in beads, commits, and merge requests, not in this file.

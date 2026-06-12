@@ -256,6 +256,11 @@ pub enum AssignmentTarget {
         name: Box<Expr>,
         span: SourceSpan,
     },
+    DynamicArrayDim {
+        name: Box<Expr>,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     ArrayDim(ArrayDimTarget),
     Property {
         receiver: Box<Expr>,

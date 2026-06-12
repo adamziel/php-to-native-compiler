@@ -392,6 +392,17 @@ impl IncludeCollector {
             AssignmentTarget::DynamicVariable { name, .. } => {
                 self.collect_expr(name, source_file, source_dir)
             }
+            AssignmentTarget::DynamicArrayDim {
+                name, dimensions, ..
+            } => {
+                self.collect_expr(name, source_file, source_dir)?;
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
             AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => Ok(()),
         }
     }

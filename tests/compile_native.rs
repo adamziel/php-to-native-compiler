@@ -15247,6 +15247,31 @@ fn parser_accepts_dynamic_variable_reads_and_assignments() {
 }
 
 #[test]
+fn parser_accepts_dynamic_variable_array_dim_assignment() {
+    let program = parser::parse("<?php ${$name}[$key] = 1;").unwrap();
+    assert_eq!(program.statements.len(), 1);
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected dynamic variable array-dim assignment expression");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target:
+                AssignmentTarget::DynamicArrayDim {
+                    name,
+                    dimensions,
+                    ..
+                },
+            op: AssignmentOp::Assign,
+            ..
+        } if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+            && dimensions.len() == 1
+            && matches!(dimensions[0].as_ref(), Some(Expr::Variable(variable, _)) if variable == "key")
+    ));
+}
+
+#[test]
 fn compile_dynamic_variable_reads_and_assignments_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-variable");
     fs::create_dir_all(&root).unwrap();
@@ -15284,6 +15309,38 @@ echo $ordered, \"\\n\";\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "initial\nupdated\n7\nnumber\ntruthy\nempty\nordered\nrhs\nrhs\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_variable_array_dim_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable-array-dim");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-array-dim.php");
+    let output = root.join("dynamic-variable-array-dim-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function mark($value) { echo $value, \"\\n\"; return $value; }\n\
+$a = \"b\";\n\
+$$a = \"test\";\n\
+$$$a = \"bucket\";\n\
+${$$$a}[\"key\"] = \"stored\";\n\
+echo $bucket[\"key\"], \"\\n\";\n\
+$name = \"items\";\n\
+${mark($name)}[mark(\"left\")] = mark(\"value\");\n\
+echo $items[\"left\"], \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "stored\nitems\nleft\nvalue\nvalue\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

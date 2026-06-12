@@ -369,6 +369,11 @@ pub enum AssignmentTarget {
         name: Box<ValueExpr>,
         line: usize,
     },
+    DynamicArrayDim {
+        name: Box<ValueExpr>,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
     ArrayDim {
         array: String,
         dimensions: Vec<Option<ValueExpr>>,
@@ -994,6 +999,22 @@ impl<'a> LoweringContext<'a> {
                     line: span.line,
                 }
             }
+            AstAssignmentTarget::DynamicArrayDim {
+                name,
+                dimensions,
+                span,
+            } => AssignmentTarget::DynamicArrayDim {
+                name: Box::new(self.lower_expr(name)),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
+            },
             AstAssignmentTarget::ArrayDim(target) => AssignmentTarget::ArrayDim {
                 array: target.array.clone(),
                 dimensions: target
@@ -1205,6 +1226,7 @@ impl<'a> LoweringContext<'a> {
                     self.lower_assignment_value(&name, op, value, line),
                 ),
                 AssignmentTarget::DynamicVariable { .. }
+                | AssignmentTarget::DynamicArrayDim { .. }
                 | AssignmentTarget::ArrayDim { .. }
                 | AssignmentTarget::Property { .. }
                 | AssignmentTarget::StaticProperty { .. }
@@ -1648,6 +1670,21 @@ fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
         AstAssignmentTarget::Variable { name, .. } => format!("${name}"),
         AstAssignmentTarget::DynamicVariable { name, .. } => {
             format!("$${}", assertion_expr_text(name))
+        }
+        AstAssignmentTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            let mut text = format!("$${}", assertion_expr_text(name));
+            for dimension in dimensions {
+                let index = dimension
+                    .as_ref()
+                    .map(assertion_expr_text)
+                    .unwrap_or_default();
+                text.push('[');
+                text.push_str(&index);
+                text.push(']');
+            }
+            text
         }
         AstAssignmentTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
         AstAssignmentTarget::Property { receiver, name, .. } => {
