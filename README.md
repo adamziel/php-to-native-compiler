@@ -72,6 +72,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 
 - `PROGRESS.md`: compact test/porting dashboard.
 - `STATUS.md` and generated mirrors: current operating status.
+- After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
+  commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
+  `STATUS.html` files.
 
 ## Commands
 
@@ -80,6 +83,7 @@ cargo test
 tools/run-native-smoke-matrix.sh
 tools/run-post-merge-cow-gate.sh
 cargo build --bin phpc
+tools/update-progress-mirrors.sh
 tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
 tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
 ```

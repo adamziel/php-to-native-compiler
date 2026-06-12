@@ -1,37 +1,37 @@
 # PTN Status
 
-Last refresh: 2026-06-11T20:31Z
-Measured base: `origin/master` at `636306708`
+Last refresh: 2026-06-12T21:39Z
+Measured: `ptn-xlc0` rebased on current `origin/master` `a89a563b2`.
 
 ## Operating Goal
 
-Hold the RC line to generic PHP semantics. Do not trade the frozen PHPT cluster
-map for row-shaped fixes.
+Hold the RC line to generic PHP semantics while expanding toward broad
+php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests: 3/3. Rust native/compiler suite: 464/464. Native smoke:
-6/6. Bounded PHPT manifest: 186/200. COW PHPT manifest: 29/29. Post-merge COW
-gate: 25/25. Callback PHPT manifest: 2/2.
+Source unit tests 3/3; Native/compiler Rust suite 578/578; Native smoke matrix 6/6; PHPT bounded manifest 231/231; PHPT Zend rows 80/80; PHPT ext/standard rows 101/101.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 464/464 |
+| Native/compiler Rust suite | 578/578 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 186/200 |
-| PHPT Zend rows | 76/76 |
-| PHPT ext/standard rows | 69/77 |
-| PHPT tests/basic+func+lang | 39/45 |
-| PHPT other rows | 2/2 |
+| PHPT bounded manifest | 231/231 |
+| PHPT Zend rows | 80/80 |
+| PHPT ext/standard rows | 101/101 |
+| PHPT focused stream rows | 2/2 |
+| PHPT tests/basic+func+lang | 45/45 |
+| PHPT other rows | 5/5 |
 | PHPT COW manifest | 29/29 |
-| Post-merge COW gate | 25/25 |
-| PHPT callback manifest | 2/2 |
+| Post-merge COW gate | 26/26 |
+| PHPT callback manifest | 4/4 |
+| PHPT include manifest | 2/2 |
 
 ## Rules
 
-- Update `PROGRESS.md` and mirrors every patrol.
-- Report numbers, not essays.
+- Update `PROGRESS.md`, then run `tools/update-progress-mirrors.sh`.
+- Keep mirrors compact and numeric.
 - Never claim broad PHP compatibility from row-specific patches.
