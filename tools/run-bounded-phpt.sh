@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 manifest=${1:-$repo_root/tools/phpt-bounded-manifest.txt}
 source "$repo_root/tools/phpt-corpus.sh"
+source "$repo_root/tools/phpt-classifier.sh"
 php_src="$(ptn_resolve_phpt_corpus "$repo_root")"
 out_dir=${PHPT_PROGRESS_DIR:-$repo_root/.runtime/phpt-progress}
 
@@ -16,11 +17,19 @@ mkdir -p "$out_dir"
 
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 resolved_manifest="$out_dir/manifest-$timestamp.txt"
+runnable_manifest="$out_dir/runnable-$timestamp.txt"
+classification_tsv="$out_dir/classification-$timestamp.tsv"
+excluded_tsv="$out_dir/excluded-$timestamp.tsv"
+excluded_dir="$out_dir/excluded-$timestamp"
 summary="$out_dir/summary-$timestamp.txt"
 bucket_dir="$out_dir/buckets-$timestamp"
 
 mkdir -p "$bucket_dir"
+mkdir -p "$excluded_dir"
 : > "$resolved_manifest"
+: > "$runnable_manifest"
+: > "$classification_tsv"
+: > "$excluded_tsv"
 
 trim() {
     local value=$1
@@ -30,11 +39,15 @@ trim() {
 }
 
 declare -a bucket_order=()
+declare -a excluded_category_order=()
 declare -A bucket_abs_manifest=()
 declare -A bucket_count=()
 declare -A bucket_expected=()
 declare -A bucket_rel_manifest=()
+declare -A bucket_selected_count=()
 declare -A bucket_slug=()
+declare -A excluded_category_count=()
+declare -A excluded_category_manifest=()
 
 ensure_bucket() {
     local bucket=$1
@@ -57,6 +70,7 @@ ensure_bucket() {
         bucket_slug[$bucket]=$slug
         bucket_expected[$bucket]=$expected
         bucket_count[$bucket]=0
+        bucket_selected_count[$bucket]=0
         bucket_rel_manifest[$bucket]="$bucket_dir/$slug.txt"
         bucket_abs_manifest[$bucket]="$bucket_dir/$slug.paths"
         : > "${bucket_rel_manifest[$bucket]}"
@@ -67,8 +81,24 @@ ensure_bucket() {
     fi
 }
 
+ensure_excluded_category() {
+    local category=$1
+
+    if [[ ! -v "excluded_category_count[$category]" ]]; then
+        local slug
+        slug=$(ptn_phpt_category_slug "$category")
+        excluded_category_count[$category]=0
+        excluded_category_manifest[$category]="$excluded_dir/$slug.txt"
+        : > "${excluded_category_manifest[$category]}"
+        excluded_category_order+=("$category")
+    fi
+}
+
 current_bucket=manifest
-total_rows=0
+selected_rows=0
+runnable_rows=0
+excluded_rows=0
+classify=${PTN_PHPT_CLASSIFY:-1}
 while IFS= read -r line || [[ -n "$line" ]]; do
     trimmed=$(trim "$line")
     if [[ "$trimmed" =~ ^#[[:space:]]*bucket:[[:space:]]*([^[:space:]]+)[[:space:]]+rows=([0-9]+)([[:space:]]|$) ]]; then
@@ -93,24 +123,72 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 
     ensure_bucket "$current_bucket"
     printf '%s\n' "$row" >> "$resolved_manifest"
+    bucket_selected_count[$current_bucket]=$((bucket_selected_count[$current_bucket] + 1))
+    selected_rows=$((selected_rows + 1))
+
+    if [[ "$classify" == "0" ]]; then
+        category="runnable"
+        reason="classification disabled by PTN_PHPT_CLASSIFY=0"
+    else
+        classification=$(ptn_phpt_classify_row "$row" "$test_path" "$php_src")
+        category=${classification%%$'\t'*}
+        reason=${classification#*$'\t'}
+    fi
+
+    printf '%s\t%s\t%s\n' "$row" "$category" "$reason" >> "$classification_tsv"
+    if [[ "$category" != "runnable" ]]; then
+        ensure_excluded_category "$category"
+        excluded_category_count[$category]=$((excluded_category_count[$category] + 1))
+        printf '%s\n' "$row" >> "${excluded_category_manifest[$category]}"
+        printf '%s\t%s\t%s\n' "$row" "$category" "$reason" >> "$excluded_tsv"
+        excluded_rows=$((excluded_rows + 1))
+        continue
+    fi
+
+    printf '%s\n' "$row" >> "$runnable_manifest"
     printf '%s\n' "$row" >> "${bucket_rel_manifest[$current_bucket]}"
     printf '%s\n' "$test_path" >> "${bucket_abs_manifest[$current_bucket]}"
     bucket_count[$current_bucket]=$((bucket_count[$current_bucket] + 1))
-    total_rows=$((total_rows + 1))
+    runnable_rows=$((runnable_rows + 1))
 done < "$manifest"
 
-if [[ "$total_rows" -eq 0 ]]; then
-    echo "manifest contains no runnable rows after comments/blank lines: $manifest" >&2
+if [[ "$selected_rows" -eq 0 ]]; then
+    echo "manifest contains no selected rows after comments/blank lines: $manifest" >&2
     exit 1
 fi
 
 for bucket in "${bucket_order[@]}"; do
     expected=${bucket_expected[$bucket]:-}
-    if [[ -n "$expected" && "${bucket_count[$bucket]}" -ne "$expected" ]]; then
-        echo "bucket '$bucket' declares rows=$expected but contains ${bucket_count[$bucket]} rows" >&2
+    if [[ -n "$expected" && "${bucket_selected_count[$bucket]}" -ne "$expected" ]]; then
+        echo "bucket '$bucket' declares rows=$expected but contains ${bucket_selected_count[$bucket]} selected rows" >&2
         exit 1
     fi
 done
+
+emit_classification_summary() {
+    {
+        echo "classification: enabled=$classify selected=$selected_rows runnable=$runnable_rows excluded=$excluded_rows"
+        echo "classification-files: all=$resolved_manifest runnable=$runnable_manifest classification=$classification_tsv excluded=$excluded_tsv"
+        local category
+        for category in "${excluded_category_order[@]}"; do
+            echo "classification.$category: rows=${excluded_category_count[$category]} manifest=${excluded_category_manifest[$category]}"
+        done
+    }
+}
+
+if [[ "$runnable_rows" -eq 0 ]]; then
+    {
+        echo "PHPT bounded patrol $timestamp"
+        echo "commit: $(git rev-parse --short=12 HEAD)"
+        echo "corpus: $php_src"
+        echo "manifest: $resolved_manifest"
+        echo "count: $selected_rows selected PHPT rows; 0 runnable; $excluded_rows excluded by classification"
+    } | tee "$summary"
+    emit_classification_summary | tee -a "$summary"
+    echo "result: buckets=${#bucket_order[@]} selected=$selected_rows runnable=0 excluded=$excluded_rows tests=0 passed=0 failed=0 skipped=0 warned=0 elapsed=0s" | tee -a "$summary"
+    echo "run-tests-exit: 0" | tee -a "$summary"
+    exit 0
+fi
 
 cargo build --bin phpc
 
@@ -159,8 +237,10 @@ aggregate_run_status=0
     echo "commit: $commit"
     echo "corpus: $php_src"
     echo "manifest: $resolved_manifest"
+    echo "runnable-manifest: $runnable_manifest"
     echo "command: cargo build --bin phpc; PHPC_BIN=\"$phpc_bin\" php $php_src/run-tests.php -q -p \"$phpc_bin\" <bucket manifest paths>"
-    echo "count: $total_rows selected PHPT rows in ${#bucket_order[@]} buckets"
+    echo "count: $selected_rows selected PHPT rows; $runnable_rows runnable; $excluded_rows excluded by classification in ${#bucket_order[@]} buckets"
+    emit_classification_summary
 } | tee "$summary"
 
 for bucket in "${bucket_order[@]}"; do
@@ -168,6 +248,13 @@ for bucket in "${bucket_order[@]}"; do
     log="$out_dir/run-$timestamp-$slug.log"
     mapfile -t tests < "${bucket_abs_manifest[$bucket]}"
     bucket_start=$(date +%s)
+
+    if [[ "${bucket_count[$bucket]}" -eq 0 ]]; then
+        {
+            echo "bucket: $bucket selected=${bucket_selected_count[$bucket]} runnable=0 tests=0 passed=0 failed=0 skipped=0 warned=0 elapsed=0s run-tests-exit=0 log="
+        } | tee -a "$summary"
+        continue
+    fi
 
     set +e
     PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q -p "$phpc_bin" "${tests[@]}" 2>&1 | tee "$log"
@@ -199,7 +286,7 @@ for bucket in "${bucket_order[@]}"; do
     fi
 
     {
-        echo "bucket: $bucket rows=${bucket_count[$bucket]} tests=$total passed=$passed failed=$failed skipped=$skipped warned=$warned elapsed=${bucket_elapsed}s run-tests-exit=$run_status log=$log"
+        echo "bucket: $bucket selected=${bucket_selected_count[$bucket]} runnable=${bucket_count[$bucket]} tests=$total passed=$passed failed=$failed skipped=$skipped warned=$warned elapsed=${bucket_elapsed}s run-tests-exit=$run_status log=$log"
     } | tee -a "$summary"
 done
 
@@ -207,6 +294,6 @@ end_epoch=$(date +%s)
 elapsed=$((end_epoch - start_epoch))
 
 {
-    echo "result: buckets=${#bucket_order[@]} rows=$total_rows tests=$aggregate_total passed=$aggregate_passed failed=$aggregate_failed skipped=$aggregate_skipped warned=$aggregate_warned elapsed=${elapsed}s"
+    echo "result: buckets=${#bucket_order[@]} selected=$selected_rows runnable=$runnable_rows excluded=$excluded_rows tests=$aggregate_total passed=$aggregate_passed failed=$aggregate_failed skipped=$aggregate_skipped warned=$aggregate_warned elapsed=${elapsed}s"
     echo "run-tests-exit: $aggregate_run_status"
 } | tee -a "$summary"

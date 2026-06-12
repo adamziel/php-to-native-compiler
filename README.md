@@ -68,6 +68,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   binary-safe strings with bounded offset/length handling.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
+- PHPT runners preclassify broad rows before execution and write selected,
+  runnable, classification, excluded, and per-category manifests under
+  `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
+  `pcre`, and `standard` extension surface plus the supported ini keys; set
+  `PTN_PHPT_CLASSIFY=0` for raw php-src `run-tests.php` pass-through.
 
 ## Status
 
