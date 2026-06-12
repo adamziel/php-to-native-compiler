@@ -1400,6 +1400,30 @@ static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const P
     return use_float ? ptn_float(float_sum) : ptn_int(integer_sum);
 }
 
+static PtnValue ptn_internal_array_product(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_product", 1, "array", args[0]);
+    int use_float = 0;
+    int64_t integer_product = 1;
+    double float_product = 1.0;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnNumber number = ptn_to_number(array->entries[i].value);
+        if (number.type == PTN_NUMBER_FLOAT) {
+            if (!use_float) {
+                float_product = (double)integer_product;
+                use_float = 1;
+            }
+            float_product *= number.floating;
+        } else if (use_float) {
+            float_product *= (double)number.integer;
+        } else {
+            integer_product *= number.integer;
+        }
+    }
+    return use_float ? ptn_float(float_product) : ptn_int(integer_product);
+}
+
 static PtnArrayKey ptn_array_change_key_case_key(PtnArrayKey source, int uppercase) {
     if (source.type == PTN_ARRAY_KEY_INT) {
         return ptn_array_int_key(source.as.integer);
@@ -5747,6 +5771,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_merge", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
         { "array_pop", 1, 1, ptn_internal_array_pop },
+        { "array_product", 1, 1, ptn_internal_array_product },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
         { "array_reduce", 2, 3, ptn_internal_array_reduce },
         { "array_replace_recursive", 1, PTN_VARIADIC_ARGS, ptn_internal_array_replace_recursive },

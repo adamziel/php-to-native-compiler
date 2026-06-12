@@ -9222,6 +9222,39 @@ var_dump(array_sum($mix));",
 }
 
 #[test]
+fn compile_array_product_dereferences_array_entries_to_native_binary() {
+    let root = temp_dir("ptn-native-array-product-reference-entries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-product-reference-entries.php");
+    let output = root.join("array-product-reference-entries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_product([]));\n\
+$n = \"10\";\n\
+$n .= \"0\";\n\
+$nums = [&$n, 2];\n\
+var_dump(array_product($nums));\n\
+var_dump($n);\n\
+$f = \"1.5\";\n\
+$mix = [&$f, 2, 4];\n\
+var_dump(array_product($mix));\n\
+var_dump(function_exists('array_product'), function_exists('ARRAY_PRODUCT'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(200)\nstring(3) \"100\"\nfloat(12)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strtr_dereferences_replacement_array_entries_to_native_binary() {
     let root = temp_dir("ptn-native-strtr-reference-map");
     fs::create_dir_all(&root).unwrap();

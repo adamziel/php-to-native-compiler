@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T06:30Z
-Measured: `ptn-e69a` rebased after `origin/master` `6657ca0af`.
+Refresh: 2026-06-12T06:55Z
+Measured: `ptn-n6db` rebased after `origin/master` `bbde91f1d`.
 
 Recent RC slices cover property/static-property inc/dec
 statements/expressions, scalar/string inc/dec value semantics, dynamic-variable
@@ -13,7 +13,7 @@ metadata, full/short lazy ternaries, PHP-style object `var_export()`, bounded
 probes, direct array mutators including default `sort()`/`asort()`/`rsort()`,
 sort flag diagnostics, set operations, `array_udiff*()`, exact
 `strings/004`, `strings/006`, and `tests/lang/024`, highlight output paths,
-`join()`/`implode()`, and scalar `sprintf()`.
+`join()`/`implode()`, scalar `sprintf()`, and `array_product()`.
 
 Recent movers include exact string/lang/array rows, `array_udiff*()`,
 dynamic-root array/string-offset writes and unsets, object `var_export()`,
@@ -21,14 +21,15 @@ dynamic-root array/string-offset writes and unsets, object `var_export()`,
 sort flag diagnostics, offset compound assignments, and property/static inc/dec.
 `ptn-e69a` adds null, boolean, numeric-string, alphanumeric-string,
 dynamic-root, array-offset, property/static-property, and catchable non-scalar
-inc/dec value coverage.
+inc/dec value coverage. `ptn-n6db` adds the adjacent boxed `array_product()`
+reducer path.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 519 | 519 | 0 |
+| Native/compiler Rust suite | 520 | 520 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 200 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
@@ -49,7 +50,8 @@ defaults, bounded closures/callables, `stdClass`, public class/object shells,
 declared instance-property defaults and metadata, property/static-property quiet
 probes, public constructors, class/object metadata intrinsics, `is_callable()`,
 assertions, heredoc/nowdoc, interpolation, streams, `pow()`, `array_merge()`,
-`join()`/`implode()`, scalar `sprintf()`, `call_user_func_array()`,
+`join()`/`implode()`, scalar `sprintf()`, `array_product()`,
+`call_user_func_array()`,
 CLI/error-reporting wiring, highlight output paths, scalar/array/current-object
 `var_export()`, direct array mutators including `sort()`/`asort()`/`rsort()`, set
 operations, array-offset/property/static inc/dec statements/expressions,
@@ -63,13 +65,10 @@ array/string-offset writes and unsets.
 
 ## Verification
 
-Verification: `ptn-bfwv` passed fmt, build, focused `asort()`/assert, and
-`cargo test` with native/compiler 515/515 plus COW/doc-tests. `ptn-1p1g` added
-focused parser/native `rsort()` and `cargo test` 516/516. `ptn-9gfw` added
-dynamic `sort()`/`asort()`/`rsort()` flag coverage and `cargo test` 517/517.
-`ptn-rrfl` added static-property quiet probes and `cargo test` 518/518.
-`ptn-e69a` adds scalar/string inc/dec reducer coverage; final gates are the
-focused reducer and `cargo test` 519/519.
+Verification: `ptn-e69a` passed fmt, build, focused scalar/string inc/dec, and
+`cargo test` with native/compiler 519/519 plus COW/doc-tests. `ptn-n6db` adds
+focused `array_product()` native coverage; final gates are fmt, build, the
+focused reducer, and `cargo test` with native/compiler 520/520.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

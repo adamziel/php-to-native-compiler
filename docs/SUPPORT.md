@@ -311,6 +311,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_udiff(expr, expr, callback);`,
   `array_udiff_assoc(expr, expr, callback);`,
   `array_udiff_uassoc(expr, expr, callback, callback);`,
+  `array_product(expr);`,
   `array_values(expr);`, `array_merge(expr, ...);`,
   `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
@@ -345,6 +346,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_udiff(expr, expr, callback)`,
   `array_udiff_assoc(expr, expr, callback)`,
   `array_udiff_uassoc(expr, expr, callback, callback)`,
+  `array_product(expr)`,
   `array_values(expr)`, `array_merge(expr, ...)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `call_user_func_array(expr, expr)`,
@@ -578,6 +580,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `array_udiff()`, `array_udiff_assoc()`, and `array_udiff_uassoc()` over
   current boxed arrays, using shared callable dispatch for value comparisons
   and, for `array_udiff_uassoc()`, key comparisons.
+- `array_product()` over current boxed arrays, multiplying entries after the
+  same dereferencing and numeric conversion path used by `array_sum()`, and
+  returning `1` for empty arrays.
 - `range()` over current boxed integer-convertible start, end, and optional
   step arguments, returning ordered arrays of integer values and throwing the
   modeled `ValueError` for zero or out-of-range steps.
