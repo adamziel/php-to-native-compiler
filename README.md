@@ -29,11 +29,11 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
 - Scalar float stringification honors `phpc -d precision=N` and PHP-style
   exponent spelling across output and string conversions.
 - Array internals including set operations, `array_chunk()`, `array_combine()`,
-  `array_filter()`, `array_key_exists()`, `array_keys()`, key-boundary
-  probes, `array_merge()`, `array_pop()`, `array_product()`, `array_push()`,
-  `array_shift()`, `array_unshift()`, `array_search()`, `arsort()`, `asort()`,
-  `krsort()`, `ksort()`, `natcasesort()`, `natsort()`, `sort()`, `rsort()`, and
-  `shuffle()` use
+  `array_filter()`, `array_key_exists()`, `array_keys()`, `array_search()`,
+  key/list probes, `array_merge()`, `array_pop()`, `array_product()`,
+  `array_push()`, `array_shift()`, `array_unshift()`, `arsort()`, `asort()`,
+  `krsort()`, `ksort()`, `natcasesort()`, `natsort()`, `sort()`, `rsort()`,
+  and `shuffle()` use
   ordered-array/COW paths.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, and `stdClass` through `(object) array(...)`.
@@ -48,7 +48,7 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
   string increment.
 - Direct variable and variable-root array/append compound assignments share
   boxed operators and return assigned values.
-- `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
+- `join()` concatenates ordered-array values, and scalar `sprintf()`
   covers `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
 - `strrev()` reverses current length-aware string operands without losing
   embedded NUL bytes.

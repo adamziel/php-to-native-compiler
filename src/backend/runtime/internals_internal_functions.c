@@ -1896,6 +1896,20 @@ static PtnValue ptn_internal_array_keys(PtnRuntime *runtime, size_t argc, const 
     return result;
 }
 
+static PtnValue ptn_internal_array_is_list(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_is_list", 1, "array", args[0]);
+    for (size_t i = 0; i < array->len; i++) {
+        if (i > (size_t)INT64_MAX ||
+            array->entries[i].key.type != PTN_ARRAY_KEY_INT ||
+            array->entries[i].key.as.integer != (int64_t)i) {
+            return ptn_bool(0);
+        }
+    }
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_array_key_first(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -6095,6 +6109,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_flip", 1, 1, ptn_internal_array_flip },
         { "array_intersect", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect },
         { "array_intersect_assoc", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_assoc },
+        { "array_is_list", 1, 1, ptn_internal_array_is_list },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_key_first", 1, 1, ptn_internal_array_key_first },
         { "array_key_last", 1, 1, ptn_internal_array_key_last },

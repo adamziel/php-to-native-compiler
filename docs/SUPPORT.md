@@ -315,6 +315,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_fill(expr, expr, expr);`, `array_filter(expr[, expr[, expr]]);`,
   `array_keys(expr[, expr[, expr]]);`,
   `array_intersect(expr, ...);`, `array_intersect_assoc(expr, ...);`,
+  `array_is_list(expr);`,
   `array_key_first(expr);`, `array_key_last(expr);`,
   `array_udiff(expr, expr, callback);`,
   `array_udiff_assoc(expr, expr, callback);`,
@@ -354,6 +355,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_fill(expr, expr, expr)`, `array_filter(expr[, expr[, expr]])`,
   `array_keys(expr[, expr[, expr]])`,
   `array_intersect(expr, ...)`, `array_intersect_assoc(expr, ...)`,
+  `array_is_list(expr)`,
   `array_key_first(expr)`, `array_key_last(expr)`,
   `array_udiff(expr, expr, callback)`,
   `array_udiff_assoc(expr, expr, callback)`,
@@ -586,6 +588,8 @@ Post-RC architecture remains explicit rather than hidden:
 - `array_key_first()` and `array_key_last()` over current boxed arrays,
   returning the first or last ordered integer/string key, or `null` for empty
   arrays.
+- `array_is_list()` over current boxed arrays, returning whether ordered keys
+  are exactly consecutive integer keys from `0` to `count($array) - 1`.
 - `array_change_key_case()` over current boxed arrays, preserving integer keys,
   converting string keys through ASCII lower/upper casing, and cloning
   dereferenced values into a fresh ordered array. The optional case flag accepts

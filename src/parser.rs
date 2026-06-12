@@ -3769,6 +3769,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_flip"
             | "array_intersect"
             | "array_intersect_assoc"
+            | "array_is_list"
             | "array_key_exists"
             | "array_key_first"
             | "array_key_last"

@@ -1268,6 +1268,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         "Cannot redeclare function array_key_exists()"
     );
 
+    let error =
+        parser::parse("<?php function array_is_list($array) { return false; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_is_list()");
+
     let error = parser::parse("<?php function Array_Keys($array) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_keys()");
 
@@ -10157,6 +10161,45 @@ var_dump(function_exists('array_key_first'), function_exists('ARRAY_KEY_LAST'));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_key_first"));
     assert!(c_source.contains("ptn_internal_array_key_last"));
+}
+
+#[test]
+fn compile_array_is_list_to_native_binary() {
+    let root = temp_dir("ptn-native-array-is-list");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-is-list.php");
+    let output = root.join("array-is-list-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_is_list([]));\n\
+var_dump(array_is_list([\"a\", \"b\"]));\n\
+var_dump(array_is_list([1 => \"a\", 2 => \"b\"]));\n\
+var_dump(array_is_list([0 => \"a\", 2 => \"b\"]));\n\
+var_dump(array_is_list([\"0\" => \"a\", \"1\" => \"b\"]));\n\
+var_dump(array_is_list([\"00\" => \"a\", 1 => \"b\"]));\n\
+$items = [\"a\", \"b\"];\n\
+unset($items[0]);\n\
+$items[] = \"c\";\n\
+var_dump($items, array_is_list($items));\n\
+$items = array_values($items);\n\
+var_dump($items, array_is_list($items));\n\
+var_dump(function_exists(\"array_is_list\"), function_exists(\"ARRAY_IS_LIST\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\narray(2) {\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"c\"\n}\nbool(false)\narray(2) {\n  [0]=>\n  string(1) \"b\"\n  [1]=>\n  string(1) \"c\"\n}\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_is_list"));
 }
 
 #[test]
