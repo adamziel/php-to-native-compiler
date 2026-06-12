@@ -20,19 +20,18 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Includes share caller file scope and return values; bounded dynamic
   include/require dispatch uses canonical once guards when candidate string
   paths are statically enumerable.
-- Unbracketed namespaces resolve current top-level functions/constants/classes,
-  qualified names, `__NAMESPACE__`, and simple imports.
-- Full and short ternaries lower through lazy boxed branches; unparenthesized
-  nested ternaries remain diagnostic.
+  qualified names, `__NAMESPACE__`, and simple class/function/const imports.
+- Full and short ternary expressions lower through lazy boxed branches;
+  unparenthesized nested ternaries remain diagnostic.
 - Direct references and by-reference parameters cover the first COW/reference
   slice; dynamic roots support reads/writes, array/string-offset writes,
-  unsets, compounds, and inc/dec targets.
+  unsets, compounds, null coalescing assignments, and inc/dec targets.
 - Arithmetic models non-numeric string/array `TypeError`s while preserving
   leading-numeric warnings; float stringification honors `phpc -d precision=N`
   and PHP-style exponent spelling.
-- Array internals cover set/key/list/search/slice/pad/product/fill/filter/
-  chunk/merge helpers, `count()`/`sizeof()` modes, and sort mutators through
-  ordered-array/COW paths.
+- Array internals cover set/key/list/search/slice/pad/reverse/product/fill/
+  filter/chunk/merge helpers, `count()`/`sizeof()` modes, and sort mutators
+  through ordered-array/COW paths.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string escaping.

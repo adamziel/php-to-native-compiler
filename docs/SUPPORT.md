@@ -118,6 +118,11 @@ Post-RC architecture remains explicit rather than hidden:
   `${$name}[$key] += $value` evaluate the dynamic name and offset expressions
   before the right-hand side, then reuse the shared array-path assign-op read
   and write helpers.
+  Dynamic-variable null coalescing assignments such as `${$name} ??= $value`
+  and `${$name}[$key] ??= $value` evaluate the dynamic name and offset
+  expressions before the right-hand side, quiet-read the target, lazily
+  evaluate the right-hand side only for missing or `null` targets, and reuse
+  the shared variable and array-path write helpers.
   Dynamic-root array/string-offset unsets such as `unset(${$name}[$key])`
   evaluate the dynamic name and offset expressions through the same path-unset
   helper used by direct array/string-offset unsets.
@@ -150,13 +155,15 @@ Post-RC architecture remains explicit rather than hidden:
   helper, then `write target`. Array dimensions are evaluated once before the
   right-hand expression and use the shared array-path assign-op helpers for
   both statement and expression forms.
-- Direct named-variable null coalescing assignment `??=`. The compiler uses the
-  same quiet lookup path as expression-form `??`, writes only when the variable
-  is missing or `null`, and evaluates the right-hand expression lazily.
-- Keyed array and string offset null coalescing assignment `??=`. Offset keys are
-  evaluated once, the read side is quiet like `??`, and existing array/string
-  write helpers perform the conditional store. Append-form `$a[] ??= ...` is
-  rejected because PHP must read the target before assigning.
+- Direct and dynamic named-variable null coalescing assignment `??=`. The
+  compiler uses the same quiet lookup path as expression-form `??`, writes only
+  when the variable is missing or `null`, and evaluates the right-hand
+  expression lazily.
+- Direct and dynamic-root keyed array and string offset null coalescing
+  assignment `??=`. Offset keys are evaluated once, the read side is quiet like
+  `??`, and existing array/string write helpers perform the conditional store.
+  Append-form `$a[] ??= ...` and `${$name}[] ??= ...` are rejected because PHP
+  must read the target before assigning.
 - Print statements and expression-form `print` use the same generated boxed
   output path as echo. Expression-form `print` returns `1` after evaluating and
   printing its operand, including assignment values, echo operands, binary
@@ -1114,9 +1121,9 @@ Post-RC architecture remains explicit rather than hidden:
 - PHP-exact file names, line numbers, custom error-handler routing, and
   overflow parity for remaining integer-only operator conversion diagnostics,
   including shift and modulo diagnostics.
-- Object lvalues, dynamic-variable array-offset null-coalescing/
-  by-reference lvalues, append-form null-coalescing, property reference
-  targets, property compound-assignment operators outside modeled
+- Object lvalues, dynamic-variable by-reference lvalues, append-form
+  null-coalescing, property reference targets, property compound-assignment
+  operators outside modeled
   public-property `??=`, and static-property compound-assignment lvalues
   outside modeled direct reads/writes/`??=`/inc/dec and read-side quiet probes.
 - Remaining reference semantics for compound assignment outside direct

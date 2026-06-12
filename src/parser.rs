@@ -5013,14 +5013,16 @@ fn validate_coalesce_assignment_target(
 
     match target {
         AssignmentTarget::Variable { .. } => Ok(()),
-        AssignmentTarget::DynamicVariable { .. } => Err(Diagnostic::new(
-            "null coalescing assignment currently supports direct variables and array/string offsets",
-            Some(span),
-        )),
-        AssignmentTarget::DynamicArrayDim { .. } => Err(Diagnostic::new(
-            "null coalescing assignment currently supports direct variable-root array/string offsets",
-            Some(span),
-        )),
+        AssignmentTarget::DynamicVariable { .. } => Ok(()),
+        AssignmentTarget::DynamicArrayDim { dimensions, .. } => {
+            if dimensions.iter().any(Option::is_none) {
+                return Err(Diagnostic::new(
+                    "null coalescing assignment cannot use append array access",
+                    Some(span),
+                ));
+            }
+            Ok(())
+        }
         AssignmentTarget::ArrayDim(target) => {
             if target.dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(

@@ -19167,6 +19167,41 @@ fn parser_accepts_dynamic_variable_array_dimension_assignments() {
 }
 
 #[test]
+fn parser_accepts_dynamic_variable_null_coalescing_assignments() {
+    let program = parser::parse("<?php $$name ??= 1; ${$name}[\"key\"] ??= 2;").unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected dynamic variable null coalescing assignment expression");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::DynamicVariable { name, .. },
+            op: AssignmentOp::CoalesceAssign,
+            ..
+        } if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected dynamic array dimension null coalescing assignment expression");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::DynamicArrayDim {
+                name,
+                dimensions,
+                ..
+            },
+            op: AssignmentOp::CoalesceAssign,
+            ..
+        } if dimensions.len() == 1
+            && matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+    ));
+}
+
+#[test]
 fn parser_accepts_dynamic_variable_array_dimension_unsets() {
     let program = parser::parse("<?php unset(${$name}[\"key\"], ${$$name}[0][\"leaf\"]);").unwrap();
     assert_eq!(program.statements.len(), 1);
@@ -19371,6 +19406,89 @@ echo $items[\"count\"], \"\\n\";\n",
 }
 
 #[test]
+fn compile_dynamic_variable_null_coalescing_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable-null-coalescing-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-null-coalescing-assignment.php");
+    let output = root.join("dynamic-variable-null-coalescing-assignment-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function mark($value) { echo $value, \"\\n\"; return $value; }\n\
+function rhs($label) { echo \"rhs:$label\\n\"; return $label; }\n\
+$name = \"slot\";\n\
+var_dump($$name ??= rhs(\"missing\"));\n\
+var_dump($slot);\n\
+var_dump($$name ??= rhs(\"hit\"));\n\
+$slot = null;\n\
+var_dump($$name ??= rhs(\"null\"));\n\
+$slot = false;\n\
+var_dump($$name ??= rhs(\"false\"));\n\
+${mark(\"ordered\")} ??= mark(\"created\");\n\
+var_dump($ordered);\n\
+$itemsName = \"items\";\n\
+$items = [\"hit\" => \"kept\", \"nullish\" => null, \"nested\" => [\"leaf\" => null]];\n\
+var_dump(${$itemsName}[\"hit\"] ??= rhs(\"array-hit\"));\n\
+var_dump(${$itemsName}[\"nullish\"] ??= rhs(\"array-null\"));\n\
+var_dump(${$itemsName}[\"missing\"] ??= rhs(\"array-missing\"));\n\
+var_dump(${$itemsName}[\"nested\"][\"leaf\"] ??= rhs(\"nested\"));\n\
+$undefName = \"undef\";\n\
+var_dump(${$undefName}[\"key\"] ??= rhs(\"undef\"));\n\
+$textName = \"text\";\n\
+$text = \"abc\";\n\
+var_dump(${$textName}[1] ??= rhs(\"string-hit\"));\n\
+${mark(\"items\")}[mark(\"ordered\")] ??= mark(\"ordered-value\");\n\
+var_dump($items[\"ordered\"]);\n\
+var_dump($items[\"hit\"], $items[\"nullish\"], $items[\"missing\"], $items[\"nested\"][\"leaf\"], $undef[\"key\"], $text);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "rhs:missing\n\
+string(7) \"missing\"\n\
+string(7) \"missing\"\n\
+string(7) \"missing\"\n\
+rhs:null\n\
+string(4) \"null\"\n\
+bool(false)\n\
+ordered\n\
+created\n\
+string(7) \"created\"\n\
+string(4) \"kept\"\n\
+rhs:array-null\n\
+string(10) \"array-null\"\n\
+rhs:array-missing\n\
+string(13) \"array-missing\"\n\
+rhs:nested\n\
+string(6) \"nested\"\n\
+rhs:undef\n\
+string(5) \"undef\"\n\
+string(1) \"b\"\n\
+items\n\
+ordered\n\
+ordered-value\n\
+string(13) \"ordered-value\"\n\
+string(4) \"kept\"\n\
+string(10) \"array-null\"\n\
+string(13) \"array-missing\"\n\
+string(6) \"nested\"\n\
+string(5) \"undef\"\n\
+string(3) \"abc\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_variable_quiet(&runtime, ptn_tmp_"));
+    assert!(c_source.contains("ptn_runtime_array_path_lookup_quiet(&runtime, ptn_tmp_"));
+    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, ptn_tmp_"));
+}
+
+#[test]
 fn dynamic_variable_non_scalar_names_report_diagnostic() {
     let root = temp_dir("ptn-native-dynamic-variable-unsupported-name");
     fs::create_dir_all(&root).unwrap();
@@ -19487,6 +19605,7 @@ fn parser_rejects_append_null_coalescing_assignment_with_explicit_diagnostics() 
         ("statement", "<?php\n$items[] ??= 1;"),
         ("echo expression", "<?php\necho $items[] ??= 1;"),
         ("grouped expression", "<?php\n($items[] ??= 1);"),
+        ("dynamic-root expression", "<?php\n${$name}[] ??= 1;"),
     ];
 
     for (name, source) in cases {
