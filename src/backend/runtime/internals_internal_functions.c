@@ -4242,6 +4242,31 @@ static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, con
     return ptn_bool(ends);
 }
 
+static PtnValue ptn_internal_strrchr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "strrchr", 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "strrchr", 2, "needle", args[1], line);
+    int before_needle = argc >= 3 && ptn_is_truthy(args[2]);
+    unsigned char byte = needle.len == 0 ? 0 : (unsigned char)needle.data[0];
+    size_t match = haystack.len;
+    for (size_t i = haystack.len; i > 0; i--) {
+        if ((unsigned char)haystack.data[i - 1] == byte) {
+            match = i - 1;
+            break;
+        }
+    }
+    ptn_string_operand_free(needle);
+    if (match == haystack.len) {
+        ptn_string_operand_free(haystack);
+        return ptn_bool(0);
+    }
+
+    size_t start = before_needle ? 0 : match;
+    size_t len = before_needle ? match : haystack.len - match;
+    PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(haystack.data + start, len), len);
+    ptn_string_operand_free(haystack);
+    return result;
+}
+
 static void ptn_string_buffer_append_repeated_pattern(PtnStringBuffer *buffer, PtnStringOperand pattern, size_t len) {
     size_t remaining = len;
     while (remaining > 0) {
@@ -8008,6 +8033,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "stripslashes", 1, 1, ptn_internal_stripslashes },
         { "strlen", 1, 1, ptn_internal_strlen },
+        { "strrchr", 2, 3, ptn_internal_strrchr },
         { "strrev", 1, 1, ptn_internal_strrev },
         { "strtolower", 1, 1, ptn_internal_strtolower },
         { "strtoupper", 1, 1, ptn_internal_strtoupper },

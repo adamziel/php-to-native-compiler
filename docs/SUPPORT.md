@@ -330,7 +330,8 @@ Post-RC architecture remains explicit rather than hidden:
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_pad(expr, expr[, expr[, expr]]);`,
   `str_repeat(expr, expr);`,
-  `strtolower(expr);`, `strtoupper(expr);`, `strrev(expr);`, `ucfirst(expr);`,
+  `strtolower(expr);`, `strtoupper(expr);`, `strrchr(expr, expr[, expr]);`,
+  `strrev(expr);`, `ucfirst(expr);`,
   `lcfirst(expr);`, `quotemeta(expr);`,
   `trim(expr[, expr]);`, `ltrim(expr[, expr]);`, `rtrim(expr[, expr]);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
@@ -385,7 +386,8 @@ Post-RC architecture remains explicit rather than hidden:
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_pad(expr, expr[, expr[, expr]])`,
   `str_repeat(expr, expr)`,
-  `strtolower(expr)`, `strtoupper(expr)`, `strrev(expr)`, `ucfirst(expr)`,
+  `strtolower(expr)`, `strtoupper(expr)`, `strrchr(expr, expr[, expr])`,
+  `strrev(expr)`, `ucfirst(expr)`,
   `lcfirst(expr)`, `quotemeta(expr)`,
   `trim(expr[, expr])`, `ltrim(expr[, expr])`, `rtrim(expr[, expr])`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
@@ -517,7 +519,7 @@ Post-RC architecture remains explicit rather than hidden:
   object class names and `Closure` in the reported given-type, for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
-  `strtr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,
+  `strtr()`, `strrchr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,
   `strtolower()`,
   `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
   `explode()` separator/string arguments,
@@ -539,6 +541,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `str_starts_with()` and `str_ends_with()` over current boxed scalar values
   after scalar string conversion, returning whether the haystack has the
   requested prefix or suffix through the current C-string-backed value path.
+- `strrchr()` over current boxed scalar values after scalar string conversion,
+  returning the suffix from the last occurrence of the first needle byte, or
+  the prefix before that byte when the optional flag is truthy.
 - `str_pad()` over current boxed scalar values after scalar string conversion,
   padding by byte length with optional pad string and `STR_PAD_LEFT`,
   `STR_PAD_RIGHT`, or `STR_PAD_BOTH` mode constants. Empty pad strings and

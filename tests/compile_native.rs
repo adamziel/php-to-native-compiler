@@ -5249,6 +5249,39 @@ fn compile_str_contains_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_strrchr_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-strrchr-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strrchr.php");
+    let output = root.join("strrchr-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(strrchr(\"\", \"\"));\n\
+var_dump(strrchr(\"abc\", \"\"));\n\
+var_dump(strrchr(\"\", \"abc\"));\n\
+var_dump(strrchr(\"abc\", \"abc\"));\n\
+var_dump(strrchr(\"test \".chr(0).\" test\", \" \"));\n\
+var_dump(strrchr(\"test\".chr(0).\"string\", \"t\"));\n\
+var_dump(strrchr(\"Hello, World\", \"World\", true));\n\
+var_dump(strrchr(12345, 52));\n\
+var_dump(function_exists(\"strrchr\"), function_exists(\"STRRCHR\"));\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(false)\nbool(false)\nstring(3) \"abc\"\nstring(5) \" test\"\nstring(5) \"tring\"\nstring(7) \"Hello, \"\nstring(1) \"5\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fdiv_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-fdiv-phpt-shape");
     fs::create_dir_all(&root).unwrap();

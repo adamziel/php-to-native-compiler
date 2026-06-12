@@ -4311,6 +4311,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "scandir"
             | "str_shuffle"
             | "str_replace"
+            | "strrchr"
             | "strtr"
             | "unlink"
             | "call_user_func"

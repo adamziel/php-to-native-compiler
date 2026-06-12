@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-12T19:06Z
-Measured: `ptn-9dx3` rebased on current `origin/master` `13a1040a6`.
+Refresh: 2026-06-12T19:34Z
+Measured: `ptn-lr1l` rebased on current `origin/master` `a6af5e4e6`.
 
 Recent RC slices cover public class constants, embedded-NUL `var_export()`,
-`explode()`, namespaced internal fallback, static-property `??=`, once guards,
-property/static inc/dec, dynamic-variable writes/unsets and `??=`, array and
-string-offset compound/null coalescing assignments, private properties,
-inherited parent-private slots, public `__destruct()` dispatch, quiet probes,
-array mutators, sort flags, set operations, `array_udiff*()`,
+`explode()`, `strrchr()`, namespaced internal fallback, static-property `??=`,
+once guards, property/static inc/dec, dynamic-variable writes/unsets and `??=`,
+array and string-offset compound/null coalescing assignments, private
+properties, inherited parent-private slots, public `__destruct()` dispatch,
+quiet probes, array mutators, sort flags, set operations, `array_udiff*()`,
 `join()`/`implode()`, bounded `sprintf()`/`printf()`, `json_encode()`,
 `array_is_list()`, `array_search()`, `array_slice()`, `array_pad()`,
 `array_reverse()`, `count()`/`sizeof()`, `str_pad()`, `str_shuffle()`,
@@ -18,20 +18,19 @@ PHP/CLI/Zend metadata, `php_uname()`, `ReflectionFunction`, namespaces,
 foreach list destructuring, dynamic include/require dispatch, return-only
 `void` declarations, and file-stream `stream_get_meta_data()` metadata.
 
-Recent movers include file-stream metadata arrays for open `fopen()` resources,
-closed-stream TypeErrors, and dynamic-root `??=` reducers for variable and
-offset targets.
+Recent movers include length-aware scalar `strrchr()` support, file-stream
+metadata arrays for open `fopen()` resources, and dynamic-root `??=` reducers.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 575 | 575 | 0 |
+| Native/compiler Rust suite | 576 | 576 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 226 | 226 | 0 |
+| PHPT bounded manifest | 227 | 227 | 0 |
 | PHPT Zend rows | 80 | 80 | 0 |
-| PHPT ext/standard rows | 96 | 96 | 0 |
+| PHPT ext/standard rows | 97 | 97 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT tests/basic+func+lang | 45 | 45 | 0 |
 | PHPT other rows | 5 | 5 | 0 |
@@ -51,21 +50,21 @@ parent-private slots, public destructor dispatch, reflection,
 callability/countability, assertions, namespaces/imports, streams and
 file-stream metadata, array/string/numeric helpers through `array_udiff*()`,
 `array_is_list()`, `count()`/`sizeof()`, `json_encode()`, `printf()`,
-`chunk_split()`, `fdiv()`, `explode()`, shared string-internal diagnostics,
-highlight paths, `var_export()`, array mutators, inc/dec, foreach
+`chunk_split()`, `fdiv()`, `explode()`, `strrchr()`, shared string-internal
+diagnostics, highlight paths, `var_export()`, array mutators, inc/dec, foreach
 destructuring, dynamic-variable writes/unsets, and array/string-offset
 compound/null coalescing assignments.
 
 ## Remaining Bounded Failures
 
-- None in the current 226-row bounded manifest.
+- None in the current 227-row bounded manifest.
 
 ## Verification
 
-Current slice verification: `cargo fmt --check`; focused stream metadata
-native test 1/1; focused stream PHPT rows 2/2; full `cargo test` 575/575;
-bounded PHPT manifest 226/226; PHPT COW manifest 29/29; post-merge COW gate
-17/17 oracle, 3/3 notice, 6/6 diagnostics.
+Current slice verification: `cargo fmt --check`; focused `strrchr()` native
+test 1/1; focused `strrchr` PHPT 1/1; full `cargo test` 576/576; bounded
+PHPT manifest 227/227; PHPT COW manifest 29/29; post-merge COW gate 17/17
+oracle, 3/3 notice, 6/6 diagnostics.
 
 Follow-ups remain destructor visibility/exception/reference/global edges,
 typed/promoted properties, interfaces/traits, bracketed/grouped namespaces,
