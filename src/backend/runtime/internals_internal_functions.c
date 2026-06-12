@@ -6199,6 +6199,19 @@ static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const Pt
 #endif
 }
 
+static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    int zend_extensions = argc >= 1 && ptn_is_truthy(args[0]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (zend_extensions) {
+        return result;
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("standard"));
+    return result;
+}
+
 static PtnValue ptn_internal_php_sapi_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -6693,6 +6706,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
         { "function_exists", 1, 1, ptn_internal_function_exists },
         { "get_class", 1, 1, ptn_internal_get_class },
+        { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "getmypid", 0, 0, ptn_internal_getmypid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "gettype", 1, 1, ptn_internal_gettype },

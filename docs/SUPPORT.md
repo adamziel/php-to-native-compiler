@@ -330,7 +330,8 @@ Post-RC architecture remains explicit rather than hidden:
   `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
   `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
-  `getmypid();`, `ob_get_contents();`, `php_sapi_name();`,
+  `getmypid();`, `get_loaded_extensions([zend_extensions]);`,
+  `ob_get_contents();`, `php_sapi_name();`,
   `phpversion([extension]);`, `zend_version();`, `intval(expr);`,
   `chr(expr);`, `ord(expr);`,
   `count(expr);`, `array_chunk(expr, expr[, expr]);`,
@@ -376,7 +377,8 @@ Post-RC architecture remains explicit rather than hidden:
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
-  `getmypid()`, `ob_get_contents()`, `php_sapi_name()`,
+  `getmypid()`, `get_loaded_extensions([zend_extensions])`,
+  `ob_get_contents()`, `php_sapi_name()`,
   `phpversion([extension])`, `zend_version()`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
   `count(expr)`, `array_chunk(expr, expr[, expr])`,
@@ -587,11 +589,16 @@ Post-RC architecture remains explicit rather than hidden:
   operator.
 - `getrandmax()` returns the modeled maximum random integer.
 - `getmypid()` returns the generated native process id.
-- `php_sapi_name()` returns the modeled CLI SAPI name.
-- `phpversion()` returns the modeled PHP version string. The optional
+- `php_sapi_name()` and the `PHP_SAPI` constant return the modeled CLI SAPI
+  name.
+- `phpversion()` and the `PHP_VERSION` constant return the modeled PHP version
+  string. The optional
   extension argument returns the same version for `core`, `standard`, and an
   empty extension name, and `false` for unmodeled extension names.
 - `zend_version()` returns the modeled Zend Engine version string.
+- `get_loaded_extensions()` returns the modeled loaded extension names
+  `Core` and `standard`; `get_loaded_extensions(true)` returns an empty array
+  because Zend extensions are outside the current runtime boundary.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and
@@ -1035,8 +1042,8 @@ Post-RC architecture remains explicit rather than hidden:
   still bypass the shared warning/deprecation/notice emitters.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
-- PHP-exact version, SAPI, and extension metadata beyond the modeled CLI/core/
-  standard boundary.
+- PHP-exact version, SAPI, and extension metadata beyond the modeled
+  CLI/core/standard names and loaded-extension list.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
 - Statement-form `(void) expr;` casts.

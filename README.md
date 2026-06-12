@@ -45,7 +45,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `pow()` uses the same boxed numeric exponentiation helper as `**`, and
   `call_user_func_array()` expands ordered arrays through callable dispatch.
 - `assert()` throws catchable `AssertionError` values with compiler-generated
-  direct-call messages; bounded `highlight_file()` shares file-return paths.
+  default messages for direct calls; bounded `highlight_file()` shares
+  file-return paths.
+- Modeled version/SAPI metadata includes `phpversion()`, `php_sapi_name()`,
+  `zend_version()`, `PHP_VERSION`, `PHP_SAPI`, and `get_loaded_extensions()`
+  for the current CLI/core/standard boundary.
 - Direct variable, array-offset, property, and static-property
   increment/decrement support statement and expression pre/post forms over
   boxed numeric values, null, booleans, numeric strings, and alphanumeric
@@ -54,7 +58,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   boxed operators and return assigned values.
 - `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
   covers `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
-- `str_pad()` supports byte-length padding with pad constants, and
+- `str_pad()` supports byte-length padding with pad constants.
 - `zend_version()` reports the modeled Zend Engine version alongside the
   existing CLI PHP version metadata.
 - `strrev()` reverses current length-aware string operands without losing

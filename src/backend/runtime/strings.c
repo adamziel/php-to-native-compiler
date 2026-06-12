@@ -658,6 +658,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int((int64_t)sizeof(int64_t));
         return 1;
     }
+    if (strcmp(name, "PHP_VERSION") == 0) {
+        *out = ptn_string(PTN_PHP_VERSION);
+        return 1;
+    }
+    if (strcmp(name, "PHP_SAPI") == 0) {
+        *out = ptn_string(PTN_PHP_SAPI_NAME);
+        return 1;
+    }
     if (strcmp(name, "PHP_EOL") == 0) {
         *out = ptn_string("\n");
         return 1;

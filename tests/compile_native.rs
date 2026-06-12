@@ -1299,6 +1299,12 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function Zend_Version() { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function zend_version()");
 
+    let error = parser::parse("<?php function Get_Loaded_Extensions() { return []; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot redeclare function get_loaded_extensions()"
+    );
+
     let error = parser::parse("<?php function IsSet($value) { return true; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function isset()");
 
@@ -8142,7 +8148,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     let output = root.join("versioning-registry-bin");
     fs::write(
         &input,
-        "<?php var_dump(function_exists(\"php_sapi_name\"), function_exists(\"PHPVERSION\"), function_exists(\"ZEND_VERSION\"), phpversion(\"STANDARD\"), phpversion(\"missing_extension\"), zend_version());",
+        "<?php var_dump(function_exists(\"php_sapi_name\"), function_exists(\"PHPVERSION\"), function_exists(\"ZEND_VERSION\"), function_exists(\"get_loaded_extensions\"), PHP_SAPI, PHP_VERSION, defined(\"PHP_SAPI\"), constant(\"PHP_VERSION\"), phpversion(\"STANDARD\"), phpversion(\"missing_extension\"), zend_version()); echo implode(',', get_loaded_extensions()), \"\\n\"; var_dump(get_loaded_extensions(true));",
     )
     .unwrap();
 
@@ -8152,7 +8158,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,standard\narray(0) {\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
