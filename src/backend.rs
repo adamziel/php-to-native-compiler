@@ -12,7 +12,7 @@ use crate::ir::{
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
     FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, Instruction,
     ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    Module, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
+    Module, PropertyVisibility, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -29,6 +29,7 @@ pub fn emit_c(module: &Module) -> String {
         || runtime_requirements.dynamic_function_dispatch;
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
     let needs_method_dispatch = runtime_requirements.method_dispatch || has_declared_methods;
+    emit_private_property_metadata_prototype(&mut out);
     emit_runtime(&mut out, &runtime_requirements);
     emit_include_prototypes(&mut out, &module.includes);
     emit_user_function_prototypes(
@@ -54,9 +55,7 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions);
     }
-    if runtime_requirements.internal_function_dispatch || needs_method_dispatch {
-        emit_class_metadata_helpers(&mut out, &module.classes);
-    }
+    emit_class_metadata_helpers(&mut out, &module.classes);
     if runtime_requirements.internal_function_dispatch {
         emit_callable_validation_helpers(&mut out);
     }
@@ -814,8 +813,52 @@ fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
     out.push_str("}\n");
 }
 
+fn emit_private_property_metadata_prototype(out: &mut String) {
+    out.push_str(
+        "static const char *ptn_declared_private_property_class(const char *class_name, const char *property_name);\n",
+    );
+}
+
 fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
-    out.push_str("\nstatic int ptn_declared_class_exists(const char *name) {\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_declared_private_property_class(const char *class_name, const char *property_name) {\n",
+    );
+    if classes.iter().all(|class| {
+        class
+            .properties
+            .iter()
+            .all(|property| property.visibility != PropertyVisibility::Private)
+    }) {
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)property_name;\n");
+    }
+    for class in classes {
+        let private_properties = class
+            .properties
+            .iter()
+            .filter(|property| property.visibility == PropertyVisibility::Private)
+            .collect::<Vec<_>>();
+        if private_properties.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for property in private_properties {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("    }\n");
+    }
+    out.push_str("    return NULL;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_exists(const char *name) {\n");
     out.push_str("    if (ptn_ascii_case_equal(name, \"stdClass\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
@@ -830,7 +873,7 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic int ptn_declared_class_method_exists(const char *class_name, const char *method_name) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_class_method_exists(const char *class_name, const char *method_name) {\n",
     );
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
@@ -856,7 +899,7 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic int ptn_declared_class_static_method_exists(const char *class_name, const char *method_name) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_class_static_method_exists(const char *class_name, const char *method_name) {\n",
     );
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
@@ -889,7 +932,9 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
-    out.push_str("\nstatic int ptn_declared_class_has_call_magic(const char *class_name) {\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_has_call_magic(const char *class_name) {\n",
+    );
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
@@ -3849,6 +3894,8 @@ impl ValueEmitter {
             out.push_str(", \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
+            out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+            out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(", ");
             out.push_str(&line.to_string());
@@ -4206,6 +4253,8 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
                 out.push_str(value_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
@@ -4972,6 +5021,8 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(&property.name));
                 out.push_str("\", ");
+                out.push_str(&c_optional_string(Some(&declared_class.name)));
+                out.push_str(", ");
                 out.push_str(&value_temp);
                 out.push_str(", ");
                 out.push_str(&property.line.to_string());
@@ -5078,6 +5129,8 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &receiver_temp);
@@ -5495,6 +5548,8 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &lookup_receiver_temp);
@@ -5524,6 +5579,8 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
         out.push_str(&value_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
@@ -6754,6 +6811,13 @@ fn c_string(value: &str) -> String {
         }
     }
     out
+}
+
+fn c_optional_string(value: Option<&str>) -> String {
+    match value {
+        Some(value) => format!("\"{}\"", c_string(value)),
+        None => "NULL".to_string(),
+    }
 }
 
 fn push_c_string_byte(out: &mut String, byte: u8) {

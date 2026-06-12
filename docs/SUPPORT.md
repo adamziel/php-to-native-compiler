@@ -11,13 +11,14 @@ internals, top-level functions, includes resolved at compile time, copy-on-write
 array/reference slices, and public class/object shells. Public class support is
 bounded to top-level declarations with public methods, direct public static
 property reads/writes, public instance property reads/writes, and public
-property `??=`, plus public non-static `__construct` dispatch through the
-declared-method path.
+property `??=`, plus bounded private instance-property declarations read/written
+from declaring-class methods, and public non-static `__construct` dispatch
+through the declared-method path.
 
 Post-RC architecture remains explicit rather than hidden:
 
 - Classes and inheritance: interfaces, traits, namespaces,
-  non-public/typed/promoted properties, broad metadata/reflection, destructors,
+  protected/typed/promoted properties, broad metadata/reflection, destructors,
   old-style constructors, class constants, and complete visibility-aware
   inherited property/method resolution remain outside the RC boundary.
 - Static properties: direct public static reads/writes are supported, but
@@ -703,9 +704,12 @@ Post-RC architecture remains explicit rather than hidden:
   can flow through generated user functions and string-callable
   `call_user_func()` dispatch. Public property null coalescing assignment
   `$object->name ??= expr` quiet-reads the property and lazily evaluates the
-  right-hand expression. Non-public, typed, inherited, constructor-promoted,
-  magic, destructor, and reflection property metadata remain outside this
-  support boundary.
+  right-hand expression. Private declared instance properties in top-level
+  classes are initialized with supported defaults, read/written from methods of
+  their declaring class, rejected for outside reads/writes with modeled
+  `Error`, and labeled as private in `var_dump()` output. Protected, typed,
+  inherited, constructor-promoted, magic, destructor, and reflection property
+  metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
@@ -715,11 +719,13 @@ Post-RC architecture remains explicit rather than hidden:
   invalid legacy octal integer literals containing `8` or `9`, plus
   unparenthesized nested ternary fatal diagnostics and
   unexpected-token parse errors at modeled statement terminators and right
-  parentheses. Global `const` declaration terminators report the
-  const-specific `"," or ";"` expected-token set, and removed alternative
-  `{}` offsets inside braced string interpolation report the current PHP
-  unexpected-token parse error. Unsupported class members and class-constant
-  fetch syntax are recognized and reported as class metadata boundaries.
+  parentheses, including expression-level ternary `? :` sites outside the
+  currently modeled nested-ternary diagnostic. Global `const` declaration
+  terminators report the const-specific `"," or ";"` expected-token set, and
+  removed alternative `{}` offsets inside braced string interpolation report
+  the current PHP unexpected-token parse error. Unsupported class members and
+  class-constant fetch syntax are recognized and reported as class metadata
+  boundaries.
 - Direct variable and variable-root array-offset increment/decrement over
   current boxed integer and float values. Statement forms such as `$name++;`
   and `$items[$key]--;` write the updated value. Expression forms such as

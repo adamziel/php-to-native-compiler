@@ -273,7 +273,13 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
                 if (key.type == PTN_ARRAY_KEY_INT) {
                     printf("[%lld]=>\n", (long long)key.as.integer);
                 } else {
-                    printf("[\"%s\"]=>\n", key.as.string);
+                    const char *private_class =
+                        ptn_declared_private_property_class(object->class_name, key.as.string);
+                    if (private_class != NULL) {
+                        printf("[\"%s\":\"%s\":private]=>\n", key.as.string, private_class);
+                    } else {
+                        printf("[\"%s\"]=>\n", key.as.string);
+                    }
                 }
                 ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
             }
@@ -380,7 +386,13 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 if (key.type == PTN_ARRAY_KEY_INT) {
                     printf("[%lld]=>\n", (long long)key.as.integer);
                 } else {
-                    printf("[\"%s\"]=>\n", key.as.string);
+                    const char *private_class =
+                        ptn_declared_private_property_class(object->class_name, key.as.string);
+                    if (private_class != NULL) {
+                        printf("[\"%s\":\"%s\":private]=>\n", key.as.string, private_class);
+                    } else {
+                        printf("[\"%s\"]=>\n", key.as.string);
+                    }
                 }
                 ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
             }

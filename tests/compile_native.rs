@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
     IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElementTarget, MagicConstantKind,
-    ReferenceTarget, Statement, StringInterpolationIndex, StringPart, TypeHint, UnaryOp,
-    UnsetTarget,
+    PropertyVisibility, ReferenceTarget, Statement, StringInterpolationIndex, StringPart, TypeHint,
+    UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -2306,6 +2306,31 @@ echo $box->name;",
         Some(Expr::Int(2, _))
     ));
     assert!(program.classes[0].properties[2].value.is_none());
+}
+
+#[test]
+fn parser_accepts_private_instance_properties() {
+    let program = parser::parse(
+        "<?php
+class Box {
+    private $secret = \"ptn\", $unset;
+    public function reveal() { return $this->secret; }
+}
+$box = new Box;
+echo $box->reveal();",
+    )
+    .unwrap();
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].properties.len(), 2);
+    assert_eq!(program.classes[0].properties[0].name, "secret");
+    assert_eq!(
+        program.classes[0].properties[0].visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(
+        program.classes[0].properties[1].visibility,
+        PropertyVisibility::Private
+    );
 }
 
 #[test]
@@ -6033,6 +6058,80 @@ var_dump($box->name);
     assert!(c_source.contains("\"name\""));
     assert!(c_source.contains("\"count\""));
     assert!(c_source.contains("\"unset\""));
+}
+
+#[test]
+fn compile_private_instance_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-private-instance-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("private-instance-properties.php");
+    let output = root.join("private-instance-properties-bin");
+    fs::write(
+        &input,
+        "<?php
+class SecretBox {
+    private $secret = \"seed\";
+    public $label = \"pub\";
+
+    public function __construct($secret) {
+        $this->secret = $secret;
+    }
+
+    public function reveal() {
+        return $this->secret;
+    }
+
+    public function replace($value) {
+        $this->secret = $value;
+        return $this->secret;
+    }
+}
+
+$box = new SecretBox(\"kept\");
+var_dump($box->reveal());
+var_dump($box->replace(\"next\"));
+var_dump($box);
+try {
+    var_dump($box->secret);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $box->secret = \"bad\";
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($box->reveal());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(4) \"kept\"\n",
+            "string(4) \"next\"\n",
+            "object(SecretBox)#1 (2) {\n",
+            "  [\"secret\":\"SecretBox\":private]=>\n",
+            "  string(4) \"next\"\n",
+            "  [\"label\"]=>\n",
+            "  string(3) \"pub\"\n",
+            "}\n",
+            "Cannot access private property SecretBox::$secret\n",
+            "Cannot access private property SecretBox::$secret\n",
+            "string(4) \"next\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_private_property_class"));
+    assert!(c_source.contains("\"SecretBox\""));
+    assert!(c_source.contains("\"secret\""));
 }
 
 #[test]

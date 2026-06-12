@@ -5,9 +5,9 @@ use crate::ast::{
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClosureUseCapture,
     ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget,
     IncludeKind, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
-    MagicConstantKind, MethodDecl, Program, PropertyDecl, ReferenceTarget, Statement,
-    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp,
-    UnsetTarget,
+    MagicConstantKind, MethodDecl, Program, PropertyDecl, PropertyVisibility, ReferenceTarget,
+    Statement, StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint,
+    UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -61,6 +61,7 @@ struct ForeachVariable {
 #[derive(Default)]
 struct ClassModifiers {
     is_static: bool,
+    visibility: PropertyVisibility,
 }
 
 enum ParsedClassMember {
@@ -200,17 +201,29 @@ impl Parser {
         }
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
             if modifiers.is_static {
+                if modifiers.visibility != PropertyVisibility::Public {
+                    return Err(Diagnostic::new(
+                        "non-public static properties are unsupported",
+                        Some(self.peek().span),
+                    ));
+                }
                 return Ok(ParsedClassMember::StaticProperties(
                     self.parse_static_property_declarations()?,
                 ));
             }
             return Ok(ParsedClassMember::Properties(
-                self.parse_property_declarations()?,
+                self.parse_property_declarations(modifiers.visibility)?,
             ));
         }
         if !matches!(self.peek().kind, TokenKind::Function) {
             return Err(Diagnostic::new(
                 "unsupported class member",
+                Some(self.peek().span),
+            ));
+        }
+        if modifiers.visibility != PropertyVisibility::Public {
+            return Err(Diagnostic::new(
+                "non-public class methods are unsupported",
                 Some(self.peek().span),
             ));
         }
@@ -227,15 +240,20 @@ impl Parser {
             };
             match modifier.to_ascii_lowercase().as_str() {
                 "public" => {
+                    modifiers.visibility = PropertyVisibility::Public;
                     self.advance();
                 }
                 "static" => {
                     modifiers.is_static = true;
                     self.advance();
                 }
-                "private" | "protected" => {
+                "private" => {
+                    modifiers.visibility = PropertyVisibility::Private;
+                    self.advance();
+                }
+                "protected" => {
                     return Err(Diagnostic::new(
-                        "non-public class members are unsupported",
+                        "protected class members are unsupported",
                         Some(self.peek().span),
                     ));
                 }
@@ -264,17 +282,23 @@ impl Parser {
         Ok(properties)
     }
 
-    fn parse_property_declarations(&mut self) -> Result<Vec<PropertyDecl>> {
-        let mut properties = vec![self.parse_property_declaration()?];
+    fn parse_property_declarations(
+        &mut self,
+        visibility: PropertyVisibility,
+    ) -> Result<Vec<PropertyDecl>> {
+        let mut properties = vec![self.parse_property_declaration(visibility)?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
-            properties.push(self.parse_property_declaration()?);
+            properties.push(self.parse_property_declaration(visibility)?);
         }
         self.expect_semicolon()?;
         Ok(properties)
     }
 
-    fn parse_property_declaration(&mut self) -> Result<PropertyDecl> {
+    fn parse_property_declaration(
+        &mut self,
+        visibility: PropertyVisibility,
+    ) -> Result<PropertyDecl> {
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new("expected property name", Some(token.span)));
@@ -294,6 +318,7 @@ impl Parser {
         };
         Ok(PropertyDecl {
             name,
+            visibility,
             value,
             span: token.span,
         })

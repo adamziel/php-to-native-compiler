@@ -20,8 +20,21 @@ pub struct ClassDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyDecl {
     pub name: String,
+    pub visibility: PropertyVisibility,
     pub value: Option<Expr>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyVisibility {
+    Public,
+    Private,
+}
+
+impl Default for PropertyVisibility {
+    fn default() -> Self {
+        Self::Public
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

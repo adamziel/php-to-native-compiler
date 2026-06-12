@@ -226,15 +226,58 @@ static PTN_UNUSED void ptn_emit_undefined_property_warning(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
+static PTN_UNUSED int ptn_property_class_names_equal(const char *left, const char *right) {
+    if (left == NULL || right == NULL) {
+        return 0;
+    }
+    while (*left != '\0' && *right != '\0') {
+        if (tolower((unsigned char)*left) != tolower((unsigned char)*right)) {
+            return 0;
+        }
+        left++;
+        right++;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static PTN_UNUSED int ptn_object_property_access_denied(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    const char *access_scope
+) {
+    const char *private_class = ptn_declared_private_property_class(object->class_name, property);
+    if (private_class == NULL || ptn_property_class_names_equal(private_class, access_scope)) {
+        return 0;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot access private property %s::$%s",
+        private_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_object_read_property(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
+    const char *access_scope,
     size_t line
 ) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
+        return ptn_null();
+    }
+    if (ptn_object_property_access_denied(runtime, receiver.as.object, property, access_scope)) {
         return ptn_null();
     }
     PtnArrayKey key = ptn_array_string_key(property);
@@ -251,12 +294,15 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
+    const char *access_scope,
     size_t line
 ) {
-    (void)runtime;
     (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
+        return ptn_lookup_missing();
+    }
+    if (ptn_object_property_access_denied(runtime, receiver.as.object, property, access_scope)) {
         return ptn_lookup_missing();
     }
     PtnArrayKey key = ptn_array_string_key(property);
@@ -272,6 +318,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
+    const char *access_scope,
     PtnValue value,
     size_t line
 ) {
@@ -290,6 +337,9 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception(runtime, "Error", message);
+        return ptn_null();
+    }
+    if (ptn_object_property_access_denied(runtime, receiver.as.object, property, access_scope)) {
         return ptn_null();
     }
     PtnValue stored = ptn_value_clone_deref(value);

@@ -53,8 +53,15 @@ pub struct ClassDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyDecl {
     pub name: String,
+    pub visibility: PropertyVisibility,
     pub value: Option<ValueExpr>,
     pub line: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyVisibility {
+    Public,
+    Private,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -647,6 +654,7 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|property| PropertyDecl {
                 name: property.name.clone(),
+                visibility: lower_property_visibility(property.visibility),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
                 line: property.span.line,
             })
@@ -996,6 +1004,13 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::Float => TypeHint::Float,
         AstTypeHint::String => TypeHint::String,
         AstTypeHint::Bool => TypeHint::Bool,
+    }
+}
+
+fn lower_property_visibility(visibility: crate::ast::PropertyVisibility) -> PropertyVisibility {
+    match visibility {
+        crate::ast::PropertyVisibility::Public => PropertyVisibility::Public,
+        crate::ast::PropertyVisibility::Private => PropertyVisibility::Private,
     }
 }
 
