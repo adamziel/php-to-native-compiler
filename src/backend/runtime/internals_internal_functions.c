@@ -4168,6 +4168,15 @@ static char *ptn_rot13_string(const char *string, size_t len) {
     return rotated;
 }
 
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+);
+
 static PtnValue ptn_internal_str_rot13(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "str_rot13", 1, "string", args[0], line);
@@ -4452,6 +4461,346 @@ static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, con
     ptn_string_operand_free(haystack);
     ptn_string_operand_free(needle);
     return ptn_bool(ends);
+}
+
+static int ptn_match_bytes_at(
+    const char *haystack,
+    const char *needle,
+    size_t needle_len,
+    int case_insensitive
+) {
+    for (size_t i = 0; i < needle_len; i++) {
+        unsigned char haystack_byte = (unsigned char)haystack[i];
+        unsigned char needle_byte = (unsigned char)needle[i];
+        if (case_insensitive) {
+            haystack_byte = ptn_ascii_lower_byte(haystack_byte);
+            needle_byte = ptn_ascii_lower_byte(needle_byte);
+        }
+        if (haystack_byte != needle_byte) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static size_t ptn_find_bytes_from(
+    const char *haystack,
+    size_t haystack_len,
+    const char *needle,
+    size_t needle_len,
+    size_t start,
+    int case_insensitive
+) {
+    if (start > haystack_len) {
+        return SIZE_MAX;
+    }
+    if (needle_len == 0) {
+        return start;
+    }
+    if (needle_len > haystack_len - start) {
+        return SIZE_MAX;
+    }
+    size_t last = haystack_len - needle_len;
+    for (size_t offset = start; offset <= last; offset++) {
+        if (ptn_match_bytes_at(haystack + offset, needle, needle_len, case_insensitive)) {
+            return offset;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static size_t ptn_rfind_bytes_between(
+    const char *haystack,
+    size_t haystack_len,
+    const char *needle,
+    size_t needle_len,
+    size_t start,
+    size_t max_start,
+    int case_insensitive
+) {
+    if (needle_len == 0) {
+        return max_start <= haystack_len ? max_start : haystack_len;
+    }
+    if (start > haystack_len || needle_len > haystack_len) {
+        return SIZE_MAX;
+    }
+    size_t last = haystack_len - needle_len;
+    if (max_start > last) {
+        max_start = last;
+    }
+    if (start > max_start) {
+        return SIZE_MAX;
+    }
+    size_t cursor = max_start + 1;
+    while (cursor > start) {
+        size_t offset = cursor - 1;
+        if (ptn_match_bytes_at(haystack + offset, needle, needle_len, case_insensitive)) {
+            return offset;
+        }
+        cursor--;
+    }
+    return SIZE_MAX;
+}
+
+static int ptn_normalize_string_offset(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int64_t raw_offset,
+    size_t string_len,
+    size_t *offset_out
+) {
+    if (raw_offset < 0) {
+        uint64_t offset_magnitude = raw_offset == INT64_MIN
+            ? ((uint64_t)INT64_MAX + 1)
+            : (uint64_t)(-raw_offset);
+        if (offset_magnitude > (uint64_t)string_len) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            return 0;
+        }
+        *offset_out = string_len - (size_t)offset_magnitude;
+        return 1;
+    }
+    if ((uint64_t)raw_offset > (uint64_t)string_len) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    *offset_out = (size_t)raw_offset;
+    return 1;
+}
+
+static PtnValue ptn_string_position_value(size_t offset) {
+    if (offset > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)offset);
+}
+
+static PtnValue ptn_internal_strpos_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int case_insensitive
+) {
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, function_name, 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, function_name, 2, "needle", args[1], line);
+    int64_t raw_offset = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, function_name, 3, "offset", args[2], line)
+        : 0;
+    size_t offset = 0;
+    if (!ptn_normalize_string_offset(runtime, function_name, raw_offset, haystack.len, &offset)) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_null();
+    }
+
+    size_t match = ptn_find_bytes_from(
+        haystack.data,
+        haystack.len,
+        needle.data,
+        needle.len,
+        offset,
+        case_insensitive
+    );
+    ptn_string_operand_free(haystack);
+    ptn_string_operand_free(needle);
+    return match == SIZE_MAX ? ptn_bool(0) : ptn_string_position_value(match);
+}
+
+static PtnValue ptn_internal_strpos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_strpos_named(runtime, "strpos", argc, args, line, 0);
+}
+
+static PtnValue ptn_internal_stripos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_strpos_named(runtime, "stripos", argc, args, line, 1);
+}
+
+static PtnValue ptn_internal_strrpos_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int case_insensitive
+) {
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, function_name, 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, function_name, 2, "needle", args[1], line);
+    int64_t raw_offset = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, function_name, 3, "offset", args[2], line)
+        : 0;
+    size_t offset = 0;
+    if (!ptn_normalize_string_offset(runtime, function_name, raw_offset, haystack.len, &offset)) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_null();
+    }
+
+    size_t start = 0;
+    size_t max_start = haystack.len;
+    if (raw_offset >= 0) {
+        start = offset;
+    } else {
+        max_start = offset;
+    }
+
+    size_t match = ptn_rfind_bytes_between(
+        haystack.data,
+        haystack.len,
+        needle.data,
+        needle.len,
+        start,
+        max_start,
+        case_insensitive
+    );
+    ptn_string_operand_free(haystack);
+    ptn_string_operand_free(needle);
+    return match == SIZE_MAX ? ptn_bool(0) : ptn_string_position_value(match);
+}
+
+static PtnValue ptn_internal_strrpos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_strrpos_named(runtime, "strrpos", argc, args, line, 0);
+}
+
+static PtnValue ptn_internal_strripos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_strrpos_named(runtime, "strripos", argc, args, line, 1);
+}
+
+static PtnValue ptn_internal_strstr_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int case_insensitive
+) {
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, function_name, 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, function_name, 2, "needle", args[1], line);
+    int before_needle = argc >= 3 && ptn_is_truthy(args[2]);
+    size_t match = ptn_find_bytes_from(
+        haystack.data,
+        haystack.len,
+        needle.data,
+        needle.len,
+        0,
+        case_insensitive
+    );
+    ptn_string_operand_free(needle);
+    if (match == SIZE_MAX) {
+        ptn_string_operand_free(haystack);
+        return ptn_bool(0);
+    }
+
+    size_t start = before_needle ? 0 : match;
+    size_t len = before_needle ? match : haystack.len - match;
+    PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(haystack.data + start, len), len);
+    ptn_string_operand_free(haystack);
+    return result;
+}
+
+static PtnValue ptn_internal_strstr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_strstr_named(runtime, "strstr", argc, args, line, 0);
+}
+
+static PtnValue ptn_internal_stristr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_strstr_named(runtime, "stristr", argc, args, line, 1);
+}
+
+static PtnValue ptn_internal_substr_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "substr_count", 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "substr_count", 2, "needle", args[1], line);
+    if (needle.len == 0) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "substr_count(): Argument #2 ($needle) must not be empty"
+        );
+        return ptn_null();
+    }
+
+    int64_t raw_offset = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "substr_count", 3, "offset", args[2], line)
+        : 0;
+    size_t start = 0;
+    if (!ptn_normalize_string_offset(runtime, "substr_count", raw_offset, haystack.len, &start)) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_null();
+    }
+
+    size_t end = haystack.len;
+    if (argc >= 4 && ptn_value_deref(args[3]).type != PTN_NULL) {
+        int64_t raw_length = ptn_internal_expect_integer_arg(runtime, "substr_count", 4, "length", args[3], line);
+        int valid_length = 1;
+        if (raw_length >= 0) {
+            valid_length = (uint64_t)raw_length <= (uint64_t)(haystack.len - start);
+            if (valid_length) {
+                end = start + (size_t)raw_length;
+            }
+        } else {
+            uint64_t trim = raw_length == INT64_MIN
+                ? ((uint64_t)INT64_MAX + 1)
+                : (uint64_t)(-raw_length);
+            valid_length = trim <= (uint64_t)haystack.len && haystack.len - (size_t)trim >= start;
+            if (valid_length) {
+                end = haystack.len - (size_t)trim;
+            }
+        }
+        if (!valid_length) {
+            ptn_string_operand_free(haystack);
+            ptn_string_operand_free(needle);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "substr_count(): Argument #4 ($length) must be contained in argument #1 ($haystack)"
+            );
+            return ptn_null();
+        }
+    }
+
+    int64_t count = 0;
+    size_t offset = start;
+    while (offset <= end && needle.len <= end - offset) {
+        size_t match = ptn_find_bytes_from(
+            haystack.data,
+            end,
+            needle.data,
+            needle.len,
+            offset,
+            0
+        );
+        if (match == SIZE_MAX || match + needle.len > end) {
+            break;
+        }
+        count++;
+        offset = match + needle.len;
+    }
+
+    ptn_string_operand_free(haystack);
+    ptn_string_operand_free(needle);
+    return ptn_int(count);
 }
 
 static PtnValue ptn_internal_strrchr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -4825,16 +5174,11 @@ static const char *ptn_find_bytes(
     const char *needle,
     size_t needle_len
 ) {
-    if (needle_len == 0 || needle_len > haystack_len) {
+    size_t match = ptn_find_bytes_from(haystack, haystack_len, needle, needle_len, 0, 0);
+    if (match == SIZE_MAX || needle_len == 0) {
         return NULL;
     }
-    size_t last = haystack_len - needle_len;
-    for (size_t offset = 0; offset <= last; offset++) {
-        if (memcmp(haystack + offset, needle, needle_len) == 0) {
-            return haystack + offset;
-        }
-    }
-    return NULL;
+    return haystack + match;
 }
 
 static void ptn_internal_throw_array_or_string_arg_type_error(
@@ -8656,15 +9000,22 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
+        { "stripos", 2, 3, ptn_internal_stripos },
         { "stripslashes", 1, 1, ptn_internal_stripslashes },
+        { "stristr", 2, 3, ptn_internal_stristr },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "strncmp", 3, 3, ptn_internal_strncmp },
+        { "strpos", 2, 3, ptn_internal_strpos },
         { "strrchr", 2, 3, ptn_internal_strrchr },
         { "strrev", 1, 1, ptn_internal_strrev },
+        { "strripos", 2, 3, ptn_internal_strripos },
+        { "strrpos", 2, 3, ptn_internal_strrpos },
+        { "strstr", 2, 3, ptn_internal_strstr },
         { "strtolower", 1, 1, ptn_internal_strtolower },
         { "strtoupper", 1, 1, ptn_internal_strtoupper },
         { "strtr", 2, 3, ptn_internal_strtr },
         { "substr", 2, 3, ptn_internal_substr },
+        { "substr_count", 2, 4, ptn_internal_substr_count },
         { "trim", 1, 2, ptn_internal_trim },
         { "ucfirst", 1, 1, ptn_internal_ucfirst },
         { "unlink", 1, 1, ptn_internal_unlink },

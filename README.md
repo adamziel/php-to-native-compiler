@@ -51,6 +51,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   scalar strings, `strncmp()` compares bounded byte prefixes, bounded
   `sprintf()`/`printf()` cover common formats, and `json_encode()` covers
   current boxed values.
+- `strpos()`/`stripos()` and `strrpos()`/`strripos()` use length-aware byte
+  search with PHP offset bounds; `strstr()`/`stristr()` return binary-safe
+  slices and `substr_count()` counts non-overlapping byte matches.
 - `str_pad()` supports byte-length padding with pad constants; `strrev()`
   preserves embedded NULs; `basename()` handles binary-safe path segments and
   suffix stripping; `pathinfo()` returns binary-safe dirname/basename/

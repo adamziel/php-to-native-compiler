@@ -332,6 +332,10 @@ Post-RC architecture remains explicit rather than hidden:
   `strcasecmp(expr, expr);`,
   `strncmp(expr, expr, expr);`, `str_contains(expr, expr);`,
   `str_starts_with(expr, expr);`,
+  `strpos(expr, expr[, expr]);`, `stripos(expr, expr[, expr]);`,
+  `strrpos(expr, expr[, expr]);`, `strripos(expr, expr[, expr]);`,
+  `strstr(expr, expr[, expr]);`, `stristr(expr, expr[, expr]);`,
+  `substr_count(expr, expr[, expr[, expr]]);`,
   `str_ends_with(expr, expr);`, `str_pad(expr, expr[, expr[, expr]]);`,
   `str_repeat(expr, expr);`,
   `strtolower(expr);`, `strtoupper(expr);`, `strrchr(expr, expr[, expr]);`,
@@ -391,6 +395,10 @@ Post-RC architecture remains explicit rather than hidden:
   `strcasecmp(expr, expr)`,
   `strncmp(expr, expr, expr)`, `str_contains(expr, expr)`,
   `str_starts_with(expr, expr)`,
+  `strpos(expr, expr[, expr])`, `stripos(expr, expr[, expr])`,
+  `strrpos(expr, expr[, expr])`, `strripos(expr, expr[, expr])`,
+  `strstr(expr, expr[, expr])`, `stristr(expr, expr[, expr])`,
+  `substr_count(expr, expr[, expr[, expr]])`,
   `str_ends_with(expr, expr)`, `str_pad(expr, expr[, expr[, expr]])`,
   `str_repeat(expr, expr)`,
   `strtolower(expr)`, `strtoupper(expr)`, `strrchr(expr, expr[, expr])`,
@@ -557,6 +565,16 @@ Post-RC architecture remains explicit rather than hidden:
 - `str_contains()` over current boxed scalar values after scalar string
   conversion, returning whether the needle string is present in the haystack
   string through the current C-string-backed value path.
+- `strpos()`/`stripos()` and `strrpos()`/`strripos()` over current boxed scalar
+  values after scalar string conversion, returning byte offsets or `false`.
+  Optional offsets are converted through the typed integer argument path and
+  enforce PHP's haystack-contained bounds.
+- `strstr()`/`stristr()` over current boxed scalar values after scalar string
+  conversion, returning the matched suffix or the optional before-needle prefix
+  through length-aware byte slices.
+- `substr_count()` over current boxed scalar values after scalar string
+  conversion, counting non-overlapping byte matches across optional offset and
+  nullable length bounds.
 - `str_starts_with()` and `str_ends_with()` over current boxed scalar values
   after scalar string conversion, returning whether the haystack has the
   requested prefix or suffix through the current C-string-backed value path.
@@ -1095,7 +1113,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Embedded NUL strings in runtime values and embedded NUL string array keys,
   `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `strcasecmp()`,
-  `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `quotemeta()`, `trim()`, `ltrim()`,
+  `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `strpos()`, `stripos()`,
+  `strrpos()`, `strripos()`, `strstr()`, `stristr()`, `substr_count()`, `quotemeta()`, `trim()`, `ltrim()`,
   `rtrim()`, `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
   `stripcslashes()`, `md5()`, `sha1()`, `substr()`, `soundex()`, `ord()`, or
   bitwise string results.

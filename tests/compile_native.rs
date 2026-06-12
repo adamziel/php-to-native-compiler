@@ -4174,6 +4174,11 @@ echo strlen(\"abcdef\"), \" \", strcmp(\"abc\", \"abd\"), \" \", str_contains(\"
 echo strcasecmp(\"AbC\", \"aBc\"), \" \", strcasecmp(\"abc\", \"ABD\"), \" \", strcasecmp(\"A\" . chr(0) . \"Z\", \"a\" . chr(0) . \"y\"), \" \", strcasecmp(\"\\x80\", \"A\"), \"\\n\";\n\
 echo str_rot13(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \" \", bin2hex(\"Az\"), \" \", quotemeta(\"a.b\"), \" \", chunk_split(\"abcd\", 2, \"|\"), \"\\n\";\n\
 echo bin2hex(strtolower(\"Az\" . chr(0) . \"Q\" . chr(255))), \" \", bin2hex(strtoupper(\"az\" . chr(0) . \"q\" . chr(255))), \" \", bin2hex(lcfirst(\"Az\" . chr(0) . \"Q\" . chr(255))), \"\\n\";\n\
+echo strpos(\"abcabc\", \"bc\"), \" \", stripos(\"AbCaBc\", \"bc\"), \" \", strrpos(\"abcabc\", \"bc\"), \" \", strripos(\"AbCaBc\", \"BC\"), \"\\n\";\n\
+var_dump(strpos(\"abc\", \"z\"), strpos(\"abc\", \"\", 2), strrpos(\"abcabc\", \"\", -1));\n\
+echo strstr(\"abcabc\", \"bc\"), \"|\", strstr(\"abcabc\", \"bc\", true), \"|\", stristr(\"AbCaBc\", \"BC\"), \"\\n\";\n\
+echo substr_count(\"abcabcabc\", \"abc\"), \" \", substr_count(\"abcabcabc\", \"abc\", 1), \" \", substr_count(\"abcabcabc\", \"abc\", 0, -3), \"\\n\";\n\
+echo bin2hex(strstr(\"A\" . chr(0) . \"BC\", chr(0))), \" \", strpos(\"A\" . chr(0) . \"BC\", chr(0)), \"\\n\";\n\
 echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
 echo bin2hex(strip_tags(\"<b>A</b>\" . chr(0) . \"<i>B</i>\")), \" \", soundex(\"A\" . chr(0) . \"B\"), \"\\n\";\n\
 echo str_pad(\"x\", 4, \"ab\", STR_PAD_LEFT), \" \", str_pad(\"x\", 4, \"ab\", STR_PAD_RIGHT), \" \", str_pad(\"x\", 5, \"ab\", STR_PAD_BOTH), \"\\n\";\n\
@@ -4195,6 +4200,11 @@ var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), str
         String::from_utf8(execution.stdout).unwrap(),
         "6 -1 1 1 1\n0 -1 1 1\nnop cde 417a a\\.b ab|cd|\n\
 617a0071ff 415a0051ff 617a0051ff\n\
+1 1 4 4\n\
+bool(false)\nint(2)\nint(5)\n\
+bcabc|a|bCaBc\n\
+3 2 2\n\
+004243 1\n\
 x A R163 65 5 255 8\n\
 4142 A100\n\
 abax xaba abxab\n\
@@ -4224,6 +4234,13 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_internal_str_starts_with",
         "ptn_internal_str_ends_with",
         "ptn_internal_strncmp",
+        "ptn_internal_strpos",
+        "ptn_internal_stripos",
+        "ptn_internal_strrpos",
+        "ptn_internal_strripos",
+        "ptn_internal_strstr",
+        "ptn_internal_stristr",
+        "ptn_internal_substr_count",
         "ptn_internal_str_pad",
         "ptn_internal_strtolower",
         "ptn_internal_strtoupper",
@@ -4257,7 +4274,10 @@ bool(true)\nbool(true)\nbool(true)\n"
         assert!(
             body.contains("ptn_value_to_string_operand")
                 || body.contains("ptn_internal_expect_string_arg")
-                || body.contains("ptn_internal_trim_named"),
+                || body.contains("ptn_internal_trim_named")
+                || body.contains("ptn_internal_strpos_named")
+                || body.contains("ptn_internal_strrpos_named")
+                || body.contains("ptn_internal_strstr_named"),
             "{function} should use the direct string operand helper"
         );
         assert!(
