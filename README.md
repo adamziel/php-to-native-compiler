@@ -29,8 +29,8 @@ rows, or outputs.
   the method path.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
-- Dynamic variable roots support scalar and simple array-offset writes through
-  shared symbol-table and array-path helpers.
+- Dynamic variable roots support scalar and simple array/string-offset writes
+  through shared symbol-table and array-path helpers.
 - Arithmetic rejects non-numeric strings and mixed array operands with modeled
   catchable `TypeError` diagnostics while preserving leading-numeric warnings.
 - Scalar float stringification honors `phpc -d precision=N` and PHP-style

@@ -15247,27 +15247,25 @@ fn parser_accepts_dynamic_variable_reads_and_assignments() {
 }
 
 #[test]
-fn parser_accepts_dynamic_variable_array_dim_assignment() {
-    let program = parser::parse("<?php ${$name}[$key] = 1;").unwrap();
+fn parser_accepts_dynamic_variable_array_dimension_assignments() {
+    let program = parser::parse("<?php ${$$$a}[\"key\"] = \"value\";").unwrap();
     assert_eq!(program.statements.len(), 1);
 
     let Statement::Expression { expression, .. } = &program.statements[0] else {
-        panic!("expected dynamic variable array-dim assignment expression");
+        panic!("expected dynamic array dimension assignment expression");
     };
     assert!(matches!(
         expression,
         Expr::Assign {
-            target:
-                AssignmentTarget::DynamicArrayDim {
-                    name,
-                    dimensions,
-                    ..
-                },
+            target: AssignmentTarget::DynamicArrayDim {
+                name,
+                dimensions,
+                ..
+            },
             op: AssignmentOp::Assign,
             ..
-        } if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
-            && dimensions.len() == 1
-            && matches!(dimensions[0].as_ref(), Some(Expr::Variable(variable, _)) if variable == "key")
+        } if dimensions.len() == 1
+            && matches!(name.as_ref(), Expr::DynamicVariable { .. })
     ));
 }
 
@@ -15314,7 +15312,7 @@ echo $ordered, \"\\n\";\n",
 }
 
 #[test]
-fn compile_dynamic_variable_array_dim_assignment_to_native_binary() {
+fn compile_dynamic_variable_array_dimension_assignments_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-variable-array-dim");
     fs::create_dir_all(&root).unwrap();
     let input = root.join("dynamic-variable-array-dim.php");
@@ -15325,24 +15323,37 @@ fn compile_dynamic_variable_array_dim_assignment_to_native_binary() {
 function mark($value) { echo $value, \"\\n\"; return $value; }\n\
 $a = \"b\";\n\
 $$a = \"test\";\n\
-$$$a = \"bucket\";\n\
-${$$$a}[\"key\"] = \"stored\";\n\
-echo $bucket[\"key\"], \"\\n\";\n\
-$name = \"items\";\n\
-${mark($name)}[mark(\"left\")] = mark(\"value\");\n\
-echo $items[\"left\"], \"\\n\";\n",
+$$$a = \"blah\";\n\
+${$$$a}[\"associative arrays work too\"] = \"this is nifty\";\n\
+echo \"$test\\n\";\n\
+echo $blah[$test = \"associative arrays work too\"], \"\\n\";\n\
+$name = \"slot\";\n\
+${$name}[1] = \"one\";\n\
+${$name}[] = \"tail\";\n\
+echo $slot[1], \":\", $slot[2], \"\\n\";\n\
+$textName = \"text\";\n\
+$text = \"abc\";\n\
+${$textName}[1] = \"Z\";\n\
+echo $text, \"\\n\";\n\
+$orderedName = \"ordered\";\n\
+${mark($orderedName)}[mark(\"key\")] = mark(\"value\");\n\
+echo $ordered[\"key\"], \"\\n\";\n",
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "stored\nitems\nleft\nvalue\nvalue\n"
+        "blah\nthis is nifty\none:tail\naZc\nordered\nkey\nvalue\nvalue\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_variable_name(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, ptn_tmp_"));
 }
 
 #[test]

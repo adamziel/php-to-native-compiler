@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T01:00Z
-Measured: `origin/master` at `955f70631` after `ptn-e3ha`.
+Refresh: 2026-06-12T01:12Z
+Measured: `ptn-9dn7` on `origin/master` at `9bf0f4051`.
 
 Recent RC slices cover array/key canonicalization, foreach targets, catchable
 arithmetic/assertion boundaries, public `__call`/`__toString`, scalar
@@ -12,13 +12,14 @@ array cursor/pop/shift mutation, literal-array defaults, `pow()`,
 filtered bitwise diagnostics, legacy `${var}` deprecations, scalar/array
 `var_export()`, `array_diff*()`/`array_intersect*()`/`array_udiff*()`,
 bounded `highlight_string()`/`highlight_file()`, statement-form array-offset
-`++`/`--`, `join()`/`implode()`, scalar `sprintf()`, and this slice's simple
-dynamic-variable array-offset assignments.
+`++`/`--`, `join()`/`implode()`, scalar `sprintf()`, and simple
+dynamic-variable array/string-offset assignments.
 
 Recent PHPT movers: `ptn-dcyl` exact `strings/006`, `ptn-e3zm` focused
-`array_udiff*()`, `ptn-bhp6` exact `strings/004`, and `ptn-e3ha`
-`tests/lang/024` via `${expr}[key] = value` writes through shared dynamic-name
-and array-path helpers.
+`array_udiff*()`, `ptn-bhp6` exact `strings/004`, `ptn-e3ha`
+`tests/lang/024` via `${expr}[key] = value`, and this slice's broader
+dynamic-root reducer covering nested names, appends, string offsets, and
+target-before-RHS evaluation order.
 
 ## Dashboard
 
@@ -40,15 +41,15 @@ and array-path helpers.
 
 Parser/IR/C backend, boxed values, variables/constants, strings, scalar
 operators, ordered arrays, `foreach`, branch/loop/switch, compile-time
-includes, selected internals, COW/reference slices, user functions, call-frame
-introspection, scalar type hints with literal-array defaults, bounded
-closures/callables, `stdClass`, public class/object shells, public properties,
-public constructors, `is_callable()`, assertions, heredoc/nowdoc,
-interpolation, streams, `pow()`, `array_merge()`, `join()`/`implode()`,
-scalar `sprintf()`, `call_user_func_array()`, CLI/error-reporting wiring,
-highlight output paths, scalar/array `var_export()`, direct array mutators,
-set operations, statement array-offset inc/dec, and simple dynamic-variable
-array-offset writes.
+includes, selected internals, COW/reference slices, user functions,
+call-frame introspection, scalar type hints with literal-array defaults,
+bounded closures/callables, `stdClass`, public class/object shells, public
+properties, public constructors, `is_callable()`, assertions,
+heredoc/nowdoc, interpolation, streams, `pow()`, `array_merge()`,
+`join()`/`implode()`, scalar `sprintf()`, `call_user_func_array()`,
+CLI/error-reporting wiring, highlight output paths, scalar/array
+`var_export()`, direct array mutators, set operations, statement array-offset
+inc/dec, and simple dynamic-variable array/string-offset writes.
 
 ## Remaining Bounded Failures
 
@@ -57,15 +58,10 @@ array-offset writes.
 
 ## Verification
 
-Pre-slice baseline on `1adf7c930`: bounded PHPT was 197/200 with
-`array/007`, `strings/004`, and `tests/lang/024` failing; COW PHPT was 29/29.
-Post-rebase verification on `bb0c6ef52`: `cargo fmt --check`, focused
-`cargo test dynamic_variable --test compile_native`, full `cargo test`
-including compile-native 488/488 and COW suites, bounded PHPT 199/200 with
-only `array/007` failing, and COW PHPT 29/29.
-Pre-`ptn-e3ha` `ptn-ehc3` audit evidence recorded exact `strings/006.phpt`
-green, COW PHPT 29/29, and bounded PHPT 198/200 with `array/007` and
-`tests/lang/024` failing; the latter is superseded by the `ptn-e3ha` pass.
+This branch ran `cargo fmt --check`, focused
+`cargo test dynamic_variable_array_dimension`, exact `tests/lang/024.phpt`
+green, bounded PHPT 199/200 with only `array/007` failing, and COW PHPT
+29/29. Prior `ptn-e3ha` full-suite evidence remains the broad Rust baseline.
 
 Follow-ups remain visibility/inheritance, typed/promoted properties,
 interfaces/traits, namespaces, reflection, remaining magic methods,
