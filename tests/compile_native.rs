@@ -4768,6 +4768,45 @@ strlen(): Argument #1 ($string) must be of type string, Closure given\n\
 }
 
 #[test]
+fn compile_str_replace_count_and_array_string_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-count-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-count-type-errors.php");
+    let output = root.join("str-replace-count-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(str_replace('', '', '', $count));\n\
+var_dump($count);\n\
+var_dump(str_replace('q', 'q', 'q', $count));\n\
+var_dump($count);\n\
+$fp = fopen(__FILE__, 'r');\n\
+try { var_dump(str_replace($fp, 'x', 'x')); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(str_replace('x', $fp, 'x')); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(str_replace('x', 'x', $fp)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+fclose($fp);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"string(0) \"\"\n\
+int(0)\n\
+string(1) \"q\"\n\
+int(1)\n\
+str_replace(): Argument #1 ($search) must be of type array|string, resource given\n\
+str_replace(): Argument #2 ($replace) must be of type array|string, resource given\n\
+str_replace(): Argument #3 ($subject) must be of type array|string, resource given\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();

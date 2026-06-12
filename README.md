@@ -53,6 +53,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   preserves embedded NULs; `basename()` handles binary-safe path segments and
   suffix stripping; trim-family internals use PHP default bytes plus bounded
   charlists.
+- `str_replace()` supports scalar byte replacement, writes the optional
+  `$count` argument by reference, and throws PHP-style TypeErrors for invalid
+  resource/object operands; array search/replace/subject forms remain bounded.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
   slots distinct from child public redeclarations; public `__destruct()` runs

@@ -714,6 +714,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("preg_match") && argument_index == 2 {
         return Some("matches");
     }
+    if name.eq_ignore_ascii_case("str_replace") && argument_index == 3 {
+        return Some("count");
+    }
     None
 }
 

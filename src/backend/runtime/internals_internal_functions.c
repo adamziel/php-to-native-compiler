@@ -3514,6 +3514,7 @@ static int64_t ptn_internal_expect_integer_arg(
     PtnValue value,
     size_t line
 );
+static const char *ptn_internal_string_arg_type_name(PtnValue value);
 static double ptn_value_to_double(PtnValue value);
 
 static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -4731,12 +4732,73 @@ static const char *ptn_find_bytes(
     return NULL;
 }
 
+static void ptn_internal_throw_array_or_string_arg_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    char message[224];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type array|string, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_internal_string_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PtnStringOperand ptn_internal_expect_str_replace_arg(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (
+        value.type == PTN_RESOURCE ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION
+    ) {
+        ptn_internal_throw_array_or_string_arg_type_error(
+            runtime,
+            "str_replace",
+            position,
+            argument_name,
+            value
+        );
+        return ptn_string_operand_borrowed("");
+    }
+    if (value.type == PTN_OBJECT) {
+        PtnStringOperand object_string;
+        if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+            return object_string;
+        }
+        ptn_internal_throw_array_or_string_arg_type_error(
+            runtime,
+            "str_replace",
+            position,
+            argument_name,
+            value
+        );
+        return ptn_string_operand_borrowed("");
+    }
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
 static PtnValue ptn_internal_str_replace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
-    PtnStringOperand search = ptn_value_to_string_operand(args[0]);
-    PtnStringOperand replace = ptn_value_to_string_operand(args[1]);
-    PtnStringOperand subject = ptn_value_to_string_operand(args[2]);
+    PtnStringOperand search = ptn_internal_expect_str_replace_arg(runtime, 1, "search", args[0], line);
+    PtnStringOperand replace = ptn_internal_expect_str_replace_arg(runtime, 2, "replace", args[1], line);
+    PtnStringOperand subject = ptn_internal_expect_str_replace_arg(runtime, 3, "subject", args[2], line);
     int64_t replacement_count = 0;
 
     PtnValue result;
