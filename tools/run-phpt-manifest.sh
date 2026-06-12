@@ -10,8 +10,12 @@ stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 log="$log_dir/run-$stamp.log"
 resolved_manifest="$log_dir/manifest-$stamp.txt"
 
-if [[ ! -f "$manifest" ]]; then
-  echo "manifest not found: $manifest" >&2
+if [[ "$manifest" == "-" ]]; then
+  manifest_input="/dev/stdin"
+elif [[ -r "$manifest" ]]; then
+  manifest_input="$manifest"
+else
+  echo "manifest not readable: $manifest" >&2
   exit 2
 fi
 
@@ -30,7 +34,7 @@ while IFS= read -r row; do
     exit 2
   fi
   paths+=("$path")
-done < "$manifest"
+done < "$manifest_input"
 
 printf '%s\n' "${paths[@]}" > "$resolved_manifest"
 

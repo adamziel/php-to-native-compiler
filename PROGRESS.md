@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T14:24Z
-Measured: `ptn-qmwy` rebased after `origin/master` `774b20033`.
+Refresh: 2026-06-12T14:32Z
+Measured: `ptn-ibol` rebased after `origin/master` `e954e9b26`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
 array/string-offset writes and unsets, array/append compound assignments,
@@ -25,9 +25,10 @@ trim reducers, `chunk_split()` empty-input binary endings, `ceil()`/`floor()`
 `TypeError` parity, namespace PHPT rows `ns_001`, `ns_002`, `ns_003`,
 `ns_014`, foreach destructuring paths, include PHPT rows,
 `ext/standard/tests/strings/str_pad`,
-`ext/standard/tests/strings/chunk_split_variation7`, and ReflectionFunction
-names, namespace/short-name probes, internal/user flags, parameter counts, and
-variadic status.
+`ext/standard/tests/strings/chunk_split_variation7`, ReflectionFunction names,
+namespace/short-name probes, internal/user flags, parameter counts, variadic
+status, and manifest tooling that accepts `-` stdin plus readable
+process-substitution inputs.
 
 ## Dashboard
 
@@ -79,8 +80,8 @@ destructuring/reference-element coverage, include PHPT manifest coverage 2/2,
 modeled `str_pad()` plus `ext/standard/tests/strings/str_pad.phpt`,
 `chunk_split("", ..., "|".chr(0))` plus
 `ext/standard/tests/strings/chunk_split_variation7.phpt`, focused `intdiv()`
-unsupported-operand `TypeError` coverage, and callback/reflection manifest
-coverage 4/4.
+unsupported-operand `TypeError` coverage, callback/reflection manifest
+coverage 4/4, and stdin/process-substitution manifest smoke checks.
 
 Follow-ups remain visibility/inheritance metadata, typed/promoted properties,
 interfaces/traits, bracketed/grouped namespace forms, namespace fallback
