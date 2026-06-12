@@ -27,7 +27,11 @@ static PTN_UNUSED void ptn_reference_assign(PtnReference *reference, PtnValue va
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_drop(PtnValue *value);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
+static PTN_UNUSED void ptn_object_retain(PtnObject *object);
 static PTN_UNUSED void ptn_object_release(PtnObject *object);
+static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObject *object);
+static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObject *object);
+static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 
 static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
     PtnArrayKey key;
@@ -360,11 +364,95 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
     return ptn_array(array);
 }
 
-static PTN_UNUSED PtnValue ptn_object_new_shell(const char *class_name) {
+static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObject *object) {
+    if (runtime == NULL || object == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->live_objects_len == root->live_objects_capacity) {
+        size_t new_capacity = root->live_objects_capacity == 0
+            ? 8
+            : root->live_objects_capacity * 2;
+        if (new_capacity < root->live_objects_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnObject *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnObject **new_objects = realloc(
+            root->live_objects,
+            new_capacity * sizeof(PtnObject *)
+        );
+        if (new_objects == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->live_objects = new_objects;
+        root->live_objects_capacity = new_capacity;
+    }
+    root->live_objects[root->live_objects_len++] = object;
+}
+
+static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObject *object) {
+    if (runtime == NULL || object == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    for (size_t i = 0; i < root->live_objects_len; i++) {
+        if (root->live_objects[i] != object) {
+            continue;
+        }
+        for (size_t j = i + 1; j < root->live_objects_len; j++) {
+            root->live_objects[j - 1] = root->live_objects[j];
+        }
+        root->live_objects_len--;
+        return;
+    }
+}
+
+static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
+    if (object == NULL || object->destructor_called) {
+        return;
+    }
+    PtnRuntime *runtime = object->lifecycle_runtime;
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->method_dispatch == NULL ||
+        root->declared_method_exists == NULL ||
+        !root->declared_method_exists(object->class_name, "__destruct")) {
+        return;
+    }
+
+    object->destructor_called = 1;
+    PtnValue receiver = ptn_value_borrow(ptn_object(object));
+    PtnValue result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, 0);
+    ptn_value_destroy(&result);
+}
+
+static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    while (root->live_objects_len > 0) {
+        PtnObject *object = root->live_objects[root->live_objects_len - 1];
+        root->live_objects_len--;
+        if (object == NULL || object->refcount == 0 || object->destructor_called) {
+            continue;
+        }
+        ptn_object_retain(object);
+        ptn_object_run_destructor(object);
+        ptn_object_release(object);
+    }
+}
+
+static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char *class_name) {
     PtnObject *object = malloc(sizeof(PtnObject));
     if (object == NULL) {
         ptn_abort_out_of_memory();
     }
+    PtnRuntime *root = runtime == NULL || runtime->lifecycle_root == NULL
+        ? runtime
+        : runtime->lifecycle_root;
     PtnValue properties = ptn_array_from_literal_entries(0, NULL);
     object->refcount = 1;
     object->class_name = ptn_duplicate_string(class_name);
@@ -374,6 +462,9 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(const char *class_name) {
     object->property_metadata_capacity = 0;
     object->native_data = NULL;
     object->native_data_free = NULL;
+    object->lifecycle_runtime = root;
+    object->destructor_called = 0;
+    ptn_runtime_register_object(root, object);
     return ptn_object(object);
 }
 
@@ -551,6 +642,14 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     if (object->refcount != 0) {
         return;
     }
+    object->refcount = 1;
+    ptn_object_run_destructor(object);
+    if (object->refcount > 1) {
+        object->refcount--;
+        return;
+    }
+    object->refcount = 0;
+    ptn_runtime_unregister_object(object->lifecycle_runtime, object);
     if (object->native_data_free != NULL) {
         object->native_data_free(object->native_data);
     }

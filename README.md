@@ -15,8 +15,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   escapes, hex/octal byte escapes, and inline HTML output.
 - Top-level functions and declared methods include magic constants, call-frame
   introspection, scalar and void return type hints, array defaults,
-  by-reference returns, typed coercion, and constructor dispatch/metadata
-  intrinsics.
+  by-reference returns, typed coercion, constructor dispatch, public destructor
+  dispatch, and metadata intrinsics.
 - Includes share caller file scope and return values; bounded dynamic
   include/require path expressions dispatch to compiled helpers when all
   candidate string paths are statically enumerable, with include-once guards
@@ -73,8 +73,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   bytes, and bounded charlists.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
-  slots distinct from child public redeclarations; full visibility and
-  inheritance remain bounded.
+  slots distinct from child public redeclarations; public `__destruct()` runs
+  on last-reference release and shutdown. Full visibility and inheritance
+  remain bounded.
 - Static properties support reads/writes, `??=`, plus quiet `isset()`,
   `empty()`, and `??`.
 - Public class constants support scalar/array defaults, direct

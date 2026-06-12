@@ -260,6 +260,8 @@ struct PtnObject {
     size_t property_metadata_capacity;
     void *native_data;
     PtnObjectNativeDataFree native_data_free;
+    PtnRuntime *lifecycle_runtime;
+    int destructor_called;
 };
 
 typedef struct {
@@ -368,6 +370,10 @@ struct PtnRuntime {
     PtnExceptionState *exceptions;
     PtnCallFrame owned_call_frame;
     PtnCallFrame *call_frame;
+    PtnRuntime *lifecycle_root;
+    PtnObject **live_objects;
+    size_t live_objects_len;
+    size_t live_objects_capacity;
     PtnMethodDispatchHandler method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
     const char *source_path;

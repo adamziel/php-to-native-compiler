@@ -5985,7 +5985,7 @@ impl ValueEmitter {
         {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_object_new_shell(\"");
+            out.push_str(" = ptn_object_new_shell(&runtime, \"");
             out.push_str(&c_string(&declared_class.name));
             out.push_str("\");\n");
             for (declaring_class_name, property) in

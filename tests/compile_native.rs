@@ -6890,7 +6890,7 @@ echo call_user_func([$greeter, \"via_this\"], 5), \"\\n\";
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_object_new_shell(\"Greeter\")"));
+    assert!(c_source.contains("ptn_object_new_shell(&runtime, \"Greeter\")"));
     assert!(c_source.contains("ptn_call_declared_method(&runtime"));
     assert!(c_source.contains("ptn_call_callable(runtime"));
     assert!(c_source.contains("ptn_runtime_write_variable(&runtime, \"this\", receiver);"));
@@ -7049,7 +7049,7 @@ var_dump($box->name);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_object_new_shell(\"Box\")"));
+    assert!(c_source.contains("ptn_object_new_shell(&runtime, \"Box\")"));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("\"name\""));
     assert!(c_source.contains("\"count\""));
@@ -7207,7 +7207,7 @@ echo $default->name, \":\", $default->count, \":\", Box::$made, \"\\n\";
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_object_new_shell(\"Box\")"));
+    assert!(c_source.contains("ptn_object_new_shell(&runtime, \"Box\")"));
     assert!(c_source.contains("ptn_call_declared_method(&runtime"));
     assert!(c_source.contains("\"__construct\""));
 }
@@ -7250,9 +7250,93 @@ echo $child->label(), \"\\n\";
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_object_new_shell(\"ChildBox\")"));
+    assert!(c_source.contains("ptn_object_new_shell(&runtime, \"ChildBox\")"));
     assert!(c_source.contains("BaseBox::__construct"));
     assert!(c_source.contains("ptn_call_declared_method(&runtime"));
+}
+
+#[test]
+fn compile_declared_class_destructor_runs_at_shutdown_to_native_binary() {
+    let root = temp_dir("ptn-native-declared-class-destructor-shutdown");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("declared-class-destructor-shutdown.php");
+    let output = root.join("declared-class-destructor-shutdown-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    public function __construct() {
+        echo __METHOD__, \"\\n\";
+    }
+
+    public function __destruct() {
+        echo __METHOD__, \"\\n\";
+    }
+}
+
+$object = new Test;
+echo \"===DONE===\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Test::__construct\n===DONE===\nTest::__destruct\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_run_object_destructors(runtime)"));
+    assert!(c_source.contains("\"__destruct\""));
+}
+
+#[test]
+fn compile_inherited_class_destructor_runs_on_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-inherited-class-destructor-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inherited-class-destructor-unset.php");
+    let output = root.join("inherited-class-destructor-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class base {
+    public function __construct() {
+        echo __METHOD__, \"\\n\";
+    }
+
+    public function __destruct() {
+        echo __METHOD__, \"\\n\";
+    }
+}
+
+class derived extends base {
+}
+
+$object = new derived;
+unset($object);
+echo \"Done\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "base::__construct\nbase::__destruct\nDone"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_method_exists"));
+    assert!(c_source.contains("base::__destruct"));
 }
 
 #[test]
@@ -7457,7 +7541,7 @@ echo $child->same(), \"\\n\";
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_object_new_shell(\"ChildLabeler\")"));
+    assert!(c_source.contains("ptn_object_new_shell(&runtime, \"ChildLabeler\")"));
     assert!(c_source.contains("ptn_call_declared_method(&runtime"));
     assert!(c_source.contains("BaseLabeler::label"));
     assert!(c_source.contains("ChildLabeler::same"));

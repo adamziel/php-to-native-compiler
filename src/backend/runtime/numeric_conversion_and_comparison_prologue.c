@@ -17,6 +17,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_call_frame.parameter_count = 0;
     runtime->owned_call_frame.parameter_names = NULL;
     runtime->call_frame = NULL;
+    runtime->lifecycle_root = caller_runtime->lifecycle_root == NULL
+        ? caller_runtime
+        : caller_runtime->lifecycle_root;
+    runtime->live_objects = NULL;
+    runtime->live_objects_len = 0;
+    runtime->live_objects_capacity = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
     runtime->source_path = caller_runtime->source_path;
@@ -40,10 +46,19 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
+    if (runtime->lifecycle_root == runtime) {
+        ptn_runtime_run_object_destructors(runtime);
+    }
     ptn_symbols_free(&runtime->owned_static_properties);
     ptn_symbols_free(&runtime->owned_class_constants);
     ptn_symbols_free(&runtime->owned_constants);
     ptn_symbols_free(&runtime->symbols);
+    if (runtime->lifecycle_root == runtime) {
+        free(runtime->live_objects);
+        runtime->live_objects = NULL;
+        runtime->live_objects_len = 0;
+        runtime->live_objects_capacity = 0;
+    }
 }
 
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_global_symbol_table(PtnRuntime *runtime) {

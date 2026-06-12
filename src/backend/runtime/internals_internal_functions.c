@@ -8013,7 +8013,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     }
     data->metadata = metadata;
 
-    PtnValue object = ptn_object_new_shell("ReflectionFunction");
+    PtnValue object = ptn_object_new_shell(runtime, "ReflectionFunction");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_function_data_free;
     return object;

@@ -188,7 +188,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_throw_exception(runtime, "ArgumentCountError", "stdClass constructor expects 0 arguments");
         return ptn_null();
     }
-    return ptn_object_new_shell("stdClass");
+    return ptn_object_new_shell(runtime, "stdClass");
 }
 
 static PTN_UNUSED void ptn_emit_non_object_property_read_warning(
