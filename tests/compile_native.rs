@@ -7512,6 +7512,41 @@ string(2) \"01\"\n"
 }
 
 #[test]
+fn compile_chr_precision_deprecations_use_call_site_to_native_binary() {
+    let root = temp_dir("ptn-native-chr-precision-deprecations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chr-precision-deprecations.php");
+    let output = root.join("chr-precision-deprecations-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(bin2hex(chr(65.7)));\n\
+var_dump(bin2hex(chr(\"65.7\")));\n\
+error_reporting(E_ERROR);\n\
+var_dump(bin2hex(chr(66.8)));\n\
+error_reporting(E_ALL);\n\
+var_dump(bin2hex(@chr(\"67.9\")));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Implicit conversion from float 65.7 to int loses precision in ptn on line 2\n\
+string(2) \"41\"\n\
+\n\
+Deprecated: Implicit conversion from float-string \"65.7\" to int loses precision in ptn on line 3\n\
+string(2) \"41\"\n\
+string(2) \"42\"\n\
+string(2) \"43\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_chr_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chr-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

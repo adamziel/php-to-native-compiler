@@ -785,16 +785,49 @@ static PTN_UNUSED int ptn_float_to_int_out_of_range(double value) {
     return value < -9223372036854775808.0 || value >= 9223372036854775808.0;
 }
 
+static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
+    PtnDiagnosticSink *diagnostics,
+    double value,
+    const char *path,
+    size_t line
+);
+
+static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation_at(
+    PtnDiagnosticSink *diagnostics,
+    const char *value,
+    const char *path,
+    size_t line
+);
+
 static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation(
     PtnDiagnosticSink *diagnostics,
     double value
 ) {
+    ptn_emit_float_to_int_precision_deprecation_at(
+        diagnostics,
+        value,
+        "ptn-generated-code",
+        0
+    );
+}
+
+static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
+    PtnDiagnosticSink *diagnostics,
+    double value,
+    const char *path,
+    size_t line
+) {
     if (diagnostics != NULL && !ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
         return;
     }
+    if (diagnostics != NULL) {
+        diagnostics->emitted_deprecation = 1;
+    }
     printf(
-        "\nDeprecated: Implicit conversion from float %.14g to int loses precision in ptn-generated-code on line 0\n",
-        value
+        "\nDeprecated: Implicit conversion from float %.14g to int loses precision in %s on line %zu\n",
+        value,
+        path,
+        line
     );
 }
 
@@ -802,12 +835,31 @@ static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation(
     PtnDiagnosticSink *diagnostics,
     const char *value
 ) {
+    ptn_emit_float_string_to_int_precision_deprecation_at(
+        diagnostics,
+        value,
+        "ptn-generated-code",
+        0
+    );
+}
+
+static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation_at(
+    PtnDiagnosticSink *diagnostics,
+    const char *value,
+    const char *path,
+    size_t line
+) {
     if (diagnostics != NULL && !ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
         return;
     }
+    if (diagnostics != NULL) {
+        diagnostics->emitted_deprecation = 1;
+    }
     printf(
-        "\nDeprecated: Implicit conversion from float-string \"%s\" to int loses precision in ptn-generated-code on line 0\n",
-        value
+        "\nDeprecated: Implicit conversion from float-string \"%s\" to int loses precision in %s on line %zu\n",
+        value,
+        path,
+        line
     );
 }
 
@@ -845,9 +897,30 @@ static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
     return number.integer;
 }
 
+static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
+    PtnDiagnosticSink *diagnostics,
+    PtnValue value,
+    const char *path,
+    size_t line
+);
+
 static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(
     PtnDiagnosticSink *diagnostics,
     PtnValue value
+) {
+    return ptn_value_to_integer_with_precision_deprecation_at(
+        diagnostics,
+        value,
+        "ptn-generated-code",
+        0
+    );
+}
+
+static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
+    PtnDiagnosticSink *diagnostics,
+    PtnValue value,
+    const char *path,
+    size_t line
 ) {
     value = ptn_value_deref(value);
     int64_t integer = 0;
@@ -856,7 +929,12 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(
     }
     if (value.type == PTN_FLOAT) {
         if (ptn_float_to_int_loses_precision(value.as.floating)) {
-            ptn_emit_float_to_int_precision_deprecation(diagnostics, value.as.floating);
+            ptn_emit_float_to_int_precision_deprecation_at(
+                diagnostics,
+                value.as.floating,
+                path,
+                line
+            );
         }
         return (int64_t)value.as.floating;
     }
@@ -868,9 +946,19 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(
     }
     if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
         if (value.type == PTN_STRING) {
-            ptn_emit_float_string_to_int_precision_deprecation(diagnostics, string_data);
+            ptn_emit_float_string_to_int_precision_deprecation_at(
+                diagnostics,
+                string_data,
+                path,
+                line
+            );
         } else {
-            ptn_emit_float_to_int_precision_deprecation(diagnostics, number.floating);
+            ptn_emit_float_to_int_precision_deprecation_at(
+                diagnostics,
+                number.floating,
+                path,
+                line
+            );
         }
     }
     return ptn_number_to_integer(number);

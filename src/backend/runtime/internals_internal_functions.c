@@ -6417,7 +6417,12 @@ static PtnValue ptn_internal_intval(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    int64_t integer = ptn_value_to_integer(args[0]);
+    int64_t integer = ptn_value_to_integer_with_precision_deprecation_at(
+        &runtime->diagnostics,
+        args[0],
+        "ptn",
+        line
+    );
     if (integer < 0 || integer > 255) {
         ptn_emit_deprecation(
             &runtime->diagnostics,
