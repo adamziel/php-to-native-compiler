@@ -1315,6 +1315,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         .unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function str_ends_with()");
 
+    let error =
+        parser::parse("<?php function StrCaseCmp($left, $right) { return 0; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strcasecmp()");
+
     let error = parser::parse("<?php function STRTOLOWER($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strtolower()");
 
@@ -4155,6 +4159,7 @@ fn compile_string_internals_use_direct_string_operand_fast_paths_to_native_binar
         &input,
         "<?php\n\
 echo strlen(\"abcdef\"), \" \", strcmp(\"abc\", \"abd\"), \" \", str_contains(\"abcdef\", \"cd\"), \" \", str_starts_with(\"abcdef\", \"ab\"), \" \", str_ends_with(\"abcdef\", \"ef\"), \"\\n\";\n\
+echo strcasecmp(\"AbC\", \"aBc\"), \" \", strcasecmp(\"abc\", \"ABD\"), \" \", strcasecmp(\"A\" . chr(0) . \"Z\", \"a\" . chr(0) . \"y\"), \" \", strcasecmp(\"\\x80\", \"A\"), \"\\n\";\n\
 echo str_rot13(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \" \", bin2hex(\"Az\"), \" \", quotemeta(\"a.b\"), \" \", chunk_split(\"abcd\", 2, \"|\"), \"\\n\";\n\
 echo bin2hex(strtolower(\"Az\" . chr(0) . \"Q\" . chr(255))), \" \", bin2hex(strtoupper(\"az\" . chr(0) . \"q\" . chr(255))), \" \", bin2hex(lcfirst(\"Az\" . chr(0) . \"Q\" . chr(255))), \"\\n\";\n\
 echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
@@ -4163,7 +4168,7 @@ echo str_pad(\"x\", 4, \"ab\", STR_PAD_LEFT), \" \", str_pad(\"x\", 4, \"ab\", S
 echo str_repeat(\"xy\", 3), \"|\", str_repeat(\"z\", 0), \"|\", chunk_split(str_repeat(\"X\", 6), 3, \"|\"), \"\\n\";\n\
 echo trim(\" \\tHi\\r\\n\"), \"|\", ltrim(\"==left\", \"=\"), \"|\", rtrim(\"right!!\", \"!\"), \"\\n\";\n\
 echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
-var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), strtoupper(false), function_exists(\"str_pad\"), defined(\"STR_PAD_BOTH\"));",
+var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), strtoupper(false), function_exists(\"str_pad\"), function_exists(\"STRCASECMP\"), defined(\"STR_PAD_BOTH\"));",
     )
     .unwrap();
 
@@ -4173,7 +4178,7 @@ var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), str
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "6 -1 1 1 1\nnop cde 417a a\\.b ab|cd|\n\
+        "6 -1 1 1 1\n0 -1 1 1\nnop cde 417a a\\.b ab|cd|\n\
 617a0071ff 415a0051ff 617a0051ff\n\
 x A R163 65 5 255 8\n\
 4142 A100\n\
@@ -4182,7 +4187,7 @@ xyxyxy||XXX|XXX|\n\
 Hi|left|right\n\
 d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
 int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\n\
-bool(true)\nbool(true)\n"
+bool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -4196,6 +4201,7 @@ bool(true)\nbool(true)\n"
         "ptn_internal_strlen",
         "ptn_internal_str_rot13",
         "ptn_internal_strcmp",
+        "ptn_internal_strcasecmp",
         "ptn_internal_str_contains",
         "ptn_internal_str_starts_with",
         "ptn_internal_str_ends_with",

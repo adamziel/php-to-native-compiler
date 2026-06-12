@@ -4159,6 +4159,39 @@ static char *ptn_ascii_case_string(const char *string, size_t len, int uppercase
     return mapped;
 }
 
+static unsigned char ptn_ascii_lower_byte(unsigned char byte) {
+    if (byte >= 'A' && byte <= 'Z') {
+        return (unsigned char)('a' + (byte - 'A'));
+    }
+    return byte;
+}
+
+static int ptn_compare_string_bytes_ascii_case_insensitive(
+    const unsigned char *left,
+    size_t left_len,
+    const unsigned char *right,
+    size_t right_len
+) {
+    size_t shared_len = left_len < right_len ? left_len : right_len;
+    for (size_t i = 0; i < shared_len; i++) {
+        unsigned char left_byte = ptn_ascii_lower_byte(left[i]);
+        unsigned char right_byte = ptn_ascii_lower_byte(right[i]);
+        if (left_byte < right_byte) {
+            return PTN_COMPARE_LESS;
+        }
+        if (left_byte > right_byte) {
+            return PTN_COMPARE_GREATER;
+        }
+    }
+    if (left_len < right_len) {
+        return PTN_COMPARE_LESS;
+    }
+    if (left_len > right_len) {
+        return PTN_COMPARE_GREATER;
+    }
+    return PTN_COMPARE_EQUAL;
+}
+
 static PtnValue ptn_internal_strtolower(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "strtolower", 1, "string", args[0], line);
@@ -4182,6 +4215,27 @@ static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnV
     PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "strcmp", 1, "string1", args[0], line);
     PtnStringOperand right = ptn_internal_expect_string_arg(runtime, "strcmp", 2, "string2", args[1], line);
     int compared = ptn_compare_string_bytes(
+        (const unsigned char *)left.data,
+        left.len,
+        (const unsigned char *)right.data,
+        right.len
+    );
+    ptn_string_operand_free(left);
+    ptn_string_operand_free(right);
+    if (compared < 0) {
+        return ptn_int(-1);
+    }
+    if (compared > 0) {
+        return ptn_int(1);
+    }
+    return ptn_int(0);
+}
+
+static PtnValue ptn_internal_strcasecmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "strcasecmp", 1, "string1", args[0], line);
+    PtnStringOperand right = ptn_internal_expect_string_arg(runtime, "strcasecmp", 2, "string2", args[1], line);
+    int compared = ptn_compare_string_bytes_ascii_case_insensitive(
         (const unsigned char *)left.data,
         left.len,
         (const unsigned char *)right.data,
@@ -8114,6 +8168,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "str_shuffle", 1, 1, ptn_internal_str_shuffle },
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
+        { "strcasecmp", 2, 2, ptn_internal_strcasecmp },
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },

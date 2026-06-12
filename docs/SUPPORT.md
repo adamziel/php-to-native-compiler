@@ -327,6 +327,7 @@ Post-RC architecture remains explicit rather than hidden:
   `addcslashes(expr, expr);`,
   `stripcslashes(expr);`, `addslashes(expr);`, `stripslashes(expr);`,
   `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
+  `strcasecmp(expr, expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_pad(expr, expr[, expr[, expr]]);`,
   `str_repeat(expr, expr);`,
@@ -383,6 +384,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strlen(expr)`, `addcslashes(expr, expr)`,
   `stripcslashes(expr)`, `addslashes(expr)`, `stripslashes(expr)`,
   `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
+  `strcasecmp(expr, expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_pad(expr, expr[, expr[, expr]])`,
   `str_repeat(expr, expr)`,
@@ -518,7 +520,7 @@ Post-RC architecture remains explicit rather than hidden:
   deprecation, and arrays, objects without the current `__toString()` support,
   closures, and exceptions throw the modeled `TypeError` boundary, including
   object class names and `Closure` in the reported given-type, for `strlen()`,
-  `str_rot13()`, `str_shuffle()`, `strcmp()`, `str_contains()`,
+  `str_rot13()`, `str_shuffle()`, `strcmp()`, `strcasecmp()`, `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
   `strtr()`, `strrchr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,
   `strtolower()`,
@@ -536,6 +538,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `strcmp()` over current boxed scalar values after scalar string conversion,
   returning a negative integer, zero, or a positive integer from bytewise
   comparison of the current C-string-backed values.
+- `strcasecmp()` over current boxed scalar values after scalar string
+  conversion, returning a negative integer, zero, or a positive integer from
+  bytewise comparison after ASCII-only case folding.
 - `str_contains()` over current boxed scalar values after scalar string
   conversion, returning whether the needle string is present in the haystack
   string through the current C-string-backed value path.
@@ -1045,13 +1050,13 @@ Post-RC architecture remains explicit rather than hidden:
   TypeError/exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime values and embedded NUL string array keys,
   `var_dump()` string
-  length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
-  `hex2bin()`, `str_contains()`, `quotemeta()`, `trim()`, `ltrim()`,
+  length/output, `strlen()`, `str_rot13()`, `strcmp()`, `strcasecmp()`,
+  `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `quotemeta()`, `trim()`, `ltrim()`,
   `rtrim()`, `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
   `stripcslashes()`, `md5()`, `sha1()`, `substr()`, `soundex()`, `ord()`, or
   bitwise string results.
-- Exact `strcmp()` resource/reference operand parity and object string
-  conversion outside the current public declared `__toString()` support.
+- Exact `strcmp()`/`strcasecmp()` resource/reference operand parity and object
+  string conversion outside the current public declared `__toString()` support.
 - Exact `join()`/`implode()` diagnostics, resource/reference operand parity,
   and object string conversion outside the current public declared
   `__toString()` support.

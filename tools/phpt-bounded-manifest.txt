@@ -173,6 +173,7 @@ ext/standard/tests/strings/rtrim_basic.phpt
 ext/standard/tests/strings/sha1_basic.phpt
 ext/standard/tests/strings/sha1raw.phpt
 ext/standard/tests/strings/soundex_basic.phpt
+ext/standard/tests/strings/strcasecmp.phpt
 ext/standard/tests/strings/str_contains.phpt
 ext/standard/tests/strings/str_ends_with.phpt
 ext/standard/tests/strings/str_pad.phpt
