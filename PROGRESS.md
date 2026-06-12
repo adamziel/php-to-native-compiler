@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T00:53Z
-Measured: `ptn-e3ha` rebased on `origin/master` at `10049fde0`.
+Refresh: 2026-06-12T01:00Z
+Measured: `origin/master` at `955f70631` after `ptn-e3ha`.
 
 Recent RC slices cover array/key canonicalization, foreach targets, catchable
 arithmetic/assertion boundaries, public `__call`/`__toString`, scalar
@@ -63,6 +63,9 @@ Post-rebase verification on `bb0c6ef52`: `cargo fmt --check`, focused
 `cargo test dynamic_variable --test compile_native`, full `cargo test`
 including compile-native 488/488 and COW suites, bounded PHPT 199/200 with
 only `array/007` failing, and COW PHPT 29/29.
+Pre-`ptn-e3ha` `ptn-ehc3` audit evidence recorded exact `strings/006.phpt`
+green, COW PHPT 29/29, and bounded PHPT 198/200 with `array/007` and
+`tests/lang/024` failing; the latter is superseded by the `ptn-e3ha` pass.
 
 Follow-ups remain visibility/inheritance, typed/promoted properties,
 interfaces/traits, namespaces, reflection, remaining magic methods,
