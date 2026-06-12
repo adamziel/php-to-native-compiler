@@ -1233,6 +1233,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function StrToUpper($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strtoupper()");
 
+    let error = parser::parse("<?php function Trim($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function trim()");
+
     let error = parser::parse("<?php function Quoted_Printable_Decode($value) { return $value; }")
         .unwrap_err();
     assert_eq!(
@@ -3894,6 +3897,7 @@ echo bin2hex(strtolower(\"Az\" . chr(0) . \"Q\" . chr(255))), \" \", bin2hex(str
 echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
 echo bin2hex(strip_tags(\"<b>A</b>\" . chr(0) . \"<i>B</i>\")), \" \", soundex(\"A\" . chr(0) . \"B\"), \"\\n\";\n\
 echo str_repeat(\"xy\", 3), \"|\", str_repeat(\"z\", 0), \"|\", chunk_split(str_repeat(\"X\", 6), 3, \"|\"), \"\\n\";\n\
+echo trim(\" \\tHi\\r\\n\"), \"|\", ltrim(\"==left\", \"=\"), \"|\", rtrim(\"right!!\", \"!\"), \"\\n\";\n\
 echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
 var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), strtoupper(false));",
     )
@@ -3910,6 +3914,7 @@ var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), str
 x A R163 65 5 255 8\n\
 4142 A100\n\
 xyxyxy||XXX|XXX|\n\
+Hi|left|right\n\
 d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
 int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\n"
     );
@@ -3930,6 +3935,9 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         "ptn_internal_str_ends_with",
         "ptn_internal_strtolower",
         "ptn_internal_strtoupper",
+        "ptn_internal_trim",
+        "ptn_internal_ltrim",
+        "ptn_internal_rtrim",
         "ptn_internal_strrev",
         "ptn_internal_ucfirst",
         "ptn_internal_quotemeta",
@@ -3954,7 +3962,8 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         let body = generated_c_static_function_body(&c_source, &marker);
         assert!(
             body.contains("ptn_value_to_string_operand")
-                || body.contains("ptn_internal_expect_string_arg"),
+                || body.contains("ptn_internal_expect_string_arg")
+                || body.contains("ptn_internal_trim_named"),
             "{function} should use the direct string operand helper"
         );
         assert!(
@@ -3968,6 +3977,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         "ptn_first_char_case_string(string.data, string.len, 1)",
         "ptn_ascii_case_string(string.data, string.len, 0)",
         "ptn_ascii_case_string(string.data, string.len, 1)",
+        "ptn_trim_string_value(input, charlist, trim_left, trim_right)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
         "ptn_dirname_string(path.data, path.len, &dirname_len)",
@@ -4019,6 +4029,63 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         soundex_body.contains("first < string.len") && soundex_body.contains("i < string.len"),
         "soundex should iterate using the known operand length"
     );
+}
+
+#[test]
+fn compile_trim_ltrim_rtrim_phpt_shapes_to_native_binary() {
+    let root = temp_dir("ptn-native-trim-ltrim-rtrim-phpt-shapes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trim-ltrim-rtrim.php");
+    let output = root.join("trim-ltrim-rtrim-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"*** Testing trim/ltrim/rtrim() : basic functionality ***\\n\";\n\
+$text = \"  \\t\\r\\n\\0\\x0B  ---These are a few words---  \\t\\r\\n\\0\\x0B  \";\n\
+$left = \" \\t\\r\\n\\0\\x0B ---These are a few words---  \";\n\
+$right = \"---These are a few words---  \\t\\r\\n\\0\\x0B  \";\n\
+$hello = \"!===Hello World===!\";\n\
+$alpha_left = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\";\n\
+$alpha_right = \"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\";\n\
+\n\
+var_dump(trim($text));\n\
+var_dump(ltrim($left));\n\
+var_dump(rtrim($right));\n\
+var_dump(trim($hello, \"=!\"));\n\
+var_dump(ltrim($hello, \"!oleH=\"));\n\
+var_dump(rtrim($hello, \"!dlWro=\"));\n\
+var_dump(ltrim($alpha_left, \"A..Z\"));\n\
+var_dump(rtrim($alpha_right, \"A..Z\"));\n\
+var_dump(\"ABC\\x50\\xC1\" === trim(\"ABC\\x50\\xC1\\x60\\x90\", \"\\x51..\\xC0\"));\n\
+var_dump(\"ABC\" === trim(\"ABC\\x50\\xC1\\x60\\x90\", \"\\x50..\\xC1\"));\n\
+var_dump(\" \\0\\t\\nABC \\0\\t\\n\" === trim(\" \\0\\t\\nABC \\0\\t\\n\", \"\"));\n\
+var_dump(function_exists(\"trim\"), function_exists(\"LTRIM\"), function_exists(\"rtrim\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "*** Testing trim/ltrim/rtrim() : basic functionality ***\n\
+string(27) \"---These are a few words---\"\n\
+string(29) \"---These are a few words---  \"\n\
+string(27) \"---These are a few words---\"\n\
+string(11) \"Hello World\"\n\
+string(10) \" World===!\"\n\
+string(10) \"!===Hello \"\n\
+string(10) \"0123456789\"\n\
+string(10) \"0123456789\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

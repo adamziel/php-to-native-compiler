@@ -52,6 +52,8 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
   covers `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
 - `strrev()` reverses current length-aware string operands without losing
   embedded NUL bytes.
+- `trim()`, `ltrim()`, and `rtrim()` use length-aware scalar string operands
+  with PHP default trim bytes and bounded byte-range charlists.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, and quiet `isset()`, `empty()`, and `??`; full visibility and
   inheritance remain bounded.

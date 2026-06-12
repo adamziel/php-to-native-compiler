@@ -301,7 +301,9 @@ Post-RC architecture remains explicit rather than hidden:
   `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`,
-  `strtolower(expr);`, `strtoupper(expr);`, `strrev(expr);`, `ucfirst(expr);`, `quotemeta(expr);`,
+  `strtolower(expr);`, `strtoupper(expr);`, `strrev(expr);`, `ucfirst(expr);`,
+  `quotemeta(expr);`,
+  `trim(expr[, expr]);`, `ltrim(expr[, expr]);`, `rtrim(expr[, expr]);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
   `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
   `md5(expr[, raw_output]);`,
@@ -342,7 +344,9 @@ Post-RC architecture remains explicit rather than hidden:
   `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`,
-  `strtolower(expr)`, `strtoupper(expr)`, `strrev(expr)`, `ucfirst(expr)`, `quotemeta(expr)`,
+  `strtolower(expr)`, `strtoupper(expr)`, `strrev(expr)`, `ucfirst(expr)`,
+  `quotemeta(expr)`,
+  `trim(expr[, expr])`, `ltrim(expr[, expr])`, `rtrim(expr[, expr])`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
   `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
   `md5(expr[, raw_output])`,
@@ -452,8 +456,9 @@ Post-RC architecture remains explicit rather than hidden:
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
   `strtr()`, `strrev()`, `ucfirst()`, `strtolower()`, `strtoupper()`,
-  `quotemeta()`, `chunk_split()`
-  string/separator arguments, `strip_tags()`, `md5()`, `sha1()`, `substr()`,
+  `quotemeta()`, `chunk_split()` string/separator arguments,
+  `trim()`/`ltrim()`/`rtrim()` string and characters arguments,
+  `strip_tags()`, `md5()`, `sha1()`, `substr()`,
   `addcslashes()`, `addslashes()`, `stripcslashes()`, `stripslashes()`,
   `bin2hex()`, `hex2bin()`, `quoted_printable_decode()`, `soundex()`, and
   `ord()`.
@@ -480,6 +485,10 @@ Post-RC architecture remains explicit rather than hidden:
   reversing bytes while preserving explicit string length and embedded NULs.
 - `ucfirst()` over current boxed scalar values after scalar string conversion,
   uppercasing an initial ASCII lowercase byte and preserving remaining bytes.
+- `trim()`, `ltrim()`, and `rtrim()` over current boxed scalar values after
+  scalar string conversion. The default PHP trim bytes are modeled, and the
+  optional characters argument supports literal byte sets plus ascending
+  `a..z`-style byte ranges over the current length-aware string path.
 - `quotemeta()` over current boxed scalar values after scalar string
   conversion, prefixing `.`, `\`, `+`, `*`, `?`, `[`, `^`, `]`, `(`, `$`, and
   `)` bytes with backslashes through the current C-string-backed value path.
@@ -906,7 +915,7 @@ Post-RC architecture remains explicit rather than hidden:
   `var_dump()` string
   length/output, `var_export()`, `strlen()`, `str_rot13()`, `strcmp()`,
   `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
-  `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
+  `trim()`, `ltrim()`, `rtrim()`, `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
   `stripcslashes()`, `md5()`, `sha1()`, `substr()`, `soundex()`, `ord()`, or
   bitwise string results.
 - Exact `strcmp()` resource/reference operand parity and object string
@@ -921,6 +930,9 @@ Post-RC architecture remains explicit rather than hidden:
   `__toString()` support.
 - Exact `quotemeta()` resource/reference operand parity and object string
   conversion outside the current public declared `__toString()` support.
+- Exact `trim()`/`ltrim()`/`rtrim()` malformed-charlist warning parity plus
+  resource/reference operand parity and object string conversion outside the
+  current public declared `__toString()` support.
 - Exact `chunk_split()` non-positive length exception parity plus
   resource/reference operand parity and object string conversion outside the
   current public declared `__toString()` support.

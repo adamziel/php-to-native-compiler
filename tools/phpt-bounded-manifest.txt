@@ -147,6 +147,7 @@ ext/standard/tests/strings/chunk_split.phpt
 ext/standard/tests/strings/chunk_split_basic.phpt
 ext/standard/tests/strings/dirname_basic.phpt
 ext/standard/tests/strings/hex2bin_basic.phpt
+ext/standard/tests/strings/ltrim_basic.phpt
 ext/standard/tests/strings/md5.phpt
 ext/standard/tests/strings/md5_basic1.phpt
 ext/standard/tests/strings/md5_basic2.phpt
@@ -155,6 +156,7 @@ ext/standard/tests/strings/ord_basic.phpt
 ext/standard/tests/strings/ord_not_1_byte.phpt
 ext/standard/tests/strings/quotemeta_basic.phpt
 ext/standard/tests/strings/quotemeta_basic_1.phpt
+ext/standard/tests/strings/rtrim_basic.phpt
 ext/standard/tests/strings/sha1_basic.phpt
 ext/standard/tests/strings/sha1raw.phpt
 ext/standard/tests/strings/soundex_basic.phpt
@@ -165,6 +167,7 @@ ext/standard/tests/strings/str_starts_with.phpt
 ext/standard/tests/strings/strip_tags.phpt
 ext/standard/tests/strings/strlen.phpt
 ext/standard/tests/strings/substr_int_min.phpt
+ext/standard/tests/strings/trim_basic.phpt
 ext/standard/tests/versioning/php_sapi_name.phpt
 ext/standard/tests/versioning/phpversion.phpt
 tests/basic/array_key_exists_null_deprecation.phpt

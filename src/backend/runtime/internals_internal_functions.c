@@ -3571,6 +3571,91 @@ static PtnValue ptn_internal_str_repeat(PtnRuntime *runtime, size_t argc, const 
     return ptn_owned_string_len(output, output_len);
 }
 
+static PtnStringOperand ptn_trim_default_charlist(void) {
+    static const char bytes[] = { ' ', '\t', '\n', '\r', '\0', '\v' };
+    return ptn_string_operand_borrowed_len(bytes, sizeof(bytes));
+}
+
+static void ptn_trim_charlist_table(PtnStringOperand charlist, unsigned char table[256]) {
+    memset(table, 0, 256);
+    for (size_t i = 0; i < charlist.len; i++) {
+        unsigned char start = (unsigned char)charlist.data[i];
+        if (
+            i + 3 < charlist.len &&
+            charlist.data[i + 1] == '.' &&
+            charlist.data[i + 2] == '.'
+        ) {
+            unsigned char end = (unsigned char)charlist.data[i + 3];
+            if (start <= end) {
+                for (unsigned int byte = start; byte <= end; byte++) {
+                    table[byte] = 1;
+                }
+                i += 3;
+                continue;
+            }
+        }
+        table[start] = 1;
+    }
+}
+
+static PtnValue ptn_trim_string_value(
+    PtnStringOperand input,
+    PtnStringOperand charlist,
+    int trim_left,
+    int trim_right
+) {
+    unsigned char table[256];
+    ptn_trim_charlist_table(charlist, table);
+
+    size_t start = 0;
+    size_t end = input.len;
+    if (trim_left) {
+        while (start < end && table[(unsigned char)input.data[start]]) {
+            start++;
+        }
+    }
+    if (trim_right) {
+        while (end > start && table[(unsigned char)input.data[end - 1]]) {
+            end--;
+        }
+    }
+
+    size_t output_len = end - start;
+    char *output = ptn_duplicate_string_len(input.data + start, output_len);
+    return ptn_owned_string_len(output, output_len);
+}
+
+static PtnValue ptn_internal_trim_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int trim_left,
+    int trim_right
+) {
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, function_name, 1, "string", args[0], line);
+    PtnStringOperand charlist = argc >= 2
+        ? ptn_internal_expect_string_arg(runtime, function_name, 2, "characters", args[1], line)
+        : ptn_trim_default_charlist();
+    PtnValue result = ptn_trim_string_value(input, charlist, trim_left, trim_right);
+    ptn_string_operand_free(input);
+    ptn_string_operand_free(charlist);
+    return result;
+}
+
+static PtnValue ptn_internal_trim(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_trim_named(runtime, "trim", argc, args, line, 1, 1);
+}
+
+static PtnValue ptn_internal_ltrim(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_trim_named(runtime, "ltrim", argc, args, line, 1, 0);
+}
+
+static PtnValue ptn_internal_rtrim(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_trim_named(runtime, "rtrim", argc, args, line, 0, 1);
+}
+
 typedef struct {
     PtnStringOperand from;
     PtnStringOperand to;
@@ -6297,6 +6382,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "key", 1, 1, ptn_internal_key },
         { "krsort", 1, 2, ptn_internal_krsort },
         { "ksort", 1, 2, ptn_internal_ksort },
+        { "ltrim", 1, 2, ptn_internal_ltrim },
         { "md5", 1, 2, ptn_internal_md5 },
         { "method_exists", 2, 2, ptn_internal_method_exists },
         { "mkdir", 1, 4, ptn_internal_mkdir },
@@ -6318,6 +6404,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "reset", 1, 1, ptn_internal_reset },
         { "rmdir", 1, 2, ptn_internal_rmdir },
         { "rsort", 1, 2, ptn_internal_rsort },
+        { "rtrim", 1, 2, ptn_internal_rtrim },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
@@ -6341,6 +6428,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strtoupper", 1, 1, ptn_internal_strtoupper },
         { "strtr", 2, 3, ptn_internal_strtr },
         { "substr", 2, 3, ptn_internal_substr },
+        { "trim", 1, 2, ptn_internal_trim },
         { "ucfirst", 1, 1, ptn_internal_ucfirst },
         { "unlink", 1, 1, ptn_internal_unlink },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
