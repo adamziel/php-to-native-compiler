@@ -4093,34 +4093,6 @@ fn target_control_path_is_reachable(target: &[usize], current: &[usize]) -> bool
             .all(|(target, current)| target == current)
 }
 
-fn array_dim_target_from_expr(expr: Expr) -> Result<ArrayDimTarget> {
-    let span = expr.span();
-    let mut dimensions = Vec::new();
-    let mut current = expr;
-    loop {
-        match current {
-            Expr::ArrayAccess { array, index, .. } => {
-                dimensions.push(index.map(|index| *index));
-                current = *array;
-            }
-            Expr::Variable(array, variable_span) => {
-                dimensions.reverse();
-                return Ok(ArrayDimTarget {
-                    array,
-                    dimensions,
-                    span: combine_spans(variable_span, span),
-                });
-            }
-            _ => {
-                return Err(Diagnostic::new(
-                    "unsupported array dimension target",
-                    Some(current.span()),
-                ));
-            }
-        }
-    }
-}
-
 fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
     let span = expr.span();
     let mut dimensions = Vec::new();
