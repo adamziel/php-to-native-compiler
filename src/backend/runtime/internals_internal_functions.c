@@ -1828,6 +1828,32 @@ static PtnValue ptn_internal_array_flip(PtnRuntime *runtime, size_t argc, const 
     return result;
 }
 
+static PtnValue ptn_internal_array_keys(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_keys", 1, "array", args[0]);
+    int has_search_value = argc >= 2;
+    int strict = argc >= 3 && ptn_is_truthy(args[2]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        if (has_search_value) {
+            int matched = strict
+                ? ptn_compare_identical(args[1], entry->value)
+                : ptn_compare_equal(args[1], entry->value);
+            if (!matched) {
+                continue;
+            }
+        }
+
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(result.as.array->next_auto_key),
+            ptn_array_key_value(entry->key)
+        );
+    }
+    return result;
+}
+
 static int ptn_array_value_strings_equal(PtnValue left, PtnValue right) {
     PtnStringOperand left_string = ptn_value_to_string_operand(left);
     PtnStringOperand right_string = ptn_value_to_string_operand(right);
@@ -5858,6 +5884,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_intersect", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect },
         { "array_intersect_assoc", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_assoc },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
+        { "array_keys", 1, 3, ptn_internal_array_keys },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
         { "array_merge", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },

@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T07:36Z
-Measured: `ptn-vc6f` rebased after `origin/master` `04d2568a1`.
+Refresh: 2026-06-12T07:39Z
+Measured: `ptn-9b9n` rebased after `origin/master` `e6e175b45`.
 
 Recent RC slices cover property/static-property inc/dec
 statements/expressions, scalar/string inc/dec value semantics, dynamic-variable
@@ -14,22 +14,23 @@ probes, direct array mutators including default
 `sort()`/`asort()`/`arsort()`/`ksort()`/`krsort()`/`rsort()`, sort flag
 diagnostics, set operations, `array_udiff*()`, exact `strings/004`,
 `strings/006`, and `tests/lang/024`, highlight output paths,
-`join()`/`implode()`, scalar `sprintf()`, `array_product()`, catchable
-`intdiv()` exceptions, and ASCII case string internals.
+`join()`/`implode()`, scalar `sprintf()`, `array_product()`, `array_keys()`,
+catchable `intdiv()` exceptions, and ASCII case string internals.
 
 Recent movers include exact string/lang/array rows, `array_udiff*()`,
 dynamic-root array/string-offset writes/unsets, object `var_export()`,
 `get_class()` metadata, property/static quiet probes, default
 sort/asort/arsort/ksort/krsort/rsort, sort flag diagnostics, offset compound
-assignments, property/static inc/dec, `array_product()`, exact `intdiv()`
-exceptions, and `ptn-vc6f` exact `strtolower()`/`strtoupper()` behavior.
+assignments, property/static inc/dec, `array_product()`, `array_keys()` loose
+and strict value filtering, exact `intdiv()` exceptions, and ASCII
+`strtolower()`/`strtoupper()` behavior.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 523 | 523 | 0 |
+| Native/compiler Rust suite | 524 | 524 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 200 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
@@ -51,13 +52,14 @@ declared instance-property defaults and metadata, property/static-property quiet
 probes, public constructors, class/object metadata intrinsics, `is_callable()`,
 assertions, heredoc/nowdoc, interpolation, streams, `pow()`, `array_merge()`,
 `join()`/`implode()`, scalar `sprintf()`, ASCII case string internals,
-`array_product()`, `call_user_func_array()`, CLI/error-reporting wiring,
-highlight output paths, scalar/array/current-object `var_export()`, direct
-array mutators including `sort()`/`asort()`/`arsort()`/`ksort()`/`krsort()`/
-`rsort()`, set operations, array-offset/property/static inc/dec
-statements/expressions, scalar/string inc/dec value semantics, variable-root
-array/append compound assignment expressions, dynamic inc/dec expressions, and
-dynamic-variable array/string-offset writes and unsets.
+`array_product()`, `array_keys()`, `call_user_func_array()`,
+CLI/error-reporting wiring, highlight output paths,
+scalar/array/current-object `var_export()`, direct array mutators including
+`sort()`/`asort()`/`arsort()`/`ksort()`/`krsort()`/`rsort()`, set operations,
+array-offset/property/static inc/dec statements/expressions, scalar/string
+inc/dec value semantics, variable-root array/append compound assignment
+expressions, dynamic inc/dec expressions, and dynamic-variable
+array/string-offset writes and unsets.
 
 ## Remaining Bounded Failures
 
@@ -65,11 +67,11 @@ dynamic-variable array/string-offset writes and unsets.
 
 ## Verification
 
-Verification: `ptn-n4j4` passed fmt, build, focused descending sort, dynamic
-sort flag, parser sort boundary, and `cargo test` with native/compiler
-523/523 plus COW/doc-tests. `ptn-vc6f` adds focused ASCII case native coverage;
-final gates are fmt, build, focused coverage, and `cargo test` with
-native/compiler 523/523.
+Verification: `ptn-vc6f` passed fmt, build, focused ASCII case coverage, and
+`cargo test` with native/compiler 523/523 plus COW/doc-tests. `ptn-9b9n` adds
+focused `array_keys()` native/parser coverage; final gates are fmt, build,
+focused coverage, and `cargo test` with native/compiler 524/524 plus
+COW/doc-tests.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

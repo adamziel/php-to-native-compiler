@@ -1268,6 +1268,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         "Cannot redeclare function array_key_exists()"
     );
 
+    let error = parser::parse("<?php function array_keys($array) { return []; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_keys()");
+
     let error =
         parser::parse("<?php function array_combine($keys, $values) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_combine()");
@@ -10009,6 +10012,43 @@ var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));"
         "array(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [3]=>\n  int(3)\n  [4]=>\n  string(3) \"ten\"\n}\narray(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [\"three\"]=>\n  int(3)\n  [10]=>\n  string(3) \"ten\"\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-array-keys");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-keys.php");
+    let output = root.join("array-keys-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = array(\"a\" => 1, 2 => \"two\", \"03\" => null, 4 => \"2\", \"dup\" => 1);\n\
+var_dump(array_keys($items));\n\
+var_dump(array_keys($items, 1));\n\
+var_dump(array_keys($items, \"1\", true));\n\
+var_dump(array_keys($items, 2));\n\
+var_dump(array_keys($items, \"2\", true));\n\
+$nested = array(\"x\" => array(\"seed\"));\n\
+$keys = array_keys($nested);\n\
+$keys[] = \"copy\";\n\
+var_dump($keys, $nested);\n\
+var_dump(function_exists(\"array_keys\"), function_exists(\"ARRAY_KEYS\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(5) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  int(2)\n  [2]=>\n  string(2) \"03\"\n  [3]=>\n  int(4)\n  [4]=>\n  string(3) \"dup\"\n}\narray(2) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(3) \"dup\"\n}\narray(0) {\n}\narray(1) {\n  [0]=>\n  int(4)\n}\narray(1) {\n  [0]=>\n  int(4)\n}\narray(2) {\n  [0]=>\n  string(1) \"x\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [\"x\"]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_keys"));
 }
 
 #[test]

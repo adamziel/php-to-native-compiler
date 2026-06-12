@@ -315,7 +315,8 @@ Post-RC architecture remains explicit rather than hidden:
   `array_udiff_assoc(expr, expr, callback);`,
   `array_udiff_uassoc(expr, expr, callback, callback);`,
   `array_product(expr);`,
-  `array_values(expr);`, `array_merge(expr, ...);`,
+  `array_values(expr);`, `array_keys(expr[, expr[, expr]]);`,
+  `array_merge(expr, ...);`,
   `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
   `call_user_func_array(expr, expr);`,
@@ -351,7 +352,8 @@ Post-RC architecture remains explicit rather than hidden:
   `array_udiff_assoc(expr, expr, callback)`,
   `array_udiff_uassoc(expr, expr, callback, callback)`,
   `array_product(expr)`,
-  `array_values(expr)`, `array_merge(expr, ...)`,
+  `array_values(expr)`, `array_keys(expr[, expr[, expr]])`,
+  `array_merge(expr, ...)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
   `call_user_func_array(expr, expr)`,
   `assert(expr[, description])`,
@@ -578,6 +580,10 @@ Post-RC architecture remains explicit rather than hidden:
   columns, and cloning dereferenced values across COW boundaries.
 - `array_values()` over current boxed arrays, preserving insertion order while
   returning a freshly reindexed ordered array of cloned values.
+- `array_keys()` over current boxed arrays, preserving insertion order while
+  returning a freshly reindexed array of integer/string keys. Optional
+  `search_value` filtering uses the shared loose comparison path by default and
+  the shared identity path when `strict` is truthy.
 - `array_merge()` over current boxed arrays, appending integer-keyed entries
   with fresh sequential keys, overwriting string-keyed entries by key while
   preserving insertion order, and cloning dereferenced values across COW

@@ -3767,6 +3767,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_intersect"
             | "array_intersect_assoc"
             | "array_key_exists"
+            | "array_keys"
             | "array_merge"
             | "array_merge_recursive"
             | "array_pop"
