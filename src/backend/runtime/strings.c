@@ -666,6 +666,34 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_standard_stream_resource_value(3);
         return 1;
     }
+    if (strcmp(name, "LC_ALL") == 0) {
+        *out = ptn_int(PTN_LC_ALL);
+        return 1;
+    }
+    if (strcmp(name, "LC_COLLATE") == 0) {
+        *out = ptn_int(PTN_LC_COLLATE);
+        return 1;
+    }
+    if (strcmp(name, "LC_CTYPE") == 0) {
+        *out = ptn_int(PTN_LC_CTYPE);
+        return 1;
+    }
+    if (strcmp(name, "LC_MESSAGES") == 0) {
+        *out = ptn_int(PTN_LC_MESSAGES);
+        return 1;
+    }
+    if (strcmp(name, "LC_MONETARY") == 0) {
+        *out = ptn_int(PTN_LC_MONETARY);
+        return 1;
+    }
+    if (strcmp(name, "LC_NUMERIC") == 0) {
+        *out = ptn_int(PTN_LC_NUMERIC);
+        return 1;
+    }
+    if (strcmp(name, "LC_TIME") == 0) {
+        *out = ptn_int(PTN_LC_TIME);
+        return 1;
+    }
     if (strcmp(name, "M_E") == 0) {
         *out = ptn_float(2.718281828459045);
         return 1;

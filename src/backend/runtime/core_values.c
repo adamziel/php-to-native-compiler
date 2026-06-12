@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
+#include <locale.h>
 #include <math.h>
 #include <stdarg.h>
 #include <setjmp.h>
@@ -101,6 +102,17 @@ typedef struct {
 #define PTN_PATHINFO_EXTENSION 4
 #define PTN_PATHINFO_FILENAME 8
 #define PTN_PATHINFO_ALL 15
+#define PTN_LC_ALL LC_ALL
+#define PTN_LC_COLLATE LC_COLLATE
+#define PTN_LC_CTYPE LC_CTYPE
+#define PTN_LC_MONETARY LC_MONETARY
+#define PTN_LC_NUMERIC LC_NUMERIC
+#define PTN_LC_TIME LC_TIME
+#if defined(LC_MESSAGES)
+#define PTN_LC_MESSAGES LC_MESSAGES
+#else
+#define PTN_LC_MESSAGES 5
+#endif
 #define PTN_DEFAULT_PRECISION 14
 
 typedef struct PtnArray PtnArray;

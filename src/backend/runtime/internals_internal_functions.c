@@ -8428,6 +8428,56 @@ static PtnValue ptn_internal_extension_loaded(PtnRuntime *runtime, size_t argc, 
     return ptn_bool(loaded);
 }
 
+static char *ptn_setlocale_try_string(int category, const char *locale) {
+    const char *result = NULL;
+    if (strcmp(locale, "0") == 0) {
+        result = setlocale(category, NULL);
+    } else {
+        result = setlocale(category, locale);
+    }
+    return result == NULL ? NULL : ptn_duplicate_string(result);
+}
+
+static char *ptn_setlocale_try_value(int category, PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        PtnArray *array = value.as.array;
+        for (size_t i = 0; i < array->len; i++) {
+            char *locale = ptn_value_to_string(array->entries[i].value);
+            char *result = ptn_setlocale_try_string(category, locale);
+            free(locale);
+            if (result != NULL) {
+                return result;
+            }
+        }
+        return NULL;
+    }
+
+    char *locale = ptn_value_to_string(value);
+    char *result = ptn_setlocale_try_string(category, locale);
+    free(locale);
+    return result;
+}
+
+static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t category_value = ptn_internal_expect_integer_arg(runtime, "setlocale", 1, "category", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (category_value < (int64_t)INT_MIN || category_value > (int64_t)INT_MAX) {
+        return ptn_bool(0);
+    }
+
+    int category = (int)category_value;
+    for (size_t i = 1; i < argc; i++) {
+        char *result = ptn_setlocale_try_value(category, args[i]);
+        if (result != NULL) {
+            return ptn_owned_string(result);
+        }
+    }
+    return ptn_bool(0);
+}
+
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
     int value = -1;
     if (byte >= '0' && byte <= '9') {
@@ -8979,6 +9029,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
+        { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },

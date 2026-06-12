@@ -363,7 +363,8 @@ Post-RC architecture remains explicit rather than hidden:
   `ob_get_contents();`, `php_ini_scanned_files();`, `php_sapi_name();`,
   `php_uname([mode]);`, `phpversion([extension]);`, `preg_match(expr, expr);`,
   `realpath(expr);`, `scandir(expr[, sorting_order[, context]]);`,
-  `str_replace(expr, expr, expr[, count]);`, `zend_version();`,
+  `setlocale(expr, expr[, ...]);`, `str_replace(expr, expr, expr[, count]);`,
+  `zend_version();`,
   `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr[, mode]);`, `sizeof(expr[, mode]);`,
   `array_chunk(expr, expr[, expr]);`,
@@ -427,6 +428,7 @@ Post-RC architecture remains explicit rather than hidden:
   `ob_get_contents()`, `php_ini_scanned_files()`, `php_sapi_name()`,
   `php_uname([mode])`, `phpversion([extension])`, `preg_match(expr, expr)`,
   `realpath(expr)`, `scandir(expr[, sorting_order[, context]])`,
+  `setlocale(expr, expr[, ...])`,
   `str_replace(expr, expr, expr[, count])`, `zend_version()`, `intval(expr)`,
   `chr(expr)`, `ord(expr)`,
   `count(expr[, mode])`, `sizeof(expr[, mode])`,
@@ -709,6 +711,12 @@ Post-RC architecture remains explicit rather than hidden:
   `Core`, `date`, `pcre`, and `standard`; `get_loaded_extensions(true)`
   returns an empty array because Zend extensions are outside the current
   runtime boundary.
+- Locale category constants `LC_ALL`, `LC_COLLATE`, `LC_CTYPE`,
+  `LC_MESSAGES`, `LC_MONETARY`, `LC_NUMERIC`, and `LC_TIME` are available
+  through the modeled constant registry. `setlocale()` delegates to the
+  platform C locale API for current scalar categories and scalar/array locale
+  candidates; locale `"0"` queries the current category, `"C"`/`"POSIX"` use
+  the stable C locale, and unavailable locale names return `false`.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and
@@ -892,8 +900,8 @@ Post-RC architecture remains explicit rather than hidden:
   `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`,
   `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, `M_SQRT3`,
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `STR_PAD_LEFT`,
-  `STR_PAD_RIGHT`, and `STR_PAD_BOTH`. Other ordinary names report as
-  undefined.
+  `STR_PAD_RIGHT`, `STR_PAD_BOTH`, and modeled `LC_*` locale category
+  constants. Other ordinary names report as undefined.
 - Duplicate global `const` declarations and `const` redeclarations after
   `define()` emit the modeled duplicate-constant warning boundary and preserve
   the original runtime constant value.
@@ -1093,8 +1101,8 @@ Post-RC architecture remains explicit rather than hidden:
   currently modeled `E_*` error masks, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, modeled PHP math `M_*` constants,
-  array-filter mode constants, and `STR_PAD_*` constants in
-  `defined()`/`constant()`.
+  array-filter mode constants, `STR_PAD_*` constants, and modeled `LC_*`
+  locale constants in `defined()`/`constant()`.
 - Function forms beyond top-level named declarations and the public class-method
   callable slice, plus the bounded `stdClass` public-property storage slice,
   including array/object default arguments, named arguments outside direct
