@@ -7464,6 +7464,66 @@ echo $child->same(), \"\\n\";
 }
 
 #[test]
+fn compile_inherited_private_and_child_public_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-inherited-private-child-public-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inherited-private-child-public-properties.php");
+    let output = root.join("inherited-private-child-public-properties-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    private $p = \"A::p\";
+
+    public function showA() {
+        echo $this->p, \"\\n\";
+    }
+}
+
+class B extends A {
+    public $p = \"B::p\";
+
+    public function showB() {
+        echo $this->p, \"\\n\";
+    }
+}
+
+$b = new B;
+$b->showA();
+$b->showB();
+echo $b->p, \"\\n\";
+var_dump($b);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "A::p\n",
+            "B::p\n",
+            "B::p\n",
+            "object(B)#1 (2) {\n",
+            "  [\"p\":\"A\":private]=>\n",
+            "  string(4) \"A::p\"\n",
+            "  [\"p\"]=>\n",
+            "  string(4) \"B::p\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_declare_property(&runtime"));
+    assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
+    assert!(c_source.contains("PTN_PROPERTY_PUBLIC"));
+}
+
+#[test]
 fn compile_user_function_reads_global_const_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-global-const");
     fs::create_dir_all(&root).unwrap();

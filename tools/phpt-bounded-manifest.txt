@@ -182,6 +182,7 @@ ext/standard/tests/versioning/php_sapi_name.phpt
 ext/standard/tests/versioning/phpversion.phpt
 tests/basic/array_key_exists_null_deprecation.phpt
 tests/basic/array_null_offset_deprecation.phpt
+tests/classes/property_override_private_public.phpt
 tests/func/001.phpt
 tests/func/004.phpt
 tests/lang/001.phpt

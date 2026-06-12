@@ -245,29 +245,96 @@ static PTN_UNUSED int ptn_property_class_names_equal(const char *left, const cha
     return *left == '\0' && *right == '\0';
 }
 
-static PTN_UNUSED int ptn_object_property_access_denied(
-    PtnRuntime *runtime,
+static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_private_property_for_scope(
     PtnObject *object,
     const char *property,
     const char *access_scope
 ) {
-    const char *private_class = ptn_declared_private_property_class(object->class_name, property);
-    if (private_class == NULL || ptn_property_class_names_equal(private_class, access_scope)) {
-        return 0;
+    if (object == NULL || property == NULL || access_scope == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (
+            metadata->visibility == PTN_PROPERTY_PRIVATE
+            && strcmp(metadata->display_name, property) == 0
+            && ptn_property_class_names_equal(metadata->declaring_class, access_scope)
+        ) {
+            return metadata;
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_own_private_property(
+    PtnObject *object,
+    const char *property
+) {
+    if (object == NULL || property == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (
+            metadata->visibility == PTN_PROPERTY_PRIVATE
+            && strcmp(metadata->display_name, property) == 0
+            && ptn_property_class_names_equal(metadata->declaring_class, object->class_name)
+        ) {
+            return metadata;
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED int ptn_object_has_public_property_slot(
+    PtnObject *object,
+    const char *property
+) {
+    if (ptn_object_property_metadata(object, property) != NULL) {
+        return 1;
+    }
+    PtnArrayKey key = ptn_array_string_key(property);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    return entry != NULL;
+}
+
+static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    const char *access_scope,
+    int quiet
+) {
+    const PtnObjectPropertyMetadata *scoped_private =
+        ptn_object_private_property_for_scope(object, property, access_scope);
+    if (scoped_private != NULL) {
+        return ptn_duplicate_string(scoped_private->storage_name);
+    }
+    if (ptn_object_has_public_property_slot(object, property)) {
+        return ptn_duplicate_string(property);
+    }
+    const PtnObjectPropertyMetadata *own_private =
+        ptn_object_own_private_property(object, property);
+    if (own_private == NULL) {
+        return ptn_duplicate_string(property);
+    }
+    if (quiet) {
+        return NULL;
     }
     char message[192];
     int written = snprintf(
         message,
         sizeof(message),
         "Cannot access private property %s::$%s",
-        private_class,
+        own_private->declaring_class,
         property
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception(runtime, "Error", message);
-    return 1;
+    return NULL;
 }
 
 static PTN_UNUSED PtnValue ptn_object_read_property(
@@ -282,12 +349,20 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
         return ptn_null();
     }
-    if (ptn_object_property_access_denied(runtime, receiver.as.object, property, access_scope)) {
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        0
+    );
+    if (storage_key == NULL) {
         return ptn_null();
     }
-    PtnArrayKey key = ptn_array_string_key(property);
+    PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     ptn_array_key_free(key);
+    free(storage_key);
     if (entry == NULL) {
         ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
         return ptn_null();
@@ -307,12 +382,20 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
     }
-    if (ptn_object_property_access_denied(runtime, receiver.as.object, property, access_scope)) {
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        1
+    );
+    if (storage_key == NULL) {
         return ptn_lookup_missing();
     }
-    PtnArrayKey key = ptn_array_string_key(property);
+    PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     ptn_array_key_free(key);
+    free(storage_key);
     if (entry == NULL) {
         return ptn_lookup_missing();
     }
@@ -326,25 +409,25 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
     const char *access_scope,
     size_t line
 ) {
-    (void)runtime;
     (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
     }
-    const char *private_class = ptn_declared_private_property_class(
-        receiver.as.object->class_name,
-        property
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        1
     );
-    if (
-        private_class != NULL
-        && !ptn_property_class_names_equal(private_class, access_scope)
-    ) {
+    if (storage_key == NULL) {
         return ptn_lookup_missing();
     }
-    PtnArrayKey key = ptn_array_string_key(property);
+    PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     ptn_array_key_free(key);
+    free(storage_key);
     if (entry == NULL) {
         return ptn_lookup_missing();
     }
@@ -376,13 +459,21 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
         ptn_throw_exception(runtime, "Error", message);
         return ptn_null();
     }
-    if (ptn_object_property_access_denied(runtime, receiver.as.object, property, access_scope)) {
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        0
+    );
+    if (storage_key == NULL) {
         return ptn_null();
     }
     PtnValue stored = ptn_value_clone_deref(value);
     PtnValue result = ptn_value_clone(stored);
-    PtnArrayKey key = ptn_array_string_key(property);
+    PtnArrayKey key = ptn_array_string_key(storage_key);
     ptn_array_write_entry(receiver.as.object->properties, key, stored);
+    free(storage_key);
     return result;
 }
 

@@ -327,17 +327,18 @@ static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key)
     }
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(object, key.as.string);
+    const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
     if (metadata == NULL || metadata->visibility == PTN_PROPERTY_PUBLIC) {
-        printf("[\"%s\"]=>\n", key.as.string);
+        printf("[\"%s\"]=>\n", display_name);
         return;
     }
     if (metadata->visibility == PTN_PROPERTY_PROTECTED) {
-        printf("[\"%s\":protected]=>\n", key.as.string);
+        printf("[\"%s\":protected]=>\n", display_name);
         return;
     }
     printf(
         "[\"%s\":\"%s\":private]=>\n",
-        key.as.string,
+        display_name,
         metadata->declaring_class
     );
 }
@@ -774,15 +775,29 @@ static void ptn_var_export_append_array(PtnStringBuffer *buffer, PtnArray *array
 
 static void ptn_var_export_append_object_state_array(
     PtnStringBuffer *buffer,
-    PtnArray *properties,
+    PtnObject *object,
     size_t indent
 ) {
+    PtnArray *properties = object->properties;
     ptn_string_buffer_append(buffer, "array(\n");
     for (size_t i = 0; i < properties->len; i++) {
         PtnArrayEntry *entry = &properties->entries[i];
         PtnValue entry_value = ptn_value_deref(entry->value);
         ptn_string_buffer_append_indent(buffer, indent + 3);
-        ptn_var_export_append_key(buffer, entry->key);
+        PtnArrayKey display_key = entry->key;
+        int free_display_key = 0;
+        if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+            const PtnObjectPropertyMetadata *metadata =
+                ptn_object_property_metadata(object, entry->key.as.string);
+            if (metadata != NULL) {
+                display_key = ptn_array_string_key(metadata->display_name);
+                free_display_key = 1;
+            }
+        }
+        ptn_var_export_append_key(buffer, display_key);
+        if (free_display_key) {
+            ptn_array_key_free(display_key);
+        }
         ptn_string_buffer_append(buffer, " => ");
         if (ptn_var_export_is_complex_value(entry_value)) {
             ptn_string_buffer_append_char(buffer, '\n');
@@ -803,7 +818,7 @@ static void ptn_var_export_append_object(PtnStringBuffer *buffer, PtnObject *obj
         ptn_string_buffer_append(buffer, object->class_name);
         ptn_string_buffer_append(buffer, "::__set_state(");
     }
-    ptn_var_export_append_object_state_array(buffer, object->properties, indent);
+    ptn_var_export_append_object_state_array(buffer, object, indent);
     if (strcmp(object->class_name, "stdClass") != 0) {
         ptn_string_buffer_append_char(buffer, ')');
     }

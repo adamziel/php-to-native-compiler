@@ -1167,6 +1167,40 @@ fn class_method_lookup_chain<'a>(
     methods
 }
 
+fn class_property_initialization_chain(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Vec<(String, crate::ir::PropertyDecl)> {
+    fn collect(
+        class: &ClassDecl,
+        classes: &[ClassDecl],
+        seen_classes: &mut HashSet<String>,
+        properties: &mut Vec<(String, crate::ir::PropertyDecl)>,
+    ) {
+        let lookup_name = class.name.to_ascii_lowercase();
+        if !seen_classes.insert(lookup_name) {
+            return;
+        }
+        if let Some(parent_name) = &class.parent_name {
+            if let Some(parent) = class_by_name(classes, parent_name) {
+                collect(parent, classes, seen_classes, properties);
+            }
+        }
+        properties.extend(
+            class
+                .properties
+                .iter()
+                .cloned()
+                .map(|property| (class.name.clone(), property)),
+        );
+    }
+
+    let mut properties = Vec::new();
+    let mut seen_classes = HashSet::new();
+    collect(class, classes, &mut seen_classes, &mut properties);
+    properties
+}
+
 fn class_has_constructor(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
     class_method_lookup_chain(class, classes)
         .iter()
@@ -5954,7 +5988,9 @@ impl ValueEmitter {
             out.push_str(" = ptn_object_new_shell(\"");
             out.push_str(&c_string(&declared_class.name));
             out.push_str("\");\n");
-            for property in &declared_class.properties {
+            for (declaring_class_name, property) in
+                class_property_initialization_chain(&declared_class, &self.classes)
+            {
                 let value_temp = match &property.value {
                     Some(value) => self.emit_materialized_value(out, value),
                     None => {
@@ -5973,7 +6009,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(&property.name));
                 out.push_str("\", \"");
-                out.push_str(&c_string(&declared_class.name));
+                out.push_str(&c_string(&declaring_class_name));
                 out.push_str("\", ");
                 out.push_str(c_property_visibility(property.visibility));
                 out.push_str(", ");

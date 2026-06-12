@@ -201,7 +201,8 @@ typedef enum {
 } PtnPropertyVisibility;
 
 typedef struct {
-    char *name;
+    char *storage_name;
+    char *display_name;
     char *declaring_class;
     PtnPropertyVisibility visibility;
 } PtnObjectPropertyMetadata;

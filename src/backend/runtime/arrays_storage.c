@@ -377,15 +377,50 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(const char *class_name) {
     return ptn_object(object);
 }
 
-static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_property_metadata(
-    PtnObject *object,
+static PTN_UNUSED char *ptn_object_private_storage_key(
+    const char *declaring_class,
     const char *property
 ) {
-    if (object == NULL || property == NULL) {
+    size_t declaring_len = strlen(declaring_class);
+    size_t property_len = strlen(property);
+    const char *prefix = "__ptn_private:";
+    size_t prefix_len = strlen(prefix);
+    if (declaring_len > SIZE_MAX - prefix_len - property_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t len = prefix_len + declaring_len + 1 + property_len;
+    char *storage_name = malloc(len + 1);
+    if (storage_name == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(storage_name, prefix, prefix_len);
+    memcpy(storage_name + prefix_len, declaring_class, declaring_len);
+    storage_name[prefix_len + declaring_len] = ':';
+    memcpy(storage_name + prefix_len + declaring_len + 1, property, property_len);
+    storage_name[len] = '\0';
+    return storage_name;
+}
+
+static PTN_UNUSED char *ptn_object_storage_key_for_declaration(
+    const char *property,
+    const char *declaring_class,
+    PtnPropertyVisibility visibility
+) {
+    if (visibility == PTN_PROPERTY_PRIVATE) {
+        return ptn_object_private_storage_key(declaring_class, property);
+    }
+    return ptn_duplicate_string(property);
+}
+
+static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_property_metadata(
+    PtnObject *object,
+    const char *storage_name
+) {
+    if (object == NULL || storage_name == NULL) {
         return NULL;
     }
     for (size_t i = 0; i < object->property_metadata_len; i++) {
-        if (strcmp(object->property_metadata[i].name, property) == 0) {
+        if (strcmp(object->property_metadata[i].storage_name, storage_name) == 0) {
             return &object->property_metadata[i];
         }
     }
@@ -401,9 +436,17 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     if (object == NULL || property == NULL || declaring_class == NULL) {
         return;
     }
+    char *storage_name = ptn_object_storage_key_for_declaration(
+        property,
+        declaring_class,
+        visibility
+    );
     for (size_t i = 0; i < object->property_metadata_len; i++) {
-        if (strcmp(object->property_metadata[i].name, property) == 0) {
+        if (strcmp(object->property_metadata[i].storage_name, storage_name) == 0) {
+            free(storage_name);
+            free(object->property_metadata[i].display_name);
             free(object->property_metadata[i].declaring_class);
+            object->property_metadata[i].display_name = ptn_duplicate_string(property);
             object->property_metadata[i].declaring_class = ptn_duplicate_string(declaring_class);
             object->property_metadata[i].visibility = visibility;
             return;
@@ -429,7 +472,8 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     }
     PtnObjectPropertyMetadata *metadata =
         &object->property_metadata[object->property_metadata_len++];
-    metadata->name = ptn_duplicate_string(property);
+    metadata->storage_name = storage_name;
+    metadata->display_name = ptn_duplicate_string(property);
     metadata->declaring_class = ptn_duplicate_string(declaring_class);
     metadata->visibility = visibility;
 }
@@ -512,7 +556,8 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     }
     free(object->class_name);
     for (size_t i = 0; i < object->property_metadata_len; i++) {
-        free(object->property_metadata[i].name);
+        free(object->property_metadata[i].storage_name);
+        free(object->property_metadata[i].display_name);
         free(object->property_metadata[i].declaring_class);
     }
     free(object->property_metadata);

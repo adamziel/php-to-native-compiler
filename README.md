@@ -72,7 +72,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `trim()`, `ltrim()`, and `rtrim()` use length-aware operands, PHP default
   bytes, and bounded charlists.
 - Declared instance properties keep public/protected/private defaults, dump
-  metadata, and quiet `isset()`, `empty()`, and `??`; full visibility and
+  metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
+  slots distinct from child public redeclarations; full visibility and
   inheritance remain bounded.
 - Static properties support reads/writes, `??=`, plus quiet `isset()`,
   `empty()`, and `??`.
