@@ -5909,6 +5909,30 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_property_probe_quiet(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let lookup_temp = self.next_temp();
+        out.push_str("        PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_object_property_probe_quiet(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &receiver_temp);
+        lookup_temp
+    }
+
     fn emit_comparison(
         &mut self,
         out: &mut String,
@@ -6051,6 +6075,23 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "        ", &index_temp);
                 result_temp
             }
+            ValueExpr::PropertyFetch {
+                receiver,
+                name,
+                line,
+            } => {
+                let lookup_temp = self.emit_property_probe_quiet(out, receiver, name, *line);
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists && ");
+                out.push_str(&lookup_temp);
+                out.push_str(".value.type != PTN_NULL;\n");
+                emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+                result_temp
+            }
             _ => {
                 let value_temp = self.emit_materialized_value(out, value);
                 let result_temp = self.next_temp();
@@ -6098,6 +6139,28 @@ impl ValueEmitter {
                 out.push_str("        }\n");
                 emit_value_cleanup(out, "        ", &format!("{container_temp}.value"));
                 emit_value_cleanup(out, "        ", &index_temp);
+                result_temp
+            }
+            ValueExpr::PropertyFetch {
+                receiver,
+                name,
+                line,
+            } => {
+                let lookup_temp = self.emit_property_probe_quiet(out, receiver, name, *line);
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = 1;\n");
+                out.push_str("        if (");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists) {\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = !ptn_is_truthy(");
+                out.push_str(&lookup_temp);
+                out.push_str(".value);\n");
+                out.push_str("        }\n");
+                emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
                 result_temp
             }
             _ => {
@@ -6153,6 +6216,11 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "        ", &index_temp);
                 result_temp
             }
+            ValueExpr::PropertyFetch {
+                receiver,
+                name,
+                line,
+            } => self.emit_property_probe_quiet(out, receiver, name, *line),
             _ => {
                 let value_temp = self.emit_materialized_value(out, value);
                 let result_temp = self.next_temp();

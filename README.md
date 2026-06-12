@@ -18,7 +18,7 @@ rows, or outputs.
 - Top-level user functions and declared class methods include scoped magic
   constants, call-frame introspection, scalar type hints, literal-array
   defaults, by-reference return aliases, typed coercion, and public constructor
-  dispatch plus bounded class/object metadata intrinsics.
+  dispatch and metadata intrinsics.
 - Full and short ternary expressions lower through the boxed value path with
   lazy branch evaluation; unparenthesized nested ternaries remain an explicit
   diagnostic boundary.
@@ -46,10 +46,10 @@ rows, or outputs.
   expression pre/post forms over the current boxed numeric slice.
 - `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
   covers the current `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
-- Declared instance properties accept public, protected, and private
-  declarations with supported constant defaults. Current object storage installs
-  them uniformly and preserves dump metadata for private/protected labels; full
-  visibility/inheritance semantics remain bounded.
+- Declared instance properties accept public, protected, and private defaults,
+  preserve private/protected dump metadata, and support quiet property
+  `isset()`, `empty()`, and expression-form `??` probes; full visibility and
+  inheritance remain bounded.
 - Basic stream resources from `fopen()`/`fclose()` are boxed runtime values with
   current type, dump, and array-key cast behavior.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or

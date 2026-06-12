@@ -14971,6 +14971,94 @@ Attempt to assign property \"bad\" on int\n"
 }
 
 #[test]
+fn compile_property_isset_empty_and_coalesce_to_native_binary() {
+    let root = temp_dir("ptn-native-property-isset-empty-coalesce");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-isset-empty-coalesce.php");
+    let output = root.join("property-isset-empty-coalesce-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    private $secret = 1;
+
+    public function probe() {
+        var_dump(isset($this->secret), empty($this->secret), $this->secret ?? \"fallback\");
+    }
+}
+
+function receiver($object, $label) {
+    echo \"receiver:$label\\n\";
+    return $object;
+}
+
+$object = new stdClass();
+$object->x = null;
+$object->zero = \"0\";
+$object->truthy = 5;
+var_dump(isset(receiver($object, \"truthy\")->truthy));
+var_dump(isset(receiver($object, \"nullish\")->x));
+var_dump(isset(receiver($object, \"missing\")->missing));
+var_dump(empty(receiver($object, \"zero\")->zero));
+var_dump(empty(receiver($object, \"truthy-empty\")->truthy));
+var_dump(empty(receiver($object, \"missing-empty\")->missing));
+var_dump(receiver($object, \"coalesce-hit\")->truthy ?? \"fallback\");
+var_dump(receiver($object, \"coalesce-null\")->x ?? \"fallback\");
+var_dump(receiver($object, \"coalesce-missing\")->missing ?? \"fallback\");
+
+$scalar = 3;
+var_dump(isset($scalar->prop), empty($scalar->prop), $scalar->prop ?? \"fallback\");
+
+$declared = new C();
+$declared->probe();
+var_dump(isset($declared->secret), empty($declared->secret), $declared->secret ?? \"fallback\");
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "receiver:truthy\n",
+            "bool(true)\n",
+            "receiver:nullish\n",
+            "bool(false)\n",
+            "receiver:missing\n",
+            "bool(false)\n",
+            "receiver:zero\n",
+            "bool(true)\n",
+            "receiver:truthy-empty\n",
+            "bool(false)\n",
+            "receiver:missing-empty\n",
+            "bool(true)\n",
+            "receiver:coalesce-hit\n",
+            "int(5)\n",
+            "receiver:coalesce-null\n",
+            "string(8) \"fallback\"\n",
+            "receiver:coalesce-missing\n",
+            "string(8) \"fallback\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(8) \"fallback\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(8) \"fallback\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_property_probe_quiet(&runtime"));
+}
+
+#[test]
 fn compile_static_property_reads_and_writes_to_native_binary() {
     let root = temp_dir("ptn-native-static-property-access");
     fs::create_dir_all(&root).unwrap();

@@ -11,9 +11,10 @@ internals, top-level functions, includes resolved at compile time, copy-on-write
 array/reference slices, and public class/object shells. Public class support is
 bounded to top-level declarations with public methods, direct public static
 property reads/writes, public instance property reads/writes, and public
-property `??=`, bounded private instance-property declarations read/written
-from declaring-class methods, declared private/protected instance-property
-metadata for initialization and dump labels, and public non-static
+property `??=` plus read-side property `isset()`/`empty()`/`??` probes,
+bounded private instance-property declarations read/written from
+declaring-class methods, declared private/protected instance-property metadata
+for initialization and dump labels, and public non-static
 `__construct` dispatch through the declared-method path.
 
 Post-RC architecture remains explicit rather than hidden:
@@ -239,16 +240,18 @@ Post-RC architecture remains explicit rather than hidden:
   `asort()`, `krsort()`, `usort()`, and `array_multisort()` remain unsupported
   and fail before code generation with an explicit unsupported diagnostic.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
-  offset reads, and currently supported value expressions. Variable and offset
-  operands use a quiet existence lookup: missing variables, missing offsets,
-  non-array containers, and out-of-range string offsets do not emit ordinary
-  read warnings; `isset()` returns false for missing or `null` values, and
-  `empty()` returns true for missing or PHP-falsey values.
+  offset reads, property reads, and currently supported value expressions.
+  Variable, offset, and property operands use a quiet existence lookup: missing
+  variables, missing offsets, missing properties, non-array/non-object
+  containers, and out-of-range string offsets do not emit ordinary read
+  warnings; `isset()` returns false for missing or `null` values, and `empty()`
+  returns true for missing or PHP-falsey values.
 - Expression-form null coalescing `left ?? right` over direct variables, array
-  reads, string offset reads, and currently supported value expressions. The
-  left operand uses the same quiet lookup path as `isset()`/`empty()`, returns
-  present non-`null` values without evaluating the right operand, and evaluates
-  the right operand only for missing or `null` left values.
+  reads, string offset reads, property reads, and currently supported value
+  expressions. The left operand uses the same quiet lookup path as
+  `isset()`/`empty()`, returns present non-`null` values without evaluating the
+  right operand, and evaluates the right operand only for missing or `null`
+  left values.
 - Full ternary `condition ? if_true : if_false` and short ternary
   `condition ?: if_false` expressions over the current boxed expression subset.
   Conditions use PHP truthiness, only the selected arm is evaluated, and short
@@ -721,12 +724,15 @@ Post-RC architecture remains explicit rather than hidden:
   can flow through generated user functions and string-callable
   `call_user_func()` dispatch. Public property null coalescing assignment
   `$object->name ??= expr` quiet-reads the property and lazily evaluates the
-  right-hand expression. Declared private/protected instance properties are
-  initialized with the same storage path and preserve metadata for `var_dump()`
-  private/protected labels. Private declared properties are read/written from
-  methods of their declaring class and rejected for outside reads/writes with
-  modeled `Error`; full protected visibility, inherited property resolution,
-  typed properties, constructor promotion, magic, destructors, and
+  right-hand expression. Property `isset()`, `empty()`, and expression-form
+  `??` quiet-probe the current object property storage; inaccessible private
+  declared properties behave as missing outside their declaring class. Declared
+  private/protected instance properties are initialized with the same storage
+  path and preserve metadata for `var_dump()` private/protected labels. Private
+  declared properties are read/written from methods of their declaring class
+  and rejected for outside reads/writes with modeled `Error`; full protected
+  visibility, inherited property resolution, typed properties, constructor
+  promotion, magic, destructors, and
   reflection property metadata remain outside this support boundary.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
@@ -816,9 +822,9 @@ Post-RC architecture remains explicit rather than hidden:
   behavior.
 - `array_key_exists()` object property checks, references, and error-handler
   routing beyond the current ordered-array/resource-key slice.
-- String-offset append, compound assignment, property/reference `isset()`/
-  `empty()` and null-coalescing semantics, and complete TypeError/exception
-  parity for unsupported string offset key types.
+- String-offset append, compound assignment, reference `isset()`/`empty()` and
+  null-coalescing semantics, property reference targets, and complete
+  TypeError/exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `var_export()`, `strlen()`, `str_rot13()`, `strcmp()`,
   `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
@@ -910,10 +916,10 @@ Post-RC architecture remains explicit rather than hidden:
   overflow parity for remaining integer-only operator conversion diagnostics,
   including shift and modulo diagnostics.
 - Object lvalues, dynamic-variable array-offset compound/null-coalescing/
-  by-reference lvalues, append-form null-coalescing, property
-  null-coalescing expressions/`isset()`/`empty()`, property compound-assignment
-  operators outside modeled public-property `??=`, and static-property
-  compound/null-coalescing lvalues outside modeled direct reads/writes.
+  by-reference lvalues, append-form null-coalescing, property reference
+  targets, property compound-assignment operators outside modeled
+  public-property `??=`, and static-property compound/null-coalescing lvalues
+  outside modeled direct reads/writes.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.
