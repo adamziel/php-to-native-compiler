@@ -3794,6 +3794,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_unshift"
             | "array_values"
             | "shuffle"
+            | "sort"
             | "current"
             | "end"
             | "key"
@@ -3818,7 +3819,7 @@ fn is_array_cursor_mutation_name(name: &str) -> bool {
 fn is_array_by_ref_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "array_pop" | "array_push" | "array_shift" | "array_unshift" | "ksort" | "shuffle"
+        "array_pop" | "array_push" | "array_shift" | "array_unshift" | "ksort" | "shuffle" | "sort"
     )
 }
 
@@ -3832,8 +3833,7 @@ fn is_single_array_path_mutation_name(name: &str) -> bool {
 fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "sort"
-            | "rsort"
+        "rsort"
             | "asort"
             | "arsort"
             | "krsort"

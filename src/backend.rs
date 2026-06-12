@@ -1169,6 +1169,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "prev",
         "reset",
         "shuffle",
+        "sort",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(name);
@@ -3357,6 +3358,7 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
             | "prev"
             | "reset"
             | "shuffle"
+            | "sort"
     )
 }
 
@@ -6919,6 +6921,8 @@ impl ValueEmitter {
                 Some("ptn_runtime_array_reset_variable")
             } else if name.eq_ignore_ascii_case("shuffle") {
                 Some("ptn_runtime_array_shuffle_variable")
+            } else if name.eq_ignore_ascii_case("sort") {
+                Some("ptn_runtime_array_sort_variable")
             } else {
                 None
             }
