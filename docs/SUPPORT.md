@@ -595,6 +595,9 @@ Post-RC architecture remains explicit rather than hidden:
   returning a freshly reindexed array of integer/string keys. Optional
   `search_value` filtering uses the shared loose comparison path by default and
   the shared identity path when `strict` is truthy.
+- `array_search()` over current boxed arrays, returning the first matching
+  integer/string key under the same loose or strict comparison path as
+  `in_array()`, or `false` when no entry matches.
 - `array_merge()` over current boxed arrays, appending integer-keyed entries
   with fresh sequential keys, overwriting string-keyed entries by key while
   preserving insertion order, and cloning dereferenced values across COW
@@ -618,10 +621,6 @@ Post-RC architecture remains explicit rather than hidden:
 - `in_array()` over current boxed arrays, returning whether the needle matches
   any entry under loose or strict comparison. References are read through the
   same dereferencing path as other comparison internals.
-- `array_search()` over current boxed arrays, returning the first matching
-  integer/string key under the same loose or strict comparison path as
-  `in_array()`, or `false` when no entry matches. Returned string keys follow
-  the current C-string-backed array-key boundary.
 - `error_reporting()` accepts zero or one scalar argument, returns the previous
   PHP-style mask on writes or current mask on reads, and filters the modeled
   shared warning/deprecation/notice emitters. Expression-level `@` suppression

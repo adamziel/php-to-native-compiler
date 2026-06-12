@@ -1271,6 +1271,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function Array_Keys($array) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_keys()");
 
+    let error = parser::parse("<?php function ARRAY_SEARCH($needle, $haystack) { return false; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_search()");
+
     let error =
         parser::parse("<?php function Array_Key_First($array) { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_key_first()");
@@ -10172,6 +10176,41 @@ var_dump(function_exists(\"array_keys\"), function_exists(\"ARRAY_KEYS\"));",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_keys"));
+}
+
+#[test]
+fn compile_array_search_to_native_binary() {
+    let root = temp_dir("ptn-native-array-search");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-search.php");
+    let output = root.join("array-search-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = array(\"a\" => 1, 2 => \"two\", \"03\" => null, 4 => \"2\", \"dup\" => 1);\n\
+var_dump(array_search(1, $items));\n\
+var_dump(array_search(\"1\", $items, true));\n\
+var_dump(array_search(2, $items));\n\
+var_dump(array_search(\"2\", $items, true));\n\
+var_dump(array_search(null, $items, true));\n\
+var_dump(array_search(\"missing\", $items));\n\
+var_dump(array_search(\"zero\", array(\"zero\", \"one\")));\n\
+var_dump(function_exists(\"array_search\"), function_exists(\"ARRAY_SEARCH\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"a\"\nbool(false)\nint(4)\nint(4)\nstring(2) \"03\"\nbool(false)\nint(0)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_search"));
 }
 
 #[test]
