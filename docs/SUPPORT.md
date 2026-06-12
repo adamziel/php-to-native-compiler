@@ -777,12 +777,15 @@ Post-RC architecture remains explicit rather than hidden:
 - Script-level `return;` and `return expr;` statements. Optional return
   expressions are evaluated through the current boxed expression path, then the
   generated native program frees runtime state and exits successfully.
-- `include expr` and `require expr` over compile-time-resolved string paths,
-  including string literals and `__DIR__`/`__FILE__` concatenation. Included
-  statement-only files are compiled into native helpers that share the caller's
-  current variable frame, emit ordinary output at the include point, return the
-  included `return expr;` value, return `null` for `return;`, and return
-  `int(1)` when the included file reaches EOF without `return`.
+- `include expr`, `include_once expr`, `require expr`, and `require_once expr`
+  over compile-time-resolved string paths, including string literals and
+  `__DIR__`/`__FILE__` concatenation. Included statement-only files are
+  compiled into native helpers that share the caller's current variable frame,
+  emit ordinary output at the include point, return the included `return expr;`
+  value, return `null` for `return;`, and return `int(1)` when the included
+  file reaches EOF without `return`. Once-include forms are keyed by the
+  canonical compiled include file and return `true` without re-executing files
+  already executed by `include`, `include_once`, `require`, or `require_once`.
 - `while (expr) statement` loops where the condition and braced or
   single-statement body use the currently supported scalar expression and
   statement subset.
@@ -933,9 +936,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Object `Traversable`, destructuring foreach targets, and PHP-exact
   `foreach` diagnostics outside the current array/non-array warning lane.
 - PHP-exact include behavior beyond compile-time-resolved statement-only files,
-  including dynamic paths, include paths, missing-file warning/return behavior,
-  `include_once`/`require_once`, declaration-bearing include files, and return
-  inside unsupported function/class contexts.
+  including fully dynamic paths outside bounded candidate sets, include paths,
+  missing-file warning/return behavior, declaration-bearing include files, and
+  return inside unsupported function/class contexts.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
 - Remaining PHP-exact increment/decrement target and value edges, including

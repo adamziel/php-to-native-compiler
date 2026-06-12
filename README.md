@@ -18,7 +18,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   coercion, and constructor dispatch/metadata intrinsics.
 - Includes share caller file scope and return values; bounded dynamic
   include/require path expressions dispatch to compiled helpers when all
-  candidate string paths are statically enumerable.
+  candidate string paths are statically enumerable, with include-once guards
+  keyed by canonical compiled include files.
 - Unbracketed namespaces resolve current top-level functions/constants/classes,
   qualified names, `__NAMESPACE__`, and simple class/function/const imports.
 - Full and short ternary expressions lower through the boxed value path with

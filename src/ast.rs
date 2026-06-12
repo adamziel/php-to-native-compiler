@@ -389,7 +389,9 @@ pub enum IncDecResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncludeKind {
     Include,
+    IncludeOnce,
     Require,
+    RequireOnce,
 }
 
 #[derive(Debug, Clone, PartialEq)]

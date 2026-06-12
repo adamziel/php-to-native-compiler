@@ -32,6 +32,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_private_property_metadata_prototype(&mut out);
     emit_runtime(&mut out, &runtime_requirements);
     emit_include_prototypes(&mut out, &module.includes);
+    emit_include_once_state(&mut out, &module.includes);
     if !module.includes.is_empty() {
         emit_include_runtime_helpers(&mut out);
     }
@@ -119,6 +120,15 @@ fn emit_include_prototypes(out: &mut String, includes: &[IncludeFile]) {
         out.push_str(&include_c_name(index));
         out.push_str("(PtnRuntime *include_runtime);\n");
     }
+}
+
+fn emit_include_once_state(out: &mut String, includes: &[IncludeFile]) {
+    if includes.is_empty() {
+        return;
+    }
+    out.push_str("static PTN_UNUSED unsigned char ptn_include_seen[");
+    out.push_str(&includes.len().to_string());
+    out.push_str("] = {0};\n");
 }
 
 fn emit_include_runtime_helpers(out: &mut String) {
@@ -2137,12 +2147,18 @@ fn include_c_name(index: usize) -> String {
 fn include_kind_text(kind: IncludeKind) -> &'static str {
     match kind {
         IncludeKind::Include => "include",
+        IncludeKind::IncludeOnce => "include_once",
         IncludeKind::Require => "require",
+        IncludeKind::RequireOnce => "require_once",
     }
 }
 
 fn include_kind_is_required(kind: IncludeKind) -> bool {
-    matches!(kind, IncludeKind::Require)
+    matches!(kind, IncludeKind::Require | IncludeKind::RequireOnce)
+}
+
+fn include_kind_is_once(kind: IncludeKind) -> bool {
+    matches!(kind, IncludeKind::IncludeOnce | IncludeKind::RequireOnce)
 }
 
 struct ControlTarget {
@@ -5296,11 +5312,33 @@ impl ValueEmitter {
             out.push_str("    } else if (");
             self.emit_include_candidate_condition(out, &resolved_temp, *candidate);
             out.push_str(") {\n");
-            out.push_str("        ");
-            out.push_str(&result_temp);
-            out.push_str(" = ");
-            out.push_str(&include_c_name(*candidate));
-            out.push_str("(&runtime);\n");
+            if include_kind_is_once(kind) {
+                out.push_str("        if (ptn_include_seen[");
+                out.push_str(&candidate.to_string());
+                out.push_str("]) {\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_bool(1);\n");
+                out.push_str("        } else {\n");
+                out.push_str("            ptn_include_seen[");
+                out.push_str(&candidate.to_string());
+                out.push_str("] = 1;\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&include_c_name(*candidate));
+                out.push_str("(&runtime);\n");
+                out.push_str("        }\n");
+            } else {
+                out.push_str("        ptn_include_seen[");
+                out.push_str(&candidate.to_string());
+                out.push_str("] = 1;\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&include_c_name(*candidate));
+                out.push_str("(&runtime);\n");
+            }
         }
         out.push_str("    } else {\n");
         out.push_str("        ");

@@ -1976,7 +1976,9 @@ impl Parser {
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_expr(),
             TokenKind::Print => self.parse_print_expr(),
             TokenKind::Include => self.parse_include_expr(IncludeKind::Include),
+            TokenKind::IncludeOnce => self.parse_include_expr(IncludeKind::IncludeOnce),
             TokenKind::Require => self.parse_include_expr(IncludeKind::Require),
+            TokenKind::RequireOnce => self.parse_include_expr(IncludeKind::RequireOnce),
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
                     let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
@@ -2704,7 +2706,9 @@ impl Parser {
                 | TokenKind::At
                 | TokenKind::Print
                 | TokenKind::Include
+                | TokenKind::IncludeOnce
                 | TokenKind::Require
+                | TokenKind::RequireOnce
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
                 | TokenKind::Backslash
@@ -3118,7 +3122,9 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Continue => "continue",
         TokenKind::Return => "return",
         TokenKind::Include => "include",
+        TokenKind::IncludeOnce => "include_once",
         TokenKind::Require => "require",
+        TokenKind::RequireOnce => "require_once",
         TokenKind::Try => "try",
         TokenKind::Catch => "catch",
         TokenKind::Goto => "goto",

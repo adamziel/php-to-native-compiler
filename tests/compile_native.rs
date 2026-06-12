@@ -689,10 +689,10 @@ fn parser_accepts_print_expression_contexts() {
 #[test]
 fn parser_accepts_include_expression_contexts() {
     let program = parser::parse(
-        "<?php $result = include \"value.php\"; echo require(__DIR__ . \"/plain.php\");",
+        "<?php $result = include \"value.php\"; echo require(__DIR__ . \"/plain.php\"); $once = include_once \"once.php\"; echo require_once(__DIR__ . \"/required.php\");",
     )
     .unwrap();
-    assert_eq!(program.statements.len(), 2);
+    assert_eq!(program.statements.len(), 4);
 
     let Statement::Assign { value, .. } = &program.statements[0] else {
         panic!("expected assignment from include expression");
@@ -712,6 +712,28 @@ fn parser_accepts_include_expression_contexts() {
         &expressions[0],
         Expr::Include {
             kind: IncludeKind::Require,
+            ..
+        }
+    ));
+
+    let Statement::Assign { value, .. } = &program.statements[2] else {
+        panic!("expected assignment from include_once expression");
+    };
+    assert!(matches!(
+        value,
+        Expr::Include {
+            kind: IncludeKind::IncludeOnce,
+            ..
+        }
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[3] else {
+        panic!("expected echo with require_once operand");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Include {
+            kind: IncludeKind::RequireOnce,
             ..
         }
     ));
@@ -14954,6 +14976,49 @@ fn compile_bounded_dynamic_include_paths_to_native_binary() {
     assert!(c_source.contains("ptn_include_resolve_path"));
     assert!(c_source.contains("ptn_include_file_0(&runtime)"));
     assert!(c_source.contains("ptn_include_file_1(&runtime)"));
+}
+
+#[test]
+fn compile_include_once_and_require_once_to_native_binary() {
+    let root = temp_dir("ptn-native-include-once");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let once = root.join("once.php");
+    let output = root.join("include-once-bin");
+    fs::write(
+        &once,
+        "<?php echo \"once:$label\\n\"; $runs += 1; return \"RET\";",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$label = \"first\";\n\
+$runs = 0;\n\
+$a = include_once \"once.php\";\n\
+$label = \"second\";\n\
+$b = include_once (__DIR__ . \"/once.php\");\n\
+$c = require_once \"once.php\";\n\
+echo \"values=$a/$b/$c runs=$runs\\n\";\n\
+$plain = include \"once.php\";\n\
+echo \"plain=$plain runs=$runs\\n\";\n\
+$d = include_once \"once.php\";\n\
+var_dump($d);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "once:first\nvalues=RET/1/1 runs=1\nonce:second\nplain=RET runs=2\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PTN_UNUSED unsigned char ptn_include_seen[1] = {0};"));
+    assert!(c_source.contains("ptn_include_seen[0]"));
 }
 
 #[test]

@@ -2013,7 +2013,9 @@ fn assertion_magic_constant_text(kind: AstMagicConstantKind) -> &'static str {
 fn assertion_include_kind_text(kind: crate::ast::IncludeKind) -> &'static str {
     match kind {
         crate::ast::IncludeKind::Include => "include",
+        crate::ast::IncludeKind::IncludeOnce => "include_once",
         crate::ast::IncludeKind::Require => "require",
+        crate::ast::IncludeKind::RequireOnce => "require_once",
     }
 }
 
