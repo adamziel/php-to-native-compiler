@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T17:22Z
-Measured: `ptn-82o3` rebased on current `origin/master` `805caa0cb`.
+Refresh: 2026-06-12T17:42Z
+Measured: `ptn-ausc` rebased on current `origin/master` `c9b748f11`.
 
 Recent RC slices cover public class constants, embedded-NUL `var_export()`,
 `explode()`, namespaced internal fallback, static-property `??=`, once guards,
@@ -12,14 +12,14 @@ flags, set operations, `array_udiff*()`, `join()`/`implode()`, bounded
 `sprintf()`/`printf()`, bounded `json_encode()`, `array_is_list()`,
 `array_search()`, `array_slice()`, `array_pad()`, `array_reverse()`,
 `count()`/`sizeof()`, `str_pad()`, `str_shuffle()`, `strtr()`,
-`chunk_split()`, `abs()`/`sqrt()`/`fdiv()` TypeErrors, ASCII case/trim,
-PHP/CLI/Zend metadata, `php_uname()`, `ReflectionFunction`, namespaces,
-foreach list destructuring, dynamic include/require dispatch, and return-only
-`void` declarations.
+`chunk_split()`, string-internal object/closure given-type diagnostics,
+`abs()`/`sqrt()`/`fdiv()` TypeErrors, ASCII case/trim, PHP/CLI/Zend metadata,
+`php_uname()`, `ReflectionFunction`, namespaces, foreach list destructuring,
+dynamic include/require dispatch, and return-only `void` declarations.
 
-Recent movers add bounded PHPT coverage for `array_reverse_basic1`,
-`php_uname_basic`, `str_shuffle_basic`, and `strtr_basic`, on top of the
-prior `explode()`, inherited private/public property, and destructor rows.
+Recent movers include shared string-internal TypeError naming for `stdClass`,
+exceptions, and `Closure`, plus bounded PHPT coverage for `array_reverse()`,
+`php_uname()`, `str_shuffle()`, and `strtr()`.
 
 ## Dashboard
 
@@ -49,9 +49,9 @@ parent-private slots, public destructor dispatch, reflection,
 callability/countability, assertions, namespaces/imports, streams, metadata,
 array/string/numeric helpers through `array_udiff*()`, `array_is_list()`,
 `count()`/`sizeof()`, `json_encode()`, `printf()`, `chunk_split()`, `fdiv()`,
-`explode()`, highlight paths, `var_export()`, array mutators, inc/dec, foreach
-destructuring, dynamic-variable writes/unsets, and array/string-offset compound
-assignments.
+`explode()`, shared string-internal diagnostics, highlight paths,
+`var_export()`, array mutators, inc/dec, foreach destructuring,
+dynamic-variable writes/unsets, and array/string-offset compound assignments.
 
 ## Remaining Bounded Failures
 
@@ -59,10 +59,11 @@ assignments.
 
 ## Verification
 
-Current slice verification: focused PHPT probe for `array_reverse_basic1`,
-`php_uname_basic`, `str_shuffle_basic`, and `strtr_basic` 4/4;
-`cargo fmt --check`; bounded PHPT manifest 226/226; PHPT COW manifest 29/29;
-and post-merge COW gate 17/17 oracle, 3/3 notice, 6/6 diagnostics.
+Current slice verification: `cargo fmt --check`; focused
+`cargo test compile_string_internals_reject_non_string_values_to_native_binary`;
+affected PHPT rows `strlen.phpt`, `ord_basic.phpt`, and `dirname_basic.phpt`
+3/3; bounded PHPT manifest 226/226; PHPT COW manifest 29/29; and post-merge
+COW gate 17/17 oracle, 3/3 notice, 6/6 diagnostics.
 
 Follow-ups remain destructor visibility/exception/reference/global edges,
 typed/promoted properties, interfaces/traits, bracketed/grouped namespaces,

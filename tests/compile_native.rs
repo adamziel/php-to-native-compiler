@@ -4703,11 +4703,11 @@ echo $s;\n",
 }
 
 #[test]
-fn compile_string_internals_reject_non_string_arrays_to_native_binary() {
-    let root = temp_dir("ptn-native-string-internal-array-diagnostics");
+fn compile_string_internals_reject_non_string_values_to_native_binary() {
+    let root = temp_dir("ptn-native-string-internal-type-diagnostics");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("string-internal-array-diagnostics.php");
-    let output = root.join("string-internal-array-diagnostics-bin");
+    let input = root.join("string-internal-type-diagnostics.php");
+    let output = root.join("string-internal-type-diagnostics-bin");
     fs::write(
         &input,
         "<?php\n\
@@ -4718,6 +4718,10 @@ try { chunk_split('abc', 2, []); } catch (\\TypeError $e) { echo $e->getMessage(
 try { str_contains('abc', []); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { addslashes([]); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { ord([]); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { strlen(new stdClass); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { ord(new stdClass); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { dirname(new stdClass); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { strlen(function () {}); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 $bytes = 'a' . chr(0) . 'b';\n\
 echo strlen($bytes), ' ', bin2hex($bytes), ' ', ord($bytes[1]), \"\\n\";\n",
     )
@@ -4736,6 +4740,10 @@ chunk_split(): Argument #3 ($separator) must be of type string, array given\n\
 str_contains(): Argument #2 ($needle) must be of type string, array given\n\
 addslashes(): Argument #1 ($string) must be of type string, array given\n\
 ord(): Argument #1 ($character) must be of type string, array given\n\
+strlen(): Argument #1 ($string) must be of type string, stdClass given\n\
+ord(): Argument #1 ($character) must be of type string, stdClass given\n\
+dirname(): Argument #1 ($path) must be of type string, stdClass given\n\
+strlen(): Argument #1 ($string) must be of type string, Closure given\n\
 3 610062 0\n"
             .to_vec()
     );

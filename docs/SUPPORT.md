@@ -505,7 +505,8 @@ Post-RC architecture remains explicit rather than hidden:
   scalar values and objects with a public declared `__toString()` are coerced
   through the same length-aware operand path, `null` arguments emit the modeled
   deprecation, and arrays, objects without the current `__toString()` support,
-  closures, and exceptions throw the modeled `TypeError` boundary for `strlen()`,
+  closures, and exceptions throw the modeled `TypeError` boundary, including
+  object class names and `Closure` in the reported given-type, for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
   `strtr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,

@@ -6016,6 +6016,28 @@ static char *ptn_dirname_string(const char *path, size_t len, size_t *dirname_le
     return dirname;
 }
 
+static const char *ptn_internal_string_arg_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_ARRAY:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            return ptn_offset_container_type_name(value);
+    }
+    return ptn_offset_container_type_name(value);
+}
+
 static void ptn_internal_throw_string_arg_type_error(
     PtnRuntime *runtime,
     const char *function_name,
@@ -6032,7 +6054,7 @@ static void ptn_internal_throw_string_arg_type_error(
         function_name,
         position,
         argument_name,
-        ptn_offset_container_type_name(value)
+        ptn_internal_string_arg_type_name(value)
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
