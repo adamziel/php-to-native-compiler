@@ -1168,6 +1168,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "end",
         "krsort",
         "ksort",
+        "natsort",
         "next",
         "prev",
         "reset",
@@ -3378,6 +3379,7 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
             | "end"
             | "krsort"
             | "ksort"
+            | "natsort"
             | "next"
             | "prev"
             | "reset"
@@ -7252,6 +7254,8 @@ impl ValueEmitter {
                 Some("ptn_runtime_array_krsort_variable")
             } else if name.eq_ignore_ascii_case("ksort") {
                 Some("ptn_runtime_array_ksort_variable")
+            } else if name.eq_ignore_ascii_case("natsort") {
+                Some("ptn_runtime_array_natsort_variable")
             } else if name.eq_ignore_ascii_case("next") {
                 Some("ptn_runtime_array_next_variable")
             } else if name.eq_ignore_ascii_case("end") {

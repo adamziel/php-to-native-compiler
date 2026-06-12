@@ -2274,6 +2274,153 @@ static int ptn_array_value_compare_descending(PtnValue left, PtnValue right) {
     return -ptn_array_value_compare_ascending(left, right);
 }
 
+static int ptn_ascii_is_natural_digit(unsigned char byte) {
+    return byte >= (unsigned char)'0' && byte <= (unsigned char)'9';
+}
+
+static int ptn_ascii_is_natural_space(unsigned char byte) {
+    return byte == (unsigned char)' ' ||
+        byte == (unsigned char)'\t' ||
+        byte == (unsigned char)'\n' ||
+        byte == (unsigned char)'\r' ||
+        byte == (unsigned char)'\v' ||
+        byte == (unsigned char)'\f';
+}
+
+static int ptn_compare_natural_digit_run_left(
+    const unsigned char *left,
+    size_t left_len,
+    size_t left_offset,
+    const unsigned char *right,
+    size_t right_len,
+    size_t right_offset
+) {
+    while (1) {
+        int left_digit = left_offset < left_len && ptn_ascii_is_natural_digit(left[left_offset]);
+        int right_digit = right_offset < right_len && ptn_ascii_is_natural_digit(right[right_offset]);
+        if (!left_digit && !right_digit) {
+            return 0;
+        }
+        if (!left_digit) {
+            return -1;
+        }
+        if (!right_digit) {
+            return 1;
+        }
+        if (left[left_offset] < right[right_offset]) {
+            return -1;
+        }
+        if (left[left_offset] > right[right_offset]) {
+            return 1;
+        }
+        left_offset++;
+        right_offset++;
+    }
+}
+
+static int ptn_compare_natural_digit_run_right(
+    const unsigned char *left,
+    size_t left_len,
+    size_t left_offset,
+    const unsigned char *right,
+    size_t right_len,
+    size_t right_offset
+) {
+    int bias = 0;
+    while (1) {
+        int left_digit = left_offset < left_len && ptn_ascii_is_natural_digit(left[left_offset]);
+        int right_digit = right_offset < right_len && ptn_ascii_is_natural_digit(right[right_offset]);
+        if (!left_digit && !right_digit) {
+            return bias;
+        }
+        if (!left_digit) {
+            return -1;
+        }
+        if (!right_digit) {
+            return 1;
+        }
+        if (left[left_offset] < right[right_offset]) {
+            if (bias == 0) {
+                bias = -1;
+            }
+        } else if (left[left_offset] > right[right_offset]) {
+            if (bias == 0) {
+                bias = 1;
+            }
+        }
+        left_offset++;
+        right_offset++;
+    }
+}
+
+static int ptn_compare_natural_string_operands(PtnStringOperand left_operand, PtnStringOperand right_operand) {
+    const unsigned char *left = (const unsigned char *)left_operand.data;
+    const unsigned char *right = (const unsigned char *)right_operand.data;
+    size_t left_offset = 0;
+    size_t right_offset = 0;
+
+    while (1) {
+        while (left_offset < left_operand.len && ptn_ascii_is_natural_space(left[left_offset])) {
+            left_offset++;
+        }
+        while (right_offset < right_operand.len && ptn_ascii_is_natural_space(right[right_offset])) {
+            right_offset++;
+        }
+
+        int left_digit = left_offset < left_operand.len && ptn_ascii_is_natural_digit(left[left_offset]);
+        int right_digit = right_offset < right_operand.len && ptn_ascii_is_natural_digit(right[right_offset]);
+        if (left_digit && right_digit) {
+            int compared = left[left_offset] == (unsigned char)'0' || right[right_offset] == (unsigned char)'0'
+                ? ptn_compare_natural_digit_run_left(
+                    left,
+                    left_operand.len,
+                    left_offset,
+                    right,
+                    right_operand.len,
+                    right_offset
+                )
+                : ptn_compare_natural_digit_run_right(
+                    left,
+                    left_operand.len,
+                    left_offset,
+                    right,
+                    right_operand.len,
+                    right_offset
+                );
+            if (compared != 0) {
+                return compared;
+            }
+        }
+
+        if (left_offset >= left_operand.len && right_offset >= right_operand.len) {
+            return 0;
+        }
+        if (left_offset >= left_operand.len) {
+            return -1;
+        }
+        if (right_offset >= right_operand.len) {
+            return 1;
+        }
+        if (left[left_offset] < right[right_offset]) {
+            return -1;
+        }
+        if (left[left_offset] > right[right_offset]) {
+            return 1;
+        }
+        left_offset++;
+        right_offset++;
+    }
+}
+
+static int ptn_array_value_compare_natural(PtnValue left, PtnValue right) {
+    PtnStringOperand left_string = ptn_value_to_string_operand(left);
+    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+    int compared = ptn_compare_natural_string_operands(left_string, right_string);
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    return compared;
+}
+
 static PTN_UNUSED void ptn_array_sort_values(PtnArray *array) {
     for (size_t i = 1; i < array->len; i++) {
         PtnArrayEntry moving = array->entries[i];
@@ -2337,6 +2484,20 @@ static PTN_UNUSED void ptn_array_arsort_values(PtnArray *array) {
         PtnArrayEntry moving = array->entries[i];
         size_t j = i;
         while (j > 0 && ptn_array_value_compare_descending(array->entries[j - 1].value, moving.value) > 0) {
+            array->entries[j] = array->entries[j - 1];
+            j--;
+        }
+        array->entries[j] = moving;
+    }
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
+static PTN_UNUSED void ptn_array_natsort_values(PtnArray *array) {
+    for (size_t i = 1; i < array->len; i++) {
+        PtnArrayEntry moving = array->entries[i];
+        size_t j = i;
+        while (j > 0 && ptn_array_value_compare_natural(array->entries[j - 1].value, moving.value) > 0) {
             array->entries[j] = array->entries[j - 1];
             j--;
         }

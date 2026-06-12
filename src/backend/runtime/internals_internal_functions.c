@@ -993,6 +993,19 @@ static PTN_UNUSED PtnValue ptn_runtime_array_arsort_variable(PtnRuntime *runtime
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_natsort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "natsort",
+        1,
+        "array",
+        name,
+        value
+    );
+    ptn_array_natsort_values(array);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_sort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -1402,6 +1415,14 @@ static PtnValue ptn_internal_shuffle(PtnRuntime *runtime, size_t argc, const Ptn
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "shuffle", 1, "array", args[0]);
     ptn_array_shuffle_values(array);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_natsort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "natsort", 1, "array", args[0]);
+    ptn_array_natsort_values(array);
     return ptn_bool(1);
 }
 
@@ -5991,6 +6012,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "md5", 1, 2, ptn_internal_md5 },
         { "method_exists", 2, 2, ptn_internal_method_exists },
         { "mkdir", 1, 4, ptn_internal_mkdir },
+        { "natsort", 1, 1, ptn_internal_natsort },
         { "next", 1, 1, ptn_internal_next },
         { "ob_get_contents", 0, 0, ptn_internal_ob_get_contents },
         { "octdec", 1, 1, ptn_internal_octdec },

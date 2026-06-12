@@ -1279,6 +1279,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         parser::parse("<?php function Array_Key_Last($array) { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_key_last()");
 
+    let error = parser::parse("<?php function NatSort($array) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function natsort()");
+
     let error =
         parser::parse("<?php function array_combine($keys, $values) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_combine()");
@@ -10807,6 +10810,7 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php asort([3, 2, 1]);", "asort"),
         ("<?php krsort([3 => \"c\", 1 => \"a\"]);", "krsort"),
         ("<?php ksort([3 => \"c\", 1 => \"a\"]);", "ksort"),
+        ("<?php natsort([\"img2\", \"img1\"]);", "natsort"),
         ("<?php rsort([3, 2, 1]);", "rsort"),
         ("<?php shuffle([1, 2, 3]);", "shuffle"),
         ("<?php sort([3, 2, 1]);", "sort"),
@@ -10840,6 +10844,7 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
     parser::parse("<?php $items = [\"b\" => 2, \"a\" => 1]; asort(($items));").unwrap();
     parser::parse("<?php $items = [2 => \"b\", 1 => \"a\"]; krsort(($items));").unwrap();
     parser::parse("<?php $items = [2 => \"b\", 1 => \"a\"]; ksort(($items));").unwrap();
+    parser::parse("<?php $items = [\"img2\", \"img10\", \"img1\"]; natsort(($items));").unwrap();
     parser::parse("<?php $items = [3, 2, 1]; rsort(($items));").unwrap();
     parser::parse("<?php $items = [1, 2]; shuffle(($items));").unwrap();
     parser::parse("<?php $items = [3, 2, 1]; sort(($items));").unwrap();
@@ -10884,6 +10889,16 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
             "<?php $items = [[3, 2, 1]]; asort($items[0]);",
             "asort",
             "non-variable array mutation targets are unsupported",
+        ),
+        (
+            "<?php $items = [\"img2\", \"img1\"]; natsort($items, SORT_REGULAR);",
+            "natsort",
+            "extra arguments are unsupported",
+        ),
+        (
+            "<?php $items = [\"img2\", \"img1\"]; natcasesort($items);",
+            "natcasesort",
+            "sort-family array mutation semantics are unsupported",
         ),
         (
             "<?php $items = [3, 2, 1]; usort($items, \"cmp\");",
@@ -11111,6 +11126,82 @@ var_dump(function_exists(\"arsort\"), function_exists(\"ARSORT\"));",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_arsort_variable"));
     assert!(c_source.contains("ptn_array_arsort_values"));
+}
+
+#[test]
+fn compile_natsort_mutates_direct_variable_preserves_keys_and_detaches_cow_to_native_binary() {
+    let root = temp_dir("ptn-native-natsort-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("natsort-cow.php");
+    let output = root.join("natsort-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = [\"b\" => \"file2\", \"a\" => \"file10\", \"c\" => \"file1\"];\n\
+$copy = $source;\n\
+var_dump(natsort($copy));\n\
+foreach ($copy as $key => $value) {\n\
+    echo $key, \"=\", $value, \"\\n\";\n\
+}\n\
+echo $source[\"b\"], \":\", $source[\"a\"], \":\", $source[\"c\"], \"\\n\";\n\
+$items = [\"img12\" => \"img12\", \"img10\" => \"img10\", \"img2\" => \"img2\", \"img1\" => \"img1\"];\n\
+natsort($items);\n\
+foreach ($items as $key => $value) {\n\
+    echo $key, \":\", $value, \"\\n\";\n\
+}\n\
+$leading = [\"z1\" => \"a1\", \"z01\" => \"a01\", \"z001\" => \"a001\", \"z10\" => \"a10\", \"z2\" => \"a2\", \"z02\" => \"a02\"];\n\
+natsort($leading);\n\
+foreach ($leading as $key => $value) {\n\
+    echo $key, \"~\", $value, \"\\n\";\n\
+}\n\
+$dynamic = \"natsort\";\n\
+$dynamic_source = [\"x2\" => \"x2\", \"x10\" => \"x10\", \"x1\" => \"x1\"];\n\
+$dynamic_copy = $dynamic_source;\n\
+var_dump($dynamic($dynamic_copy));\n\
+foreach ($dynamic_copy as $key => $value) {\n\
+    echo \"d\", $key, \"=\", $value, \"\\n\";\n\
+}\n\
+echo $dynamic_source[\"x2\"], \":\", $dynamic_source[\"x10\"], \":\", $dynamic_source[\"x1\"], \"\\n\";\n\
+var_dump(function_exists(\"natsort\"), function_exists(\"NATSORT\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "c=file1\n",
+            "b=file2\n",
+            "a=file10\n",
+            "file2:file10:file1\n",
+            "img1:img1\n",
+            "img2:img2\n",
+            "img10:img10\n",
+            "img12:img12\n",
+            "z001~a001\n",
+            "z01~a01\n",
+            "z02~a02\n",
+            "z1~a1\n",
+            "z2~a2\n",
+            "z10~a10\n",
+            "bool(true)\n",
+            "dx1=x1\n",
+            "dx2=x2\n",
+            "dx10=x10\n",
+            "x2:x10:x1\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_natsort_variable"));
+    assert!(c_source.contains("ptn_array_natsort_values"));
 }
 
 #[test]

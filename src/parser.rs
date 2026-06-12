@@ -3722,6 +3722,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "asort"
             | "krsort"
             | "ksort"
+            | "natsort"
             | "error_reporting"
             | "func_get_arg"
             | "func_get_args"
@@ -3819,6 +3820,7 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
             | "asort"
             | "krsort"
             | "ksort"
+            | "natsort"
             | "rsort"
             | "shuffle"
             | "sort"
@@ -3835,7 +3837,7 @@ fn is_single_array_path_mutation_name(name: &str) -> bool {
 fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "natsort" | "natcasesort" | "usort" | "uasort" | "uksort" | "array_multisort"
+        "natcasesort" | "usort" | "uasort" | "uksort" | "array_multisort"
     )
 }
 
@@ -3880,6 +3882,12 @@ fn validate_mutating_array_internal_call(
             format!(
                 "{normalized}() currently supports default SORT_REGULAR semantics only; sort flags are unsupported"
             ),
+            Some(arguments.get(1).map_or(call_span, Expr::span)),
+        ));
+    }
+    if name.eq_ignore_ascii_case("natsort") && arguments.len() > 1 {
+        return Err(Diagnostic::new(
+            "natsort() currently supports exactly one direct variable array argument; extra arguments are unsupported",
             Some(arguments.get(1).map_or(call_span, Expr::span)),
         ));
     }
