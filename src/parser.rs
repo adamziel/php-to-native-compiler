@@ -3676,6 +3676,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "stripslashes"
             | "strtolower"
             | "strtoupper"
+            | "ucfirst"
             | "quotemeta"
             | "chunk_split"
             | "strip_tags"

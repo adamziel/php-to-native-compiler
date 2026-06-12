@@ -1,18 +1,19 @@
 # PTN Progress
 
 Refresh: 2026-06-12T09:28Z
-Measured: `ptn-4ngk` rebased after `origin/master` `86e0e60e1`.
+Measured: `ptn-6cxf` rebased after `origin/master` `207ebfa61`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
-array/string-offset writes and unsets, array-offset inc/dec, array/append
-compound assignments, bounded private properties, object `var_export()`,
-`get_class()`, property/static quiet probes, direct array mutators including
+array/string-offset writes and unsets, array/append compound assignments,
+bounded private properties, object `var_export()`, `get_class()`, quiet
+property/static probes, direct array mutators including
 `sort()`/`asort()`/`arsort()`/`ksort()`/`krsort()`/`rsort()`/`natsort()`/
 `natcasesort()`, set operations, `array_udiff*()`, exact string/lang rows,
 highlight output paths, `join()`/`implode()`, `sprintf()`, `array_product()`,
 `array_keys()`, key-boundary helpers, `array_search()`, catchable `intdiv()`,
-ASCII case string internals, `strrev()`, PHP-style `ceil()`/`floor()`
-numeric-argument diagnostics, and `is_countable()` over current boxed arrays.
+ASCII case string internals, `strrev()`, `ucfirst()`, PHP-style
+`ceil()`/`floor()` numeric-argument diagnostics, and `is_countable()` over
+current boxed arrays.
 
 Recent movers include dynamic-root array/string-offset writes/unsets, object
 `var_export()`, property/static quiet probes, default sort-family mutators,
@@ -20,8 +21,9 @@ sort flag diagnostics, offset compounds, property/static inc/dec,
 `array_product()`, `array_keys()` filtering, key-boundary helpers,
 `array_search()` key lookup, `intdiv()` exceptions, ASCII case conversion,
 key-preserving natural `natsort()`/`natcasesort()`, binary-safe `strrev()`,
-`ceil()`/`floor()` invalid numeric-string/unsupported-operand `TypeError`
-parity, and the current boxed-array `is_countable()` predicate.
+first-byte `ucfirst()`, `ceil()`/`floor()` invalid numeric-string/unsupported
+operand `TypeError` parity, and the current boxed-array `is_countable()`
+predicate.
 
 ## Dashboard
 
@@ -47,7 +49,8 @@ compile-time includes, selected internals, COW/reference slices, user
 functions, call-frame introspection, scalar type hints, bounded closures,
 `stdClass`, public class/object shells, declared properties, quiet probes,
 metadata intrinsics, `is_callable()`, `is_countable()`, assertions,
-interpolation, streams, `pow()`, `array_merge()`, `strrev()`, `array_search()`,
+interpolation, streams, `pow()`, `array_merge()`, `strrev()`, `ucfirst()`,
+`array_search()`,
 `call_user_func_array()`, highlight output paths, `var_export()`, direct array
 mutators including `natcasesort()`, set operations, inc/dec
 statements/expressions, and dynamic-variable array/string-offset writes.
@@ -70,7 +73,8 @@ adds `ceil()`/`floor()` numeric-argument diagnostics and targeted
 adds current boxed-array `is_countable()` coverage. Focused parser/native
 reducers passed, `cargo test` passed with native/compiler 533/533 plus
 COW/doc-tests, bounded PHPT passed 205/205, COW PHPT passed 29/29, and the
-post-merge COW gate passed 25/25.
+post-merge COW gate passed 25/25. `ptn-6cxf` adds modeled `ucfirst()` and
+`ext/standard/tests/strings/ucfirst.phpt`.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

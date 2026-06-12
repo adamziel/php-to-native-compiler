@@ -154,6 +154,7 @@ ext/standard/tests/strings/str_starts_with.phpt
 ext/standard/tests/strings/strip_tags.phpt
 ext/standard/tests/strings/strlen.phpt
 ext/standard/tests/strings/substr_int_min.phpt
+ext/standard/tests/strings/ucfirst.phpt
 ext/standard/tests/versioning/php_sapi_name.phpt
 ext/standard/tests/versioning/phpversion.phpt
 tests/basic/array_key_exists_null_deprecation.phpt

@@ -1289,6 +1289,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function StrRev($string) { return $string; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strrev()");
 
+    let error = parser::parse("<?php function UcFirst($string) { return $string; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function ucfirst()");
+
     let error =
         parser::parse("<?php function array_combine($keys, $values) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_combine()");
@@ -3928,6 +3931,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
         "ptn_internal_strtolower",
         "ptn_internal_strtoupper",
         "ptn_internal_strrev",
+        "ptn_internal_ucfirst",
         "ptn_internal_quotemeta",
         "ptn_internal_chunk_split",
         "ptn_internal_str_repeat",
@@ -3961,6 +3965,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
 
     for expected_call in [
         "ptn_rot13_string(string.data, string.len)",
+        "ptn_first_char_case_string(string.data, string.len, 1)",
         "ptn_ascii_case_string(string.data, string.len, 0)",
         "ptn_ascii_case_string(string.data, string.len, 1)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
@@ -3983,6 +3988,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\
 
     for marker in [
         "static char *ptn_rot13_string(",
+        "static char *ptn_first_char_case_string(",
         "static char *ptn_ascii_case_string(",
         "static char *ptn_quotemeta_string(",
         "static char *ptn_chunk_split_string(",
@@ -4038,6 +4044,41 @@ var_dump(function_exists(\"strrev\"), function_exists(\"STRREV\"));",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(5) \"olleH\"\nstring(6) \"420041\"\nstring(5) \"54321\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_ucfirst_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-ucfirst");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ucfirst.php");
+    let output = root.join("ucfirst-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ucfirst(\"hello\"));\n\
+var_dump(ucfirst(\"Hello\"));\n\
+var_dump(ucfirst(\"1hello\"));\n\
+var_dump(bin2hex(ucfirst(\"a\" . chr(0) . \"z\")));\n\
+var_dump(ucfirst(12345));\n\
+var_dump(function_exists(\"ucfirst\"), function_exists(\"UCFIRST\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"Hello\"\n\
+string(5) \"Hello\"\n\
+string(6) \"1hello\"\n\
+string(6) \"41007a\"\n\
+string(5) \"12345\"\n\
+bool(true)\n\
+bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -3321,6 +3321,33 @@ static PtnValue ptn_internal_strrev(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_owned_string_len(reversed, len);
 }
 
+static char *ptn_first_char_case_string(const char *string, size_t len, int uppercase) {
+    char *mapped = malloc(len + 1);
+    if (mapped == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (len != 0) {
+        memcpy(mapped, string, len);
+        unsigned char first = (unsigned char)mapped[0];
+        if (uppercase && first >= 'a' && first <= 'z') {
+            mapped[0] = (char)('A' + (first - 'a'));
+        } else if (!uppercase && first >= 'A' && first <= 'Z') {
+            mapped[0] = (char)('a' + (first - 'A'));
+        }
+    }
+    mapped[len] = '\0';
+    return mapped;
+}
+
+static PtnValue ptn_internal_ucfirst(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "ucfirst", 1, "string", args[0], line);
+    char *mapped = ptn_first_char_case_string(string.data, string.len, 1);
+    size_t len = string.len;
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(mapped, len);
+}
+
 static char *ptn_ascii_case_string(const char *string, size_t len, int uppercase) {
     char *mapped = malloc(len + 1);
     if (mapped == NULL) {
@@ -6233,6 +6260,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strtoupper", 1, 1, ptn_internal_strtoupper },
         { "strtr", 2, 3, ptn_internal_strtr },
         { "substr", 2, 3, ptn_internal_substr },
+        { "ucfirst", 1, 1, ptn_internal_ucfirst },
         { "unlink", 1, 1, ptn_internal_unlink },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "var_export", 1, 2, ptn_internal_var_export },

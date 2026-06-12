@@ -297,7 +297,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_repeat(expr, expr);`,
-  `strtolower(expr);`, `strtoupper(expr);`, `strrev(expr);`, `quotemeta(expr);`,
+  `strtolower(expr);`, `strtoupper(expr);`, `strrev(expr);`, `ucfirst(expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
   `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
   `md5(expr[, raw_output]);`,
@@ -337,7 +337,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_repeat(expr, expr)`,
-  `strtolower(expr)`, `strtoupper(expr)`, `strrev(expr)`, `quotemeta(expr)`,
+  `strtolower(expr)`, `strtoupper(expr)`, `strrev(expr)`, `ucfirst(expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
   `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
   `md5(expr[, raw_output])`,
@@ -445,7 +445,8 @@ Post-RC architecture remains explicit rather than hidden:
   closures, and exceptions throw the modeled `TypeError` boundary for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
-  `strtr()`, `strtolower()`, `strtoupper()`, `quotemeta()`, `chunk_split()`
+  `strtr()`, `strrev()`, `ucfirst()`, `strtolower()`, `strtoupper()`,
+  `quotemeta()`, `chunk_split()`
   string/separator arguments, `strip_tags()`, `md5()`, `sha1()`, `substr()`,
   `addcslashes()`, `addslashes()`, `stripcslashes()`, `stripslashes()`,
   `bin2hex()`, `hex2bin()`, `quoted_printable_decode()`, `soundex()`, and
@@ -471,6 +472,8 @@ Post-RC architecture remains explicit rather than hidden:
   scalar string conversion, mapping ASCII letters and preserving other bytes.
 - `strrev()` over current boxed scalar values after scalar string conversion,
   reversing bytes while preserving explicit string length and embedded NULs.
+- `ucfirst()` over current boxed scalar values after scalar string conversion,
+  uppercasing an initial ASCII lowercase byte and preserving remaining bytes.
 - `quotemeta()` over current boxed scalar values after scalar string
   conversion, prefixing `.`, `\`, `+`, `*`, `?`, `[`, `^`, `]`, `(`, `$`, and
   `)` bytes with backslashes through the current C-string-backed value path.
