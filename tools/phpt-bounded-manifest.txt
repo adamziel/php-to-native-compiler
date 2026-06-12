@@ -113,6 +113,7 @@ ext/standard/tests/array/array_keys_basic.phpt
 ext/standard/tests/array/array_keys_variation_002.phpt
 ext/standard/tests/array/array_keys_variation_003.phpt
 ext/standard/tests/array/array_keys_variation_004.phpt
+ext/standard/tests/array/array_reverse_basic1.phpt
 ext/standard/tests/array/array_slice_basic.phpt
 ext/standard/tests/array/count_basic.phpt
 ext/standard/tests/array/sizeof_basic2.phpt
@@ -122,6 +123,7 @@ ext/standard/tests/general_functions/002.phpt
 ext/standard/tests/general_functions/006.phpt
 ext/standard/tests/general_functions/array_is_list.phpt
 ext/standard/tests/general_functions/getmypid_basic.phpt
+ext/standard/tests/general_functions/php_uname_basic.phpt
 ext/standard/tests/general_functions/print_r_arrays.phpt
 ext/standard/tests/general_functions/print_r_bools.phpt
 ext/standard/tests/general_functions/print_r_ints.phpt
@@ -173,7 +175,9 @@ ext/standard/tests/strings/str_contains.phpt
 ext/standard/tests/strings/str_ends_with.phpt
 ext/standard/tests/strings/str_pad.phpt
 ext/standard/tests/strings/str_rot13_basic.phpt
+ext/standard/tests/strings/str_shuffle_basic.phpt
 ext/standard/tests/strings/str_starts_with.phpt
+ext/standard/tests/strings/strtr_basic.phpt
 ext/standard/tests/strings/strip_tags.phpt
 ext/standard/tests/strings/strlen.phpt
 ext/standard/tests/strings/substr_int_min.phpt
