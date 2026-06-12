@@ -1244,6 +1244,21 @@ fn parser_accepts_scalar_parameter_return_hints_and_by_ref_returns() {
 }
 
 #[test]
+fn parser_accepts_void_return_type_but_not_void_parameters() {
+    let program = parser::parse("<?php function test(): void { return; } test();").unwrap();
+    assert_eq!(program.functions[0].return_type, Some(TypeHint::Void));
+
+    let error = parser::parse("<?php function test(void $value) {}").unwrap_err();
+    assert_eq!(error.message, "expected function parameter variable");
+}
+
+#[test]
+fn parser_rejects_value_return_from_void_function() {
+    let error = parser::parse("<?php function test(): void { return 1; }").unwrap_err();
+    assert_eq!(error.message, "A void function must not return a value");
+}
+
+#[test]
 fn parser_accepts_variadic_function_parameters() {
     let program =
         parser::parse("<?php function test(int $head, string &...$tail) { return $head; }")
@@ -1388,6 +1403,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
             .unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_filter()");
 
+    let error = parser::parse("<?php function array_is_list($array) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_is_list()");
+
     let error =
         parser::parse("<?php function ARRAY_MAP($callback, $array) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_map()");
@@ -1437,6 +1455,12 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
 
     let error = parser::parse("<?php function Print_R($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function print_r()");
+
+    let error = parser::parse("<?php function JSON_ENCODE($value) { return ''; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function json_encode()");
+
+    let error = parser::parse("<?php function Printf($format) { return 0; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function printf()");
 
     let error = parser::parse("<?php function array_values($array) { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_values()");
@@ -4882,6 +4906,47 @@ var_dump(function_exists(\"sprintf\"));",
 }
 
 #[test]
+fn compile_json_encode_and_printf_to_native_binary() {
+    let root = temp_dir("ptn-native-json-printf");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("json-printf.php");
+    let output = root.join("json-printf-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo json_encode(null), \"\\n\";\n\
+echo json_encode(true), \"\\n\";\n\
+echo json_encode([1, true, null, \"a\\nb\", \"/\"]), \"\\n\";\n\
+echo json_encode([\"x\" => 1, \"two\" => false]), \"\\n\";\n\
+var_dump(printf(\"%s: %s\\n\", \"flag\", json_encode(false)));\n\
+var_dump(function_exists(\"json_encode\"), function_exists(\"printf\"), function_exists(\"PRINTF\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "null\n\
+true\n\
+[1,true,null,\"a\\nb\",\"\\/\"]\n\
+{\"x\":1,\"two\":false}\n\
+flag: false\n\
+int(12)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_json_encode("));
+    assert!(c_source.contains("static PtnValue ptn_internal_printf("));
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();
@@ -7502,6 +7567,34 @@ fn compile_null_typed_user_function_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_void_typed_user_function_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-void-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-void-type.php");
+    let output = root.join("user-function-void-type-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function explicit_done($value): void { echo \"value=$value\\n\"; return; }\n\
+function implicit_done(): void { echo \"implicit\\n\"; }\n\
+explicit_done(7);\n\
+var_dump(explicit_done(8));\n\
+var_dump(implicit_done());",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "value=7\nvalue=8\nNULL\nimplicit\nNULL\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -11082,6 +11175,84 @@ var_dump(function_exists('array_key_first'), function_exists('ARRAY_KEY_LAST'));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_key_first"));
     assert!(c_source.contains("ptn_internal_array_key_last"));
+}
+
+#[test]
+fn compile_array_is_list_to_native_binary() {
+    let root = temp_dir("ptn-native-array-is-list");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-is-list.php");
+    let output = root.join("array-is-list-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(array_is_list([]));
+var_dump(array_is_list([1, 2, 3]));
+var_dump(array_is_list([1 => 'a', 0 => 'b']));
+var_dump(array_is_list(['0' => 'a', 1 => 'b']));
+var_dump(array_is_list(['00' => 'a', 1 => 'b']));
+var_dump(array_is_list([0 => 'a', 2 => 'b']));
+
+$drop_first = [1, 2, 3];
+unset($drop_first[0]);
+var_dump(array_is_list($drop_first));
+
+$drop_middle = [1, 2, 3];
+unset($drop_middle[1]);
+var_dump(array_is_list($drop_middle));
+
+$drop_end = [1, 2, 3];
+unset($drop_end[2]);
+var_dump(array_is_list($drop_end));
+
+$drop_string = [1, 'a' => 'a', 2];
+unset($drop_string['a']);
+var_dump(array_is_list($drop_string));
+
+$append = [1, 2, 3];
+$append[] = 4;
+var_dump(array_is_list($append));
+
+$gap = [1, 2, 3];
+$gap[4] = 5;
+var_dump(array_is_list($gap));
+
+try { array_is_list(null); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+try { array_is_list(true); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+try { array_is_list(new stdClass()); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+var_dump(function_exists('array_is_list'), function_exists('ARRAY_IS_LIST'));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+array_is_list(): Argument #1 ($array) must be of type array, null given\n\
+array_is_list(): Argument #1 ($array) must be of type array, true given\n\
+array_is_list(): Argument #1 ($array) must be of type array, stdClass given\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_is_list"));
 }
 
 #[test]

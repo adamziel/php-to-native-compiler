@@ -867,6 +867,7 @@ fn emit_return_type_boundary(
                 out.push_str("    ptn_return_value = ptn_typed_return_value;\n");
             }
         }
+        TypeHint::Void => {}
     }
 }
 
@@ -876,7 +877,7 @@ fn type_hint_scalar_cast_helper(type_hint: Option<TypeHint>) -> Option<&'static 
         Some(TypeHint::Float) => Some("ptn_cast_float"),
         Some(TypeHint::String) => Some("ptn_cast_string"),
         Some(TypeHint::Bool) => Some("ptn_cast_bool"),
-        Some(TypeHint::Null) | None => None,
+        Some(TypeHint::Null | TypeHint::Void) | None => None,
     }
 }
 

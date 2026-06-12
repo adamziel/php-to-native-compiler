@@ -110,6 +110,7 @@ pub enum TypeHint {
     Float,
     String,
     Bool,
+    Void,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -120,6 +120,7 @@ ext/standard/tests/array/sort/natcasesort_basic.phpt
 ext/standard/tests/directory/directory_constants.phpt
 ext/standard/tests/general_functions/002.phpt
 ext/standard/tests/general_functions/006.phpt
+ext/standard/tests/general_functions/array_is_list.phpt
 ext/standard/tests/general_functions/getmypid_basic.phpt
 ext/standard/tests/general_functions/print_r_arrays.phpt
 ext/standard/tests/general_functions/print_r_bools.phpt

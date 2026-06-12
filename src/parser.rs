@@ -163,6 +163,9 @@ impl Parser {
                         &format!("{}::{}", class.name, method.name),
                     )?;
                 }
+                if method.return_type == Some(TypeHint::Void) {
+                    validate_void_returns_in_statements(&method.body)?;
+                }
                 validate_anonymous_functions_in_statements(&method.body, &functions)?;
                 validate_reference_assignment_sources(&method.body, &functions)?;
                 validate_goto_labels(&method.body)?;
@@ -170,6 +173,7 @@ impl Parser {
         }
         validate_function_names(&functions)?;
         validate_by_reference_returns(&functions)?;
+        validate_void_returns(&functions)?;
         validate_anonymous_functions_in_statements(&statements, &functions)?;
         validate_reference_assignment_sources(&statements, &functions)?;
         for function in &functions {
@@ -758,7 +762,7 @@ impl Parser {
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
-            Some(self.parse_type_hint()?)
+            Some(self.parse_return_type_hint()?)
         } else {
             None
         };
@@ -851,7 +855,7 @@ impl Parser {
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
-            Some(self.parse_type_hint()?)
+            Some(self.parse_return_type_hint()?)
         } else {
             None
         };
@@ -881,7 +885,7 @@ impl Parser {
         let captures = self.parse_closure_use_captures()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
-            Some(self.parse_type_hint()?)
+            Some(self.parse_return_type_hint()?)
         } else {
             None
         };
@@ -1011,6 +1015,19 @@ impl Parser {
     fn parse_type_hint(&mut self) -> Result<TypeHint> {
         let token = self.advance();
         match token.kind {
+            TokenKind::Null => Ok(TypeHint::Null),
+            TokenKind::IntType | TokenKind::IntegerType => Ok(TypeHint::Int),
+            TokenKind::FloatType | TokenKind::DoubleType => Ok(TypeHint::Float),
+            TokenKind::StringType | TokenKind::BinaryType => Ok(TypeHint::String),
+            TokenKind::BoolType | TokenKind::BooleanType => Ok(TypeHint::Bool),
+            _ => Err(Diagnostic::new("expected type hint", Some(token.span))),
+        }
+    }
+
+    fn parse_return_type_hint(&mut self) -> Result<TypeHint> {
+        let token = self.advance();
+        match &token.kind {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("void") => Ok(TypeHint::Void),
             TokenKind::Null => Ok(TypeHint::Null),
             TokenKind::IntType | TokenKind::IntegerType => Ok(TypeHint::Int),
             TokenKind::FloatType | TokenKind::DoubleType => Ok(TypeHint::Float),
@@ -3635,6 +3652,70 @@ fn validate_by_reference_returns(functions: &[FunctionDecl]) -> Result<()> {
     Ok(())
 }
 
+fn validate_void_returns(functions: &[FunctionDecl]) -> Result<()> {
+    for function in functions {
+        if function.return_type == Some(TypeHint::Void) {
+            validate_void_returns_in_statements(&function.body)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_void_returns_in_statements(statements: &[Statement]) -> Result<()> {
+    for statement in statements {
+        match statement {
+            Statement::Return {
+                value: Some(_),
+                span,
+            } => {
+                return Err(Diagnostic::new(
+                    "A void function must not return a value",
+                    Some(*span),
+                ));
+            }
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                validate_void_returns_in_statements(then_body)?;
+                validate_void_returns_in_statements(else_body)?;
+            }
+            Statement::Block { statements, .. } => {
+                validate_void_returns_in_statements(statements)?;
+            }
+            Statement::While { body, .. }
+            | Statement::DoWhile { body, .. }
+            | Statement::Foreach { body, .. } => {
+                validate_void_returns_in_statements(body)?;
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                validate_void_returns_in_statements(initializers)?;
+                validate_void_returns_in_statements(updates)?;
+                validate_void_returns_in_statements(body)?;
+            }
+            Statement::Try { body, catches, .. } => {
+                validate_void_returns_in_statements(body)?;
+                for catch in catches {
+                    validate_void_returns_in_statements(&catch.body)?;
+                }
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    validate_void_returns_in_statements(&case.body)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 fn validate_anonymous_functions_in_statements(
     statements: &[Statement],
     functions: &[FunctionDecl],
@@ -3783,6 +3864,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         Expr::AnonymousFunction(function) => {
             if function.return_by_ref {
                 validate_by_reference_returns_in_statements(&function.body, "{closure}")?;
+            }
+            if function.return_type == Some(TypeHint::Void) {
+                validate_void_returns_in_statements(&function.body)?;
             }
             validate_anonymous_functions_in_statements(&function.body, functions)?;
             validate_reference_assignment_sources(&function.body, functions)?;
@@ -4092,6 +4176,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "quoted_printable_decode"
             | "soundex"
             | "sprintf"
+            | "printf"
+            | "json_encode"
             | "ceil"
             | "floor"
             | "abs"
@@ -4184,6 +4270,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_flip"
             | "array_intersect"
             | "array_intersect_assoc"
+            | "array_is_list"
             | "array_key_exists"
             | "array_key_first"
             | "array_key_last"

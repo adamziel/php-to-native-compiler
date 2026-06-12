@@ -119,6 +119,7 @@ pub enum TypeHint {
     Float,
     String,
     Bool,
+    Void,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1074,6 +1075,7 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::Float => TypeHint::Float,
         AstTypeHint::String => TypeHint::String,
         AstTypeHint::Bool => TypeHint::Bool,
+        AstTypeHint::Void => TypeHint::Void,
     }
 }
 

@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-12T16:01Z
-Measured: `ptn-88jb` rebased after `origin/master` `712f50a1c`.
+Refresh: 2026-06-12T16:06Z
+Measured: `ptn-tca0` rebased on current `origin/master`.
 
 Recent RC slices cover public class constants, embedded-NUL `var_export()`,
 namespaced internal fallback, static-property `??=`, include-once guards,
@@ -9,34 +9,25 @@ property/static inc/dec, dynamic-variable writes/unsets and array/string-offset
 compound assignments, array/append compound assignments, private properties,
 object `var_export()`, `get_class()`, quiet probes, array mutators, sort flags,
 set operations, `array_udiff*()`, string/lang rows, highlight paths,
-`join()`/`implode()`, `sprintf()`, `array_product()`, key helpers,
-`array_search()`, `array_slice()`, `array_pad()`, `count()`/`sizeof()` modes,
-`str_pad()`, catchable `intdiv()`, `chunk_split()`, and
-`abs()`/`sqrt()`/`fdiv()` TypeErrors, ASCII case/trim, PHP/CLI/Zend metadata,
-PHPT runner probes, `ceil()`/`floor()`, `chr()` diagnostics,
-`is_countable()`, `ReflectionFunction`, namespaces, foreach list
-destructuring, and bounded dynamic include/require dispatch.
-
-Recent movers include dynamic-root array-offset compound assignment reducers,
-numeric-internal operand diagnostics, class-constant reducers, the
-`explode.phpt` embedded-NUL `var_export()` md5 boundary, namespace fallback,
-once-include reducers, static-property coalesce assignment, dynamic-root
-writes/unsets, property/static probes, sort diagnostics, array helpers,
-count/sizeof modes, `str_pad()` constants, `chunk_split()` length diagnostics,
-ASCII case/trim, runner probes, namespace and include PHPT rows, `str_pad`,
-`chunk_split_variation7`, `count_basic`, `sizeof_basic2`,
-ReflectionFunction metadata, and fd-backed manifest tooling.
+`join()`/`implode()`, bounded `sprintf()`/`printf()`, bounded `json_encode()`,
+`array_product()`, key helpers, `array_is_list()`, `array_search()`,
+`array_slice()`, `array_pad()`, `count()`/`sizeof()` modes, `str_pad()`,
+catchable `intdiv()`, `chunk_split()`, `abs()`/`sqrt()`/`fdiv()` TypeErrors,
+ASCII case/trim, PHP/CLI/Zend metadata, PHPT runner probes,
+`ceil()`/`floor()`, `chr()` diagnostics, `is_countable()`,
+`ReflectionFunction`, namespaces, foreach list destructuring, bounded dynamic
+include/require dispatch, and return-only `void` declarations.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 563 | 563 | 0 |
+| Native/compiler Rust suite | 568 | 568 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 218 | 218 | 0 |
+| PHPT bounded manifest | 219 | 219 | 0 |
 | PHPT Zend rows | 80 | 80 | 0 |
-| PHPT ext/standard rows | 91 | 91 | 0 |
+| PHPT ext/standard rows | 92 | 92 | 0 |
 | PHPT tests/basic+func+lang | 45 | 45 | 0 |
 | PHPT other rows | 2 | 2 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
@@ -49,28 +40,27 @@ ReflectionFunction metadata, and fd-backed manifest tooling.
 Parser/IR/C backend, boxed values, variables/constants, strings, scalar
 operators, ternary, ordered arrays, `foreach`, control flow, includes/once
 guards, selected internals, COW/reference slices, user functions, call-frame
-introspection, type hints, closures, `stdClass`, public class/object
-shells/constants, declared/static properties, quiet probes, reflection,
-callability/countability, assertions, namespaces/imports, streams, metadata,
-array/string/numeric helpers through `array_udiff*()`, `chunk_split()`,
-`sizeof()`, and `fdiv()`, highlight paths, `var_export()`, array mutators,
-inc/dec, foreach destructuring, dynamic-variable writes/unsets and array/
-string-offset compound assignments.
+introspection, scalar plus `void` return type hints, closures, `stdClass`,
+public class/object shells/constants, declared/static properties, quiet
+probes, reflection, callability/countability, assertions, namespaces/imports,
+streams, metadata, array/string/numeric helpers through `array_udiff*()`,
+`array_is_list()`, `count()`/`sizeof()`, `json_encode()`, `printf()`,
+`chunk_split()`, `fdiv()`, highlight paths, `var_export()`, array mutators,
+inc/dec, foreach destructuring, dynamic-variable writes/unsets and
+array/string-offset compound assignments.
 
 ## Remaining Bounded Failures
 
-- None in the current 218-row bounded manifest.
+- None in the current 219-row bounded manifest.
 
 ## Verification
 
-Verification: recent slices added class constants, embedded-NUL `var_export()`
-coverage matching `explode.phpt` md5 evidence, registered-internal fallback,
-once-includes, static-property `??=`, dynamic-root array-offset compound
-assignment coverage, namespace PHPT rows 4/4, include PHPT manifest 2/2,
-`str_pad.phpt`, `chunk_split_variation7.phpt`, focused `intdiv()` TypeErrors,
-catchable `chunk_split()` length errors, callback/reflection manifest 4/4,
-streamed-manifest smokes, runner probes, `chr()` diagnostics, count/sizeof
-coverage, and focused `abs()`/`sqrt()`/`fdiv()` operand coverage.
+Current slice verification: `cargo fmt --check`; `cargo test void`;
+`cargo test compile_array_is_list_to_native_binary`;
+`cargo test compile_json_encode_and_printf_to_native_binary`;
+focused `ext/standard/tests/general_functions/array_is_list.phpt` 1/1;
+`tools/run-phpt-manifest.sh tools/phpt-bounded-manifest.txt` 219/219; and
+post-merge COW gate 17/17 oracle, 3/3 notice, 6/6 diagnostics.
 
 Follow-ups remain visibility/inheritance metadata, typed/promoted properties,
 interfaces/traits, bracketed/grouped namespaces, broader fallback/reflection,

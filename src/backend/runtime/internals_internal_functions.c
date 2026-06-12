@@ -866,6 +866,234 @@ static PtnValue ptn_internal_var_export(PtnRuntime *runtime, size_t argc, const 
     return ptn_bool(1);
 }
 
+static void ptn_json_encode_append_value(
+    PtnStringBuffer *buffer,
+    PtnValue value,
+    PtnDumpSeenArrays *seen,
+    size_t depth,
+    int *ok
+);
+
+static void ptn_json_encode_append_hex4(PtnStringBuffer *buffer, unsigned char byte) {
+    static const char hex[] = "0123456789abcdef";
+    ptn_string_buffer_append(buffer, "\\u00");
+    ptn_string_buffer_append_char(buffer, hex[(byte >> 4) & 0xf]);
+    ptn_string_buffer_append_char(buffer, hex[byte & 0xf]);
+}
+
+static void ptn_json_encode_append_string(PtnStringBuffer *buffer, const unsigned char *data, size_t len) {
+    ptn_string_buffer_append_char(buffer, '"');
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = data[i];
+        switch (byte) {
+            case '"':
+                ptn_string_buffer_append(buffer, "\\\"");
+                break;
+            case '\\':
+                ptn_string_buffer_append(buffer, "\\\\");
+                break;
+            case '/':
+                ptn_string_buffer_append(buffer, "\\/");
+                break;
+            case '\b':
+                ptn_string_buffer_append(buffer, "\\b");
+                break;
+            case '\f':
+                ptn_string_buffer_append(buffer, "\\f");
+                break;
+            case '\n':
+                ptn_string_buffer_append(buffer, "\\n");
+                break;
+            case '\r':
+                ptn_string_buffer_append(buffer, "\\r");
+                break;
+            case '\t':
+                ptn_string_buffer_append(buffer, "\\t");
+                break;
+            default:
+                if (byte < 0x20) {
+                    ptn_json_encode_append_hex4(buffer, byte);
+                } else {
+                    ptn_string_buffer_append_char(buffer, (char)byte);
+                }
+                break;
+        }
+    }
+    ptn_string_buffer_append_char(buffer, '"');
+}
+
+static int ptn_json_array_is_list(PtnArray *array) {
+    for (size_t i = 0; i < array->len; i++) {
+        if (i > (size_t)INT64_MAX) {
+            return 0;
+        }
+        PtnArrayKey key = array->entries[i].key;
+        if (key.type != PTN_ARRAY_KEY_INT || key.as.integer != (int64_t)i) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_json_encode_append_array(
+    PtnStringBuffer *buffer,
+    PtnArray *array,
+    PtnDumpSeenArrays *seen,
+    size_t depth,
+    int *ok
+) {
+    if (depth == 0 || ptn_dump_seen_arrays_contains(seen, array)) {
+        *ok = 0;
+        return;
+    }
+    ptn_dump_seen_arrays_push(seen, array);
+    int list = ptn_json_array_is_list(array);
+    ptn_string_buffer_append_char(buffer, list ? '[' : '{');
+    for (size_t i = 0; i < array->len; i++) {
+        if (i != 0) {
+            ptn_string_buffer_append_char(buffer, ',');
+        }
+        if (!list) {
+            PtnArrayKey key = array->entries[i].key;
+            if (key.type == PTN_ARRAY_KEY_INT) {
+                char key_buffer[64];
+                int written = snprintf(key_buffer, sizeof(key_buffer), "%lld", (long long)key.as.integer);
+                if (written < 0 || (size_t)written >= sizeof(key_buffer)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_json_encode_append_string(buffer, (const unsigned char *)key_buffer, (size_t)written);
+            } else {
+                ptn_json_encode_append_string(buffer, (const unsigned char *)key.as.string, strlen(key.as.string));
+            }
+            ptn_string_buffer_append_char(buffer, ':');
+        }
+        ptn_json_encode_append_value(buffer, array->entries[i].value, seen, depth - 1, ok);
+        if (!*ok) {
+            ptn_dump_seen_arrays_pop(seen);
+            return;
+        }
+    }
+    ptn_string_buffer_append_char(buffer, list ? ']' : '}');
+    ptn_dump_seen_arrays_pop(seen);
+}
+
+static void ptn_json_encode_append_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnDumpSeenArrays *seen,
+    size_t depth,
+    int *ok
+) {
+    if (depth == 0) {
+        *ok = 0;
+        return;
+    }
+    ptn_string_buffer_append_char(buffer, '{');
+    size_t emitted = 0;
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            continue;
+        }
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(object, entry->key.as.string);
+        if (metadata != NULL && metadata->visibility != PTN_PROPERTY_PUBLIC) {
+            continue;
+        }
+        if (emitted != 0) {
+            ptn_string_buffer_append_char(buffer, ',');
+        }
+        ptn_json_encode_append_string(
+            buffer,
+            (const unsigned char *)entry->key.as.string,
+            strlen(entry->key.as.string)
+        );
+        ptn_string_buffer_append_char(buffer, ':');
+        ptn_json_encode_append_value(buffer, entry->value, seen, depth - 1, ok);
+        if (!*ok) {
+            return;
+        }
+        emitted++;
+    }
+    ptn_string_buffer_append_char(buffer, '}');
+}
+
+static void ptn_json_encode_append_value(
+    PtnStringBuffer *buffer,
+    PtnValue value,
+    PtnDumpSeenArrays *seen,
+    size_t depth,
+    int *ok
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_string_buffer_append(buffer, "null");
+            break;
+        case PTN_BOOL:
+            ptn_string_buffer_append(buffer, value.as.boolean ? "true" : "false");
+            break;
+        case PTN_INT:
+            ptn_string_buffer_append_format(buffer, "%lld", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT: {
+            if (!isfinite(value.as.floating)) {
+                *ok = 0;
+                break;
+            }
+            char formatted[128];
+            ptn_format_scalar_float(value.as.floating, formatted, sizeof(formatted));
+            ptn_string_buffer_append(buffer, formatted);
+            break;
+        }
+        case PTN_STRING:
+            ptn_json_encode_append_string(buffer, value.as.string.data, value.as.string.len);
+            break;
+        case PTN_ARRAY:
+            ptn_json_encode_append_array(buffer, value.as.array, seen, depth, ok);
+            break;
+        case PTN_OBJECT:
+            ptn_json_encode_append_object(buffer, value.as.object, seen, depth, ok);
+            break;
+        case PTN_RESOURCE:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_REFERENCE:
+            *ok = 0;
+            break;
+    }
+}
+
+static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    size_t depth = 512;
+    if (argc >= 3) {
+        int64_t requested_depth = ptn_value_to_integer(args[2]);
+        if (requested_depth <= 0) {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "json_encode(): Argument #3 ($depth) must be greater than 0"
+            );
+            return ptn_null();
+        }
+        depth = (size_t)requested_depth;
+    }
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    PtnDumpSeenArrays seen;
+    ptn_dump_seen_arrays_init(&seen);
+    int ok = 1;
+    ptn_json_encode_append_value(&buffer, args[0], &seen, depth, &ok);
+    ptn_dump_seen_arrays_free(&seen);
+    if (!ok) {
+        free(buffer.data);
+        return ptn_bool(0);
+    }
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
 static PtnArray *ptn_internal_expect_array_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -2047,6 +2275,41 @@ static PtnValue ptn_internal_array_key_last(PtnRuntime *runtime, size_t argc, co
         return ptn_null();
     }
     return ptn_array_key_value(array->entries[array->len - 1].key);
+}
+
+static PtnValue ptn_internal_array_is_list(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type != PTN_ARRAY) {
+        const char *given = value.type == PTN_OBJECT
+            ? value.as.object->class_name
+            : ptn_count_operand_type_name(value);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "array_is_list(): Argument #1 ($array) must be of type array, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnArray *array = value.as.array;
+    for (size_t i = 0; i < array->len; i++) {
+        if (i > (size_t)INT64_MAX) {
+            return ptn_bool(0);
+        }
+        PtnArrayKey key = array->entries[i].key;
+        if (key.type != PTN_ARRAY_KEY_INT || key.as.integer != (int64_t)i) {
+            return ptn_bool(0);
+        }
+    }
+    return ptn_bool(1);
 }
 
 static int ptn_array_value_strings_equal(PtnValue left, PtnValue right) {
@@ -3496,8 +3759,8 @@ static void ptn_sprintf_throw_unknown_specifier(PtnRuntime *runtime, char specif
     ptn_throw_exception(runtime, "ValueError", message);
 }
 
-static PtnValue ptn_internal_sprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "sprintf", 1, "format", args[0], line);
+static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, function_name, 1, "format", args[0], line);
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     size_t arg_index = 1;
@@ -3566,7 +3829,7 @@ static PtnValue ptn_internal_sprintf(PtnRuntime *runtime, size_t argc, const Ptn
         if (arg_index >= argc) {
             ptn_string_operand_free(format);
             free(output.data);
-            ptn_emit_argument_count_error(&runtime->diagnostics, "sprintf", arg_index + 1, argc);
+            ptn_emit_argument_count_error(&runtime->diagnostics, function_name, arg_index + 1, argc);
             exit(255);
         }
         PtnValue arg = args[arg_index++];
@@ -3624,6 +3887,26 @@ static PtnValue ptn_internal_sprintf(PtnRuntime *runtime, size_t argc, const Ptn
 
     ptn_string_operand_free(format);
     return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_internal_sprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_sprintf_named(runtime, "sprintf", argc, args, line);
+}
+
+static PtnValue ptn_internal_printf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue formatted = ptn_internal_sprintf_named(runtime, "printf", argc, args, line);
+    if (ptn_value_deref(formatted).type != PTN_STRING) {
+        return formatted;
+    }
+    PtnValue string_value = ptn_value_deref(formatted);
+    fwrite(string_value.as.string.data, 1, string_value.as.string.len, stdout);
+    if (string_value.as.string.len > (size_t)INT64_MAX) {
+        ptn_value_drop(&formatted);
+        ptn_abort_out_of_memory();
+    }
+    int64_t len = (int64_t)string_value.as.string.len;
+    ptn_value_drop(&formatted);
+    return ptn_int(len);
 }
 
 static char *ptn_rot13_string(const char *string, size_t len) {
@@ -7375,6 +7658,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_flip", 1, 1, ptn_internal_array_flip },
         { "array_intersect", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect },
         { "array_intersect_assoc", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_assoc },
+        { "array_is_list", 1, 1, ptn_internal_array_is_list },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_key_first", 1, 1, ptn_internal_array_key_first },
         { "array_key_last", 1, 1, ptn_internal_array_key_last },
@@ -7465,6 +7749,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
         { "is_string", 1, 1, ptn_internal_is_string },
         { "join", 1, 2, ptn_internal_join },
+        { "json_encode", 1, 3, ptn_internal_json_encode },
         { "key", 1, 1, ptn_internal_key },
         { "krsort", 1, 2, ptn_internal_krsort },
         { "ksort", 1, 2, ptn_internal_ksort },
@@ -7488,6 +7773,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "preg_match", 2, 5, ptn_internal_preg_match },
         { "prev", 1, 1, ptn_internal_prev },
         { "print_r", 1, 2, ptn_internal_print_r },
+        { "printf", 1, PTN_VARIADIC_ARGS, ptn_internal_printf },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "range", 2, 3, ptn_internal_range },

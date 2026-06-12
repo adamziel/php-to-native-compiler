@@ -328,6 +328,7 @@ Post-RC architecture remains explicit rather than hidden:
   `trim(expr[, expr]);`, `ltrim(expr[, expr]);`, `rtrim(expr[, expr]);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
   `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
+  `printf(expr, ...);`, `json_encode(expr[, expr[, expr]]);`,
   `md5(expr[, raw_output]);`,
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
   `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr);`,
@@ -352,7 +353,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_map(expr, expr[, ...]);`, `array_reduce(expr, expr[, expr]);`,
   `array_walk(expr, expr[, expr]);`,
   `array_intersect(expr, ...);`, `array_intersect_assoc(expr, ...);`,
-  `array_key_first(expr);`, `array_key_last(expr);`,
+  `array_is_list(expr);`, `array_key_first(expr);`, `array_key_last(expr);`,
   `array_udiff(expr, expr, callback);`,
   `array_udiff_assoc(expr, expr, callback);`,
   `array_udiff_uassoc(expr, expr, callback, callback);`,
@@ -381,6 +382,7 @@ Post-RC architecture remains explicit rather than hidden:
   `trim(expr[, expr])`, `ltrim(expr[, expr])`, `rtrim(expr[, expr])`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
   `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
+  `printf(expr, ...)`, `json_encode(expr[, expr[, expr]])`,
   `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `quoted_printable_decode(expr)`, `dirname(expr)`,
@@ -405,7 +407,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_map(expr, expr[, ...])`, `array_reduce(expr, expr[, expr])`,
   `array_walk(expr, expr[, expr])`,
   `array_intersect(expr, ...)`, `array_intersect_assoc(expr, ...)`,
-  `array_key_first(expr)`, `array_key_last(expr)`,
+  `array_is_list(expr)`, `array_key_first(expr)`, `array_key_last(expr)`,
   `array_udiff(expr, expr, callback)`,
   `array_udiff_assoc(expr, expr, callback)`,
   `array_udiff_uassoc(expr, expr, callback, callback)`,
@@ -441,9 +443,10 @@ Post-RC architecture remains explicit rather than hidden:
   trailing scalar and literal-array default parameter values including omitted
   `null` defaults, local variable storage, ordinary `return` statements,
   implicit `null` returns, recursive calls, call-frame argument introspection,
-  and minimal `null` parameter and return type declarations over the currently
-  supported expression and statement subset. Direct calls may omit defaulted trailing
-  arguments, pass extra positional arguments, or use named arguments for direct
+  and minimal scalar/`null` parameter and return type declarations plus
+  return-only `void` declarations over the currently supported expression and
+  statement subset. Direct calls may omit defaulted trailing arguments, pass
+  extra positional arguments, or use named arguments for direct
   generated user-function calls: argument expressions are evaluated
   left-to-right, values are bound to parameters by name, call-frame
   introspection observes parameter order, and unknown or overwritten parameter
@@ -490,6 +493,12 @@ Post-RC architecture remains explicit rather than hidden:
   `%u`, `%o`, `%x`/`%X`, `%b`, `%c`, and `%f`/`%F`/`%e`/`%E`/`%g`/`%G`
   conversions with ordinary flags, width, and precision. String formatting is
   length-aware for embedded NUL bytes in current string operands.
+- `printf()` shares the bounded `sprintf()` formatter, writes the formatted
+  bytes to stdout, and returns the emitted byte length.
+- `json_encode()` covers current scalar values, strings with JSON escaping,
+  list arrays, associative arrays, and public object properties. Unsupported
+  runtime-only values and excessive recursion return `false`; option flags are
+  not yet modeled.
 - Shared string-argument checking for common string/byte internals: supported
   scalar values and objects with a public declared `__toString()` are coerced
   through the same length-aware operand path, `null` arguments emit the modeled
@@ -684,6 +693,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `array_flip()` over current boxed arrays, flipping dereferenced integer and
   string values into ordered-map keys and using the original keys as values.
   Unsupported value types emit the modeled PHP warning boundary and are skipped.
+- `array_is_list()` over current boxed arrays, returning whether ordered keys
+  are exactly integer `0..n-1` in insertion order. Non-array operands throw the
+  modeled catchable PHP `TypeError`.
 - `array_key_first()` and `array_key_last()` over current boxed arrays,
   returning the first or last ordered integer/string key, or `null` for empty
   arrays.

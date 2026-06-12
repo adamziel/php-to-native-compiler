@@ -14,8 +14,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Strings cover interpolation, legacy `${name}` deprecations, common/control
   escapes, hex/octal byte escapes, and inline HTML output.
 - Top-level functions and declared methods include magic constants, call-frame
-  introspection, scalar type hints, array defaults, by-reference returns, typed
-  coercion, and constructor dispatch/metadata intrinsics.
+  introspection, scalar and void return type hints, array defaults,
+  by-reference returns, typed coercion, and constructor dispatch/metadata
+  intrinsics.
 - Includes share caller file scope and return values; bounded dynamic
   include/require path expressions dispatch to compiled helpers when all
   candidate string paths are statically enumerable, with include-once guards
@@ -37,11 +38,12 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Array internals including set operations, `count()`/`sizeof()` with current
   array modes, `array_chunk()`, `array_combine()`, `array_filter()`,
   `array_key_exists()`, `array_keys()`, key-boundary
-  probes, `array_merge()`, `array_pad()`, `array_pop()`, `array_product()`,
-  `array_push()`, `array_shift()`, `array_unshift()`, `array_search()`,
-  `arsort()`, `asort()`, `krsort()`, `ksort()`, `natcasesort()`, `natsort()`,
-  `sort()`, `rsort()`, and `shuffle()` use ordered-array/COW paths; direct
-  regular sort-family calls also accept an explicit `SORT_REGULAR` flag.
+  probes, `array_is_list()`, `array_merge()`, `array_pad()`, `array_pop()`,
+  `array_product()`, `array_push()`, `array_shift()`, `array_unshift()`,
+  `array_search()`, `arsort()`, `asort()`, `krsort()`, `ksort()`,
+  `natcasesort()`, `natsort()`, `sort()`, `rsort()`, and `shuffle()` use
+  ordered-array/COW paths; direct regular sort-family calls also accept an
+  explicit `SORT_REGULAR` flag.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string escaping.
@@ -59,8 +61,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   string increment.
 - Direct variable and variable-root array/append compound assignments share
   boxed operators and return assigned values.
-- `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
-  covers `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
+- `join()` concatenates ordered-array values, bounded scalar `sprintf()`/
+  `printf()` cover common formats, and `json_encode()` covers scalar/object/
+  array values in the current boxed subset.
 - `str_pad()` supports byte-length padding with pad constants.
 - `zend_version()` reports the modeled Zend Engine version alongside the
   existing CLI PHP version metadata.
