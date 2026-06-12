@@ -1773,16 +1773,46 @@ fn parser_accepts_keyword_boolean_precedence() {
 }
 
 #[test]
-fn parser_rejects_keyword_boolean_after_direct_assignment() {
-    let error = parser::parse("<?php $result = true and false;").unwrap_err();
-    assert!(error
-        .message
-        .contains("assignment expressions with keyword boolean operators are unsupported"));
+fn parser_accepts_keyword_boolean_tail_after_direct_assignment_statement() {
+    let program = parser::parse("<?php $result = true and false;").unwrap();
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected expression statement");
+    };
+    let Expr::Binary {
+        op: BinaryOp::And,
+        left,
+        ..
+    } = expression
+    else {
+        panic!("expected keyword boolean tail");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Assign {
+            op: AssignmentOp::Assign,
+            ..
+        }
+    ));
 
-    let compound = parser::parse("<?php $result += true xor false;").unwrap_err();
-    assert!(compound
-        .message
-        .contains("assignment expressions with keyword boolean operators are unsupported"));
+    let compound = parser::parse("<?php $result += true xor false;").unwrap();
+    let Statement::Expression { expression, .. } = &compound.statements[0] else {
+        panic!("expected expression statement");
+    };
+    let Expr::Binary {
+        op: BinaryOp::Xor,
+        left,
+        ..
+    } = expression
+    else {
+        panic!("expected keyword boolean tail");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Assign {
+            op: AssignmentOp::AddAssign,
+            ..
+        }
+    ));
 
     parser::parse("<?php $result = (true and false);").unwrap();
 }
@@ -9744,6 +9774,43 @@ var_dump($left xor $right);\n",
             "bool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\n{}bool(false)\n",
             undefined_variable_warnings(&input, &[("left", 10), ("right", 10)])
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_keyword_boolean_assignment_tails_to_native_binary() {
+    let root = temp_dir("ptn-native-keyword-boolean-assignment-tails");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("keyword-boolean-assignment-tails.php");
+    let output = root.join("keyword-boolean-assignment-tails-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = true and false;\n\
+var_dump($a);\n\
+$b = false or true;\n\
+var_dump($b);\n\
+$c = true xor false;\n\
+var_dump($c);\n\
+$hit = 0;\n\
+$d = false and $hit = 1;\n\
+var_dump($d, $hit);\n\
+$e = true or $hit = 2;\n\
+var_dump($e, $hit);\n\
+$items = [0];\n\
+$items[0] = true and false;\n\
+var_dump($items[0]);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(false)\nbool(true)\nbool(false)\nint(0)\nbool(true)\nint(0)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

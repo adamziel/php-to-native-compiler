@@ -1124,7 +1124,14 @@ impl Parser {
                     &AssignmentTarget::ArrayDim(target.clone()),
                     op_span,
                 )?;
-                let value = self.parse_assignment_value_expr()?;
+                let value = self.parse_assignment_expr_without_keyword_boolean()?;
+                if let Some(statement) = self.parse_keyword_boolean_assignment_tail_statement(
+                    AssignmentTarget::ArrayDim(target.clone()),
+                    op,
+                    value.clone(),
+                )? {
+                    return Ok(statement);
+                }
                 self.expect_statement_terminator()?;
                 return Ok(Statement::ArrayAssign {
                     target,
@@ -1151,12 +1158,19 @@ impl Parser {
                     span: token.span,
                 });
             }
-            let value = self.parse_assignment_value_expr()?;
+            let value = self.parse_assignment_expr_without_keyword_boolean()?;
             if matches!(op, AssignmentOp::Assign) {
                 validate_recursive_reference_assignment_value(
                     &AssignmentTarget::ArrayDim(target.clone()),
                     &value,
                 )?;
+            }
+            if let Some(statement) = self.parse_keyword_boolean_assignment_tail_statement(
+                AssignmentTarget::ArrayDim(target.clone()),
+                op,
+                value.clone(),
+            )? {
+                return Ok(statement);
             }
             self.expect_statement_terminator()?;
             return Ok(Statement::ArrayAssign {
@@ -1187,15 +1201,18 @@ impl Parser {
                 span: token.span,
             });
         }
-        let value = self.parse_assignment_value_expr()?;
+        let value = self.parse_assignment_expr_without_keyword_boolean()?;
+        let target = AssignmentTarget::Variable {
+            name: name.clone(),
+            span: token.span,
+        };
         if matches!(op, AssignmentOp::Assign) {
-            validate_recursive_reference_assignment_value(
-                &AssignmentTarget::Variable {
-                    name: name.clone(),
-                    span: token.span,
-                },
-                &value,
-            )?;
+            validate_recursive_reference_assignment_value(&target, &value)?;
+        }
+        if let Some(statement) =
+            self.parse_keyword_boolean_assignment_tail_statement(target, op, value.clone())?
+        {
+            return Ok(statement);
         }
         self.expect_statement_terminator()?;
         Ok(Statement::Assign {
@@ -1886,6 +1903,11 @@ impl Parser {
         self.parse_assignment_expr_from_left(left)
     }
 
+    fn parse_assignment_expr_without_keyword_boolean(&mut self) -> Result<Expr> {
+        let left = self.parse_ternary_expr(SYMBOL_OR_PRECEDENCE)?;
+        self.parse_assignment_expr_from_left(left)
+    }
+
     fn parse_assignment_expr_from_left(&mut self, left: Expr) -> Result<Expr> {
         if !self.peek_is_expression_assignment_op() {
             reject_append_array_read(&left)?;
@@ -1913,7 +1935,7 @@ impl Parser {
                 span,
             });
         }
-        let value = self.parse_assignment_expr()?;
+        let value = self.parse_assignment_expr_without_keyword_boolean()?;
         if matches!(op, AssignmentOp::Assign) {
             validate_recursive_reference_assignment_value(&target, &value)?;
         }
@@ -1927,8 +1949,7 @@ impl Parser {
     }
 
     fn parse_assignment_value_expr(&mut self) -> Result<Expr> {
-        let left = self.parse_ternary_expr(SYMBOL_OR_PRECEDENCE)?;
-        let value = self.parse_assignment_expr_from_left(left)?;
+        let value = self.parse_assignment_expr_without_keyword_boolean()?;
         if self.peek_is_keyword_boolean_operator() {
             return Err(Diagnostic::new(
                 "assignment expressions with keyword boolean operators are unsupported",
@@ -1936,6 +1957,54 @@ impl Parser {
             ));
         }
         Ok(value)
+    }
+
+    fn parse_keyword_boolean_tail_from_left(
+        &mut self,
+        mut left: Expr,
+        min_precedence: u8,
+    ) -> Result<Expr> {
+        while let Some((op, precedence)) = self.peek_keyword_boolean_op() {
+            if precedence < min_precedence {
+                break;
+            }
+
+            self.advance();
+            let right = self.parse_assignment_expr_without_keyword_boolean()?;
+            let right = self.parse_keyword_boolean_tail_from_left(right, precedence + 1)?;
+            let span = combine_spans(left.span(), right.span());
+            left = Expr::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_keyword_boolean_assignment_tail_statement(
+        &mut self,
+        target: AssignmentTarget,
+        op: AssignmentOp,
+        value: Expr,
+    ) -> Result<Option<Statement>> {
+        if !self.peek_is_keyword_boolean_operator() {
+            return Ok(None);
+        }
+
+        let span = combine_spans(assignment_target_span(&target), value.span());
+        let assignment = Expr::Assign {
+            target,
+            op,
+            value: Box::new(value),
+            span,
+        };
+        let expression =
+            self.parse_keyword_boolean_tail_from_left(assignment, KEYWORD_OR_PRECEDENCE)?;
+        let span = expression.span();
+        self.expect_statement_terminator()?;
+        Ok(Some(Statement::Expression { expression, span }))
     }
 
     fn parse_assignment_expr_without_ternary(&mut self, binary_min_precedence: u8) -> Result<Expr> {
@@ -2745,6 +2814,15 @@ impl Parser {
             self.peek().kind,
             TokenKind::KeywordAnd | TokenKind::KeywordOr | TokenKind::KeywordXor
         )
+    }
+
+    fn peek_keyword_boolean_op(&self) -> Option<(BinaryOp, u8)> {
+        match self.peek().kind {
+            TokenKind::KeywordOr => Some((BinaryOp::Or, KEYWORD_OR_PRECEDENCE)),
+            TokenKind::KeywordXor => Some((BinaryOp::Xor, KEYWORD_XOR_PRECEDENCE)),
+            TokenKind::KeywordAnd => Some((BinaryOp::And, KEYWORD_AND_PRECEDENCE)),
+            _ => None,
+        }
     }
 
     fn reject_unsupported_ternary_expression(&mut self) -> Result<Statement> {

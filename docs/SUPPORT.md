@@ -157,6 +157,10 @@ Post-RC architecture remains explicit rather than hidden:
   helper, then `write target`. Array dimensions are evaluated once before the
   right-hand expression and use the shared array-path assign-op helpers for
   both statement and expression forms.
+- Direct variable and variable-root array assignment statements followed by
+  keyword boolean `and`, `or`, or `xor` tails are parsed with PHP precedence:
+  the assignment is evaluated first as the left operand, then the existing
+  short-circuit or XOR boolean path evaluates the tail.
 - Direct and dynamic named-variable null coalescing assignment `??=`. The
   compiler uses the same quiet lookup path as expression-form `??`, writes only
   when the variable is missing or `null`, and evaluates the right-hand
@@ -1054,10 +1058,9 @@ Post-RC architecture remains explicit rather than hidden:
   offsets, modeled properties, and direct static properties, including append
   offsets, dynamic-variable array offsets, temporary array reads, nested or
   dynamic property lvalues, and broader static-property forms.
-- Keyword boolean tails after direct assignment statements, ternary precedence
-  edges beyond the modeled nested associativity diagnostics, PHP-exact chained
-  comparison parse errors, and complete comparison parity for unsupported value
-  types.
+- Ternary precedence edges beyond the modeled nested associativity diagnostics,
+  PHP-exact chained comparison parse errors, and complete comparison parity for
+  unsupported value types.
 - Unbraced switch bodies, alternate control-flow syntax,
   for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics

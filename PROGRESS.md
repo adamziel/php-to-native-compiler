@@ -1,33 +1,31 @@
 # PTN Progress
 
-Refresh: 2026-06-13T05:19Z
-Measured: `ptn-98d8.3` rebased on current `origin/master` `c5345b334`.
+Refresh: 2026-06-13T06:07Z
+Measured: `ptn-9uzn` rebased on current `origin/master` `507a48131`.
 
 Recent RC slices cover class constants, embedded-NUL `var_export()`,
 `explode()`, `strncmp()`, `strrchr()`, namespaces/imports, includes/once
 guards, closures, `stdClass`, properties/destructors/reflection, inherited
-static dispatch, `property_exists()` metadata, array mutators/set/sort/udiff
-helpers, `array_sum()`/`array_product()` warnings and overflow, `json_encode()`,
+static dispatch, `property_exists()` metadata, array helpers, `json_encode()`,
 `printf()`/`sprintf()`, `basename()`, `pathinfo()`, `file_get_contents()`,
-`strcasecmp()`, string search/slice/count internals, scalar `str_replace()`
-counts/TypeErrors, `chr()` diagnostics, `crc32()`, standard streams, foreach
-list destructuring, dynamic-variable writes/unsets and `??=`, stream metadata,
-and offset compound/coalescing.
+`strcasecmp()`, string search/slice/count internals, scalar `str_replace()`,
+`chr()` diagnostics, `crc32()`, standard streams, foreach destructuring,
+dynamic-variable writes/unsets and `??=`, stream metadata, keyword boolean
+tails after direct assignments, and offset compound/coalescing.
 
-Recent movers include binary-safe `strpos()`/`stripos()`,
-`strrpos()`/`strripos()`, `strstr()`/`stristr()`, and `substr_count()` with PHP
-offset bounds, PHP 8.4 `array_sum()`/`array_product()` unsupported-type
-warnings and overflow promotion, persistent `STDIN`/`STDOUT`/`STDERR`,
-binary-safe `pathinfo()` with `PATHINFO_*` flags, `property_exists()` metadata,
-broad PHPT manifests, length-aware `crc32()`, scalar `str_replace()` counts,
-`strncmp()`/`strrchr()`, `basename()`, and stream preclassification.
+Recent movers include binary-safe search/count internals with PHP offset
+bounds, PHP 8.4 `array_sum()`/`array_product()` warnings and overflow
+promotion, persistent `STDIN`/`STDOUT`/`STDERR`, binary-safe `pathinfo()`,
+`property_exists()` metadata, PHPT manifests, keyword boolean
+`and`/`or`/`xor` tails after direct assignment statements, length-aware
+`crc32()`, scalar `str_replace()` counts, and stream preclassification.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 583 | 583 | 0 |
+| Native/compiler Rust suite | 584 | 584 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 262 | 260 | 2 |
 | PHPT Zend rows | 82 | 82 | 0 |
@@ -60,8 +58,9 @@ stream constants, file reads/writes, array/string/numeric helpers through
 `printf()`, `fdiv()`, `explode()`, `str_replace()`, `strcasecmp()`,
 `strncmp()`, `strrchr()`, string search/slice/count internals, `pathinfo()`,
 `crc32()`, `basename()`, `chr()` diagnostics, `var_export()`, array mutators,
-inc/dec, foreach destructuring, dynamic-variable writes/unsets, and
-array/string-offset compound/null coalescing assignments.
+inc/dec, foreach destructuring, dynamic-variable writes/unsets, direct
+assignment statement keyword boolean tails, and array/string-offset
+compound/null coalescing assignments.
 
 ## Remaining Bounded Failures
 
@@ -70,10 +69,10 @@ array/string-offset compound/null coalescing assignments.
 
 ## Verification
 
-2026-06-13T05:19Z: passed diff check, `cargo fmt`, focused native
-string-internal 1/1, focused search PHPT 5/5, `cargo test` 583/583 plus
-COW/doc tests, bounded PHPT 260/260 with 2 excluded, PHPT COW 29/29, and
-post-merge COW 26/26.
+2026-06-13T06:07Z: passed diff check, `cargo fmt`, focused keyword-boolean
+assignment-tail parser/native tests 2/2, `cargo test` 584/584 plus COW/doc
+tests, bounded PHPT 260/260 with 2 excluded, PHPT COW 29/29, and post-merge
+COW 26/26.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, bracketed/grouped namespaces, broader
