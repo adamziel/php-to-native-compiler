@@ -3406,6 +3406,24 @@ fn binary_runtime_function_uses_context(op: BinaryOp) -> bool {
     )
 }
 
+fn assignment_compound_binary_op(op: AssignmentOp) -> Option<BinaryOp> {
+    match op {
+        AssignmentOp::Assign | AssignmentOp::CoalesceAssign => None,
+        AssignmentOp::AddAssign => Some(BinaryOp::Add),
+        AssignmentOp::SubtractAssign => Some(BinaryOp::Subtract),
+        AssignmentOp::MultiplyAssign => Some(BinaryOp::Multiply),
+        AssignmentOp::PowerAssign => Some(BinaryOp::Power),
+        AssignmentOp::DivideAssign => Some(BinaryOp::Divide),
+        AssignmentOp::ModuloAssign => Some(BinaryOp::Modulo),
+        AssignmentOp::ConcatAssign => Some(BinaryOp::Concat),
+        AssignmentOp::BitwiseAndAssign => Some(BinaryOp::BitwiseAnd),
+        AssignmentOp::BitwiseOrAssign => Some(BinaryOp::BitwiseOr),
+        AssignmentOp::BitwiseXorAssign => Some(BinaryOp::BitwiseXor),
+        AssignmentOp::ShiftLeftAssign => Some(BinaryOp::ShiftLeft),
+        AssignmentOp::ShiftRightAssign => Some(BinaryOp::ShiftRight),
+    }
+}
+
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     let c_path = output.with_extension("c");
     fs::write(&c_path, c_source).map_err(|error| {
@@ -3949,6 +3967,16 @@ impl ValueEmitter {
             line,
         } = target
         {
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                return self.emit_array_dim_compound_assignment(
+                    out,
+                    array,
+                    dimensions,
+                    *line,
+                    compound_op,
+                    value,
+                );
+            }
             let path = emit_array_path_segments(out, self, dimensions);
             let value_temp = self.emit_materialized_value(out, value);
             let snapshot_temp = self.next_temp();
@@ -4033,6 +4061,88 @@ impl ValueEmitter {
         let value_temp = self.emit_materialized_value(out, value);
         let result_temp = self.emit_store_assignment_target_from_temp(out, target, &value_temp);
         emit_value_cleanup(out, "    ", &value_temp);
+        result_temp
+    }
+
+    fn emit_array_dim_compound_assignment(
+        &mut self,
+        out: &mut String,
+        array: &str,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        op: BinaryOp,
+        value: &ValueExpr,
+    ) -> String {
+        out.push_str("    ptn_runtime_array_warn_missing_base_for_assign_op(&runtime, \"");
+        out.push_str(&c_string(array));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let path = emit_array_path_segments(out, self, dimensions);
+        let value_temp = self.emit_materialized_value(out, value);
+
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, \"");
+        out.push_str(&c_string(array));
+        out.push_str("\", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        if matches!(op, BinaryOp::Concat) {
+            out.push_str("ptn_concat(&runtime, ");
+            out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&value_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(")");
+        } else {
+            out.push_str(binary_runtime_function(op));
+            out.push('(');
+            if binary_runtime_function_uses_context(op) {
+                out.push_str("&runtime, ");
+            }
+            out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&value_temp);
+            if binary_runtime_function_uses_context(op) {
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+            }
+            out.push(')');
+        }
+        out.push_str(";\n");
+
+        out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
+        out.push_str(&c_string(array));
+        out.push_str("\", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&result_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
         result_temp
     }
 

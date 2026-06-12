@@ -4416,13 +4416,13 @@ fn validate_expression_assignment_target(
 
     match target {
         AssignmentTarget::Variable { .. } => Ok(()),
+        AssignmentTarget::ArrayDim(_) => Ok(()),
         AssignmentTarget::DynamicVariable { .. }
         | AssignmentTarget::DynamicArrayDim { .. }
-        | AssignmentTarget::ArrayDim(_)
         | AssignmentTarget::Property { .. }
         | AssignmentTarget::StaticProperty { .. }
         | AssignmentTarget::List(_) => Err(Diagnostic::new(
-            "compound assignment expressions currently support direct variables",
+            "compound assignment expressions currently support variables and array/string offsets",
             Some(span),
         )),
     }

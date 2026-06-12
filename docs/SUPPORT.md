@@ -102,9 +102,11 @@ Post-RC architecture remains explicit rather than hidden:
   and list/short-array destructuring targets, including by-reference
   destructuring entries in the modeled reference-array subset.
 - Assignment expressions in branch and loop conditions for the currently
-  supported expression-assignment subset. Direct-variable compound condition
-  assignments read the current value, evaluate the right-hand side, write the
-  computed value, and branch on that assigned value's PHP truthiness.
+  supported expression-assignment subset. Direct-variable and variable-root
+  array/append compound condition assignments evaluate the target once, read
+  the current value through the same assign-op lookup path as statements,
+  evaluate the right-hand side, write the computed value, and branch on that
+  assigned value's PHP truthiness.
 - Undefined direct variable reads emit a runtime warning with generated source
   path and line, then yield `null`.
 - Boxed scalar `+`, `-`, `*`, `**`, `/`, and `%` numeric arithmetic and `.`
@@ -119,12 +121,12 @@ Post-RC architecture remains explicit rather than hidden:
   `*`, `**`, and `/` throw modeled catchable PHP `TypeError` diagnostics.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
-- Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
-  `**=`, `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. The compiler lowers these as
-  `read $x`, the matching boxed binary helper, then `write $x`. The direct
-  variable read happens before the right-hand expression, so existing
-  source-spanned undefined-variable diagnostics remain observable in source
-  order.
+- Direct named-variable and variable-root array/append compound assignment for
+  `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `.=`, `&=`, `|=`, `^=`, `<<=`, and
+  `>>=`. The compiler lowers these as `read target`, the matching boxed binary
+  helper, then `write target`. Array dimensions are evaluated once before the
+  right-hand expression and use the shared array-path assign-op helpers for
+  both statement and expression forms.
 - Direct named-variable null coalescing assignment `??=`. The compiler uses the
   same quiet lookup path as expression-form `??`, writes only when the variable
   is missing or `null`, and evaluates the right-hand expression lazily.
@@ -201,10 +203,10 @@ Post-RC architecture remains explicit rather than hidden:
   modeled illegal-offset warning and leave the string unchanged. The assigned
   value is converted to a string, empty string results throw `Error`, and
   multi-byte results emit the modeled first-byte warning before writing the
-  first byte. String-offset compound assignment remains unsupported, but its
-  key uses the same string-offset conversion diagnostics before the modeled PHP
-  `Error`. Direct and nested attempts to unset string offsets throw the modeled
-  PHP `Error` and leave the string unchanged.
+  first byte. String-offset compound assignment evaluates its key through the
+  same string-offset conversion path before raising the modeled PHP `Error`.
+  Direct and nested attempts to unset string offsets throw the modeled PHP
+  `Error` and leave the string unchanged.
 - Attempts to create references to/from string offsets in supported reference
   lvalue positions, including array literal reference elements, raise the
   modeled PHP `Error` through the runtime exception path.

@@ -1792,6 +1792,46 @@ fn parser_accepts_variable_root_array_assignment_and_unset() {
 }
 
 #[test]
+fn parser_accepts_array_offset_compound_assignment_expressions() {
+    let program = parser::parse(
+        "<?php\n\
+echo $items[\"count\"] += 2;\n\
+($items[] .= \"x\");\n",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Assign {
+            target: AssignmentTarget::ArrayDim(target),
+            op: AssignmentOp::AddAssign,
+            ..
+        } if target.array == "items"
+            && matches!(target.dimensions[0].as_ref(), Some(Expr::String(value, _)) if value == "count")
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected grouped expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Grouped { expr, .. }
+            if matches!(
+                expr.as_ref(),
+                Expr::Assign {
+                    target: AssignmentTarget::ArrayDim(target),
+                    op: AssignmentOp::ConcatAssign,
+                    ..
+                } if target.array == "items" && target.dimensions == vec![None]
+            )
+    ));
+}
+
+#[test]
 fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
     let by_ref_return = parser::parse("<?php function &factory() { return null; }").unwrap_err();
     assert_eq!(
@@ -9616,6 +9656,50 @@ var_dump($a);",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_offset_compound_assignment_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-array-offset-compound-expressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-offset-compound-expressions.php");
+    let output = root.join("array-offset-compound-expressions-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function idx(&$hits) {\n\
+    echo \"idx:$hits\\n\";\n\
+    return $hits++;\n\
+}\n\
+function rhs() {\n\
+    echo \"rhs\\n\";\n\
+    return 3;\n\
+}\n\
+$hits = 0;\n\
+$items = [10];\n\
+var_dump($items[idx($hits)] += rhs());\n\
+var_dump($items[0], $hits);\n\
+var_dump($append[] += 2);\n\
+var_dump($append);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "idx:0\nrhs\nint(13)\nint(13)\nint(1)\n{}int(2)\narray(1) {{\n  [0]=>\n  int(2)\n}}\n",
+            undefined_variable_warning(&input, "append", 14)
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_read_for_assign_op"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_from_assign_op"));
 }
 
 #[test]

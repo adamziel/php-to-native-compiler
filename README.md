@@ -1,6 +1,6 @@
 # PTN From Scratch
 
-PTN compiles a growing PHP subset into native binaries:
+PTN compiles a PHP subset into native binaries:
 
 `PHP source -> lexer/parser -> AST -> IR -> C runtime -> native executable`
 
@@ -11,7 +11,7 @@ rows, or outputs.
 
 - Rust crate and `phpc` compiler binary.
 - Boxed C runtime for PHP-like values.
-- Native tests for parser, IR, backend, runtime, and PHP behavior.
+- Native tests cover parser, IR, backend, runtime, and PHP behavior.
 - Strings cover direct and braced interpolation, legacy `${name}`
   deprecations, common/control escapes, hex/octal byte escapes, and inline HTML
   through shared output paths.
@@ -44,6 +44,8 @@ rows, or outputs.
   file-return paths.
 - Direct variable and array-offset increment/decrement support statement and
   expression pre/post forms over the current boxed numeric slice.
+- Direct variable and variable-root array/append compound assignments share
+  boxed operators and return assigned values.
 - `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
   covers the current `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
 - Declared instance properties accept public, protected, and private defaults,
