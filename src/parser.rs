@@ -3716,6 +3716,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "chr"
             | "ord"
             | "range"
+            | "asort"
             | "ksort"
             | "error_reporting"
             | "func_get_arg"
@@ -3801,7 +3802,14 @@ fn is_array_cursor_mutation_name(name: &str) -> bool {
 fn is_array_by_ref_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "array_pop" | "array_push" | "array_shift" | "array_unshift" | "ksort" | "shuffle" | "sort"
+        "array_pop"
+            | "array_push"
+            | "array_shift"
+            | "array_unshift"
+            | "asort"
+            | "ksort"
+            | "shuffle"
+            | "sort"
     )
 }
 
@@ -3816,7 +3824,6 @@ fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "rsort"
-            | "asort"
             | "arsort"
             | "krsort"
             | "natsort"
@@ -3884,9 +3891,14 @@ fn validate_mutating_array_internal_call(
             Some(arguments.first().map_or(call_span, Expr::span)),
         ));
     }
-    if name.eq_ignore_ascii_case("sort") && arguments.len() > 1 {
+    if (name.eq_ignore_ascii_case("sort") || name.eq_ignore_ascii_case("asort"))
+        && arguments.len() > 1
+    {
+        let normalized = name.to_ascii_lowercase();
         return Err(Diagnostic::new(
-            "sort() currently supports the default comparison mode; sort flags are unsupported",
+            format!(
+                "{normalized}() currently supports the default comparison mode; sort flags are unsupported"
+            ),
             Some(arguments.get(1).map_or(call_span, Expr::span)),
         ));
     }

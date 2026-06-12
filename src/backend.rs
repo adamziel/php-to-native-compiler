@@ -1163,6 +1163,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "array_shift",
         "array_unshift",
         "array_walk",
+        "asort",
         "end",
         "ksort",
         "next",
@@ -3365,6 +3366,7 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
             | "array_shift"
             | "array_unshift"
             | "array_walk"
+            | "asort"
             | "end"
             | "ksort"
             | "next"
@@ -7153,6 +7155,8 @@ impl ValueEmitter {
                 Some("ptn_runtime_array_pop_variable")
             } else if name.eq_ignore_ascii_case("array_shift") {
                 Some("ptn_runtime_array_shift_variable")
+            } else if name.eq_ignore_ascii_case("asort") {
+                Some("ptn_runtime_array_asort_variable")
             } else if name.eq_ignore_ascii_case("ksort") {
                 Some("ptn_runtime_array_ksort_variable")
             } else if name.eq_ignore_ascii_case("next") {
