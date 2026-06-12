@@ -15,10 +15,9 @@ rows, or outputs.
 - Strings cover direct and braced interpolation, legacy `${name}`
   deprecations, common/control escapes, hex/octal byte escapes, and inline HTML
   through shared output paths.
-- Top-level user functions and declared class methods include scoped magic
-  constants, call-frame introspection, scalar type hints, literal-array
-  defaults, by-reference return aliases, typed coercion, and public constructor
-  dispatch and metadata intrinsics.
+- Top-level functions and declared methods include magic constants, call-frame
+  introspection, scalar type hints, array defaults, by-reference returns, typed
+  coercion, and constructor dispatch/metadata intrinsics.
 - Full and short ternary expressions lower through the boxed value path with
   lazy branch evaluation; unparenthesized nested ternaries remain an explicit
   diagnostic boundary.
@@ -30,7 +29,7 @@ rows, or outputs.
 - Arithmetic models non-numeric string and array `TypeError` diagnostics while
   preserving leading-numeric warnings.
 - Scalar float stringification honors `phpc -d precision=N` and PHP-style
-  exponent spelling across echo, casts, concatenation, and string internals.
+  exponent spelling across output and string conversions.
 - Array internals including set operations, `array_chunk()`, `array_combine()`,
   `array_filter()`, `array_key_exists()`, `array_merge()`, `array_pop()`,
   `array_push()`, `array_shift()`, `array_unshift()`, `asort()`, `ksort()`,
@@ -42,8 +41,10 @@ rows, or outputs.
 - `assert()` throws catchable `AssertionError` values with compiler-generated
   default messages for direct calls; bounded `highlight_file()` shares
   file-return paths.
-- Direct variable and array-offset increment/decrement support statement and
-  expression pre/post forms over the current boxed numeric slice.
+- Direct variable, array-offset, property, and static-property
+  increment/decrement support statement and expression pre/post forms over
+  boxed numeric values, null, booleans, numeric strings, and alphanumeric
+  string increment.
 - Direct variable and variable-root array/append compound assignments share
   boxed operators and return assigned values.
 - `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
@@ -53,8 +54,8 @@ rows, or outputs.
   inheritance remain bounded.
 - Static properties support reads/writes plus quiet `isset()`, `empty()`, and
   `??`.
-- Basic stream resources from `fopen()`/`fclose()` are boxed runtime values with
-  type, dump, and array-key cast behavior.
+- Basic stream resources from `fopen()`/`fclose()` are boxed with type, dump,
+  and array-key cast behavior.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 

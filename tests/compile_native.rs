@@ -13533,6 +13533,64 @@ echo --${$arrayName}[\"k\"], \":\", $items[\"k\"], \"\\n\";\n",
 }
 
 #[test]
+fn compile_scalar_and_string_increment_decrement_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-string-inc-dec");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-string-inc-dec.php");
+    let output = root.join("scalar-string-inc-dec-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$n = null; var_dump($n++, $n);\n\
+$n = null; var_dump($n--, $n);\n\
+$b = true; var_dump(++$b, $b--, $b);\n\
+$s = \"\"; var_dump(++$s);\n\
+$s = \"\"; var_dump(--$s);\n\
+$s = \"a\"; var_dump($s++, $s);\n\
+$s = \"z\"; var_dump(++$s);\n\
+$s = \"a9\"; var_dump(++$s);\n\
+$s = \"9z\"; var_dump(++$s);\n\
+$s = \"099\"; var_dump($s++, $s);\n\
+$s = \"1.5\"; var_dump(--$s);\n\
+$items = [\"k\" => \"z\"]; var_dump(++$items[\"k\"]);\n\
+$varName = \"dyn\"; $dyn = \"y\"; var_dump(++$$varName);\n\
+try { $a = []; $a++; } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $a = []; $a--; } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "NULL\n\
+int(1)\n\
+NULL\n\
+NULL\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+string(1) \"1\"\n\
+int(-1)\n\
+string(1) \"a\"\n\
+string(1) \"b\"\n\
+string(2) \"aa\"\n\
+string(2) \"b0\"\n\
+string(3) \"10a\"\n\
+string(3) \"099\"\n\
+int(100)\n\
+float(0.5)\n\
+string(2) \"aa\"\n\
+string(1) \"z\"\n\
+Cannot increment array\n\
+Cannot decrement array\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_while_condition_rechecks_each_iteration_to_native_binary() {
     let root = temp_dir("ptn-native-while-condition-recheck");
     fs::create_dir_all(&root).unwrap();
@@ -15556,8 +15614,8 @@ Box::bumpStatic();
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
-    assert!(c_source.contains("ptn_increment_numeric"));
-    assert!(c_source.contains("ptn_decrement_numeric"));
+    assert!(c_source.contains("ptn_increment_value(&runtime"));
+    assert!(c_source.contains("ptn_decrement_value(&runtime"));
 }
 
 #[test]

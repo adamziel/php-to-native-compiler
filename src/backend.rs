@@ -3252,8 +3252,8 @@ fn emit_label_reference(out: &mut String, label: &str) {
 
 fn inc_dec_runtime_function(op: IncDecOp) -> &'static str {
     match op {
-        IncDecOp::Increment => "ptn_increment_numeric",
-        IncDecOp::Decrement => "ptn_decrement_numeric",
+        IncDecOp::Increment => "ptn_increment_value",
+        IncDecOp::Decrement => "ptn_decrement_value",
     }
 }
 
@@ -3282,8 +3282,10 @@ fn emit_increment_statement(
             out.push_str(&result_temp);
             out.push_str(" = ");
             out.push_str(inc_dec_runtime_function(op));
-            out.push('(');
+            out.push_str("(&runtime, ");
             out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("    ptn_runtime_write_variable(&runtime, \"");
             out.push_str(&c_string(name));
@@ -3324,8 +3326,10 @@ fn emit_increment_statement(
             out.push_str(&result_temp);
             out.push_str(" = ");
             out.push_str(inc_dec_runtime_function(op));
-            out.push('(');
+            out.push_str("(&runtime, ");
             out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
             out.push_str(&c_string(array));
@@ -5100,8 +5104,10 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(inc_dec_runtime_function(op));
-                out.push('(');
+                out.push_str("(&runtime, ");
                 out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
                 out.push_str(");\n");
                 out.push_str("    ptn_runtime_write_variable(&runtime, \"");
                 out.push_str(&c_string(name));
@@ -5150,8 +5156,10 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(inc_dec_runtime_function(op));
-                out.push('(');
+                out.push_str("(&runtime, ");
                 out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
                 out.push_str(");\n");
                 out.push_str("    ptn_runtime_write_variable(&runtime, ");
                 out.push_str(&name_temp);
@@ -5214,8 +5222,10 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(inc_dec_runtime_function(op));
-                out.push('(');
+                out.push_str("(&runtime, ");
                 out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
                 out.push_str(");\n");
                 out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, ");
                 out.push_str(&name_temp);
@@ -5284,8 +5294,10 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(inc_dec_runtime_function(op));
-                out.push('(');
+                out.push_str("(&runtime, ");
                 out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
                 out.push_str(");\n");
                 out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
                 out.push_str(&c_string(array));
@@ -5342,8 +5354,10 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(inc_dec_runtime_function(op));
-                out.push('(');
+                out.push_str("(&runtime, ");
                 out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
                 out.push_str(");\n");
                 let assigned_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -5402,8 +5416,10 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(inc_dec_runtime_function(op));
-                out.push('(');
+                out.push_str("(&runtime, ");
                 out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
                 out.push_str(");\n");
                 let assigned_temp = self.next_temp();
                 out.push_str("    PtnValue ");

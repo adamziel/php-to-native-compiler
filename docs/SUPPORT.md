@@ -764,11 +764,16 @@ Post-RC architecture remains explicit rather than hidden:
   the current PHP unexpected-token parse error. Unsupported class members and
   class-constant fetch syntax are recognized and reported as class metadata
   boundaries.
-- Direct variable and variable-root array-offset increment/decrement over
-  current boxed integer and float values. Statement forms such as `$name++;`
-  and `$items[$key]--;` write the updated value. Expression forms such as
-  `++$name`, `$name++`, `++$items[$key]`, and `$items[$key]--` return the PHP
-  pre/post result value while applying the same side effect.
+- Direct variable, variable-root array-offset, modeled property, and direct
+  static-property increment/decrement over boxed integer and float values,
+  null, booleans, numeric strings, empty strings, and alphanumeric string
+  increment. Statement forms such as `$name++;`, `$items[$key]--;`, and
+  `$object->count++;` write the updated value. Expression forms such as
+  `++$name`, `$name++`, `++$items[$key]`, `$items[$key]--`, and
+  `++ClassName::$counter` return the PHP pre/post result value while applying
+  the same side effect. Array, object, closure, exception, resource, and
+  reference operands throw modeled catchable `TypeError` messages for the
+  current target slice.
 
 ## Not Yet Supported
 
@@ -781,9 +786,10 @@ Post-RC architecture remains explicit rather than hidden:
   invalid numeric-separator/radix diagnostic parity beyond invalid legacy
   octal integers, remaining unsupported grammar-site parse-error wording, and
   exact scalar cast overflow behavior.
-- Increment/decrement targets beyond direct variables and variable-root array
-  offsets, including append offsets, dynamic-variable array offsets, temporary
-  array reads, properties, and static properties.
+- Increment/decrement targets beyond direct variables, variable-root array
+  offsets, modeled properties, and direct static properties, including append
+  offsets, dynamic-variable array offsets, temporary array reads, nested or
+  dynamic property lvalues, and broader static-property forms.
 - Keyword boolean tails after direct assignment statements, ternary precedence
   edges beyond the modeled nested associativity diagnostics, PHP-exact chained
   comparison parse errors, and complete comparison parity for unsupported value
@@ -802,9 +808,9 @@ Post-RC architecture remains explicit rather than hidden:
   inside unsupported function/class contexts.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
-- PHP-exact increment/decrement semantics for null, booleans, strings, arrays,
-  objects, references, copy-on-write, and diagnostics beyond the current
-  integer/float direct-variable and variable-root array-offset expression
+- Remaining PHP-exact increment/decrement target and value edges, including
+  unsupported target roots, Unicode/string edge cases, references,
+  copy-on-write, and diagnostic parity beyond the current modeled target
   slice.
 - Inline HTML before `<?php` or between PHP blocks.
 - Remaining complex string interpolation forms, including object/property

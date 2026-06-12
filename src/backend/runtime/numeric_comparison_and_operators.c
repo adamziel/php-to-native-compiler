@@ -901,31 +901,195 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
     return ptn_int(left_integer % right_integer);
 }
 
-static PTN_UNUSED void ptn_abort_increment_decrement_numeric_boundary(void) {
-    ptn_abort_arithmetic_error("Increment/decrement currently supports only int and float values");
+static PTN_UNUSED PtnValue ptn_increment_number(PtnNumber number) {
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float(number.floating + 1.0);
+    }
+    return ptn_add_integers(number.integer, 1);
 }
 
-static PTN_UNUSED PtnValue ptn_increment_numeric(PtnValue value) {
+static PTN_UNUSED PtnValue ptn_decrement_number(PtnNumber number) {
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float(number.floating - 1.0);
+    }
+    return ptn_subtract_integers(number.integer, 1);
+}
+
+static PTN_UNUSED int ptn_increment_string_byte_is_alnum(unsigned char byte) {
+    return (byte >= '0' && byte <= '9') ||
+        (byte >= 'a' && byte <= 'z') ||
+        (byte >= 'A' && byte <= 'Z');
+}
+
+static PTN_UNUSED PtnValue ptn_increment_string(PtnString string) {
+    if (string.len == 0) {
+        return ptn_string_literal("1", 1);
+    }
+
+    PtnNumber number;
+    int has_trailing_non_numeric_data = 0;
+    if (ptn_arithmetic_string_to_number(string, &number, &has_trailing_non_numeric_data) &&
+        !has_trailing_non_numeric_data) {
+        return ptn_increment_number(number);
+    }
+
+    if (!ptn_increment_string_byte_is_alnum(string.data[string.len - 1])) {
+        return ptn_owned_string_len(
+            ptn_duplicate_string_len((const char *)string.data, string.len),
+            string.len
+        );
+    }
+
+    char *result = ptn_duplicate_string_len((const char *)string.data, string.len);
+    int carry = 0;
+    char carry_prefix = '\0';
+    for (size_t offset = string.len; offset > 0; offset--) {
+        size_t index = offset - 1;
+        unsigned char byte = (unsigned char)result[index];
+        if (byte >= '0' && byte <= '8') {
+            result[index] = (char)(byte + 1);
+            carry = 0;
+            break;
+        }
+        if (byte == '9') {
+            result[index] = '0';
+            carry = 1;
+            carry_prefix = '1';
+            continue;
+        }
+        if (byte >= 'a' && byte <= 'y') {
+            result[index] = (char)(byte + 1);
+            carry = 0;
+            break;
+        }
+        if (byte == 'z') {
+            result[index] = 'a';
+            carry = 1;
+            carry_prefix = 'a';
+            continue;
+        }
+        if (byte >= 'A' && byte <= 'Y') {
+            result[index] = (char)(byte + 1);
+            carry = 0;
+            break;
+        }
+        if (byte == 'Z') {
+            result[index] = 'A';
+            carry = 1;
+            carry_prefix = 'A';
+            continue;
+        }
+        carry = 0;
+        break;
+    }
+
+    if (carry) {
+        if (string.len == SIZE_MAX) {
+            free(result);
+            ptn_abort_out_of_memory();
+        }
+        char *prefixed = malloc(string.len + 2);
+        if (prefixed == NULL) {
+            free(result);
+            ptn_abort_out_of_memory();
+        }
+        prefixed[0] = carry_prefix;
+        memcpy(prefixed + 1, result, string.len + 1);
+        free(result);
+        return ptn_owned_string_len(prefixed, string.len + 1);
+    }
+    return ptn_owned_string_len(result, string.len);
+}
+
+static PTN_UNUSED PtnValue ptn_decrement_string(PtnString string) {
+    if (string.len == 0) {
+        return ptn_subtract_integers(0, 1);
+    }
+
+    PtnNumber number;
+    int has_trailing_non_numeric_data = 0;
+    if (ptn_arithmetic_string_to_number(string, &number, &has_trailing_non_numeric_data) &&
+        !has_trailing_non_numeric_data) {
+        return ptn_decrement_number(number);
+    }
+
+    return ptn_owned_string_len(
+        ptn_duplicate_string_len((const char *)string.data, string.len),
+        string.len
+    );
+}
+
+static PTN_UNUSED void ptn_throw_invalid_increment_decrement(
+    PtnRuntime *runtime,
+    const char *operation,
+    PtnValue value,
+    size_t line
+) {
+    const char *type_name = ptn_arithmetic_operand_type_name(value);
+    int needed = snprintf(NULL, 0, "Cannot %s %s", operation, type_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, "Cannot %s %s", operation, type_name);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+    free(message);
+}
+
+static PTN_UNUSED PtnValue ptn_increment_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
-    if (value.type == PTN_INT) {
-        return ptn_add_integers(value.as.integer, 1);
+    switch (value.type) {
+        case PTN_NULL:
+            return ptn_int(1);
+        case PTN_BOOL:
+            return ptn_bool(value.as.boolean);
+        case PTN_INT:
+            return ptn_add_integers(value.as.integer, 1);
+        case PTN_FLOAT:
+            return ptn_float(value.as.floating + 1.0);
+        case PTN_STRING:
+            return ptn_increment_string(value.as.string);
+        case PTN_ARRAY:
+        case PTN_RESOURCE:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_REFERENCE:
+            ptn_throw_invalid_increment_decrement(runtime, "increment", value, line);
+            return ptn_null();
     }
-    if (value.type == PTN_FLOAT) {
-        return ptn_float(value.as.floating + 1.0);
-    }
-    ptn_abort_increment_decrement_numeric_boundary();
     return ptn_null();
 }
 
-static PTN_UNUSED PtnValue ptn_decrement_numeric(PtnValue value) {
+static PTN_UNUSED PtnValue ptn_decrement_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
-    if (value.type == PTN_INT) {
-        return ptn_subtract_integers(value.as.integer, 1);
+    switch (value.type) {
+        case PTN_NULL:
+            return ptn_null();
+        case PTN_BOOL:
+            return ptn_bool(value.as.boolean);
+        case PTN_INT:
+            return ptn_subtract_integers(value.as.integer, 1);
+        case PTN_FLOAT:
+            return ptn_float(value.as.floating - 1.0);
+        case PTN_STRING:
+            return ptn_decrement_string(value.as.string);
+        case PTN_ARRAY:
+        case PTN_RESOURCE:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_REFERENCE:
+            ptn_throw_invalid_increment_decrement(runtime, "decrement", value, line);
+            return ptn_null();
     }
-    if (value.type == PTN_FLOAT) {
-        return ptn_float(value.as.floating - 1.0);
-    }
-    ptn_abort_increment_decrement_numeric_boundary();
     return ptn_null();
 }
 
