@@ -4106,6 +4106,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_reverse"
             | "array_search"
             | "array_shift"
+            | "array_slice"
             | "array_sum"
             | "array_udiff"
             | "array_udiff_assoc"

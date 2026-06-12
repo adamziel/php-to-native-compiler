@@ -2615,6 +2615,167 @@ static PtnValue ptn_internal_array_reverse(PtnRuntime *runtime, size_t argc, con
     return result;
 }
 
+static int ptn_array_slice_string_to_integer(PtnString string, int64_t *integer_out) {
+    const char *data = (const char *)string.data;
+    const char *limit = data + string.len;
+    const char *start = data;
+    while (start < limit && isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (start >= limit) {
+        return 0;
+    }
+
+    char *end = NULL;
+    errno = 0;
+    double number = strtod(start, &end);
+    if (end == start) {
+        return 0;
+    }
+    while (end < limit && isspace((unsigned char)*end)) {
+        end++;
+    }
+    if (end != limit) {
+        return 0;
+    }
+    if (number > (double)INT64_MAX) {
+        *integer_out = INT64_MAX;
+        return 1;
+    }
+    if (number < (double)INT64_MIN) {
+        *integer_out = INT64_MIN;
+        return 1;
+    }
+    *integer_out = (int64_t)number;
+    return 1;
+}
+
+static int64_t ptn_array_slice_integer_arg(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    int nullable,
+    int *is_null
+) {
+    value = ptn_value_deref(value);
+    if (is_null != NULL) {
+        *is_null = 0;
+    }
+
+    switch (value.type) {
+        case PTN_NULL:
+            if (nullable) {
+                if (is_null != NULL) {
+                    *is_null = 1;
+                }
+                return 0;
+            }
+            return 0;
+        case PTN_BOOL:
+            return value.as.boolean ? 1 : 0;
+        case PTN_INT:
+            return value.as.integer;
+        case PTN_FLOAT:
+            return (int64_t)value.as.floating;
+        case PTN_STRING: {
+            int64_t integer = 0;
+            if (ptn_array_slice_string_to_integer(value.as.string, &integer)) {
+                return integer;
+            }
+            break;
+        }
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            break;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "array_slice(): Argument #%zu ($%s) must be of type %s, %s given",
+        position,
+        argument_name,
+        nullable ? "?int" : "int",
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
+static size_t ptn_array_slice_negative_distance(int64_t value, size_t limit) {
+    uint64_t distance = value == INT64_MIN
+        ? (uint64_t)INT64_MAX + 1ULL
+        : (uint64_t)(-value);
+    if (distance > (uint64_t)limit) {
+        return limit;
+    }
+    return (size_t)distance;
+}
+
+static size_t ptn_array_slice_start_offset(size_t array_len, int64_t offset) {
+    if (offset >= 0) {
+        if ((uint64_t)offset > (uint64_t)array_len) {
+            return array_len;
+        }
+        return (size_t)offset;
+    }
+    size_t distance = ptn_array_slice_negative_distance(offset, array_len);
+    return array_len - distance;
+}
+
+static size_t ptn_array_slice_count(size_t array_len, size_t start, int has_length, int64_t length) {
+    size_t available = array_len - start;
+    if (!has_length) {
+        return available;
+    }
+    if (length >= 0) {
+        if ((uint64_t)length > (uint64_t)available) {
+            return available;
+        }
+        return (size_t)length;
+    }
+    size_t drop = ptn_array_slice_negative_distance(length, available);
+    return available - drop;
+}
+
+static PtnValue ptn_internal_array_slice(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_slice", 1, "array", args[0]);
+    int64_t offset = ptn_array_slice_integer_arg(runtime, 2, "offset", args[1], 0, NULL);
+    int length_is_null = 0;
+    int64_t length = argc >= 3
+        ? ptn_array_slice_integer_arg(runtime, 3, "length", args[2], 1, &length_is_null)
+        : 0;
+    int has_length = argc >= 3 && !length_is_null;
+    int preserve_keys = argc >= 4 && ptn_is_truthy(args[3]);
+    size_t start = ptn_array_slice_start_offset(array->len, offset);
+    size_t count = ptn_array_slice_count(array->len, start, has_length, length);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+
+    for (size_t i = 0; i < count; i++) {
+        PtnArrayEntry *source = &array->entries[start + i];
+        PtnArrayKey key = (preserve_keys || source->key.type == PTN_ARRAY_KEY_STRING)
+            ? ptn_array_key_clone(source->key)
+            : ptn_array_int_key(result.as.array->next_auto_key);
+        ptn_array_set_entry(
+            result.as.array,
+            key,
+            ptn_value_clone(ptn_array_reindexing_internal_value(source->value))
+        );
+    }
+
+    return result;
+}
+
 static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     int64_t start = ptn_value_to_integer(args[0]);
@@ -6319,6 +6480,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_reverse", 1, 2, ptn_internal_array_reverse },
         { "array_search", 2, 3, ptn_internal_array_search },
         { "array_shift", 1, 1, ptn_internal_array_shift },
+        { "array_slice", 2, 4, ptn_internal_array_slice },
         { "array_sum", 1, 1, ptn_internal_array_sum },
         { "array_udiff", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff },
         { "array_udiff_assoc", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff_assoc },

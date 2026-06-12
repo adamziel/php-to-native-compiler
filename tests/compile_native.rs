@@ -12177,6 +12177,92 @@ var_dump(function_exists(\"array_reverse\"), function_exists(\"ARRAY_REVERSE\"))
 }
 
 #[test]
+fn compile_array_slice_to_native_binary() {
+    let root = temp_dir("ptn-native-array-slice");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-slice.php");
+    let output = root.join("array-slice-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = [\"a\" => \"A\", 5 => \"five\", 6 => \"six\", \"b\" => \"B\", 7 => \"seven\"];\n\
+var_dump(array_slice($source, 1, 3));\n\
+var_dump(array_slice($source, 1, 3, true));\n\
+var_dump(array_slice($source, -2, null, true));\n\
+var_dump(array_slice($source, 1, -1));\n\
+var_dump(array_slice($source, 9));\n\
+$value = [\"seed\"];\n\
+$nested = [$value, [\"next\"], $value];\n\
+$slice = array_slice($nested, 0, 2);\n\
+$slice[0][] = \"copy\";\n\
+var_dump($slice[0], $nested[0]);\n\
+try { array_slice(range(1, 3), 0, \"foo\"); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"array_slice\"), function_exists(\"ARRAY_SLICE\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(4) \"five\"\n",
+            "  [1]=>\n",
+            "  string(3) \"six\"\n",
+            "  [\"b\"]=>\n",
+            "  string(1) \"B\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [5]=>\n",
+            "  string(4) \"five\"\n",
+            "  [6]=>\n",
+            "  string(3) \"six\"\n",
+            "  [\"b\"]=>\n",
+            "  string(1) \"B\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"b\"]=>\n",
+            "  string(1) \"B\"\n",
+            "  [7]=>\n",
+            "  string(5) \"seven\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(4) \"five\"\n",
+            "  [1]=>\n",
+            "  string(3) \"six\"\n",
+            "  [\"b\"]=>\n",
+            "  string(1) \"B\"\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(4) \"seed\"\n",
+            "  [1]=>\n",
+            "  string(4) \"copy\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(4) \"seed\"\n",
+            "}\n",
+            "array_slice(): Argument #3 ($length) must be of type ?int, string given\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_slice"));
+    assert!(c_source.contains("ptn_array_slice_start_offset"));
+}
+
+#[test]
 fn compile_array_keys_filter_edges_to_native_binary() {
     let root = temp_dir("ptn-native-array-keys-filter-edges");
     fs::create_dir_all(&root).unwrap();

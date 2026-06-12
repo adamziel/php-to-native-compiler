@@ -343,6 +343,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_udiff_assoc(expr, expr, callback);`,
   `array_udiff_uassoc(expr, expr, callback, callback);`,
   `array_product(expr);`, `array_search(expr, expr[, expr]);`,
+  `array_slice(expr, expr[, expr[, expr]]);`,
   `array_values(expr);`, `array_keys(expr[, expr[, expr]]);`,
   `array_merge(expr, ...);`,
   `array_merge_recursive(expr, ...);`,
@@ -386,6 +387,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_udiff_assoc(expr, expr, callback)`,
   `array_udiff_uassoc(expr, expr, callback, callback)`,
   `array_product(expr)`, `array_search(expr, expr[, expr])`,
+  `array_slice(expr, expr[, expr[, expr]])`,
   `array_values(expr)`, `array_keys(expr[, expr[, expr]])`,
   `array_merge(expr, ...)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
@@ -646,6 +648,10 @@ Post-RC architecture remains explicit rather than hidden:
 - `array_search()` over current boxed arrays, returning the first matching
   integer/string key under the same loose or strict comparison path as
   `in_array()`, or `false` when no entry matches.
+- `array_slice()` over current boxed arrays, slicing by insertion order into a
+  fresh ordered array. Positive and negative offsets, omitted or `null`
+  lengths, negative lengths, and the preserve-keys flag are supported; integer
+  keys are reindexed by default while string keys are preserved.
 - `array_merge()` over current boxed arrays, appending integer-keyed entries
   with fresh sequential keys, overwriting string-keyed entries by key while
   preserving insertion order, and cloning dereferenced values across COW
