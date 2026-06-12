@@ -62,7 +62,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `Class::CONST`/`self::CONST` reads, and `constant()`/`defined()` lookup;
   typed/non-public/inherited/dynamic constants remain bounded.
 - Stream resources from `fopen()`/`fclose()` are boxed with type, dump, and
-  array-key cast behavior.
+  array-key cast behavior; `file_get_contents()` reads filesystem paths into
+  binary-safe strings with bounded offset/length handling.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 

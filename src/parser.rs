@@ -4186,6 +4186,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "fdiv"
             | "fclose"
             | "file_exists"
+            | "file_get_contents"
             | "file_put_contents"
             | "fopen"
             | "stream_get_meta_data"

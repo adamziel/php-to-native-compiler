@@ -119,6 +119,8 @@ ext/standard/tests/array/count_basic.phpt
 ext/standard/tests/array/sizeof_basic2.phpt
 ext/standard/tests/array/sort/natcasesort_basic.phpt
 ext/standard/tests/directory/directory_constants.phpt
+ext/standard/tests/file/file_get_contents_error002.phpt
+ext/standard/tests/file/file_get_contents_file_put_contents_error.phpt
 ext/standard/tests/general_functions/002.phpt
 ext/standard/tests/general_functions/006.phpt
 ext/standard/tests/general_functions/array_is_list.phpt

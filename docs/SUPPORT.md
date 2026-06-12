@@ -432,6 +432,7 @@ Post-RC architecture remains explicit rather than hidden:
   `in_array(expr, expr[, expr])`,
   `fopen(expr, expr[, expr[, expr]])`, `fclose(expr)`,
   `stream_get_meta_data(expr)`,
+  `file_get_contents(expr[, use_include_path[, context[, offset[, length]]]])`,
   `is_callable(expr[, syntax_only])`, `is_countable(expr)`, `is_finite(expr)`,
   `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar plus array/object/resource
@@ -787,6 +788,9 @@ Post-RC architecture remains explicit rather than hidden:
   metadata slice for open `fopen()` streams: timeout/blocking/eof flags,
   wrapper and stream type, original mode and URI, unread byte count, and
   seekability.
+- `file_get_contents()` reads filesystem-backed paths into binary-safe strings
+  using the shared file-read helper, with bounded `offset` and nullable
+  `length` handling plus PHP-style negative-length `ValueError`.
 - `function_exists()` over generated user-function declarations, including
   resolved namespaced declarations, and the currently registered
   internal-function names.

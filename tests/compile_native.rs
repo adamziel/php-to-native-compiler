@@ -4843,6 +4843,53 @@ echo \"done\\n\";\n",
 }
 
 #[test]
+fn compile_file_get_contents_binary_safe_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-file-get-contents");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-get-contents.php");
+    let output = root.join("file-get-contents-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$filename = __DIR__ . \"/read.dat\";\n\
+$s = \"ab\" . chr(0) . \"cdef\";\n\
+var_dump(file_put_contents($filename, $s));\n\
+$all = file_get_contents($filename);\n\
+echo strlen($all), \" \", bin2hex($all), \"\\n\";\n\
+echo bin2hex(file_get_contents($filename, false, null, 3, 2)), \"\\n\";\n\
+echo bin2hex(file_get_contents($filename, false, null, -2)), \"\\n\";\n\
+var_dump(file_get_contents($filename, false, null, 99, 5));\n\
+try {\n\
+    file_get_contents($filename, false, null, 0, -1);\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(function_exists(\"file_get_contents\"), function_exists(\"FILE_GET_CONTENTS\"));\n\
+@unlink($filename);\n\
+file_get_contents($filename);\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("int(7)\n7 61620063646566\n6364\n6566\nstring(0) \"\"\n"));
+    assert!(stdout.contains(
+        "file_get_contents(): Argument #5 ($length) must be greater than or equal to 0\n"
+    ));
+    assert!(stdout.contains("bool(true)\nbool(true)\n"));
+    assert!(stdout.contains("Warning: file_get_contents("));
+    assert!(stdout.contains(
+        "read.dat): Failed to open stream: No such file or directory in ptn on line 17\n"
+    ));
+    assert!(stdout.ends_with("done\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_highlight_string_and_empty_output_buffer_to_native_binary() {
     let root = temp_dir("ptn-native-highlight-string-ob");
     fs::create_dir_all(&root).unwrap();

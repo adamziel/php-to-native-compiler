@@ -5584,6 +5584,92 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
     return result;
 }
 
+static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+);
+
+static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "file_get_contents(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    int64_t offset = argc >= 4
+        ? ptn_internal_expect_integer_arg(runtime, "file_get_contents", 4, "offset", args[3], line)
+        : 0;
+    int has_length = 0;
+    int64_t length = 0;
+    if (argc >= 5 && ptn_value_deref(args[4]).type != PTN_NULL) {
+        length = ptn_internal_expect_integer_arg(runtime, "file_get_contents", 5, "length", args[4], line);
+        if (length < 0) {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "file_get_contents(): Argument #5 ($length) must be greater than or equal to 0"
+            );
+            free(path);
+            return ptn_null();
+        }
+        has_length = 1;
+    }
+
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    if (read_result <= 0) {
+        char detail[192];
+        int needed = snprintf(
+            detail,
+            sizeof(detail),
+            "%s: %s",
+            read_result == 0 ? "Failed to open stream" : "Failed to read stream",
+            strerror(errno)
+        );
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "file_get_contents", path, detail, line);
+        free(path);
+        free(data);
+        return ptn_bool(0);
+    }
+    free(path);
+
+    int64_t start_offset = offset;
+    if (start_offset < 0) {
+        uint64_t distance = start_offset == INT64_MIN
+            ? (uint64_t)INT64_MAX + 1
+            : (uint64_t)(-start_offset);
+        if (distance > data_len) {
+            start_offset = 0;
+        } else {
+            start_offset = (int64_t)data_len + start_offset;
+        }
+    }
+    size_t start = start_offset <= 0 ? 0 : (size_t)start_offset;
+    if (start > data_len) {
+        start = data_len;
+    }
+
+    size_t available = data_len - start;
+    size_t result_len = available;
+    if (has_length && (uint64_t)length < result_len) {
+        result_len = (size_t)length;
+    }
+    char *copy = ptn_duplicate_string_len((const char *)data + start, result_len);
+    free(data);
+    return ptn_owned_string_len(copy, result_len);
+}
+
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
     FILE *stream = fopen(path, "rb");
     if (stream == NULL) {
@@ -7935,6 +8021,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "fclose", 1, 1, ptn_internal_fclose },
         { "fdiv", 2, 2, ptn_internal_fdiv },
         { "file_exists", 1, 1, ptn_internal_file_exists },
+        { "file_get_contents", 1, 5, ptn_internal_file_get_contents },
         { "file_put_contents", 2, 2, ptn_internal_file_put_contents },
         { "floor", 1, 1, ptn_internal_floor },
         { "fopen", 2, 4, ptn_internal_fopen },
