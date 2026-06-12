@@ -1317,6 +1317,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function Count($value) { return 0; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function count()");
 
+    let error = parser::parse("<?php function SizeOf($value) { return 0; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function sizeof()");
+
     let error = parser::parse("<?php function IntDiv($a, $b) { return $a; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function intdiv()");
 
@@ -8944,6 +8947,42 @@ echo \"after\\n\";",
 }
 
 #[test]
+fn compile_count_modes_and_sizeof_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-count-modes-sizeof-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("count-modes-sizeof-alias.php");
+    let output = root.join("count-modes-sizeof-alias-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$nested = [1, [2, 3], [\"x\" => [4]]];\n\
+var_dump(COUNT_NORMAL, COUNT_RECURSIVE);\n\
+var_dump(count($nested), count($nested, COUNT_NORMAL), count($nested, 0));\n\
+var_dump(count($nested, COUNT_RECURSIVE), count($nested, 1));\n\
+var_dump(sizeof($nested), sizeof($nested, COUNT_RECURSIVE));\n\
+try { count($nested, 2); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { sizeof($nested, -1); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { sizeof(false); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"sizeof\"), function_exists(\"SIZEOF\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(1)\nint(3)\nint(3)\nint(3)\nint(7)\nint(7)\nint(3)\nint(7)\ncount(): Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE\nsizeof(): Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE\nsizeof(): Argument #1 ($value) must be of type Countable|array, false given\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_count"));
+    assert!(c_source.contains("ptn_internal_sizeof"));
+}
+
+#[test]
 fn compile_object_method_callable_without_declared_methods_to_native_binary() {
     let root = temp_dir("ptn-native-object-method-callable-no-declared-methods");
     fs::create_dir_all(&root).unwrap();
@@ -11411,7 +11450,7 @@ if (!array_key_exists(\"absent\", $items)) echo \"absent\\n\";",
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime"));
+    assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_count_value("));
     assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_array_key_exists_value"));
     assert!(c_source.contains("ptn_count_value(&runtime"));
     assert!(c_source.contains("ptn_array_key_exists_value(&runtime"));

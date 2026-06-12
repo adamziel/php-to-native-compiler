@@ -114,6 +114,8 @@ ext/standard/tests/array/array_keys_variation_002.phpt
 ext/standard/tests/array/array_keys_variation_003.phpt
 ext/standard/tests/array/array_keys_variation_004.phpt
 ext/standard/tests/array/array_slice_basic.phpt
+ext/standard/tests/array/count_basic.phpt
+ext/standard/tests/array/sizeof_basic2.phpt
 ext/standard/tests/array/sort/natcasesort_basic.phpt
 ext/standard/tests/directory/directory_constants.phpt
 ext/standard/tests/general_functions/002.phpt

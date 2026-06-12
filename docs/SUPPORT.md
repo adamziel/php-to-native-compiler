@@ -334,7 +334,8 @@ Post-RC architecture remains explicit rather than hidden:
   `ob_get_contents();`, `php_sapi_name();`,
   `phpversion([extension]);`, `zend_version();`, `intval(expr);`,
   `chr(expr);`, `ord(expr);`,
-  `count(expr);`, `array_chunk(expr, expr[, expr]);`,
+  `count(expr[, mode]);`, `sizeof(expr[, mode]);`,
+  `array_chunk(expr, expr[, expr]);`,
   `array_change_key_case(expr[, expr]);`, `array_column(expr, expr[, expr]);`,
   `array_combine(expr, expr);`, `array_count_values(expr);`,
   `array_fill(expr, expr, expr);`, `array_pad(expr, expr, expr);`,
@@ -381,7 +382,8 @@ Post-RC architecture remains explicit rather than hidden:
   `ob_get_contents()`, `php_sapi_name()`,
   `phpversion([extension])`, `zend_version()`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
-  `count(expr)`, `array_chunk(expr, expr[, expr])`,
+  `count(expr[, mode])`, `sizeof(expr[, mode])`,
+  `array_chunk(expr, expr[, expr])`,
   `array_change_key_case(expr[, expr])`, `array_column(expr, expr[, expr])`,
   `array_combine(expr, expr)`, `array_count_values(expr)`,
   `array_fill(expr, expr, expr)`, `array_pad(expr, expr, expr)`,
@@ -616,7 +618,10 @@ Post-RC architecture remains explicit rather than hidden:
 - `ord()` over current boxed scalar values after scalar string conversion,
   returning the first byte as an integer. Empty and multi-byte strings emit
   PHP-like deprecation diagnostics with the internal-call source line.
-- `count()` over current boxed arrays, returning their length as an integer.
+- `count()` and `sizeof()` over current boxed arrays, returning their length as
+  an integer in `COUNT_NORMAL` mode and recursively counting nested arrays in
+  `COUNT_RECURSIVE` mode. Recursive cycles emit the modeled recursion warning
+  and do not descend further.
 - `array_count_values()` over current boxed arrays, counting dereferenced
   integer and string values with PHP array-key canonicalization. Unsupported
   value types emit the modeled PHP warning boundary and are skipped.

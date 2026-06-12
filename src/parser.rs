@@ -4070,6 +4070,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "isset"
             | "empty"
             | "count"
+            | "sizeof"
             | "array_change_key_case"
             | "array_chunk"
             | "array_column"

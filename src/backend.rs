@@ -7168,8 +7168,10 @@ impl ValueEmitter {
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_count_value(&runtime, ");
+            out.push_str(" = ptn_count_value(&runtime, \"count\", ");
             out.push_str(&argument_temp);
+            out.push_str(", PTN_COUNT_NORMAL, ");
+            out.push_str(&line.to_string());
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &argument_temp);
             return result_temp;

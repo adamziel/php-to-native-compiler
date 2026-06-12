@@ -626,6 +626,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STR_PAD_BOTH);
         return 1;
     }
+    if (strcmp(name, "COUNT_NORMAL") == 0) {
+        *out = ptn_int(PTN_COUNT_NORMAL);
+        return 1;
+    }
+    if (strcmp(name, "COUNT_RECURSIVE") == 0) {
+        *out = ptn_int(PTN_COUNT_RECURSIVE);
+        return 1;
+    }
     if (strcmp(name, "M_E") == 0) {
         *out = ptn_float(2.718281828459045);
         return 1;

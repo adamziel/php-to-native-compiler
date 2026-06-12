@@ -33,8 +33,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   preserving leading-numeric warnings.
 - Scalar float stringification honors `phpc -d precision=N` and PHP-style
   exponent spelling across output and string conversions.
-- Array internals including set operations, `array_chunk()`, `array_combine()`,
-  `array_filter()`, `array_key_exists()`, `array_keys()`, key-boundary
+- Array internals including set operations, `count()`/`sizeof()` with current
+  array modes, `array_chunk()`, `array_combine()`, `array_filter()`,
+  `array_key_exists()`, `array_keys()`, key-boundary
   probes, `array_merge()`, `array_pad()`, `array_pop()`, `array_product()`,
   `array_push()`, `array_shift()`, `array_unshift()`, `array_search()`,
   `arsort()`, `asort()`, `krsort()`, `ksort()`, `natcasesort()`, `natsort()`,

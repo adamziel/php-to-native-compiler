@@ -70,17 +70,128 @@ static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
     return ptn_offset_container_type_name(value);
 }
 
-static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime, PtnValue value) {
+typedef struct {
+    PtnArray **items;
+    size_t len;
+    size_t capacity;
+} PtnCountSeenArrays;
+
+static PTN_UNUSED void ptn_count_seen_arrays_init(PtnCountSeenArrays *seen) {
+    seen->items = NULL;
+    seen->len = 0;
+    seen->capacity = 0;
+}
+
+static PTN_UNUSED void ptn_count_seen_arrays_free(PtnCountSeenArrays *seen) {
+    free(seen->items);
+    seen->items = NULL;
+    seen->len = 0;
+    seen->capacity = 0;
+}
+
+static PTN_UNUSED int ptn_count_seen_arrays_contains(PtnCountSeenArrays *seen, PtnArray *array) {
+    for (size_t i = 0; i < seen->len; i++) {
+        if (seen->items[i] == array) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_count_seen_arrays_push(PtnCountSeenArrays *seen, PtnArray *array) {
+    if (seen->len == seen->capacity) {
+        size_t new_capacity = seen->capacity == 0 ? 8 : seen->capacity * 2;
+        if (new_capacity < seen->capacity || new_capacity > SIZE_MAX / sizeof(PtnArray *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArray **new_items = realloc(seen->items, new_capacity * sizeof(PtnArray *));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->items = new_items;
+        seen->capacity = new_capacity;
+    }
+    seen->items[seen->len++] = array;
+}
+
+static PTN_UNUSED int64_t ptn_count_array_recursive(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnArray *array,
+    PtnCountSeenArrays *seen,
+    size_t line
+) {
+    if (ptn_count_seen_arrays_contains(seen, array)) {
+        char message[96];
+        int written = snprintf(message, sizeof(message), "%s(): Recursion detected", function_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return 0;
+    }
+
+    ptn_count_seen_arrays_push(seen, array);
+    if (array->len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    int64_t count = (int64_t)array->len;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        if (value.type != PTN_ARRAY) {
+            continue;
+        }
+        int64_t nested = ptn_count_array_recursive(runtime, function_name, value.as.array, seen, line);
+        if (nested > INT64_MAX - count) {
+            ptn_abort_out_of_memory();
+        }
+        count += nested;
+    }
+    seen->len--;
+    return count;
+}
+
+static PTN_UNUSED PtnValue ptn_count_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    int64_t mode,
+    size_t line
+) {
+    if (mode != PTN_COUNT_NORMAL && mode != PTN_COUNT_RECURSIVE) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return ptn_null();
+    }
+
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
-        return ptn_int((int64_t)value.as.array->len);
+        if (mode == PTN_COUNT_NORMAL) {
+            return ptn_int((int64_t)value.as.array->len);
+        }
+
+        PtnCountSeenArrays seen;
+        ptn_count_seen_arrays_init(&seen);
+        int64_t count = ptn_count_array_recursive(runtime, function_name, value.as.array, &seen, line);
+        ptn_count_seen_arrays_free(&seen);
+        return ptn_int(count);
     }
 
     char message[192];
     int written = snprintf(
         message,
         sizeof(message),
-        "count(): Argument #1 ($value) must be of type Countable|array, %s given",
+        "%s(): Argument #1 ($value) must be of type Countable|array, %s given",
+        function_name,
         ptn_count_operand_type_name(value)
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -6469,9 +6580,13 @@ static PtnValue ptn_internal_ord(PtnRuntime *runtime, size_t argc, const PtnValu
 }
 
 static PtnValue ptn_internal_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)line;
-    return ptn_count_value(runtime, args[0]);
+    int64_t mode = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_COUNT_NORMAL;
+    return ptn_count_value(runtime, "count", args[0], mode, line);
+}
+
+static PtnValue ptn_internal_sizeof(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t mode = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_COUNT_NORMAL;
+    return ptn_count_value(runtime, "sizeof", args[0], mode, line);
 }
 
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -6692,7 +6807,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
         { "class_exists", 1, 2, ptn_internal_class_exists },
         { "constant", 1, 1, ptn_internal_constant },
-        { "count", 1, 1, ptn_internal_count },
+        { "count", 1, 2, ptn_internal_count },
         { "current", 1, 1, ptn_internal_current },
         { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
         { "define", 2, 3, ptn_internal_define },
@@ -6773,6 +6888,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
+        { "sizeof", 1, 2, ptn_internal_sizeof },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "sprintf", 1, PTN_VARIADIC_ARGS, ptn_internal_sprintf },
