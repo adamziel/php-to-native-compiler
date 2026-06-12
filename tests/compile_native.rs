@@ -15600,6 +15600,67 @@ try {
 }
 
 #[test]
+fn compile_static_property_isset_empty_and_coalesce_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-isset-empty-coalesce");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-isset-empty-coalesce.php");
+    let output = root.join("static-property-isset-empty-coalesce-bin");
+    fs::write(
+        &input,
+        "<?php
+class Counter {
+    public static $nullish = null;
+    public static $zero = \"0\";
+    public static $truthy = 5;
+
+    public static function probe() {
+        var_dump(isset(self::$truthy), empty(self::$zero), self::$missing ?? \"fallback\");
+    }
+}
+
+var_dump(isset(Counter::$truthy), isset(Counter::$nullish), isset(Counter::$missing));
+var_dump(empty(Counter::$zero), empty(Counter::$truthy), empty(Counter::$missing));
+var_dump(Counter::$truthy ?? \"fallback\", Counter::$nullish ?? \"fallback\", Counter::$missing ?? \"fallback\");
+Counter::probe();
+try {
+    echo Counter::$missing;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "int(5)\n",
+            "string(8) \"fallback\"\n",
+            "string(8) \"fallback\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(8) \"fallback\"\n",
+            "Access to undeclared static property Counter::$missing\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_static_property_quiet(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
+}
+
+#[test]
 fn compile_callback_shaped_object_property_read_to_native_binary() {
     let root = temp_dir("ptn-native-callback-object-property-read");
     fs::create_dir_all(&root).unwrap();

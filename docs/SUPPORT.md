@@ -10,8 +10,9 @@ The release-candidate surface is the generic compiler/runtime path exercised by
 internals, top-level functions, includes resolved at compile time, copy-on-write
 array/reference slices, and public class/object shells. Public class support is
 bounded to top-level declarations with public methods, direct public static
-property reads/writes, public instance property reads/writes, and public
-property `??=` plus read-side property `isset()`/`empty()`/`??` probes,
+property reads/writes, read-side static property `isset()`/`empty()`/`??`
+probes, public instance property reads/writes, and public property `??=`
+plus read-side property `isset()`/`empty()`/`??` probes,
 bounded private instance-property declarations read/written from
 declaring-class methods, declared private/protected instance-property metadata
 for initialization and dump labels, and public non-static
@@ -25,7 +26,7 @@ Post-RC architecture remains explicit rather than hidden:
   property/method resolution remain outside the RC boundary.
 - Static properties: direct public static reads/writes are supported, but
   visibility, inheritance, late static binding, typed/default metadata, and
-  static-property compound or null-coalescing lvalues are post-RC.
+  static-property compound or null-coalescing-assignment lvalues are post-RC.
 - Magic methods: public declared instance `__construct` is supported during
   object construction, and public declared instance `__call` is supported as a
   fallback for direct object calls and supported object callable dispatch when
@@ -248,15 +249,17 @@ Post-RC architecture remains explicit rather than hidden:
   `array_multisort()` remain unsupported and fail before code generation with
   an explicit unsupported diagnostic.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
-  offset reads, property reads, and currently supported value expressions.
-  Variable, offset, and property operands use a quiet existence lookup: missing
-  variables, missing offsets, missing properties, non-array/non-object
+  offset reads, property reads, static property reads, and currently supported
+  value expressions. Variable, offset, property, and static-property operands
+  use a quiet existence lookup: missing variables, missing offsets, missing
+  properties, missing declared-class static properties, non-array/non-object
   containers, and out-of-range string offsets do not emit ordinary read
   warnings; `isset()` returns false for missing or `null` values, and `empty()`
   returns true for missing or PHP-falsey values.
 - Expression-form null coalescing `left ?? right` over direct variables, array
-  reads, string offset reads, property reads, and currently supported value
-  expressions. The left operand uses the same quiet lookup path as
+  reads, string offset reads, property reads, static property reads, and
+  currently supported value expressions. The left operand uses the same quiet
+  lookup path as
   `isset()`/`empty()`, returns present non-`null` values without evaluating the
   right operand, and evaluates the right operand only for missing or `null`
   left values.
@@ -722,8 +725,10 @@ Post-RC architecture remains explicit rather than hidden:
   constant-expression default subset. Generated native code initializes
   declaration-backed static slots before top-level statements, supports
   `Class::$name` reads, writes, and pre/post inc/dec, resolves `self::$name`
-  inside declared methods, and throws modeled PHP `Error` diagnostics for
-  undeclared static properties.
+  inside declared methods, quiet-probes `isset()`, `empty()`, and
+  expression-form `??` over declared-class static properties, and throws modeled
+  PHP `Error` diagnostics for ordinary undeclared static property reads/writes
+  and inc/dec.
 - `new stdClass` and declared-class object shells, boxed object handles, public
   dynamic property reads/writes such as `$object->name`, and public declared
   instance properties with supported constant defaults. Object assignment
@@ -927,8 +932,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Object lvalues, dynamic-variable array-offset compound/null-coalescing/
   by-reference lvalues, append-form null-coalescing, property reference
   targets, property compound-assignment operators outside modeled
-  public-property `??=`, and static-property compound/null-coalescing lvalues
-  outside modeled direct reads/writes/inc/dec.
+  public-property `??=`, and static-property compound/null-coalescing-assignment
+  lvalues outside modeled direct reads/writes/inc/dec and read-side quiet probes.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.

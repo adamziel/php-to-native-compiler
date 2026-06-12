@@ -48,10 +48,11 @@ rows, or outputs.
   boxed operators and return assigned values.
 - `join()` concatenates ordered-array values, and bounded scalar `sprintf()`
   covers the current `%s`, integer, unsigned/hex/oct, float, and `%%` formats.
-- Declared instance properties accept public, protected, and private defaults,
-  preserve private/protected dump metadata, and support quiet property
-  `isset()`, `empty()`, and expression-form `??` probes; full visibility and
+- Declared instance properties keep public/protected/private defaults, dump
+  metadata, and quiet `isset()`, `empty()`, and `??`; full visibility and
   inheritance remain bounded.
+- Static properties support reads/writes plus quiet `isset()`, `empty()`, and
+  `??`.
 - Basic stream resources from `fopen()`/`fclose()` are boxed runtime values with
   type, dump, and array-key cast behavior.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
@@ -63,8 +64,7 @@ rows, or outputs.
 - `STATUS.md`: current operating status.
 - `progress.md`, `progress.html`, `STATUS.html`: short generated mirrors.
 
-Keep each under 500 words; progress patrol refreshes them about every 10
-minutes.
+Keep each under 500 words; progress patrol refreshes them periodically.
 
 ## Commands
 

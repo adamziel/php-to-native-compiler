@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-12T06:13Z
-Measured: `ptn-9gfw` rebased after `origin/master` `8312706fd`.
+Refresh: 2026-06-12T06:22Z
+Measured: `ptn-rrfl` rebased after `origin/master` `060f29db3`.
 
 Recent RC slices cover property/static-property inc/dec statements and
 expressions, dynamic-variable array/string-offset writes and unsets,
 array-offset inc/dec statements/expressions, variable-root array/append
 compound assignment expressions, bounded private instance-property access,
 protected/private dump metadata, full/short lazy ternaries, PHP-style object
-`var_export()`, bounded `get_class()` metadata, read-side property
+`var_export()`, bounded `get_class()` metadata, property/static-property
 `isset()`/`empty()`/`??` quiet probes, direct array mutators including default
 `sort()`/`asort()`/`rsort()`, sort flag diagnostics, array set operations,
 `array_udiff*()`, exact `strings/004`, `strings/006`, and `tests/lang/024`,
@@ -20,14 +20,15 @@ Recent PHPT movers: `ptn-dcyl` exact `strings/006`, `ptn-e3zm`
 array/string-offset unsets, `ptn-ir7c` exact `array/007`, `ptn-juzx`
 refined object `var_export()`, `ptn-6c76` property/static-property inc/dec,
 `ptn-bfwv` default `asort()` preserving keys, `ptn-1p1g` default `rsort()`
-reindexing values, and `ptn-9gfw` dynamic sort flag runtime boundaries.
+reindexing values, `ptn-9gfw` dynamic sort flag runtime boundaries, and
+`ptn-rrfl` static-property quiet probes.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 517 | 517 | 0 |
+| Native/compiler Rust suite | 518 | 518 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 200 | 0 |
 | PHPT Zend rows | 76 | 76 | 0 |
@@ -45,7 +46,7 @@ operators, ternary expressions, ordered arrays, `foreach`, branch/loop/switch,
 compile-time includes, selected internals, COW/reference slices, user
 functions, call-frame introspection, scalar type hints with literal-array
 defaults, bounded closures/callables, `stdClass`, public class/object shells,
-declared instance-property defaults and metadata, read-side property quiet
+declared instance-property defaults and metadata, property/static-property quiet
 probes, public constructors, class/object metadata intrinsics, `is_callable()`,
 assertions, heredoc/nowdoc, interpolation, streams, `pow()`, `array_merge()`,
 `join()`/`implode()`, scalar `sprintf()`, `call_user_func_array()`,
@@ -68,7 +69,9 @@ native/compiler 515/515 plus COW/doc-tests. `ptn-1p1g` adds focused `rsort()`
 reducer coverage; final checks include focused parser/native `rsort()`
 coverage and full `cargo test` with native/compiler 516/516. `ptn-9gfw` adds
 focused dynamic `sort()`/`asort()`/`rsort()` flag runtime coverage with
-native/compiler 517/517.
+native/compiler 517/517. `ptn-rrfl` adds focused static-property quiet probe
+coverage; final checks include focused static-property tests and full
+`cargo test` with native/compiler 518/518.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

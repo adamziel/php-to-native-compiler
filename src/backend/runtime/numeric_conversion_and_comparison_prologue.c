@@ -460,6 +460,23 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
     return ptn_runtime_undeclared_static_property(runtime, class_name, property);
 }
 
+static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    size_t line
+) {
+    (void)line;
+    char *key = ptn_static_property_key(class_name, property);
+    PtnValue value;
+    if (ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
+        free(key);
+        return ptn_lookup_found(ptn_value_clone_deref(value));
+    }
+    free(key);
+    return ptn_lookup_missing();
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_write_static_property(
     PtnRuntime *runtime,
     const char *class_name,
