@@ -31,8 +31,8 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
 - Array internals including set operations, `array_chunk()`, `array_combine()`,
   `array_filter()`, `array_key_exists()`, `array_keys()`, key-boundary
   probes, `array_merge()`, `array_pop()`, `array_product()`, `array_push()`,
-  `array_shift()`, `array_unshift()`, `arsort()`, `asort()`, `krsort()`,
-  `ksort()`, `natsort()`, `sort()`, `rsort()`, and `shuffle()` use
+  `array_shift()`, `array_unshift()`, `array_search()`, `arsort()`, `asort()`,
+  `krsort()`, `ksort()`, `natsort()`, `sort()`, `rsort()`, and `shuffle()` use
   ordered-array/COW paths.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, and `stdClass` through `(object) array(...)`.
@@ -56,7 +56,7 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
   inheritance remain bounded.
 - Static properties support reads/writes plus quiet `isset()`, `empty()`, and
   `??`.
-- Basic stream resources from `fopen()`/`fclose()` are boxed with type, dump,
+- Stream resources from `fopen()`/`fclose()` are boxed with type, dump,
   and array-key cast behavior.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.

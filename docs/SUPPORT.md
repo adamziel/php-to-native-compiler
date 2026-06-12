@@ -318,7 +318,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_udiff(expr, expr, callback);`,
   `array_udiff_assoc(expr, expr, callback);`,
   `array_udiff_uassoc(expr, expr, callback, callback);`,
-  `array_product(expr);`,
+  `array_product(expr);`, `array_search(expr, expr[, expr]);`,
   `array_values(expr);`, `array_keys(expr[, expr[, expr]]);`,
   `array_merge(expr, ...);`,
   `array_merge_recursive(expr, ...);`,
@@ -357,7 +357,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_udiff(expr, expr, callback)`,
   `array_udiff_assoc(expr, expr, callback)`,
   `array_udiff_uassoc(expr, expr, callback, callback)`,
-  `array_product(expr)`,
+  `array_product(expr)`, `array_search(expr, expr[, expr])`,
   `array_values(expr)`, `array_keys(expr[, expr[, expr]])`,
   `array_merge(expr, ...)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
@@ -618,6 +618,10 @@ Post-RC architecture remains explicit rather than hidden:
 - `in_array()` over current boxed arrays, returning whether the needle matches
   any entry under loose or strict comparison. References are read through the
   same dereferencing path as other comparison internals.
+- `array_search()` over current boxed arrays, returning the first matching
+  integer/string key under the same loose or strict comparison path as
+  `in_array()`, or `false` when no entry matches. Returned string keys follow
+  the current C-string-backed array-key boundary.
 - `error_reporting()` accepts zero or one scalar argument, returns the previous
   PHP-style mask on writes or current mask on reads, and filters the modeled
   shared warning/deprecation/notice emitters. Expression-level `@` suppression
@@ -876,7 +880,8 @@ Post-RC architecture remains explicit rather than hidden:
 - String-offset append, compound assignment, reference `isset()`/`empty()` and
   null-coalescing semantics, property reference targets, and complete
   TypeError/exception parity for unsupported string offset key types.
-- Embedded NUL strings in runtime string values, `var_dump()` string
+- Embedded NUL strings in runtime values and embedded NUL string array keys,
+  `var_dump()` string
   length/output, `var_export()`, `strlen()`, `str_rot13()`, `strcmp()`,
   `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
   `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,

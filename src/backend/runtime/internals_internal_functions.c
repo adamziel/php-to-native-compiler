@@ -2392,6 +2392,21 @@ static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_array_search(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_search", 2, "haystack", args[1]);
+    int strict = argc >= 3 && ptn_is_truthy(args[2]);
+    for (size_t i = 0; i < array->len; i++) {
+        int matched = strict
+            ? ptn_compare_identical(args[0], array->entries[i].value)
+            : ptn_compare_equal(args[0], array->entries[i].value);
+        if (matched) {
+            return ptn_array_key_value(array->entries[i].key);
+        }
+    }
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_array_fill(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -5953,6 +5968,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_reduce", 2, 3, ptn_internal_array_reduce },
         { "array_replace_recursive", 1, PTN_VARIADIC_ARGS, ptn_internal_array_replace_recursive },
         { "array_reverse", 1, 2, ptn_internal_array_reverse },
+        { "array_search", 2, 3, ptn_internal_array_search },
         { "array_shift", 1, 1, ptn_internal_array_shift },
         { "array_sum", 1, 1, ptn_internal_array_sum },
         { "array_udiff", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff },

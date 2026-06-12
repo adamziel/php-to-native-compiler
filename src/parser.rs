@@ -3779,6 +3779,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_push"
             | "array_replace_recursive"
             | "array_reverse"
+            | "array_search"
             | "array_shift"
             | "array_sum"
             | "array_udiff"

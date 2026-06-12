@@ -1309,6 +1309,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error =
         parser::parse("<?php function IN_ARRAY($needle, $haystack) { return true; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function in_array()");
+
+    let error = parser::parse("<?php function array_search($needle, $haystack) { return false; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_search()");
 }
 
 #[test]
@@ -9409,6 +9413,48 @@ var_dump(function_exists(\"in_array\"), function_exists(\"IN_ARRAY\"));",
         "bool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_search_returns_first_matching_key_to_native_binary() {
+    let root = temp_dir("ptn-native-array-search");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-search.php");
+    let output = root.join("array-search-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$value = \"10\";\n\
+$haystack = [\"first\" => &$value, 20, \"030\", \"two\" => 2];\n\
+var_dump(array_search(10, $haystack));\n\
+var_dump(array_search(10, $haystack, true));\n\
+var_dump(array_search(\"10\", $haystack, true));\n\
+$value = 30;\n\
+var_dump(array_search(\"30\", $haystack));\n\
+var_dump(array_search(\"30\", $haystack, true));\n\
+$needle =& $value;\n\
+var_dump(array_search($needle, $haystack, true));\n\
+var_dump(array_search(2, $haystack));\n\
+var_dump(array_search(\"2\", $haystack, true));\n\
+var_dump(array_search(\"missing\", $haystack));\n\
+var_dump(function_exists(\"array_search\"), function_exists(\"ARRAY_SEARCH\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"first\"\nbool(false)\nstring(5) \"first\"\nstring(5) \"first\"\nbool(false)\nstring(5) \"first\"\nstring(3) \"two\"\nbool(false)\nbool(false)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_search"));
+    assert!(c_source.contains("ptn_compare_equal"));
+    assert!(c_source.contains("ptn_compare_identical"));
 }
 
 #[test]
