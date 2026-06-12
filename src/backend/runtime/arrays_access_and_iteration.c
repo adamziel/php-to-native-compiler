@@ -2288,6 +2288,20 @@ static PTN_UNUSED void ptn_array_asort_values(PtnArray *array) {
     ptn_array_rebuild_index(array);
 }
 
+static PTN_UNUSED void ptn_array_arsort_values(PtnArray *array) {
+    for (size_t i = 1; i < array->len; i++) {
+        PtnArrayEntry moving = array->entries[i];
+        size_t j = i;
+        while (j > 0 && ptn_array_value_compare_ascending(array->entries[j - 1].value, moving.value) < 0) {
+            array->entries[j] = array->entries[j - 1];
+            j--;
+        }
+        array->entries[j] = moving;
+    }
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
 static PTN_UNUSED void ptn_array_rsort_values(PtnArray *array) {
     for (size_t i = 1; i < array->len; i++) {
         PtnArrayEntry moving = array->entries[i];

@@ -3716,6 +3716,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "chr"
             | "ord"
             | "range"
+            | "arsort"
             | "asort"
             | "ksort"
             | "error_reporting"
@@ -3808,6 +3809,7 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
             | "array_push"
             | "array_shift"
             | "array_unshift"
+            | "arsort"
             | "asort"
             | "ksort"
             | "rsort"
@@ -3826,14 +3828,7 @@ fn is_single_array_path_mutation_name(name: &str) -> bool {
 fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "arsort"
-            | "krsort"
-            | "natsort"
-            | "natcasesort"
-            | "usort"
-            | "uasort"
-            | "uksort"
-            | "array_multisort"
+        "krsort" | "natsort" | "natcasesort" | "usort" | "uasort" | "uksort" | "array_multisort"
     )
 }
 
@@ -3869,6 +3864,7 @@ fn validate_mutating_array_internal_call(
     call_span: SourceSpan,
 ) -> Result<()> {
     if (name.eq_ignore_ascii_case("sort")
+        || name.eq_ignore_ascii_case("arsort")
         || name.eq_ignore_ascii_case("asort")
         || name.eq_ignore_ascii_case("rsort"))
         && arguments.len() > 1

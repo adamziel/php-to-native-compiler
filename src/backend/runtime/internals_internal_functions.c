@@ -967,6 +967,19 @@ static PTN_UNUSED PtnValue ptn_runtime_array_asort_variable(PtnRuntime *runtime,
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_arsort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "arsort",
+        1,
+        "array",
+        name,
+        value
+    );
+    ptn_array_arsort_values(array);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_sort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -1343,6 +1356,17 @@ static PtnValue ptn_internal_asort(PtnRuntime *runtime, size_t argc, const PtnVa
     }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "asort", 1, "array", args[0]);
     ptn_array_asort_values(array);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_arsort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (argc >= 2) {
+        ptn_internal_throw_sort_flags_unsupported(runtime, "arsort");
+        return ptn_null();
+    }
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "arsort", 1, "array", args[0]);
+    ptn_array_arsort_values(array);
     return ptn_bool(1);
 }
 
@@ -5786,6 +5810,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
         { "array_walk", 2, 3, ptn_internal_array_walk },
+        { "arsort", 1, 2, ptn_internal_arsort },
         { "asort", 1, 2, ptn_internal_asort },
         { "assert", 1, 2, ptn_internal_assert },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },

@@ -10707,6 +10707,7 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php var_dump(array_shift(array(1, 2)));", "array_shift"),
         ("<?php array_push([1], 2);", "array_push"),
         ("<?php array_unshift([1], 2);", "array_unshift"),
+        ("<?php arsort([3, 2, 1]);", "arsort"),
         ("<?php asort([3, 2, 1]);", "asort"),
         ("<?php ksort([3 => \"c\", 1 => \"a\"]);", "ksort"),
         ("<?php shuffle([1, 2, 3]);", "shuffle"),
@@ -10737,6 +10738,7 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
     parser::parse("<?php $items = [1, 2]; array_pop(($items));").unwrap();
     parser::parse("<?php $items = [1]; array_push(($items), 2);").unwrap();
     parser::parse("<?php $items = [1]; array_unshift(($items), 0);").unwrap();
+    parser::parse("<?php $items = [\"b\" => 2, \"a\" => 1]; arsort(($items));").unwrap();
     parser::parse("<?php $items = [\"b\" => 2, \"a\" => 1]; asort(($items));").unwrap();
     parser::parse("<?php $items = [2 => \"b\", 1 => \"a\"]; ksort(($items));").unwrap();
     parser::parse("<?php $items = [1, 2]; shuffle(($items));").unwrap();
@@ -10752,6 +10754,11 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
         (
             "<?php $items = [3, 2, 1]; sort($items, SORT_REGULAR);",
             "sort",
+            "sort flags are unsupported",
+        ),
+        (
+            "<?php $items = [3, 2, 1]; arsort($items, SORT_REGULAR);",
+            "arsort",
             "sort flags are unsupported",
         ),
         (
@@ -10796,6 +10803,10 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
         (
             "<?php $items = [3, 2, 1]; rsort($items, SORT_STRING);",
             "rsort",
+        ),
+        (
+            "<?php $items = [3, 2, 1]; arsort($items, SORT_STRING);",
+            "arsort",
         ),
     ] {
         let error = parser::parse(source).unwrap_err();
@@ -10854,6 +10865,70 @@ var_dump(function_exists(\"asort\"));",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_asort_variable"));
     assert!(c_source.contains("ptn_array_asort_values"));
+}
+
+#[test]
+fn compile_arsort_mutates_direct_variable_preserves_keys_and_detaches_cow_to_native_binary() {
+    let root = temp_dir("ptn-native-arsort-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arsort-cow.php");
+    let output = root.join("arsort-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = [\"b\" => 3, \"a\" => 1, \"c\" => 2];\n\
+$copy = $source;\n\
+var_dump(arsort($copy));\n\
+foreach ($copy as $key => $value) {\n\
+    echo $key, \"=\", $value, \"\\n\";\n\
+}\n\
+echo $source[\"b\"], \":\", $source[\"a\"], \":\", $source[\"c\"], \"\\n\";\n\
+$mixed = [2 => \"pear\", 7 => \"apple\", 4 => \"banana\"];\n\
+arsort($mixed);\n\
+foreach ($mixed as $key => $word) {\n\
+    echo $key, \":\", $word, \"\\n\";\n\
+}\n\
+$dynamic = \"arsort\";\n\
+$dynamic_source = [3, 1, 2];\n\
+$dynamic_copy = $dynamic_source;\n\
+var_dump($dynamic($dynamic_copy));\n\
+foreach ($dynamic_copy as $key => $value) {\n\
+    echo \"d\", $key, \"=\", $value, \"\\n\";\n\
+}\n\
+echo $dynamic_source[0], \":\", $dynamic_source[1], \":\", $dynamic_source[2], \"\\n\";\n\
+var_dump(function_exists(\"arsort\"), function_exists(\"ARSORT\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "b=3\n",
+            "c=2\n",
+            "a=1\n",
+            "3:1:2\n",
+            "2:pear\n",
+            "4:banana\n",
+            "7:apple\n",
+            "bool(true)\n",
+            "d0=3\n",
+            "d2=2\n",
+            "d1=1\n",
+            "3:1:2\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_arsort_variable"));
+    assert!(c_source.contains("ptn_array_arsort_values"));
 }
 
 #[test]
@@ -11052,13 +11127,19 @@ try {\n\
 } catch (Error $e) {\n\
     echo $e->getMessage(), \"\\n\";\n\
 }\n\
+$arsortItems = [\"b\" => 2, \"a\" => 1];\n\
+try {\n\
+    call_user_func(\"arsort\", $arsortItems, 0);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
 $rsortItems = [1, 2, 3];\n\
 try {\n\
     call_user_func(\"rsort\", $rsortItems, 0);\n\
 } catch (Error $e) {\n\
     echo $e->getMessage(), \"\\n\";\n\
 }\n\
-var_dump($sortItems, $asortItems, $rsortItems);",
+var_dump($sortItems, $asortItems, $arsortItems, $rsortItems);",
     )
     .unwrap();
 
@@ -11071,6 +11152,7 @@ var_dump($sortItems, $asortItems, $rsortItems);",
         concat!(
             "sort() flags are unsupported; default regular value sorting is supported\n",
             "asort() flags are unsupported; default regular value sorting is supported\n",
+            "arsort() flags are unsupported; default regular value sorting is supported\n",
             "rsort() flags are unsupported; default regular value sorting is supported\n",
             "array(3) {\n",
             "  [0]=>\n",
@@ -11078,6 +11160,12 @@ var_dump($sortItems, $asortItems, $rsortItems);",
             "  [1]=>\n",
             "  int(2)\n",
             "  [2]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"b\"]=>\n",
+            "  int(2)\n",
+            "  [\"a\"]=>\n",
             "  int(1)\n",
             "}\n",
             "array(2) {\n",
