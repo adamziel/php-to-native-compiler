@@ -5625,6 +5625,7 @@ static int ptn_declared_class_method_exists(const char *class_name, const char *
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -5699,6 +5700,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
         { "function_exists", 1, 1, ptn_internal_function_exists },
+        { "get_class", 1, 1, ptn_internal_get_class },
         { "getmypid", 0, 0, ptn_internal_getmypid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "gettype", 1, 1, ptn_internal_gettype },
@@ -5842,6 +5844,34 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     int exists = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;
     free(name);
     return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return ptn_owned_string(ptn_duplicate_string(value.as.object->class_name));
+        case PTN_CLOSURE:
+            return ptn_string("Closure");
+        case PTN_EXCEPTION:
+            return ptn_owned_string(ptn_duplicate_string(value.as.exception->class_name));
+        default:
+            break;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "get_class(): Argument #1 ($object) must be of type object, %s given",
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

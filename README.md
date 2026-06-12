@@ -18,7 +18,7 @@ rows, or outputs.
 - Top-level user functions and declared class methods include scoped magic
   constants, call-frame introspection, scalar type hints, literal-array
   defaults, by-reference return aliases, typed coercion, and public constructor
-  dispatch.
+  dispatch plus bounded class/object metadata intrinsics.
 - Full and short ternary expressions lower through the boxed value path with
   lazy branch evaluation; unparenthesized nested ternaries remain an explicit
   diagnostic boundary.

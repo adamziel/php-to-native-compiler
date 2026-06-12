@@ -6445,6 +6445,7 @@ class Worker {
 }
 
 $worker = new Worker();
+$callback = function () { return null; };
 var_dump(class_exists(\"Worker\"));
 var_dump(class_exists(\"worker\"));
 var_dump(class_exists(\"Missing\", false));
@@ -6454,6 +6455,15 @@ var_dump(method_exists($worker, \"RUN\"));
 var_dump(method_exists(\"Worker\", \"staticwork\"));
 var_dump(method_exists(\"Worker\", \"missing\"));
 var_dump(method_exists(\"stdClass\", \"anything\"));
+var_dump(get_class($worker));
+var_dump(get_class(new stdClass));
+var_dump(get_class($callback));
+try {
+    get_class(42);
+} catch (TypeError $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+var_dump(function_exists(\"get_class\"));
 ",
     )
     .unwrap();
@@ -6474,6 +6484,11 @@ var_dump(method_exists(\"stdClass\", \"anything\"));
             "bool(true)\n",
             "bool(false)\n",
             "bool(false)\n",
+            "string(6) \"Worker\"\n",
+            "string(8) \"stdClass\"\n",
+            "string(7) \"Closure\"\n",
+            "TypeError: get_class(): Argument #1 ($object) must be of type object, int given\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -6482,6 +6497,7 @@ var_dump(method_exists(\"stdClass\", \"anything\"));
     assert!(c_source.contains("static int ptn_declared_class_exists("));
     assert!(c_source.contains("static int ptn_declared_class_method_exists("));
     assert!(c_source.contains("ptn_internal_class_exists"));
+    assert!(c_source.contains("ptn_internal_get_class"));
     assert!(c_source.contains("ptn_internal_method_exists"));
 }
 

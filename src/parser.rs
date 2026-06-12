@@ -3762,6 +3762,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "constant"
             | "defined"
             | "function_exists"
+            | "get_class"
             | "isset"
             | "empty"
             | "count"

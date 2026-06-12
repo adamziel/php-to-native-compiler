@@ -690,10 +690,13 @@ Post-RC architecture remains explicit rather than hidden:
   and `["Class", "method"]` callable values. Declared class names and declared
   method names are exposed through bounded `class_exists()` and
   `method_exists()` metadata, with case-insensitive lookup and `stdClass`
-  recognized as the current built-in object shell. Declared and inherited
-  public instance methods can be called directly through object receivers and
-  through `[$object, "method"]` callable values, including internal callback
-  dispatch. Public `__construct` methods in declared classes are invoked
+  recognized as the current built-in object shell. Object class names are
+  exposed through bounded `get_class($object)` for current object, closure, and
+  exception values; non-object operands throw a modeled `TypeError`. Declared
+  and inherited public instance methods can be called directly through object
+  receivers and through `[$object, "method"]` callable values, including
+  internal callback dispatch. Public `__construct` methods in declared classes
+  are invoked
   during `new Class(...)` after declared property defaults are installed,
   using the same method dispatch, `$this` binding, inherited public method
   lookup, positional argument/default-parameter handling, and return-value
