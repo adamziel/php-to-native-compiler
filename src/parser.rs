@@ -3723,6 +3723,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "asort"
             | "krsort"
             | "ksort"
+            | "natcasesort"
             | "natsort"
             | "error_reporting"
             | "func_get_arg"
@@ -3822,6 +3823,7 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
             | "asort"
             | "krsort"
             | "ksort"
+            | "natcasesort"
             | "natsort"
             | "rsort"
             | "shuffle"
@@ -3839,7 +3841,7 @@ fn is_single_array_path_mutation_name(name: &str) -> bool {
 fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "natcasesort" | "usort" | "uasort" | "uksort" | "array_multisort"
+        "usort" | "uasort" | "uksort" | "array_multisort"
     )
 }
 
@@ -3887,9 +3889,14 @@ fn validate_mutating_array_internal_call(
             Some(arguments.get(1).map_or(call_span, Expr::span)),
         ));
     }
-    if name.eq_ignore_ascii_case("natsort") && arguments.len() > 1 {
+    if (name.eq_ignore_ascii_case("natsort") || name.eq_ignore_ascii_case("natcasesort"))
+        && arguments.len() > 1
+    {
+        let normalized = name.to_ascii_lowercase();
         return Err(Diagnostic::new(
-            "natsort() currently supports exactly one direct variable array argument; extra arguments are unsupported",
+            format!(
+                "{normalized}() currently supports exactly one direct variable array argument; extra arguments are unsupported"
+            ),
             Some(arguments.get(1).map_or(call_span, Expr::span)),
         ));
     }

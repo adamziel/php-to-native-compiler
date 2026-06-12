@@ -32,7 +32,8 @@ Rule: implement reusable PHP semantics; do not special-case PHPT rows.
   `array_filter()`, `array_key_exists()`, `array_keys()`, key-boundary
   probes, `array_merge()`, `array_pop()`, `array_product()`, `array_push()`,
   `array_shift()`, `array_unshift()`, `array_search()`, `arsort()`, `asort()`,
-  `krsort()`, `ksort()`, `natsort()`, `sort()`, `rsort()`, and `shuffle()` use
+  `krsort()`, `ksort()`, `natcasesort()`, `natsort()`, `sort()`, `rsort()`, and
+  `shuffle()` use
   ordered-array/COW paths.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, and `stdClass` through `(object) array(...)`.

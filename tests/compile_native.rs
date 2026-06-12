@@ -11012,9 +11012,9 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
             "extra arguments are unsupported",
         ),
         (
-            "<?php $items = [\"img2\", \"img1\"]; natcasesort($items);",
+            "<?php $items = [\"img2\", \"img1\"]; natcasesort($items, SORT_REGULAR);",
             "natcasesort",
-            "sort-family array mutation semantics are unsupported",
+            "extra arguments are unsupported",
         ),
         (
             "<?php $items = [3, 2, 1]; usort($items, \"cmp\");",
@@ -11318,6 +11318,81 @@ var_dump(function_exists(\"natsort\"), function_exists(\"NATSORT\"));",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_natsort_variable"));
     assert!(c_source.contains("ptn_array_natsort_values"));
+}
+
+#[test]
+fn compile_natcasesort_mutates_direct_variable_preserves_keys_and_detaches_cow_to_native_binary() {
+    let root = temp_dir("ptn-native-natcasesort-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("natcasesort-cow.php");
+    let output = root.join("natcasesort-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = [\"b\" => \"file2\", \"a\" => \"File10\", \"c\" => \"FILE1\"];\n\
+$copy = $source;\n\
+var_dump(natcasesort($copy));\n\
+foreach ($copy as $key => $value) {\n\
+    echo $key, \"=\", $value, \"\\n\";\n\
+}\n\
+echo $source[\"b\"], \":\", $source[\"a\"], \":\", $source[\"c\"], \"\\n\";\n\
+$items = [\"img12\" => \"IMG12\", \"img10\" => \"img10\", \"img2\" => \"Img2\", \"img1\" => \"img1\"];\n\
+natcasesort($items);\n\
+foreach ($items as $key => $value) {\n\
+    echo $key, \":\", $value, \"\\n\";\n\
+}\n\
+$ties = [\"z\" => \"a\", \"y\" => \"A\", \"x\" => \"a2\", \"w\" => \"A10\", \"v\" => \"a1\"];\n\
+natcasesort($ties);\n\
+foreach ($ties as $key => $value) {\n\
+    echo $key, \"~\", $value, \"\\n\";\n\
+}\n\
+$dynamic = \"natcasesort\";\n\
+$dynamic_source = [\"xB2\" => \"XB2\", \"xa10\" => \"xa10\", \"xA1\" => \"xA1\"];\n\
+$dynamic_copy = $dynamic_source;\n\
+var_dump($dynamic($dynamic_copy));\n\
+foreach ($dynamic_copy as $key => $value) {\n\
+    echo \"d\", $key, \"=\", $value, \"\\n\";\n\
+}\n\
+echo $dynamic_source[\"xB2\"], \":\", $dynamic_source[\"xa10\"], \":\", $dynamic_source[\"xA1\"], \"\\n\";\n\
+var_dump(function_exists(\"natcasesort\"), function_exists(\"NATCASESORT\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "c=FILE1\n",
+            "b=file2\n",
+            "a=File10\n",
+            "file2:File10:FILE1\n",
+            "img1:img1\n",
+            "img2:Img2\n",
+            "img10:img10\n",
+            "img12:IMG12\n",
+            "z~a\n",
+            "y~A\n",
+            "v~a1\n",
+            "x~a2\n",
+            "w~A10\n",
+            "bool(true)\n",
+            "dxA1=xA1\n",
+            "dxa10=xa10\n",
+            "dxB2=XB2\n",
+            "XB2:xa10:xA1\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_natcasesort_variable"));
+    assert!(c_source.contains("ptn_array_natcasesort_values"));
 }
 
 #[test]

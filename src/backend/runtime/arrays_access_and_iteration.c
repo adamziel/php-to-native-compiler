@@ -2287,6 +2287,13 @@ static int ptn_ascii_is_natural_space(unsigned char byte) {
         byte == (unsigned char)'\f';
 }
 
+static unsigned char ptn_ascii_natural_case_fold(unsigned char byte) {
+    if (byte >= (unsigned char)'A' && byte <= (unsigned char)'Z') {
+        return (unsigned char)(byte + ((unsigned char)'a' - (unsigned char)'A'));
+    }
+    return byte;
+}
+
 static int ptn_compare_natural_digit_run_left(
     const unsigned char *left,
     size_t left_len,
@@ -2353,7 +2360,7 @@ static int ptn_compare_natural_digit_run_right(
     }
 }
 
-static int ptn_compare_natural_string_operands(PtnStringOperand left_operand, PtnStringOperand right_operand) {
+static int ptn_compare_natural_string_operands(PtnStringOperand left_operand, PtnStringOperand right_operand, int case_insensitive) {
     const unsigned char *left = (const unsigned char *)left_operand.data;
     const unsigned char *right = (const unsigned char *)right_operand.data;
     size_t left_offset = 0;
@@ -2401,10 +2408,16 @@ static int ptn_compare_natural_string_operands(PtnStringOperand left_operand, Pt
         if (right_offset >= right_operand.len) {
             return 1;
         }
-        if (left[left_offset] < right[right_offset]) {
+        unsigned char left_byte = left[left_offset];
+        unsigned char right_byte = right[right_offset];
+        if (case_insensitive) {
+            left_byte = ptn_ascii_natural_case_fold(left_byte);
+            right_byte = ptn_ascii_natural_case_fold(right_byte);
+        }
+        if (left_byte < right_byte) {
             return -1;
         }
-        if (left[left_offset] > right[right_offset]) {
+        if (left_byte > right_byte) {
             return 1;
         }
         left_offset++;
@@ -2415,7 +2428,16 @@ static int ptn_compare_natural_string_operands(PtnStringOperand left_operand, Pt
 static int ptn_array_value_compare_natural(PtnValue left, PtnValue right) {
     PtnStringOperand left_string = ptn_value_to_string_operand(left);
     PtnStringOperand right_string = ptn_value_to_string_operand(right);
-    int compared = ptn_compare_natural_string_operands(left_string, right_string);
+    int compared = ptn_compare_natural_string_operands(left_string, right_string, 0);
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    return compared;
+}
+
+static int ptn_array_value_compare_natural_case(PtnValue left, PtnValue right) {
+    PtnStringOperand left_string = ptn_value_to_string_operand(left);
+    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+    int compared = ptn_compare_natural_string_operands(left_string, right_string, 1);
     ptn_string_operand_free(left_string);
     ptn_string_operand_free(right_string);
     return compared;
@@ -2498,6 +2520,20 @@ static PTN_UNUSED void ptn_array_natsort_values(PtnArray *array) {
         PtnArrayEntry moving = array->entries[i];
         size_t j = i;
         while (j > 0 && ptn_array_value_compare_natural(array->entries[j - 1].value, moving.value) > 0) {
+            array->entries[j] = array->entries[j - 1];
+            j--;
+        }
+        array->entries[j] = moving;
+    }
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
+static PTN_UNUSED void ptn_array_natcasesort_values(PtnArray *array) {
+    for (size_t i = 1; i < array->len; i++) {
+        PtnArrayEntry moving = array->entries[i];
+        size_t j = i;
+        while (j > 0 && ptn_array_value_compare_natural_case(array->entries[j - 1].value, moving.value) > 0) {
             array->entries[j] = array->entries[j - 1];
             j--;
         }
