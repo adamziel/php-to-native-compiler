@@ -1388,6 +1388,47 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
             .unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_filter()");
 
+    let error =
+        parser::parse("<?php function ARRAY_MAP($callback, $array) { return []; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_map()");
+
+    let error = parser::parse("<?php function array_reduce($array, $callback) { return null; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_reduce()");
+
+    let error =
+        parser::parse("<?php function array_walk($array, $callback) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_walk()");
+
+    let error =
+        parser::parse("<?php function CALL_USER_FUNC($callback) { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function call_user_func()");
+
+    let error =
+        parser::parse("<?php function call_user_func_array($callback, $args) { return null; }")
+            .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot redeclare function call_user_func_array()"
+    );
+
+    let error = parser::parse("<?php function Class_Exists($class) { return false; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function class_exists()");
+
+    let error = parser::parse("<?php function method_exists($object, $method) { return false; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function method_exists()");
+
+    let error = parser::parse("<?php function is_callable($value) { return false; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function is_callable()");
+
+    let error = parser::parse("<?php function Assert($value) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function assert()");
+
+    let error =
+        parser::parse("<?php function debug_zval_dump($value) { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function debug_zval_dump()");
+
     let error = parser::parse("<?php function End($array) { return $array; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function end()");
 
@@ -16717,6 +16758,74 @@ var_dump(array_map(null, [\"x\" => 1, \"y\" => 2], [10]));
     assert!(c_source.contains("ptn_internal_array_map"));
     assert!(c_source.contains("ptn_call_callable(runtime, callback, array_count"));
     assert!(c_source.contains("ptn_array_map_result_key"));
+}
+
+#[test]
+fn compile_namespaced_registered_internals_fall_back_to_global_runtime() {
+    let root = temp_dir("ptn-native-namespaced-registered-internal-fallback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespaced-registered-internal-fallback.php");
+    let output = root.join("namespaced-registered-internal-fallback-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace Demo;
+
+class Worker {
+    public function run() {
+        return \"ok\";
+    }
+}
+
+function bump($value) {
+    return $value + 1;
+}
+
+function add($carry, $value) {
+    return $carry + $value;
+}
+
+function label($value) {
+    return $value . \"!\";
+}
+
+var_dump(array_map(\"Demo\\\\bump\", [1, 2]));
+var_dump(array_reduce([1, 2, 3], \"Demo\\\\add\", 0));
+var_dump(call_user_func(\"Demo\\\\label\", \"x\"));
+var_dump(is_callable(\"strlen\"));
+var_dump(class_exists(\"Demo\\\\Worker\"));
+var_dump(method_exists(\"Demo\\\\Worker\", \"run\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "int(6)\n",
+            "string(2) \"x!\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_function(&runtime, \"array_map\""));
+    assert!(c_source.contains("ptn_call_function(&runtime, \"array_reduce\""));
+    assert!(c_source.contains("ptn_call_function(&runtime, \"call_user_func\""));
+    assert!(c_source.contains("ptn_call_function(&runtime, \"class_exists\""));
 }
 
 #[test]

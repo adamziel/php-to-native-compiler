@@ -345,6 +345,8 @@ Post-RC architecture remains explicit rather than hidden:
   `array_fill(expr, expr, expr);`, `array_pad(expr, expr, expr);`,
   `array_filter(expr[, expr[, expr]]);`,
   `array_keys(expr[, expr[, expr]]);`,
+  `array_map(expr, expr[, ...]);`, `array_reduce(expr, expr[, expr]);`,
+  `array_walk(expr, expr[, expr]);`,
   `array_intersect(expr, ...);`, `array_intersect_assoc(expr, ...);`,
   `array_key_first(expr);`, `array_key_last(expr);`,
   `array_udiff(expr, expr, callback);`,
@@ -356,7 +358,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_merge(expr, ...);`,
   `array_merge_recursive(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
-  `call_user_func_array(expr, expr);`,
+  `call_user_func(expr[, ...]);`, `call_user_func_array(expr, expr);`,
   `assert(expr[, description]);`,
   `in_array(expr, expr[, expr]);`,
   `is_callable(expr[, syntax_only]);`, `is_finite(expr);`,
@@ -396,6 +398,8 @@ Post-RC architecture remains explicit rather than hidden:
   `array_fill(expr, expr, expr)`, `array_pad(expr, expr, expr)`,
   `array_filter(expr[, expr[, expr]])`,
   `array_keys(expr[, expr[, expr]])`,
+  `array_map(expr, expr[, ...])`, `array_reduce(expr, expr[, expr])`,
+  `array_walk(expr, expr[, expr])`,
   `array_intersect(expr, ...)`, `array_intersect_assoc(expr, ...)`,
   `array_key_first(expr)`, `array_key_last(expr)`,
   `array_udiff(expr, expr, callback)`,
@@ -406,7 +410,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_values(expr)`, `array_keys(expr[, expr[, expr]])`,
   `array_merge(expr, ...)`,
   `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
-  `call_user_func_array(expr, expr)`,
+  `call_user_func(expr[, ...])`, `call_user_func_array(expr, expr)`,
   `assert(expr[, description])`,
   `in_array(expr, expr[, expr])`,
   `fopen(expr, expr[, expr[, expr]])`, `fclose(expr)`,
@@ -660,6 +664,15 @@ Post-RC architecture remains explicit rather than hidden:
   shared callable path with value, key, or value/key arguments according to
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`, and rejects unknown modes
   with the modeled PHP `ValueError`.
+- `array_map()` over current boxed arrays, dispatching through the shared
+  callable path for one or more input arrays. A `null` callback returns current
+  zipped row values. Single-array calls preserve source keys; multi-array calls
+  use sequential integer keys.
+- `array_reduce()` over current boxed arrays, dispatching carry/value pairs
+  through the shared callable path and supporting an optional initial value.
+- `array_walk()` over direct-variable arrays, dispatching value/key pairs and
+  optional user data through the shared callable path while preserving PHP's
+  by-reference mutation behavior for walked values.
 - `array_flip()` over current boxed arrays, flipping dereferenced integer and
   string values into ordered-map keys and using the original keys as values.
   Unsupported value types emit the modeled PHP warning boundary and are skipped.
@@ -736,6 +749,8 @@ Post-RC architecture remains explicit rather than hidden:
   method array callable values, including inherited public object methods,
   supported `__call` fallback, and the optional syntax-only flag. The third
   by-reference callable-name output parameter is not yet supported.
+- `call_user_func()` dispatches current string, closure, static method array,
+  and object method array callable values through the shared callable path.
 - `call_user_func_array()` expands current ordered-array argument values through
   the shared callable dispatch path, preserving reference entries for the
   current by-reference callable subset. Unreferenced values passed to

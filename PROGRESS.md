@@ -1,37 +1,42 @@
 # PTN Progress
 
-Refresh: 2026-06-12T15:23Z
-Measured: `ptn-n1tv` rebased after `origin/master` `d17d760bd`.
+Refresh: 2026-06-12T15:29Z
+Measured: `ptn-9fpp` rebased after `origin/master` `940d153e3`.
 
-Recent RC slices cover direct static-property null coalescing assignment,
-include-once guards for compiled include helpers, property/static-property
-inc/dec, dynamic-variable array/string-offset writes and unsets, array/append
-compound assignments, bounded private properties, object `var_export()`,
-`get_class()`, quiet property/static probes, direct array mutators including
-the sort family, explicit regular sort flags, set operations, `array_udiff*()`,
-exact string/lang rows, highlight output paths, `join()`/`implode()`,
-`sprintf()`, `array_product()`, key helpers, `array_search()`,
-`array_slice()`, `array_pad()`, `count()`/`sizeof()` normal and recursive
-modes, `str_pad()`, catchable `intdiv()` plus unsupported-operand TypeErrors,
-catchable `chunk_split()` length `ValueError`, ASCII case/trim reducers,
-length-aware `chunk_split()` empty-input endings, modeled PHP/CLI/Zend
-metadata, PHPT runner environment probes, `ceil()`/`floor()` diagnostics,
-`is_countable()`, `chr()` finite float/float-string precision diagnostics,
-first `ReflectionFunction` metadata backed by generated user-function metadata
-plus the internal registry, unbracketed namespaces, foreach list destructuring
-with reference elements, and bounded dynamic include/require path dispatch.
+Recent RC slices cover namespaced registered-internal fallback, direct
+static-property null coalescing assignment, include-once guards for compiled
+include helpers, property/static-property inc/dec, dynamic-variable
+array/string-offset writes and unsets, array/append compound assignments,
+bounded private properties, object `var_export()`, `get_class()`, quiet
+property/static probes, direct array mutators including the sort family,
+explicit regular sort flags, set operations, `array_udiff*()`, exact
+string/lang rows, highlight output paths, `join()`/`implode()`, `sprintf()`,
+`array_product()`, key helpers, `array_search()`, `array_slice()`,
+`array_pad()`, `count()`/`sizeof()` normal and recursive modes, `str_pad()`,
+catchable `intdiv()` plus unsupported-operand TypeErrors, catchable
+`chunk_split()` length `ValueError`, ASCII case/trim reducers, length-aware
+`chunk_split()` empty-input endings, modeled PHP/CLI/Zend metadata, PHPT
+runner environment probes, `ceil()`/`floor()` diagnostics, `is_countable()`,
+`chr()` finite float/float-string precision diagnostics, first
+`ReflectionFunction` metadata backed by generated user-function metadata plus
+the internal registry, unbracketed namespaces, foreach list destructuring with
+reference elements, and bounded dynamic include/require path dispatch.
 
-Recent movers include compiled `include_once`/`require_once` reducers,
-static-property null coalescing assignment, dynamic-root offset writes/unsets,
-property/static quiet probes and inc/dec, direct sort-family mutators and flag
-diagnostics, array key/search/slice/pad helpers, shared `count()`/`sizeof()`
-optional-mode dispatch, `COUNT_NORMAL`/`COUNT_RECURSIVE` constants, recursive
-array counting with recursion warnings, invalid-mode `ValueError`s,
-byte-length `str_pad()` modes and `STR_PAD_*` constants, catchable `intdiv()`
-unsupported-operand TypeErrors, catchable `chunk_split()` length diagnostics,
-ASCII case and trim reducers, `chunk_split()` empty-input binary endings,
-`phpversion()`, `php_sapi_name()`, `zend_version()`, `PHP_VERSION`, `PHP_SAPI`,
-`PHP_OS`, `PHP_SHLIB_SUFFIX`, `get_loaded_extensions()`, `extension_loaded()`,
+Recent movers include registered internal-function namespace fallback for
+callable and metadata helpers such as `array_map()`, `array_reduce()`,
+`array_walk()`, `call_user_func()`, `call_user_func_array()`, `class_exists()`,
+`method_exists()`, `is_callable()`, `assert()`, and `debug_zval_dump()`,
+compiled `include_once`/`require_once` reducers, static-property null
+coalescing assignment, dynamic-root offset writes/unsets, property/static quiet
+probes and inc/dec, direct sort-family mutators and flag diagnostics, array
+key/search/slice/pad helpers, shared `count()`/`sizeof()` optional-mode
+dispatch, `COUNT_NORMAL`/`COUNT_RECURSIVE` constants, recursive array counting
+with recursion warnings, invalid-mode `ValueError`s, byte-length `str_pad()`
+modes and `STR_PAD_*` constants, catchable `intdiv()` unsupported-operand
+TypeErrors, catchable `chunk_split()` length diagnostics, ASCII case and trim
+reducers, `chunk_split()` empty-input binary endings, `phpversion()`,
+`php_sapi_name()`, `zend_version()`, `PHP_VERSION`, `PHP_SAPI`, `PHP_OS`,
+`PHP_SHLIB_SUFFIX`, `get_loaded_extensions()`, `extension_loaded()`,
 `ini_get()`, `get_cfg_var()`, `php_ini_scanned_files()`, `php_uname()`,
 `realpath()`, `scandir()`, `preg_match()`, `str_replace()`, `chr()` call-site
 precision deprecations, `ceil()`/`floor()` `TypeError` parity, namespace PHPT
@@ -48,7 +53,7 @@ process-substitution inputs.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 557 | 557 | 0 |
+| Native/compiler Rust suite | 558 | 558 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 218 | 218 | 0 |
 | PHPT Zend rows | 80 | 80 | 0 |
@@ -71,10 +76,11 @@ properties, quiet probes, metadata intrinsics, `ReflectionFunction` metadata
 probes, `is_callable()`, `is_countable()`, assertions, interpolation,
 unbracketed namespaces, simple imports, streams, modeled PHP/CLI/Zend version
 metadata, PHPT runner environment probes, `get_loaded_extensions()`, `pow()`,
-`array_merge()`, `array_pad()`, `count()`/`sizeof()`, `str_pad()`,
-`array_slice()`, `strrev()`, first-byte case helpers, trim-family internals,
-length-aware `chunk_split()` empty-input endings, catchable `chunk_split()`
-length errors, `chr()` call-site precision deprecations, `array_search()`,
+`array_merge()`, `array_pad()`, `array_map()`, `array_reduce()`,
+`array_walk()`, `count()`/`sizeof()`, `str_pad()`, `array_slice()`, `strrev()`,
+first-byte case helpers, trim-family internals, length-aware `chunk_split()`
+empty-input endings, catchable `chunk_split()` length errors, `chr()` call-site
+precision deprecations, `array_search()`, `call_user_func()`,
 `call_user_func_array()`, catchable `intdiv()` integer-operand TypeErrors,
 highlight output paths, `var_export()`, direct array mutators including
 `natcasesort()`, explicit regular sort flags, set operations, inc/dec,
@@ -89,8 +95,9 @@ by the PHPT runner.
 
 ## Verification
 
-Verification: recent slices added focused `include_once`/`require_once` native
-reducer coverage, focused static-property `??=` parser/native coverage,
+Verification: recent slices added focused namespaced registered-internal
+fallback and internal redeclare coverage, focused `include_once`/`require_once`
+native reducer coverage, focused static-property `??=` parser/native coverage,
 `array_search()`, `natcasesort()`, `ceil()`/`floor()` diagnostics,
 `is_countable()`, `ucfirst()`, `lcfirst()`, `array_pad()`, `array_slice()`,
 catchable `chunk_split()` length `ValueError`, explicit regular sort flags,
@@ -108,9 +115,9 @@ extensions, directory scans, and regex captures.
 
 Follow-ups remain visibility/inheritance metadata, typed/promoted properties,
 interfaces/traits, bracketed/grouped namespace forms, namespace fallback
-parity, broader reflection classes/parameters/methods, magic methods,
-first-class callables, destructors, dynamic includes outside bounded path sets,
-unsupported internals, scalar offset-lvalues, assertion config, binary-safe
-array keys, inc/dec Unicode/reference/COW/diagnostics, object IDs/visibility,
-broader `chr()` unsupported-type diagnostics, and broader foreach/object/
-reference targets.
+parity beyond registered internals, broader reflection classes/parameters/
+methods, magic methods, first-class callables, destructors, dynamic includes
+outside bounded path sets, unsupported internals, scalar offset-lvalues,
+assertion config, binary-safe array keys, inc/dec Unicode/reference/COW/
+diagnostics, object IDs/visibility, broader `chr()` unsupported-type
+diagnostics, and broader foreach/object/reference targets.
