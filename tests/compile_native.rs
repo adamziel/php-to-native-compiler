@@ -4359,6 +4359,29 @@ test|end\n"
 }
 
 #[test]
+fn compile_chunk_split_empty_input_returns_binary_ending_to_native_binary() {
+    let root = temp_dir("ptn-native-chunk-split-empty-binary-ending");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chunk-split-empty-binary-ending.php");
+    let output = root.join("chunk-split-empty-binary-ending-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(chunk_split(\"\", 5, \"????\"));\n\
+$binary = chunk_split(\"\", 5, \"|\" . chr(0));\n\
+echo strlen($binary), \" \", bin2hex($binary), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(execution.stdout, b"string(4) \"????\"\n2 7c00\n".to_vec());
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_binary_safe_value_strings_to_native_binary() {
     let root = temp_dir("ptn-native-binary-safe-value-strings");
     fs::create_dir_all(&root).unwrap();

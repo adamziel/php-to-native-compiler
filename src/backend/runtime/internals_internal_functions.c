@@ -4106,7 +4106,21 @@ static char *ptn_chunk_split_string(
     size_t ending_len,
     size_t *output_len_out
 ) {
-    size_t chunk_count = input_len == 0 ? 0 : ((input_len - 1) / chunk_len) + 1;
+    if (input_len == 0) {
+        if (ending_len == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        char *output = malloc(ending_len + 1);
+        if (output == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(output, ending, ending_len);
+        output[ending_len] = '\0';
+        *output_len_out = ending_len;
+        return output;
+    }
+
+    size_t chunk_count = ((input_len - 1) / chunk_len) + 1;
     if (chunk_count != 0 && ending_len > (SIZE_MAX - input_len) / chunk_count) {
         ptn_abort_out_of_memory();
     }

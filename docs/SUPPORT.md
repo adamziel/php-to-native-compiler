@@ -521,7 +521,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `chunk_split()` over current boxed scalar values after scalar string
   conversion, using a chunk length converted through the current scalar integer
   conversion path and an ending converted through the current scalar string
-  conversion path. The defaults are length `76` and ending `"\r\n"`.
+  conversion path. The defaults are length `76` and ending `"\r\n"`. Input and
+  ending bytes are length-aware, including embedded NUL bytes, and empty input
+  returns the ending string like PHP.
 - `strip_tags()` over current boxed scalar values after scalar string
   conversion, removing complete `<...>`, `<?...?>`, `<%...%>`, and HTML
   comment tag regions through the current C-string-backed value path.
@@ -948,7 +950,7 @@ Post-RC architecture remains explicit rather than hidden:
 - Embedded NUL strings in runtime values and embedded NUL string array keys,
   `var_dump()` string
   length/output, `var_export()`, `strlen()`, `str_rot13()`, `strcmp()`,
-  `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
+  `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `quotemeta()`,
   `trim()`, `ltrim()`, `rtrim()`, `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
   `stripcslashes()`, `md5()`, `sha1()`, `substr()`, `soundex()`, `ord()`, or
   bitwise string results.

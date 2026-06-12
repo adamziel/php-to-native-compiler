@@ -150,6 +150,7 @@ ext/standard/tests/strings/chr_basic.phpt
 ext/standard/tests/strings/chr_out_of_range.phpt
 ext/standard/tests/strings/chunk_split.phpt
 ext/standard/tests/strings/chunk_split_basic.phpt
+ext/standard/tests/strings/chunk_split_variation7.phpt
 ext/standard/tests/strings/dirname_basic.phpt
 ext/standard/tests/strings/hex2bin_basic.phpt
 ext/standard/tests/strings/ltrim_basic.phpt
