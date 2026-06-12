@@ -7244,6 +7244,53 @@ fn compile_floorceil_phpt_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_floorceil_numeric_argument_parity_to_native_binary() {
+    let root = temp_dir("ptn-native-floorceil-numeric-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("floorceil-numeric-arguments.php");
+    let output = root.join("floorceil-numeric-arguments-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ceil(null));\n\
+var_dump(floor(null));\n\
+foreach ([true, false, \"10\", \"10.5\", \"10 \", \" 10\", \".5\", \"-.5\", \"1e309\", \"-1e309\"] as $value) {\n\
+    var_dump(ceil($value));\n\
+}\n\
+foreach ([\"10x\", \"x10\", \"\", \" \", \"0x10\", \"INF\", [], [1]] as $value) {\n\
+    try {\n\
+        var_dump(floor($value));\n\
+    } catch (\\TypeError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: ceil(): Passing null to parameter #1 ($num) of type int|float is deprecated in ptn on line 2\nfloat(0)\n\
+\nDeprecated: floor(): Passing null to parameter #1 ($num) of type int|float is deprecated in ptn on line 3\nfloat(0)\n\
+float(1)\nfloat(0)\nfloat(10)\nfloat(11)\nfloat(10)\nfloat(10)\nfloat(1)\nfloat(-0)\nfloat(INF)\nfloat(-INF)\n\
+floor(): Argument #1 ($num) must be of type int|float, string given\n\
+floor(): Argument #1 ($num) must be of type int|float, string given\n\
+floor(): Argument #1 ($num) must be of type int|float, string given\n\
+floor(): Argument #1 ($num) must be of type int|float, string given\n\
+floor(): Argument #1 ($num) must be of type int|float, string given\n\
+floor(): Argument #1 ($num) must be of type int|float, string given\n\
+floor(): Argument #1 ($num) must be of type int|float, array given\n\
+floor(): Argument #1 ($num) must be of type int|float, array given\n\
+after\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_pi_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-pi-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

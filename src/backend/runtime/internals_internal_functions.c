@@ -5448,18 +5448,137 @@ static double ptn_value_to_double(PtnValue value) {
     return number.floating;
 }
 
+static const char *ptn_numeric_arg_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_EXCEPTION) {
+        return value.as.exception->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static int ptn_numeric_arg_string_to_double(PtnString string, double *out) {
+    const char *data = (const char *)string.data;
+    const char *limit = data + string.len;
+    const char *start = data;
+    while (start < limit && isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (start >= limit) {
+        return 0;
+    }
+
+    const char *cursor = start;
+    if (*cursor == '+' || *cursor == '-') {
+        cursor++;
+        if (cursor >= limit) {
+            return 0;
+        }
+    }
+    if (cursor + 1 < limit && cursor[0] == '0' && (cursor[1] == 'x' || cursor[1] == 'X')) {
+        return 0;
+    }
+    if (!isdigit((unsigned char)*cursor) && *cursor != '.') {
+        return 0;
+    }
+    if (*cursor == '.' && (cursor + 1 >= limit || !isdigit((unsigned char)cursor[1]))) {
+        return 0;
+    }
+
+    char *end = NULL;
+    double number = strtod(start, &end);
+    if (end == start) {
+        return 0;
+    }
+    while (end < limit && isspace((unsigned char)*end)) {
+        end++;
+    }
+    if (end != limit) {
+        return 0;
+    }
+
+    *out = number;
+    return 1;
+}
+
+static double ptn_internal_expect_numeric_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL: {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Passing null to parameter #%zu ($%s) of type int|float is deprecated",
+                function_name,
+                position,
+                argument_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_deprecation(&runtime->diagnostics, message, line);
+            return 0.0;
+        }
+        case PTN_BOOL:
+            return value.as.boolean ? 1.0 : 0.0;
+        case PTN_INT:
+            return (double)value.as.integer;
+        case PTN_FLOAT:
+            return value.as.floating;
+        case PTN_STRING: {
+            double number = 0.0;
+            if (ptn_numeric_arg_string_to_double(value.as.string, &number)) {
+                return number;
+            }
+            break;
+        }
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            break;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type int|float, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_numeric_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0.0;
+}
+
 static PtnValue ptn_internal_ceil(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    return ptn_float(ceil(ptn_value_to_double(args[0])));
+    return ptn_float(ceil(ptn_internal_expect_numeric_arg(runtime, "ceil", 1, "num", args[0], line)));
 }
 
 static PtnValue ptn_internal_floor(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
-    return ptn_float(floor(ptn_value_to_double(args[0])));
+    return ptn_float(floor(ptn_internal_expect_numeric_arg(runtime, "floor", 1, "num", args[0], line)));
 }
 
 static PtnValue ptn_internal_abs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

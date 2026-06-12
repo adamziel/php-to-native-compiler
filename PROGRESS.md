@@ -1,7 +1,7 @@
 # PTN Progress
 
 Refresh: 2026-06-12T08:48Z
-Measured: `ptn-t6qd` rebased after `origin/master` `719361b61`.
+Measured: `ptn-ah6f` rebased after `origin/master` `3bcf32bf6`.
 
 Recent RC slices cover property/static-property inc/dec, dynamic-variable
 array/string-offset writes and unsets, array-offset inc/dec, array/append
@@ -11,14 +11,17 @@ compound assignments, bounded private properties, object `var_export()`,
 `natcasesort()`, set operations, `array_udiff*()`, exact string/lang rows,
 highlight output paths, `join()`/`implode()`, `sprintf()`, `array_product()`,
 `array_keys()`, key-boundary helpers, `array_search()`, catchable `intdiv()`,
-ASCII case string internals, and `strrev()`.
+ASCII case string internals, `strrev()`, and PHP-style `ceil()`/`floor()`
+numeric-argument diagnostics.
 
 Recent movers include dynamic-root array/string-offset writes/unsets, object
 `var_export()`, property/static quiet probes, default sort-family mutators,
 sort flag diagnostics, offset compounds, property/static inc/dec,
 `array_product()`, `array_keys()` filtering, key-boundary helpers,
 `array_search()` key lookup, `intdiv()` exceptions, ASCII case conversion,
-key-preserving natural `natsort()`/`natcasesort()`, and binary-safe `strrev()`.
+key-preserving natural `natsort()`/`natcasesort()`, binary-safe `strrev()`,
+and `ceil()`/`floor()` invalid numeric-string/unsupported-operand `TypeError`
+parity.
 
 ## Dashboard
 
@@ -61,7 +64,9 @@ plus COW/doc-tests. `ptn-h0ig` adds adjacent `array_search()` coverage.
 `ptn-t6qd` adds `natcasesort()` plus
 `ext/standard/tests/array/sort/natcasesort_basic.phpt`. Final gates passed:
 fmt, build, focused parser/native/PHPT `natcasesort()` coverage, and
-`cargo test` with native/compiler 531/531 plus COW/doc-tests.
+`cargo test` with native/compiler 531/531 plus COW/doc-tests. `ptn-ah6f`
+adds `ceil()`/`floor()` numeric-argument diagnostics and targeted
+`ext/standard/tests/math/floorceil.phpt` coverage after rebase.
 
 Follow-ups remain full visibility/inheritance metadata, typed/promoted
 properties, interfaces/traits, namespaces, reflection, remaining magic methods,

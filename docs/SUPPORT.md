@@ -512,8 +512,13 @@ Post-RC architecture remains explicit rather than hidden:
   handled through the runtime path.
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
-- `ceil()` and `floor()` over current boxed scalar values after scalar numeric
-  conversion, returning boxed floats.
+- `ceil()` and `floor()` over current boxed scalar values after PHP numeric
+  parameter conversion, returning boxed floats. `null` emits the modeled
+  deprecation and yields `0.0`; booleans, integers, floats, fully numeric
+  decimal strings, and overflowing numeric strings are accepted. Empty strings,
+  non-numeric strings, leading-numeric strings with trailing junk, C-style hex
+  strings, arrays, objects, closures, exceptions, resources, and references
+  throw catchable `TypeError` values.
 - `abs()` over current boxed scalar values after scalar numeric conversion,
   returning boxed integer or float magnitudes and emitting the modeled
   PHP null-deprecation boundary.
@@ -930,8 +935,6 @@ Post-RC architecture remains explicit rather than hidden:
   current public declared `__toString()` support.
 - Exact `chr()` float-to-int precision-loss diagnostics.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
-- Exact `ceil()`/`floor()` null deprecations, string and unsupported-type
-  diagnostics, and complete special-float parity.
 - Exact `abs()` diagnostics for unsupported array/object/resource/reference
   operands and complete overflow parity beyond the current boxed numeric path.
 - `count()` support for `Countable` objects and exact non-array diagnostics.
