@@ -1316,6 +1316,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     assert_eq!(error.message, "Cannot redeclare function str_ends_with()");
 
     let error =
+        parser::parse("<?php function StrPos($haystack, $needle) { return false; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strpos()");
+
+    let error =
         parser::parse("<?php function StrCaseCmp($left, $right) { return 0; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strcasecmp()");
 
@@ -4224,6 +4228,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_internal_str_starts_with",
         "ptn_internal_str_ends_with",
         "ptn_internal_strncmp",
+        "ptn_internal_strpos",
         "ptn_internal_str_pad",
         "ptn_internal_strtolower",
         "ptn_internal_strtoupper",
@@ -4274,6 +4279,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_ascii_case_string(string.data, string.len, 1)",
         "ptn_trim_string_value(input, charlist, trim_left, trim_right)",
         "ptn_compare_string_prefix_bytes(",
+        "ptn_find_string_offset(haystack, needle, start)",
         "ptn_string_buffer_append_repeated_pattern(&output, pad_string, left_len)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
@@ -5359,6 +5365,49 @@ fn compile_str_contains_registry_and_scalar_conversion_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_strpos_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-strpos-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strpos.php");
+    let output = root.join("strpos-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(strpos(\"test string\", \"test\"));\n\
+var_dump(strpos(\"test string\", \"string\"));\n\
+var_dump(strpos(\"test string\", \"g\"));\n\
+var_dump(strpos(\"te\".chr(0).\"st\", chr(0)));\n\
+var_dump(strpos(\"tEst\", \"test\"));\n\
+var_dump(strpos(\"\", \"\"));\n\
+var_dump(strpos(\"a\", \"\"));\n\
+var_dump(strpos(\"\", \"a\"));\n\
+var_dump(strpos(\"abcabc\", \"bc\", 3));\n\
+var_dump(strpos(\"abcabc\", \"bc\", -3));\n\
+var_dump(strpos(\"abcabc\", \"\", 6));\n\
+var_dump(strpos(\"abcabc\", \"\", -1));\n\
+try { strpos(\"abcabc\", \"bc\", 7); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { strpos(\"abcabc\", \"bc\", -7); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(strpos(12345, 34));\n\
+var_dump(strpos(false, \"\"));\n\
+var_dump(function_exists(\"strpos\"), function_exists(\"STRPOS\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(5)\nint(10)\nint(2)\nbool(false)\nint(0)\nint(0)\nbool(false)\nint(4)\nint(4)\nint(6)\nint(5)\n\
+strpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)\n\
+strpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)\n\
+int(2)\nint(0)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

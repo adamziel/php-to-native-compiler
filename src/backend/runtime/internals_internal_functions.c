@@ -4323,6 +4323,74 @@ static PtnValue ptn_internal_str_contains(PtnRuntime *runtime, size_t argc, cons
     return ptn_bool(contains);
 }
 
+static size_t ptn_find_string_offset(PtnStringOperand haystack, PtnStringOperand needle, size_t start) {
+    if (start > haystack.len) {
+        return SIZE_MAX;
+    }
+    if (needle.len == 0) {
+        return start;
+    }
+    if (needle.len > haystack.len - start) {
+        return SIZE_MAX;
+    }
+    for (size_t offset = start; offset <= haystack.len - needle.len; offset++) {
+        if (memcmp(haystack.data + offset, needle.data, needle.len) == 0) {
+            return offset;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static int ptn_string_search_start_offset(size_t haystack_len, int64_t offset, size_t *start) {
+    if (offset >= 0) {
+        uint64_t positive = (uint64_t)offset;
+        if (positive > (uint64_t)haystack_len) {
+            return 0;
+        }
+        *start = (size_t)positive;
+        return 1;
+    }
+
+    uint64_t distance = offset == INT64_MIN
+        ? ((uint64_t)INT64_MAX + 1u)
+        : (uint64_t)(-offset);
+    if (distance > (uint64_t)haystack_len) {
+        return 0;
+    }
+    *start = haystack_len - (size_t)distance;
+    return 1;
+}
+
+static PtnValue ptn_internal_strpos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "strpos", 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "strpos", 2, "needle", args[1], line);
+    int64_t offset = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "strpos", 3, "offset", args[2], line)
+        : 0;
+    size_t start = 0;
+    if (!ptn_string_search_start_offset(haystack.len, offset, &start)) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "strpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)"
+        );
+        return ptn_null();
+    }
+
+    size_t match = ptn_find_string_offset(haystack, needle, start);
+    ptn_string_operand_free(haystack);
+    ptn_string_operand_free(needle);
+    if (match == SIZE_MAX) {
+        return ptn_bool(0);
+    }
+    if (match > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)match);
+}
+
 static PtnValue ptn_internal_str_starts_with(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "str_starts_with", 1, "haystack", args[0], line);
@@ -8554,6 +8622,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stripslashes", 1, 1, ptn_internal_stripslashes },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "strncmp", 3, 3, ptn_internal_strncmp },
+        { "strpos", 2, 3, ptn_internal_strpos },
         { "strrchr", 2, 3, ptn_internal_strrchr },
         { "strrev", 1, 1, ptn_internal_strrev },
         { "strtolower", 1, 1, ptn_internal_strtolower },

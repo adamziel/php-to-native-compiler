@@ -331,6 +331,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
   `strcasecmp(expr, expr);`,
   `strncmp(expr, expr, expr);`, `str_contains(expr, expr);`,
+  `strpos(expr, expr[, expr]);`,
   `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_pad(expr, expr[, expr[, expr]]);`,
   `str_repeat(expr, expr);`,
@@ -390,6 +391,7 @@ Post-RC architecture remains explicit rather than hidden:
   `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
   `strcasecmp(expr, expr)`,
   `strncmp(expr, expr, expr)`, `str_contains(expr, expr)`,
+  `strpos(expr, expr[, expr])`,
   `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_pad(expr, expr[, expr[, expr]])`,
   `str_repeat(expr, expr)`,
@@ -528,7 +530,7 @@ Post-RC architecture remains explicit rather than hidden:
   closures, and exceptions throw the modeled `TypeError` boundary, including
   object class names and `Closure` in the reported given-type, for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `strcasecmp()`, `strncmp()`,
-  `str_contains()`,
+  `str_contains()`, `strpos()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
   `strtr()`, `strrchr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,
   `strtolower()`,
@@ -557,6 +559,11 @@ Post-RC architecture remains explicit rather than hidden:
 - `str_contains()` over current boxed scalar values after scalar string
   conversion, returning whether the needle string is present in the haystack
   string through the current C-string-backed value path.
+- `strpos()` over current boxed scalar values after scalar string conversion,
+  returning the first byte offset of the needle in the haystack or `false`.
+  Empty needles return the normalized start offset, positive and negative
+  offsets are bounded by the haystack length, and out-of-range offsets throw
+  the modeled PHP `ValueError`.
 - `str_starts_with()` and `str_ends_with()` over current boxed scalar values
   after scalar string conversion, returning whether the haystack has the
   requested prefix or suffix through the current C-string-backed value path.
@@ -1110,6 +1117,8 @@ Post-RC architecture remains explicit rather than hidden:
   and object string conversion outside the current public declared
   `__toString()` support.
 - Exact `str_contains()` resource/reference operand parity and object string
+  conversion outside the current public declared `__toString()` support.
+- Exact `strpos()` resource/reference operand parity and object string
   conversion outside the current public declared `__toString()` support.
 - Exact `str_starts_with()`/`str_ends_with()` resource/reference operand parity
   and object string conversion outside the current public declared

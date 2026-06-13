@@ -153,6 +153,8 @@ ext/standard/tests/strings/sha1raw.phpt
 ext/standard/tests/strings/soundex_basic.phpt
 ext/standard/tests/strings/str_contains.phpt
 ext/standard/tests/strings/str_ends_with.phpt
+ext/standard/tests/strings/strpos.phpt
+ext/standard/tests/strings/strpos_variation1.phpt
 ext/standard/tests/strings/str_rot13_basic.phpt
 ext/standard/tests/strings/str_starts_with.phpt
 ext/standard/tests/strings/strip_tags.phpt

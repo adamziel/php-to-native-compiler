@@ -187,6 +187,8 @@ ext/standard/tests/strings/strcasecmp.phpt
 ext/standard/tests/strings/str_contains.phpt
 ext/standard/tests/strings/str_ends_with.phpt
 ext/standard/tests/strings/str_pad.phpt
+ext/standard/tests/strings/strpos.phpt
+ext/standard/tests/strings/strpos_variation1.phpt
 ext/standard/tests/strings/str_replace_basic.phpt
 ext/standard/tests/strings/str_rot13_basic.phpt
 ext/standard/tests/strings/str_shuffle_basic.phpt
