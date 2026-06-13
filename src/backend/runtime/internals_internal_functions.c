@@ -8537,6 +8537,61 @@ static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const P
     return ptn_bool(0);
 }
 
+static void ptn_localeconv_set_string(PtnArray *array, const char *key, const char *value) {
+    ptn_array_set_entry(array, ptn_array_string_key(key), ptn_string(value == NULL ? "" : value));
+}
+
+static void ptn_localeconv_set_int(PtnArray *array, const char *key, char value) {
+    ptn_array_set_entry(array, ptn_array_string_key(key), ptn_int((int64_t)(unsigned char)value));
+}
+
+static PtnValue ptn_localeconv_grouping_array(const char *grouping) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (grouping == NULL) {
+        return result;
+    }
+    for (size_t i = 0; grouping[i] != '\0' && (unsigned char)grouping[i] != CHAR_MAX; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(result.as.array->next_auto_key),
+            ptn_int((int64_t)(unsigned char)grouping[i])
+        );
+    }
+    return result;
+}
+
+static void ptn_localeconv_set_grouping(PtnArray *array, const char *key, const char *grouping) {
+    ptn_array_set_entry(array, ptn_array_string_key(key), ptn_localeconv_grouping_array(grouping));
+}
+
+static PtnValue ptn_internal_localeconv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    struct lconv *locale = localeconv();
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_localeconv_set_string(result.as.array, "decimal_point", locale->decimal_point);
+    ptn_localeconv_set_string(result.as.array, "thousands_sep", locale->thousands_sep);
+    ptn_localeconv_set_string(result.as.array, "int_curr_symbol", locale->int_curr_symbol);
+    ptn_localeconv_set_string(result.as.array, "currency_symbol", locale->currency_symbol);
+    ptn_localeconv_set_string(result.as.array, "mon_decimal_point", locale->mon_decimal_point);
+    ptn_localeconv_set_string(result.as.array, "mon_thousands_sep", locale->mon_thousands_sep);
+    ptn_localeconv_set_string(result.as.array, "positive_sign", locale->positive_sign);
+    ptn_localeconv_set_string(result.as.array, "negative_sign", locale->negative_sign);
+    ptn_localeconv_set_int(result.as.array, "int_frac_digits", locale->int_frac_digits);
+    ptn_localeconv_set_int(result.as.array, "frac_digits", locale->frac_digits);
+    ptn_localeconv_set_int(result.as.array, "p_cs_precedes", locale->p_cs_precedes);
+    ptn_localeconv_set_int(result.as.array, "p_sep_by_space", locale->p_sep_by_space);
+    ptn_localeconv_set_int(result.as.array, "n_cs_precedes", locale->n_cs_precedes);
+    ptn_localeconv_set_int(result.as.array, "n_sep_by_space", locale->n_sep_by_space);
+    ptn_localeconv_set_int(result.as.array, "p_sign_posn", locale->p_sign_posn);
+    ptn_localeconv_set_int(result.as.array, "n_sign_posn", locale->n_sign_posn);
+    ptn_localeconv_set_grouping(result.as.array, "grouping", locale->grouping);
+    ptn_localeconv_set_grouping(result.as.array, "mon_grouping", locale->mon_grouping);
+    return result;
+}
+
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
     int value = -1;
     if (byte >= '0' && byte <= '9') {
@@ -9075,6 +9130,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "krsort", 1, 2, ptn_internal_krsort },
         { "ksort", 1, 2, ptn_internal_ksort },
         { "lcfirst", 1, 1, ptn_internal_lcfirst },
+        { "localeconv", 0, 0, ptn_internal_localeconv },
         { "ltrim", 1, 2, ptn_internal_ltrim },
         { "md5", 1, 2, ptn_internal_md5 },
         { "method_exists", 2, 2, ptn_internal_method_exists },

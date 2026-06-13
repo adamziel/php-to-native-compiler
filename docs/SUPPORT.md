@@ -364,6 +364,7 @@ Post-RC architecture remains explicit rather than hidden:
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `get_cfg_var(expr);`,
   `get_loaded_extensions([zend_extensions]);`, `ini_get(expr);`,
+  `localeconv();`,
   `ob_get_contents();`, `php_ini_scanned_files();`, `php_sapi_name();`,
   `php_uname([mode]);`, `phpversion([extension]);`, `preg_match(expr, expr);`,
   `realpath(expr);`, `scandir(expr[, sorting_order[, context]]);`,
@@ -431,6 +432,7 @@ Post-RC architecture remains explicit rather than hidden:
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
   `getmypid()`, `get_cfg_var(expr)`,
   `get_loaded_extensions([zend_extensions])`, `ini_get(expr)`,
+  `localeconv()`,
   `ob_get_contents()`, `php_ini_scanned_files()`, `php_sapi_name()`,
   `php_uname([mode])`, `phpversion([extension])`, `preg_match(expr, expr)`,
   `realpath(expr)`, `scandir(expr[, sorting_order[, context]])`,
@@ -730,6 +732,8 @@ Post-RC architecture remains explicit rather than hidden:
   platform C locale API for current scalar categories and scalar/array locale
   candidates; locale `"0"` queries the current category, `"C"`/`"POSIX"` use
   the stable C locale, and unavailable locale names return `false`.
+  `localeconv()` returns the current C `struct lconv` fields as an ordered PHP
+  array, including grouping arrays.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and

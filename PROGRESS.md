@@ -1,8 +1,8 @@
 # PTN Progress
 
-Refresh: 2026-06-13T12:12Z
-Measured: `ptn-je09` integration on current `origin/master` `710be66`;
-focused statement-form void-cast verification passed.
+Refresh: 2026-06-13T12:18Z
+Measured: `ptn-41ev` integration on current `origin/master` `9d9a736`;
+focused locale helper verification passed.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
 closures, `stdClass`, properties/destructors, reflection, array helpers,
@@ -10,7 +10,8 @@ closures, `stdClass`, properties/destructors, reflection, array helpers,
 search/count/string internals, scalar `str_replace()`, `chr()` diagnostics,
 `crc32()`, scalar conversion internals, PHP metadata constants, standard
 streams, foreach destructuring, namespace/import forms, `global` bindings,
-dynamic-variable writes/unsets, stream metadata, locale support, type
+dynamic-variable writes/unsets, stream metadata, locale support including
+`localeconv()`, type
 predicates including `is_iterable()`, PHPT runner ini values, statement-form
 `(void)` casts, and offset compound/coalescing.
 
@@ -18,8 +19,8 @@ Recent movers include statement-form `(void)` expression discard,
 `display_errors`/`zend.assertions` runner ini plumbing, bracketed namespace
 blocks, `is_iterable()` for arrays in the current non-`Traversable` subset,
 grouped namespace imports, scalar conversions, `global`, PHP metadata
-constants, `dirname()` levels, `pathinfo()`, `LC_*`/`setlocale()`, search/count
-internals, persistent standard streams, `property_exists()`, PHPT manifests,
+constants, `dirname()` levels, `pathinfo()`, `LC_*`/`setlocale()`/`localeconv()`,
+search/count internals, persistent standard streams, `property_exists()`, PHPT manifests,
 `crc32()`, `str_replace()` counts, and integer validation for `chr()`,
 `intdiv()`, and file offsets.
 
@@ -28,7 +29,7 @@ internals, persistent standard streams, `property_exists()`, PHPT manifests,
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 618 | 618 | 0 |
+| Native/compiler Rust suite | 619 | 619 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 272 | 272 | 0 |
 | PHPT Zend rows | 86 | 86 | 0 |
@@ -50,7 +51,7 @@ shells/constants, properties, destructors, reflection, assertions,
 namespace/import forms, streams, file reads/writes, array/string/numeric
 helpers through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`,
 `explode()`, string/path/search helpers, scalar conversions, `is_iterable()`,
-inline HTML, locale support, PHP metadata constants, PHPT runner ini values,
+inline HTML, locale support including `localeconv()`, PHP metadata constants, PHPT runner ini values,
 statement-form `(void)`, array mutators, inc/dec, `global`, dynamic variables,
 and offset compound/null coalescing.
 
@@ -62,8 +63,8 @@ and offset compound/null coalescing.
 
 ## Verification
 
-Current branch verification for `ptn-je09`: diff, format, focused void-cast
-tests 4/4, and focused PHPT row 1/1 passed.
+Current branch verification for `ptn-41ev`: diff, format, focused
+`localeconv()` reducer, and 619-test inventory passed.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic

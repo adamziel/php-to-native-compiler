@@ -4662,6 +4662,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "is_infinite"
             | "is_nan"
             | "join"
+            | "localeconv"
             | "define"
             | "constant"
             | "defined"

@@ -9559,6 +9559,33 @@ var_dump(setlocale(999, 'C'));\n",
 }
 
 #[test]
+fn compile_localeconv_to_native_binary() {
+    let root = temp_dir("ptn-native-localeconv");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("localeconv.php");
+    let output = root.join("localeconv-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('localeconv'));\n\
+setlocale(LC_ALL, 'C');\n\
+$lc = localeconv();\n\
+var_dump(count($lc), array_key_exists('decimal_point', $lc), $lc['decimal_point'], $lc['thousands_sep'], $lc['grouping'], $lc['mon_grouping'], $lc['int_frac_digits']);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(18)\nbool(true)\nstring(1) \".\"\nstring(0) \"\"\narray(0) {\n}\narray(0) {\n}\nint(127)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_scandir_and_preg_match_runner_probe_to_native_binary() {
     let root = temp_dir("ptn-native-scandir-preg-match-runner-probe");
     fs::create_dir_all(&root).unwrap();
