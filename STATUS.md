@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T19:07Z
-Measured: `ptn-550s.3` array-internal COW frontier rebased after
+Last refresh: 2026-06-13T19:18Z
+Measured: `ptn-550s.1` broad COW risk inventory after `ptn-550s.3`.
 
 ## Operating Goal
 
