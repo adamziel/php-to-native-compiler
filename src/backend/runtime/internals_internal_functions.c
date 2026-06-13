@@ -5177,6 +5177,10 @@ static PtnValue ptn_internal_rtrim(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_internal_trim_named(runtime, "rtrim", argc, args, line, 0, 1);
 }
 
+static PtnValue ptn_internal_chop(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_trim_named(runtime, "chop", argc, args, line, 0, 1);
+}
+
 typedef struct {
     PtnStringOperand from;
     PtnStringOperand to;
@@ -9548,6 +9552,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "call_user_func_array", 2, 2, ptn_internal_call_user_func_array },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chdir", 1, 1, ptn_internal_chdir },
+        { "chop", 1, 2, ptn_internal_chop },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
         { "class_exists", 1, 2, ptn_internal_class_exists },

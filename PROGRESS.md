@@ -1,21 +1,21 @@
 # PTN Progress
 
-Refresh: 2026-06-13T14:08Z
-Measured: `ptn-bnyg` `array_unique()` integration on `origin/master`
-`eeb473bda`; focused native/PHPT gates passed.
+Refresh: 2026-06-13T14:27Z
+Measured: `ptn-dfmi` `chop()` trim-alias integration on `origin/master`
+`065dc5dcd`; focused native/PHPT gates passed after conflict resolution.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
 closures, `stdClass`, properties/destructors, reflection, array helpers,
 `json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
 search/count/string internals, scalar/array type hints, ordered-array
-`str_replace()`, `str_split()`, `nl2br()`, `strncasecmp()`, `chr()`, `crc32()`, PHP
-metadata constants, standard streams, foreach destructuring,
+`str_replace()`, `str_split()`, `nl2br()`, `strncasecmp()`, `chr()`, `crc32()`,
+PHP metadata constants, standard streams, foreach destructuring,
 namespace/import forms, `global`, dynamic-variable writes/unsets, stream
 metadata, locale constants plus `localeconv()`, predicates including
 `is_iterable()`, invokable callables, SPL object identity intrinsics,
-non-recursive `array_replace()`, `array_unique()`, `getcwd()`/`chdir()`, PHPT
-runner ini values, statement-form `(void)` casts, offset
-compound/coalescing, and property/static-property compounds.
+non-recursive `array_replace()`, `array_unique()`, `chop()`,
+`getcwd()`/`chdir()`, PHPT runner ini values, statement-form `(void)` casts,
+offset compound/coalescing, and property/static-property compounds.
 
 Recent movers include `display_errors`/`zend.assertions` runner ini plumbing,
 bracketed namespace blocks, grouped imports, scalar conversions, `global`, PHP
@@ -25,14 +25,14 @@ internals, persistent standard streams, `property_exists()`, PHPT manifests,
 `crc32()`, `str_replace()` array operands/reference entries/counts,
 `str_split()`, `nl2br()`, `strncasecmp()`, array parameter/return hints,
 object IDs, cwd helpers, property/static-property compounds, `array_unique()`,
-and integer validation for `chr()`/`intdiv()`/file offsets.
+`chop()`, and integer validation for `chr()`/`intdiv()`/file offsets.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 632 | 632 | 0 |
+| Native/compiler Rust suite | 633 | 633 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 281 | 281 | 0 |
 | PHPT Zend rows | 87 | 87 | 0 |
@@ -54,12 +54,13 @@ internals, COW/reference slices, functions, closures, `stdClass`, class/object
 shells/constants, properties, destructors, reflection, assertions,
 namespace/import forms, streams, file reads/writes, array/string/numeric
 helpers through `array_udiff*()`, `array_unique()`, `json_encode()`,
-`printf()`, `fdiv()`, `explode()`, string/path/search helpers, scalar
-conversions, `is_iterable()`, locale support, invokable object callables,
-SPL object identity intrinsics, non-recursive `array_replace()`, PHPT runner
-ini values, `getcwd()`/`chdir()`, statement-form `(void)`, array mutators,
-inc/dec, `global`, dynamic variables, offset compound/null coalescing, and
-direct property/static-property compounds.
+`printf()`, `fdiv()`, `explode()`, trim-family aliases including `chop()`,
+string/path/search helpers, scalar conversions, `is_iterable()`, locale
+support, invokable object callables, SPL object identity intrinsics,
+non-recursive `array_replace()`, PHPT runner ini values, `getcwd()`/`chdir()`,
+statement-form `(void)`, array mutators, inc/dec, `global`, dynamic variables,
+offset compound/null coalescing, and direct property/static-property
+compounds.
 
 ## Remaining Bounded Exclusions
 
@@ -69,8 +70,9 @@ direct property/static-property compounds.
 
 ## Verification
 
-Current branch verification for `ptn-bnyg`: focused `array_unique()` native
-reducer and `array_unique_basic.phpt` passed.
+Current branch verification for `ptn-dfmi`: focused `chop()` native reducer,
+modeled-internal parser guard, direct string-helper coverage, and
+`chop_basic.phpt` passed after conflict resolution.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 first-class callables, dynamic includes, unsupported internals,

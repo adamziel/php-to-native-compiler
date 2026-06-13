@@ -4574,6 +4574,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "strtoupper"
             | "ucfirst"
             | "lcfirst"
+            | "chop"
             | "trim"
             | "ltrim"
             | "rtrim"

@@ -359,6 +359,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strrev(expr);`, `ucfirst(expr);`,
   `lcfirst(expr);`, `quotemeta(expr);`,
   `trim(expr[, expr]);`, `ltrim(expr[, expr]);`, `rtrim(expr[, expr]);`,
+  `chop(expr[, expr]);`,
   `chunk_split(expr[, expr[, expr]]);`, `nl2br(expr[, use_xhtml]);`,
   `strip_tags(expr);`,
   `explode(expr, expr[, expr]);`,
@@ -430,6 +431,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strrev(expr)`, `ucfirst(expr)`,
   `lcfirst(expr)`, `quotemeta(expr)`,
   `trim(expr[, expr])`, `ltrim(expr[, expr])`, `rtrim(expr[, expr])`,
+  `chop(expr[, expr])`,
   `chunk_split(expr[, expr[, expr]])`, `nl2br(expr[, use_xhtml])`,
   `strip_tags(expr)`,
   `explode(expr, expr[, expr])`,
@@ -577,7 +579,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strtolower()`,
   `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
   `nl2br()`, `explode()` separator/string arguments,
-  `trim()`/`ltrim()`/`rtrim()` string and characters arguments,
+  `trim()`/`ltrim()`/`rtrim()`/`chop()` string and characters arguments,
   `strip_tags()`, `crc32()`, `md5()`, `sha1()`, `substr()`,
   `addcslashes()`, `addslashes()`, `stripcslashes()`, `stripslashes()`,
   `bin2hex()`, `hex2bin()`, `quoted_printable_decode()`, `soundex()`, and
@@ -641,10 +643,11 @@ Post-RC architecture remains explicit rather than hidden:
 - `ucfirst()` and `lcfirst()` over current boxed scalar values after scalar
   string conversion, mapping the initial ASCII byte to upper/lowercase and
   preserving remaining bytes.
-- `trim()`, `ltrim()`, and `rtrim()` over current boxed scalar values after
-  scalar string conversion. The default PHP trim bytes are modeled, and the
-  optional characters argument supports literal byte sets plus ascending
-  `a..z`-style byte ranges over the current length-aware string path.
+- `trim()`, `ltrim()`, `rtrim()`, and `chop()` over current boxed scalar values
+  after scalar string conversion. `chop()` shares the `rtrim()` right-trim
+  semantics. The default PHP trim bytes are modeled, and the optional
+  characters argument supports literal byte sets plus ascending `a..z`-style
+  byte ranges over the current length-aware string path.
 - `quotemeta()` over current boxed scalar values after scalar string
   conversion, prefixing `.`, `\`, `+`, `*`, `?`, `[`, `^`, `]`, `(`, `$`, and
   `)` bytes with backslashes through the current C-string-backed value path.
@@ -1202,8 +1205,9 @@ Post-RC architecture remains explicit rather than hidden:
   `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `strcasecmp()`,
   `bin2hex()`, `chr()`, `hex2bin()`, `str_contains()`, `strpos()`, `stripos()`,
-  `strrpos()`, `strripos()`, `strstr()`, `stristr()`, `substr_count()`, `quotemeta()`, `trim()`, `ltrim()`,
-  `rtrim()`, `strip_tags()`, `quoted_printable_decode()`, `addcslashes()`,
+  `strrpos()`, `strripos()`, `strstr()`, `stristr()`, `substr_count()`,
+  `quotemeta()`, `trim()`, `ltrim()`, `rtrim()`, `chop()`, `strip_tags()`,
+  `quoted_printable_decode()`, `addcslashes()`,
   `stripcslashes()`, `md5()`, `sha1()`, `substr()`, `soundex()`, `ord()`, or
   bitwise string results.
 - Exact `strcmp()` resource/reference operand parity and object string
@@ -1226,7 +1230,7 @@ Post-RC architecture remains explicit rather than hidden:
   `__toString()` support.
 - Exact `quotemeta()` resource/reference operand parity and object string
   conversion outside the current public declared `__toString()` support.
-- Exact `trim()`/`ltrim()`/`rtrim()` malformed-charlist warning parity plus
+- Exact `trim()`/`ltrim()`/`rtrim()`/`chop()` malformed-charlist warning parity plus
   resource/reference operand parity and object string conversion outside the
   current public declared `__toString()` support.
 - Exact `chunk_split()` resource/reference operand parity and object string

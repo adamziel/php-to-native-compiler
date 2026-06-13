@@ -1378,6 +1378,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function Trim($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function trim()");
 
+    let error = parser::parse("<?php function Chop($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function chop()");
+
     let error = parser::parse("<?php function Quoted_Printable_Decode($value) { return $value; }")
         .unwrap_err();
     assert_eq!(
@@ -4440,6 +4443,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_internal_trim",
         "ptn_internal_ltrim",
         "ptn_internal_rtrim",
+        "ptn_internal_chop",
         "ptn_internal_strrev",
         "ptn_internal_ucfirst",
         "ptn_internal_lcfirst",
@@ -4597,6 +4601,41 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_chop_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-chop-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chop-basic.php");
+    let output = root.join("chop-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"*** Testing chop() : basic functionality ***\\n\";\n\
+$str = \"hello world\\t\\n\\r\\0\\x0B  \";\n\
+$charlist = 'dl ';\n\
+var_dump(chop($str));\n\
+var_dump(chop($str, $charlist));\n\
+var_dump(chop($str, '!'));\n\
+var_dump(function_exists(\"chop\"), function_exists(\"CHOP\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"*** Testing chop() : basic functionality ***\n\
+string(11) \"hello world\"\n\
+string(16) \"hello world\t\n\r\0\x0B\"\n\
+string(18) \"hello world\t\n\r\0\x0B  \"\n\
 bool(true)\n\
 bool(true)\n"
     );
