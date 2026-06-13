@@ -1,20 +1,22 @@
 # PTN Progress
 
-Refresh: 2026-06-13T11:57Z
-Measured: `ptn-inis` integration on current `origin/master` `0f774e4ab`;
-focused bracketed namespace verification green.
+Refresh: 2026-06-13T12:05Z
+Measured: `ptn-5rao` rebased on current `origin/master` `6dbd14cb`;
+bounded PHPT/COW verification was green before the slice; post-rebase native,
+format, and COW gates are green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, inline HTML
 output, includes/once guards, closures, `stdClass`, properties/destructors,
 inherited static dispatch, `property_exists()` metadata, array helpers,
 `json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
-`strcasecmp()`, search/count internals, scalar `str_replace()`, `chr()`
-diagnostics, `crc32()`, `boolval()`/`floatval()`/`doubleval()`, PHP
-version/build/platform metadata constants, standard streams, foreach
-destructuring, unbracketed and bracketed namespaces with simple/grouped
-imports, `global` bindings, dynamic-variable writes/unsets, stream metadata,
-locale constants and `setlocale()`, type predicates including
-`is_iterable()`, alternate `<>` parsing, and offset compound/coalescing.
+`strcasecmp()`, search/count internals, scalar and ordered-array
+`str_replace()` forms, `chr()` diagnostics, `crc32()`,
+`boolval()`/`floatval()`/`doubleval()`, PHP version/build/platform metadata
+constants, standard streams, foreach destructuring, unbracketed and bracketed
+namespaces with simple/grouped imports, `global` bindings,
+dynamic-variable writes/unsets, stream metadata, locale constants and
+`setlocale()`, type predicates including `is_iterable()`, alternate `<>`
+parsing, and offset compound/coalescing.
 
 Recent movers include bracketed namespace blocks, `is_iterable()` for arrays
 in the current non-`Traversable` object subset, grouped namespace imports,
@@ -22,15 +24,15 @@ scalar conversion internals, `global` binding to root globals, PHP
 version/build/platform metadata constants, `dirname()` levels, `pathinfo()`,
 modeled `LC_*` constants, C/POSIX `setlocale()`, search/count internals,
 persistent standard streams, `property_exists()`, PHPT manifests, `crc32()`,
-`str_replace()` counts, and integer validation for `chr()`, `intdiv()`, and
-file offsets.
+`str_replace()` array/count paths, and integer validation for `chr()`,
+`intdiv()`, and file offsets.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 595 | 595 | 0 |
+| Native/compiler Rust suite | 596 | 596 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 271 | 269 | 2 |
 | PHPT Zend rows | 85 | 84 | 1 |
@@ -52,8 +54,8 @@ class/object shells/constants, properties, destructors, reflection, assertions,
 namespace/import forms including bracketed blocks and grouped use forms,
 streams, file reads/writes, array/string/numeric helpers through
 `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
-`str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `pathinfo()`,
-`dirname()` levels, `crc32()`, `basename()`,
+`str_replace()` scalar and ordered-array forms, `strcasecmp()`, `strncmp()`,
+`strrchr()`, `pathinfo()`, `dirname()` levels, `crc32()`, `basename()`,
 `boolval()`/`floatval()`/`doubleval()`, `is_iterable()`, inline HTML output,
 locale support, PHP metadata constants, `var_export()`, array mutators,
 inc/dec, `global` bindings, dynamic-variable writes/unsets, and offset
@@ -68,12 +70,15 @@ compound/null coalescing assignments.
 
 ## Verification
 
-Current branch verification for `ptn-inis`: diff check, `cargo fmt`, and
-focused namespace native/parser tests.
+Current branch verification for `ptn-5rao`: `cargo fmt --check`; focused
+native `str_replace()` array reducer 1/1; full `cargo test` with
+native/compiler 596/596 plus ancillary COW suites; bounded PHPT 268/268 plus
+2 unsupported-ini exclusions and PHPT COW 29/29 before rebasing onto
+`6dbd14cb`; post-rebase COW gate 26/26.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic
 includes, unsupported internals, scalar offset-lvalues, assertions,
 binary-safe array keys, `Traversable` objects, embedded-NUL internals, object
-IDs, host-locale parity, `str_replace()` array forms, exact scalar conversion
-diagnostics for edge values, and object/reference targets.
+IDs, host-locale parity, exact scalar conversion diagnostics for edge values,
+and object/reference targets.

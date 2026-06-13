@@ -673,13 +673,15 @@ Post-RC architecture remains explicit rather than hidden:
   through the runtime path.
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
-- `str_replace()` over current scalar and stringable-object search,
-  replacement, and subject operands after scalar string conversion, returning
-  the replaced byte string, writing the optional `$count` argument by
-  reference, and throwing catchable PHP-style `array|string` `TypeError`
-  diagnostics for invalid resource, closure, exception, and non-stringable
-  object operands. Array search/replacement/subject forms remain outside the
-  current bounded path.
+- `str_replace()` over current scalar, stringable-object, and ordered-array
+  search, replacement, and subject operands. Search arrays are applied in
+  iteration order; replacement arrays pair by iteration position and missing
+  replacements become empty strings. Subject arrays are mapped non-recursively
+  with keys preserved. The optional `$count` argument is written by reference,
+  invalid top-level resource, closure, exception, and non-stringable object
+  operands throw catchable PHP-style `array|string` `TypeError` diagnostics,
+  and a scalar search with an array replacement throws the PHP-style string
+  replacement `TypeError`.
 - `ceil()` and `floor()` over current boxed scalar values after PHP numeric
   parameter conversion, returning boxed floats. `null` emits the modeled
   deprecation and yields `0.0`; booleans, integers, floats, fully numeric
@@ -1218,9 +1220,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `soundex()` locale/non-ASCII behavior plus resource/reference operand
   parity and object string conversion outside the current public declared
   `__toString()` support.
-- Complete `str_replace()` array search/replacement/subject semantics,
-  array-to-string warnings, and nested replacement-count parity beyond the
-  current scalar bounded path.
+- Exact `str_replace()` object/resource/reference operand diagnostics beyond
+  the current top-level checks and ordered-array conversion path.
 - Complete non-finite comparison parity for unsupported arrays, objects,
   resources, and references.
 - Remaining PHP float precision and formatting edge cases plus
