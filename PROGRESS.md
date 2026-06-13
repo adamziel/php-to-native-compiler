@@ -1,40 +1,40 @@
 # PTN Progress
 
-Refresh: 2026-06-13T11:57Z
-Measured: `ptn-inis` integration on current `origin/master` `0f774e4ab`;
-focused bracketed namespace verification green.
+Refresh: 2026-06-13T12:05Z
+Measured: `ptn-29ui` integration on current `origin/master` `6dbd14cb`;
+focused ini verification passed.
 
-Recent RC slices cover constants, embedded-NUL `var_export()`, inline HTML
-output, includes/once guards, closures, `stdClass`, properties/destructors,
-inherited static dispatch, `property_exists()` metadata, array helpers,
-`json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
-`strcasecmp()`, search/count internals, scalar `str_replace()`, `chr()`
-diagnostics, `crc32()`, `boolval()`/`floatval()`/`doubleval()`, PHP
-version/build/platform metadata constants, standard streams, foreach
-destructuring, unbracketed and bracketed namespaces with simple/grouped
-imports, `global` bindings, dynamic-variable writes/unsets, stream metadata,
-locale constants and `setlocale()`, type predicates including
-`is_iterable()`, alternate `<>` parsing, and offset compound/coalescing.
+Recent RC slices cover constants, embedded-NUL `var_export()`, inline HTML,
+includes/once guards, closures, `stdClass`, properties/destructors, inherited
+static dispatch, `property_exists()` metadata, array helpers, `json_encode()`,
+`printf()`, `basename()`, `pathinfo()`, `dirname()` levels, `strcasecmp()`,
+search/count internals, scalar `str_replace()`, `chr()` diagnostics, `crc32()`,
+`boolval()`/`floatval()`/`doubleval()`, PHP version/build/platform metadata
+constants, standard streams, foreach destructuring, unbracketed and bracketed
+namespaces with simple/grouped imports, `global` bindings, dynamic-variable
+writes/unsets, stream metadata, locale constants and `setlocale()`, type
+predicates including `is_iterable()`, alternate `<>` parsing, PHPT runner ini
+values through `ini_get()`, and offset compound/coalescing.
 
-Recent movers include bracketed namespace blocks, `is_iterable()` for arrays
-in the current non-`Traversable` object subset, grouped namespace imports,
-scalar conversion internals, `global` binding to root globals, PHP
-version/build/platform metadata constants, `dirname()` levels, `pathinfo()`,
-modeled `LC_*` constants, C/POSIX `setlocale()`, search/count internals,
-persistent standard streams, `property_exists()`, PHPT manifests, `crc32()`,
-`str_replace()` counts, and integer validation for `chr()`, `intdiv()`, and
-file offsets.
+Recent movers include PHPT `display_errors` and `zend.assertions` runner ini
+plumbing, bracketed namespace blocks, `is_iterable()` for arrays in the current
+non-`Traversable` object subset, grouped namespace imports, scalar conversion
+internals, `global` binding to root globals, PHP metadata constants,
+`dirname()` levels, `pathinfo()`, modeled `LC_*` constants, C/POSIX
+`setlocale()`, search/count internals, persistent standard streams,
+`property_exists()`, PHPT manifests, `crc32()`, `str_replace()` counts, and
+integer validation for `chr()`, `intdiv()`, and file offsets.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 595 | 595 | 0 |
+| Native/compiler Rust suite | 616 | 616 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 271 | 269 | 2 |
-| PHPT Zend rows | 85 | 84 | 1 |
-| PHPT ext/standard rows | 131 | 130 | 1 |
+| PHPT bounded manifest | 271 | 271 | 0 |
+| PHPT Zend rows | 85 | 85 | 0 |
+| PHPT ext/standard rows | 131 | 131 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT tests/basic+func+lang | 50 | 50 | 0 |
 | PHPT other rows | 5 | 5 | 0 |
@@ -55,21 +55,20 @@ streams, file reads/writes, array/string/numeric helpers through
 `str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `pathinfo()`,
 `dirname()` levels, `crc32()`, `basename()`,
 `boolval()`/`floatval()`/`doubleval()`, `is_iterable()`, inline HTML output,
-locale support, PHP metadata constants, `var_export()`, array mutators,
-inc/dec, `global` bindings, dynamic-variable writes/unsets, and offset
-compound/null coalescing assignments.
+locale support, PHP metadata constants, PHPT runner ini values, `var_export()`,
+array mutators, inc/dec, `global` bindings, dynamic-variable writes/unsets,
+and offset compound/null coalescing assignments.
 
 ## Remaining Bounded Exclusions
 
-- None among the 269 runnable rows in the current 271-row bounded manifest.
-  Two selected rows are classified out for unsupported ini requirements.
+- None among the 271 runnable rows in the current bounded manifest.
 - Callback manifest has 3 runnable passing rows and 2 unsupported-extension
   exclusions.
 
 ## Verification
 
-Current branch verification for `ptn-inis`: diff check, `cargo fmt`, and
-focused namespace native/parser tests.
+Current branch verification for `ptn-29ui`: diff, format, shell syntax, test
+inventory, and focused `phpc` ini regression passed.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic

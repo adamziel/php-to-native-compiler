@@ -94,7 +94,9 @@ enum Mode {
 #[derive(Debug, Default)]
 struct RuntimeIni {
     precision: Option<u8>,
+    display_errors: Option<String>,
     error_reporting: Option<i64>,
+    zend_assertions: Option<String>,
 }
 
 impl Invocation {
@@ -199,10 +201,31 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
                 ini.precision = Some(parsed);
             }
         }
-    } else if name.trim().eq_ignore_ascii_case("error_reporting") {
+    } else if name.eq_ignore_ascii_case("display_errors") {
+        ini.display_errors = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("error_reporting") {
         if let Ok(parsed) = raw_value.trim().parse::<i64>() {
             ini.error_reporting = Some(parsed);
         }
+    } else if name.eq_ignore_ascii_case("zend.assertions") {
+        ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
+    }
+}
+
+fn normalize_ini_scalar(raw_value: &str) -> String {
+    let trimmed = raw_value.trim();
+    if trimmed.eq_ignore_ascii_case("false")
+        || trimmed.eq_ignore_ascii_case("off")
+        || trimmed.eq_ignore_ascii_case("no")
+    {
+        String::new()
+    } else if trimmed.eq_ignore_ascii_case("true")
+        || trimmed.eq_ignore_ascii_case("on")
+        || trimmed.eq_ignore_ascii_case("yes")
+    {
+        "1".to_string()
+    } else {
+        trimmed.to_string()
     }
 }
 
@@ -224,8 +247,14 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     if let Some(precision) = ini.precision {
         command.env("PTN_PHP_PRECISION", precision.to_string());
     }
+    if let Some(display_errors) = &ini.display_errors {
+        command.env("PTN_PHP_DISPLAY_ERRORS", display_errors);
+    }
     if let Some(error_reporting) = ini.error_reporting {
         command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());
+    }
+    if let Some(zend_assertions) = &ini.zend_assertions {
+        command.env("PTN_ZEND_ASSERTIONS", zend_assertions);
     }
     let status = command
         .status()

@@ -16120,6 +16120,34 @@ fn phpc_error_reporting_ini_sets_initial_level() {
 }
 
 #[test]
+fn phpc_ini_get_reports_bounded_runner_ini_values() {
+    let root = temp_dir("ptn-phpc-bounded-runner-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bounded-runner-ini.php");
+    fs::write(
+        &input,
+        "<?php var_dump(ini_get('display_errors'), ini_get('zend.assertions'));",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("display_errors=false")
+        .arg("-d")
+        .arg("zend.assertions=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(0) \"\"\nstring(1) \"1\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_if_elseif_else_to_native_binary() {
     let root = temp_dir("ptn-native-if-elseif-else");
     fs::create_dir_all(&root).unwrap();

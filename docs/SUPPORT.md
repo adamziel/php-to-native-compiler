@@ -929,6 +929,9 @@ Post-RC architecture remains explicit rather than hidden:
   the original runtime constant value.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
+  `-d precision=N` and `-d error_reporting=N` influence modeled runtime
+  behavior; `-d display_errors=value` and `-d zend.assertions=value` are
+  accepted for PHPT harness parity and are visible through `ini_get()`.
 - Braced and single-statement `if`, `elseif`, and `else` statements whose
   conditions and bodies use the currently supported scalar expression and
   statement subset.
