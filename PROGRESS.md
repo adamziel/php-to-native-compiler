@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-13T05:19Z
-Measured: `ptn-98d8.3` rebased on current `origin/master` `c5345b334`.
+Refresh: 2026-06-13T05:47Z
+Measured: `ptn-8bwi` rebased on current `origin/master` `507a48131`, with focused classifier evidence for bounded `display_errors`/`zend.assertions` ini rows.
 
 Recent RC slices cover class constants, embedded-NUL `var_export()`,
 `explode()`, `strncmp()`, `strrchr()`, namespaces/imports, includes/once
@@ -20,7 +20,8 @@ offset bounds, PHP 8.4 `array_sum()`/`array_product()` unsupported-type
 warnings and overflow promotion, persistent `STDIN`/`STDOUT`/`STDERR`,
 binary-safe `pathinfo()` with `PATHINFO_*` flags, `property_exists()` metadata,
 broad PHPT manifests, length-aware `crc32()`, scalar `str_replace()` counts,
-`strncmp()`/`strrchr()`, `basename()`, and stream preclassification.
+`strncmp()`/`strrchr()`, `basename()`, and stream/bounded-ini
+preclassification.
 
 ## Dashboard
 
@@ -29,7 +30,7 @@ broad PHPT manifests, length-aware `crc32()`, scalar `str_replace()` counts,
 | Source unit tests | 3 | 3 | 0 |
 | Native/compiler Rust suite | 583 | 583 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 262 | 260 | 2 |
+| PHPT bounded manifest | 262 | 262 | 0 |
 | PHPT Zend rows | 82 | 82 | 0 |
 | PHPT ext/standard rows | 130 | 130 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
@@ -65,8 +66,7 @@ array/string-offset compound/null coalescing assignments.
 
 ## Remaining Bounded Failures
 
-- None among the 260 runnable rows in the current 262-row bounded manifest.
-  Two selected rows are classified out for unsupported ini requirements.
+- None among the 262 runnable rows in the current bounded manifest.
 
 ## Verification
 
@@ -74,6 +74,13 @@ array/string-offset compound/null coalescing assignments.
 string-internal 1/1, focused search PHPT 5/5, `cargo test` 583/583 plus
 COW/doc tests, bounded PHPT 260/260 with 2 excluded, PHPT COW 29/29, and
 post-merge COW 26/26.
+
+2026-06-13T05:47Z: rebased `ptn-8bwi` on `origin/master` `507a48131`;
+`cargo fmt --check`, PHPT classifier shell syntax, and focused
+`display_errors`/`zend.assertions` rows 2/2 passed with classification enabled.
+Together with the upstream bounded PHPT 260/260 evidence, the current bounded
+manifest has 262 selected runnable rows and 0 excluded. PHPT COW passed 29/29,
+and post-merge COW gate passed 17 oracle, 3 notice, and 6 diagnostic cases.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, bracketed/grouped namespaces, broader

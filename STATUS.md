@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T05:19Z
-Measured: `ptn-98d8.3` rebased on current `origin/master` `c5345b334`.
+Last refresh: 2026-06-13T05:47Z
+Measured: `ptn-8bwi` rebased on current `origin/master` `507a48131`, with focused classifier evidence for bounded `display_errors`/`zend.assertions` ini rows.
 
 ## Operating Goal
 
@@ -10,7 +10,7 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 583/583; Native smoke matrix 6/6; PHPT bounded manifest 260/262; PHPT Zend rows 82/82; PHPT ext/standard rows 130/130.
+Source unit tests 3/3; Native/compiler Rust suite 583/583; Native smoke matrix 6/6; PHPT bounded manifest 262/262; PHPT Zend rows 82/82; PHPT ext/standard rows 130/130.
 
 ## Active Buckets
 
@@ -19,7 +19,7 @@ Source unit tests 3/3; Native/compiler Rust suite 583/583; Native smoke matrix 6
 | Source unit tests | 3/3 |
 | Native/compiler Rust suite | 583/583 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 260/262 |
+| PHPT bounded manifest | 262/262 |
 | PHPT Zend rows | 82/82 |
 | PHPT ext/standard rows | 130/130 |
 | PHPT focused stream rows | 2/2 |
