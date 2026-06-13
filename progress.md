@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T15:23Z
+Last refresh: 2026-06-13T15:29Z
 Source: `PROGRESS.md`
-Measured: `ptn-qsmv.7` environment/include-path helpers and process-boundary
+Measured: `ptn-z98n` `php_uname()` invalid-mode validation on
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 637/637; Native smoke matrix 6/6; PHPT bounded manifest 282/282; PHPT Zend rows 87/87; PHPT ext/standard rows 140/140.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 638/638; Native smoke matrix 6/6; PHPT bounded manifest 282/282; PHPT Zend rows 87/87; PHPT ext/standard rows 140/140.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 637/637 |
+| Native/compiler Rust suite | 638/638 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 282/282 |
 | PHPT Zend rows | 87/87 |

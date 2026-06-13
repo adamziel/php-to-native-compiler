@@ -10203,6 +10203,38 @@ var_dump(function_exists('zend_version'), function_exists('ini_get'), function_e
 }
 
 #[test]
+fn compile_php_uname_rejects_invalid_modes_to_native_binary() {
+    let root = temp_dir("ptn-native-php-uname-invalid-modes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-uname-invalid-modes.php");
+    let output = root.join("php-uname-invalid-modes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach (['', 'test', 'z'] as $mode) {\n\
+    try {\n\
+        var_dump(php_uname($mode));\n\
+    } catch (ValueError $e) {\n\
+        echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ValueError: php_uname(): Argument #1 ($mode) must be a single character\n\
+ValueError: php_uname(): Argument #1 ($mode) must be a single character\n\
+ValueError: php_uname(): Argument #1 ($mode) must be one of \"a\", \"m\", \"n\", \"r\", \"s\", or \"v\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_locale_constants_and_setlocale_to_native_binary() {
     let root = temp_dir("ptn-native-locale-constants-setlocale");
     fs::create_dir_all(&root).unwrap();

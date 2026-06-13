@@ -761,6 +761,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `getmypid()` returns the generated native process id.
 - `php_sapi_name()` and the `PHP_SAPI` constant return the modeled CLI SAPI
   name.
+- `php_uname()` returns platform metadata for the supported PHP mode letters
+  `a`, `s`, `n`, `r`, `v`, and `m`; empty, multi-character, or unknown mode
+  strings throw catchable `ValueError` values.
 - `phpversion()` and the `PHP_VERSION`, `PHP_MAJOR_VERSION`,
   `PHP_MINOR_VERSION`, `PHP_RELEASE_VERSION`, `PHP_EXTRA_VERSION`,
   `PHP_VERSION_ID`, `PHP_ZTS`, and `PHP_DEBUG` constants return modeled PHP

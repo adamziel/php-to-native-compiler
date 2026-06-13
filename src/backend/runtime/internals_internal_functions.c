@@ -8962,15 +8962,29 @@ static PtnValue ptn_internal_phpversion(PtnRuntime *runtime, size_t argc, const 
 }
 
 static PtnValue ptn_internal_php_uname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)line;
     char mode = 'a';
     if (argc >= 1) {
         PtnStringOperand mode_operand = ptn_value_to_string_operand(args[0]);
-        if (mode_operand.len > 0) {
-            mode = (char)tolower((unsigned char)mode_operand.data[0]);
+        if (mode_operand.len != 1) {
+            ptn_string_operand_free(mode_operand);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "php_uname(): Argument #1 ($mode) must be a single character"
+            );
+            return ptn_null();
         }
+        mode = (char)tolower((unsigned char)mode_operand.data[0]);
         ptn_string_operand_free(mode_operand);
+        if (mode != 'a' && mode != 'm' && mode != 'n' && mode != 'r' && mode != 's' && mode != 'v') {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "php_uname(): Argument #1 ($mode) must be one of \"a\", \"m\", \"n\", \"r\", \"s\", or \"v\""
+            );
+            return ptn_null();
+        }
     }
 
 #if defined(_WIN32)
