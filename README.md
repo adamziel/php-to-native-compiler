@@ -14,7 +14,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Strings cover interpolation, legacy `${name}` deprecations, common/control
   escapes, hex/octal byte escapes, and inline HTML output.
 - Top-level functions and declared methods include magic constants, call-frame
-  introspection, scalar and void return type hints, array defaults,
+  introspection, scalar, array, and void return type hints, array defaults,
   by-reference returns, typed coercion, constructor dispatch, public destructor
   dispatch, inherited static call dispatch, and metadata intrinsics.
 - Includes share caller file scope and return values; bounded dynamic

@@ -115,6 +115,7 @@ pub struct FunctionParameter {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeHint {
     Null,
+    Array,
     Int,
     Float,
     String,
@@ -1079,6 +1080,7 @@ fn lower_property_visibility(visibility: AstPropertyVisibility) -> PropertyVisib
 fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
     match type_hint {
         AstTypeHint::Null => TypeHint::Null,
+        AstTypeHint::Array => TypeHint::Array,
         AstTypeHint::Int => TypeHint::Int,
         AstTypeHint::Float => TypeHint::Float,
         AstTypeHint::String => TypeHint::String,

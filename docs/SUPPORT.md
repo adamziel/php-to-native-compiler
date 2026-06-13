@@ -492,7 +492,7 @@ Post-RC architecture remains explicit rather than hidden:
   trailing scalar and literal-array default parameter values including omitted
   `null` defaults, local variable storage, ordinary `return` statements,
   implicit `null` returns, recursive calls, call-frame argument introspection,
-  and minimal scalar/`null` parameter and return type declarations plus
+  and minimal scalar/array/`null` parameter and return type declarations plus
   return-only `void` declarations over the currently supported expression and
   statement subset. Direct calls may omit defaulted trailing arguments, pass
   extra positional arguments, or use named arguments for direct

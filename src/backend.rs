@@ -439,6 +439,19 @@ fn emit_user_functions(
                 out.push_str("        exit(255);\n");
                 out.push_str("    }\n");
             }
+            if let Some(TypeHint::Array) = parameter.type_hint {
+                out.push_str("    if (ptn_value_deref(");
+                out.push_str(&parameter_source);
+                out.push_str(").type != PTN_ARRAY) {\n");
+                out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+                out.push_str(&c_string(&function.name));
+                out.push_str("() argument $");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str(" must be of type array\");\n");
+                out.push_str("        ptn_runtime_free(&runtime);\n");
+                out.push_str("        exit(255);\n");
+                out.push_str("    }\n");
+            }
             let parameter_cast_temp =
                 if let Some(cast_helper) = type_hint_scalar_cast_helper(parameter.type_hint) {
                     let temp = format!("ptn_parameter_{}", parameter_index);
@@ -648,6 +661,22 @@ fn emit_variadic_parameter_binding(
         out.push_str("            exit(255);\n");
         out.push_str("        }\n");
     }
+    if let Some(TypeHint::Array) = parameter.type_hint {
+        out.push_str("        if (ptn_value_deref(args[");
+        out.push_str(&index_temp);
+        out.push_str("]).type != PTN_ARRAY) {\n");
+        out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("() argument $");
+        out.push_str(&c_string(&parameter.name));
+        out.push_str(" must be of type array\");\n");
+        out.push_str("            ptn_value_drop(&");
+        out.push_str(&array_temp);
+        out.push_str(");\n");
+        out.push_str("            ptn_runtime_free(&runtime);\n");
+        out.push_str("            exit(255);\n");
+        out.push_str("        }\n");
+    }
 
     let value_expr = if let Some(cast_helper) = type_hint_scalar_cast_helper(parameter.type_hint) {
         let value_temp = format!("ptn_variadic_value_{}", parameter_index);
@@ -848,6 +877,15 @@ fn emit_return_type_boundary(
             out.push_str("        exit(255);\n");
             out.push_str("    }\n");
         }
+        TypeHint::Array => {
+            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_ARRAY) {\n");
+            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str(&c_string(function_name));
+            out.push_str("() return value must be of type array\");\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            out.push_str("        exit(255);\n");
+            out.push_str("    }\n");
+        }
         TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool => {
             let cast_helper = type_hint_scalar_cast_helper(Some(return_type))
                 .expect("scalar return type should map to cast helper");
@@ -880,7 +918,7 @@ fn type_hint_scalar_cast_helper(type_hint: Option<TypeHint>) -> Option<&'static 
         Some(TypeHint::Float) => Some("ptn_cast_float"),
         Some(TypeHint::String) => Some("ptn_cast_string"),
         Some(TypeHint::Bool) => Some("ptn_cast_bool"),
-        Some(TypeHint::Null | TypeHint::Void) | None => None,
+        Some(TypeHint::Null | TypeHint::Array | TypeHint::Void) | None => None,
     }
 }
 

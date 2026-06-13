@@ -106,6 +106,7 @@ pub struct ClosureUseCapture {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeHint {
     Null,
+    Array,
     Int,
     Float,
     String,

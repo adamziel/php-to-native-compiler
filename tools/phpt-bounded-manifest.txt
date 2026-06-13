@@ -87,6 +87,7 @@ Zend/tests/type_coercion/type_casts/non_canonical_double_cast.phpt
 Zend/tests/type_coercion/type_casts/non_canonical_integer_cast.phpt
 Zend/tests/type_coercion/type_casts/real_cast.phpt
 Zend/tests/type_declarations/mixed/casting/mixed_cast_error.phpt
+Zend/tests/type_declarations/return_separation.phpt
 Zend/tests/type_declarations/standalone_null.phpt
 Zend/tests/unset/unset_cast_removed.phpt
 Zend/tests/unterminated_comment.phpt
@@ -128,6 +129,7 @@ ext/standard/tests/array/array_product_variation3.phpt
 ext/standard/tests/array/array_product_variation4.phpt
 ext/standard/tests/array/array_reverse_basic1.phpt
 ext/standard/tests/array/array_slice_basic.phpt
+ext/standard/tests/array/array_slice_variation11.phpt
 ext/standard/tests/array/array_sum_basic.phpt
 ext/standard/tests/array/array_sum_on_reference.phpt
 ext/standard/tests/array/array_sum_packed_long_overflow.phpt
@@ -136,6 +138,7 @@ ext/standard/tests/array/array_sum_variation4.phpt
 ext/standard/tests/array/array_sum_variation5.phpt
 ext/standard/tests/array/array_sum_variation6.phpt
 ext/standard/tests/array/array_sum_variation7.phpt
+ext/standard/tests/array/bug72622.phpt
 ext/standard/tests/array/count_basic.phpt
 ext/standard/tests/array/sizeof_basic2.phpt
 ext/standard/tests/array/sort/natcasesort_basic.phpt

@@ -1244,6 +1244,28 @@ fn parser_accepts_scalar_parameter_return_hints_and_by_ref_returns() {
 }
 
 #[test]
+fn parser_accepts_array_parameter_return_hints_for_functions_and_closures() {
+    let program = parser::parse(
+        "<?php function test(array $items): array { return $items; } \
+         $callback = function (array $values): array { return $values; };",
+    )
+    .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(function.return_type, Some(TypeHint::Array));
+    assert_eq!(function.parameters[0].type_hint, Some(TypeHint::Array));
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert_eq!(closure.return_type, Some(TypeHint::Array));
+    assert_eq!(closure.parameters[0].type_hint, Some(TypeHint::Array));
+}
+
+#[test]
 fn parser_accepts_global_variable_statements() {
     let program = parser::parse("<?php function read_globals() { global $left, $right; }").unwrap();
 
@@ -8463,6 +8485,82 @@ fn compile_null_typed_user_function_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_typed_functions_and_closures_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-array-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-array-type.php");
+    let output = root.join("user-function-array-type-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function identity(array $items): array { return $items; }\n\
+$callback = function (array $items): array { $items[] = \"tail\"; return $items; };\n\
+var_dump(identity([\"head\"]));\n\
+var_dump($callback([\"head\"]));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  string(4) \"head\"\n}\n\
+array(2) {\n  [0]=>\n  string(4) \"head\"\n  [1]=>\n  string(4) \"tail\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-array-type-errors");
+    fs::create_dir_all(&root).unwrap();
+
+    let parameter_input = root.join("array-parameter-type-error.php");
+    let parameter_output = root.join("array-parameter-type-error-bin");
+    fs::write(
+        &parameter_input,
+        "<?php function takes_array(array $items): array { return $items; } takes_array('x');",
+    )
+    .unwrap();
+    compile_file(
+        &parameter_input,
+        &parameter_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let parameter_execution = Command::new(&parameter_output).output().unwrap();
+    assert!(!parameter_execution.status.success());
+    assert_eq!(parameter_execution.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8(parameter_execution.stderr).unwrap(),
+        "Fatal error: takes_array() argument $items must be of type array\n"
+    );
+
+    let return_input = root.join("array-return-type-error.php");
+    let return_output = root.join("array-return-type-error-bin");
+    fs::write(
+        &return_input,
+        "<?php function returns_array(): array { return 'x'; } returns_array();",
+    )
+    .unwrap();
+    compile_file(
+        &return_input,
+        &return_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let return_execution = Command::new(&return_output).output().unwrap();
+    assert!(!return_execution.status.success());
+    assert_eq!(return_execution.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8(return_execution.stderr).unwrap(),
+        "Fatal error: returns_array() return value must be of type array\n"
+    );
 }
 
 #[test]

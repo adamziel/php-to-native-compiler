@@ -1268,8 +1268,11 @@ impl Parser {
 
     fn parse_type_hint(&mut self) -> Result<TypeHint> {
         let token = self.advance();
-        match token.kind {
+        match &token.kind {
             TokenKind::Null => Ok(TypeHint::Null),
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
+                Ok(TypeHint::Array)
+            }
             TokenKind::IntType | TokenKind::IntegerType => Ok(TypeHint::Int),
             TokenKind::FloatType | TokenKind::DoubleType => Ok(TypeHint::Float),
             TokenKind::StringType | TokenKind::BinaryType => Ok(TypeHint::String),
@@ -1282,6 +1285,9 @@ impl Parser {
         let token = self.advance();
         match &token.kind {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("void") => Ok(TypeHint::Void),
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
+                Ok(TypeHint::Array)
+            }
             TokenKind::Null => Ok(TypeHint::Null),
             TokenKind::IntType | TokenKind::IntegerType => Ok(TypeHint::Int),
             TokenKind::FloatType | TokenKind::DoubleType => Ok(TypeHint::Float),
@@ -1292,18 +1298,19 @@ impl Parser {
     }
 
     fn peek_is_type_hint(&self) -> bool {
-        matches!(
-            self.peek().kind,
+        match &self.peek().kind {
             TokenKind::Null
-                | TokenKind::IntType
-                | TokenKind::IntegerType
-                | TokenKind::FloatType
-                | TokenKind::DoubleType
-                | TokenKind::StringType
-                | TokenKind::BinaryType
-                | TokenKind::BoolType
-                | TokenKind::BooleanType
-        )
+            | TokenKind::IntType
+            | TokenKind::IntegerType
+            | TokenKind::FloatType
+            | TokenKind::DoubleType
+            | TokenKind::StringType
+            | TokenKind::BinaryType
+            | TokenKind::BoolType
+            | TokenKind::BooleanType => true,
+            TokenKind::Identifier(name) => name.eq_ignore_ascii_case("array"),
+            _ => false,
+        }
     }
 
     fn parse_variable_statement(&mut self) -> Result<Statement> {
