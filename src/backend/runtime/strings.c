@@ -654,6 +654,48 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PATHINFO_ALL);
         return 1;
     }
+#if defined(LC_CTYPE)
+    if (strcmp(name, "LC_CTYPE") == 0) {
+        *out = ptn_int(LC_CTYPE);
+        return 1;
+    }
+#endif
+#if defined(LC_NUMERIC)
+    if (strcmp(name, "LC_NUMERIC") == 0) {
+        *out = ptn_int(LC_NUMERIC);
+        return 1;
+    }
+#endif
+#if defined(LC_TIME)
+    if (strcmp(name, "LC_TIME") == 0) {
+        *out = ptn_int(LC_TIME);
+        return 1;
+    }
+#endif
+#if defined(LC_COLLATE)
+    if (strcmp(name, "LC_COLLATE") == 0) {
+        *out = ptn_int(LC_COLLATE);
+        return 1;
+    }
+#endif
+#if defined(LC_MONETARY)
+    if (strcmp(name, "LC_MONETARY") == 0) {
+        *out = ptn_int(LC_MONETARY);
+        return 1;
+    }
+#endif
+#if defined(LC_MESSAGES)
+    if (strcmp(name, "LC_MESSAGES") == 0) {
+        *out = ptn_int(LC_MESSAGES);
+        return 1;
+    }
+#endif
+#if defined(LC_ALL)
+    if (strcmp(name, "LC_ALL") == 0) {
+        *out = ptn_int(LC_ALL);
+        return 1;
+    }
+#endif
     if (strcmp(name, "M_E") == 0) {
         *out = ptn_float(2.718281828459045);
         return 1;

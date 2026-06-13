@@ -7787,6 +7787,44 @@ static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const Pt
 #endif
 }
 
+static char *ptn_locale_operand_to_c_string(PtnStringOperand locale) {
+    return ptn_duplicate_string_len(locale.data, locale.len);
+}
+
+static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t category_value = ptn_internal_expect_integer_arg(
+        runtime,
+        "setlocale",
+        1,
+        "category",
+        args[0],
+        line
+    );
+    int category = (int)category_value;
+
+    for (size_t i = 1; i < argc; i++) {
+        PtnStringOperand locale_operand = ptn_internal_expect_string_arg(
+            runtime,
+            "setlocale",
+            i + 1,
+            "locales",
+            args[i],
+            line
+        );
+        int query = locale_operand.len == 1 && locale_operand.data[0] == '0';
+        char *locale = query ? NULL : ptn_locale_operand_to_c_string(locale_operand);
+        ptn_string_operand_free(locale_operand);
+
+        char *result = setlocale(category, locale);
+        free(locale);
+        if (result != NULL) {
+            return ptn_string(result);
+        }
+    }
+
+    return ptn_bool(0);
+}
+
 static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal) {
     size_t literal_len = strlen(literal);
     if (value.len != literal_len) {
@@ -8530,6 +8568,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
+        { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },

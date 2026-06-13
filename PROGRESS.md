@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-13T03:09Z
-Measured: `ptn-98d8.5` rebased on current `origin/master` `d21b77f37`.
+Refresh: 2026-06-13T04:16Z
+Measured: `ptn-zi6k` rebased on current `origin/master` `60d3576f3`.
 
 Recent RC slices cover class constants, embedded-NUL `var_export()`,
 `explode()`, `strncmp()`, `strrchr()`, namespaces/imports, includes/once
@@ -11,15 +11,17 @@ array mutators/set/sort/udiff/list helpers, `json_encode()`,
 `printf()`/`sprintf()`, `basename()`, `pathinfo()`, `file_get_contents()`,
 `strcasecmp()`, scalar `str_replace()` count outputs and TypeErrors, `chr()`
 diagnostics, length-aware `crc32()`, metadata, foreach list destructuring,
-dynamic-variable writes/unsets and `??=`, stream metadata, and
-array/string-offset compound/null coalescing.
+dynamic-variable writes/unsets and `??=`, stream metadata, array/string-offset
+compound/null coalescing, plus bounded locale constants and scalar
+`setlocale()` query/set candidates.
 
 Recent movers include binary-safe `pathinfo()` component extraction with
-`PATHINFO_*` flags, declared/static `property_exists()` metadata, inherited
-static method dispatch, broad PHPT baseline manifests, length-aware scalar
-`crc32()` checksums, scalar `str_replace()` count out-parameters, `chr()`
-integer diagnostics, `strncmp()`/`strrchr()`, `basename()`,
-`file_get_contents()`, `strcasecmp()`, streams, and PHPT preclassification.
+`PATHINFO_*` flags, LC constant registry entries and scalar `setlocale()`,
+declared/static `property_exists()` metadata, inherited static method dispatch,
+broad PHPT baseline manifests, length-aware scalar `crc32()` checksums, scalar
+`str_replace()` count out-parameters, `chr()` integer diagnostics,
+`strncmp()`/`strrchr()`, `basename()`, `file_get_contents()`, `strcasecmp()`,
+streams, and PHPT preclassification.
 
 ## Dashboard
 
@@ -58,8 +60,9 @@ namespaces/imports, streams, file reads/writes, array/string/numeric helpers
 through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
 `str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `pathinfo()`,
 `crc32()`, `basename()`, `chr()` diagnostics, `var_export()`, array mutators,
-inc/dec, foreach destructuring, dynamic-variable writes/unsets, and
-array/string-offset compound/null coalescing assignments.
+inc/dec, foreach destructuring, dynamic-variable writes/unsets,
+array/string-offset compound/null coalescing assignments, LC constants, and
+scalar `setlocale()` query/set candidates.
 
 ## Remaining Bounded Failures
 
@@ -68,15 +71,16 @@ array/string-offset compound/null coalescing assignments.
 
 ## Verification
 
-2026-06-13T03:42Z: passed diff check, `cargo fmt`, focused native
-`pathinfo()` 1/1, focused PHPT `pathinfo` 5/5, `compile_native` 582/582,
-auxiliary COW tests 13/13, bounded PHPT 240/240 with 2 excluded, PHPT COW
-29/29, and post-merge COW 26/26.
+2026-06-13T04:16Z: passed `git diff --check`, `cargo fmt --check`,
+focused native locale/setlocale 1/1, full `cargo test` 582/582 plus auxiliary
+COW/doc tests, bounded PHPT frontier scan 237 selected/235 runnable/2 excluded
+with 235/235 passed before the `pathinfo()` rebase, PHPT COW 29/29, and
+post-merge COW 17/17 oracle, 3/3 notice, 6/6 diagnostics.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, bracketed/grouped namespaces, broader
 fallback/reflection, magic methods, first-class callables, dynamic includes,
 unsupported internals, scalar offset-lvalues, assertion config, binary-safe
 array keys, append-form `??=`, embedded-NUL internals, object IDs,
-locale constants/`setlocale()`, `str_replace()` array forms, and
-object/reference targets.
+complete locale edge parity, `str_replace()` array forms, and object/reference
+targets.

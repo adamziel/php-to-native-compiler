@@ -350,7 +350,7 @@ Post-RC architecture remains explicit rather than hidden:
   `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
   `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
-  `getmypid();`, `get_cfg_var(expr);`,
+  `getmypid();`, `setlocale(expr, expr[, ...]);`, `get_cfg_var(expr);`,
   `get_loaded_extensions([zend_extensions]);`, `ini_get(expr);`,
   `ob_get_contents();`, `php_ini_scanned_files();`, `php_sapi_name();`,
   `php_uname([mode]);`, `phpversion([extension]);`, `preg_match(expr, expr);`,
@@ -410,7 +410,7 @@ Post-RC architecture remains explicit rather than hidden:
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
-  `getmypid()`, `get_cfg_var(expr)`,
+  `getmypid()`, `setlocale(expr, expr[, ...])`, `get_cfg_var(expr)`,
   `get_loaded_extensions([zend_extensions])`, `ini_get(expr)`,
   `ob_get_contents()`, `php_ini_scanned_files()`, `php_sapi_name()`,
   `php_uname([mode])`, `phpversion([extension])`, `preg_match(expr, expr)`,
@@ -676,6 +676,11 @@ Post-RC architecture remains explicit rather than hidden:
   operator.
 - `getrandmax()` returns the modeled maximum random integer.
 - `getmypid()` returns the generated native process id.
+- `setlocale()` accepts a scalar category and scalar string/zero locale
+  candidates through the host C library. String or integer `0` queries the
+  current category, string candidates such as `"C"` update the process locale,
+  variadic scalar candidates are tried in order, and unsupported categories or
+  unavailable locale names return `false`.
 - `php_sapi_name()` and the `PHP_SAPI` constant return the modeled CLI SAPI
   name.
 - `phpversion()` and the `PHP_VERSION` constant return the modeled PHP version
@@ -869,6 +874,8 @@ Post-RC architecture remains explicit rather than hidden:
   PHP math constants `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`,
   `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`,
   `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, `M_SQRT3`,
+  `LC_CTYPE`, `LC_NUMERIC`, `LC_TIME`, `LC_COLLATE`, `LC_MONETARY`,
+  `LC_MESSAGES`, `LC_ALL`,
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `STR_PAD_LEFT`,
   `STR_PAD_RIGHT`, and `STR_PAD_BOTH`. Other ordinary names report as
   undefined.
@@ -1072,7 +1079,7 @@ Post-RC architecture remains explicit rather than hidden:
   currently modeled `E_*` error masks, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, modeled PHP math `M_*` constants,
-  array-filter mode constants, and `STR_PAD_*` constants in
+  array-filter mode constants, `LC_*` locale constants, and `STR_PAD_*` constants in
   `defined()`/`constant()`.
 - Function forms beyond top-level named declarations and the public class-method
   callable slice, plus the bounded `stdClass` public-property storage slice,
@@ -1181,6 +1188,9 @@ Post-RC architecture remains explicit rather than hidden:
   still bypass the shared warning/deprecation/notice emitters.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
+- Complete `setlocale()` array-candidate handling, locale alias/environment
+  parity, warning text, and cross-platform locale-category coverage beyond the
+  current scalar string/zero candidate path.
 - PHP-exact version, SAPI, and extension metadata beyond the modeled
   CLI/core/standard names and loaded-extension list.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
