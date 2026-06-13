@@ -97,6 +97,39 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
 }
 
 #[test]
+fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
+    let cases = [
+        (
+            "abstract method contracts",
+            "--TEST--\nabstract\n--FILE--\n<?php\nabstract class Base { abstract protected function run(); }\n--EXPECT--\n",
+            "requires abstract class/method contract metadata",
+        ),
+        (
+            "autoload",
+            "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register(function ($class) {});\n--EXPECT--\n",
+            "requires runtime class autoload symbol-table mutation",
+        ),
+        (
+            "non-public method visibility",
+            "--TEST--\nvisibility\n--FILE--\n<?php\nclass Box { private function run() {} }\n--EXPECT--\n",
+            "requires non-public method visibility dispatch",
+        ),
+    ];
+
+    for (name, phpt, reason) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("unsupported-class-metadata\t"),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_variadic_parameter_rows_runnable() {
     let classification = classify(
         "--TEST--\nvariadic\n--FILE--\n<?php\nfunction f(...$args) { var_dump($args); }\nf(1, 2);\n--EXPECT--\n",

@@ -494,6 +494,131 @@ ptn_phpt_first_unsupported_language_surface() {
     '
 }
 
+ptn_phpt_first_unsupported_class_metadata_surface() {
+    local path=$1
+
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+        function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
+            quote = ""
+            escaped = 0
+            out = ""
+            for (i = 1; i <= length(raw); i++) {
+                ch = substr(raw, i, 1)
+                next_ch = substr(raw, i + 1, 1)
+                if (ptn_block_comment) {
+                    if (ch == "*" && next_ch == "/") {
+                        ptn_block_comment = 0
+                        out = out "  "
+                        i++
+                    } else {
+                        out = out " "
+                    }
+                    continue
+                }
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    out = out " "
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    out = out " "
+                    continue
+                }
+                if (ch == "/" && next_ch == "/") {
+                    break
+                }
+                if (ch == "#") {
+                    break
+                }
+                if (ch == "/" && next_ch == "*") {
+                    ptn_block_comment = 1
+                    out = out "  "
+                    i++
+                    continue
+                }
+                out = out ch
+            }
+            return tolower(out)
+        }
+        {
+            line = ptn_php_code_line($0)
+            if (line ~ /(^|[^[:alnum:]_$])enum[[:space:]]+[a-z_\\]/) {
+                print "unsupported-class-metadata\trequires enum declarations and case metadata, outside PTN modeled class metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])abstract[[:space:]]+(class|function|static|public|protected|private|[a-z_\\])/) {
+                print "unsupported-class-metadata\trequires abstract class/method contract metadata, outside PTN modeled class dispatch"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])final[[:space:]]+(class|function|static|public|protected|private|[a-z_\\])/) {
+                print "unsupported-class-metadata\trequires final class/method override metadata, outside PTN modeled class dispatch"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+(class|public|protected|private|static|[a-z_\\?]|\$)/) {
+                print "unsupported-class-metadata\trequires readonly class/property write-once metadata, outside PTN modeled property metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]*\([[:space:]]*set[[:space:]]*\)/) {
+                print "unsupported-class-metadata\trequires asymmetric property visibility metadata, outside PTN modeled property visibility"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+(static[[:space:]]+)?function[[:space:]]+[a-z_]/) {
+                print "unsupported-class-metadata\trequires non-public method visibility dispatch and diagnostics, outside PTN modeled method visibility"
+                found = 1
+                exit
+            }
+            if (line ~ /function[[:space:]]+__(call|callstatic|get|set|isset|unset|debuginfo|serialize|unserialize|sleep|wakeup|tostring)[[:space:]]*\(/) {
+                print "unsupported-class-metadata\trequires unsupported magic method dispatch/reflection metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(spl_autoload_[a-z0-9_]*|__autoload)[[:space:]]*\(/) {
+                print "unsupported-class-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /function[[:space:]]+__construct[[:space:]]*\([^)]*(public|protected|private|readonly)[[:space:]]+/) {
+                print "unsupported-class-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[[:space:]])(public|protected|private|var|static|readonly)[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
+                print "unsupported-class-metadata\trequires typed property metadata, outside PTN modeled property declarations"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
+                print "unsupported-class-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+const[[:space:]]+/) {
+                print "unsupported-class-metadata\trequires non-public class constant metadata, outside PTN modeled class constants"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[[:space:]])const[[:space:]]+[a-z_\\][a-z0-9_\\|?]*[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]*=/) {
+                print "unsupported-class-metadata\trequires typed class constant metadata, outside PTN modeled class constants"
+                found = 1
+                exit
+            }
+        }
+        END { exit found ? 0 : 1 }
+    '
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -566,6 +691,11 @@ ptn_phpt_classify_row() {
     fi
 
     if value=$(ptn_phpt_first_unsupported_language_surface "$path"); then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    if value=$(ptn_phpt_first_unsupported_class_metadata_surface "$path"); then
         printf '%s\n' "$value"
         return 0
     fi

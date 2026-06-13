@@ -1,16 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-13T17:30Z
-Measured: `ptn-qsmv.2` broad PHPT unsupported-syntax blocker classification
-rebased after `ptn-qsmv.5` object/class/callable metadata expansion.
+Refresh: 2026-06-13T17:35Z
+Measured: `ptn-n1q2` broad object/class metadata PHPT classification rebased
+after `ptn-qsmv.2` unsupported-syntax blocker classification.
 
 Recent RC slices cover constants, includes, closures, `stdClass`,
 properties/destructors, reflection metadata, array helpers, formatted output,
 string/path/count internals, scalar/operator PHPT rows, PHPT classification
-including PHP attributes and new broad syntax blockers, object callables,
-object cloning, environment/include-path helpers, filesystem metadata/path
-helpers, stream writes, `function_exists()` static-method separation, and
-bounded `get_parent_class()`.
+including PHP attributes, broad syntax blockers, and class-metadata blockers,
+object callables, object cloning, environment/include-path helpers,
+filesystem metadata/path helpers, stream writes, `function_exists()`
+static-method separation, and bounded `get_parent_class()`.
 
 ## Dashboard
 
@@ -56,14 +56,14 @@ property compounds, static-method-aware `function_exists()`, and bounded
 
 ## Verification
 
-`ptn-qsmv.2` verification: broad 1k evidence from the submitting branch moved
-from 614 runnable / 386 excluded to 551 runnable / 449 excluded, adding 63
-unsupported-language classifications: 37 asymmetric visibility, 14 arrow
-function, 12 userland `throw`, and 1 readonly-modifier row. Current-branch
-classifier syntax, classifier tests, and fmt passed.
+`ptn-n1q2` verification: the submitting broad 1k classify-only run selected
+1,000 rows, kept 476 runnable, excluded 524, and classified 138 rows as
+`unsupported-class-metadata`. Current-branch classifier syntax, classifier
+tests, and fmt passed.
 
-Previous `ptn-qsmv.5` verification remains: targeted native metadata gates and
-25 object/class/callable PHPT rows passed.
+Previous `ptn-qsmv.2` verification remains: broad 1k evidence added 63
+unsupported-language classifications across asymmetric visibility, arrow
+functions, userland `throw`, and readonly modifiers.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods, PHP
 attributes/reflection metadata, arrow functions, userland `throw`, readonly
