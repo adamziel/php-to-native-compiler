@@ -234,6 +234,10 @@ pub enum Statement {
         value: Option<Expr>,
         span: SourceSpan,
     },
+    Throw {
+        value: Expr,
+        span: SourceSpan,
+    },
     Try {
         body: Vec<Statement>,
         catches: Vec<CatchClause>,
@@ -523,6 +527,10 @@ pub enum Expr {
         path: Box<Expr>,
         span: SourceSpan,
     },
+    Throw {
+        value: Box<Expr>,
+        span: SourceSpan,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -666,6 +674,7 @@ impl Expr {
             Expr::Empty { span, .. } => *span,
             Expr::Print { span, .. } => *span,
             Expr::Include { span, .. } => *span,
+            Expr::Throw { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } | Expr::Ternary { span, .. } | Expr::Grouped { span, .. } => {
                 *span

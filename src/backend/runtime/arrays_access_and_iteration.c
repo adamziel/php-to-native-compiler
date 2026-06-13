@@ -168,6 +168,27 @@ static PTN_UNUSED int ptn_class_name_is_stdclass(const char *class_name) {
     return *class_name == '\0' && *stdclass == '\0';
 }
 
+static PTN_UNUSED PtnValue ptn_new_exception_object(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 3) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "Exception constructor expects at most 3 arguments");
+        return ptn_null();
+    }
+    char *message = argc >= 1 ? ptn_value_to_string(args[0]) : ptn_duplicate_string("");
+    return ptn_exception_value(ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        runtime->source_path,
+        line
+    ));
+}
+
 static PTN_UNUSED PtnValue ptn_new_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -175,13 +196,15 @@ static PTN_UNUSED PtnValue ptn_new_object(
     const PtnValue *args,
     size_t line
 ) {
-    (void)args;
-    (void)line;
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_internal_class_name_is_reflection_function(class_name)) {
         return ptn_reflection_function_new(runtime, argc, args, line);
     }
 #endif
+    const char *exception_class_name = ptn_builtin_exception_class_name(class_name);
+    if (exception_class_name != NULL) {
+        return ptn_new_exception_object(runtime, exception_class_name, argc, args, line);
+    }
     if (!ptn_class_name_is_stdclass(class_name)) {
         char message[192];
         int written = snprintf(message, sizeof(message), "Class \"%s\" not found", class_name);

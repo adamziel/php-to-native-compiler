@@ -114,11 +114,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires `never` return type",
         ),
         (
-            "userland throw",
-            "--TEST--\nthrow\n--FILE--\n<?php\ntry { throw new Exception('boom'); } catch (Exception $e) {}\n--EXPECT--\n",
-            "requires userland throw expression/statement lowering",
-        ),
-        (
             "static local variable",
             "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
             "requires static local variables",

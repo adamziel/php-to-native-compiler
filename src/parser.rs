@@ -1287,6 +1287,7 @@ impl Parser {
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
             TokenKind::Return => self.parse_return(),
+            TokenKind::Throw => self.parse_throw_statement(),
             TokenKind::Try => self.parse_try(),
             TokenKind::Goto => self.parse_goto(),
             TokenKind::Const => self.parse_const(),
@@ -2286,6 +2287,14 @@ impl Parser {
         Ok(Statement::Return { value, span })
     }
 
+    fn parse_throw_statement(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let value = self.parse_expr()?;
+        let span = combine_spans(token.span, value.span());
+        self.expect_statement_terminator()?;
+        Ok(Statement::Throw { value, span })
+    }
+
     fn parse_try(&mut self) -> Result<Statement> {
         let span = self.expect_try()?;
         let body = self.parse_block()?;
@@ -2716,6 +2725,7 @@ impl Parser {
             TokenKind::IncludeOnce => self.parse_include_expr(IncludeKind::IncludeOnce),
             TokenKind::Require => self.parse_include_expr(IncludeKind::Require),
             TokenKind::RequireOnce => self.parse_include_expr(IncludeKind::RequireOnce),
+            TokenKind::Throw => self.parse_throw_expr(),
             TokenKind::Clone => self.parse_clone_expr(),
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
@@ -2740,6 +2750,16 @@ impl Parser {
         let span = combine_spans(token.span, expr.span());
         Ok(Expr::Clone {
             expr: Box::new(expr),
+            span,
+        })
+    }
+
+    fn parse_throw_expr(&mut self) -> Result<Expr> {
+        let token = self.advance().clone();
+        let value = self.parse_assignment_expr()?;
+        let span = combine_spans(token.span, value.span());
+        Ok(Expr::Throw {
+            value: Box::new(value),
             span,
         })
     }
@@ -3525,6 +3545,7 @@ impl Parser {
                 | TokenKind::IncludeOnce
                 | TokenKind::Require
                 | TokenKind::RequireOnce
+                | TokenKind::Throw
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
                 | TokenKind::Backslash
@@ -3973,6 +3994,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::RequireOnce => "require_once",
         TokenKind::Try => "try",
         TokenKind::Catch => "catch",
+        TokenKind::Throw => "throw",
         TokenKind::Goto => "goto",
         TokenKind::Const => "const",
         TokenKind::Function => "function",
@@ -4182,6 +4204,7 @@ fn collect_arrow_captures_from_expr(
             expression: target, ..
         }
         | Expr::Include { path: target, .. }
+        | Expr::Throw { value: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::Cast { expr: target, .. }
         | Expr::Grouped { expr: target, .. } => {
@@ -4728,6 +4751,7 @@ fn expr_array_literal_reference_to_variable(
             expression: value, ..
         }
         | Expr::Include { path: value, .. }
+        | Expr::Throw { value, .. }
         | Expr::Clone { expr: value, .. }
         | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
@@ -4959,7 +4983,8 @@ fn validate_anonymous_functions_in_statements(
             }
             | Statement::Return {
                 value: Some(value), ..
-            } => {
+            }
+            | Statement::Throw { value, .. } => {
                 validate_anonymous_functions_in_expr(value, functions)?;
             }
             Statement::Call { arguments, .. }
@@ -5157,6 +5182,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         }
         | Expr::DynamicVariable { name: expr, .. }
         | Expr::Include { path: expr, .. }
+        | Expr::Throw { value: expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
@@ -6540,6 +6566,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         }
         | Expr::DynamicVariable { name: target, .. }
         | Expr::Include { path: target, .. }
+        | Expr::Throw { value: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::Cast { expr: target, .. }
         | Expr::Grouped { expr: target, .. } => reject_append_array_read(target)?,
@@ -6680,6 +6707,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::AssignRef { .. }
         | Expr::Print { .. }
         | Expr::Include { .. }
+        | Expr::Throw { .. }
         | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }

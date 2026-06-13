@@ -365,6 +365,7 @@ typedef struct {
 } PtnConcatOperand;
 
 struct PtnException {
+    size_t refcount;
     size_t object_id;
     const char *class_name;
     char *message;
@@ -833,6 +834,16 @@ static PTN_UNUSED PtnValue ptn_exception_borrow(PtnException *exception) {
     PtnValue value = ptn_exception_value(exception);
     value.owned = 0;
     return value;
+}
+
+static PTN_UNUSED void ptn_exception_retain(PtnException *exception) {
+    if (exception == NULL) {
+        return;
+    }
+    if (exception->refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    exception->refcount++;
 }
 
 static int64_t ptn_next_resource_id = 5;

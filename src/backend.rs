@@ -2037,6 +2037,16 @@ fn emit_instruction(
                 out.push_str("    return 0;\n");
             }
         },
+        Instruction::Throw { value, line } => {
+            let value_temp = values.emit_materialized_value(out, value);
+            out.push_str("    ptn_throw_value(&runtime, ");
+            out.push_str(&value_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(source_path));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
         Instruction::Try { body, catches } => {
             emit_try(
                 out,
@@ -2807,6 +2817,9 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(value, deprecations);
             }
         }
+        Instruction::Throw { value, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+        }
         Instruction::Try { body, catches } => {
             collect_instructions_legacy_dollar_brace_deprecations(body, deprecations);
             for catch in catches {
@@ -3039,6 +3052,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::Include { path, .. } => {
             collect_value_legacy_dollar_brace_deprecations(path, deprecations);
         }
+        ValueExpr::Throw { value, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+        }
         ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
             for argument in arguments {
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
@@ -3228,6 +3244,9 @@ fn collect_instruction_runtime_requirements(
             if let Some(value) = value {
                 collect_value_runtime_requirements(value, functions, requirements);
             }
+        }
+        Instruction::Throw { value, .. } => {
+            collect_value_runtime_requirements(value, functions, requirements);
         }
         Instruction::Try { body, catches } => {
             collect_instructions_runtime_requirements(body, functions, requirements);
@@ -3465,6 +3484,9 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::Include { path, .. } => {
             collect_value_runtime_requirements(path, functions, requirements);
+        }
+        ValueExpr::Throw { value, .. } => {
+            collect_value_runtime_requirements(value, functions, requirements);
         }
         ValueExpr::InternalCall {
             name,
@@ -4346,6 +4368,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         ValueExpr::Empty { target } => value_mentions_variable(target, name),
         ValueExpr::Print { expression } => value_mentions_variable(expression, name),
         ValueExpr::Include { path, .. } => value_mentions_variable(path, name),
+        ValueExpr::Throw { value, .. } => value_mentions_variable(value, name),
         ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
             arguments
                 .iter()
@@ -5897,6 +5920,7 @@ impl ValueEmitter {
                 candidates,
                 line,
             } => self.emit_include(out, *kind, path, candidates, *line),
+            ValueExpr::Throw { value, line } => self.emit_throw_value(out, value, *line),
             ValueExpr::Load { name, line } => format!(
                 "ptn_runtime_read_variable(&runtime, \"{}\", \"{}\", {})",
                 c_string(name),
@@ -6094,6 +6118,21 @@ impl ValueEmitter {
         out.push_str(&resolved_temp);
         out.push_str(");\n");
         out.push_str("    }\n");
+        result_temp
+    }
+
+    fn emit_throw_value(&mut self, out: &mut String, value: &ValueExpr, line: usize) -> String {
+        let value_temp = self.emit_materialized_value(out, value);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_throw_value(&runtime, ");
+        out.push_str(&value_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         result_temp
     }
 
@@ -8086,6 +8125,7 @@ impl ValueEmitter {
                 | ValueExpr::StaticPropertyFetch { .. }
                 | ValueExpr::ClassConstantFetch { .. }
                 | ValueExpr::Include { .. }
+                | ValueExpr::Throw { .. }
         ) {
             return self.emit_value(out, value);
         }

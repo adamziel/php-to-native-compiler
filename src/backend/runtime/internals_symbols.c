@@ -2,6 +2,10 @@ static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
     if (exception == NULL) {
         return;
     }
+    if (exception->refcount > 1) {
+        exception->refcount--;
+        return;
+    }
     free(exception->message);
     free(exception);
 }

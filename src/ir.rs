@@ -194,6 +194,10 @@ pub enum Instruction {
         value: Option<ValueExpr>,
         line: usize,
     },
+    Throw {
+        value: ValueExpr,
+        line: usize,
+    },
     Try {
         body: Vec<Instruction>,
         catches: Vec<CatchClause>,
@@ -321,6 +325,10 @@ pub enum ValueExpr {
         kind: AstIncludeKind,
         path: Box<ValueExpr>,
         candidates: Vec<usize>,
+        line: usize,
+    },
+    Throw {
+        value: Box<ValueExpr>,
         line: usize,
     },
     InternalCall {
@@ -1009,6 +1017,12 @@ impl<'a> LoweringContext<'a> {
                         line: span.line,
                     });
                 }
+                Statement::Throw { value, span } => {
+                    instructions.push(Instruction::Throw {
+                        value: self.lower_expr(value),
+                        line: span.line,
+                    });
+                }
                 Statement::Try { body, catches, .. } => {
                     instructions.push(Instruction::Try {
                         body: self.lower_statements(body),
@@ -1543,6 +1557,10 @@ impl<'a> LoweringContext<'a> {
                 candidates: self.include_candidates(*span),
                 line: span.line,
             },
+            Expr::Throw { value, span } => ValueExpr::Throw {
+                value: Box::new(self.lower_expr(value)),
+                line: span.line,
+            },
             Expr::Call {
                 name,
                 arguments,
@@ -1869,6 +1887,7 @@ fn assertion_expr_text(expr: &Expr) -> String {
                 assertion_expr_text(path)
             )
         }
+        Expr::Throw { value, .. } => format!("throw {}", assertion_expr_text(value)),
         Expr::Unary { op, expr, .. } => {
             format!(
                 "{}{}",

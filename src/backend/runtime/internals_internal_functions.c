@@ -11269,7 +11269,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char 
 }
 
 static int ptn_internal_class_exists_name(const char *class_name) {
-    return ptn_internal_class_name_is_reflection_function(class_name);
+    return ptn_internal_class_name_is_reflection_function(class_name) ||
+        ptn_builtin_exception_class_name(class_name) != NULL;
 }
 
 static int ptn_reflection_function_method_exists(const char *method_name) {

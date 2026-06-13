@@ -1360,6 +1360,41 @@ fn parser_accepts_arrow_function_by_reference_returns() {
 }
 
 #[test]
+fn parser_accepts_throw_statement_and_expression() {
+    let program = parser::parse(
+        "<?php try { throw new Exception('boom'); } catch (Exception $e) {} \
+         $callback = fn() => throw new ValueError('missing');",
+    )
+    .unwrap();
+
+    let Statement::Try { body, catches, .. } = &program.statements[0] else {
+        panic!("expected try statement");
+    };
+    assert_eq!(catches.len(), 1);
+    assert!(matches!(
+        &body[..],
+        [Statement::Throw {
+            value: Expr::NewObject { class_name, .. },
+            ..
+        }] if class_name == "Exception"
+    ));
+
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected arrow assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected arrow function closure");
+    };
+    assert!(matches!(
+        &closure.body[..],
+        [Statement::Return {
+            value: Some(Expr::Throw { value, .. }),
+            ..
+        }] if matches!(value.as_ref(), Expr::NewObject { class_name, .. } if class_name == "ValueError")
+    ));
+}
+
+#[test]
 fn parser_accepts_global_variable_statements() {
     let program = parser::parse("<?php function read_globals() { global $left, $right; }").unwrap();
 
@@ -17603,6 +17638,58 @@ echo \"after\\n\";",
         "Cannot access offset of type string on string\nafter\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_userland_throw_statement_and_expression_to_native_binary() {
+    let root = temp_dir("ptn-native-userland-throw");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("userland-throw.php");
+    let output = root.join("userland-throw-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$e = new Exception('boom');\n\
+try {\n\
+    throw $e;\n\
+    echo \"unreached\\n\";\n\
+} catch (Throwable $caught) {\n\
+    echo get_class($caught), ':', $caught->getMessage(), ':', ($caught === $e ? 'same' : 'diff'), \"\\n\";\n\
+}\n\
+try {\n\
+    $value = null ?? throw new ValueError('missing');\n\
+} catch (ValueError $caught) {\n\
+    echo get_class($caught), ':', $caught->getMessage(), \"\\n\";\n\
+}\n\
+$callback = fn($ok) => $ok ? 'ok' : throw new Exception('arrow');\n\
+echo $callback(true), \"\\n\";\n\
+try {\n\
+    $callback(false);\n\
+} catch (Exception $caught) {\n\
+    echo $caught->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    throw 'bad';\n\
+} catch (Error $caught) {\n\
+    echo $caught->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(class_exists('Exception'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Exception:boom:same\nValueError:missing\nok\narrow\nCan only throw objects\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_value(&runtime"));
+    assert!(c_source.contains("ptn_new_exception_object("));
 }
 
 #[test]

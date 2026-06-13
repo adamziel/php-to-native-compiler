@@ -1,18 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-13T21:34Z
-Measured: `ptn-qsmv.12` readonly class/property metadata after gates.
+Refresh: 2026-06-13T21:40Z
+Measured: `ptn-qsmv.11` throw after `ptn-qsmv.12`.
 
-Slices cover callable/object, filesystem/string, property, COW, `array_walk()`,
-PHPT blockers, and readonly metadata. `ptn-qsmv.12` adds readonly parsing,
-write-once properties, inheritance guards, and classifier narrowing.
+Slices cover callable/object, filesystem/string, property, COW, PHPT blockers,
+readonly, and userland `throw` through boxed exception propagation.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 685 | 685 | 0 |
+| Native/compiler Rust suite | 684 | 684 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
@@ -44,24 +43,25 @@ write-once properties, inheritance guards, and classifier narrowing.
 
 ## Verification
 
-`ptn-qsmv.12` parses `readonly class` and readonly property modifiers, carries
-readonly metadata through AST/IR/native declarations, enforces write-once
-initialization, reports uninitialized reads, rejects dynamic properties on
-readonly classes, and keeps unsupported readonly rows classified separately.
-Refinery gates: readonly native/parser tests 5/5, PHPT classifier 15/15, and
-targeted Zend readonly PHPT selected 12, runnable 8, excluded 4, passed 8/8.
+`ptn-qsmv.11` adds parser/AST/IR/backend support for userland `throw`, boxed
+exception propagation, modeled `Exception`/`Error` construction, class lookup,
+catch matching, and non-object throw diagnostics.
+Worker gates before readonly rebase passed `cargo fmt --check`, full
+`cargo test`, smoke 6/6, and PHPT 2/4; blockers are `ptn-5sca`, `ptn-c284`,
+and `ptn-feps`. Refinery reran pass rows after rebase: 2/2.
 
-`ptn-550s.9` focused Zend foreach object/property rerun passed 6/6:
-`bug34310`, `bug39017`, `bug39825`, `foreach_010`, `foreach_018`, and
-`foreach_by_ref_to_property`. `ptn-x8p9` maps 73 `unsupported-ini` rows;
-`assert.exception` probe passed 5/17, so it is blocker evidence.
+`ptn-qsmv.12` adds readonly parsing, write-once properties, inheritance guards,
+and classifier narrowing. Gates: readonly native/parser 5/5,
+classifier 15/15, Zend readonly PHPT selected 12, runnable 8, excluded 4,
+passed 8/8.
 
-`ptn-flje` COW classify-only is 46 selected, 31 runnable,
-15 excluded. `ptn-550s.8` reruns seven `array_walk()` rows: six pass and
-`bug39576` is class-metadata.
+`ptn-550s.9` Zend foreach object/property rerun passed 6/6. `ptn-x8p9` maps
+73 `unsupported-ini` rows; `assert.exception` probe passed 5/17. `ptn-flje`
+COW classify-only is 46 selected, 31 runnable, 15 excluded.
 
 Follow-ups remain typed properties, traits, magic methods, attributes,
-heredoc/nowdoc, `throw`, nullable types, generator `yield`, first-class
-callables, dynamic includes, unsupported internals, scalar-offset lvalues,
-`Traversable`, INI runtime modes, process boundaries, formatter/callback
-parity, and classifier scan batching.
+heredoc, declared `Exception` subclasses, property by-reference
+assignment, `Exception::getTrace()`, `array_walk()` by-reference userdata,
+nullable types, generator `yield`, first-class callables, dynamic includes,
+unsupported internals, scalar-offset lvalues, `Traversable`, INI modes,
+process boundaries, formatter/callback parity, and classifier batching.

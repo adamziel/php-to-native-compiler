@@ -295,6 +295,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     if (exception == NULL) {
         ptn_abort_out_of_memory();
     }
+    exception->refcount = 1;
     exception->object_id = ptn_runtime_alloc_object_id(runtime);
     exception->class_name = class_name;
     exception->message = message;
@@ -311,6 +312,45 @@ static PTN_UNUSED PtnException *ptn_exception_new(
     size_t line
 ) {
     return ptn_exception_new_owned(runtime, class_name, ptn_duplicate_string(message), path, line);
+}
+
+static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *right);
+
+static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name) {
+    if (class_name[0] == '\\') {
+        class_name++;
+    }
+    if (ptn_exception_name_equal(class_name, "Exception")) {
+        return "Exception";
+    }
+    if (ptn_exception_name_equal(class_name, "ReflectionException")) {
+        return "ReflectionException";
+    }
+    if (ptn_exception_name_equal(class_name, "Error")) {
+        return "Error";
+    }
+    if (ptn_exception_name_equal(class_name, "TypeError")) {
+        return "TypeError";
+    }
+    if (ptn_exception_name_equal(class_name, "ArgumentCountError")) {
+        return "ArgumentCountError";
+    }
+    if (ptn_exception_name_equal(class_name, "ValueError")) {
+        return "ValueError";
+    }
+    if (ptn_exception_name_equal(class_name, "ArithmeticError")) {
+        return "ArithmeticError";
+    }
+    if (ptn_exception_name_equal(class_name, "DivisionByZeroError")) {
+        return "DivisionByZeroError";
+    }
+    if (ptn_exception_name_equal(class_name, "AssertionError")) {
+        return "AssertionError";
+    }
+    if (ptn_exception_name_equal(class_name, "ParseError")) {
+        return "ParseError";
+    }
+    return NULL;
 }
 
 static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *right) {
@@ -348,6 +388,9 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
     }
     if (ptn_exception_name_equal(type_name, "ArithmeticError")) {
         return ptn_exception_name_equal(class_name, "DivisionByZeroError");
+    }
+    if (ptn_exception_name_equal(type_name, "Exception")) {
+        return ptn_exception_name_equal(class_name, "ReflectionException");
     }
     if (ptn_exception_name_equal(type_name, "Throwable")) {
         return 1;
@@ -434,6 +477,32 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
     exit(255);
+}
+
+static PTN_UNUSED PtnValue ptn_throw_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *path,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_EXCEPTION) {
+        ptn_throw_exception_at(runtime, "Error", "Can only throw objects", path, line);
+        return ptn_null();
+    }
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = resolved.as.exception;
+    ptn_exception_retain(runtime->exceptions->active_exception);
+    if (runtime->exceptions->active_exception->path == NULL) {
+        runtime->exceptions->active_exception->path = path;
+        runtime->exceptions->active_exception->line = line;
+    }
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+    return ptn_null();
 }
 
 static PTN_UNUSED void ptn_throw_user_argument_count_error(

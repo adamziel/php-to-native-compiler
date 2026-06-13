@@ -164,6 +164,7 @@ impl IncludeCollector {
             Statement::Expression { expression, .. } => {
                 self.collect_expr(expression, source_file, source_dir)
             }
+            Statement::Throw { value, .. } => self.collect_expr(value, source_file, source_dir),
             Statement::Const { declarations, .. } => {
                 for declaration in declarations {
                     self.collect_expr(&declaration.value, source_file, source_dir)?;
@@ -355,6 +356,7 @@ impl IncludeCollector {
             }
             | Expr::DynamicVariable { name: target, .. }
             | Expr::Clone { expr: target, .. }
+            | Expr::Throw { value: target, .. }
             | Expr::Unary { expr: target, .. }
             | Expr::Cast { expr: target, .. }
             | Expr::Grouped { expr: target, .. } => {

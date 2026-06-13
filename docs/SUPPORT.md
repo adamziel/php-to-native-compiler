@@ -530,6 +530,13 @@ Post-RC architecture remains explicit rather than hidden:
   explicit scalar descriptions are string-converted through the shared runtime
   path, and dynamic one-argument calls use PHP's empty fallback message.
   Assertion INI modes and throwable descriptions are not yet modeled.
+- Userland `throw` statements and PHP 8 throw expressions lower through the
+  shared exception runtime. Built-in exception values constructed with
+  `new Exception(...)` and modeled `Error` family names are boxed, shared by
+  reference across variables/catches/rethrows, matched by `Throwable`,
+  `Exception`, `Error`, and concrete subclasses, and expose `getMessage()`.
+  Declared user classes extending `Exception` remain bounded by the current
+  object/class metadata model.
 - Top-level named user-defined functions with by-value positional parameters,
   direct by-reference positional parameters, final variadic parameters,
   trailing scalar and literal-array default parameter values including omitted

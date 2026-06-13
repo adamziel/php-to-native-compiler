@@ -54,7 +54,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   public `__invoke` objects can be called directly or through callback
   dispatch; `is_callable()` writes callable-name output for supported callable
   shapes.
-- `assert()` throws catchable `AssertionError`; bounded `highlight_file()`
+- `assert()` throws catchable `AssertionError`; userland `throw` statements
+  and PHP 8 throw expressions propagate boxed built-in exception values
+  through the shared `try`/`catch` runtime, including `Exception`, `Error`
+  families, `Throwable`, and `getMessage()`; bounded `highlight_file()`
   shares file-return paths.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,
   `zend_version()`, PHP version/build/platform constants, `PHP_SAPI`,
@@ -127,9 +130,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, and broad unsupported language surfaces such as anonymous
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
-  generator `yield`, nullable type hints, userland `throw`, heredoc/nowdoc
-  strings, class/reflection-metadata blockers, readonly static property
-  diagnostics, and currently
+  generator `yield`, nullable type hints, heredoc/nowdoc strings,
+  class/reflection-metadata blockers, readonly static property diagnostics,
+  and currently
   unmodeled mutating array-internal helpers such as `array_splice()`,
   `array_walk_recursive()`, `array_multisort()`, `usort()`, `uasort()`, and
   `uksort()` are mapped to blocker categories with source evidence; broad

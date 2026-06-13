@@ -531,11 +531,6 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])throw([^[:alnum:]_]|$)/) {
-                print "unsupported-language\trequires userland throw expression/statement lowering and exception object propagation, outside PTN throw AST/lowering"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+\$[a-z_]/) {
                 print "unsupported-language\trequires static local variables, outside PTN function-local static storage model"
                 found = 1
