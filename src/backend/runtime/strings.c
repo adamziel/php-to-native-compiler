@@ -731,12 +731,44 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_string(PTN_PHP_VERSION);
         return 1;
     }
+    if (strcmp(name, "PHP_MAJOR_VERSION") == 0) {
+        *out = ptn_int(PTN_PHP_MAJOR_VERSION);
+        return 1;
+    }
+    if (strcmp(name, "PHP_MINOR_VERSION") == 0) {
+        *out = ptn_int(PTN_PHP_MINOR_VERSION);
+        return 1;
+    }
+    if (strcmp(name, "PHP_RELEASE_VERSION") == 0) {
+        *out = ptn_int(PTN_PHP_RELEASE_VERSION);
+        return 1;
+    }
+    if (strcmp(name, "PHP_EXTRA_VERSION") == 0) {
+        *out = ptn_string(PTN_PHP_EXTRA_VERSION);
+        return 1;
+    }
+    if (strcmp(name, "PHP_VERSION_ID") == 0) {
+        *out = ptn_int(PTN_PHP_VERSION_ID);
+        return 1;
+    }
+    if (strcmp(name, "PHP_ZTS") == 0) {
+        *out = ptn_int(PTN_PHP_ZTS);
+        return 1;
+    }
+    if (strcmp(name, "PHP_DEBUG") == 0) {
+        *out = ptn_int(PTN_PHP_DEBUG);
+        return 1;
+    }
     if (strcmp(name, "PHP_SAPI") == 0) {
         *out = ptn_string(PTN_PHP_SAPI_NAME);
         return 1;
     }
     if (strcmp(name, "PHP_OS") == 0) {
         *out = ptn_string(PTN_PHP_OS);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OS_FAMILY") == 0) {
+        *out = ptn_string(PTN_PHP_OS_FAMILY);
         return 1;
     }
     if (strcmp(name, "PHP_SHLIB_SUFFIX") == 0) {

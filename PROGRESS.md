@@ -1,23 +1,25 @@
 # PTN Progress
 
-Refresh: 2026-06-13T10:59Z
-Measured: `ptn-dnfa` rebased on current `origin/master` `527a6eb99`;
-verification green.
+Refresh: 2026-06-13T11:32Z
+Measured: `ptn-0280` integrated on current `origin/master` `05a04a4e2`;
+focused verification green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, includes/once
 guards, closures, `stdClass`, properties/destructors, inherited static
 dispatch, `property_exists()` metadata, array helpers, `json_encode()`,
 `printf()`, `basename()`, `pathinfo()`, `dirname()` levels, `strcasecmp()`,
 search/count internals, scalar `str_replace()`, `chr()` diagnostics, `crc32()`,
-standard streams, foreach destructuring, dynamic-variable writes/unsets, stream
-metadata, locale constants and `setlocale()`, catchable arithmetic/operator
-errors, alternate `<>` parsing, and offset compound/coalescing.
+PHP version/build/platform metadata constants, standard streams, foreach
+destructuring, dynamic-variable writes/unsets, stream metadata, locale constants
+and `setlocale()`, catchable arithmetic/operator errors, alternate `<>`
+parsing, and offset compound/coalescing.
 
-Recent movers include `dirname()` positive-level traversal, `pathinfo()`,
-modeled `LC_*` constants, C/POSIX `setlocale()`, search/count internals,
-PHP 8.4 array warning/overflow behavior, persistent standard streams,
-`property_exists()`, PHPT manifests, `crc32()`, `str_replace()` counts, and
-integer validation for `chr()`, `intdiv()`, and file offsets.
+Recent movers include PHP version/build/platform metadata constants,
+`dirname()` positive-level traversal, `pathinfo()`, modeled `LC_*` constants,
+C/POSIX `setlocale()`, search/count internals, PHP 8.4 array warning/overflow
+behavior, persistent standard streams, `property_exists()`, PHPT manifests,
+`crc32()`, `str_replace()` counts, and integer validation for `chr()`,
+`intdiv()`, and file offsets.
 
 ## Dashboard
 
@@ -46,9 +48,10 @@ class/object shells/constants, properties, destructors, reflection, assertions,
 namespaces/imports, streams, file reads/writes, array/string/numeric helpers
 through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
 `str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `pathinfo()`,
-`dirname()` levels, `crc32()`, `basename()`, locale support, `var_export()`,
-array mutators, inc/dec, dynamic-variable writes/unsets, and offset
-compound/null coalescing assignments.
+`dirname()` levels, `crc32()`, `basename()`, locale support, PHP
+version/build/platform metadata constants, `var_export()`, array mutators,
+inc/dec, dynamic-variable writes/unsets, and offset compound/null coalescing
+assignments.
 
 ## Remaining Bounded Exclusions
 
@@ -57,10 +60,9 @@ compound/null coalescing assignments.
 
 ## Verification
 
-Current branch verification for `ptn-dnfa`: diff check, `cargo fmt`, focused
-dirname native tests 2/2, focused `dirname_multi.phpt` 1/1, full `cargo test`
-native/compiler 588/588 plus COW tail suites, isolated bounded PHPT 269/269
-plus 2 exclusions, PHPT COW 29/29, and post-merge COW 26/26.
+Current branch verification for `ptn-0280`: diff check, `cargo fmt`, focused
+PHP metadata constant native test 1/1, and versioning registry native test
+1/1.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic

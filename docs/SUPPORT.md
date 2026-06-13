@@ -704,10 +704,12 @@ Post-RC architecture remains explicit rather than hidden:
 - `getmypid()` returns the generated native process id.
 - `php_sapi_name()` and the `PHP_SAPI` constant return the modeled CLI SAPI
   name.
-- `phpversion()` and the `PHP_VERSION` constant return the modeled PHP version
-  string. The optional extension argument returns the same version for `core`,
-  `date`, `pcre`, `standard`, and an empty extension name, and `false` for
-  unmodeled extension names.
+- `phpversion()` and the `PHP_VERSION`, `PHP_MAJOR_VERSION`,
+  `PHP_MINOR_VERSION`, `PHP_RELEASE_VERSION`, `PHP_EXTRA_VERSION`,
+  `PHP_VERSION_ID`, `PHP_ZTS`, and `PHP_DEBUG` constants return modeled PHP
+  version/build metadata. The optional extension argument returns the same
+  version for `core`, `date`, `pcre`, `standard`, and an empty extension name,
+  and `false` for unmodeled extension names.
 - `zend_version()` returns the modeled Zend Engine version string.
 - `get_loaded_extensions()` returns the modeled loaded extension names
   `Core`, `date`, `pcre`, and `standard`; `get_loaded_extensions(true)`
@@ -895,9 +897,10 @@ Post-RC architecture remains explicit rather than hidden:
   using the current scalar string-conversion result for the name.
 - `defined()` over global `const` declarations, constants created with
   `define()`, plus the current modeled constant registry, including `E_ERROR`,
-  `PHP_EOL`, `DIRECTORY_SEPARATOR`,
-  `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, the PHP
-  `E_*` error-reporting mask constants, `INF`, `NAN`, `M_PI`, and the modeled
+  `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
+  `PHP_INT_MAX`, `PHP_INT_SIZE`, the modeled PHP version/platform metadata
+  constants, the PHP `E_*` error-reporting mask constants, `INF`, `NAN`,
+  `M_PI`, and the modeled
   PHP math constants `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`,
   `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`,
   `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, `M_SQRT3`,

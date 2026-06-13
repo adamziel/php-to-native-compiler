@@ -9276,6 +9276,50 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
 }
 
 #[test]
+fn compile_php_core_version_platform_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-core-version-platform-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("core-version-platform-constants.php");
+    let output = root.join("core-version-platform-constants-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(PHP_MAJOR_VERSION, PHP_MINOR_VERSION, PHP_RELEASE_VERSION, PHP_EXTRA_VERSION, PHP_VERSION_ID);\n\
+var_dump(PHP_ZTS, PHP_DEBUG, PHP_OS_FAMILY);\n\
+var_dump(defined('PHP_VERSION_ID'), defined('PHP_OS_FAMILY'));\n\
+var_dump(constant('PHP_EXTRA_VERSION'), constant('PHP_OS_FAMILY'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let php_os_family = if cfg!(windows) {
+        "Windows"
+    } else if cfg!(target_os = "macos") {
+        "Darwin"
+    } else if cfg!(target_os = "freebsd") {
+        "BSD"
+    } else if cfg!(target_os = "linux") {
+        "Linux"
+    } else {
+        "Unknown"
+    };
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "int(8)\nint(4)\nint(0)\nstring(0) \"\"\nint(80400)\nint(0)\nint(0)\nstring({}) \"{}\"\nbool(true)\nbool(true)\nstring(0) \"\"\nstring({}) \"{}\"\n",
+            php_os_family.len(),
+            php_os_family,
+            php_os_family.len(),
+            php_os_family
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_runner_environment_probes_to_native_binary() {
     let root = temp_dir("ptn-native-runner-environment-probes");
     fs::create_dir_all(&root).unwrap();

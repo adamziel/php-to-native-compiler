@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T10:59Z
-Measured: `ptn-dnfa` rebased on current `origin/master` `527a6eb99`;
+Last refresh: 2026-06-13T11:32Z
+Measured: `ptn-0280` integrated on current `origin/master` `05a04a4e2`;
 
 ## Operating Goal
 

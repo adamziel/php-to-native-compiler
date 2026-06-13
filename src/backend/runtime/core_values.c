@@ -53,23 +53,35 @@ typedef struct {
 #endif
 
 #define PTN_PHP_VERSION "8.4.0"
+#define PTN_PHP_MAJOR_VERSION 8
+#define PTN_PHP_MINOR_VERSION 4
+#define PTN_PHP_RELEASE_VERSION 0
+#define PTN_PHP_EXTRA_VERSION ""
+#define PTN_PHP_VERSION_ID 80400
+#define PTN_PHP_ZTS 0
+#define PTN_PHP_DEBUG 0
 #define PTN_PHP_SAPI_NAME "cli"
 #define PTN_ZEND_VERSION "4.4.0"
 #define PTN_PHP_EXTENSION_DIR "."
 #if defined(_WIN32)
 #define PTN_PHP_OS "WINNT"
+#define PTN_PHP_OS_FAMILY "Windows"
 #define PTN_PHP_SHLIB_SUFFIX "dll"
 #elif defined(__APPLE__)
 #define PTN_PHP_OS "Darwin"
+#define PTN_PHP_OS_FAMILY "Darwin"
 #define PTN_PHP_SHLIB_SUFFIX "dylib"
 #elif defined(__linux__)
 #define PTN_PHP_OS "Linux"
+#define PTN_PHP_OS_FAMILY "Linux"
 #define PTN_PHP_SHLIB_SUFFIX "so"
 #elif defined(__FreeBSD__)
 #define PTN_PHP_OS "FreeBSD"
+#define PTN_PHP_OS_FAMILY "BSD"
 #define PTN_PHP_SHLIB_SUFFIX "so"
 #else
 #define PTN_PHP_OS "Unknown"
+#define PTN_PHP_OS_FAMILY "Unknown"
 #define PTN_PHP_SHLIB_SUFFIX "so"
 #endif
 #define PTN_ARRAY_INDEX_MIN_ENTRIES 16
