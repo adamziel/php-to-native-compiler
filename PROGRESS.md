@@ -1,8 +1,8 @@
 # PTN Progress
 
-Refresh: 2026-06-13T12:48Z
-Measured: `ptn-80xp` integration on current `origin/master` `d7431e8`;
-focused native/parser `str_split()` reducers and `str_split_basic.phpt` passed.
+Refresh: 2026-06-13T12:59Z
+Measured: `ptn-0xkn` integration on current `origin/master` `d583db9`;
+focused `LC_*`/`setlocale()` reducer passed.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
 closures, `stdClass`, properties/destructors, reflection, array helpers,
@@ -11,7 +11,7 @@ search/count/string internals, scalar and ordered-array `str_replace()`,
 `str_split()` byte chunking, `chr()` diagnostics, `crc32()`, scalar conversion
 internals, PHP metadata constants, standard streams, foreach destructuring,
 namespace/import forms, `global` bindings, dynamic-variable writes/unsets,
-stream metadata, locale support including `localeconv()`, type predicates
+stream metadata, stable locale constants plus `localeconv()`, type predicates
 including `is_iterable()`, invokable object callables through public
 `__invoke`, PHPT runner ini values, statement-form `(void)` casts, and offset
 compound/coalescing.
@@ -21,10 +21,11 @@ Recent movers include statement-form `(void)` expression discard,
 blocks, `is_iterable()` for arrays in the current non-`Traversable` subset,
 grouped namespace imports, scalar conversions, `global`, PHP metadata
 constants, `dirname()` levels, `pathinfo()`, `LC_*`/`setlocale()`/`localeconv()`,
-invokable object callables, search/count internals, persistent standard
-streams, `property_exists()`, PHPT manifests, `crc32()`, `str_replace()`
-array operands/reference entries/counts, `str_split()`, and integer validation
-for `chr()`, `intdiv()`, and file offsets.
+including PHP-to-libc category mapping, invokable object callables,
+search/count internals, persistent standard streams, `property_exists()`, PHPT
+manifests, `crc32()`, `str_replace()` array operands/reference entries/counts,
+`str_split()`, and integer validation for `chr()`, `intdiv()`, and file
+offsets.
 
 ## Dashboard
 
@@ -67,10 +68,9 @@ coalescing.
 
 ## Verification
 
-Current branch verification for `ptn-80xp`:
-`compile_str_split_internal_function_to_native_binary`,
-`parser_rejects_user_function_redeclaring_modeled_internal`, focused PHPT
-`str_split_basic.phpt` 1/1, and 622-test inventory passed.
+Current branch verification for `ptn-0xkn`:
+`compile_locale_constants_and_setlocale_to_native_binary`, `git diff --check`,
+and `cargo fmt --check` passed.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic

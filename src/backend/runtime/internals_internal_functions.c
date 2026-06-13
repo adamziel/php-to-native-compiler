@@ -8638,6 +8638,38 @@ static PtnValue ptn_internal_extension_loaded(PtnRuntime *runtime, size_t argc, 
     return ptn_bool(loaded);
 }
 
+static int ptn_setlocale_category(int64_t category, int *out) {
+    switch (category) {
+        case PTN_LC_CTYPE:
+            *out = LC_CTYPE;
+            return 1;
+        case PTN_LC_NUMERIC:
+            *out = LC_NUMERIC;
+            return 1;
+        case PTN_LC_TIME:
+            *out = LC_TIME;
+            return 1;
+        case PTN_LC_COLLATE:
+            *out = LC_COLLATE;
+            return 1;
+        case PTN_LC_MONETARY:
+            *out = LC_MONETARY;
+            return 1;
+        case PTN_LC_MESSAGES:
+#if defined(LC_MESSAGES)
+            *out = LC_MESSAGES;
+            return 1;
+#else
+            return 0;
+#endif
+        case PTN_LC_ALL:
+            *out = LC_ALL;
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 static char *ptn_setlocale_try_string(int category, const char *locale) {
     const char *result = NULL;
     if (strcmp(locale, "0") == 0) {
@@ -8683,11 +8715,12 @@ static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const P
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    if (category_value < (int64_t)INT_MIN || category_value > (int64_t)INT_MAX) {
+
+    int category = 0;
+    if (!ptn_setlocale_category(category_value, &category)) {
         return ptn_bool(0);
     }
 
-    int category = (int)category_value;
     for (size_t i = 1; i < argc; i++) {
         char *result = ptn_setlocale_try_value(category, args[i]);
         if (result != NULL) {

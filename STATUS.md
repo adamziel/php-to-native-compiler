@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T12:48Z
-Measured: `ptn-80xp` integration on current `origin/master` `d7431e8`;
+Last refresh: 2026-06-13T12:59Z
+Measured: `ptn-0xkn` integration on current `origin/master` `d583db9`;
 
 ## Operating Goal
 

@@ -737,10 +737,11 @@ Post-RC architecture remains explicit rather than hidden:
   runtime boundary.
 - Locale category constants `LC_ALL`, `LC_COLLATE`, `LC_CTYPE`,
   `LC_MESSAGES`, `LC_MONETARY`, `LC_NUMERIC`, and `LC_TIME` are available
-  through the modeled constant registry. `setlocale()` delegates to the
-  platform C locale API for current scalar categories and scalar/array locale
-  candidates; locale `"0"` queries the current category, `"C"`/`"POSIX"` use
-  the stable C locale, and unavailable locale names return `false`.
+  through the modeled constant registry with stable PHP values. `setlocale()`
+  maps those values to the platform C locale API for current scalar categories
+  and scalar/array locale candidates; locale `"0"` queries the current
+  category, `"C"`/`"POSIX"` use the stable C locale, and unavailable locale
+  names return `false`.
   `localeconv()` returns the current C `struct lconv` fields as an ordered PHP
   array, including grouping arrays.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after

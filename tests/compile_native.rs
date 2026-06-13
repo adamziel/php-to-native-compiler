@@ -9696,6 +9696,7 @@ var_dump(function_exists('setlocale'), defined('LC_ALL'), defined('LC_NUMERIC'))
 var_dump(function_exists('SETLOCALE'));\n\
 echo gettype(LC_ALL), ' ', gettype(constant('LC_CTYPE')), ' ', gettype(LC_MESSAGES), \"\\n\";\n\
 var_dump(LC_CTYPE === constant('LC_CTYPE'));\n\
+var_dump(LC_CTYPE, LC_NUMERIC, LC_TIME, LC_COLLATE, LC_MONETARY, LC_MESSAGES, LC_ALL);\n\
 var_dump(setlocale(LC_ALL, 'C'));\n\
 var_dump(setlocale(LC_ALL, 0));\n\
 var_dump(setlocale(LC_ALL, null));\n\
@@ -9714,7 +9715,7 @@ var_dump(setlocale(999, 'C'));\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\ninteger integer integer\nbool(true)\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\ninteger integer integer\nbool(true)\nint(0)\nint(1)\nint(2)\nint(3)\nint(4)\nint(5)\nint(6)\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
