@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T17:42Z
-Measured: `ptn-i8vw` heredoc/nowdoc PHPT classification rebased after
+Last refresh: 2026-06-13T17:49Z
+Measured: `ptn-c7iw` asymmetric visibility blocker evidence rebased after
 
 ## Operating Goal
 

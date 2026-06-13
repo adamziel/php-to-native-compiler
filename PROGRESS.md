@@ -1,17 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-13T17:42Z
-Measured: `ptn-i8vw` heredoc/nowdoc PHPT classification rebased after
-`ptn-n1q2` class-metadata blocker classification.
+Refresh: 2026-06-13T17:49Z
+Measured: `ptn-c7iw` asymmetric visibility blocker evidence rebased after
+`ptn-i8vw` heredoc/nowdoc PHPT classification.
 
 Recent RC slices cover constants, includes, closures, `stdClass`,
 properties/destructors, reflection metadata, array helpers, formatted output,
 string/path/count internals, scalar/operator PHPT rows, PHPT classification
-including PHP attributes, broad syntax blockers, class-metadata blockers, and
-heredoc/nowdoc syntax, object callables, object cloning,
-environment/include-path helpers, filesystem metadata/path helpers, stream
-writes, `function_exists()` static-method separation, and bounded
-`get_parent_class()`.
+including PHP attributes, broad syntax blockers, class-metadata blockers,
+heredoc/nowdoc syntax, and asymmetric property visibility, object callables,
+object cloning, environment/include-path helpers, filesystem metadata/path
+helpers, stream writes, `function_exists()` static-method separation, and
+bounded `get_parent_class()`.
 
 ## Dashboard
 
@@ -57,13 +57,13 @@ property compounds, static-method-aware `function_exists()`, and bounded
 
 ## Verification
 
-`ptn-i8vw` verification: submitting evidence selected 73 heredoc/nowdoc rows
-and moved 71 from runnable to unsupported-language, leaving 1 harness-cleanup
-and 1 external-service exclusion. Current-branch classifier syntax, classifier
-tests, and fmt passed.
+`ptn-c7iw` verification: the submitting broad 1k classify-only evidence moved
+38 rows from runnable to `unsupported-language` asymmetric property visibility
+blockers, from 614 runnable / 386 excluded to 576 runnable / 424 excluded.
+Current-branch classifier syntax, classifier tests, and fmt passed.
 
-Previous `ptn-n1q2` verification remains: broad 1k classify-only evidence kept
-476 runnable rows and classified 138 rows as `unsupported-class-metadata`.
+Previous `ptn-i8vw` verification remains: submitting evidence selected 73
+heredoc/nowdoc rows and moved 71 from runnable to unsupported-language.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods, PHP
 attributes/reflection metadata, arrow functions, heredoc/nowdoc parsing,
