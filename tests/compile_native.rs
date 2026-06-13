@@ -4960,6 +4960,53 @@ str_replace(): Argument #3 ($subject) must be of type array|string, resource giv
 }
 
 #[test]
+fn compile_str_replace_array_forms_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-array-forms");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-array-forms.php");
+    let output = root.join("str-replace-array-forms-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(str_replace(['a', 'b'], ['A', 'B'], 'ababa', $count));\n\
+var_dump($count);\n\
+var_dump(str_replace(['a', 'b'], 'X', 'ab', $count));\n\
+var_dump($count);\n\
+var_dump(str_replace(['a', 'b', 'c'], ['A'], 'abc', $count));\n\
+var_dump($count);\n\
+$result = str_replace('a', 'x', ['k' => 'ab', 2 => 'ba'], $count);\n\
+var_dump($result);\n\
+var_dump($count);\n\
+$result = str_replace(['a', 'b'], ['A', 'B'], ['k' => 'ab', 2 => 'ba'], $count);\n\
+var_dump($result);\n\
+var_dump($count);\n\
+try { var_dump(str_replace('a', ['x'], 'a')); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"string(5) \"ABABA\"\n\
+int(5)\n\
+string(2) \"XX\"\n\
+int(2)\n\
+string(1) \"A\"\n\
+int(3)\n\
+array(2) {\n  [\"k\"]=>\n  string(2) \"xb\"\n  [2]=>\n  string(2) \"bx\"\n}\n\
+int(2)\n\
+array(2) {\n  [\"k\"]=>\n  string(2) \"AB\"\n  [2]=>\n  string(2) \"BA\"\n}\n\
+int(4)\n\
+str_replace(): Argument #2 ($replace) must be of type string when argument #1 ($search) is a string\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();
