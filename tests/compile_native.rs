@@ -7522,6 +7522,67 @@ echo $dynamic(\"three\"), \"\\n\";
 }
 
 #[test]
+fn compile_invokable_object_callables_to_native_binary() {
+    let root = temp_dir("ptn-native-invokable-object-callables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("invokable-object-callables.php");
+    let output = root.join("invokable-object-callables-bin");
+    fs::write(
+        &input,
+        "<?php
+class InvokableBase {
+    public function __invoke($value) {
+        return \"base:\" . $value;
+    }
+}
+
+class InvokableChild extends InvokableBase {
+}
+
+class Plain {
+}
+
+$child = new InvokableChild();
+$dynamic = $child;
+
+echo $child(\"direct\"), \"\\n\";
+echo $dynamic(\"dynamic\"), \"\\n\";
+echo call_user_func($child, \"user\"), \"\\n\";
+var_dump(is_callable($child));
+var_dump(is_callable($child, true));
+var_dump(is_callable(new Plain()));
+var_dump(is_callable(new Plain(), true));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "base:direct\n",
+            "base:dynamic\n",
+            "base:user\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_declared_method(runtime, resolved, \"__invoke\""));
+    assert!(c_source.contains(
+        "ptn_declared_class_method_exists(resolved.as.object->class_name, \"__invoke\")"
+    ));
+    assert!(c_source.contains("InvokableBase::__invoke"));
+}
+
+#[test]
 fn compile_is_callable_object_callable_subset_to_native_binary() {
     let root = temp_dir("ptn-native-is-callable-object-subset");
     fs::create_dir_all(&root).unwrap();

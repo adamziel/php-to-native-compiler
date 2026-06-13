@@ -39,17 +39,19 @@ Post-RC architecture remains explicit rather than hidden:
   object construction, and public declared instance `__call` is supported as a
   fallback for direct object calls and supported object callable dispatch when
   no declared method matches. Public declared instance `__toString` is
-  supported for current runtime string conversions. `__destruct`, `__get`,
-  `__set`, `__isset`, `__unset`, `__callStatic`, `__invoke`, and related hooks
+  supported for current runtime string conversions. Public declared instance
+  `__invoke` is supported for object-as-callable dispatch. `__destruct`,
+  `__get`, `__set`, `__isset`, `__unset`, `__callStatic`, and related hooks
   remain unsupported.
 - Non-static callables: direct object method calls and bounded
   `[$object, "method"]` callback dispatch work for declared and inherited
   public methods, and missing object methods fall through to supported
   `__call`. `is_callable()` validates the current string, closure,
   `["Class", "staticMethod"]`, and `[$object, "method"]` subset, including
-  `__call`-capable objects and syntax-only checks. First-class callable syntax,
-  non-public visibility, `__invoke`, `__callStatic`, and arbitrary dynamic
-  instance method metadata remain post-RC.
+  `__call`-capable objects, invokable objects with declared public `__invoke`,
+  and syntax-only checks. First-class callable syntax, non-public visibility,
+  `__callStatic`, and arbitrary dynamic instance method metadata remain
+  post-RC.
 - Object destructuring and object `Traversable` remain unsupported; current
   destructuring support is array/list lvalues.
 - Property compound lvalues remain post-RC except public property `??=` and
@@ -891,13 +893,14 @@ Post-RC architecture remains explicit rather than hidden:
   and stdClass dynamic property slots. Invalid non-object/non-string first
   operands throw modeled `TypeError`s; property-name arguments use the current
   weak string-argument coercion path.
-- `is_callable()` over current string, closure, static method array, and object
-  method array callable values, including inherited public object methods,
-  supported `__call` fallback, and the optional syntax-only flag. The third
-  by-reference callable-name output parameter is not yet supported.
+- `is_callable()` over current string, closure, static method array, object
+  method array, and invokable object callable values, including inherited
+  public object methods, supported `__call` fallback, and the optional
+  syntax-only flag. The third by-reference callable-name output parameter is
+  not yet supported.
 - `call_user_func()` dispatches current string, closure, static method array,
-  and object method array callable values through the shared callable path,
-  including user-function `global` bindings.
+  object method array, and invokable object callable values through the shared
+  callable path, including user-function `global` bindings.
 - `call_user_func_array()` expands current ordered-array argument values through
   the shared callable dispatch path, preserving reference entries for the
   current by-reference callable subset. Unreferenced values passed to
@@ -1020,10 +1023,12 @@ Post-RC architecture remains explicit rather than hidden:
   cleanup as other declared instance methods. Missing direct and callable
   object method dispatch falls through to inherited public
   `__call($name, $args)` when present; the generated helper supplies the
-  attempted method name and an ordered argument array. `is_callable()` reports
-  the supported string, closure, static-method array, object-method array,
-  inherited method, and `__call` fallback subset, with optional syntax-only
-  checks for valid callable shapes.
+  attempted method name and an ordered argument array. Public declared
+  `__invoke` methods make objects callable for direct dynamic calls and current
+  callback helpers. `is_callable()` reports the supported string, closure,
+  static-method array, object-method array, inherited method, invokable object,
+  and `__call` fallback subset, with optional syntax-only checks for valid
+  callable shapes.
 - Public static property declarations in top-level classes, using the supported
   constant-expression default subset. Generated native code initializes
   declaration-backed static slots before top-level statements, supports

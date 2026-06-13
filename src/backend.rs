@@ -1366,6 +1366,9 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        free(name);\n");
     out.push_str("        return valid;\n");
     out.push_str("    }\n");
+    out.push_str("    if (resolved.type == PTN_OBJECT) {\n");
+    out.push_str("        return ptn_declared_class_method_exists(resolved.as.object->class_name, \"__invoke\");\n");
+    out.push_str("    }\n");
     out.push_str("    PtnValue scope;\n");
     out.push_str("    PtnValue method;\n");
     out.push_str("    if (!ptn_callable_array_parts(resolved, &scope, &method) || method.type != PTN_STRING) {\n");
@@ -1534,6 +1537,9 @@ fn emit_callable_dispatch(
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
     if needs_method_dispatch {
+        out.push_str("    if (resolved.type == PTN_OBJECT) {\n");
+        out.push_str("        return ptn_call_declared_method(runtime, resolved, \"__invoke\", argc, args, line);\n");
+        out.push_str("    }\n");
         out.push_str("    if (resolved.type == PTN_ARRAY && resolved.as.array->len == 2) {\n");
         out.push_str("        PtnArrayKey receiver_key = ptn_array_int_key(0);\n");
         out.push_str("        PtnArrayKey method_key = ptn_array_int_key(1);\n");
