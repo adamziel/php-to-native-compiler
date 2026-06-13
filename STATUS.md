@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T18:17Z
-Measured: `ptn-qsmv.3` broad ext/standard strings manifest expansion rebased
+Last refresh: 2026-06-13T18:28Z
+Measured: `ptn-qsmv.3` string manifest expansion and `ptn-o7kg` broad 1k
 
 ## Operating Goal
 

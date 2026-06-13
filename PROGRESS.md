@@ -1,17 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-13T18:17Z
-Measured: `ptn-qsmv.3` broad ext/standard strings manifest expansion rebased
-after `ptn-7o62` attribute syntax blocker evidence; the integrated 50-row
-ext/standard string manifest passed 50/50.
+Refresh: 2026-06-13T18:28Z
+Measured: `ptn-qsmv.3` string manifest expansion and `ptn-o7kg` broad 1k
+array-frontier blocker map rebased after `ptn-6fbw`.
 
-Recent RC slices cover constants, includes, closures, `stdClass`, object
-callables/cloning, reflection metadata, helper internals, formatted output,
-PHPT blocker classification, environment/include-path, filesystem/path
-helpers, streams, `function_exists()` static-method separation, bounded
-`get_parent_class()`, and 50 additional ext/standard
-string rows across cslashes, basename, bug regressions, chop/chunk-split,
-explode, `str_split()`, `strncmp()`, and `strncasecmp()`.
+Recent RC slices cover constants, includes, closures, object callables/cloning,
+reflection metadata, helper internals, PHPT blocker classification,
+environment/include-path, filesystem/path helpers, streams, `function_exists()`,
+`get_parent_class()`, 50 additional ext/standard string rows, and the broad 1k
+array-frontier map.
 
 ## Dashboard
 
@@ -40,9 +37,9 @@ explode, `str_split()`, `strncmp()`, and `strncasecmp()`.
 Parser/IR/C backend, boxed values, variables/constants, strings, scalar
 operators, arrays, `foreach`, control flow, includes, selected internals,
 COW/reference slices, functions/closures, class/object shells, reflection,
-namespaces, streams, file reads/writes, helper internals, runner state, PHPT
-blockers, filesystem/path helpers, dynamic variables, offset/property
-compounds, `function_exists()`, `get_parent_class()`, and expanded string rows.
+streams, file reads/writes, helper internals, runner state, PHPT blockers,
+filesystem/path helpers, dynamic variables, offset/property compounds, and
+expanded string rows.
 
 ## Remaining Bounded Exclusions
 
@@ -57,15 +54,19 @@ compounds, `function_exists()`, `get_parent_class()`, and expanded string rows.
 `ptn-qsmv.3` verification: broad ext/standard strings classify-only selected
 734 rows, runnable 677, excluded 57. Candidate runs found passing families:
 120 rows yielded 30 passes, then 45 rows yielded 38 passes. The rebased
-50-row string manifest selected 50, runnable 50, ran 50, passed 50, and had
-0 failures/skips/warnings. The bounded manifest is now 485 rows: Zend 119,
-ext/standard 280, tests/basic+func+lang 78, and other 8. Full bounded
-classify-only selected 485 rows, runnable 459, excluded 26; none of the added
-50 string rows were excluded.
+50-row string manifest passed 50/50 with no skips or warnings. The bounded
+manifest is now 485 rows: Zend 119, ext/standard 280, tests/basic+func+lang
+78, and other 8.
+
+`ptn-o7kg` evidence: `cargo test --test phpt_classifier` passed 6/6 and broad
+1k classify-only selected 1,000 rows, kept 430 runnable, and classified 570.
+The blocker map records 274 runnable array rows by family: 75 set/diff,
+32 `array_chunk()`, 18 key/existence, 18 `array_map()`, 16 merge,
+15 sum/product, and smaller helper groups.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 attributes/reflection, arrow functions, heredoc/nowdoc parsing, userland
 `throw`, readonly/asymmetric metadata, first-class callables, dynamic includes,
 unsupported internals, scalar-offset lvalues, `Traversable`, embedded-NUL
-internals, conversion diagnostics, formatter/callback
-parity, filesystem/process boundaries, and process execution.
+internals, conversion diagnostics, formatter/callback parity,
+filesystem/process boundaries, and process execution.

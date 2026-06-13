@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T18:17Z
+Last refresh: 2026-06-13T18:28Z
 Source: `PROGRESS.md`
-Measured: `ptn-qsmv.3` broad ext/standard strings manifest expansion rebased
+Measured: `ptn-qsmv.3` string manifest expansion and `ptn-o7kg` broad 1k
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
