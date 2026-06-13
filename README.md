@@ -118,7 +118,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   expectation rows, and broad unsupported language surfaces such as anonymous
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
   arrow functions, userland `throw`, readonly modifiers, and asymmetric
-  property visibility are mapped to blocker categories with source evidence.
+  property visibility, heredoc/nowdoc strings, and class-metadata blockers are
+  mapped to blocker categories with source evidence.
   `PTN_PHPT_CLASSIFY=0` gives raw php-src `run-tests.php` pass-through.
 - Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from
   `Zend/tests`, `ext/standard/tests`, and core `tests`, recording the php-src

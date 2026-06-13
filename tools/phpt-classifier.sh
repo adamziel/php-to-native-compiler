@@ -438,6 +438,11 @@ ptn_phpt_first_unsupported_language_surface() {
                 exit
             }
             line = ptn_php_code_line($0)
+            if (line ~ /<<<[[:space:]]*["'\''"]?[a-z_][a-z0-9_]*/) {
+                print "unsupported-language\trequires heredoc/nowdoc string syntax (`<<<`), outside PTN modeled string parser"
+                found = 1
+                exit
+            }
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+class([^[:alnum:]_]|$)/) {
                 print "unsupported-language\trequires anonymous class syntax (`new class`), outside PTN modeled class metadata"
                 found = 1

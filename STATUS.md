@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T17:35Z
-Measured: `ptn-n1q2` broad object/class metadata PHPT classification rebased
+Last refresh: 2026-06-13T17:42Z
+Measured: `ptn-i8vw` heredoc/nowdoc PHPT classification rebased after
 
 ## Operating Goal
 

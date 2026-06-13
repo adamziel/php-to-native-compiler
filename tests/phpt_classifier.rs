@@ -156,7 +156,7 @@ fn phpt_classifier_keeps_attribute_text_in_strings_runnable() {
 #[test]
 fn phpt_classifier_keeps_unsupported_syntax_words_in_strings_and_comments_runnable() {
     let classification = classify(
-        "--TEST--\nsyntax text\n--FILE--\n<?php\n// throw new Exception();\n# fn($x) => $x\n/* public private(set) int $value; */\necho \"readonly class fn throw private(set)\";\n--EXPECT--\nreadonly class fn throw private(set)\n",
+        "--TEST--\nsyntax text\n--FILE--\n<?php\n// throw new Exception();\n# fn($x) => $x\n/* public private(set) int $value; */\necho \"readonly class fn throw private(set) <<<HEREDOC\";\n--EXPECT--\nreadonly class fn throw private(set) <<<HEREDOC\n",
     );
 
     assert!(

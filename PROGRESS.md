@@ -1,16 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-13T17:35Z
-Measured: `ptn-n1q2` broad object/class metadata PHPT classification rebased
-after `ptn-qsmv.2` unsupported-syntax blocker classification.
+Refresh: 2026-06-13T17:42Z
+Measured: `ptn-i8vw` heredoc/nowdoc PHPT classification rebased after
+`ptn-n1q2` class-metadata blocker classification.
 
 Recent RC slices cover constants, includes, closures, `stdClass`,
 properties/destructors, reflection metadata, array helpers, formatted output,
 string/path/count internals, scalar/operator PHPT rows, PHPT classification
-including PHP attributes, broad syntax blockers, and class-metadata blockers,
-object callables, object cloning, environment/include-path helpers,
-filesystem metadata/path helpers, stream writes, `function_exists()`
-static-method separation, and bounded `get_parent_class()`.
+including PHP attributes, broad syntax blockers, class-metadata blockers, and
+heredoc/nowdoc syntax, object callables, object cloning,
+environment/include-path helpers, filesystem metadata/path helpers, stream
+writes, `function_exists()` static-method separation, and bounded
+`get_parent_class()`.
 
 ## Dashboard
 
@@ -56,19 +57,18 @@ property compounds, static-method-aware `function_exists()`, and bounded
 
 ## Verification
 
-`ptn-n1q2` verification: the submitting broad 1k classify-only run selected
-1,000 rows, kept 476 runnable, excluded 524, and classified 138 rows as
-`unsupported-class-metadata`. Current-branch classifier syntax, classifier
+`ptn-i8vw` verification: submitting evidence selected 73 heredoc/nowdoc rows
+and moved 71 from runnable to unsupported-language, leaving 1 harness-cleanup
+and 1 external-service exclusion. Current-branch classifier syntax, classifier
 tests, and fmt passed.
 
-Previous `ptn-qsmv.2` verification remains: broad 1k evidence added 63
-unsupported-language classifications across asymmetric visibility, arrow
-functions, userland `throw`, and readonly modifiers.
+Previous `ptn-n1q2` verification remains: broad 1k classify-only evidence kept
+476 runnable rows and classified 138 rows as `unsupported-class-metadata`.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods, PHP
-attributes/reflection metadata, arrow functions, userland `throw`, readonly
-and asymmetric property metadata, first-class callables, dynamic includes,
-unsupported internals, scalar-offset lvalues, `Traversable`, embedded-NUL
-internals, host-locale parity, conversion diagnostics, formatter edge parity,
-array callback diagnostic parity, filesystem/process boundaries, and process
-execution.
+attributes/reflection metadata, arrow functions, heredoc/nowdoc parsing,
+userland `throw`, readonly and asymmetric property metadata, first-class
+callables, dynamic includes, unsupported internals, scalar-offset lvalues,
+`Traversable`, embedded-NUL internals, host-locale parity, conversion
+diagnostics, formatter edge parity, array callback diagnostic parity,
+filesystem/process boundaries, and process execution.
