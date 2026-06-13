@@ -1729,6 +1729,11 @@ fn emit_instruction(
             out.push_str(&c_string(name));
             out.push_str("\");\n");
         }
+        Instruction::BindGlobal { name } => {
+            out.push_str("    ptn_runtime_bind_global_variable(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\");\n");
+        }
         Instruction::UnsetArrayDim {
             array,
             dimensions,
@@ -2597,6 +2602,7 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
             collect_inc_dec_target_legacy_dollar_brace_deprecations(target, deprecations);
         }
         Instruction::UnsetVariable { .. }
+        | Instruction::BindGlobal { .. }
         | Instruction::Break { .. }
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
@@ -2920,7 +2926,7 @@ fn collect_instruction_runtime_requirements(
         Instruction::Increment { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
         }
-        Instruction::UnsetVariable { .. } => {}
+        Instruction::UnsetVariable { .. } | Instruction::BindGlobal { .. } => {}
         Instruction::UnsetArrayDim { dimensions, .. } => {
             for dimension in dimensions {
                 collect_value_runtime_requirements(dimension, functions, requirements);

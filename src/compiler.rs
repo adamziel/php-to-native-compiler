@@ -246,6 +246,7 @@ impl IncludeCollector {
             | Statement::Empty { .. }
             | Statement::Break { .. }
             | Statement::Continue { .. }
+            | Statement::Global { .. }
             | Statement::Label { .. }
             | Statement::Goto { .. }
             | Statement::InlineHtml { .. } => Ok(()),

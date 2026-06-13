@@ -152,6 +152,9 @@ pub enum Instruction {
     UnsetVariable {
         name: String,
     },
+    BindGlobal {
+        name: String,
+    },
     UnsetArrayDim {
         array: String,
         dimensions: Vec<ValueExpr>,
@@ -834,6 +837,11 @@ impl<'a> LoweringContext<'a> {
                 Statement::Unset { targets, .. } => {
                     for target in targets {
                         instructions.push(self.lower_unset_target(target));
+                    }
+                }
+                Statement::Global { names, .. } => {
+                    for name in names {
+                        instructions.push(Instruction::BindGlobal { name: name.clone() });
                     }
                 }
                 Statement::Const { declarations, .. } => {

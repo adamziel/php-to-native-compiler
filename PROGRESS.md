@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-13T11:32Z
-Measured: `ptn-0280` integrated on current `origin/master` `05a04a4e2`;
+Refresh: 2026-06-13T11:26Z
+Measured: `ptn-98d8.6` integrated on current `origin/master` `c0fbbc0c8`;
 focused verification green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, includes/once
@@ -10,16 +10,17 @@ dispatch, `property_exists()` metadata, array helpers, `json_encode()`,
 `printf()`, `basename()`, `pathinfo()`, `dirname()` levels, `strcasecmp()`,
 search/count internals, scalar `str_replace()`, `chr()` diagnostics, `crc32()`,
 PHP version/build/platform metadata constants, standard streams, foreach
-destructuring, dynamic-variable writes/unsets, stream metadata, locale constants
-and `setlocale()`, catchable arithmetic/operator errors, alternate `<>`
-parsing, and offset compound/coalescing.
+destructuring, `global` bindings, dynamic-variable writes/unsets, stream
+metadata, locale constants and `setlocale()`, catchable arithmetic/operator
+errors, alternate `<>` parsing, and offset compound/coalescing.
 
-Recent movers include PHP version/build/platform metadata constants,
-`dirname()` positive-level traversal, `pathinfo()`, modeled `LC_*` constants,
-C/POSIX `setlocale()`, search/count internals, PHP 8.4 array warning/overflow
-behavior, persistent standard streams, `property_exists()`, PHPT manifests,
-`crc32()`, `str_replace()` counts, and integer validation for `chr()`,
-`intdiv()`, and file offsets.
+Recent movers include `global` function-local binding to root globals, PHP
+version/build/platform metadata constants, `dirname()` positive-level
+traversal, `pathinfo()`, modeled `LC_*` constants, C/POSIX `setlocale()`,
+search/count internals, PHP 8.4 array warning/overflow behavior, persistent
+standard streams, `property_exists()`, PHPT manifests, `crc32()`,
+`str_replace()` counts, and integer validation for `chr()`, `intdiv()`, and
+file offsets.
 
 ## Dashboard
 
@@ -36,7 +37,7 @@ behavior, persistent standard streams, `property_exists()`, PHPT manifests,
 | PHPT other rows | 5 | 5 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
 | Post-merge COW gate | 26 | 26 | 0 |
-| PHPT callback manifest | 4 | 4 | 0 |
+| PHPT callback manifest | 5 | 3 | 2 |
 | PHPT include manifest | 2 | 2 | 0 |
 
 ## RC Surface
@@ -50,19 +51,21 @@ through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
 `str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `pathinfo()`,
 `dirname()` levels, `crc32()`, `basename()`, locale support, PHP
 version/build/platform metadata constants, `var_export()`, array mutators,
-inc/dec, dynamic-variable writes/unsets, and offset compound/null coalescing
-assignments.
+inc/dec, `global` bindings, dynamic-variable writes/unsets, and offset
+compound/null coalescing assignments.
 
 ## Remaining Bounded Exclusions
 
 - None among the 269 runnable rows in the current 271-row bounded manifest.
   Two selected rows are classified out for unsupported ini requirements.
+- Callback manifest has 3 runnable passing rows and 2 unsupported-extension
+  exclusions.
 
 ## Verification
 
-Current branch verification for `ptn-0280`: diff check, `cargo fmt`, focused
-PHP metadata constant native test 1/1, and versioning registry native test
-1/1.
+Current branch verification for `ptn-98d8.6`: diff check, `cargo fmt`,
+focused parser/global native tests, and callback PHPT 3/3 runnable passing
+with 2 unsupported-extension exclusions.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic

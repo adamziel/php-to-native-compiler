@@ -117,6 +117,12 @@ static PTN_UNUSED void ptn_runtime_bind_variable_reference(PtnRuntime *runtime, 
     ptn_symbols_bind_reference(&runtime->symbols, name, reference);
 }
 
+static PTN_UNUSED void ptn_runtime_bind_global_variable(PtnRuntime *runtime, const char *name) {
+    PtnValue reference = ptn_symbols_reference_for_variable(ptn_runtime_global_symbol_table(runtime), name);
+    ptn_symbols_bind_reference(&runtime->symbols, name, reference);
+    ptn_value_destroy(&reference);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_variable(PtnRuntime *runtime, const char *name) {
     return ptn_symbols_reference_for_variable(&runtime->symbols, name);
 }

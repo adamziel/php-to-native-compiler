@@ -798,6 +798,7 @@ impl Parser {
             TokenKind::Try => self.parse_try(),
             TokenKind::Goto => self.parse_goto(),
             TokenKind::Const => self.parse_const(),
+            TokenKind::Global => self.parse_global(),
             TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             TokenKind::Identifier(ref name) if is_unsupported_class_like_declaration(name) => {
@@ -1324,6 +1325,27 @@ impl Parser {
         }
         self.expect_const_statement_terminator()?;
         Ok(Statement::Const { declarations, span })
+    }
+
+    fn parse_global(&mut self) -> Result<Statement> {
+        let span = self.advance().span;
+        let mut names = Vec::new();
+        loop {
+            let token = self.advance().clone();
+            let TokenKind::Variable(name) = token.kind else {
+                return Err(Diagnostic::new(
+                    "expected global variable",
+                    Some(token.span),
+                ));
+            };
+            names.push(name);
+            if !matches!(self.peek().kind, TokenKind::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        self.expect_statement_terminator()?;
+        Ok(Statement::Global { names, span })
     }
 
     fn parse_const_declaration(&mut self) -> Result<ConstDeclaration> {
@@ -3294,6 +3316,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Goto => "goto",
         TokenKind::Const => "const",
         TokenKind::Function => "function",
+        TokenKind::Global => "global",
         TokenKind::New => "new",
         TokenKind::Identifier(_) => "identifier",
         TokenKind::String(_) => "string",
@@ -3889,6 +3912,7 @@ fn validate_anonymous_functions_in_statements(
             Statement::Return { value: None, .. }
             | Statement::Empty { .. }
             | Statement::Unset { .. }
+            | Statement::Global { .. }
             | Statement::Break { .. }
             | Statement::Continue { .. }
             | Statement::Label { .. }

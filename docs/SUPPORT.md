@@ -497,6 +497,9 @@ Post-RC architecture remains explicit rather than hidden:
   element references, array literal reference elements, and by-value copies near
   references. Unsupported recursive, nested array, temporary offset, and other
   non-lvalue reference forms are rejected explicitly with source spans.
+- `global` statements bind function-local names to the root global symbol table,
+  so direct and callback-dispatched user functions can read, write, and return
+  modeled global variables by reference.
 - `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, `string(length) "value"`, and ordered literal
   arrays. Finite floats use the shortest decimal spelling that round-trips to
@@ -878,7 +881,8 @@ Post-RC architecture remains explicit rather than hidden:
   supported `__call` fallback, and the optional syntax-only flag. The third
   by-reference callable-name output parameter is not yet supported.
 - `call_user_func()` dispatches current string, closure, static method array,
-  and object method array callable values through the shared callable path.
+  and object method array callable values through the shared callable path,
+  including user-function `global` bindings.
 - `call_user_func_array()` expands current ordered-array argument values through
   the shared callable dispatch path, preserving reference entries for the
   current by-reference callable subset. Unreferenced values passed to

@@ -1244,6 +1244,16 @@ fn parser_accepts_scalar_parameter_return_hints_and_by_ref_returns() {
 }
 
 #[test]
+fn parser_accepts_global_variable_statements() {
+    let program = parser::parse("<?php function read_globals() { global $left, $right; }").unwrap();
+
+    let Statement::Global { names, .. } = &program.functions[0].body[0] else {
+        panic!("expected global statement");
+    };
+    assert_eq!(names, &vec!["left".to_string(), "right".to_string()]);
+}
+
+#[test]
 fn parser_accepts_void_return_type_but_not_void_parameters() {
     let program = parser::parse("<?php function test(): void { return; } test();").unwrap();
     assert_eq!(program.functions[0].return_type, Some(TypeHint::Void));
@@ -18155,6 +18165,81 @@ var_dump(call_user_func(\"inspect_args\", \"one\", \"two\"));
     assert!(c_source.contains("ptn_call_callable("));
     assert!(c_source.contains("args[0]"));
     assert!(c_source.contains("argc - 1"));
+}
+
+#[test]
+fn compile_global_statement_callback_return_to_native_binary() {
+    let root = temp_dir("ptn-native-global-statement-callback-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("global-statement-callback-return.php");
+    let output = root.join("global-statement-callback-return-bin");
+    fs::write(
+        &input,
+        "<?php
+$t1 = 'test1';
+
+function test1($arg1, $arg2)
+{
+    global $t1;
+    echo \"$arg1 $arg2\\n\";
+    return $t1;
+}
+
+$t2 = 'test2';
+
+function & test2($arg1, $arg2)
+{
+    global $t2;
+    echo \"$arg1 $arg2\\n\";
+    return $t2;
+}
+
+function mutate_globals()
+{
+    global $t1, $missing;
+    $t1 = 'changed';
+    $missing = 'made';
+}
+
+function test($func)
+{
+    var_dump($func('Direct', 'Call'));
+    var_dump(call_user_func_array($func, array('User', 'Func')));
+}
+
+test('test1');
+test('test2');
+mutate_globals();
+var_dump($t1, $missing);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Direct Call\n",
+            "string(5) \"test1\"\n",
+            "User Func\n",
+            "string(5) \"test1\"\n",
+            "Direct Call\n",
+            "string(5) \"test2\"\n",
+            "User Func\n",
+            "string(5) \"test2\"\n",
+            "string(7) \"changed\"\n",
+            "string(4) \"made\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_bind_global_variable(&runtime, \"t1\")"));
+    assert!(c_source.contains("ptn_runtime_bind_global_variable(&runtime, \"t2\")"));
+    assert!(c_source.contains("ptn_internal_call_user_func_array"));
 }
 
 #[test]

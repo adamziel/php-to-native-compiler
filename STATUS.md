@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T11:32Z
-Measured: `ptn-0280` integrated on current `origin/master` `05a04a4e2`;
+Last refresh: 2026-06-13T11:26Z
+Measured: `ptn-98d8.6` integrated on current `origin/master` `c0fbbc0c8`;
 
 ## Operating Goal
 
@@ -27,7 +27,7 @@ Source unit tests 3/3; Native/compiler Rust suite 588/588; Native smoke matrix 6
 | PHPT other rows | 5/5 |
 | PHPT COW manifest | 29/29 |
 | Post-merge COW gate | 26/26 |
-| PHPT callback manifest | 4/4 |
+| PHPT callback manifest | 3/5 |
 | PHPT include manifest | 2/2 |
 
 ## Rules

@@ -149,6 +149,10 @@ pub enum Statement {
         targets: Vec<UnsetTarget>,
         span: SourceSpan,
     },
+    Global {
+        names: Vec<String>,
+        span: SourceSpan,
+    },
     Call {
         name: String,
         arguments: Vec<Expr>,
