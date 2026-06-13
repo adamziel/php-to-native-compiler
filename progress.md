@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T17:16Z
+Last refresh: 2026-06-13T17:30Z
 Source: `PROGRESS.md`
-Measured: `ptn-qsmv.5` object/class/callable metadata expansion rebased after
+Measured: `ptn-qsmv.2` broad PHPT unsupported-syntax blocker classification
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 435/435; PHPT Zend rows 119/119; PHPT ext/standard rows 230/230.
 

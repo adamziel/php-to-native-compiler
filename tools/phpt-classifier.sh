@@ -339,6 +339,55 @@ ptn_phpt_first_unsupported_language_surface() {
     local path=$1
 
     ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+        function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
+            quote = ""
+            escaped = 0
+            out = ""
+            for (i = 1; i <= length(raw); i++) {
+                ch = substr(raw, i, 1)
+                next_ch = substr(raw, i + 1, 1)
+                if (ptn_block_comment) {
+                    if (ch == "*" && next_ch == "/") {
+                        ptn_block_comment = 0
+                        out = out "  "
+                        i++
+                    } else {
+                        out = out " "
+                    }
+                    continue
+                }
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    out = out " "
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    out = out " "
+                    continue
+                }
+                if (ch == "/" && next_ch == "/") {
+                    break
+                }
+                if (ch == "#") {
+                    break
+                }
+                if (ch == "/" && next_ch == "*") {
+                    ptn_block_comment = 1
+                    out = out "  "
+                    i++
+                    continue
+                }
+                out = out ch
+            }
+            return tolower(out)
+        }
         function ptn_has_php_attribute_syntax(raw,    i, ch, next_ch, prev, quote, escaped) {
             quote = ""
             escaped = 0
@@ -383,12 +432,12 @@ ptn_phpt_first_unsupported_language_surface() {
             return 0
         }
         {
-            line = tolower($0)
             if (ptn_has_php_attribute_syntax($0)) {
                 print "unsupported-language\trequires PHP attribute syntax (`#[...]`) and reflection metadata, outside PTN parser/metadata model"
                 found = 1
                 exit
             }
+            line = ptn_php_code_line($0)
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+class([^[:alnum:]_]|$)/) {
                 print "unsupported-language\trequires anonymous class syntax (`new class`), outside PTN modeled class metadata"
                 found = 1
@@ -406,6 +455,29 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])trait[[:space:]]+[a-z_\\]/) {
                 print "unsupported-language\trequires trait declarations, outside PTN modeled class metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(public|protected|private)[[:space:]]+(public|protected|private)[[:space:]]*\([[:space:]]*(set|get)[[:space:]]*\)/ ||
+                line ~ /(^|[^[:alnum:]_$])(public|protected|private)[[:space:]]*\([[:space:]]*(set|get)[[:space:]]*\)/) {
+                print "unsupported-language\trequires PHP asymmetric property visibility (`private(set)`/`protected(set)`), outside PTN property metadata and access checks"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+class[[:space:]]+[a-z_\\]/ ||
+                line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+[$?a-z_\\]/ ||
+                line ~ /(^|[^[:alnum:]_$])(public|protected|private|static)[[:space:]]+readonly([^[:alnum:]_]|$)/) {
+                print "unsupported-language\trequires readonly class/property modifiers, outside PTN property metadata and write guards"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(static[[:space:]]+)?fn[[:space:]]*\(/ && line ~ /=>/) {
+                print "unsupported-language\trequires arrow function syntax (`fn(...) => ...`) and lexical capture lowering, outside PTN closure parser/lowering"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])throw([^[:alnum:]_]|$)/) {
+                print "unsupported-language\trequires userland throw expression/statement lowering and exception object propagation, outside PTN throw AST/lowering"
                 found = 1
                 exit
             }

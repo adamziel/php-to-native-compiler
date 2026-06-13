@@ -61,6 +61,26 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n",
             "requires PHP attribute syntax",
         ),
+        (
+            "asymmetric property visibility",
+            "--TEST--\nasymmetric visibility\n--FILE--\n<?php\nclass Bag { public private(set) int $value; }\n--EXPECT--\n",
+            "requires PHP asymmetric property visibility",
+        ),
+        (
+            "readonly property modifier",
+            "--TEST--\nreadonly property\n--FILE--\n<?php\nclass Bag { public readonly int $value; }\n--EXPECT--\n",
+            "requires readonly class/property modifiers",
+        ),
+        (
+            "arrow function",
+            "--TEST--\narrow\n--FILE--\n<?php\n$fn = fn($value) => $value + 1;\n--EXPECT--\n",
+            "requires arrow function syntax",
+        ),
+        (
+            "userland throw",
+            "--TEST--\nthrow\n--FILE--\n<?php\ntry { throw new Exception('boom'); } catch (Exception $e) {}\n--EXPECT--\n",
+            "requires userland throw expression/statement lowering",
+        ),
     ];
 
     for (name, phpt, reason) in cases {
@@ -92,6 +112,18 @@ fn phpt_classifier_keeps_variadic_parameter_rows_runnable() {
 fn phpt_classifier_keeps_attribute_text_in_strings_runnable() {
     let classification = classify(
         "--TEST--\nattribute text\n--FILE--\n<?php\necho \"prefix #[not an attribute]\";\n--EXPECT--\nprefix #[not an attribute]\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_unsupported_syntax_words_in_strings_and_comments_runnable() {
+    let classification = classify(
+        "--TEST--\nsyntax text\n--FILE--\n<?php\n// throw new Exception();\n# fn($x) => $x\n/* public private(set) int $value; */\necho \"readonly class fn throw private(set)\";\n--EXPECT--\nreadonly class fn throw private(set)\n",
     );
 
     assert!(

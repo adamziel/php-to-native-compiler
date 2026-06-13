@@ -1,17 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-13T17:16Z
-Measured: `ptn-qsmv.5` object/class/callable metadata expansion rebased after
-`ptn-6kt2` filesystem/path support.
+Refresh: 2026-06-13T17:30Z
+Measured: `ptn-qsmv.2` broad PHPT unsupported-syntax blocker classification
+rebased after `ptn-qsmv.5` object/class/callable metadata expansion.
 
 Recent RC slices cover constants, includes, closures, `stdClass`,
 properties/destructors, reflection metadata, array helpers, formatted output,
 string/path/count internals, scalar/operator PHPT rows, PHPT classification
-including PHP attributes, invokable object callables, object cloning,
-environment/include-path helpers, `getcwd()`/`chdir()`, compound
-offsets/properties, filesystem metadata/path helpers, `chmod()`/`touch()`,
-`fwrite()`/`fputs()` stream writes, `function_exists()` global/static-method
-separation, and bounded `get_parent_class()`.
+including PHP attributes and new broad syntax blockers, object callables,
+object cloning, environment/include-path helpers, filesystem metadata/path
+helpers, stream writes, `function_exists()` static-method separation, and
+bounded `get_parent_class()`.
 
 ## Dashboard
 
@@ -40,12 +39,11 @@ separation, and bounded `get_parent_class()`.
 Parser/IR/C backend, boxed values, variables/constants, strings, scalar
 operators, arrays, `foreach`, control flow, includes, selected internals,
 COW/reference slices, functions, closures, `stdClass`, class/object shells,
-properties, destructors, reflection, assertions, namespaces, streams, file
-reads/writes, array/string/numeric helpers, scalar conversions, runner
-ini/include-path state, PHPT blocker categories, filesystem metadata/path
-helpers, statement-form `(void)`, array mutators, inc/dec, `global`, dynamic
-variables, offset compound/null coalescing, property compounds,
-`function_exists()` global/static-method separation, and bounded
+properties, destructors, reflection, namespaces, streams, file reads/writes,
+array/string/numeric helpers, runner ini/include-path state, PHPT blocker
+categories, filesystem metadata/path helpers, statement-form `(void)`, array
+mutators, inc/dec, dynamic variables, offset compound/null coalescing,
+property compounds, static-method-aware `function_exists()`, and bounded
 `get_parent_class()` metadata.
 
 ## Remaining Bounded Exclusions
@@ -58,17 +56,19 @@ variables, offset compound/null coalescing, property compounds,
 
 ## Verification
 
-`ptn-qsmv.5` verification: targeted native metadata gates passed, `cargo fmt
---check` passed, and the 25 newly added object/class/callable PHPT rows passed
-with 25 selected, 25 runnable, 25 passes, and no exclusions.
+`ptn-qsmv.2` verification: broad 1k evidence from the submitting branch moved
+from 614 runnable / 386 excluded to 551 runnable / 449 excluded, adding 63
+unsupported-language classifications: 37 asymmetric visibility, 14 arrow
+function, 12 userland `throw`, and 1 readonly-modifier row. Current-branch
+classifier syntax, classifier tests, and fmt passed.
 
-Previous `ptn-6kt2` verification remains: focused native compile tests and
-`tools/run-phpt-manifest.sh tools/phpt-filesystem-path-process-manifest.txt`
-passed with 46 selected rows, 13 runnable rows, 13 passes, 8 harness-cleanup
-exclusions, and 25 process-boundary exclusions.
+Previous `ptn-qsmv.5` verification remains: targeted native metadata gates and
+25 object/class/callable PHPT rows passed.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods, PHP
-attributes/reflection metadata, first-class callables, dynamic includes,
+attributes/reflection metadata, arrow functions, userland `throw`, readonly
+and asymmetric property metadata, first-class callables, dynamic includes,
 unsupported internals, scalar-offset lvalues, `Traversable`, embedded-NUL
 internals, host-locale parity, conversion diagnostics, formatter edge parity,
-array callback diagnostic parity, and process execution.
+array callback diagnostic parity, filesystem/process boundaries, and process
+execution.

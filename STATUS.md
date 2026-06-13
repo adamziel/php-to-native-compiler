@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T17:16Z
-Measured: `ptn-qsmv.5` object/class/callable metadata expansion rebased after
+Last refresh: 2026-06-13T17:30Z
+Measured: `ptn-qsmv.2` broad PHPT unsupported-syntax blocker classification
 
 ## Operating Goal
 
