@@ -702,6 +702,36 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
 #endif
         return 1;
     }
+    if (strcmp(name, "LC_ALL") == 0) {
+        *out = ptn_int(LC_ALL);
+        return 1;
+    }
+    if (strcmp(name, "LC_COLLATE") == 0) {
+        *out = ptn_int(LC_COLLATE);
+        return 1;
+    }
+    if (strcmp(name, "LC_CTYPE") == 0) {
+        *out = ptn_int(LC_CTYPE);
+        return 1;
+    }
+    if (strcmp(name, "LC_MONETARY") == 0) {
+        *out = ptn_int(LC_MONETARY);
+        return 1;
+    }
+    if (strcmp(name, "LC_NUMERIC") == 0) {
+        *out = ptn_int(LC_NUMERIC);
+        return 1;
+    }
+    if (strcmp(name, "LC_TIME") == 0) {
+        *out = ptn_int(LC_TIME);
+        return 1;
+    }
+#ifdef LC_MESSAGES
+    if (strcmp(name, "LC_MESSAGES") == 0) {
+        *out = ptn_int(LC_MESSAGES);
+        return 1;
+    }
+#endif
     if (strcmp(name, "INF") == 0) {
         *out = ptn_float(INFINITY);
         return 1;

@@ -10,19 +10,20 @@ reflection, array mutators/set/sort/udiff/list helpers, `json_encode()`,
 `printf()`/`sprintf()`, `basename()`, `file_get_contents()`, `strcasecmp()`,
 scalar `str_replace()` count outputs and TypeErrors, `chr()` diagnostics,
 metadata, foreach list destructuring, dynamic-variable writes/unsets and
-`??=`, stream metadata, and array/string-offset compound/null coalescing.
+`??=`, stream metadata, array/string-offset compound/null coalescing, locale
+category constants, and bounded `setlocale()` state/query support.
 
 Recent movers include broad PHPT baseline manifests, scalar `str_replace()`
 count out-parameters, `chr()` integer diagnostics, `strncmp()`/`strrchr()`,
-`basename()`, `file_get_contents()`, `strcasecmp()`, streams, and PHPT
-preclassification of unsupported rows.
+`basename()`, `file_get_contents()`, `strcasecmp()`, streams,
+native-process locale state, and PHPT preclassification of unsupported rows.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 580 | 580 | 0 |
+| Native/compiler Rust suite | 581 | 581 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 233 | 231 | 2 |
 | PHPT Zend rows | 80 | 80 | 0 |
@@ -67,12 +68,13 @@ Current slice verification: `git diff --check`; `cargo fmt --check`; `bash -n`
 for PHPT scripts; `run-phpt-manifest.sh -` selected 1/runnable 1/passed 1 with
 corpus revision telemetry; `run-phpt-baseline.sh --generate-only` emitted
 1k/5k/10k manifests; tier-5 baseline smoke selected 5/runnable 4/excluded 1
-and recorded 3 passed, 1 failed as broad measurement signal.
+and recorded 3 passed, 1 failed as broad measurement signal; focused locale
+native reducer; full `cargo test` 581/581 plus auxiliary/doc tests.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, bracketed/grouped namespaces, broader
 fallback/reflection, magic methods, first-class callables, dynamic includes,
 unsupported internals, scalar offset-lvalues, assertion config, binary-safe
 array keys, append-form `??=`, embedded-NUL internals, object IDs,
-locale constants/`setlocale()`, `str_replace()` array forms, and
-object/reference targets.
+`str_replace()` array forms, object/reference targets, and locale-sensitive
+behavior beyond native-process `setlocale()` state.

@@ -7789,6 +7789,78 @@ static PtnValue ptn_internal_php_ini_scanned_files(PtnRuntime *runtime, size_t a
     return ptn_string("");
 }
 
+static PtnValue ptn_setlocale_try_candidate(int category, PtnStringOperand locale) {
+    const char *locale_name = NULL;
+    char *owned_locale_name = NULL;
+    if (locale.len == 1 && locale.data[0] == '0') {
+        locale_name = NULL;
+    } else {
+        owned_locale_name = ptn_duplicate_string_len(locale.data, locale.len);
+        locale_name = owned_locale_name;
+    }
+
+    const char *selected = setlocale(category, locale_name);
+    free(owned_locale_name);
+    if (selected == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(ptn_duplicate_string(selected));
+}
+
+static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    int64_t category_value = ptn_internal_expect_integer_arg(runtime, "setlocale", 1, "category", args[0], line);
+    int category = (int)category_value;
+    if ((int64_t)category != category_value) {
+        return ptn_bool(0);
+    }
+
+    PtnValue locale_arg = ptn_value_deref(args[1]);
+    if (locale_arg.type == PTN_ARRAY) {
+        PtnArray *locales = locale_arg.as.array;
+        for (size_t i = 0; i < locales->len; i++) {
+            PtnStringOperand candidate = ptn_internal_expect_string_arg(
+                runtime,
+                "setlocale",
+                2,
+                "locales",
+                locales->entries[i].value,
+                line
+            );
+            PtnValue selected = ptn_setlocale_try_candidate(category, candidate);
+            ptn_string_operand_free(candidate);
+            if (selected.type != PTN_BOOL || selected.as.boolean) {
+                return selected;
+            }
+        }
+        return ptn_bool(0);
+    }
+
+    PtnStringOperand locale = ptn_internal_expect_string_arg(runtime, "setlocale", 2, "locales", args[1], line);
+    PtnValue selected = ptn_setlocale_try_candidate(category, locale);
+    ptn_string_operand_free(locale);
+    if (selected.type != PTN_BOOL || selected.as.boolean) {
+        return selected;
+    }
+
+    for (size_t i = 2; i < argc; i++) {
+        PtnStringOperand candidate = ptn_internal_expect_string_arg(
+            runtime,
+            "setlocale",
+            i + 1,
+            "rest",
+            args[i],
+            line
+        );
+        selected = ptn_setlocale_try_candidate(category, candidate);
+        ptn_string_operand_free(candidate);
+        if (selected.type != PTN_BOOL || selected.as.boolean) {
+            return selected;
+        }
+    }
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)line;
@@ -8360,6 +8432,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
+        { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },

@@ -189,6 +189,12 @@ Post-RC architecture remains explicit rather than hidden:
   setting is absent. Scientific notation uses PHP-style uppercase `E`,
   unpadded exponent widths, and decimal mantissas; non-finite values stringify
   as `INF`, `-INF`, and `NAN`.
+- Locale category constants `LC_ALL`, `LC_COLLATE`, `LC_CTYPE`,
+  `LC_MONETARY`, `LC_NUMERIC`, `LC_TIME`, and platform-defined
+  `LC_MESSAGES` are exposed through the shared constant table. `setlocale()`
+  supports the current native process locale boundary for scalar locale
+  strings, PHP's `0` query form, array candidate lists, and variadic candidate
+  strings.
 - Removed `(real)` cast syntax is rejected with a source-spanned PHP-style
   parse error through `phpc`.
 - Removed `(unset)` cast syntax is rejected with a source-spanned PHP-style
@@ -1158,8 +1164,9 @@ Post-RC architecture remains explicit rather than hidden:
   still bypass the shared warning/deprecation/notice emitters.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
-- PHP-exact version, SAPI, and extension metadata beyond the modeled
-  CLI/core/standard names and loaded-extension list.
+- PHP-exact version, SAPI, locale, and extension metadata beyond the modeled
+  CLI/core/standard names, loaded-extension list, and native-process
+  `setlocale()` boundary.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
 - Statement-form `(void) expr;` casts.

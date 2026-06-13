@@ -9226,6 +9226,36 @@ var_dump(defined(\"DIRECTORY_SEPARATOR\"), defined(\"PATH_SEPARATOR\"));",
 }
 
 #[test]
+fn compile_locale_constants_and_setlocale_to_native_binary() {
+    let root = temp_dir("ptn-native-locale-constants-setlocale");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("locale-constants-setlocale.php");
+    let output = root.join("locale-constants-setlocale-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(LC_ALL, LC_COLLATE, LC_CTYPE, LC_MONETARY, LC_NUMERIC, LC_TIME);\n\
+var_dump(defined(\"LC_ALL\"), defined(\"LC_NUMERIC\"), defined(\"LC_MESSAGES\"));\n\
+var_dump(function_exists(\"setlocale\"), function_exists(\"SETLOCALE\"));\n\
+var_dump(setlocale(LC_NUMERIC, \"definitely_invalid_locale_for_ptn\"));\n\
+var_dump(setlocale(LC_NUMERIC, [\"definitely_invalid_locale_for_ptn\", \"C\"]));\n\
+var_dump(setlocale(LC_NUMERIC, 0));\n\
+var_dump(setlocale(LC_TIME, \"definitely_invalid_locale_for_ptn\", \"C\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nbool(true)\n"));
+    assert!(stdout.contains("bool(false)\nstring(1) \"C\"\nstring(1) \"C\"\n"));
+    assert!(stdout.ends_with("string(1) \"C\"\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_bug27443_defined_type_shape_to_native_binary() {
     let root = temp_dir("ptn-native-bug27443-defined");
     fs::create_dir_all(&root).unwrap();
