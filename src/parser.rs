@@ -5508,13 +5508,14 @@ fn validate_expression_assignment_target(
     match target {
         AssignmentTarget::Variable { .. } => Ok(()),
         AssignmentTarget::ArrayDim(_) | AssignmentTarget::DynamicArrayDim { .. } => Ok(()),
-        AssignmentTarget::DynamicVariable { .. }
-        | AssignmentTarget::Property { .. }
-        | AssignmentTarget::StaticProperty { .. }
-        | AssignmentTarget::List(_) => Err(Diagnostic::new(
-            "compound assignment expressions currently support variables and array/string offsets",
-            Some(span),
-        )),
+        AssignmentTarget::Property { .. } => Ok(()),
+        AssignmentTarget::StaticProperty { .. } => Ok(()),
+        AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::List(_) => Err(
+            Diagnostic::new(
+                "compound assignment expressions currently support variables, array/string offsets, and properties",
+                Some(span),
+            ),
+        ),
     }
 }
 

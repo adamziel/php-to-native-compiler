@@ -2832,6 +2832,82 @@ echo Counter::$value ??= 6;",
 }
 
 #[test]
+fn parser_accepts_property_and_static_property_compound_assignments() {
+    let program = parser::parse(
+        "<?php
+class Counter {
+    public static $value = 1;
+}
+$object = new stdClass;
+$object->value += 2;
+echo $object->label .= \"x\";
+Counter::$value <<= 1;
+var_dump(Counter::$label .= \"!\");
+",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 5);
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected property compound assignment statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::Property { name, .. },
+            op: AssignmentOp::AddAssign,
+            ..
+        } if name == "value"
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[2] else {
+        panic!("expected property concat assignment echo");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Assign {
+            target: AssignmentTarget::Property { name, .. },
+            op: AssignmentOp::ConcatAssign,
+            ..
+        } if name == "label"
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[3] else {
+        panic!("expected static property compound assignment statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target:
+                AssignmentTarget::StaticProperty {
+                    class_name,
+                    name,
+                    ..
+                },
+            op: AssignmentOp::ShiftLeftAssign,
+            ..
+        } if class_name == "Counter" && name == "value"
+    ));
+
+    let Statement::Call { arguments, .. } = &program.statements[4] else {
+        panic!("expected static property concat assignment call");
+    };
+    assert!(matches!(
+        &arguments[0],
+        Expr::Assign {
+            target:
+                AssignmentTarget::StaticProperty {
+                    class_name,
+                    name,
+                    ..
+                },
+            op: AssignmentOp::ConcatAssign,
+            ..
+        } if class_name == "Counter" && name == "label"
+    ));
+}
+
+#[test]
 fn parser_accepts_property_and_static_property_increment_targets() {
     let program = parser::parse(
         "<?php
@@ -19740,6 +19816,91 @@ Box::bumpStatic();
     assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
     assert!(c_source.contains("ptn_increment_value(&runtime"));
     assert!(c_source.contains("ptn_decrement_value(&runtime"));
+}
+
+#[test]
+fn compile_property_and_static_property_compound_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-property-static-compound");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-static-compound.php");
+    let output = root.join("property-static-compound-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public $value = 1;
+    public $label = \"a\";
+    private $secret = 3;
+    public static $count = 1;
+    public static $text = \"s\";
+
+    public function bump($rhs) {
+        var_dump($this->secret += $rhs);
+        var_dump($this->secret .= \"!\");
+    }
+
+    public static function bumpStatic() {
+        var_dump(self::$count *= 2);
+        var_dump(self::$text .= \"t\");
+    }
+}
+
+function mutate_object($box) {
+    echo \"rhs-object:\", $box->value, \"\\n\";
+    $box->value = 10;
+    return 2;
+}
+
+function mutate_static() {
+    echo \"rhs-static:\", Box::$count, \"\\n\";
+    Box::$count = 10;
+    return 2;
+}
+
+$box = new Box();
+var_dump($box->value += mutate_object($box));
+var_dump($box->value);
+var_dump($box->label .= \"b\");
+$box->bump(4);
+var_dump(Box::$count += mutate_static());
+var_dump(Box::$count);
+var_dump(Box::$text .= \"u\");
+Box::bumpStatic();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "rhs-object:1\n",
+            "int(12)\n",
+            "int(12)\n",
+            "string(2) \"ab\"\n",
+            "int(7)\n",
+            "string(2) \"7!\"\n",
+            "rhs-static:1\n",
+            "int(12)\n",
+            "int(12)\n",
+            "string(2) \"su\"\n",
+            "int(24)\n",
+            "string(3) \"sut\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_read_property(&runtime"));
+    assert!(c_source.contains("ptn_object_write_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+    assert!(c_source.contains("ptn_add(&runtime"));
+    assert!(c_source.contains("ptn_multiply(&runtime"));
+    assert!(c_source.contains("ptn_concat(&runtime"));
 }
 
 #[test]

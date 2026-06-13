@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T13:26Z
+Last refresh: 2026-06-13T14:00Z
 Source: `PROGRESS.md`
-Measured: `ptn-4bwx` current-directory integration on current `origin/master`
+Measured: `ptn-2yg2` property/static-property compounds on `origin/master`
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 629/629; Native smoke matrix 6/6; PHPT bounded manifest 280/280; PHPT Zend rows 87/87; PHPT ext/standard rows 138/138.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 631/631; Native smoke matrix 6/6; PHPT bounded manifest 280/280; PHPT Zend rows 87/87; PHPT ext/standard rows 138/138.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 629/629 |
+| Native/compiler Rust suite | 631/631 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 280/280 |
 | PHPT Zend rows | 87/87 |

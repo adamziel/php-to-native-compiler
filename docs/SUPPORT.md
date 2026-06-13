@@ -11,8 +11,9 @@ internals, top-level functions, includes resolved at compile time, copy-on-write
 array/reference slices, and public class/object shells. Public class support is
 bounded to top-level declarations with public methods, direct public static
 property reads/writes, read-side static property `isset()`/`empty()`/`??`
-probes, direct static-property `??=`, public instance property reads/writes,
-public property `??=`, read-side property `isset()`/`empty()`/`??` probes, and
+probes, direct static-property `??=` and compound assignment, public instance
+property reads/writes, public property `??=` and compound assignment,
+read-side property `isset()`/`empty()`/`??` probes, and
 bounded private instance-property declarations read/written from
 declaring-class methods, declared private/protected instance-property metadata
 for initialization, dump labels, and `property_exists()` checks, inherited
@@ -31,10 +32,10 @@ Post-RC architecture remains explicit rather than hidden:
   top-level function/constant and declared-class subset. Bracketed namespace
   blocks, namespace fallback parity for arbitrary userland symbols,
   namespace/class constants, and namespace-sensitive reflection remain post-RC.
-- Static properties: direct public static reads/writes and `??=` are
-  supported, and `property_exists()` can inspect the current declared static
-  property metadata. Visibility, late static binding, typed/default metadata,
-  and static-property compound lvalues outside `??=` and inc/dec are post-RC.
+- Static properties: direct public static reads/writes, compound assignment,
+  and `??=` are supported, and `property_exists()` can inspect the current
+  declared static property metadata. Visibility, late static binding,
+  typed/default metadata, and broader static-property lvalues are post-RC.
 - Magic methods: public declared instance `__construct` is supported during
   object construction, and public declared instance `__call` is supported as a
   fallback for direct object calls and supported object callable dispatch when
@@ -54,10 +55,10 @@ Post-RC architecture remains explicit rather than hidden:
   post-RC.
 - Object destructuring and object `Traversable` remain unsupported; current
   destructuring support is array/list lvalues.
-- Property compound lvalues remain post-RC except public property `??=` and
-  modeled property/static-property inc/dec: property `+=`, `.=` and other
-  compounds, nested/dynamic property lvalues, and static-property compounds
-  outside inc/dec are unsupported.
+- Property lvalues remain post-RC outside public property `??=`, modeled
+  property/static-property inc/dec, and direct property/static-property
+  compound assignment: nested/dynamic property lvalues and broader static
+  forms remain unsupported.
 
 ## Supported
 
@@ -161,6 +162,11 @@ Post-RC architecture remains explicit rather than hidden:
   helper, then `write target`. Array dimensions are evaluated once before the
   right-hand expression and use the shared array-path assign-op helpers for
   both statement and expression forms.
+- Direct property and static-property compound assignment for the same
+  operators over the current modeled read/write surface. The receiver or class
+  and property name are evaluated once before the right-hand expression; the
+  compiler then reads the current slot, applies the boxed binary helper, writes
+  the assigned value back, and returns that assigned value.
 - Direct variable and variable-root array assignment statements followed by
   keyword boolean `and`, `or`, or `xor` tails are parsed with PHP precedence:
   the assignment is evaluated first as the left operand, then the existing
@@ -1064,8 +1070,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Public static property declarations in top-level classes, using the supported
   constant-expression default subset. Generated native code initializes
   declaration-backed static slots before top-level statements, supports
-  `Class::$name` reads, writes, and pre/post inc/dec, resolves `self::$name`
-  inside declared methods, quiet-probes `isset()`, `empty()`, and
+  `Class::$name` reads, writes, compounds, and pre/post inc/dec, resolves
+  `self::$name` inside declared methods, quiet-probes `isset()`, `empty()`, and
   expression-form `??` over declared-class static properties, and supports
   direct static-property null coalescing assignment `Class::$name ??= expr` and
   `self::$name ??= expr` with quiet reads and lazy right-hand evaluation.
@@ -1083,7 +1089,7 @@ Post-RC architecture remains explicit rather than hidden:
   right-hand expression. Property `isset()`, `empty()`, and expression-form
   `??` quiet-probe the current object property storage; inaccessible private
   declared properties behave as missing outside their declaring class. Property
-  pre/post inc/dec uses the modeled property
+  pre/post inc/dec and direct compound assignments use the modeled property
   read/write path. Declared private/protected instance properties are
   initialized with the same storage path and preserve metadata for `var_dump()`
   private/protected labels and `property_exists()` checks. Private declared
@@ -1290,10 +1296,9 @@ Post-RC architecture remains explicit rather than hidden:
   overflow parity for remaining integer-only operator conversion diagnostics,
   including shift and modulo diagnostics.
 - Object lvalues, dynamic-variable by-reference lvalues, append-form
-  null-coalescing, property reference targets, property compound-assignment
-  operators outside modeled
-  public-property `??=`, and static-property compound-assignment lvalues
-  outside modeled direct reads/writes/`??=`/inc/dec and read-side quiet probes.
+  null-coalescing, property reference targets, nested/dynamic property
+  compound lvalues, and static-property lvalues outside modeled direct
+  reads/writes/`??=`/compound/inc/dec and read-side quiet probes.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.

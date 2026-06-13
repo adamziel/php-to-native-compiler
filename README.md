@@ -52,8 +52,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `spl_object_hash()`, and bounded class/property existence checks.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
-- Direct variable and variable-root array/append compounds share boxed
-  operators and return assigned values.
+- Direct variable, variable-root array/append, property, and static-property
+  compounds share boxed operators and return assigned values.
 - `join()` concatenates ordered-array values, `explode()`, `str_split()`, and
   `nl2br()` handle length-aware scalar strings, `strncmp()`/`strncasecmp()`
   compare bounded byte prefixes, bounded
@@ -79,8 +79,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   the current declared/static property metadata and stdClass dynamic slots.
   Public `__destruct()` runs on last-reference release and shutdown. Full
   visibility and inheritance remain bounded.
-- Static properties support reads/writes, `??=`, plus quiet `isset()`,
-  `empty()`, and `??`.
+- Static properties support reads/writes, compounds, `??=`, plus quiet
+  `isset()`, `empty()`, and `??`.
 - Public class constants support scalar/array defaults, direct
   `Class::CONST`/`self::CONST` reads, and `constant()`/`defined()` lookup;
   typed/non-public/inherited/dynamic constants remain bounded.
