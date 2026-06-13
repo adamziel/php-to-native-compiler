@@ -9343,13 +9343,18 @@ fn compile_locale_constants_and_setlocale_to_native_binary() {
         &input,
         "<?php\n\
 var_dump(function_exists('setlocale'), defined('LC_ALL'), defined('LC_NUMERIC'));\n\
+var_dump(function_exists('SETLOCALE'));\n\
 echo gettype(LC_ALL), ' ', gettype(constant('LC_CTYPE')), ' ', gettype(LC_MESSAGES), \"\\n\";\n\
+var_dump(LC_CTYPE === constant('LC_CTYPE'));\n\
 var_dump(setlocale(LC_ALL, 'C'));\n\
 var_dump(setlocale(LC_ALL, 0));\n\
 var_dump(setlocale(LC_ALL, null));\n\
 var_dump(setlocale(LC_NUMERIC, 'POSIX'));\n\
 var_dump(setlocale(LC_ALL, ['missing_ptn_locale', 'C']));\n\
-var_dump(setlocale(LC_ALL, 'missing_ptn_locale'));\n",
+var_dump(setlocale(LC_ALL, 'missing_ptn_locale'));\n\
+var_dump(setlocale(LC_CTYPE, 'definitely_missing_ptn_locale', 'C'));\n\
+var_dump(setlocale(LC_CTYPE, ['definitely_missing_ptn_locale', 'C']));\n\
+var_dump(setlocale(999, 'C'));\n",
     )
     .unwrap();
 
@@ -9359,7 +9364,7 @@ var_dump(setlocale(LC_ALL, 'missing_ptn_locale'));\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\ninteger integer integer\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\ninteger integer integer\nbool(true)\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
