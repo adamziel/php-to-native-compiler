@@ -205,6 +205,11 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "--TEST--\nproperty visibility\n--FILE--\n<?php\nclass Box { protected $value = 1; }\n--EXPECT--\n",
             "requires non-public property visibility metadata",
         ),
+        (
+            "object vars export",
+            "--TEST--\nobject vars\n--FILE--\n<?php\n$object = new stdClass;\nvar_dump(get_object_vars($object));\n--EXPECT--\n",
+            "requires get_object_vars() object property-table export",
+        ),
     ];
 
     for (name, phpt, reason) in cases {

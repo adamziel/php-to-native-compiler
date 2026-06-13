@@ -629,6 +629,11 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
+            if (line ~ /(^|[^[:alnum:]_$])get_object_vars[[:space:]]*\(/) {
+                print "unsupported-class-metadata\trequires get_object_vars() object property-table export and property array-dimension lvalues, outside PTN modeled object/property metadata"
+                found = 1
+                exit
+            }
             if (line ~ /function[[:space:]]+__construct[[:space:]]*\([^)]*(public|protected|private|readonly)[[:space:]]+/) {
                 print "unsupported-class-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
                 found = 1

@@ -321,6 +321,11 @@ fn emit_user_functions(
     for (index, function) in functions.iter().enumerate() {
         let required_parameter_count = function_required_parameter_count(function);
         let call_frame_parameter_count = function_call_frame_parameter_count(function);
+        let arity_error_is_exact = required_parameter_count == function.parameters.len()
+            && !function
+                .parameters
+                .iter()
+                .any(|parameter| parameter.is_variadic);
         let c_name = user_function_c_name(index);
         out.push_str("\nstatic PTN_UNUSED PtnValue ");
         out.push_str(&c_name);
@@ -335,6 +340,16 @@ fn emit_user_functions(
             out.push_str("    if (argc < ");
             out.push_str(&required_parameter_count.to_string());
             out.push_str(") {\n");
+            out.push_str("        if (caller_runtime->throw_argument_count_errors) {\n");
+            out.push_str("            ptn_throw_user_argument_count_error(caller_runtime, \"");
+            out.push_str(&c_string(&function.name));
+            out.push_str("\", ");
+            out.push_str(&required_parameter_count.to_string());
+            out.push_str(", argc, ");
+            out.push_str(if arity_error_is_exact { "1" } else { "0" });
+            out.push_str(");\n");
+            out.push_str("            return ptn_null();\n");
+            out.push_str("        }\n");
             out.push_str("        ptn_emit_argument_count_error(&caller_runtime->diagnostics, \"");
             out.push_str(&c_string(&function.name));
             out.push_str("\", ");
@@ -2426,6 +2441,8 @@ fn emit_try(
     out.push_str("            ptn_try_frame_pop(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
+    out.push_str("            runtime.warn_by_ref_argument_mismatch = 0;\n");
+    out.push_str("            runtime.throw_argument_count_errors = 0;\n");
     out.push_str("            int ");
     out.push_str(&caught_temp);
     out.push_str(" = 0;\n");

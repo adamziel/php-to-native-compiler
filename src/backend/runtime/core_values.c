@@ -448,6 +448,7 @@ struct PtnRuntime {
     char *include_path;
     size_t call_site_line;
     int warn_by_ref_argument_mismatch;
+    int throw_argument_count_errors;
 };
 
 typedef struct {

@@ -36,6 +36,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->include_path = NULL;
     runtime->call_site_line = 0;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
+    runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
 }
 
 static PTN_UNUSED void ptn_runtime_set_call_frame(
@@ -432,6 +433,42 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
     exit(255);
+}
+
+static PTN_UNUSED void ptn_throw_user_argument_count_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t expected,
+    size_t passed,
+    int exactly
+) {
+    const char *mode = exactly ? "exactly" : "at least";
+    int needed = snprintf(
+        NULL,
+        0,
+        "Too few arguments to function %s(), %zu passed and %s %zu expected",
+        function_name,
+        passed,
+        mode,
+        expected
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Too few arguments to function %s(), %zu passed and %s %zu expected",
+        function_name,
+        passed,
+        mode,
+        expected
+    );
+    ptn_throw_exception_owned_message(runtime, "ArgumentCountError", message);
 }
 
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_table(PtnRuntime *runtime) {

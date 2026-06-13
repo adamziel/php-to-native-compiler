@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T20:06Z
+Last refresh: 2026-06-13T20:23Z
 Source: `PROGRESS.md`
-Measured: `ptn-qsmv.10` arrow-function parser/lowering after `ptn-550s.2`.
+Measured: `ptn-550s.8` array_walk COW residual slice after `ptn-qsmv.10`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 664/664; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 670/670; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 664/664 |
+| Native/compiler Rust suite | 670/670 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

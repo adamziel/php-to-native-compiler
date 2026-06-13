@@ -281,6 +281,16 @@ impl<'a> Lexer<'a> {
                 '(' => self.push_fixed(TokenKind::LeftParen, 1),
                 ')' => self.push_fixed(TokenKind::RightParen, 1),
                 '$' => self.lex_variable()?,
+                'b' | 'B'
+                    if self.rest().starts_with("b'")
+                        || self.rest().starts_with("B'")
+                        || self.rest().starts_with("b\"")
+                        || self.rest().starts_with("B\"") =>
+                {
+                    self.bump_char();
+                    let quote = self.peek_char().expect("binary string prefix has quote");
+                    self.lex_string(quote)?
+                }
                 '\'' | '"' => self.lex_string(ch)?,
                 c if c.is_ascii_digit() => self.lex_number()?,
                 c if is_ident_start(c) => self.lex_word()?,

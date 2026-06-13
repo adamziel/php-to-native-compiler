@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T20:06Z
-Measured: `ptn-qsmv.10` arrow-function parser/lowering after `ptn-550s.2`.
+Last refresh: 2026-06-13T20:23Z
+Measured: `ptn-550s.8` array_walk COW residual slice after `ptn-qsmv.10`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 664/664; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 670/670; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 664/664 |
+| Native/compiler Rust suite | 670/670 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

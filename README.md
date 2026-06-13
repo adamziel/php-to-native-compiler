@@ -12,7 +12,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Boxed C runtime for PHP-like values.
 - Native tests cover parser, backend, runtime, and PHP behavior.
 - Strings cover interpolation, legacy `${name}` deprecations, common/control
-  escapes, hex/octal byte escapes, and inline HTML output.
+  escapes, hex/octal byte escapes, binary-prefixed string literals, and inline
+  HTML output.
 - Top-level functions and declared methods include magic constants, call-frame
   introspection, scalar, array, and void return type hints, array defaults,
   by-reference returns, typed coercion, constructor dispatch, public destructor
@@ -40,12 +41,14 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   sum/product/fill/filter/chunk/merge/replace helpers, key-aware
   diff/intersect helpers with user comparators, sum/product warning and
   overflow parity,
-  `count()`/`sizeof()` modes, and sort mutators through ordered-array/COW
-  paths.
+  `count()`/`sizeof()` modes, sort mutators through ordered-array/COW paths,
+  and non-recursive `array_walk()` callback diagnostics, userdata separation,
+  key snapshots, and mutation visibility.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string escaping.
-- `pow()` uses the boxed exponentiation helper, `call_user_func_array()`
+- `pow()` uses the boxed exponentiation helper, `min()`/`max()` use the shared
+  loose ordering helper, `flush()` flushes native stdout, `call_user_func_array()`
   expands ordered arrays through callable dispatch, callback dispatch observes
   `global` bindings for user functions reached through direct calls, and
   public `__invoke` objects can be called directly or through callback

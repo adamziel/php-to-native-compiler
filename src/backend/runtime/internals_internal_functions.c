@@ -263,6 +263,112 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
+static int ptn_callable_is_valid(PtnValue callable, int syntax_only);
+
+static char *ptn_invalid_callback_message(
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue callback
+) {
+    PtnValue resolved = ptn_value_deref(callback);
+    char *reason = NULL;
+    if (resolved.type == PTN_STRING) {
+        char *name = ptn_value_to_string(resolved);
+        int needed = snprintf(
+            NULL,
+            0,
+            "function \"%s\" not found or invalid function name",
+            name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        reason = malloc((size_t)needed + 1);
+        if (reason == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            reason,
+            (size_t)needed + 1,
+            "function \"%s\" not found or invalid function name",
+            name
+        );
+        free(name);
+    } else {
+        char *name = ptn_callable_output_name(callback);
+        int needed = snprintf(
+            NULL,
+            0,
+            "callback \"%s\" not found or invalid function name",
+            name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        reason = malloc((size_t)needed + 1);
+        if (reason == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            reason,
+            (size_t)needed + 1,
+            "callback \"%s\" not found or invalid function name",
+            name
+        );
+        free(name);
+    }
+
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Argument #%zu ($%s) must be a valid callback, %s",
+        function_name,
+        position,
+        parameter_name,
+        reason
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Argument #%zu ($%s) must be a valid callback, %s",
+        function_name,
+        position,
+        parameter_name,
+        reason
+    );
+    free(reason);
+    return message;
+}
+
+static PtnValue ptn_internal_expect_callback_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue callback
+) {
+    PtnValue checked = ptn_value_clone_deref(callback);
+    if (ptn_callable_is_valid(checked, 0)) {
+        return checked;
+    }
+    char *message = ptn_invalid_callback_message(
+        function_name,
+        position,
+        parameter_name,
+        checked
+    );
+    ptn_value_destroy(&checked);
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+    return ptn_null();
+}
 
 static void ptn_var_dump_indent(size_t indent) {
     for (size_t i = 0; i < indent; i++) {
@@ -1646,7 +1752,7 @@ static void ptn_array_walk_call_function(
     PtnValue callback_args[3] = {
         value_reference,
         key,
-        has_userdata ? ptn_value_clone(userdata) : ptn_null()
+        has_userdata ? ptn_value_clone_deref(userdata) : ptn_null()
     };
     PtnValue callback_result = ptn_call_callable(
         runtime,
@@ -1663,6 +1769,31 @@ static void ptn_array_walk_call_function(
     ptn_value_destroy(&callback_result);
 }
 
+static PtnArrayKey *ptn_array_walk_snapshot_keys(PtnArray *array, size_t *count_out) {
+    *count_out = array->len;
+    if (array->len == 0) {
+        return NULL;
+    }
+    PtnArrayKey *keys = malloc(array->len * sizeof(PtnArrayKey));
+    if (keys == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        keys[i] = ptn_array_key_clone(array->entries[i].key);
+    }
+    return keys;
+}
+
+static void ptn_array_walk_free_snapshot_keys(PtnArrayKey *keys, size_t count) {
+    if (keys == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        ptn_array_key_free(keys[i]);
+    }
+    free(keys);
+}
+
 static PtnValue ptn_array_walk_slot(
     PtnRuntime *runtime,
     const char *name,
@@ -1674,39 +1805,85 @@ static PtnValue ptn_array_walk_slot(
     size_t line
 ) {
     PtnArray *last_array = NULL;
-    size_t index = 0;
+    PtnArrayKey *snapshot_keys = NULL;
+    size_t snapshot_count = 0;
+    size_t snapshot_index = 0;
 
     for (;;) {
         PtnValue *slot = ptn_array_walk_current_slot(runtime, name, local_slot);
         PtnArray *array = ptn_array_walk_slot_array_for_write(runtime, slot, value);
         if (array != last_array) {
+            ptn_array_walk_free_snapshot_keys(snapshot_keys, snapshot_count);
             last_array = array;
-            index = 0;
+            snapshot_keys = ptn_array_walk_snapshot_keys(array, &snapshot_count);
+            snapshot_index = 0;
         }
-        if (index >= array->len) {
+        if (snapshot_index >= snapshot_count) {
             break;
         }
 
-        ptn_array_walk_call_function(
-            runtime,
-            callback,
-            array,
-            index,
-            has_userdata,
-            userdata,
-            line
-        );
+        PtnArrayKey key = ptn_array_key_clone(snapshot_keys[snapshot_index]);
+        snapshot_index++;
+        size_t entry_index = ptn_array_find_key(array, key);
+        ptn_array_key_free(key);
+        if (entry_index < array->len) {
+            ptn_array_walk_call_function(
+                runtime,
+                callback,
+                array,
+                entry_index,
+                has_userdata,
+                userdata,
+                line
+            );
+        }
 
         PtnValue *after_slot = ptn_array_walk_current_slot(runtime, name, local_slot);
         PtnArray *after_array = ptn_array_walk_slot_current_array(after_slot);
-        if (after_array == array || after_slot == NULL) {
-            index++;
-        } else {
+        if (after_array != array && after_slot != NULL) {
             last_array = NULL;
         }
     }
 
+    ptn_array_walk_free_snapshot_keys(snapshot_keys, snapshot_count);
     return ptn_bool(1);
+}
+
+static PtnValue ptn_array_walk_checked(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue *local_slot,
+    PtnValue value,
+    PtnValue callback,
+    int has_userdata,
+    PtnValue userdata,
+    size_t line
+) {
+    PtnValue checked_callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "array_walk",
+        2,
+        "callback",
+        callback
+    );
+    int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    runtime->warn_by_ref_argument_mismatch = 1;
+    runtime->throw_argument_count_errors = 1;
+    PtnValue result = ptn_array_walk_slot(
+        runtime,
+        name,
+        local_slot,
+        value,
+        checked_callback,
+        has_userdata,
+        userdata,
+        line
+    );
+    runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
+    runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    ptn_value_destroy(&checked_callback);
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_walk_variable(
@@ -1718,7 +1895,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_walk_variable(
     PtnValue userdata,
     size_t line
 ) {
-    return ptn_array_walk_slot(runtime, name, NULL, value, callback, has_userdata, userdata, line);
+    return ptn_array_walk_checked(runtime, name, NULL, value, callback, has_userdata, userdata, line);
 }
 
 static PtnValue ptn_internal_array_pop(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -3069,7 +3246,7 @@ static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, cons
 
 static PtnValue ptn_internal_array_walk(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue value = ptn_value_clone(args[0]);
-    PtnValue result = ptn_array_walk_slot(
+    PtnValue result = ptn_array_walk_checked(
         runtime,
         NULL,
         &value,
@@ -9583,6 +9760,15 @@ static PtnValue ptn_internal_floor(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_float(floor(ptn_internal_expect_numeric_arg(runtime, "floor", 1, "num", args[0], line)));
 }
 
+static PtnValue ptn_internal_flush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    fflush(stdout);
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_abs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnNumber number = ptn_internal_expect_number_arg(
@@ -9609,6 +9795,65 @@ static PtnValue ptn_internal_abs(PtnRuntime *runtime, size_t argc, const PtnValu
 static PtnValue ptn_internal_sqrt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     return ptn_float(sqrt(ptn_internal_expect_float_arg(runtime, "sqrt", 1, "num", args[0], line)));
+}
+
+static PtnValue ptn_internal_minmax(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    int want_max
+) {
+    PtnValue first = ptn_value_deref(args[0]);
+    if (argc == 1 && first.type == PTN_ARRAY) {
+        if (first.as.array->len == 0) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #1 ($value) must contain at least one element",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            return ptn_null();
+        }
+        PtnValue best = ptn_value_clone_deref(first.as.array->entries[0].value);
+        for (size_t i = 1; i < first.as.array->len; i++) {
+            PtnValue candidate = ptn_value_deref(first.as.array->entries[i].value);
+            int compared = ptn_compare_order(candidate, best);
+            if ((want_max && compared == PTN_COMPARE_GREATER) ||
+                (!want_max && compared == PTN_COMPARE_LESS)) {
+                ptn_value_destroy(&best);
+                best = ptn_value_clone_deref(candidate);
+            }
+        }
+        return best;
+    }
+
+    PtnValue best = ptn_value_clone_deref(args[0]);
+    for (size_t i = 1; i < argc; i++) {
+        PtnValue candidate = ptn_value_deref(args[i]);
+        int compared = ptn_compare_order(candidate, best);
+        if ((want_max && compared == PTN_COMPARE_GREATER) ||
+            (!want_max && compared == PTN_COMPARE_LESS)) {
+            ptn_value_destroy(&best);
+            best = ptn_value_clone_deref(candidate);
+        }
+    }
+    return best;
+}
+
+static PtnValue ptn_internal_max(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    return ptn_internal_minmax(runtime, "max", argc, args, 1);
+}
+
+static PtnValue ptn_internal_min(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    return ptn_internal_minmax(runtime, "min", argc, args, 0);
 }
 
 static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -10818,6 +11063,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "filetype", 1, 1, ptn_internal_filetype },
         { "floatval", 1, 1, ptn_internal_floatval },
         { "floor", 1, 1, ptn_internal_floor },
+        { "flush", 0, 0, ptn_internal_flush },
         { "fopen", 2, 4, ptn_internal_fopen },
         { "fprintf", 2, PTN_VARIADIC_ARGS, ptn_internal_fprintf },
         { "fputs", 2, 3, ptn_internal_fputs },
@@ -10880,8 +11126,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "localeconv", 0, 0, ptn_internal_localeconv },
         { "lstat", 1, 1, ptn_internal_lstat },
         { "ltrim", 1, 2, ptn_internal_ltrim },
+        { "max", 1, PTN_VARIADIC_ARGS, ptn_internal_max },
         { "md5", 1, 2, ptn_internal_md5 },
         { "method_exists", 2, 2, ptn_internal_method_exists },
+        { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
         { "natcasesort", 1, 1, ptn_internal_natcasesort },
         { "natsort", 1, 1, ptn_internal_natsort },
@@ -11426,16 +11674,65 @@ static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, 
     return ptn_array_key_exists_value(runtime, args[0], args[1], line);
 }
 
+static void ptn_throw_internal_argument_count_error(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *limit,
+    size_t expected,
+    size_t argc
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s() expects %s %zu argument%s, %zu given",
+        name,
+        limit,
+        expected,
+        expected == 1 ? "" : "s",
+        argc
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s() expects %s %zu argument%s, %zu given",
+        name,
+        limit,
+        expected,
+        expected == 1 ? "" : "s",
+        argc
+    );
+    ptn_throw_exception_owned_message(runtime, "ArgumentCountError", message);
+}
+
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
     const PtnInternalFunction *function = ptn_find_internal_function(name);
     if (function != NULL) {
         if (argc < function->min_args) {
-            ptn_emit_argument_count_error(&runtime->diagnostics, name, function->min_args, argc);
-            exit(255);
+            ptn_throw_internal_argument_count_error(
+                runtime,
+                name,
+                "at least",
+                function->min_args,
+                argc
+            );
+            return ptn_null();
         }
         if (function->max_args != PTN_VARIADIC_ARGS && argc > function->max_args) {
-            ptn_emit_too_many_arguments_error(&runtime->diagnostics, name, function->max_args, argc);
-            exit(255);
+            ptn_throw_internal_argument_count_error(
+                runtime,
+                name,
+                "at most",
+                function->max_args,
+                argc
+            );
+            return ptn_null();
         }
         return function->handler(runtime, argc, args, line);
     }

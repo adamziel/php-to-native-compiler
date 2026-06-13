@@ -101,6 +101,13 @@ fn lexer_preserves_unknown_string_escape_backslashes() {
 }
 
 #[test]
+fn lexer_accepts_binary_prefixed_string_literals() {
+    let tokens = lexer::lex("<?php b\"binary\" B'binary'").unwrap();
+    assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "binary"));
+    assert!(matches!(&tokens[2].kind, TokenKind::String(value) if value == "binary"));
+}
+
+#[test]
 fn lexer_decodes_ascii_double_quoted_octal_and_hex_escapes() {
     let tokens = lexer::lex("<?php \"a\\145..\\160z\" \"\\x41\\x7a\" \"\\0\"").unwrap();
     assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "ae..pz"));
@@ -4512,6 +4519,29 @@ fn compile_internal_call_arguments_evaluate_left_to_right_to_native_binary() {
             "{}NULL\nNULL\n",
             undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_flush_and_binary_prefixed_strings_to_native_binary() {
+    let root = temp_dir("ptn-native-flush-binary-strings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("flush-binary-strings.php");
+    let output = root.join("flush-binary-strings-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(b\"binary\", B'binary'); echo \"x\"; flush(); echo \"y\\n\"; var_dump(function_exists(\"flush\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(6) \"binary\"\nstring(6) \"binary\"\nxy\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -20264,6 +20294,174 @@ var_dump($array, $array2);
     assert!(c_source.contains("ptn_runtime_array_walk_variable(&runtime, \"array\""));
     assert!(c_source.contains("ptn_call_callable("));
     assert!(c_source.contains("ptn_closure_set_capture("));
+}
+
+#[test]
+fn compile_array_walk_callback_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-callback-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-callback-diagnostics.php");
+    let output = root.join("array-walk-callback-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php
+function callback1($value, $key, $user_data) {}
+function callback2($value, $key, $user_data1, $user_data2) {}
+$input = [1];
+
+try {
+    var_dump(array_walk($input, \"callback1\"));
+} catch (Throwable $e) {
+    echo \"Exception: \" . $e->getMessage() . \"\\n\";
+}
+try {
+    var_dump(array_walk($input, \"callback2\", 4));
+} catch (Throwable $e) {
+    echo \"Exception: \" . $e->getMessage() . \"\\n\";
+}
+try {
+    var_dump(array_walk($input, \"echo\"));
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump(array_walk($input, \"callback1\", 20, 10));
+} catch (Throwable $e) {
+    echo \"Exception: \" . $e->getMessage() . \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Exception: Too few arguments to function callback1(), 2 passed and exactly 3 expected\n",
+            "Exception: Too few arguments to function callback2(), 3 passed and exactly 4 expected\n",
+            "array_walk(): Argument #2 ($callback) must be a valid callback, function \"echo\" not found or invalid function name\n",
+            "Exception: array_walk() expects at most 3 arguments, 4 given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_walk_userdata_by_ref_separation_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-userdata-ref-separation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-userdata-ref-separation.php");
+    let output = root.join("array-walk-userdata-ref-separation-bin");
+    fs::write(
+        &input,
+        "<?php
+function needs_userdata_ref($value, $key, &$userdata) {
+    $userdata[] = $key;
+}
+$input = [\"k\" => \"v\"];
+$userdata = [];
+var_dump(array_walk($input, \"needs_userdata_ref\", $userdata));
+var_dump($userdata);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: needs_userdata_ref(): Argument #3 ($userdata) must be passed by reference, value given in ptn on line 7\n",
+            "bool(true)\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_walk_keys_and_builtin_callbacks_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-keys-builtins");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-keys-builtins.php");
+    let output = root.join("array-walk-keys-builtins-bin");
+    fs::write(
+        &input,
+        "<?php
+function dump_walk($value, $key, $userdata) {
+    var_dump($key);
+    var_dump($value);
+    var_dump($userdata);
+}
+$input = [1 => 25, 5 => 12, 0 => -80, -2 => 100, 5 => 30];
+var_dump(array_walk($input, \"dump_walk\", 10));
+$strings = [\"a\" => \"Apple\", \"b\" => \"Banana\"];
+var_dump(array_walk($strings, \"dump_walk\", \"tag\"));
+$numbers = [2 => 1, 65, 98, 100, 6 => -4];
+var_dump(array_walk($numbers, \"pow\"));
+var_dump(array_walk($numbers, \"min\"));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\nint(25)\nint(10)\n",
+            "int(5)\nint(30)\nint(10)\n",
+            "int(0)\nint(-80)\nint(10)\n",
+            "int(-2)\nint(100)\nint(10)\n",
+            "bool(true)\n",
+            "string(1) \"a\"\nstring(5) \"Apple\"\nstring(3) \"tag\"\n",
+            "string(1) \"b\"\nstring(6) \"Banana\"\nstring(3) \"tag\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_walk_unset_mutation_snapshot_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-unset-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-unset-mutation.php");
+    let output = root.join("array-walk-unset-mutation-bin");
+    fs::write(
+        &input,
+        "<?php
+$myArray = array_fill(0, 10, 1);
+array_walk($myArray, function($value, $key) use (&$myArray) {
+    var_dump($key);
+    unset($myArray[$key]);
+    unset($myArray[$key + 1]);
+    unset($myArray[$key + 2]);
+});
+print_r($myArray);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("int(0)\n", "int(3)\n", "int(6)\n", "int(9)\n", "Array\n", "(\n", ")\n",)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

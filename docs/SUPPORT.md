@@ -98,7 +98,8 @@ Post-RC architecture remains explicit rather than hidden:
 - String, integer, float, boolean, and null literals. Numeric literals accept
   PHP digit separators between digits; integer literals include decimal,
   legacy octal, explicit octal `0o`/`0O`, binary `0b`/`0B`, and hexadecimal
-  `0x`/`0X` forms.
+  `0x`/`0X` forms. Binary-prefixed string literals `b'...'` and `b"..."`
+  are accepted as ordinary PHP strings.
 - Invalid legacy octal integer literals containing `8` or `9` are rejected with
   source-spanned PHP-style parse errors through `phpc`.
 - Double-quoted strings with direct `$name`, simple variable-root array offset
@@ -381,8 +382,9 @@ Post-RC architecture remains explicit rather than hidden:
   `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr[, levels]);`,
   `highlight_string(expr[, return]);`, `highlight_file(expr[, return]);`,
   `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
-  `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
-  `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
+  `pow(expr, expr);`, `min(expr[, ...]);`, `max(expr[, ...]);`,
+  `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
+  `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`, `flush();`,
   `getmypid();`, `getcwd();`, `chdir(expr);`, `get_cfg_var(expr);`,
   `get_loaded_extensions([zend_extensions]);`, `ini_get(expr);`,
   `localeconv();`,
@@ -463,8 +465,9 @@ Post-RC architecture remains explicit rather than hidden:
   `pathinfo(expr[, flags])`,
   `highlight_string(expr[, return])`, `highlight_file(expr[, return])`,
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
-  `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
-  `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
+  `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `min(expr[, ...])`,
+  `max(expr[, ...])`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
+  `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `flush()`,
   `getmypid()`, `getcwd()`, `chdir(expr)`, `get_cfg_var(expr)`,
   `get_loaded_extensions([zend_extensions])`, `ini_get(expr)`,
   `localeconv()`,
@@ -781,7 +784,10 @@ Post-RC architecture remains explicit rather than hidden:
 - `pi()` returns the modeled boxed float value of the `M_PI` constant.
 - `pow()` calls the same boxed numeric exponentiation helper as the `**`
   operator.
+- `min()` and `max()` select over variadic operands or one array operand using
+  the shared boxed loose ordering helper.
 - `getrandmax()` returns the modeled maximum random integer.
+- `flush()` flushes native stdout and returns `null`.
 - `getmypid()` returns the generated native process id.
 - `php_sapi_name()` and the `PHP_SAPI` constant return the modeled CLI SAPI
   name.
@@ -872,8 +878,10 @@ Post-RC architecture remains explicit rather than hidden:
   use sequential integer keys.
 - `array_reduce()` over current boxed arrays, dispatching carry/value pairs
   through the shared callable path and supporting an optional initial value.
-- `array_walk()` over direct-variable arrays, dispatching value/key pairs and
-  optional user data through the shared callable path while preserving PHP's
+- `array_walk()` over direct-variable arrays, validating callback operands,
+  dispatching value/key pairs and separated optional user data through the
+  shared callable path, throwing catchable callback arity diagnostics,
+  snapshotting walked keys for unset-mutation visibility, and preserving PHP's
   by-reference mutation behavior for walked values.
 - `array_flip()` over current boxed arrays, flipping dereferenced integer and
   string values into ordered-map keys and using the original keys as values.
