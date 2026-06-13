@@ -4996,6 +4996,15 @@ var_dump($count);\n\
 $count = null;\n\
 var_dump(str_replace(['a', 'b'], ['A', 'B'], ['k' => 'ab', 2 => 'ba'], $count));\n\
 var_dump($count);\n\
+$data = ['a' => 'b', 'numeric' => 1];\n\
+$ref = &$data;\n\
+$b = &$ref['a'];\n\
+$numeric = &$ref['numeric'];\n\
+$count = null;\n\
+var_dump(str_replace(array_keys($data), $data, \"a numeric\", $count));\n\
+var_dump($count);\n\
+var_dump($numeric);\n\
+var_dump($data['numeric']);\n\
 try { var_dump(str_replace('a', ['x'], 'a')); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
     )
     .unwrap();
@@ -5014,6 +5023,10 @@ array(2) {\n  [\"first\"]=>\n  string(2) \"Xb\"\n  [2]=>\n  string(2) \"cX\"\n}\
 int(2)\n\
 array(2) {\n  [\"k\"]=>\n  string(2) \"AB\"\n  [2]=>\n  string(2) \"BA\"\n}\n\
 int(4)\n\
+string(3) \"b 1\"\n\
+int(2)\n\
+int(1)\n\
+int(1)\n\
 str_replace(): Argument #2 ($replace) must be of type string when argument #1 ($search) is a string\n"
             .to_vec()
     );

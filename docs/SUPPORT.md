@@ -683,8 +683,9 @@ Post-RC architecture remains explicit rather than hidden:
   search/replacement/subject operands after PHP string conversion. Search
   arrays are applied sequentially, replacement arrays use the matching entry or
   an empty string when missing, scalar replacements apply to every search
-  entry, subject arrays preserve their keys, and the optional `$count` argument
-  accumulates replacements by reference. Invalid resource, closure, exception,
+  entry, reference-backed array entries are dereferenced, subject arrays
+  preserve their keys, and the optional `$count` argument accumulates
+  replacements by reference. Invalid resource, closure, exception,
   non-stringable object operands, and scalar-search/array-replace calls throw
   catchable PHP-style `TypeError` diagnostics.
 - `ceil()` and `floor()` over current boxed scalar values after PHP numeric

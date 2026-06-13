@@ -67,9 +67,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   length-aware CRC-32 integers; trim-family internals use PHP default bytes
   plus bounded charlists.
 - `str_replace()` supports scalar and ordered-array search/replacement/subject
-  byte replacement, preserves subject-array keys, writes the optional `$count`
-  argument by reference, and throws PHP-style TypeErrors for invalid
-  resource/object operands and scalar-search/array-replace calls.
+  byte replacement, dereferences array entries, preserves subject-array keys,
+  writes the optional `$count` argument by reference, and throws PHP-style
+  TypeErrors for invalid resource/object operands and scalar-search/
+  array-replace calls.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
   slots distinct from child public redeclarations; `property_exists()` covers

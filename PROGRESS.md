@@ -1,8 +1,8 @@
 # PTN Progress
 
-Refresh: 2026-06-13T12:34Z
-Measured: `ptn-79ha` integration on current `origin/master` `31a3b89`;
-focused `str_replace()` array-operand verification passed.
+Refresh: 2026-06-13T12:39Z
+Measured: `ptn-mxgw` evidence integration on current `origin/master`
+`8c9b27b`; focused `str_replace()` reference-array PHPT passed.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
 closures, `stdClass`, properties/destructors, reflection, array helpers,
@@ -22,8 +22,8 @@ grouped namespace imports, scalar conversions, `global`, PHP metadata
 constants, `dirname()` levels, `pathinfo()`, `LC_*`/`setlocale()`/`localeconv()`,
 invokable object callables, search/count internals, persistent standard
 streams, `property_exists()`, PHPT manifests, `crc32()`, `str_replace()`
-array operands/counts, and integer validation for `chr()`, `intdiv()`, and
-file offsets.
+array operands/reference entries/counts, and integer validation for `chr()`,
+`intdiv()`, and file offsets.
 
 ## Dashboard
 
@@ -32,9 +32,9 @@ file offsets.
 | Source unit tests | 3 | 3 | 0 |
 | Native/compiler Rust suite | 621 | 621 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 272 | 272 | 0 |
+| PHPT bounded manifest | 273 | 273 | 0 |
 | PHPT Zend rows | 86 | 86 | 0 |
-| PHPT ext/standard rows | 131 | 131 | 0 |
+| PHPT ext/standard rows | 132 | 132 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT tests/basic+func+lang | 50 | 50 | 0 |
 | PHPT other rows | 5 | 5 | 0 |
@@ -59,15 +59,15 @@ PHPT runner ini values, statement-form `(void)`, array mutators, inc/dec,
 
 ## Remaining Bounded Exclusions
 
-- None among the 272 runnable rows in the current bounded manifest.
+- None among the 273 runnable rows in the current bounded manifest.
 - Callback manifest has 3 runnable passing rows and 2 unsupported-extension
   exclusions.
 
 ## Verification
 
-Current branch verification for `ptn-79ha`: focused
-`compile_str_replace_array_operands_to_native_binary` reducer, scalar/count
-`str_replace()` regression, and 621-test inventory passed.
+Current branch verification for `ptn-mxgw`: extended focused
+`compile_str_replace_array_operands_to_native_binary` reducer, focused PHPT
+`str_replace_array_refs.phpt` 1/1, and 621-test inventory passed.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic

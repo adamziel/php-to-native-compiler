@@ -209,6 +209,7 @@ ext/standard/tests/strings/str_ends_with.phpt
 ext/standard/tests/strings/stripos.phpt
 ext/standard/tests/strings/str_pad.phpt
 ext/standard/tests/strings/str_replace_basic.phpt
+ext/standard/tests/strings/str_replace_array_refs.phpt
 ext/standard/tests/strings/str_rot13_basic.phpt
 ext/standard/tests/strings/str_shuffle_basic.phpt
 ext/standard/tests/strings/strrchr.phpt
