@@ -20974,6 +20974,101 @@ echo strlen("abc"), ":", PHP_INT_SIZE, "\n";
 }
 
 #[test]
+fn compile_grouped_namespace_imports_to_native_binary() {
+    let root = temp_dir("ptn-native-grouped-namespace-imports");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("grouped-namespace-imports.php");
+    let output = root.join("grouped-namespace-imports-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace Lib\Models;
+
+class User {
+    public static function label() { return __METHOD__ . "\n"; }
+}
+
+namespace Lib\Tools;
+
+class Formatter {
+    public static function label() { return __METHOD__ . "\n"; }
+}
+
+function label($value) {
+    return __NAMESPACE__ . ":" . $value . "\n";
+}
+
+function repeat_label($value) {
+    return label($value) . label($value);
+}
+
+const MARK = "mark\n";
+const EXTRA = "extra\n";
+const ENABLED = "enabled\n";
+
+namespace App;
+
+use Lib\{Models\User, Tools\Formatter as Fmt};
+use function Lib\Tools\{label, repeat_label as twice};
+use const Lib\Tools\{MARK, EXTRA as OTHER};
+use Lib\Tools\{function label as mixed_label, const ENABLED};
+
+echo User::label();
+echo Fmt::label();
+echo label("call");
+echo twice("again");
+echo MARK;
+echo OTHER;
+echo mixed_label("mixed");
+echo ENABLED;
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Lib\\Models\\User::label\n",
+            "Lib\\Tools\\Formatter::label\n",
+            "Lib\\Tools:call\n",
+            "Lib\\Tools:again\n",
+            "Lib\\Tools:again\n",
+            "mark\n",
+            "extra\n",
+            "Lib\\Tools:mixed\n",
+            "enabled\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_rejects_unsupported_grouped_namespace_import_forms() {
+    let cases = [
+        (
+            "<?php use namespace\\Lib\\{Foo};",
+            "namespace-relative grouped use prefixes are unsupported",
+        ),
+        (
+            "<?php use Lib\\{\\Foo};",
+            "fully qualified grouped use items are unsupported",
+        ),
+        (
+            "<?php use Lib\\{namespace\\Foo};",
+            "namespace-relative grouped use items are unsupported",
+        ),
+    ];
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn parser_rejects_namespace_after_function_declaration() {
     let error = parser::parse("<?php function foo() {} namespace Bar;").unwrap_err();
     assert_eq!(

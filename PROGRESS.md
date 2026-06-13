@@ -1,8 +1,8 @@
 # PTN Progress
 
-Refresh: 2026-06-13T11:39Z
-Measured: `ptn-ijqx` integration on current `origin/master` `3a5068148`;
-focused scalar conversion verification green.
+Refresh: 2026-06-13T11:45Z
+Measured: `ptn-ab0o` integration on current `origin/master` `2f1950ea6`;
+focused grouped namespace import verification green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, inline HTML
 output, includes/once guards, closures, `stdClass`, properties/destructors,
@@ -11,13 +11,14 @@ inherited static dispatch, `property_exists()` metadata, array helpers,
 `strcasecmp()`, search/count internals, scalar `str_replace()`, `chr()`
 diagnostics, `crc32()`, `boolval()`/`floatval()`/`doubleval()`, PHP
 version/build/platform metadata constants, standard streams, foreach
-destructuring, `global` bindings, dynamic-variable writes/unsets, stream
-metadata, locale constants and `setlocale()`, catchable arithmetic/operator
-errors, alternate `<>` parsing, and offset compound/coalescing.
+destructuring, unbracketed namespaces with simple/grouped imports, `global`
+bindings, dynamic-variable writes/unsets, stream metadata, locale constants and
+`setlocale()`, catchable arithmetic/operator errors, alternate `<>` parsing,
+and offset compound/coalescing.
 
-Recent movers include scalar conversion internals for
-`boolval()`/`floatval()`/`doubleval()`, `global` function-local binding to root
-globals, PHP version/build/platform metadata constants, `dirname()`
+Recent movers include grouped namespace imports, scalar conversion internals
+for `boolval()`/`floatval()`/`doubleval()`, `global` function-local binding to
+root globals, PHP version/build/platform metadata constants, `dirname()`
 positive-level traversal, `pathinfo()`, modeled `LC_*` constants, C/POSIX
 `setlocale()`, search/count internals, PHP 8.4 array warning/overflow
 behavior, persistent standard streams, `property_exists()`, PHPT manifests,
@@ -29,7 +30,7 @@ behavior, persistent standard streams, `property_exists()`, PHPT manifests,
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 589 | 589 | 0 |
+| Native/compiler Rust suite | 591 | 591 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 271 | 269 | 2 |
 | PHPT Zend rows | 85 | 84 | 1 |
@@ -48,14 +49,14 @@ Parser/IR/C backend, boxed values, variables/constants, strings, scalar
 operators, arrays, `foreach`, control flow, includes/once guards, selected
 internals, COW/reference slices, functions, closures, `stdClass`,
 class/object shells/constants, properties, destructors, reflection, assertions,
-namespaces/imports, streams, file reads/writes, array/string/numeric helpers
-through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
-`str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `pathinfo()`,
-`dirname()` levels, `crc32()`, `basename()`,
-`boolval()`/`floatval()`/`doubleval()`, inline HTML output, locale support,
-PHP version/build/platform metadata constants, `var_export()`, array mutators,
-inc/dec, `global` bindings, dynamic-variable writes/unsets, and offset
-compound/null coalescing assignments.
+namespaces/imports including grouped use forms, streams, file reads/writes,
+array/string/numeric helpers through `array_udiff*()`, `json_encode()`,
+`printf()`, `fdiv()`, `explode()`, `str_replace()`, `strcasecmp()`,
+`strncmp()`, `strrchr()`, `pathinfo()`, `dirname()` levels, `crc32()`,
+`basename()`, `boolval()`/`floatval()`/`doubleval()`, inline HTML output,
+locale support, PHP version/build/platform metadata constants, `var_export()`,
+array mutators, inc/dec, `global` bindings, dynamic-variable writes/unsets,
+and offset compound/null coalescing assignments.
 
 ## Remaining Bounded Exclusions
 
@@ -66,12 +67,12 @@ compound/null coalescing assignments.
 
 ## Verification
 
-Current branch verification for `ptn-ijqx`: diff check, `cargo fmt`, and
-focused scalar conversion native test.
+Current branch verification for `ptn-ab0o`: diff check, `cargo fmt`, and
+focused grouped namespace import native/parser tests.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
-properties, interfaces/traits, magic methods, first-class callables, dynamic
-includes, unsupported internals, scalar offset-lvalues, assertions,
-binary-safe array keys, embedded-NUL internals, object IDs, host-locale parity,
-`str_replace()` array forms, exact scalar conversion diagnostics for edge
-values, and object/reference targets.
+properties, interfaces/traits, bracketed namespace blocks, magic methods,
+first-class callables, dynamic includes, unsupported internals, scalar
+offset-lvalues, assertions, binary-safe array keys, embedded-NUL internals,
+object IDs, host-locale parity, `str_replace()` array forms, exact scalar
+conversion diagnostics for edge values, and object/reference targets.
