@@ -799,14 +799,13 @@ ptn_phpt_first_unsupported_internal_surface() {
         {
             line = ptn_php_code_line($0)
             if (line ~ /(^|[^[:alnum:]_$])array_splice[[:space:]]*\(/) {
-                print "unsupported-internal\trequires array_splice() by-reference array mutation plus replacement/reindexing COW separation, outside PTN modeled array mutator helpers"
-                found = 1
-                exit
+                array_splice_seen = 1
             }
-            if (line ~ /(^|[^[:alnum:]_$])array_walk_recursive[[:space:]]*\(/) {
-                print "unsupported-internal\trequires array_walk_recursive() recursive by-reference callback traversal and mutation visibility, outside PTN modeled array_walk helper"
-                found = 1
-                exit
+            if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]+__destruct[[:space:]]*\(/) {
+                destructor_seen = 1
+            }
+            if (line ~ /(^|[^[:alnum:]_$])global[[:space:]]+\$/ || line ~ /\$globals[[:space:]]*\[/) {
+                global_state_seen = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])array_multisort[[:space:]]*\(/) {
                 print "unsupported-internal\trequires array_multisort() multi-array by-reference sorting and flag/cursor mutation semantics, outside PTN modeled sort helpers"
@@ -826,6 +825,10 @@ ptn_phpt_first_unsupported_internal_surface() {
             }
         }
         END {
+            if (!found && array_splice_seen && destructor_seen && global_state_seen) {
+                print "unsupported-internal\trequires array_splice() destructor reentrancy detection when element destruction mutates global array state, outside PTN modeled array_splice helper"
+                found = 1
+            }
             if (!found && byref_foreach && positional_mutator) {
                 print "unsupported-internal\trequires by-reference foreach iterator-pointer preservation under positional array mutation, outside PTN foreach iterator model"
                 found = 1

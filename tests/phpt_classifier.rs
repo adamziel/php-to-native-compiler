@@ -255,11 +255,6 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
 fn phpt_classifier_excludes_unsupported_foreach_internal_surfaces() {
     let cases = [
         (
-            "array_walk_recursive",
-            "--TEST--\nrecursive walk\n--FILE--\n<?php\narray_walk_recursive($items, 'visit');\n--EXPECT--\n",
-            "requires array_walk_recursive() recursive by-reference callback traversal",
-        ),
-        (
             "by-ref foreach positional mutation",
             "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_unshift($items, 0); }\n--EXPECT--\n",
             "requires by-reference foreach iterator-pointer preservation",
@@ -363,14 +358,9 @@ fn phpt_classifier_keeps_variadic_parameter_rows_runnable() {
 fn phpt_classifier_excludes_unsupported_mutating_array_internals() {
     let cases = [
         (
-            "array_splice",
-            "--TEST--\nsplice\n--FILE--\n<?php\n$items = [1, 2, 3];\narray_splice($items, 1, 1, [4]);\n--EXPECT--\n",
-            "requires array_splice() by-reference array mutation",
-        ),
-        (
-            "array_walk_recursive",
-            "--TEST--\nrecursive walk\n--FILE--\n<?php\narray_walk_recursive([1], \"var_dump\");\n--EXPECT--\n",
-            "requires array_walk_recursive() recursive by-reference callback traversal",
+            "array_splice destructor reentrancy",
+            "--TEST--\nsplice destructor\n--FILE--\n<?php\nclass C { function __destruct() { global $items; $items[] = 0; } }\n$items = [1, new C, 2];\narray_splice($items, 1, 1);\n--EXPECT--\n",
+            "requires array_splice() destructor reentrancy detection",
         ),
         (
             "array_multisort",
@@ -392,6 +382,28 @@ fn phpt_classifier_excludes_unsupported_mutating_array_internals() {
         );
         assert!(
             classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_modeled_mutating_array_helpers_runnable() {
+    let cases = [
+        (
+            "array_splice",
+            "--TEST--\nsplice\n--FILE--\n<?php\n$items = [1, 2, 3];\narray_splice($items, 1, 1, [4]);\n--EXPECT--\n",
+        ),
+        (
+            "array_walk_recursive",
+            "--TEST--\nrecursive walk\n--FILE--\n<?php\n$items = [1];\narray_walk_recursive($items, \"var_dump\");\n--EXPECT--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
             "{name}: {classification:?}"
         );
     }

@@ -16770,6 +16770,186 @@ var_dump($replaced, $left, $right, function_exists(\"array_replace\"), function_
 }
 
 #[test]
+fn compile_array_replace_preserves_shared_references_to_native_binary() {
+    let root = temp_dir("ptn-native-array-replace-shared-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-replace-shared-references.php");
+    let output = root.join("array-replace-shared-references-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$x = 1;\n\
+$right = [\"r\" => &$x, \"n\" => [\"r\" => &$x]];\n\
+$replaced = array_replace([], $right);\n\
+$recursive = array_replace_recursive([\"n\" => [\"keep\" => 0]], $right);\n\
+$x = 2;\n\
+$replaced[\"r\"] = 3;\n\
+$recursive[\"n\"][\"r\"] = 4;\n\
+var_dump($x, $right, $replaced, $recursive);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(4)\n",
+            "array(2) {\n",
+            "  [\"r\"]=>\n",
+            "  &int(4)\n",
+            "  [\"n\"]=>\n",
+            "  array(1) {\n",
+            "    [\"r\"]=>\n",
+            "    &int(4)\n",
+            "  }\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"r\"]=>\n",
+            "  &int(4)\n",
+            "  [\"n\"]=>\n",
+            "  array(1) {\n",
+            "    [\"r\"]=>\n",
+            "    &int(4)\n",
+            "  }\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"n\"]=>\n",
+            "  array(2) {\n",
+            "    [\"keep\"]=>\n",
+            "    int(0)\n",
+            "    [\"r\"]=>\n",
+            "    &int(4)\n",
+            "  }\n",
+            "  [\"r\"]=>\n",
+            "  &int(4)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_splice_to_native_binary() {
+    let root = temp_dir("ptn-native-array-splice");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-splice.php");
+    let output = root.join("array-splice-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$x = 1;\n\
+$a = [\"a\" => 1, 2 => &$x, \"b\" => 3, 5 => 4];\n\
+$rep = [\"x\" => 9, 7 => &$x];\n\
+$removed = array_splice($a, 1, 2, $rep);\n\
+$a[1] = 5;\n\
+var_dump($x, $removed, $a, $rep, function_exists(\"array_splice\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(5)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  &int(5)\n",
+            "  [\"b\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(4) {\n",
+            "  [\"a\"]=>\n",
+            "  int(1)\n",
+            "  [0]=>\n",
+            "  int(9)\n",
+            "  [1]=>\n",
+            "  &int(5)\n",
+            "  [2]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"x\"]=>\n",
+            "  int(9)\n",
+            "  [7]=>\n",
+            "  &int(5)\n",
+            "}\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_splice"));
+    assert!(c_source.contains("ptn_array_splice_values"));
+}
+
+#[test]
+fn compile_array_walk_recursive_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-recursive");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-recursive.php");
+    let output = root.join("array-walk-recursive-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function bump_walk(&$value, $key, $tag) { $value = $tag . $key . ':' . $value; }\n\
+$data = [\"top\" => 1, \"nest\" => [\"a\" => 2, \"deep\" => [3]]];\n\
+$copy = $data;\n\
+$result = array_walk_recursive($data, \"bump_walk\", \"v\");\n\
+var_dump($result, $data, $copy, function_exists(\"array_walk_recursive\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "array(2) {\n",
+            "  [\"top\"]=>\n",
+            "  string(6) \"vtop:1\"\n",
+            "  [\"nest\"]=>\n",
+            "  array(2) {\n",
+            "    [\"a\"]=>\n",
+            "    string(4) \"va:2\"\n",
+            "    [\"deep\"]=>\n",
+            "    array(1) {\n",
+            "      [0]=>\n",
+            "      string(4) \"v0:3\"\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"top\"]=>\n",
+            "  int(1)\n",
+            "  [\"nest\"]=>\n",
+            "  array(2) {\n",
+            "    [\"a\"]=>\n",
+            "    int(2)\n",
+            "    [\"deep\"]=>\n",
+            "    array(1) {\n",
+            "      [0]=>\n",
+            "      int(3)\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_walk_recursive"));
+    assert!(c_source.contains("ptn_runtime_array_walk_recursive_variable"));
+}
+
+#[test]
 fn compile_array_copy_on_write_detaches_shared_payloads_to_native_binary() {
     let root = temp_dir("ptn-native-array-cow-detach");
     fs::create_dir_all(&root).unwrap();

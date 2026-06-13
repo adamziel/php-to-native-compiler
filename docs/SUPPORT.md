@@ -310,10 +310,11 @@ Post-RC architecture remains explicit rather than hidden:
   `uasort()`, `uksort()`, and `array_multisort()` remain unsupported and fail
   with an explicit unsupported diagnostic.
 - Broad PHPT rows for currently unmodeled mutating array-internal helpers
-  (`array_splice()`, `array_walk_recursive()`, `array_multisort()`, `usort()`,
-  `uasort()`, and `uksort()`) are classified as `unsupported-internal` before
-  execution, with source evidence, so they do not inflate runnable semantic
-  failures until generic helper implementations exist.
+  (`array_multisort()`, `usort()`, `uasort()`, and `uksort()`) and
+  destructor-reentrant `array_splice()` cases are classified as
+  `unsupported-internal` before execution, with source evidence, so they do not
+  inflate runnable semantic failures until generic helper implementations
+  exist.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
   offset reads, property reads, static property reads, and currently supported
   value expressions. Variable, offset, property, and static-property operands
@@ -404,6 +405,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_keys(expr[, expr[, expr]]);`,
   `array_map(expr, expr[, ...]);`, `array_reduce(expr, expr[, expr]);`,
   `array_walk(expr, expr[, expr]);`,
+  `array_walk_recursive(expr, expr[, expr]);`,
   `array_intersect(expr, ...);`, `array_intersect_assoc(expr, ...);`,
   `array_diff_key(expr, ...);`, `array_intersect_key(expr, ...);`,
   `array_diff_uassoc(expr, expr, callback);`,
@@ -419,6 +421,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_uintersect_uassoc(expr, expr, callback, callback);`,
   `array_product(expr);`, `array_search(expr, expr[, expr]);`,
   `array_slice(expr, expr[, expr[, expr]]);`,
+  `array_splice(expr, expr[, expr[, expr]]);`,
   `array_values(expr);`, `array_keys(expr[, expr[, expr]]);`,
   `array_merge(expr, ...);`,
   `array_merge_recursive(expr, ...);`,
@@ -951,7 +954,15 @@ Post-RC architecture remains explicit rather than hidden:
   modeled `ValueError` for zero or out-of-range steps.
 - `array_merge_recursive()`, `array_replace()`, and
   `array_replace_recursive()` over current boxed arrays, preserving ordered-map
-  key behavior while cloning dereferenced values across COW boundaries.
+  key behavior; replace helpers preserve shared references and unwrap
+  single-owner references across COW boundaries.
+- `array_splice()` over direct by-reference arrays, including offset/length
+  normalization, scalar or array replacement insertion, numeric-key reindexing,
+  and reference preservation for removed/replacement values. Destructor
+  reentrancy detection during splice remains classified.
+- `array_walk_recursive()` over direct-variable arrays, recursively visiting
+  leaf values through callable dispatch with userdata, by-reference callback
+  visibility, and COW detachment for nested arrays.
 - `in_array()` over current boxed arrays, returning whether the needle matches
   any entry under loose or strict comparison. References are read through the
   same dereferencing path as other comparison internals.

@@ -1689,13 +1689,14 @@ static PTN_UNUSED PtnValue ptn_runtime_array_reset_path(
 
 static PtnArray *ptn_array_walk_slot_array_for_write(
     PtnRuntime *runtime,
+    const char *function_name,
     PtnValue *slot,
     PtnValue value
 ) {
     PtnValue current_value = slot == NULL ? value : *slot;
     PtnArray *array = ptn_internal_expect_array_arg(
         runtime,
-        "array_walk",
+        function_name,
         1,
         "array",
         current_value
@@ -1811,7 +1812,7 @@ static PtnValue ptn_array_walk_slot(
 
     for (;;) {
         PtnValue *slot = ptn_array_walk_current_slot(runtime, name, local_slot);
-        PtnArray *array = ptn_array_walk_slot_array_for_write(runtime, slot, value);
+        PtnArray *array = ptn_array_walk_slot_array_for_write(runtime, "array_walk", slot, value);
         if (array != last_array) {
             ptn_array_walk_free_snapshot_keys(snapshot_keys, snapshot_count);
             last_array = array;
@@ -1896,6 +1897,109 @@ static PTN_UNUSED PtnValue ptn_runtime_array_walk_variable(
     size_t line
 ) {
     return ptn_array_walk_checked(runtime, name, NULL, value, callback, has_userdata, userdata, line);
+}
+
+static void ptn_array_walk_recursive_array(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnValue callback,
+    int has_userdata,
+    PtnValue userdata,
+    size_t line
+) {
+    size_t snapshot_count = 0;
+    PtnArrayKey *snapshot_keys = ptn_array_walk_snapshot_keys(array, &snapshot_count);
+
+    for (size_t i = 0; i < snapshot_count; i++) {
+        PtnArrayEntry *entry = ptn_array_entry_for_key(array, snapshot_keys[i]);
+        if (entry == NULL) {
+            continue;
+        }
+
+        PtnValue *entry_value = entry->value.type == PTN_REFERENCE
+            ? &entry->value.as.reference->value
+            : &entry->value;
+        PtnValue resolved = ptn_value_deref(*entry_value);
+        if (resolved.type == PTN_ARRAY) {
+            PtnArray *child = ptn_array_detach_value(entry_value);
+            ptn_array_walk_recursive_array(
+                runtime,
+                child == NULL ? resolved.as.array : child,
+                callback,
+                has_userdata,
+                userdata,
+                line
+            );
+            continue;
+        }
+
+        size_t current_index = (size_t)(entry - array->entries);
+        ptn_array_walk_call_function(
+            runtime,
+            callback,
+            array,
+            current_index,
+            has_userdata,
+            userdata,
+            line
+        );
+    }
+
+    ptn_array_walk_free_snapshot_keys(snapshot_keys, snapshot_count);
+}
+
+static PtnValue ptn_array_walk_recursive_checked(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue *local_slot,
+    PtnValue value,
+    PtnValue callback,
+    int has_userdata,
+    PtnValue userdata,
+    size_t line
+) {
+    PtnValue checked_callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "array_walk_recursive",
+        2,
+        "callback",
+        callback
+    );
+    PtnValue *slot = ptn_array_walk_current_slot(runtime, name, local_slot);
+    PtnArray *array = ptn_array_walk_slot_array_for_write(
+        runtime,
+        "array_walk_recursive",
+        slot,
+        value
+    );
+    int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    runtime->warn_by_ref_argument_mismatch = 1;
+    runtime->throw_argument_count_errors = 1;
+    ptn_array_walk_recursive_array(
+        runtime,
+        array,
+        checked_callback,
+        has_userdata,
+        userdata,
+        line
+    );
+    runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
+    runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    ptn_value_destroy(&checked_callback);
+    return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_walk_recursive_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue callback,
+    int has_userdata,
+    PtnValue userdata,
+    size_t line
+) {
+    return ptn_array_walk_recursive_checked(runtime, name, NULL, value, callback, has_userdata, userdata, line);
 }
 
 static PtnValue ptn_internal_array_pop(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -3261,6 +3365,22 @@ static PtnValue ptn_internal_array_walk(PtnRuntime *runtime, size_t argc, const 
     return result;
 }
 
+static PtnValue ptn_internal_array_walk_recursive(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue value = ptn_value_clone(args[0]);
+    PtnValue result = ptn_array_walk_recursive_checked(
+        runtime,
+        NULL,
+        &value,
+        value,
+        args[1],
+        argc >= 3,
+        argc >= 3 ? args[2] : ptn_null(),
+        line
+    );
+    ptn_value_destroy(&value);
+    return result;
+}
+
 static PtnArray **ptn_array_map_arrays(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t *max_len_out) {
     size_t array_count = argc - 1;
     PtnArray **arrays = malloc(array_count * sizeof(PtnArray *));
@@ -3658,6 +3778,7 @@ static int ptn_array_slice_string_to_integer(PtnString string, int64_t *integer_
 
 static int64_t ptn_array_slice_integer_arg(
     PtnRuntime *runtime,
+    const char *function_name,
     size_t position,
     const char *argument_name,
     PtnValue value,
@@ -3704,7 +3825,8 @@ static int64_t ptn_array_slice_integer_arg(
     int written = snprintf(
         message,
         sizeof(message),
-        "array_slice(): Argument #%zu ($%s) must be of type %s, %s given",
+        "%s(): Argument #%zu ($%s) must be of type %s, %s given",
+        function_name,
         position,
         argument_name,
         nullable ? "?int" : "int",
@@ -3753,13 +3875,109 @@ static size_t ptn_array_slice_count(size_t array_len, size_t start, int has_leng
     return available - drop;
 }
 
+static PtnValue ptn_array_replacement_value(PtnValue value);
+
+static PtnArrayKey ptn_array_splice_result_key(PtnArray *array, PtnArrayKey source_key) {
+    if (source_key.type == PTN_ARRAY_KEY_STRING) {
+        return ptn_array_key_clone(source_key);
+    }
+    return ptn_array_int_key(array->next_auto_key);
+}
+
+static void ptn_array_splice_append_source_entry(PtnArray *target, PtnArrayEntry *source) {
+    ptn_array_set_entry(
+        target,
+        ptn_array_splice_result_key(target, source->key),
+        ptn_array_replacement_value(source->value)
+    );
+}
+
+static void ptn_array_splice_append_replacement_value(PtnArray *target, PtnValue value) {
+    ptn_array_set_entry(
+        target,
+        ptn_array_int_key(target->next_auto_key),
+        ptn_array_replacement_value(value)
+    );
+}
+
+static void ptn_array_adopt_storage(PtnArray *target, PtnArray *source) {
+    for (size_t i = 0; i < target->len; i++) {
+        ptn_array_key_free(target->entries[i].key);
+        ptn_value_destroy(&target->entries[i].value);
+    }
+    free(target->index_slots);
+    free(target->entries);
+
+    target->len = source->len;
+    target->capacity = source->capacity;
+    target->entries = source->entries;
+    target->index_slots = source->index_slots;
+    target->index_capacity = source->index_capacity;
+    target->next_auto_key = source->next_auto_key;
+    target->current_index = source->current_index <= source->len ? source->current_index : source->len;
+
+    source->len = 0;
+    source->capacity = 0;
+    source->entries = NULL;
+    source->index_slots = NULL;
+    source->index_capacity = 0;
+    source->next_auto_key = 0;
+    source->current_index = 0;
+}
+
+static PtnValue ptn_array_splice_values(
+    PtnArray *array,
+    int64_t offset,
+    int has_length,
+    int64_t length,
+    int has_replacement,
+    PtnValue replacement
+) {
+    size_t start = ptn_array_slice_start_offset(array->len, offset);
+    size_t count = ptn_array_slice_count(array->len, start, has_length, length);
+    PtnValue removed = ptn_array_from_literal_entries(0, NULL);
+    PtnValue rebuilt = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *replacement_array = NULL;
+    PtnValue replacement_value = ptn_value_deref(replacement);
+    if (has_replacement && replacement_value.type == PTN_ARRAY) {
+        replacement_array = replacement_value.as.array;
+    }
+
+    for (size_t i = 0; i < start; i++) {
+        ptn_array_splice_append_source_entry(rebuilt.as.array, &array->entries[i]);
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        ptn_array_splice_append_source_entry(removed.as.array, &array->entries[start + i]);
+    }
+
+    if (replacement_array != NULL) {
+        for (size_t i = 0; i < replacement_array->len; i++) {
+            ptn_array_splice_append_replacement_value(
+                rebuilt.as.array,
+                replacement_array->entries[i].value
+            );
+        }
+    } else if (has_replacement && replacement_value.type != PTN_NULL) {
+        ptn_array_splice_append_replacement_value(rebuilt.as.array, replacement);
+    }
+
+    for (size_t i = start + count; i < array->len; i++) {
+        ptn_array_splice_append_source_entry(rebuilt.as.array, &array->entries[i]);
+    }
+
+    ptn_array_adopt_storage(array, rebuilt.as.array);
+    free(rebuilt.as.array);
+    return removed;
+}
+
 static PtnValue ptn_internal_array_slice(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_slice", 1, "array", args[0]);
-    int64_t offset = ptn_array_slice_integer_arg(runtime, 2, "offset", args[1], 0, NULL);
+    int64_t offset = ptn_array_slice_integer_arg(runtime, "array_slice", 2, "offset", args[1], 0, NULL);
     int length_is_null = 0;
     int64_t length = argc >= 3
-        ? ptn_array_slice_integer_arg(runtime, 3, "length", args[2], 1, &length_is_null)
+        ? ptn_array_slice_integer_arg(runtime, "array_slice", 3, "length", args[2], 1, &length_is_null)
         : 0;
     int has_length = argc >= 3 && !length_is_null;
     int preserve_keys = argc >= 4 && ptn_is_truthy(args[3]);
@@ -3780,6 +3998,29 @@ static PtnValue ptn_internal_array_slice(PtnRuntime *runtime, size_t argc, const
     }
 
     return result;
+}
+
+static PtnValue ptn_internal_array_splice(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_splice", 1, "array", args[0]);
+    if (args[0].type == PTN_REFERENCE && args[0].as.reference->value.type == PTN_ARRAY) {
+        array = ptn_array_detach_value(&args[0].as.reference->value);
+    }
+    int64_t offset = ptn_array_slice_integer_arg(runtime, "array_splice", 2, "offset", args[1], 0, NULL);
+    int length_is_null = 0;
+    int64_t length = argc >= 3
+        ? ptn_array_slice_integer_arg(runtime, "array_splice", 3, "length", args[2], 1, &length_is_null)
+        : 0;
+    int has_length = argc >= 3 && !length_is_null;
+    PtnValue replacement = argc >= 4 ? args[3] : ptn_null();
+    (void)line;
+    return ptn_array_splice_values(
+        array,
+        offset,
+        has_length,
+        length,
+        argc >= 4,
+        replacement
+    );
 }
 
 static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -4009,13 +4250,20 @@ static PtnValue ptn_internal_array_merge_recursive(PtnRuntime *runtime, size_t a
     return result;
 }
 
+static PtnValue ptn_array_replacement_value(PtnValue value) {
+    if (value.type == PTN_REFERENCE && value.as.reference->refcount <= 1) {
+        return ptn_value_clone_deref(value);
+    }
+    return ptn_value_clone(value);
+}
+
 static void ptn_array_replace_into(PtnArray *target, PtnArray *source) {
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayEntry *entry = &source->entries[i];
         ptn_array_set_entry(
             target,
             ptn_array_key_clone(entry->key),
-            ptn_value_clone_deref(entry->value)
+            ptn_array_replacement_value(entry->value)
         );
     }
 }
@@ -4035,7 +4283,7 @@ static void ptn_array_replace_recursive_into(PtnArray *target, PtnArray *source)
 static void ptn_array_replace_recursive_entry(PtnArray *target, PtnArrayKey key, PtnValue value) {
     PtnArrayEntry *entry = ptn_array_entry_for_key(target, key);
     if (entry == NULL) {
-        ptn_array_set_entry(target, ptn_array_key_clone(key), ptn_value_clone_deref(value));
+        ptn_array_set_entry(target, ptn_array_key_clone(key), ptn_array_replacement_value(value));
         return;
     }
 
@@ -4053,7 +4301,7 @@ static void ptn_array_replace_recursive_entry(PtnArray *target, PtnArrayKey key,
     }
 
     ptn_value_destroy(entry_value);
-    *entry_value = ptn_value_clone(incoming);
+    *entry_value = ptn_array_replacement_value(value);
 }
 
 static void ptn_array_replace_recursive_into(PtnArray *target, PtnArray *source) {
@@ -11077,6 +11325,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_search", 2, 3, ptn_internal_array_search },
         { "array_shift", 1, 1, ptn_internal_array_shift },
         { "array_slice", 2, 4, ptn_internal_array_slice },
+        { "array_splice", 2, 4, ptn_internal_array_splice },
         { "array_sum", 1, 1, ptn_internal_array_sum },
         { "array_udiff", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff },
         { "array_udiff_assoc", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff_assoc },
@@ -11088,6 +11337,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
         { "array_walk", 2, 3, ptn_internal_array_walk },
+        { "array_walk_recursive", 2, 3, ptn_internal_array_walk_recursive },
         { "arsort", 1, 2, ptn_internal_arsort },
         { "asort", 1, 2, ptn_internal_asort },
         { "assert", 1, 2, ptn_internal_assert },

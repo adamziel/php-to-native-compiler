@@ -45,9 +45,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   sum/product/fill/filter/chunk/merge/replace helpers, key-aware
   diff/intersect helpers with user comparators, sum/product warning and
   overflow parity,
-  `count()`/`sizeof()` modes, sort mutators through ordered-array/COW paths,
-  and non-recursive `array_walk()` callback diagnostics, userdata separation,
-  key snapshots, and mutation visibility.
+  `count()`/`sizeof()` modes, `array_splice()` mutation, sort mutators through
+  ordered-array/COW paths, and recursive/non-recursive `array_walk()` callback
+  diagnostics, userdata separation, key snapshots, and mutation visibility.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string escaping.
@@ -140,10 +140,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   generator `yield`, nullable type hints, heredoc/nowdoc strings,
   plain variable-variable unsets,
   class/reflection-metadata blockers, readonly static property diagnostics,
-  and currently
-  unmodeled mutating array-internal helpers such as `array_splice()`,
-  `array_walk_recursive()`, `array_multisort()`, `usort()`, `uasort()`, and
-  `uksort()` are mapped to blocker categories with source evidence; broad
+  and currently unmodeled mutating array-internal helpers such as
+  `array_multisort()`, `usort()`, `uasort()`, and `uksort()` plus
+  destructor-reentrant `array_splice()` cases are mapped to blocker categories
+  with source evidence; broad
   baseline runs also opt into `--SKIPIF--` precondition harness classification.
   `PTN_PHPT_CLASSIFY=0` gives raw php-src `run-tests.php` pass-through.
 - Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from

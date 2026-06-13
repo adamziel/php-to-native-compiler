@@ -764,6 +764,12 @@ fn by_ref_parameter_for_argument(
 }
 
 fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&'static str> {
+    if name.eq_ignore_ascii_case("array_splice") && argument_index == 0 {
+        return Some("array");
+    }
+    if name.eq_ignore_ascii_case("array_walk_recursive") && argument_index == 0 {
+        return Some("array");
+    }
     if name.eq_ignore_ascii_case("preg_match") && argument_index == 2 {
         return Some("matches");
     }
@@ -1762,8 +1768,10 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "array_pop",
         "array_push",
         "array_shift",
+        "array_splice",
         "array_unshift",
         "array_walk",
+        "array_walk_recursive",
         "arsort",
         "asort",
         "end",
@@ -3791,6 +3799,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("array_uintersect_assoc")
         || name.eq_ignore_ascii_case("array_uintersect_uassoc")
         || name.eq_ignore_ascii_case("array_walk")
+        || name.eq_ignore_ascii_case("array_walk_recursive")
         || name.eq_ignore_ascii_case("call_user_func")
         || name.eq_ignore_ascii_case("call_user_func_array")
 }
@@ -4158,8 +4167,10 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
         "array_pop"
             | "array_push"
             | "array_shift"
+            | "array_splice"
             | "array_unshift"
             | "array_walk"
+            | "array_walk_recursive"
             | "arsort"
             | "asort"
             | "end"
@@ -8708,7 +8719,9 @@ impl ValueEmitter {
             _ => None,
         };
 
-        if name.eq_ignore_ascii_case("array_walk") && (arguments.len() == 2 || arguments.len() == 3)
+        if (name.eq_ignore_ascii_case("array_walk")
+            || name.eq_ignore_ascii_case("array_walk_recursive"))
+            && (arguments.len() == 2 || arguments.len() == 3)
         {
             let variable_name = variable_name?;
             let array_temp = self.emit_materialized_value(out, &arguments[0]);
@@ -8719,7 +8732,13 @@ impl ValueEmitter {
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_runtime_array_walk_variable(&runtime, \"");
+            out.push_str(" = ");
+            if name.eq_ignore_ascii_case("array_walk_recursive") {
+                out.push_str("ptn_runtime_array_walk_recursive_variable");
+            } else {
+                out.push_str("ptn_runtime_array_walk_variable");
+            }
+            out.push_str("(&runtime, \"");
             out.push_str(&c_string(variable_name));
             out.push_str("\", ");
             out.push_str(&array_temp);
