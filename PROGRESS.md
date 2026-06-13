@@ -1,34 +1,35 @@
 # PTN Progress
 
-Refresh: 2026-06-13T11:32Z
-Measured: `ptn-1wj0` docs refresh on current `origin/master` `0fd3ca1cc`;
-focused inline HTML verification green.
+Refresh: 2026-06-13T11:39Z
+Measured: `ptn-ijqx` integration on current `origin/master` `3a5068148`;
+focused scalar conversion verification green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, inline HTML
 output, includes/once guards, closures, `stdClass`, properties/destructors,
 inherited static dispatch, `property_exists()` metadata, array helpers,
 `json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
 `strcasecmp()`, search/count internals, scalar `str_replace()`, `chr()`
-diagnostics, `crc32()`, PHP version/build/platform metadata constants,
-standard streams, foreach destructuring, `global` bindings, dynamic-variable
-writes/unsets, stream metadata, locale constants and `setlocale()`, catchable
-arithmetic/operator errors, alternate `<>` parsing, and offset
-compound/coalescing.
+diagnostics, `crc32()`, `boolval()`/`floatval()`/`doubleval()`, PHP
+version/build/platform metadata constants, standard streams, foreach
+destructuring, `global` bindings, dynamic-variable writes/unsets, stream
+metadata, locale constants and `setlocale()`, catchable arithmetic/operator
+errors, alternate `<>` parsing, and offset compound/coalescing.
 
-Recent movers include `global` function-local binding to root globals, PHP
-version/build/platform metadata constants, `dirname()` positive-level
-traversal, `pathinfo()`, modeled `LC_*` constants, C/POSIX `setlocale()`,
-search/count internals, PHP 8.4 array warning/overflow behavior, persistent
-standard streams, `property_exists()`, PHPT manifests, `crc32()`,
-`str_replace()` counts, and integer validation for `chr()`, `intdiv()`, and
-file offsets.
+Recent movers include scalar conversion internals for
+`boolval()`/`floatval()`/`doubleval()`, `global` function-local binding to root
+globals, PHP version/build/platform metadata constants, `dirname()`
+positive-level traversal, `pathinfo()`, modeled `LC_*` constants, C/POSIX
+`setlocale()`, search/count internals, PHP 8.4 array warning/overflow
+behavior, persistent standard streams, `property_exists()`, PHPT manifests,
+`crc32()`, `str_replace()` counts, and integer validation for `chr()`,
+`intdiv()`, and file offsets.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 588 | 588 | 0 |
+| Native/compiler Rust suite | 589 | 589 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 271 | 269 | 2 |
 | PHPT Zend rows | 85 | 84 | 1 |
@@ -50,8 +51,9 @@ class/object shells/constants, properties, destructors, reflection, assertions,
 namespaces/imports, streams, file reads/writes, array/string/numeric helpers
 through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
 `str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `pathinfo()`,
-`dirname()` levels, `crc32()`, `basename()`, inline HTML output, locale
-support, PHP version/build/platform metadata constants, `var_export()`, array mutators,
+`dirname()` levels, `crc32()`, `basename()`,
+`boolval()`/`floatval()`/`doubleval()`, inline HTML output, locale support,
+PHP version/build/platform metadata constants, `var_export()`, array mutators,
 inc/dec, `global` bindings, dynamic-variable writes/unsets, and offset
 compound/null coalescing assignments.
 
@@ -64,11 +66,12 @@ compound/null coalescing assignments.
 
 ## Verification
 
-Current branch verification for `ptn-1wj0`: diff check, `cargo fmt`, and
-focused inline HTML native test.
+Current branch verification for `ptn-ijqx`: diff check, `cargo fmt`, and
+focused scalar conversion native test.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic
 includes, unsupported internals, scalar offset-lvalues, assertions,
 binary-safe array keys, embedded-NUL internals, object IDs, host-locale parity,
-`str_replace()` array forms, and object/reference targets.
+`str_replace()` array forms, exact scalar conversion diagnostics for edge
+values, and object/reference targets.

@@ -367,7 +367,8 @@ Post-RC architecture remains explicit rather than hidden:
   `realpath(expr);`, `scandir(expr[, sorting_order[, context]]);`,
   `setlocale(expr, expr[, ...]);`, `str_replace(expr, expr, expr[, count]);`,
   `zend_version();`,
-  `intval(expr);`, `chr(expr);`, `ord(expr);`,
+  `boolval(expr);`, `floatval(expr);`, `doubleval(expr);`, `intval(expr);`,
+  `chr(expr);`, `ord(expr);`,
   `count(expr[, mode]);`, `sizeof(expr[, mode]);`,
   `array_chunk(expr, expr[, expr]);`,
   `array_change_key_case(expr[, expr]);`, `array_column(expr, expr[, expr]);`,
@@ -432,7 +433,8 @@ Post-RC architecture remains explicit rather than hidden:
   `php_uname([mode])`, `phpversion([extension])`, `preg_match(expr, expr)`,
   `realpath(expr)`, `scandir(expr[, sorting_order[, context]])`,
   `setlocale(expr, expr[, ...])`,
-  `str_replace(expr, expr, expr[, count])`, `zend_version()`, `intval(expr)`,
+  `str_replace(expr, expr, expr[, count])`, `zend_version()`,
+  `boolval(expr)`, `floatval(expr)`, `doubleval(expr)`, `intval(expr)`,
   `chr(expr)`, `ord(expr)`,
   `count(expr[, mode])`, `sizeof(expr[, mode])`,
   `array_chunk(expr, expr[, expr])`,
@@ -731,6 +733,10 @@ Post-RC architecture remains explicit rather than hidden:
   prefixes, ignores invalid base digits with a deprecation boundary, and
   returns integers until the parsed value exceeds native integer range, then
   floats.
+- `boolval()` over current boxed values through the shared PHP truthiness
+  helper.
+- `floatval()` and `doubleval()` over current boxed scalar and array values
+  through the shared scalar numeric conversion path.
 - `intval()` over current boxed scalar values after scalar integer conversion,
   with bounded string/base conversion for supported bases, including PHP-style
   `0x`/`0b` prefix handling and integer-range saturation.

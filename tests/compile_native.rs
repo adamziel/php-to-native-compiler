@@ -8799,6 +8799,60 @@ var_dump(intval(\"zz\", 36));
 }
 
 #[test]
+fn compile_scalar_conversion_value_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-conversion-value-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-conversion-value-internals.php");
+    let output = root.join("scalar-conversion-value-internals-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(boolval(null), boolval(false), boolval(true), boolval(0), boolval(1), boolval(0.0), boolval(\"\"), boolval(\"0\"), boolval(\"x\"), boolval([]), boolval([0]));
+var_dump(floatval(null), floatval(false), floatval(true), floatval(42), floatval(\"1.5x\"), floatval([]), floatval([1]), doubleval(\"2.25\"));
+var_dump(function_exists(\"boolval\"), function_exists(\"FLOATVAL\"), function_exists(\"doubleval\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "float(0)\n",
+            "float(0)\n",
+            "float(1)\n",
+            "float(42)\n",
+            "float(1.5)\n",
+            "float(0)\n",
+            "float(1)\n",
+            "float(2.25)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_boolval("));
+    assert!(c_source.contains("static PtnValue ptn_internal_floatval("));
+}
+
+#[test]
 fn compile_floorceil_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-floorceil-phpt-shape");
     fs::create_dir_all(&root).unwrap();

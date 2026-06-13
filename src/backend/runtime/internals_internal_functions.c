@@ -8674,6 +8674,20 @@ static PtnValue ptn_internal_octdec(PtnRuntime *runtime, size_t argc, const PtnV
     return value;
 }
 
+static PtnValue ptn_internal_boolval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_cast_bool(args[0]);
+}
+
+static PtnValue ptn_internal_floatval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_cast_float(args[0]);
+}
+
 static PtnValue ptn_internal_intval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)line;
@@ -8971,6 +8985,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "basename", 1, 2, ptn_internal_basename },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
+        { "boolval", 1, 1, ptn_internal_boolval },
         { "call_user_func", 1, PTN_VARIADIC_ARGS, ptn_internal_call_user_func },
         { "call_user_func_array", 2, 2, ptn_internal_call_user_func_array },
         { "ceil", 1, 1, ptn_internal_ceil },
@@ -8985,6 +9000,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "define", 2, 3, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
         { "dirname", 1, 2, ptn_internal_dirname },
+        { "doubleval", 1, 1, ptn_internal_floatval },
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "explode", 2, 3, ptn_internal_explode },
@@ -8994,6 +9010,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "file_exists", 1, 1, ptn_internal_file_exists },
         { "file_get_contents", 1, 5, ptn_internal_file_get_contents },
         { "file_put_contents", 2, 2, ptn_internal_file_put_contents },
+        { "floatval", 1, 1, ptn_internal_floatval },
         { "floor", 1, 1, ptn_internal_floor },
         { "fopen", 2, 4, ptn_internal_fopen },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
