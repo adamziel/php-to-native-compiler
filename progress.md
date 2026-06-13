@@ -1,19 +1,19 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T12:39Z
+Last refresh: 2026-06-13T12:48Z
 Source: `PROGRESS.md`
-Measured: `ptn-mxgw` evidence integration on current `origin/master`
+Measured: `ptn-80xp` integration on current `origin/master` `d7431e8`;
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 621/621; Native smoke matrix 6/6; PHPT bounded manifest 273/273; PHPT Zend rows 86/86; PHPT ext/standard rows 132/132.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 622/622; Native smoke matrix 6/6; PHPT bounded manifest 274/274; PHPT Zend rows 86/86; PHPT ext/standard rows 133/133.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 621/621 |
+| Native/compiler Rust suite | 622/622 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 273/273 |
+| PHPT bounded manifest | 274/274 |
 | PHPT Zend rows | 86/86 |
-| PHPT ext/standard rows | 132/132 |
+| PHPT ext/standard rows | 133/133 |
 | PHPT focused stream rows | 2/2 |
 | PHPT tests/basic+func+lang | 50/50 |
 | PHPT other rows | 5/5 |

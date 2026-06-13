@@ -1313,6 +1313,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         parser::parse("<?php function STR_REPEAT($value, $times) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function str_repeat()");
 
+    let error =
+        parser::parse("<?php function STR_SPLIT($value, $length = 1) { return []; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function str_split()");
+
     let error = parser::parse("<?php function Strip_Tags($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strip_tags()");
 
@@ -4856,6 +4860,42 @@ var_dump(function_exists('explode'), function_exists('EXPLODE'));\n",
     let body = generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_explode(");
     assert!(body.contains("ptn_internal_expect_string_arg"));
     assert!(!body.contains("strtok"));
+}
+
+#[test]
+fn compile_str_split_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-str-split");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-split.php");
+    let output = root.join("str-split-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(str_split(\"abcd\", 2));\n\
+var_dump(str_split(\"\"));\n\
+$binary = str_split(\"A\" . chr(0) . \"B\", 2);\n\
+echo bin2hex($binary[0]), \":\", bin2hex($binary[1]), \"\\n\";\n\
+try { str_split(\"abc\", 0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"str_split\"), function_exists(\"STR_SPLIT\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  string(2) \"ab\"\n  [1]=>\n  string(2) \"cd\"\n}\narray(0) {\n}\n4100:42\nstr_split(): Argument #2 ($length) must be greater than 0\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_str_split("));
+    let body =
+        generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_str_split(");
+    assert!(body.contains("ptn_internal_expect_string_arg"));
+    assert!(body.contains("ptn_internal_expect_integer_arg"));
 }
 
 #[test]

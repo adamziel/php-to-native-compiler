@@ -4210,6 +4210,43 @@ static PtnValue ptn_internal_str_shuffle(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string_len(shuffled, len);
 }
 
+static PtnValue ptn_internal_str_split(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "str_split", 1, "string", args[0], line);
+    int64_t length = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "str_split", 2, "length", args[1], line)
+        : 1;
+    if (length < 1) {
+        ptn_string_operand_free(string);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "str_split(): Argument #2 ($length) must be greater than 0"
+        );
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t chunk_len = (size_t)length;
+    size_t index = 0;
+    for (size_t offset = 0; offset < string.len; offset += chunk_len) {
+        if (index > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        size_t remaining = string.len - offset;
+        size_t len = remaining < chunk_len ? remaining : chunk_len;
+        char *chunk = ptn_duplicate_string_len(string.data + offset, len);
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)index),
+            ptn_owned_string_len(chunk, len)
+        );
+        index++;
+    }
+
+    ptn_string_operand_free(string);
+    return result;
+}
+
 static PtnValue ptn_internal_strrev(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "strrev", 1, "string", args[0], line);
@@ -9301,6 +9338,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_replace", 3, 4, ptn_internal_str_replace },
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "str_shuffle", 1, 1, ptn_internal_str_shuffle },
+        { "str_split", 1, 2, ptn_internal_str_split },
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
         { "strcasecmp", 2, 2, ptn_internal_strcasecmp },
         { "strcmp", 2, 2, ptn_internal_strcmp },

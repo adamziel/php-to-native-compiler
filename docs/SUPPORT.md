@@ -347,7 +347,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strstr(expr, expr[, expr]);`, `stristr(expr, expr[, expr]);`,
   `substr_count(expr, expr[, expr[, expr]]);`,
   `str_ends_with(expr, expr);`, `str_pad(expr, expr[, expr[, expr]]);`,
-  `str_repeat(expr, expr);`,
+  `str_repeat(expr, expr);`, `str_split(expr[, expr]);`,
   `strtolower(expr);`, `strtoupper(expr);`, `strrchr(expr, expr[, expr]);`,
   `strrev(expr);`, `ucfirst(expr);`,
   `lcfirst(expr);`, `quotemeta(expr);`,
@@ -413,7 +413,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strstr(expr, expr[, expr])`, `stristr(expr, expr[, expr])`,
   `substr_count(expr, expr[, expr[, expr]])`,
   `str_ends_with(expr, expr)`, `str_pad(expr, expr[, expr[, expr]])`,
-  `str_repeat(expr, expr)`,
+  `str_repeat(expr, expr)`, `str_split(expr[, expr])`,
   `strtolower(expr)`, `strtoupper(expr)`, `strrchr(expr, expr[, expr])`,
   `strrev(expr)`, `ucfirst(expr)`,
   `lcfirst(expr)`, `quotemeta(expr)`,
@@ -557,8 +557,9 @@ Post-RC architecture remains explicit rather than hidden:
   object class names and `Closure` in the reported given-type, for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `strcasecmp()`, `strncmp()`,
   `str_contains()`,
-  `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
-  `strtr()`, `strrchr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,
+  `str_starts_with()`, `str_ends_with()`, `str_repeat()`, `str_split()`,
+  three-argument `strtr()`, `strrchr()`, `strrev()`, `str_pad()`,
+  `ucfirst()`, `lcfirst()`,
   `strtolower()`,
   `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
   `explode()` separator/string arguments,
@@ -571,6 +572,10 @@ Post-RC architecture remains explicit rather than hidden:
   returning ASCII ROT13 output while leaving non-letters unchanged.
 - `str_shuffle()` over current boxed scalar values after scalar string
   conversion, returning a byte-shuffled string without mutating the input.
+- `str_split()` over current boxed scalar values after scalar string
+  conversion, chunking binary-safe bytes into an ordered array. The length
+  argument uses the shared scalar integer path and throws the modeled
+  `ValueError` boundary for non-positive lengths.
 - `strcmp()` over current boxed scalar values after scalar string conversion,
   returning a negative integer, zero, or a positive integer from bytewise
   comparison of the current C-string-backed values.
