@@ -43,7 +43,8 @@ Post-RC architecture remains explicit rather than hidden:
   supported for current runtime string conversions. Public declared instance
   `__invoke` is supported for direct object callable values and internal
   callback dispatch. `__destruct`, `__get`, `__set`, `__isset`, `__unset`,
-  `__callStatic`, and related hooks remain unsupported.
+  `__callStatic`, and related hooks remain unsupported. Static `__invoke`
+  declarations are rejected with a PHP-style fatal diagnostic.
 - Non-static callables: direct object method calls and bounded
   `[$object, "method"]` callback dispatch work for declared and inherited
   public methods, and missing object methods fall through to supported

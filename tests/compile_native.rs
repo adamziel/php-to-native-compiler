@@ -3127,6 +3127,17 @@ fn parser_rejects_non_public_methods_before_visibility_dispatch() {
 }
 
 #[test]
+fn parser_rejects_static_magic_invoke_methods() {
+    let error = parser::parse("<?php class Invokable { public static function __invoke() {} }")
+        .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Method Invokable::__invoke() cannot be static"
+    );
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+}
+
+#[test]
 fn parser_accepts_instance_class_methods_and_object_callables() {
     let program = parser::parse(
         "<?php

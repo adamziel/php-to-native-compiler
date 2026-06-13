@@ -3780,6 +3780,12 @@ fn validate_method_names(class: &ClassDecl) -> Result<()> {
     let mut names = HashSet::new();
     for method in &class.methods {
         let lookup_name = method.name.to_ascii_lowercase();
+        if method.is_static && lookup_name == "__invoke" {
+            return Err(Diagnostic::new(
+                format!("Method {}::__invoke() cannot be static", class.name),
+                Some(method.span),
+            ));
+        }
         if !names.insert(lookup_name.clone()) {
             return Err(Diagnostic::new(
                 format!("Cannot redeclare {}::{}()", class.name, lookup_name),
