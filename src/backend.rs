@@ -549,6 +549,7 @@ fn emit_user_functions(
             emit_return_type_boundary(out, return_type, &function.name, function.return_by_ref);
         }
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+        out.push_str("    caller_runtime->diagnostics.display_errors = runtime.diagnostics.display_errors;\n");
         out.push_str("    ptn_runtime_free(&runtime);\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");

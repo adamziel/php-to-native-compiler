@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T06:59Z
-Measured: `ptn-ryv4` rebased on current `origin/master` `eaa43afc9`.
+Last refresh: 2026-06-13T07:31Z
+Measured: `ptn-ue3b` rebased on current `origin/master` `7bc467b8b`.
 
 ## Operating Goal
 
@@ -10,7 +10,7 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 585/585; Native smoke matrix 6/6; PHPT bounded manifest 260/262; PHPT Zend rows 82/82; PHPT ext/standard rows 130/130.
+Source unit tests 3/3; Native/compiler Rust suite 585/585; Native smoke matrix 6/6; PHPT bounded manifest 261/262; PHPT Zend rows 82/82; PHPT ext/standard rows 130/130.
 
 ## Active Buckets
 
@@ -19,7 +19,7 @@ Source unit tests 3/3; Native/compiler Rust suite 585/585; Native smoke matrix 6
 | Source unit tests | 3/3 |
 | Native/compiler Rust suite | 585/585 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 260/262 |
+| PHPT bounded manifest | 261/262 |
 | PHPT Zend rows | 82/82 |
 | PHPT ext/standard rows | 130/130 |
 | PHPT focused stream rows | 2/2 |

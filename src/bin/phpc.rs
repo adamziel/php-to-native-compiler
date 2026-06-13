@@ -95,6 +95,7 @@ enum Mode {
 struct RuntimeIni {
     precision: Option<u8>,
     error_reporting: Option<i64>,
+    display_errors: Option<bool>,
 }
 
 impl Invocation {
@@ -203,6 +204,17 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         if let Ok(parsed) = raw_value.trim().parse::<i64>() {
             ini.error_reporting = Some(parsed);
         }
+    } else if name.trim().eq_ignore_ascii_case("display_errors") {
+        ini.display_errors = parse_ini_bool(raw_value);
+    }
+}
+
+fn parse_ini_bool(value: &str) -> Option<bool> {
+    let value = value.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "" | "0" | "off" | "false" | "no" => Some(false),
+        "1" | "on" | "true" | "yes" | "stdout" | "stderr" => Some(true),
+        _ => value.parse::<i64>().ok().map(|parsed| parsed != 0),
     }
 }
 
@@ -226,6 +238,12 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     }
     if let Some(error_reporting) = ini.error_reporting {
         command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());
+    }
+    if let Some(display_errors) = ini.display_errors {
+        command.env(
+            "PTN_PHP_DISPLAY_ERRORS",
+            if display_errors { "1" } else { "0" },
+        );
     }
     let status = command
         .status()

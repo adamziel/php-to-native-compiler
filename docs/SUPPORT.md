@@ -838,6 +838,9 @@ Post-RC architecture remains explicit rather than hidden:
   PHP-style mask on writes or current mask on reads, and filters the modeled
   shared warning/deprecation/notice emitters. Expression-level `@` suppression
   still stacks independently with the configured mask.
+- `phpc -d display_errors=0|false|off` suppresses the modeled generated
+  runtime diagnostics that flow through the shared diagnostic sink; truthy
+  values preserve the default display behavior.
 - `basename()` strips trailing platform path separators from the current
   binary-safe string path, returns the final path segment, and removes a
   matching non-empty suffix only when the suffix is shorter than that segment.

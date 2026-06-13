@@ -165,14 +165,21 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->emitted_warning = 0;
     diagnostics->suppressed = 0;
     diagnostics->error_reporting = PTN_E_ALL;
+    diagnostics->display_errors = 1;
     int64_t configured_error_reporting = 0;
     if (ptn_parse_int64_env("PTN_PHP_ERROR_REPORTING", &configured_error_reporting)) {
         diagnostics->error_reporting = configured_error_reporting;
     }
+    int64_t configured_display_errors = 0;
+    if (ptn_parse_int64_env("PTN_PHP_DISPLAY_ERRORS", &configured_display_errors)) {
+        diagnostics->display_errors = configured_display_errors != 0;
+    }
 }
 
 static PTN_UNUSED int ptn_diagnostics_should_emit(PtnDiagnosticSink *diagnostics, int64_t severity) {
-    return diagnostics->suppressed <= 0 && (diagnostics->error_reporting & severity) != 0;
+    return diagnostics->display_errors != 0
+        && diagnostics->suppressed <= 0
+        && (diagnostics->error_reporting & severity) != 0;
 }
 
 static void ptn_emit_undefined_variable_warning(
@@ -197,6 +204,9 @@ static void ptn_emit_undefined_variable_warning(
 }
 
 static PTN_UNUSED void ptn_emit_undefined_function_error(PtnDiagnosticSink *diagnostics, const char *name) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_ERROR)) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: Call to undefined function ", stream);
     fputs(name, stream);
@@ -204,6 +214,9 @@ static PTN_UNUSED void ptn_emit_undefined_function_error(PtnDiagnosticSink *diag
 }
 
 static void ptn_emit_undefined_constant_error(PtnDiagnosticSink *diagnostics, const char *name) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_ERROR)) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: Undefined constant \"", stream);
     fputs(name, stream);
@@ -216,6 +229,9 @@ static PTN_UNUSED void ptn_emit_argument_count_error(
     size_t min_args,
     size_t argc
 ) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_ERROR)) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: ", stream);
     fputs(name, stream);
@@ -236,6 +252,9 @@ static PTN_UNUSED void ptn_emit_too_many_arguments_error(
     size_t max_args,
     size_t argc
 ) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_ERROR)) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: ", stream);
     fputs(name, stream);
@@ -251,6 +270,9 @@ static PTN_UNUSED void ptn_emit_too_many_arguments_error(
 }
 
 static PTN_UNUSED void ptn_emit_type_error(PtnDiagnosticSink *diagnostics, const char *message) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_ERROR)) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: ", stream);
     fputs(message, stream);

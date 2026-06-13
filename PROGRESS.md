@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-13T06:59Z
-Measured: `ptn-ryv4` rebased on current `origin/master` `eaa43afc9`.
+Refresh: 2026-06-13T07:31Z
+Measured: `ptn-ue3b` rebased on current `origin/master` `7bc467b8b`.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, `explode()`,
 `strncmp()`, `strrchr()`, namespaces/imports, includes/once guards, closures,
@@ -17,9 +17,10 @@ compound/coalescing.
 Recent movers include binary-safe search/count internals, PHP 8.4
 `array_sum()`/`array_product()` warnings and overflow promotion, persistent
 `STDIN`/`STDOUT`/`STDERR`, binary-safe `pathinfo()`, `property_exists()`,
-PHPT manifests, keyword boolean assignment tails, modeled `LC_*` constants with
-C/POSIX `setlocale()` dispatch, `crc32()`, scalar `str_replace()` counts, and
-stream preclassification.
+PHPT manifests, `display_errors` ini handling and PHPT classification for the
+passing bounded file error row, keyword boolean assignment tails, modeled
+`LC_*` constants with C/POSIX `setlocale()` dispatch, `crc32()`, scalar
+`str_replace()` counts, and stream preclassification.
 
 ## Dashboard
 
@@ -28,7 +29,7 @@ stream preclassification.
 | Source unit tests | 3 | 3 | 0 |
 | Native/compiler Rust suite | 585 | 585 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 262 | 260 | 2 |
+| PHPT bounded manifest | 262 | 261 | 1 |
 | PHPT Zend rows | 82 | 82 | 0 |
 | PHPT ext/standard rows | 130 | 130 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
@@ -59,15 +60,20 @@ tails, and array/string-offset compound/null coalescing assignments.
 
 ## Remaining Bounded Failures
 
-- None among the 260 runnable rows in the current 262-row bounded manifest.
-  Two selected rows are classified out for unsupported ini requirements.
+- None among the 261 runnable rows in the current 262-row bounded manifest.
+  One selected row is classified out for unsupported `zend.assertions` ini
+  requirements.
 
 ## Verification
 
-Current slice `ptn-ryv4` is green on diff check, `cargo fmt`, focused locale
-native test 1/1, `cargo test` 585/585 plus COW/doc tests, bounded PHPT
+Current baseline slice `ptn-ryv4` is green on diff check, `cargo fmt`, focused
+locale native test 1/1, `cargo test` 585/585 plus COW/doc tests, bounded PHPT
 260/260 with 2 classified exclusions, PHPT COW 29/29, and post-merge COW
-26/26.
+26/26. `ptn-ue3b` additionally passed `cargo fmt --check`, focused native
+`phpc_display_errors_ini_suppresses_initial_diagnostics`, focused promoted
+`display_errors=false` `file_get_contents_error002.phpt` 1/1, and classifier
+confirmation that the bounded manifest now selects 261 runnable rows with one
+remaining `zend.assertions` exclusion.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, bracketed/grouped namespaces, broader
