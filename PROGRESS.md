@@ -1,27 +1,23 @@
 # PTN Progress
 
-Refresh: 2026-06-13T10:06Z
-Measured: `ptn-ih9g` rebased on current `origin/master` `ea501c3b5`;
+Refresh: 2026-06-13T10:59Z
+Measured: `ptn-dnfa` rebased on current `origin/master` `527a6eb99`;
 verification green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, includes/once
 guards, closures, `stdClass`, properties/destructors, inherited static
 dispatch, `property_exists()` metadata, array helpers, `json_encode()`,
-`printf()`, `basename()`, `pathinfo()`, `strcasecmp()`, search/count
-internals, scalar `str_replace()`, `chr()` diagnostics, `crc32()`, standard
-streams, foreach destructuring, dynamic-variable writes/unsets, stream
-metadata, keyword boolean tails after direct assignments, locale constants and
-`setlocale()` current/C/POSIX queries including `null`, catchable
-divide/modulo/shift operator errors, alternate `<>` not-equal parsing, offset
-compound/coalescing, and non-finite float TypeErrors through shared
-integer-internal validation.
+`printf()`, `basename()`, `pathinfo()`, `dirname()` levels, `strcasecmp()`,
+search/count internals, scalar `str_replace()`, `chr()` diagnostics, `crc32()`,
+standard streams, foreach destructuring, dynamic-variable writes/unsets, stream
+metadata, locale constants and `setlocale()`, catchable arithmetic/operator
+errors, alternate `<>` parsing, and offset compound/coalescing.
 
-Recent movers include search/count internals, PHP 8.4 array warning/overflow
-behavior, persistent standard streams, `pathinfo()`,
-`property_exists()`, PHPT manifests, modeled `LC_*` constants, C/POSIX
-`setlocale()`, catchable operator exceptions, tests/lang operator rows,
-`crc32()`, `str_replace()` counts, and integer validation for `chr()`,
-`intdiv()`, and file offsets.
+Recent movers include `dirname()` positive-level traversal, `pathinfo()`,
+modeled `LC_*` constants, C/POSIX `setlocale()`, search/count internals,
+PHP 8.4 array warning/overflow behavior, persistent standard streams,
+`property_exists()`, PHPT manifests, `crc32()`, `str_replace()` counts, and
+integer validation for `chr()`, `intdiv()`, and file offsets.
 
 ## Dashboard
 
@@ -30,11 +26,11 @@ behavior, persistent standard streams, `pathinfo()`,
 | Source unit tests | 3 | 3 | 0 |
 | Native/compiler Rust suite | 588 | 588 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 270 | 268 | 2 |
-| PHPT Zend rows | 88 | 88 | 0 |
-| PHPT ext/standard rows | 130 | 130 | 0 |
+| PHPT bounded manifest | 271 | 269 | 2 |
+| PHPT Zend rows | 85 | 84 | 1 |
+| PHPT ext/standard rows | 131 | 130 | 1 |
 | PHPT focused stream rows | 2 | 2 | 0 |
-| PHPT tests/basic+func+lang | 47 | 47 | 0 |
+| PHPT tests/basic+func+lang | 50 | 50 | 0 |
 | PHPT other rows | 5 | 5 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
 | Post-merge COW gate | 26 | 26 | 0 |
@@ -44,35 +40,30 @@ behavior, persistent standard streams, `pathinfo()`,
 ## RC Surface
 
 Parser/IR/C backend, boxed values, variables/constants, strings, scalar
-operators, ternary, arrays, `foreach`, control flow, includes/once guards,
-selected internals, COW/reference slices, user functions, scalar plus `void`
-return hints, closures, `stdClass`, class/object shells/constants, declared and
-static properties, `property_exists()` metadata, inherited static dispatch,
-public destructors, reflection, assertions, namespaces/imports, streams, file
-reads/writes, array/string/numeric helpers through `array_udiff*()`,
-`array_sum()`, `array_product()`, `json_encode()`, `printf()`, `fdiv()`,
-`explode()`, `str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, string
-search/slice/count internals, `pathinfo()`, `crc32()`, `basename()`, `chr()`
-diagnostics, locale constants and `setlocale()`, `var_export()`, array
-mutators, inc/dec, foreach destructuring, dynamic-variable writes/unsets,
-catchable operator arithmetic exceptions, alternate not-equal parsing, keyword
-boolean tails, and array/string-offset compound/null coalescing assignments.
+operators, arrays, `foreach`, control flow, includes/once guards, selected
+internals, COW/reference slices, functions, closures, `stdClass`,
+class/object shells/constants, properties, destructors, reflection, assertions,
+namespaces/imports, streams, file reads/writes, array/string/numeric helpers
+through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
+`str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `pathinfo()`,
+`dirname()` levels, `crc32()`, `basename()`, locale support, `var_export()`,
+array mutators, inc/dec, dynamic-variable writes/unsets, and offset
+compound/null coalescing assignments.
 
-## Remaining Bounded Failures
+## Remaining Bounded Exclusions
 
-- None among the 268 runnable rows in the current 270-row bounded manifest.
+- None among the 269 runnable rows in the current 271-row bounded manifest.
   Two selected rows are classified out for unsupported ini requirements.
 
 ## Verification
 
-Current branch verification for `ptn-ih9g`: diff check, `cargo fmt`, focused
-setlocale native test and `gh19070.phpt` 1/1, `cargo test` native/compiler
-588/588 plus ancillary suites, isolated bounded PHPT 268/268 plus 2
-exclusions, PHPT COW 29/29, and post-merge COW 26/26.
+Current branch verification for `ptn-dnfa`: diff check, `cargo fmt`, focused
+dirname native tests 2/2, focused `dirname_multi.phpt` 1/1, full `cargo test`
+native/compiler 588/588 plus COW tail suites, isolated bounded PHPT 269/269
+plus 2 exclusions, PHPT COW 29/29, and post-merge COW 26/26.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
-properties, interfaces/traits, namespaces, fallback/reflection, magic methods,
-first-class callables, dynamic includes, unsupported internals, scalar
-offset-lvalues, assertions, binary-safe array keys, append-form `??=`,
-embedded-NUL internals, object IDs, host-locale parity, `str_replace()` array
-forms, and object/reference targets.
+properties, interfaces/traits, magic methods, first-class callables, dynamic
+includes, unsupported internals, scalar offset-lvalues, assertions,
+binary-safe array keys, embedded-NUL internals, object IDs, host-locale parity,
+`str_replace()` array forms, and object/reference targets.

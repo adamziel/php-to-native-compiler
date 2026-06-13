@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T10:06Z
-Measured: `ptn-ih9g` rebased on current `origin/master` `ea501c3b5`;
+Last refresh: 2026-06-13T10:59Z
+Measured: `ptn-dnfa` rebased on current `origin/master` `527a6eb99`;
 
 ## Operating Goal
 
@@ -10,7 +10,7 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 588/588; Native smoke matrix 6/6; PHPT bounded manifest 268/270; PHPT Zend rows 88/88; PHPT ext/standard rows 130/130.
+Source unit tests 3/3; Native/compiler Rust suite 588/588; Native smoke matrix 6/6; PHPT bounded manifest 269/271; PHPT Zend rows 84/85; PHPT ext/standard rows 130/131.
 
 ## Active Buckets
 
@@ -19,11 +19,11 @@ Source unit tests 3/3; Native/compiler Rust suite 588/588; Native smoke matrix 6
 | Source unit tests | 3/3 |
 | Native/compiler Rust suite | 588/588 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 268/270 |
-| PHPT Zend rows | 88/88 |
-| PHPT ext/standard rows | 130/130 |
+| PHPT bounded manifest | 269/271 |
+| PHPT Zend rows | 84/85 |
+| PHPT ext/standard rows | 130/131 |
 | PHPT focused stream rows | 2/2 |
-| PHPT tests/basic+func+lang | 47/47 |
+| PHPT tests/basic+func+lang | 50/50 |
 | PHPT other rows | 5/5 |
 | PHPT COW manifest | 29/29 |
 | Post-merge COW gate | 26/26 |
