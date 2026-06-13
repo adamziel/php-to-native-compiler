@@ -65,7 +65,9 @@ Post-RC architecture remains explicit rather than hidden:
 - PHP `//`, `#`, and `/* ... */` comments inside PHP code. One-line
   comments end at a newline or at a trailing `?>` close tag.
 - A `?>` close tag that ends PHP mode and emits following inline output, with
-  one immediately following newline swallowed.
+  one immediately following newline swallowed. Inline HTML before the first
+  open tag and between PHP blocks is emitted through the same native output
+  path.
 - Global-scope and unbracketed namespace-scope `const NAME = expr;`
   declarations for the currently supported constant-expression subset.
   Declared constants are visible to bare constant reads, `defined()`, and
@@ -1100,7 +1102,6 @@ Post-RC architecture remains explicit rather than hidden:
   unsupported target roots, Unicode/string edge cases, references,
   copy-on-write, and diagnostic parity beyond the current modeled target
   slice.
-- Inline HTML before `<?php` or between PHP blocks.
 - Remaining complex string interpolation forms, including object/property
   interpolation, variable variables, arbitrary expressions/calls, append
   offsets, and non-variable-root offsets.

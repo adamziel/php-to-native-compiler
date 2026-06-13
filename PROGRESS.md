@@ -1,18 +1,19 @@
 # PTN Progress
 
-Refresh: 2026-06-13T11:26Z
-Measured: `ptn-98d8.6` integrated on current `origin/master` `c0fbbc0c8`;
-focused verification green.
+Refresh: 2026-06-13T11:32Z
+Measured: `ptn-1wj0` docs refresh on current `origin/master` `0fd3ca1cc`;
+focused inline HTML verification green.
 
-Recent RC slices cover constants, embedded-NUL `var_export()`, includes/once
-guards, closures, `stdClass`, properties/destructors, inherited static
-dispatch, `property_exists()` metadata, array helpers, `json_encode()`,
-`printf()`, `basename()`, `pathinfo()`, `dirname()` levels, `strcasecmp()`,
-search/count internals, scalar `str_replace()`, `chr()` diagnostics, `crc32()`,
-PHP version/build/platform metadata constants, standard streams, foreach
-destructuring, `global` bindings, dynamic-variable writes/unsets, stream
-metadata, locale constants and `setlocale()`, catchable arithmetic/operator
-errors, alternate `<>` parsing, and offset compound/coalescing.
+Recent RC slices cover constants, embedded-NUL `var_export()`, inline HTML
+output, includes/once guards, closures, `stdClass`, properties/destructors,
+inherited static dispatch, `property_exists()` metadata, array helpers,
+`json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
+`strcasecmp()`, search/count internals, scalar `str_replace()`, `chr()`
+diagnostics, `crc32()`, PHP version/build/platform metadata constants,
+standard streams, foreach destructuring, `global` bindings, dynamic-variable
+writes/unsets, stream metadata, locale constants and `setlocale()`, catchable
+arithmetic/operator errors, alternate `<>` parsing, and offset
+compound/coalescing.
 
 Recent movers include `global` function-local binding to root globals, PHP
 version/build/platform metadata constants, `dirname()` positive-level
@@ -49,8 +50,8 @@ class/object shells/constants, properties, destructors, reflection, assertions,
 namespaces/imports, streams, file reads/writes, array/string/numeric helpers
 through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
 `str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `pathinfo()`,
-`dirname()` levels, `crc32()`, `basename()`, locale support, PHP
-version/build/platform metadata constants, `var_export()`, array mutators,
+`dirname()` levels, `crc32()`, `basename()`, inline HTML output, locale
+support, PHP version/build/platform metadata constants, `var_export()`, array mutators,
 inc/dec, `global` bindings, dynamic-variable writes/unsets, and offset
 compound/null coalescing assignments.
 
@@ -63,9 +64,8 @@ compound/null coalescing assignments.
 
 ## Verification
 
-Current branch verification for `ptn-98d8.6`: diff check, `cargo fmt`,
-focused parser/global native tests, and callback PHPT 3/3 runnable passing
-with 2 unsupported-extension exclusions.
+Current branch verification for `ptn-1wj0`: diff check, `cargo fmt`, and
+focused inline HTML native test.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic
