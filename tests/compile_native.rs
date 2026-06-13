@@ -1787,6 +1787,25 @@ fn parser_accepts_comparison_boolean_and_grouping_expressions() {
 }
 
 #[test]
+fn parser_accepts_clone_expressions_with_assignment_operands() {
+    let program = parser::parse("<?php $copy = clone $source = new stdClass;").unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment statement");
+    };
+    let Expr::Clone { expr, .. } = value else {
+        panic!("expected clone expression");
+    };
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::Assign {
+            target: AssignmentTarget::Variable { name, .. },
+            value,
+            ..
+        } if name == "source" && matches!(value.as_ref(), Expr::NewObject { class_name, .. } if class_name == "stdClass")
+    ));
+}
+
+#[test]
 fn parser_accepts_keyword_boolean_precedence() {
     let program = parser::parse(
         "<?php echo true || false and false, false or true && false, true xor false || false;",
@@ -21957,6 +21976,110 @@ try {
     assert!(c_source.contains("ptn_object_declare_property(&runtime"));
     assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
     assert!(c_source.contains("PTN_PROPERTY_PROTECTED"));
+}
+
+#[test]
+fn compile_object_clone_magic_and_comparison_to_native_binary() {
+    let root = temp_dir("ptn-native-object-clone-magic-comparison");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-clone-magic-comparison.php");
+    let output = root.join("object-clone-magic-comparison-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    private $secret;
+    public $label = \"box\";
+
+    public function __construct($secret) {
+        $this->secret = $secret;
+    }
+
+    public function __clone() {
+        echo \"clone:\", $this->label, \"\\n\";
+        $this->label = \"clone\";
+    }
+
+    public function expose() {
+        return $this->label . \":\" . $this->secret;
+    }
+}
+
+$a = new Box(7);
+$b = clone $a;
+var_dump($a == $b, $a === $b);
+echo $a->expose(), \"\\n\";
+echo $b->expose(), \"\\n\";
+$c = clone clone $d = new stdClass;
+var_dump($c == $d, $c === $d);
+try {
+    clone array();
+} catch (TypeError $e) {
+    echo \"TypeError: \", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "clone:box\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "box:7\n",
+            "clone:7\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "TypeError: clone(): Argument #1 ($object) must be of type object, array given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_clone_value(&runtime"));
+    assert!(c_source.contains("root->method_dispatch(root, clone, \"__clone\""));
+}
+
+#[test]
+fn compile_magic_method_visibility_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-method-visibility-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-method-visibility-warning.php");
+    let output = root.join("magic-method-visibility-warning-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicVisibility {
+    private function __unset($name) {
+        echo \"unused\";
+    }
+}
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Warning: The magic method MagicVisibility::__unset() must have public visibility in ptn on line 3\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source
+        .contains("The magic method MagicVisibility::__unset() must have public visibility"));
 }
 
 #[test]

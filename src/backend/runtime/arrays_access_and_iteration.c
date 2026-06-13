@@ -191,6 +191,65 @@ static PTN_UNUSED PtnValue ptn_new_object(
     return ptn_object_new_shell(runtime, "stdClass");
 }
 
+static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "clone(): Argument #1 ($object) must be of type object, %s given",
+            ptn_offset_container_type_name(resolved)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    PtnObject *source = resolved.as.object;
+    if (source->native_data != NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Trying to clone an uncloneable object of class %s",
+            source->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return ptn_null();
+    }
+
+    PtnValue clone = ptn_object_new_shell(runtime, source->class_name);
+    PtnObject *cloned = clone.as.object;
+    ptn_array_free(cloned->properties);
+    cloned->properties = ptn_array_clone(source->properties);
+    for (size_t i = 0; i < source->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &source->property_metadata[i];
+        ptn_object_register_property_metadata(
+            cloned,
+            metadata->display_name,
+            metadata->declaring_class,
+            metadata->visibility
+        );
+    }
+
+    PtnRuntime *root = runtime == NULL || runtime->lifecycle_root == NULL
+        ? runtime
+        : runtime->lifecycle_root;
+    if (root != NULL &&
+        root->method_dispatch != NULL &&
+        root->declared_method_exists != NULL &&
+        root->declared_method_exists(cloned->class_name, "__clone")) {
+        PtnValue result = root->method_dispatch(root, clone, "__clone", 0, NULL, line);
+        ptn_value_destroy(&result);
+    }
+    return clone;
+}
+
 static PTN_UNUSED void ptn_emit_non_object_property_read_warning(
     PtnRuntime *runtime,
     const char *property,

@@ -25,6 +25,7 @@ pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let runtime_requirements = module_runtime_requirements(module);
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
+    let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
     let needs_callable_dispatch = runtime_requirements.internal_function_dispatch
         || runtime_requirements.dynamic_function_dispatch;
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
@@ -89,6 +90,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
     );
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
+    emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
     emit_class_constant_initializers(&mut out, &mut values, &module.classes);
     emit_static_property_initializers(&mut out, &mut values, &module.classes);
     for warning in collect_module_control_warnings(module) {
@@ -851,6 +853,13 @@ struct LegacyDollarBraceDeprecation {
     line: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MagicVisibilityWarning {
+    class_name: String,
+    method_name: String,
+    line: usize,
+}
+
 fn emit_legacy_dollar_brace_deprecations(
     out: &mut String,
     deprecations: &[LegacyDollarBraceDeprecation],
@@ -860,6 +869,18 @@ fn emit_legacy_dollar_brace_deprecations(
         out.push_str(&c_string(LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE));
         out.push_str("\", ");
         out.push_str(&deprecation.line.to_string());
+        out.push_str(");\n");
+    }
+}
+
+fn emit_magic_visibility_warnings(out: &mut String, warnings: &[MagicVisibilityWarning]) {
+    for warning in warnings {
+        out.push_str("    ptn_emit_warning(&runtime.diagnostics, \"The magic method ");
+        out.push_str(&c_string(&warning.class_name));
+        out.push_str("::");
+        out.push_str(&c_string(&warning.method_name));
+        out.push_str("() must have public visibility\", ");
+        out.push_str(&warning.line.to_string());
         out.push_str(");\n");
     }
 }
@@ -1146,7 +1167,10 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
-    if classes.iter().all(|class| class.methods.is_empty()) {
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
         out.push_str("    (void)method_name;\n");
     }
     for class in classes {
@@ -1257,6 +1281,9 @@ fn class_method_lookup_chain<'a>(
         methods: &mut Vec<&'a crate::ir::MethodDecl>,
     ) {
         for method in &class.methods {
+            if method.visibility != PropertyVisibility::Public {
+                continue;
+            }
             if seen_methods.insert(method.name.to_ascii_lowercase()) {
                 methods.push(method);
             }
@@ -2552,6 +2579,44 @@ fn collect_module_legacy_dollar_brace_deprecations(
     deprecations
 }
 
+fn collect_module_magic_visibility_warnings(module: &Module) -> Vec<MagicVisibilityWarning> {
+    let mut warnings = Vec::new();
+    for class in &module.classes {
+        for method in &class.methods {
+            if method.visibility == PropertyVisibility::Public
+                || !magic_method_requires_public_visibility(&method.name)
+            {
+                continue;
+            }
+            warnings.push(MagicVisibilityWarning {
+                class_name: class.name.clone(),
+                method_name: method.name.clone(),
+                line: method.line,
+            });
+        }
+    }
+    warnings
+}
+
+fn magic_method_requires_public_visibility(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "__call"
+            | "__callstatic"
+            | "__get"
+            | "__set"
+            | "__isset"
+            | "__unset"
+            | "__sleep"
+            | "__wakeup"
+            | "__serialize"
+            | "__unserialize"
+            | "__tostring"
+            | "__set_state"
+            | "__debuginfo"
+    )
+}
+
 fn collect_include_legacy_dollar_brace_deprecations(
     include: &IncludeFile,
 ) -> Vec<LegacyDollarBraceDeprecation> {
@@ -2856,6 +2921,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
             for argument in arguments {
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
             }
+        }
+        ValueExpr::Clone { expr, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
         }
         ValueExpr::DynamicCall {
             callee, arguments, ..
@@ -3321,6 +3389,10 @@ fn collect_value_runtime_requirements(
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
             }
+        }
+        ValueExpr::Clone { expr, .. } => {
+            collect_value_runtime_requirements(expr, functions, requirements);
+            requirements.method_dispatch = true;
         }
         ValueExpr::PropertyFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
@@ -4144,6 +4216,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                 .iter()
                 .any(|argument| value_mentions_variable(argument, name))
         }
+        ValueExpr::Clone { expr, .. } => value_mentions_variable(expr, name),
         ValueExpr::DynamicCall {
             callee, arguments, ..
         } => {
@@ -5618,6 +5691,19 @@ impl ValueEmitter {
                 argument_names,
                 line,
             } => self.emit_new_object(out, class_name, arguments, argument_names, *line),
+            ValueExpr::Clone { expr, line } => {
+                let expr_temp = self.emit_materialized_value(out, expr);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_clone_value(&runtime, ");
+                out.push_str(&expr_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &expr_temp);
+                result_temp
+            }
             ValueExpr::PropertyFetch {
                 receiver,
                 name,
@@ -7783,6 +7869,7 @@ impl ValueEmitter {
                 | ValueExpr::Empty { .. }
                 | ValueExpr::Ternary { .. }
                 | ValueExpr::MethodCall { .. }
+                | ValueExpr::Clone { .. }
                 | ValueExpr::StaticPropertyFetch { .. }
                 | ValueExpr::ClassConstantFetch { .. }
                 | ValueExpr::Include { .. }

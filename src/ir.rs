@@ -87,7 +87,9 @@ pub struct ClassConstantDecl {
 pub struct MethodDecl {
     pub name: String,
     pub function_index: usize,
+    pub visibility: PropertyVisibility,
     pub is_static: bool,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -335,6 +337,10 @@ pub enum ValueExpr {
         class_name: String,
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
+        line: usize,
+    },
+    Clone {
+        expr: Box<ValueExpr>,
         line: usize,
     },
     PropertyFetch {
@@ -759,7 +765,9 @@ impl<'a> LoweringContext<'a> {
                 MethodDecl {
                     name: method.name.clone(),
                     function_index,
+                    visibility: lower_property_visibility(method.visibility),
                     is_static: method.is_static,
+                    line: method.span.line,
                 }
             })
             .collect();
@@ -1569,6 +1577,10 @@ impl<'a> LoweringContext<'a> {
                 argument_names: argument_names.clone(),
                 line: span.line,
             },
+            Expr::Clone { expr, span } => ValueExpr::Clone {
+                expr: Box::new(self.lower_expr(expr)),
+                line: span.line,
+            },
             Expr::PropertyFetch {
                 receiver,
                 name,
@@ -1783,6 +1795,7 @@ fn assertion_expr_text(expr: &Expr) -> String {
             "new {class_name}({})",
             assertion_argument_list_text(arguments)
         ),
+        Expr::Clone { expr, .. } => format!("clone {}", assertion_expr_text(expr)),
         Expr::PropertyFetch { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }

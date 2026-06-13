@@ -19,6 +19,7 @@ Zend/tests/bug69891.phpt
 Zend/tests/bug69892.phpt
 Zend/tests/bug69893.phpt
 Zend/tests/bug77660.phpt
+Zend/tests/clone/clone_002.phpt
 Zend/tests/code_before_loop_var_free.phpt
 Zend/tests/concat/concat_002.phpt
 Zend/tests/const_eval_and.phpt

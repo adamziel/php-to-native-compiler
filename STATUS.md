@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T15:29Z
-Measured: `ptn-z98n` `php_uname()` invalid-mode validation on
+Last refresh: 2026-06-13T15:35Z
+Measured: `ptn-8fip` object clone/magic visibility integration on
 
 ## Operating Goal
 
@@ -10,17 +10,17 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 638/638; Native smoke matrix 6/6; PHPT bounded manifest 282/282; PHPT Zend rows 87/87; PHPT ext/standard rows 140/140.
+Source unit tests 3/3; Native/compiler Rust suite 641/641; Native smoke matrix 6/6; PHPT bounded manifest 284/284; PHPT Zend rows 89/89; PHPT ext/standard rows 140/140.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 638/638 |
+| Native/compiler Rust suite | 641/641 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 282/282 |
-| PHPT Zend rows | 87/87 |
+| PHPT bounded manifest | 284/284 |
+| PHPT Zend rows | 89/89 |
 | PHPT ext/standard rows | 140/140 |
 | PHPT focused stream rows | 2/2 |
 | PHPT focused cwd rows | 2/2 |

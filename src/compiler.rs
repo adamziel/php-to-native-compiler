@@ -351,6 +351,7 @@ impl IncludeCollector {
                 expression: target, ..
             }
             | Expr::DynamicVariable { name: target, .. }
+            | Expr::Clone { expr: target, .. }
             | Expr::Unary { expr: target, .. }
             | Expr::Cast { expr: target, .. }
             | Expr::Grouped { expr: target, .. } => {

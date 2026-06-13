@@ -104,6 +104,7 @@ struct ForeachVariable {
     span: SourceSpan,
 }
 
+#[derive(Clone, Copy)]
 struct ClassModifiers {
     is_static: bool,
     visibility: PropertyVisibility,
@@ -808,15 +809,16 @@ impl Parser {
                 Some(self.peek().span),
             ));
         }
-        if modifiers.visibility != PropertyVisibility::Public {
+        let method = self.parse_method_decl(modifiers)?;
+        if method.visibility != PropertyVisibility::Public
+            && !magic_method_requires_public_visibility(&method.name)
+        {
             return Err(Diagnostic::new(
                 "non-public class methods are unsupported",
                 modifiers.visibility_span,
             ));
         }
-        Ok(ParsedClassMember::Method(
-            self.parse_method_decl(modifiers)?,
-        ))
+        Ok(ParsedClassMember::Method(method))
     }
 
     fn parse_class_modifiers(&mut self) -> Result<ClassModifiers> {
@@ -1025,6 +1027,7 @@ impl Parser {
         let body = body?;
         Ok(MethodDecl {
             name,
+            visibility: modifiers.visibility,
             parameters,
             return_type,
             return_by_ref,
@@ -2449,6 +2452,7 @@ impl Parser {
             TokenKind::IncludeOnce => self.parse_include_expr(IncludeKind::IncludeOnce),
             TokenKind::Require => self.parse_include_expr(IncludeKind::Require),
             TokenKind::RequireOnce => self.parse_include_expr(IncludeKind::RequireOnce),
+            TokenKind::Clone => self.parse_clone_expr(),
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
                     let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
@@ -2464,6 +2468,16 @@ impl Parser {
             }
             _ => self.parse_postfix_expr(),
         }
+    }
+
+    fn parse_clone_expr(&mut self) -> Result<Expr> {
+        let token = self.advance().clone();
+        let expr = self.parse_assignment_expr()?;
+        let span = combine_spans(token.span, expr.span());
+        Ok(Expr::Clone {
+            expr: Box::new(expr),
+            span,
+        })
     }
 
     fn parse_include_expr(&mut self, kind: IncludeKind) -> Result<Expr> {
@@ -3185,6 +3199,7 @@ impl Parser {
                 | TokenKind::Dollar
                 | TokenKind::Function
                 | TokenKind::New
+                | TokenKind::Clone
                 | TokenKind::Identifier(_)
                 | TokenKind::Plus
                 | TokenKind::Minus
@@ -3619,6 +3634,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Function => "function",
         TokenKind::Global => "global",
         TokenKind::New => "new",
+        TokenKind::Clone => "clone",
         TokenKind::Identifier(_) => "identifier",
         TokenKind::String(_) => "string",
         TokenKind::InterpolatedString(_) => "encapsed string",
@@ -3720,6 +3736,25 @@ fn is_unsupported_class_like_declaration(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "class" | "enum" | "interface" | "trait"
+    )
+}
+
+fn magic_method_requires_public_visibility(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "__call"
+            | "__callstatic"
+            | "__get"
+            | "__set"
+            | "__isset"
+            | "__unset"
+            | "__sleep"
+            | "__wakeup"
+            | "__serialize"
+            | "__unserialize"
+            | "__tostring"
+            | "__set_state"
+            | "__debuginfo"
     )
 }
 
@@ -3912,6 +3947,7 @@ fn expr_array_literal_reference_to_variable(
             expression: value, ..
         }
         | Expr::Include { path: value, .. }
+        | Expr::Clone { expr: value, .. }
         | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
@@ -4306,6 +4342,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         }
         Expr::PropertyFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
+        }
+        Expr::Clone { expr, .. } => {
+            validate_anonymous_functions_in_expr(expr, functions)?;
         }
         Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
@@ -5660,6 +5699,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::PropertyFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
+        Expr::Clone { expr, .. } => reject_append_array_read(expr)?,
         Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
             for element in elements {
@@ -5824,6 +5864,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::NewObject { .. }
+        | Expr::Clone { .. }
         | Expr::PropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }

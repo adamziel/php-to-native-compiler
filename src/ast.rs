@@ -58,6 +58,7 @@ pub struct ClassConstantDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MethodDecl {
     pub name: String,
+    pub visibility: PropertyVisibility,
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
@@ -467,6 +468,10 @@ pub enum Expr {
         argument_names: Vec<Option<String>>,
         span: SourceSpan,
     },
+    Clone {
+        expr: Box<Expr>,
+        span: SourceSpan,
+    },
     PropertyFetch {
         receiver: Box<Expr>,
         name: String,
@@ -636,6 +641,7 @@ impl Expr {
             | Expr::DynamicCall { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::NewObject { span, .. }
+            | Expr::Clone { span, .. }
             | Expr::PropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. } => *span,
