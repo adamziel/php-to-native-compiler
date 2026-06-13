@@ -209,6 +209,7 @@ typedef struct {
 
 struct PtnClosure {
     size_t refcount;
+    size_t object_id;
     size_t function_index;
     const char *display_name;
     PtnSymbolTable captures;
@@ -278,6 +279,7 @@ struct PtnArray {
 
 struct PtnObject {
     size_t refcount;
+    size_t object_id;
     char *class_name;
     PtnArray *properties;
     PtnObjectPropertyMetadata *property_metadata;
@@ -333,6 +335,7 @@ typedef struct {
 } PtnConcatOperand;
 
 struct PtnException {
+    size_t object_id;
     const char *class_name;
     char *message;
     const char *path;
@@ -402,6 +405,7 @@ struct PtnRuntime {
     PtnObject **live_objects;
     size_t live_objects_len;
     size_t live_objects_capacity;
+    size_t next_object_id;
     PtnMethodDispatchHandler method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
     const char *source_path;
@@ -489,6 +493,20 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.required_parameter_count = required_parameter_count;
     metadata.is_variadic = is_variadic;
     return metadata;
+}
+
+static PTN_UNUSED size_t ptn_runtime_alloc_object_id(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return 0;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->next_object_id == 0) {
+        root->next_object_id = 1;
+    }
+    if (root->next_object_id > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return root->next_object_id++;
 }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -731,12 +749,13 @@ static PTN_UNUSED PtnValue ptn_object(PtnObject *object) {
     return value;
 }
 
-static PTN_UNUSED PtnValue ptn_closure(size_t function_index, const char *display_name) {
+static PTN_UNUSED PtnValue ptn_closure(PtnRuntime *runtime, size_t function_index, const char *display_name) {
     PtnClosure *closure = malloc(sizeof(PtnClosure));
     if (closure == NULL) {
         ptn_abort_out_of_memory();
     }
     closure->refcount = 1;
+    closure->object_id = ptn_runtime_alloc_object_id(runtime);
     closure->function_index = function_index;
     closure->display_name = display_name;
     closure->captures.items = NULL;

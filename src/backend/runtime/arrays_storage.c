@@ -455,6 +455,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
         : runtime->lifecycle_root;
     PtnValue properties = ptn_array_from_literal_entries(0, NULL);
     object->refcount = 1;
+    object->object_id = ptn_runtime_alloc_object_id(root);
     object->class_name = ptn_duplicate_string(class_name);
     object->properties = properties.as.array;
     object->property_metadata = NULL;
@@ -739,6 +740,7 @@ static PTN_UNUSED PtnValue ptn_exception_clone_value(PtnException *source) {
         ptn_abort_out_of_memory();
     }
     exception->class_name = source->class_name;
+    exception->object_id = source->object_id;
     exception->message = ptn_duplicate_string(source->message);
     exception->path = source->path;
     exception->line = source->line;

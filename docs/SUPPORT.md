@@ -398,8 +398,10 @@ Post-RC architecture remains explicit rather than hidden:
   `call_user_func(expr[, ...]);`, `call_user_func_array(expr, expr);`,
   `assert(expr[, description]);`,
   `in_array(expr, expr[, expr]);`,
-  `is_callable(expr[, syntax_only]);`, `is_finite(expr);`,
-  `is_countable(expr);`, `is_iterable(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
+  `is_callable(expr[, syntax_only]);`, `spl_object_id(expr);`,
+  `spl_object_hash(expr);`, `is_finite(expr);`,
+  `is_countable(expr);`, `is_iterable(expr);`, `is_infinite(expr);`,
+  `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
   including `var_export(expr[, return])`, `print_r(expr[, return])`,
@@ -1029,10 +1031,13 @@ Post-RC architecture remains explicit rather than hidden:
   property names are exposed through bounded `property_exists()` metadata.
   Object class names are exposed through bounded `get_class($object)` for
   current object, closure, and exception values; non-object operands throw a
-  modeled `TypeError`. Declared and inherited public instance methods can be
-  called directly through object receivers and through `[$object, "method"]`
-  callable values, including internal callback dispatch. Public `__construct`
-  methods in declared classes are invoked
+  modeled `TypeError`. Current object, closure, and exception values receive
+  stable runtime object identities exposed through `spl_object_id()` and
+  PHP-shaped `spl_object_hash()` strings; non-object operands throw modeled
+  `TypeError`s. Declared and inherited public instance methods can be called
+  directly through object receivers and through `[$object, "method"]` callable
+  values, including internal callback dispatch. Public `__construct` methods
+  in declared classes are invoked
   during `new Class(...)` after declared property defaults are installed,
   using the same method dispatch, `$this` binding, inherited public method
   lookup, positional argument/default-parameter handling, and return-value

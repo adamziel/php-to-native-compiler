@@ -4745,6 +4745,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "is_callable"
             | "method_exists"
             | "property_exists"
+            | "spl_object_hash"
+            | "spl_object_id"
     )
 }
 

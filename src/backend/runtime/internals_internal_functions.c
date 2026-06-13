@@ -400,7 +400,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
         case PTN_OBJECT: {
             PtnObject *object = value.as.object;
             PtnArray *properties = object->properties;
-            printf("object(%s)#1 (%zu) {\n", object->class_name, properties->len);
+            printf("object(%s)#%zu (%zu) {\n", object->class_name, object->object_id, properties->len);
             for (size_t i = 0; i < properties->len; i++) {
                 ptn_var_dump_indent(indent + 1);
                 PtnArrayKey key = properties->entries[i].key;
@@ -412,12 +412,12 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             break;
         }
         case PTN_CLOSURE:
-            printf("object(Closure)#1 (0) {\n");
+            printf("object(Closure)#%zu (0) {\n", value.as.closure->object_id);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
         case PTN_EXCEPTION:
-            printf("object(%s)#1 (1) {\n", value.as.exception->class_name);
+            printf("object(%s)#%zu (1) {\n", value.as.exception->class_name, value.as.exception->object_id);
             ptn_var_dump_indent(indent + 1);
             fputs("[\"message\"]=>\n", stdout);
             ptn_var_dump_indent(indent + 1);
@@ -499,8 +499,9 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             PtnObject *object = value.as.object;
             PtnArray *properties = object->properties;
             printf(
-                "object(%s)#1 (%zu) refcount(%zu){\n",
+                "object(%s)#%zu (%zu) refcount(%zu){\n",
                 object->class_name,
+                object->object_id,
                 properties->len,
                 object->refcount
             );
@@ -535,12 +536,12 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             fputs("\"\n", stdout);
             break;
         case PTN_CLOSURE:
-            printf("object(Closure)#1 (0) {\n");
+            printf("object(Closure)#%zu (0) {\n", value.as.closure->object_id);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
         case PTN_EXCEPTION:
-            printf("object(%s)#1 (1) {\n", value.as.exception->class_name);
+            printf("object(%s)#%zu (1) {\n", value.as.exception->class_name, value.as.exception->object_id);
             ptn_var_dump_indent(indent + 1);
             fputs("[\"message\"]=>\n", stdout);
             ptn_var_dump_indent(indent + 1);
@@ -9209,6 +9210,82 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
     return result;
 }
 
+static int ptn_spl_object_id(PtnValue value, size_t *id_out) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            *id_out = value.as.object->object_id;
+            return 1;
+        case PTN_CLOSURE:
+            *id_out = value.as.closure->object_id;
+            return 1;
+        case PTN_EXCEPTION:
+            *id_out = value.as.exception->object_id;
+            return 1;
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_RESOURCE:
+        case PTN_ARRAY:
+        case PTN_REFERENCE:
+            return 0;
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_spl_object_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    size_t id = 0;
+    if (ptn_spl_object_id(args[0], &id)) {
+        return ptn_int((int64_t)id);
+    }
+
+    PtnValue value = ptn_value_deref(args[0]);
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "spl_object_id(): Argument #1 ($object) must be of type object, %s given",
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    size_t id = 0;
+    if (!ptn_spl_object_id(args[0], &id)) {
+        PtnValue value = ptn_value_deref(args[0]);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "spl_object_hash(): Argument #1 ($object) must be of type object, %s given",
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    char buffer[33];
+    int written = snprintf(buffer, sizeof(buffer), "%016llx0000000000000000", (unsigned long long)id);
+    if (written < 0 || written != 32) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_owned_string(ptn_duplicate_string(buffer));
+}
+
 static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     if (ptn_is_truthy(args[0])) {
@@ -9235,6 +9312,8 @@ static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_spl_object_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -9406,6 +9485,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sizeof", 1, 2, ptn_internal_sizeof },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
+        { "spl_object_hash", 1, 1, ptn_internal_spl_object_hash },
+        { "spl_object_id", 1, 1, ptn_internal_spl_object_id },
         { "sprintf", 1, PTN_VARIADIC_ARGS, ptn_internal_sprintf },
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "str_contains", 2, 2, ptn_internal_str_contains },

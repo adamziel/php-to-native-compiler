@@ -23,6 +23,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
+    runtime->next_object_id = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
     runtime->source_path = caller_runtime->source_path;
@@ -272,6 +273,7 @@ static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const cha
 }
 
 static PTN_UNUSED PtnException *ptn_exception_new_owned(
+    PtnRuntime *runtime,
     const char *class_name,
     char *message,
     const char *path,
@@ -281,6 +283,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     if (exception == NULL) {
         ptn_abort_out_of_memory();
     }
+    exception->object_id = ptn_runtime_alloc_object_id(runtime);
     exception->class_name = class_name;
     exception->message = message;
     exception->path = path;
@@ -289,12 +292,13 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
 }
 
 static PTN_UNUSED PtnException *ptn_exception_new(
+    PtnRuntime *runtime,
     const char *class_name,
     const char *message,
     const char *path,
     size_t line
 ) {
-    return ptn_exception_new_owned(class_name, ptn_duplicate_string(message), path, line);
+    return ptn_exception_new_owned(runtime, class_name, ptn_duplicate_string(message), path, line);
 }
 
 static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *right) {
@@ -391,7 +395,7 @@ static PTN_UNUSED void ptn_throw_exception_at(
     size_t line
 ) {
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = ptn_exception_new(class_name, message, path, line);
+    runtime->exceptions->active_exception = ptn_exception_new(runtime, class_name, message, path, line);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -409,7 +413,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
     char *message
 ) {
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = ptn_exception_new_owned(class_name, message, NULL, 0);
+    runtime->exceptions->active_exception = ptn_exception_new_owned(runtime, class_name, message, NULL, 0);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }

@@ -8188,6 +8188,72 @@ var_dump(function_exists(\"get_class\"));
 }
 
 #[test]
+fn compile_spl_object_identity_intrinsics_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-object-identity-intrinsics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-object-identity-intrinsics.php");
+    let output = root.join("spl-object-identity-intrinsics-bin");
+    fs::write(
+        &input,
+        "<?php
+class Worker {}
+
+$worker = new Worker();
+$std = new stdClass();
+$closure = function () { return null; };
+var_dump(spl_object_id($worker));
+var_dump(spl_object_id($std));
+var_dump(spl_object_id($closure));
+var_dump(spl_object_id($worker));
+var_dump(spl_object_hash($worker));
+var_dump(spl_object_hash($std));
+var_dump(function_exists(\"spl_object_id\"), function_exists(\"SPL_OBJECT_HASH\"));
+try {
+    spl_object_id(42);
+} catch (TypeError $e) {
+    var_dump(is_object($e));
+    var_dump(spl_object_id($e));
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+try {
+    spl_object_hash(null);
+} catch (TypeError $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(1)\n",
+            "string(32) \"00000000000000010000000000000000\"\n",
+            "string(32) \"00000000000000020000000000000000\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(4)\n",
+            "TypeError: spl_object_id(): Argument #1 ($object) must be of type object, int given\n",
+            "TypeError: spl_object_hash(): Argument #1 ($object) must be of type object, null given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_spl_object_id"));
+    assert!(c_source.contains("ptn_internal_spl_object_hash"));
+    assert!(c_source.contains("ptn_runtime_alloc_object_id"));
+}
+
+#[test]
 fn compile_reflection_function_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-function-metadata");
     fs::create_dir_all(&root).unwrap();

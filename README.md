@@ -48,8 +48,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,
   `zend_version()`, PHP version/build/platform constants, `PHP_SAPI`,
   `get_loaded_extensions()`, stable PHP locale constants, bounded
-  `setlocale()`/`localeconv()` helpers, and bounded class/property existence
-  checks.
+  `setlocale()`/`localeconv()` helpers, `spl_object_id()`/
+  `spl_object_hash()`, and bounded class/property existence checks.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable and variable-root array/append compounds share boxed

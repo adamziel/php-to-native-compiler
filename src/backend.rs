@@ -6087,7 +6087,7 @@ impl ValueEmitter {
         let closure_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&closure_temp);
-        out.push_str(" = ptn_closure(");
+        out.push_str(" = ptn_closure(&runtime, ");
         out.push_str(&function_index.to_string());
         out.push_str(", \"{closure}\");\n");
 
