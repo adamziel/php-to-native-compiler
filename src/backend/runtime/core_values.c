@@ -28,6 +28,11 @@
 
 #if !defined(_WIN32)
 extern char *realpath(const char *path, char *resolved_path);
+extern char **environ;
+#define PTN_ENVIRON environ
+#else
+extern char **_environ;
+#define PTN_ENVIRON _environ
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -417,6 +422,7 @@ struct PtnRuntime {
     PtnDeclaredMethodExistsHandler declared_method_exists;
     const char *source_path;
     const char *current_function_name;
+    char *include_path;
     size_t call_site_line;
     int warn_by_ref_argument_mismatch;
 };
@@ -514,6 +520,13 @@ static PTN_UNUSED size_t ptn_runtime_alloc_object_id(PtnRuntime *runtime) {
         ptn_abort_out_of_memory();
     }
     return root->next_object_id++;
+}
+
+static PTN_UNUSED PtnRuntime *ptn_runtime_root(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return NULL;
+    }
+    return runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
 }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH

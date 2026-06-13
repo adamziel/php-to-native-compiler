@@ -28,6 +28,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
+    runtime->include_path = NULL;
     runtime->call_site_line = 0;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
 }
@@ -55,6 +56,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free(&runtime->owned_constants);
     ptn_symbols_free(&runtime->symbols);
     if (runtime->lifecycle_root == runtime) {
+        free(runtime->include_path);
+        runtime->include_path = NULL;
         free(runtime->live_objects);
         runtime->live_objects = NULL;
         runtime->live_objects_len = 0;

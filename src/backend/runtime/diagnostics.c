@@ -422,6 +422,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->declared_method_exists = NULL;
     runtime->source_path = NULL;
     runtime->current_function_name = NULL;
+    runtime->include_path = ptn_duplicate_string(".");
     runtime->call_site_line = 0;
     runtime->warn_by_ref_argument_mismatch = 0;
 }

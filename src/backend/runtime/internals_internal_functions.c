@@ -8724,6 +8724,10 @@ static int ptn_ini_value(PtnStringOperand option, PtnValue *out) {
         *out = ptn_string(PTN_PHP_EXTENSION_DIR);
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
+        *out = ptn_string(".");
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
         *out = ptn_string("1000000");
         return 1;
@@ -8738,6 +8742,189 @@ static int ptn_ini_value(PtnStringOperand option, PtnValue *out) {
         return 1;
     }
     return 0;
+}
+
+static const char *ptn_runtime_current_include_path(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->include_path == NULL) {
+        return ".";
+    }
+    return root->include_path;
+}
+
+static void ptn_runtime_set_include_path(PtnRuntime *runtime, const char *path) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    char *copy = ptn_duplicate_string(path);
+    free(root->include_path);
+    root->include_path = copy;
+}
+
+static int ptn_environment_put_owned(char *assignment) {
+#if defined(_WIN32)
+    int result = _putenv(assignment);
+    free(assignment);
+    return result == 0;
+#else
+    char *equals = strchr(assignment, '=');
+    if (equals == NULL || equals == assignment) {
+        free(assignment);
+        return 0;
+    }
+    *equals = '\0';
+    int result = setenv(assignment, equals + 1, 1);
+    free(assignment);
+    return result == 0;
+#endif
+}
+
+static int ptn_environment_unset(const char *name) {
+#if defined(_WIN32)
+    size_t name_len = strlen(name);
+    if (name_len > SIZE_MAX - 2) {
+        ptn_abort_out_of_memory();
+    }
+    char *assignment = malloc(name_len + 2);
+    if (assignment == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(assignment, name, name_len);
+    assignment[name_len] = '=';
+    assignment[name_len + 1] = '\0';
+    int result = _putenv(assignment);
+    free(assignment);
+    return result == 0;
+#else
+    return unsetenv(name) == 0;
+#endif
+}
+
+static PtnValue ptn_environment_snapshot(void) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    char **environment = PTN_ENVIRON;
+    if (environment == NULL) {
+        return result;
+    }
+    for (char **entry = environment; *entry != NULL; entry++) {
+        char *equals = strchr(*entry, '=');
+        if (equals == NULL || equals == *entry) {
+            continue;
+        }
+        size_t name_len = (size_t)(equals - *entry);
+        char *name = ptn_duplicate_string_len(*entry, name_len);
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key(name),
+            ptn_owned_string(ptn_duplicate_string(equals + 1))
+        );
+        free(name);
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_get_include_path(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_include_path(runtime)));
+}
+
+static PtnValue ptn_internal_set_include_path(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "set_include_path", 1, "include_path", args[0], line);
+    if (path.len == 0) {
+        ptn_string_operand_free(path);
+        return ptn_bool(0);
+    }
+    char *previous = ptn_duplicate_string(ptn_runtime_current_include_path(runtime));
+    char *next = ptn_duplicate_string_len(path.data, path.len);
+    ptn_runtime_set_include_path(runtime, next);
+    free(next);
+    ptn_string_operand_free(path);
+    return ptn_owned_string(previous);
+}
+
+static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand option = ptn_internal_expect_string_arg(runtime, "ini_restore", 1, "option", args[0], line);
+    if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
+        ptn_runtime_set_include_path(runtime, ".");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    PtnValue value;
+    int known = ptn_ini_value(option, &value);
+    if (known) {
+        ptn_value_destroy(&value);
+    }
+    ptn_string_operand_free(option);
+    return known ? ptn_null() : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_getenv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc == 0) {
+        (void)runtime;
+        (void)args;
+        (void)line;
+        return ptn_environment_snapshot();
+    }
+
+    PtnStringOperand name = ptn_internal_expect_string_arg(runtime, "getenv", 1, "name", args[0], line);
+    if (memchr(name.data, '\0', name.len) != NULL) {
+        ptn_string_operand_free(name);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "getenv(): Argument #1 ($name) must not contain any null bytes"
+        );
+        return ptn_null();
+    }
+    char *key = ptn_duplicate_string_len(name.data, name.len);
+    ptn_string_operand_free(name);
+    const char *value = getenv(key);
+    free(key);
+    if (value == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(ptn_duplicate_string(value));
+}
+
+static PtnValue ptn_internal_putenv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand assignment = ptn_internal_expect_string_arg(runtime, "putenv", 1, "assignment", args[0], line);
+    if (memchr(assignment.data, '\0', assignment.len) != NULL) {
+        ptn_string_operand_free(assignment);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "putenv(): Argument #1 ($assignment) must not contain any null bytes"
+        );
+        return ptn_null();
+    }
+    if (assignment.len == 0 || assignment.data[0] == '=') {
+        ptn_string_operand_free(assignment);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "putenv(): Argument #1 ($assignment) must have a valid syntax"
+        );
+        return ptn_null();
+    }
+
+    const char *equals = memchr(assignment.data, '=', assignment.len);
+    int ok;
+    if (equals == NULL) {
+        char *name = ptn_duplicate_string_len(assignment.data, assignment.len);
+        ok = ptn_environment_unset(name);
+        free(name);
+    } else {
+        char *owned_assignment = ptn_duplicate_string_len(assignment.data, assignment.len);
+        ok = ptn_environment_put_owned(owned_assignment);
+    }
+    ptn_string_operand_free(assignment);
+    return ptn_bool(ok);
 }
 
 static PtnValue ptn_internal_php_sapi_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -8834,18 +9021,21 @@ static PtnValue ptn_internal_php_uname(PtnRuntime *runtime, size_t argc, const P
 }
 
 static PtnValue ptn_internal_ini_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     PtnStringOperand option = ptn_value_to_string_operand(args[0]);
     PtnValue value;
+    if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
+        value = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_include_path(runtime)));
+        ptn_string_operand_free(option);
+        return value;
+    }
     int found = ptn_ini_value(option, &value);
     ptn_string_operand_free(option);
     return found ? value : ptn_bool(0);
 }
 
 static PtnValue ptn_internal_get_cfg_var(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     PtnStringOperand option = ptn_value_to_string_operand(args[0]);
@@ -8854,6 +9044,11 @@ static PtnValue ptn_internal_get_cfg_var(PtnRuntime *runtime, size_t argc, const
         return ptn_bool(0);
     }
     PtnValue value;
+    if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
+        value = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_include_path(runtime)));
+        ptn_string_operand_free(option);
+        return value;
+    }
     int found = ptn_ini_value(option, &value);
     ptn_string_operand_free(option);
     return found ? value : ptn_bool(0);
@@ -9621,8 +9816,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "function_exists", 1, 1, ptn_internal_function_exists },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 1, 1, ptn_internal_get_class },
+        { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "getcwd", 0, 0, ptn_internal_getcwd },
+        { "getenv", 0, 2, ptn_internal_getenv },
         { "getmypid", 0, 0, ptn_internal_getmypid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "gettype", 1, 1, ptn_internal_gettype },
@@ -9633,6 +9830,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "implode", 1, 2, ptn_internal_implode },
         { "in_array", 2, 3, ptn_internal_in_array },
         { "ini_get", 1, 1, ptn_internal_ini_get },
+        { "ini_restore", 1, 1, ptn_internal_ini_restore },
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
         { "is_array", 1, 1, ptn_internal_is_array },
@@ -9685,6 +9883,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "print_r", 1, 2, ptn_internal_print_r },
         { "printf", 1, PTN_VARIADIC_ARGS, ptn_internal_printf },
         { "property_exists", 2, 2, ptn_internal_property_exists },
+        { "putenv", 1, 1, ptn_internal_putenv },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "range", 2, 3, ptn_internal_range },
@@ -9694,6 +9893,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
+        { "set_include_path", 1, 1, ptn_internal_set_include_path },
         { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },

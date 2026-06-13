@@ -92,6 +92,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   boxed with type, dump, and array-key cast behavior; `file_get_contents()`
   reads filesystem paths into binary-safe strings with bounded offset/length
   handling.
+- Environment and include-path helpers cover `getenv()` snapshots/lookups,
+  `putenv()` set/unset plus embedded-NUL/invalid-assignment diagnostics, and
+  bounded `get_include_path()`/`set_include_path()`/`ini_restore()` state.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 - PHPT runners preclassify broad rows before execution and write selected,
@@ -99,8 +102,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
   `pcre`, `Reflection`, and `standard` extension surface plus accepted runner ini keys
   (`date.timezone`, `display_errors`, `error_reporting`, `extension_dir`,
-  `pcre.backtrack_limit`, `precision`, and `zend.assertions`); set
-  `PTN_PHPT_CLASSIFY=0` for raw php-src `run-tests.php` pass-through.
+  `include_path`, `pcre.backtrack_limit`, `precision`, and
+  `zend.assertions`); child-process control rows are classified until PTN has a
+  native process boundary, and `PTN_PHPT_CLASSIFY=0` gives raw php-src
+  `run-tests.php` pass-through.
 - Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from
   `Zend/tests`, `ext/standard/tests`, and core `tests`, recording the php-src
   corpus revision plus pass/fail/skip/warn counts without requiring all rows to

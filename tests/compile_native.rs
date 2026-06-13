@@ -10448,6 +10448,80 @@ var_dump(defined(\"DIRECTORY_SEPARATOR\"), defined(\"PATH_SEPARATOR\"));",
 }
 
 #[test]
+fn compile_environment_and_include_path_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-environment-include-path-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("environment-include-path.php");
+    let output = root.join("environment-include-path-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists(\"getenv\"), function_exists(\"putenv\"), function_exists(\"get_include_path\"), function_exists(\"set_include_path\"), function_exists(\"ini_restore\"));\n\
+var_dump(getenv(\"PTN_ENV_TEST\"));\n\
+$env = getenv();\n\
+var_dump($env[\"PTN_ENV_TEST\"]);\n\
+$name = \"PTN_NATIVE_ENV_RUNTIME_TEST\";\n\
+var_dump(getenv($name));\n\
+var_dump(putenv($name . \"=value\"));\n\
+var_dump(getenv($name));\n\
+var_dump(putenv($name . \"=\"));\n\
+var_dump(getenv($name));\n\
+var_dump(putenv($name));\n\
+var_dump(getenv($name));\n\
+try { getenv(\"BAD\" . chr(0) . \"NAME\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { putenv(\"BAD\" . chr(0) . \"NAME=value\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { putenv(\"=bad\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(get_include_path(), ini_get(\"include_path\"));\n\
+var_dump(set_include_path(\"var\"));\n\
+var_dump(get_include_path(), ini_get(\"include_path\"));\n\
+var_dump(ini_restore(\"include_path\"));\n\
+var_dump(get_include_path(), ini_get(\"include_path\"));\n\
+var_dump(set_include_path(\"\"));\n\
+var_dump(get_include_path());",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_ENV_TEST", "bar")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+string(3) \"bar\"\n\
+string(3) \"bar\"\n\
+bool(false)\n\
+bool(true)\n\
+string(5) \"value\"\n\
+bool(true)\n\
+string(0) \"\"\n\
+bool(true)\n\
+bool(false)\n\
+getenv(): Argument #1 ($name) must not contain any null bytes\n\
+putenv(): Argument #1 ($assignment) must not contain any null bytes\n\
+putenv(): Argument #1 ($assignment) must have a valid syntax\n\
+string(1) \".\"\n\
+string(1) \".\"\n\
+string(1) \".\"\n\
+string(3) \"var\"\n\
+string(3) \"var\"\n\
+NULL\n\
+string(1) \".\"\n\
+string(1) \".\"\n\
+bool(false)\n\
+string(1) \".\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_bug27443_defined_type_shape_to_native_binary() {
     let root = temp_dir("ptn-native-bug27443-defined");
     fs::create_dir_all(&root).unwrap();

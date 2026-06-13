@@ -8,7 +8,7 @@
 # Generic PHP semantic gaps remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard,Reflection"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="date.timezone,display_errors,error_reporting,extension_dir,pcre.backtrack_limit,precision,zend.assertions"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="date.timezone,display_errors,error_reporting,extension_dir,include_path,pcre.backtrack_limit,precision,zend.assertions"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,GET,HEADERS,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
 
 ptn_phpt_supported_extensions() {
@@ -207,6 +207,19 @@ ptn_phpt_has_external_service_harness() {
         "$path"
 }
 
+ptn_phpt_has_process_boundary() {
+    local path=$1
+    local section
+
+    for section in FILE CLEAN SKIPIF; do
+        if ptn_phpt_section "$path" "$section" \
+            | grep -Eiq '(^|[^[:alnum:]_\\$])(proc_open|proc_close|proc_get_status|proc_terminate|proc_nice|popen|pclose|exec|system|passthru|shell_exec)[[:space:]]*\('; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 ptn_phpt_first_unsupported_section() {
     local path=$1
     local unsupported
@@ -247,6 +260,11 @@ ptn_phpt_classify_row() {
 
     if [[ "$rel" == sapi/* ]]; then
         printf 'sapi-behavior\texercises php-src SAPI executable behavior outside PTN script execution\n'
+        return 0
+    fi
+
+    if ptn_phpt_has_process_boundary "$path"; then
+        printf 'process-boundary\trequires child-process execution/control and pipe semantics outside PTN native runtime boundary\n'
         return 0
     fi
 
