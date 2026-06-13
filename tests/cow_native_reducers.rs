@@ -260,6 +260,22 @@ var_dump(array_reduce($array, \"pick_reduce_value\", 0));",
             expected_stdout: "int(2)\n",
         },
         CowReducerCase {
+            name: "call_user_func_array_reference_element_identity",
+            oracle: "ext/standard/tests/general_functions/call_user_func_array_variation_001.phpt",
+            source: "<?php\n\
+function by_val($arg) { $arg = \"changed\"; }\n\
+function by_ref(&$arg) { $arg = \"changed\"; }\n\
+$items = [\"original\"];\n\
+call_user_func_array(\"by_val\", $items);\n\
+var_dump($items);\n\
+$ref =& $items[0];\n\
+call_user_func_array(\"by_val\", $items);\n\
+var_dump($items);\n\
+call_user_func_array(\"by_ref\", $items);\n\
+var_dump($items);",
+            expected_stdout: "array(1) {\n  [0]=>\n  string(8) \"original\"\n}\narray(1) {\n  [0]=>\n  &string(8) \"original\"\n}\narray(1) {\n  [0]=>\n  &string(7) \"changed\"\n}\n",
+        },
+        CowReducerCase {
             name: "function_return_array_then_write",
             oracle: "Zend/tests/assign_by_val_function_by_ref_return_value.phpt",
             source: "<?php\n\
@@ -279,6 +295,15 @@ $value =& make_array();\n\
 $value[\"v\"] = 2;\n\
 echo $value[\"v\"], \"\\n\";",
             expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 3\n2\n",
+        },
+        CowReducerCase {
+            name: "by_ref_assignment_from_function_result_keeps_result_alive",
+            oracle: "Zend/tests/assign_ref_func_leak.phpt",
+            source: "<?php\n\
+function make_array() { return [0]; }\n\
+$x = $y =& make_array();\n\
+var_dump($x, $y);",
+            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 3\narray(1) {\n  [0]=>\n  int(0)\n}\narray(1) {\n  [0]=>\n  int(0)\n}\n",
         },
         CowReducerCase {
             name: "array_slot_by_ref_assignment_from_call_result_assigns_value",
@@ -470,7 +495,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 31, "COW reducer pass count changed");
+    assert_eq!(passed, 33, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T19:18Z
+Last refresh: 2026-06-13T19:22Z
 Source: `PROGRESS.md`
-Measured: `ptn-550s.1` broad COW risk inventory after `ptn-550s.3`.
+Measured: `ptn-550s.4` COW function-boundary expansion after `ptn-550s.1`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 651/651; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
@@ -20,7 +20,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 651/651; Nativ
 | PHPT focused filesystem/path/process rows | 13/46 |
 | PHPT tests/basic+func+lang | 78/78 |
 | PHPT other rows | 8/8 |
-| PHPT COW manifest | 29/29 |
+| PHPT COW manifest | 54/54 |
 | PHPT array-internal COW frontier | 0/72 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |

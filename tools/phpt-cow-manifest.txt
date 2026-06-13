@@ -36,11 +36,36 @@ Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt
 Zend/tests/foreach/foreach_temp_array_expr_with_refs.phpt
 ext/standard/tests/array/array_walk/bug69068_2.phpt
 
-# bucket: function-boundaries rows=4
+# bucket: function-boundaries rows=29
 Zend/tests/return_types/return_reference_separation.phpt
 Zend/tests/assign_by_val_function_by_ref_return_value.phpt
+Zend/tests/assign_ref_func_leak.phpt
+Zend/tests/call_user_functions/call_user_func_array_array_slice_type.phpt
+Zend/tests/func_get_arg_invalid.phpt
+Zend/tests/type_declarations/scalar_weak_reference.phpt
 ext/standard/tests/array/array_reduce_accumulator_refcount.phpt
+ext/standard/tests/array/array_reduce.phpt
 ext/standard/tests/array/array_reduce_return_by_ref.phpt
+ext/standard/tests/array/array_reduce_variation3.phpt
+ext/standard/tests/general_functions/call_user_func_array_variation_001.phpt
+ext/standard/tests/general_functions/call_user_func_return.phpt
+tests/lang/func_get_arg.001.phpt
+tests/lang/func_get_arg.002.phpt
+tests/lang/func_get_arg.003.phpt
+tests/lang/func_get_arg.004.phpt
+tests/lang/func_get_arg.005.phpt
+tests/lang/func_get_arg_variation.phpt
+tests/lang/func_get_args.001.phpt
+tests/lang/func_get_args.002.phpt
+tests/lang/func_get_args.003.phpt
+tests/lang/func_get_args.004.phpt
+tests/lang/func_num_args.004.phpt
+tests/lang/passByReference_001.phpt
+tests/lang/passByReference_003.phpt
+tests/lang/passByReference_008.phpt
+tests/lang/passByReference_009.phpt
+tests/lang/returnByReference.001.phpt
+tests/lang/returnByReference.002.phpt
 
 # bucket: reference-interaction rows=5
 Zend/tests/array_with_refs_identical.phpt
