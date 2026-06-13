@@ -1,8 +1,8 @@
 # PTN Progress
 
 Refresh: 2026-06-13T13:26Z
-Measured: `ptn-4bwx` `nl2br()` integration on current `origin/master`
-`5b69ed7`; focused native/parser/PHPT gates passed.
+Measured: `ptn-4bwx` current-directory integration on current `origin/master`
+`a10b973`; focused native/parser/PHPT gates passed.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
 closures, `stdClass`, properties/destructors, reflection, array helpers,
@@ -11,10 +11,10 @@ search/count/string internals, scalar/array type hints, ordered-array
 `str_replace()`, `str_split()`, `nl2br()`, `strncasecmp()`, `chr()`, `crc32()`, PHP
 metadata constants, standard streams, foreach destructuring,
 namespace/import forms, `global`, dynamic-variable writes/unsets, stream
-metadata, stable locale constants plus `localeconv()`, type predicates
-including `is_iterable()`, invokable callables, SPL object identity intrinsics,
-non-recursive `array_replace()`, PHPT runner ini values, statement-form
-`(void)` casts, and offset compound/coalescing.
+metadata, locale constants plus `localeconv()`, predicates including
+`is_iterable()`, invokable callables, SPL object identity intrinsics,
+non-recursive `array_replace()`, `getcwd()`/`chdir()`, PHPT runner ini values,
+statement-form `(void)` casts, and offset compound/coalescing.
 
 Recent movers include `display_errors`/`zend.assertions` runner ini plumbing,
 bracketed namespace blocks, `is_iterable()` for arrays in the current subset,
@@ -23,20 +23,21 @@ constants, `dirname()` levels, `pathinfo()`, `LC_*`/`setlocale()`/`localeconv()`
 invokable object callables, search/count internals, persistent standard
 streams, `property_exists()`, PHPT manifests, `crc32()`, `str_replace()` array
 operands/reference entries/counts, `str_split()`, `nl2br()`, `strncasecmp()`, array
-parameter/return hints, runtime object IDs, and integer validation for
-`chr()`/`intdiv()`/file offsets plus `array_replace()` overwrite semantics.
+parameter/return hints, runtime object IDs, current-directory helpers, and
+integer validation for `chr()`/`intdiv()`/file offsets plus `array_replace()`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 628 | 628 | 0 |
+| Native/compiler Rust suite | 629 | 629 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 280 | 280 | 0 |
 | PHPT Zend rows | 87 | 87 | 0 |
 | PHPT ext/standard rows | 138 | 138 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
+| PHPT focused cwd rows | 2 | 2 | 0 |
 | PHPT tests/basic+func+lang | 50 | 50 | 0 |
 | PHPT other rows | 5 | 5 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
@@ -57,23 +58,22 @@ inline HTML, locale support including `localeconv()`, invokable object
 callables, scalar and ordered-array `str_replace()`, `str_split()`, `nl2br()`,
 PHP metadata constants, `strncasecmp()`, scalar/array type hints, SPL object
 identity intrinsics, non-recursive `array_replace()`, PHPT runner ini values,
-statement-form `(void)`, array mutators, inc/dec, `global`, dynamic variables,
-and offset compound/null
+`getcwd()`/`chdir()`, statement-form `(void)`, array mutators, inc/dec,
+`global`, dynamic variables, and offset compound/null
 coalescing.
 
 ## Remaining Bounded Exclusions
 
-- None among the 279 runnable rows in the current bounded manifest.
+- None among the 280 runnable rows in the current bounded manifest.
 - Callback manifest has 3 runnable passing rows and 2 unsupported-extension
   exclusions.
 
 ## Verification
 
-Current branch verification for `ptn-4bwx`: focused `nl2br()` reducer, parser
-internal-name guard, and `nl2br.phpt` passed.
+Current branch verification for `ptn-4bwx`: focused `getcwd()`/`chdir()`
+reducer, parser internal-name guard, and cwd PHPT rows passed.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 first-class callables, dynamic includes, unsupported internals, scalar
-offset-lvalues, assertions, binary-safe array keys, `Traversable` objects,
-embedded-NUL internals, host-locale parity, scalar conversion diagnostics, and
-callable syntax.
+offset-lvalues, assertions, `Traversable`, embedded-NUL internals,
+host-locale parity, conversion diagnostics, and callables.

@@ -6848,6 +6848,77 @@ static PtnValue ptn_internal_file_exists(PtnRuntime *runtime, size_t argc, const
     return ptn_path_predicate(runtime, "file_exists", args[0], line, ptn_path_exists_c);
 }
 
+static char *ptn_platform_getcwd_alloc(void) {
+    size_t capacity = 256;
+    for (;;) {
+        if (capacity > (size_t)INT_MAX) {
+            errno = ERANGE;
+            return NULL;
+        }
+        char *buffer = malloc(capacity);
+        if (buffer == NULL) {
+            ptn_abort_out_of_memory();
+        }
+#if defined(_WIN32)
+        if (_getcwd(buffer, (int)capacity) != NULL) {
+            return buffer;
+        }
+#else
+        if (getcwd(buffer, capacity) != NULL) {
+            return buffer;
+        }
+#endif
+        int saved_errno = errno;
+        free(buffer);
+        if (saved_errno == ERANGE && capacity <= SIZE_MAX / 2) {
+            capacity *= 2;
+            continue;
+        }
+        errno = saved_errno;
+        return NULL;
+    }
+}
+
+static int ptn_platform_chdir(const char *path) {
+#if defined(_WIN32)
+    return _chdir(path);
+#else
+    return chdir(path);
+#endif
+}
+
+static PtnValue ptn_internal_getcwd(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    char *cwd = ptn_platform_getcwd_alloc();
+    if (cwd == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(cwd);
+}
+
+static PtnValue ptn_internal_chdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "chdir", 1, "directory", args[0], line);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "chdir(): Path must not contain any null bytes", line);
+        return ptn_bool(0);
+    }
+
+    if (ptn_platform_chdir(path) == 0) {
+        free(path);
+        return ptn_bool(1);
+    }
+
+    ptn_emit_file_warning(runtime, "chdir", path, strerror(errno), line);
+    free(path);
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_realpath(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
@@ -9428,6 +9499,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "call_user_func", 1, PTN_VARIADIC_ARGS, ptn_internal_call_user_func },
         { "call_user_func_array", 2, 2, ptn_internal_call_user_func_array },
         { "ceil", 1, 1, ptn_internal_ceil },
+        { "chdir", 1, 1, ptn_internal_chdir },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
         { "class_exists", 1, 2, ptn_internal_class_exists },
@@ -9459,6 +9531,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 1, 1, ptn_internal_get_class },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
+        { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getmypid", 0, 0, ptn_internal_getmypid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "gettype", 1, 1, ptn_internal_gettype },

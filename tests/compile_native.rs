@@ -1400,6 +1400,12 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         "Cannot redeclare function get_loaded_extensions()"
     );
 
+    let error = parser::parse("<?php function GetCwd() { return ''; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function getcwd()");
+
+    let error = parser::parse("<?php function ChDir($path) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function chdir()");
+
     let error = parser::parse("<?php function IsSet($value) { return true; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function isset()");
 
@@ -5371,6 +5377,45 @@ var_dump(highlight_file($file, false));\n",
         "int(5)\n\
 bool(true)\nbool(true)\nbool(false)\n\
 <code><span style=\"color: #000000\">\n&lt;A&amp;&gt;\n</span>\n</code>bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_getcwd_and_chdir_to_native_binary() {
+    let root = temp_dir("ptn-native-getcwd-chdir");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getcwd-chdir.php");
+    let output = root.join("getcwd-chdir-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$target = __DIR__ . \"/cwd-target\";\n\
+mkdir($target);\n\
+$before = getcwd();\n\
+var_dump(is_string($before));\n\
+var_dump(chdir($target));\n\
+var_dump(getcwd() === $target);\n\
+var_dump(chdir($before));\n\
+var_dump(getcwd() === $before);\n\
+var_dump(function_exists(\"getcwd\"), function_exists(\"CHDIR\"));\n\
+rmdir($target);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

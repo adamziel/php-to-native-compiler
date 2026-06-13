@@ -366,7 +366,7 @@ Post-RC architecture remains explicit rather than hidden:
   `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
   `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
-  `getmypid();`, `get_cfg_var(expr);`,
+  `getmypid();`, `getcwd();`, `chdir(expr);`, `get_cfg_var(expr);`,
   `get_loaded_extensions([zend_extensions]);`, `ini_get(expr);`,
   `localeconv();`,
   `ob_get_contents();`, `php_ini_scanned_files();`, `php_sapi_name();`,
@@ -439,7 +439,7 @@ Post-RC architecture remains explicit rather than hidden:
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
-  `getmypid()`, `get_cfg_var(expr)`,
+  `getmypid()`, `getcwd()`, `chdir(expr)`, `get_cfg_var(expr)`,
   `get_loaded_extensions([zend_extensions])`, `ini_get(expr)`,
   `localeconv()`,
   `ob_get_contents()`, `php_ini_scanned_files()`, `php_sapi_name()`,
@@ -710,6 +710,10 @@ Post-RC architecture remains explicit rather than hidden:
 - `nl2br()` over current boxed scalar values after scalar string conversion,
   inserting `<br />` by default or `<br>` when the optional XHTML flag is false
   before `\n`, `\r`, `\r\n`, and `\n\r` newline sequences.
+- `getcwd()` returns the process current working directory as a string, and
+  `chdir()` changes it for scalar path operands. Embedded NUL paths return
+  `false` with the current warning boundary; failing host calls return `false`
+  with the shared filesystem warning path.
 - `ceil()` and `floor()` over current boxed scalar values after PHP numeric
   parameter conversion, returning boxed floats. `null` emits the modeled
   deprecation and yields `0.0`; booleans, integers, floats, fully numeric
