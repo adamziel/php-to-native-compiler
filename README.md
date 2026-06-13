@@ -24,6 +24,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   imports.
 - Full and short ternary expressions lower through lazy boxed branches;
   unparenthesized nested ternaries remain diagnostic.
+- Statement-form `(void)` casts evaluate operands for side effects and discard
+  results while expression-context `(void)` remains diagnostic.
 - Direct references and by-reference parameters cover the first COW/reference
   slice; dynamic roots support reads/writes, array/string-offset writes,
   unsets, compounds, null coalescing assignments, and inc/dec targets.

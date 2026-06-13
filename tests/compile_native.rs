@@ -1656,6 +1656,20 @@ fn parser_rejects_void_cast_expression_context_with_parse_error_kind() {
 }
 
 #[test]
+fn parser_accepts_void_cast_statement_form() {
+    let program = parser::parse("<?php (void)$dummy; (void)mark();").unwrap();
+    assert_eq!(program.statements.len(), 2);
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected expression statement");
+    };
+    assert!(matches!(expression, Expr::Variable(name, _) if name == "dummy"));
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected expression statement");
+    };
+    assert!(matches!(expression, Expr::Call { name, .. } if name == "mark"));
+}
+
+#[test]
 fn parser_rejects_unterminated_block_comment_with_parse_error_kind() {
     let error = parser::parse("<?php\n/* Foo\nBar").unwrap_err();
     assert_eq!(error.message, "Unterminated comment starting line 2");
@@ -20045,6 +20059,29 @@ fn compile_unary_parenthesized_and_cast_expressions_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "-5\n1 \n42.5 1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_statement_void_casts_to_native_binary() {
+    let root = temp_dir("ptn-native-statement-void-casts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("statement-void-casts.php");
+    let output = root.join("statement-void-casts-bin");
+    fs::write(
+        &input,
+        "<?php\nfunction mark($value) { echo \"mark=$value\\n\"; return $value + 1; }\n(void)mark(3);\n(void)($x = mark(4));\n(void)[\"discarded\"];\necho \"x=$x\\n\";\necho \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "mark=3\nmark=4\nx=5\ndone\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

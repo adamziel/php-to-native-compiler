@@ -190,6 +190,8 @@ Post-RC architecture remains explicit rather than hidden:
 - Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
   non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts over
   supported boxed scalar values.
+- Statement-form `(void) expr;` casts evaluate the operand for side effects and
+  discard the result.
 - `phpc -d precision=N` accepts bounded integer precision values for generated
   native execution. Scalar float stringification for echo, string casts,
   concatenation, string internals such as `strlen()`, and `print_r()` uses that
@@ -1239,7 +1241,6 @@ Post-RC architecture remains explicit rather than hidden:
   CLI/core/standard names and loaded-extension list.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
-- Statement-form `(void) expr;` casts.
 - Scope-aware magic constants inside traits, includes, and eval contexts, plus
   remaining namespace-sensitive reflection and metadata parity.
 - PHP-exact file names, line numbers, custom error-handler routing, and

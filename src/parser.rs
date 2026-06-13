@@ -1547,6 +1547,22 @@ impl Parser {
     }
 
     fn parse_expression_statement(&mut self) -> Result<Statement> {
+        if let Some(void_span) = self.try_parse_void_cast_statement_prefix() {
+            let expression = self.parse_expr()?;
+            let span = combine_spans(void_span, expression.span());
+            if matches!(self.peek().kind, TokenKind::Question) {
+                return self.reject_unsupported_ternary_expression();
+            }
+            if self.peek_is_assignment_op() {
+                return Err(Diagnostic::new(
+                    "expected assignment",
+                    Some(self.peek().span),
+                ));
+            }
+            self.expect_statement_terminator()?;
+            return Ok(Statement::Expression { expression, span });
+        }
+
         let expression = self.parse_expr()?;
         let span = expression.span();
         if matches!(self.peek().kind, TokenKind::Question) {
@@ -1560,6 +1576,24 @@ impl Parser {
         }
         self.expect_statement_terminator()?;
         Ok(Statement::Expression { expression, span })
+    }
+
+    fn try_parse_void_cast_statement_prefix(&mut self) -> Option<SourceSpan> {
+        if !matches!(self.peek().kind, TokenKind::LeftParen) || !self.peek_next_is_void_cast_name()
+        {
+            return None;
+        }
+        if !matches!(
+            self.tokens.get(self.index + 2).map(|token| &token.kind),
+            Some(TokenKind::RightParen)
+        ) {
+            return None;
+        }
+
+        let left = self.advance().span;
+        self.advance();
+        let right = self.advance().span;
+        Some(combine_spans(left, right))
     }
 
     fn parse_const(&mut self) -> Result<Statement> {
@@ -3033,6 +3067,13 @@ impl Parser {
     fn peek_is_void_cast_name(&self) -> bool {
         matches!(
             &self.peek().kind,
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("void")
+        )
+    }
+
+    fn peek_next_is_void_cast_name(&self) -> bool {
+        matches!(
+            &self.peek_next().kind,
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("void")
         )
     }
