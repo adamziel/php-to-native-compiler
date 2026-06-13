@@ -1,19 +1,18 @@
 # PTN Progress
 
-Refresh: 2026-06-13T20:59Z
-Measured: `ptn-550s.9` foreach object/property residuals after `ptn-x8p9`.
+Refresh: 2026-06-13T21:34Z
+Measured: `ptn-qsmv.12` readonly class/property metadata after gates.
 
-Slices cover callable/object, filesystem/string, property, COW,
-`array_walk()`, and PHPT blocker work. `ptn-550s.9` adds object-cast property
-foreach, property/by-reference targets, object property unset, and scope-aware
-property visibility.
+Slices cover callable/object, filesystem/string, property, COW, `array_walk()`,
+PHPT blockers, and readonly metadata. `ptn-qsmv.12` adds readonly parsing,
+write-once properties, inheritance guards, and classifier narrowing.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 676 | 676 | 0 |
+| Native/compiler Rust suite | 685 | 685 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
@@ -45,24 +44,24 @@ property visibility.
 
 ## Verification
 
+`ptn-qsmv.12` parses `readonly class` and readonly property modifiers, carries
+readonly metadata through AST/IR/native declarations, enforces write-once
+initialization, reports uninitialized reads, rejects dynamic properties on
+readonly classes, and keeps unsupported readonly rows classified separately.
+Refinery gates: readonly native/parser tests 5/5, PHPT classifier 15/15, and
+targeted Zend readonly PHPT selected 12, runnable 8, excluded 4, passed 8/8.
+
 `ptn-550s.9` focused Zend foreach object/property rerun passed 6/6:
 `bug34310`, `bug39017`, `bug39825`, `foreach_010`, `foreach_018`, and
-`foreach_by_ref_to_property`. Worker evidence: `cargo fmt --check`, focused
-Zend rerun, and full `cargo test` before the newer docs/classifier rebase.
+`foreach_by_ref_to_property`. `ptn-x8p9` maps 73 `unsupported-ini` rows;
+`assert.exception` probe passed 5/17, so it is blocker evidence.
 
-`ptn-x8p9` carries `ptn-j2ar` INI split:
-`docs/PHPT_INI_BLOCKERS_2026-06-13.md` maps 73 `unsupported-ini` rows into
-request/input 28, assertion 17, resource-limit 15, diagnostics 5, and four
-2-row categories. The forced `assert.exception` probe passed 5/17: blocker
-evidence, not runtime INI support.
-
-`ptn-flje` adds broad COW frontier classify-only: 46 selected, 31 runnable,
-15 excluded; older worker execution ran 42 rows, passed 11, and failed 31.
-`ptn-550s.8` reruns seven `array_walk()` rows: six pass and `bug39576` is
-class-metadata.
+`ptn-flje` COW classify-only is 46 selected, 31 runnable,
+15 excluded. `ptn-550s.8` reruns seven `array_walk()` rows: six pass and
+`bug39576` is class-metadata.
 
 Follow-ups remain typed properties, traits, magic methods, attributes,
-heredoc/nowdoc, `throw`, readonly metadata, nullable types, generator `yield`,
-first-class callables, dynamic includes, unsupported internals, scalar-offset
-lvalues, `Traversable`, INI runtime modes, process boundaries,
-formatter/callback parity, and classifier scan batching.
+heredoc/nowdoc, `throw`, nullable types, generator `yield`, first-class
+callables, dynamic includes, unsupported internals, scalar-offset lvalues,
+`Traversable`, INI runtime modes, process boundaries, formatter/callback
+parity, and classifier scan batching.

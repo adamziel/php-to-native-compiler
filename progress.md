@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T20:59Z
+Last refresh: 2026-06-13T21:34Z
 Source: `PROGRESS.md`
-Measured: `ptn-550s.9` foreach object/property residuals after `ptn-x8p9`.
+Measured: `ptn-qsmv.12` readonly class/property metadata after gates.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 676/676; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 685/685; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 676/676 |
+| Native/compiler Rust suite | 685/685 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

@@ -31,6 +31,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
     runtime->class_scope_allows = caller_runtime->class_scope_allows;
+    runtime->declared_class_is_readonly = caller_runtime->declared_class_is_readonly;
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
     runtime->include_path = NULL;

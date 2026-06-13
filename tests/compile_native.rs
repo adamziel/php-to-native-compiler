@@ -3282,6 +3282,101 @@ class Book {
 }
 
 #[test]
+fn parser_accepts_readonly_property_metadata() {
+    let program = parser::parse(
+        "<?php
+class Book {
+    public readonly string $title;
+    private readonly int $year;
+    public private(set) readonly int $id;
+}
+",
+    )
+    .unwrap();
+
+    assert!(program.classes[0].properties[0].is_readonly);
+    assert_eq!(
+        program.classes[0].properties[0].visibility,
+        PropertyVisibility::Public
+    );
+    assert_eq!(
+        program.classes[0].properties[0].set_visibility,
+        PropertyVisibility::Protected
+    );
+    assert!(program.classes[0].properties[1].is_readonly);
+    assert_eq!(
+        program.classes[0].properties[1].visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(
+        program.classes[0].properties[1].set_visibility,
+        PropertyVisibility::Private
+    );
+    assert!(program.classes[0].properties[2].is_readonly);
+    assert_eq!(
+        program.classes[0].properties[2].set_visibility,
+        PropertyVisibility::Private
+    );
+}
+
+#[test]
+fn parser_accepts_readonly_class_property_metadata() {
+    let program = parser::parse(
+        "<?php
+readonly class Point {
+    public int $x;
+    protected string $label;
+}
+readonly class ChildPoint extends Point {
+    public string $note;
+}
+",
+    )
+    .unwrap();
+
+    assert!(program.classes[0].is_readonly);
+    assert!(program.classes[0].properties[0].is_readonly);
+    assert!(program.classes[0].properties[1].is_readonly);
+    assert!(program.classes[1].is_readonly);
+    assert!(program.classes[1].properties[0].is_readonly);
+}
+
+#[test]
+fn parser_rejects_invalid_readonly_property_metadata() {
+    let cases = [
+        (
+            "<?php class Bad { public readonly $name; }",
+            "Readonly property Bad::$name must have type",
+        ),
+        (
+            "<?php class Bad { public readonly int $name = 1; }",
+            "Readonly property Bad::$name cannot have default value",
+        ),
+        (
+            "<?php class Bad { public static readonly int $name; }",
+            "readonly static properties are unsupported",
+        ),
+        (
+            "<?php readonly class Bad { public static int $name; }",
+            "readonly static properties are unsupported",
+        ),
+        (
+            "<?php class Base {} readonly class Child extends Base {}",
+            "Readonly class Child cannot extend non-readonly class Base",
+        ),
+        (
+            "<?php readonly class Base {} class Child extends Base {}",
+            "Non-readonly class Child cannot extend readonly class Base",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
 fn parser_rejects_invalid_asymmetric_property_visibility_metadata() {
     let error =
         parser::parse("<?php class Bad { protected public(set) string $name; }").unwrap_err();
@@ -22981,6 +23076,134 @@ try {
     assert!(c_source.contains("ptn_object_declare_property(&runtime"));
     assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
     assert!(c_source.contains("PTN_PROPERTY_PROTECTED"));
+}
+
+#[test]
+fn compile_readonly_instance_property_write_once_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-instance-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readonly-instance-property.php");
+    let output = root.join("readonly-instance-property-bin");
+    fs::write(
+        &input,
+        "<?php
+class Token {
+    public readonly int $id;
+
+    public function __construct($id) {
+        $this->id = $id;
+    }
+
+    public function rewrite($id) {
+        $this->id = $id;
+    }
+}
+
+$token = new Token(7);
+var_dump($token->id);
+
+try {
+    $token->rewrite(8);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $token->id = 9;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+var_dump($token->id);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(7)\n",
+            "Cannot modify readonly property Token::$id\n",
+            "Cannot modify readonly property Token::$id\n",
+            "int(7)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_declare_property(&runtime"));
+    assert!(c_source.contains("Cannot modify readonly property"));
+}
+
+#[test]
+fn compile_readonly_uninitialized_and_class_dynamic_guards_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-class-guards");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readonly-class-guards.php");
+    let output = root.join("readonly-class-guards-bin");
+    fs::write(
+        &input,
+        "<?php
+class Bag {
+    public readonly int $value;
+}
+
+$bag = new Bag();
+
+try {
+    var_dump($bag->value);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $bag->value = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+readonly class Point {
+    public int $x;
+
+    public function __construct($x) {
+        $this->x = $x;
+    }
+}
+
+$point = new Point(2);
+var_dump($point->x);
+
+try {
+    $point->y = 3;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Typed property Bag::$value must not be accessed before initialization\n",
+            "Cannot initialize readonly property Bag::$value from global scope\n",
+            "int(2)\n",
+            "Cannot create dynamic property Point::$y\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_is_readonly"));
+    assert!(c_source.contains("Cannot create dynamic property"));
 }
 
 #[test]

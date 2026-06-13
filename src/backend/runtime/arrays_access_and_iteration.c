@@ -241,7 +241,8 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
             metadata->display_name,
             metadata->declaring_class,
             metadata->read_visibility,
-            metadata->set_visibility
+            metadata->set_visibility,
+            metadata->is_readonly
         );
     }
 
@@ -415,6 +416,108 @@ static PTN_UNUSED int ptn_object_public_property_slot_exists(
     return entry != NULL;
 }
 
+static PTN_UNUSED int ptn_object_property_storage_initialized(
+    PtnObject *object,
+    const char *storage_name
+) {
+    if (object == NULL || storage_name == NULL) {
+        return 0;
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    return entry != NULL;
+}
+
+static PTN_UNUSED void ptn_throw_readonly_property_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot modify readonly property %s::$%s",
+        declaring_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
+static PTN_UNUSED void ptn_throw_readonly_property_initialize_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    const char *access_scope
+) {
+    char message[320];
+    int written;
+    if (access_scope == NULL) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot initialize readonly property %s::$%s from global scope",
+            declaring_class,
+            property
+        );
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot initialize readonly property %s::$%s from scope %s",
+            declaring_class,
+            property,
+            access_scope
+        );
+    }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
+static PTN_UNUSED void ptn_throw_uninitialized_typed_property_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Typed property %s::$%s must not be accessed before initialization",
+        declaring_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
+static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot create dynamic property %s::$%s",
+        class_name,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
 static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -429,6 +532,12 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
         PtnPropertyVisibility visibility = for_write
             ? scoped_private->set_visibility
             : scoped_private->read_visibility;
+        int readonly_initialized = for_write &&
+            scoped_private->is_readonly &&
+            ptn_object_property_storage_initialized(object, scoped_private->storage_name);
+        if (readonly_initialized) {
+            return ptn_duplicate_string(scoped_private->storage_name);
+        }
         if (!ptn_property_visibility_allows(
             runtime,
             visibility,
@@ -438,7 +547,14 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             if (quiet) {
                 return NULL;
             }
-            if (for_write && scoped_private->set_visibility != scoped_private->read_visibility) {
+            if (for_write && scoped_private->is_readonly) {
+                ptn_throw_readonly_property_initialize_error(
+                    runtime,
+                    scoped_private->declaring_class,
+                    property,
+                    access_scope
+                );
+            } else if (for_write && scoped_private->set_visibility != scoped_private->read_visibility) {
                 ptn_throw_property_set_visibility_error(
                     runtime,
                     scoped_private->set_visibility,
@@ -464,6 +580,12 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
         PtnPropertyVisibility visibility = for_write
             ? shared_property->set_visibility
             : shared_property->read_visibility;
+        int readonly_initialized = for_write &&
+            shared_property->is_readonly &&
+            ptn_object_property_storage_initialized(object, shared_property->storage_name);
+        if (readonly_initialized) {
+            return ptn_duplicate_string(shared_property->storage_name);
+        }
         if (!ptn_property_visibility_allows(
             runtime,
             visibility,
@@ -473,7 +595,14 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             if (quiet) {
                 return NULL;
             }
-            if (for_write && shared_property->set_visibility != shared_property->read_visibility) {
+            if (for_write && shared_property->is_readonly) {
+                ptn_throw_readonly_property_initialize_error(
+                    runtime,
+                    shared_property->declaring_class,
+                    property,
+                    access_scope
+                );
+            } else if (for_write && shared_property->set_visibility != shared_property->read_visibility) {
                 ptn_throw_property_set_visibility_error(
                     runtime,
                     shared_property->set_visibility,
@@ -496,6 +625,21 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     const PtnObjectPropertyMetadata *own_private =
         ptn_object_own_private_property(object, property);
     if (own_private == NULL) {
+        if (
+            for_write &&
+            runtime != NULL &&
+            runtime->declared_class_is_readonly != NULL &&
+            runtime->declared_class_is_readonly(object->class_name)
+        ) {
+            if (!quiet) {
+                ptn_throw_dynamic_property_readonly_class_error(
+                    runtime,
+                    object->class_name,
+                    property
+                );
+            }
+            return NULL;
+        }
         return ptn_duplicate_string(property);
     }
     if (quiet) {
@@ -541,9 +685,19 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
+        if (metadata != NULL && metadata->is_readonly) {
+            ptn_throw_uninitialized_typed_property_error(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name
+            );
+            return ptn_null();
+        }
         ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
         return ptn_null();
     }
@@ -652,9 +806,22 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
     if (storage_key == NULL) {
         return ptn_null();
     }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
+    if (metadata != NULL && metadata->is_readonly && entry != NULL) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_readonly_property_error(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name
+        );
+        return ptn_null();
+    }
     PtnValue stored = ptn_value_clone_deref(value);
     PtnValue result = ptn_value_clone(stored);
-    PtnArrayKey key = ptn_array_string_key(storage_key);
     ptn_array_write_entry(receiver.as.object->properties, key, stored);
     free(storage_key);
     return result;
@@ -739,6 +906,8 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
     const char *declaring_class,
     PtnPropertyVisibility read_visibility,
     PtnPropertyVisibility set_visibility,
+    int is_readonly,
+    int has_value,
     PtnValue value,
     size_t line
 ) {
@@ -749,8 +918,12 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
             property,
             declaring_class,
             read_visibility,
-            set_visibility
+            set_visibility,
+            is_readonly
         );
+    }
+    if (!has_value) {
+        return ptn_null();
     }
     return ptn_object_write_property(runtime, receiver, property, declaring_class, value, line);
 }

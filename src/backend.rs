@@ -80,6 +80,7 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str("    runtime.declared_method_exists = ptn_declared_class_method_exists;\n");
     }
     out.push_str("    runtime.class_scope_allows = ptn_declared_class_scope_allows;\n");
+    out.push_str("    runtime.declared_class_is_readonly = ptn_declared_class_is_readonly;\n");
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
@@ -1142,6 +1143,23 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_is_readonly(const char *name) {\n");
+    if classes.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if class.is_readonly {
+            out.push_str("        return 1;\n");
+        }
+        out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
@@ -6611,6 +6629,14 @@ impl ValueEmitter {
                 out.push_str(c_property_visibility(property.visibility));
                 out.push_str(", ");
                 out.push_str(c_property_visibility(property.set_visibility));
+                out.push_str(", ");
+                out.push_str(if property.is_readonly { "1" } else { "0" });
+                out.push_str(", ");
+                out.push_str(if property.is_readonly && property.value.is_none() {
+                    "0"
+                } else {
+                    "1"
+                });
                 out.push_str(", ");
                 out.push_str(&value_temp);
                 out.push_str(", ");

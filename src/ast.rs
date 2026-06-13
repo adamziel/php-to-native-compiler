@@ -11,6 +11,7 @@ pub struct Program {
 pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
+    pub is_readonly: bool,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
@@ -23,6 +24,7 @@ pub struct PropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
+    pub is_readonly: bool,
     pub value: Option<Expr>,
     pub span: SourceSpan,
 }

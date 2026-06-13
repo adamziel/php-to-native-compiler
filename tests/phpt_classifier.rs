@@ -99,11 +99,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires PHP attribute syntax",
         ),
         (
-            "readonly property modifier",
-            "--TEST--\nreadonly property\n--FILE--\n<?php\nclass Bag { public readonly int $value; }\n--EXPECT--\n",
-            "requires readonly class/property modifiers",
-        ),
-        (
             "generator yield",
             "--TEST--\nyield\n--FILE--\n<?php\n$fn = fn() => yield 123;\n--EXPECT--\n",
             "requires generator/yield lowering",
@@ -166,6 +161,22 @@ fn phpt_classifier_keeps_asymmetric_property_visibility_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_readonly_property_rows_runnable() {
+    let cases = [
+        "--TEST--\nreadonly property\n--FILE--\n<?php\nclass Bag { public readonly int $value; }\n--EXPECT--\n",
+        "--TEST--\nreadonly class\n--FILE--\n<?php\nreadonly class Bag { public int $value; }\n--EXPECT--\n",
+    ];
+
+    for phpt in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_supported_arrow_functions_runnable() {
     let classification = classify(
         "--TEST--\narrow\n--FILE--\n<?php\n$fn = fn($value) => $value + 1;\nvar_dump($fn(1));\n--EXPECT--\nint(2)\n",
@@ -209,6 +220,21 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "object vars export",
             "--TEST--\nobject vars\n--FILE--\n<?php\n$object = new stdClass;\nvar_dump(get_object_vars($object));\n--EXPECT--\n",
             "requires get_object_vars() object property-table export",
+        ),
+        (
+            "readonly static property",
+            "--TEST--\nreadonly static\n--FILE--\n<?php\nclass Bag { public static readonly int $value; }\n--EXPECT--\n",
+            "requires readonly static property diagnostics",
+        ),
+        (
+            "readonly constructor promotion",
+            "--TEST--\nreadonly promotion\n--FILE--\n<?php\nreadonly class Bag {\n    public function __construct(\n        public int $value\n    ) {}\n}\n--EXPECT--\n",
+            "requires constructor property promotion metadata",
+        ),
+        (
+            "readonly indirect property mutation",
+            "--TEST--\nreadonly indirect mutation\n--FILE--\n<?php\nclass Bag { public readonly array $value; }\n$bag = new Bag();\n$ref =& $bag->value;\n--EXPECT--\n",
+            "requires indirect readonly property mutation diagnostics",
         ),
     ];
 

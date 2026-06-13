@@ -539,7 +539,8 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     const char *property,
     const char *declaring_class,
     PtnPropertyVisibility read_visibility,
-    PtnPropertyVisibility set_visibility
+    PtnPropertyVisibility set_visibility,
+    int is_readonly
 ) {
     if (object == NULL || property == NULL || declaring_class == NULL) {
         return;
@@ -558,6 +559,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             object->property_metadata[i].declaring_class = ptn_duplicate_string(declaring_class);
             object->property_metadata[i].read_visibility = read_visibility;
             object->property_metadata[i].set_visibility = set_visibility;
+            object->property_metadata[i].is_readonly = is_readonly;
             return;
         }
     }
@@ -586,6 +588,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->declaring_class = ptn_duplicate_string(declaring_class);
     metadata->read_visibility = read_visibility;
     metadata->set_visibility = set_visibility;
+    metadata->is_readonly = is_readonly;
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {

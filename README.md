@@ -91,12 +91,14 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   argument expansion and stream-write path; exact PHP parity for some
   formatter flags and error diagnostics remains bounded.
 - Declared instance properties keep public/protected/private defaults,
-  asymmetric private(set)/protected(set) write visibility metadata, dump
-  metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
-  slots distinct from child public redeclarations; `property_exists()` covers
-  the current declared/static property metadata and stdClass dynamic slots.
-  Public `__destruct()` runs on last-reference release and shutdown. Full
-  visibility and inheritance remain bounded.
+  asymmetric private(set)/protected(set) write visibility metadata, readonly
+  write-once metadata for properties and readonly classes, readonly
+  uninitialized-read and dynamic-property guards, dump metadata, quiet
+  `isset()`, `empty()`, and `??`, and inherited parent-private slots distinct
+  from child public redeclarations; `property_exists()` covers the current
+  declared/static property metadata and stdClass dynamic slots. Public
+  `__destruct()` runs on last-reference release and shutdown. Full visibility,
+  property type enforcement, and inheritance remain bounded.
 - Static properties support read/write visibility, asymmetric set visibility,
   reads/writes, compounds, `??=`, plus quiet `isset()`, `empty()`, and `??`.
 - Public class constants support scalar/array defaults, direct
@@ -125,8 +127,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, and broad unsupported language surfaces such as anonymous
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
-  generator `yield`, nullable type hints, userland `throw`, readonly modifiers,
-  heredoc/nowdoc strings, class/reflection-metadata blockers, and currently
+  generator `yield`, nullable type hints, userland `throw`, heredoc/nowdoc
+  strings, class/reflection-metadata blockers, readonly static property
+  diagnostics, and currently
   unmodeled mutating array-internal helpers such as `array_splice()`,
   `array_walk_recursive()`, `array_multisort()`, `usort()`, `uasort()`, and
   `uksort()` are mapped to blocker categories with source evidence; broad

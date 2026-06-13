@@ -257,6 +257,7 @@ typedef struct {
     char *declaring_class;
     PtnPropertyVisibility read_visibility;
     PtnPropertyVisibility set_visibility;
+    int is_readonly;
 } PtnObjectPropertyMetadata;
 
 typedef void (*PtnObjectNativeDataFree)(void *data);
@@ -420,6 +421,7 @@ typedef int (*PtnClassScopeAllowsHandler)(
     const char *access_scope,
     const char *declaring_class
 );
+typedef int (*PtnDeclaredClassReadonlyHandler)(const char *class_name);
 
 struct PtnRuntime {
     PtnSymbolTable symbols;
@@ -447,6 +449,7 @@ struct PtnRuntime {
     PtnMethodDispatchHandler method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
     PtnClassScopeAllowsHandler class_scope_allows;
+    PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
     const char *source_path;
     const char *current_function_name;
     char *include_path;

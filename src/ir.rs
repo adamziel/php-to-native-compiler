@@ -48,6 +48,7 @@ pub type IncludeResolutionMap = HashMap<(String, usize, usize), Vec<usize>>;
 pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
+    pub is_readonly: bool,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
@@ -59,6 +60,7 @@ pub struct PropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
+    pub is_readonly: bool,
     pub value: Option<ValueExpr>,
     pub line: usize,
 }
@@ -727,6 +729,7 @@ impl<'a> LoweringContext<'a> {
                 name: property.name.clone(),
                 visibility: lower_property_visibility(property.visibility),
                 set_visibility: lower_property_visibility(property.set_visibility),
+                is_readonly: property.is_readonly,
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
                 line: property.span.line,
             })
@@ -785,6 +788,7 @@ impl<'a> LoweringContext<'a> {
         ClassDecl {
             name: class.name.clone(),
             parent_name: class.parent_name.clone(),
+            is_readonly: class.is_readonly,
             properties,
             static_properties,
             constants,

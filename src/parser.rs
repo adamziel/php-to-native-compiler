@@ -107,6 +107,8 @@ struct ForeachVariable {
 #[derive(Clone, Copy)]
 struct ClassModifiers {
     is_static: bool,
+    is_readonly: bool,
+    readonly_span: Option<SourceSpan>,
     visibility: PropertyVisibility,
     visibility_span: Option<SourceSpan>,
     set_visibility: Option<PropertyVisibility>,
@@ -117,6 +119,8 @@ impl Default for ClassModifiers {
     fn default() -> Self {
         Self {
             is_static: false,
+            is_readonly: false,
+            readonly_span: None,
             visibility: PropertyVisibility::Public,
             visibility_span: None,
             set_visibility: None,
@@ -153,6 +157,7 @@ impl Parser {
         )?;
         validate_class_names(&classes)?;
         validate_parent_class_names(&classes)?;
+        validate_readonly_class_inheritance(&classes)?;
         for class in &classes {
             validate_method_names(class)?;
             validate_class_constant_names(class)?;
@@ -226,7 +231,7 @@ impl Parser {
             } else if self.peek_starts_function_decl() {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 functions.push(self.parse_function_decl()?);
-            } else if token_is_identifier_named(self.peek(), "class") {
+            } else if self.peek_starts_class_decl() {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 classes.push(self.parse_class_decl()?);
             } else {
@@ -722,6 +727,13 @@ impl Parser {
     }
 
     fn parse_class_decl(&mut self) -> Result<ClassDecl> {
+        let readonly_span = if token_is_identifier_named(self.peek(), "readonly")
+            && token_is_identifier_named(self.peek_next(), "class")
+        {
+            Some(self.advance().span)
+        } else {
+            None
+        };
         let class_token = self.advance().clone();
         let TokenKind::Identifier(keyword) = &class_token.kind else {
             return Err(Diagnostic::new("expected class", Some(class_token.span)));
@@ -729,6 +741,7 @@ impl Parser {
         if !keyword.eq_ignore_ascii_case("class") {
             return Err(Diagnostic::new("expected class", Some(class_token.span)));
         }
+        let is_readonly = readonly_span.is_some();
 
         let (class_name, _) = self.parse_declaration_name("expected class name")?;
         let parent_name = if token_is_identifier_named(self.peek(), "extends") {
@@ -753,7 +766,7 @@ impl Parser {
         let mut constants = Vec::new();
         let mut methods = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
-            match self.parse_class_member()? {
+            match self.parse_class_member(is_readonly, &class_name)? {
                 ParsedClassMember::Method(method) => methods.push(method),
                 ParsedClassMember::Properties(parsed_properties) => {
                     properties.extend(parsed_properties);
@@ -770,15 +783,20 @@ impl Parser {
         Ok(ClassDecl {
             name: class_name,
             parent_name,
+            is_readonly,
             properties,
             static_properties,
             constants,
             methods,
-            span: class_token.span,
+            span: readonly_span.unwrap_or(class_token.span),
         })
     }
 
-    fn parse_class_member(&mut self) -> Result<ParsedClassMember> {
+    fn parse_class_member(
+        &mut self,
+        class_is_readonly: bool,
+        class_name: &str,
+    ) -> Result<ParsedClassMember> {
         let modifiers = self.parse_class_modifiers()?;
         if matches!(self.peek().kind, TokenKind::Const) {
             if modifiers.is_static {
@@ -797,9 +815,18 @@ impl Parser {
                 self.parse_class_constant_declarations(modifiers.visibility)?,
             ));
         }
+        let member_is_readonly = class_is_readonly || modifiers.is_readonly;
+        let set_visibility = modifiers
+            .set_visibility
+            .unwrap_or_else(|| default_set_visibility(modifiers.visibility, member_is_readonly));
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
-            let set_visibility = modifiers.set_visibility.unwrap_or(modifiers.visibility);
             if modifiers.is_static {
+                if member_is_readonly {
+                    return Err(Diagnostic::new(
+                        "readonly static properties are unsupported",
+                        modifiers.readonly_span.or(Some(self.peek().span)),
+                    ));
+                }
                 return Ok(ParsedClassMember::StaticProperties(
                     self.parse_static_property_declarations(
                         modifiers.visibility,
@@ -813,12 +840,19 @@ impl Parser {
                     modifiers.visibility,
                     set_visibility,
                     modifiers.set_visibility_span,
+                    member_is_readonly,
+                    class_name,
                 )?,
             ));
         }
         if self.peek_starts_property_type_hint() {
-            let set_visibility = modifiers.set_visibility.unwrap_or(modifiers.visibility);
             if modifiers.is_static {
+                if member_is_readonly {
+                    return Err(Diagnostic::new(
+                        "readonly static properties are unsupported",
+                        modifiers.readonly_span.or(Some(self.peek().span)),
+                    ));
+                }
                 return Ok(ParsedClassMember::StaticProperties(
                     self.parse_static_property_declarations(
                         modifiers.visibility,
@@ -832,6 +866,8 @@ impl Parser {
                     modifiers.visibility,
                     set_visibility,
                     modifiers.set_visibility_span,
+                    member_is_readonly,
+                    class_name,
                 )?,
             ));
         }
@@ -907,6 +943,17 @@ impl Parser {
                     ));
                 }
                 "final" => {
+                    self.advance();
+                }
+                "readonly" => {
+                    if modifiers.is_readonly {
+                        return Err(Diagnostic::new(
+                            "duplicate readonly modifier",
+                            Some(self.peek().span),
+                        ));
+                    }
+                    modifiers.is_readonly = true;
+                    modifiers.readonly_span = Some(self.peek().span);
                     self.advance();
                 }
                 _ => break,
@@ -1019,18 +1066,40 @@ impl Parser {
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
         set_visibility_span: Option<SourceSpan>,
+        is_readonly: bool,
+        class_name: &str,
     ) -> Result<Vec<PropertyDecl>> {
         let has_type = self.parse_optional_property_type_hint()?;
+        if is_readonly && !has_type {
+            let property_name = match &self.peek().kind {
+                TokenKind::Variable(name) => name.as_str(),
+                _ => "",
+            };
+            return Err(Diagnostic::new(
+                format!("Readonly property {class_name}::${property_name} must have type"),
+                Some(self.peek().span),
+            ));
+        }
         if set_visibility_span.is_some() && !has_type {
             return Err(Diagnostic::new(
                 "asymmetric property visibility requires typed property",
                 set_visibility_span,
             ));
         }
-        let mut properties = vec![self.parse_property_declaration(visibility, set_visibility)?];
+        let mut properties = vec![self.parse_property_declaration(
+            visibility,
+            set_visibility,
+            is_readonly,
+            class_name,
+        )?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
-            properties.push(self.parse_property_declaration(visibility, set_visibility)?);
+            properties.push(self.parse_property_declaration(
+                visibility,
+                set_visibility,
+                is_readonly,
+                class_name,
+            )?);
         }
         self.expect_semicolon()?;
         Ok(properties)
@@ -1040,6 +1109,8 @@ impl Parser {
         &mut self,
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
+        is_readonly: bool,
+        class_name: &str,
     ) -> Result<PropertyDecl> {
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
@@ -1054,6 +1125,12 @@ impl Parser {
                     Some(value.span()),
                 ));
             }
+            if is_readonly {
+                return Err(Diagnostic::new(
+                    format!("Readonly property {class_name}::${name} cannot have default value"),
+                    Some(value.span()),
+                ));
+            }
             Some(value)
         } else {
             None
@@ -1062,6 +1139,7 @@ impl Parser {
             name,
             visibility,
             set_visibility,
+            is_readonly,
             value,
             span: token.span,
         })
@@ -3469,6 +3547,12 @@ impl Parser {
             && matches!(self.peek_n(3).kind, TokenKind::RightParen)
     }
 
+    fn peek_starts_class_decl(&self) -> bool {
+        token_is_identifier_named(self.peek(), "class")
+            || (token_is_identifier_named(self.peek(), "readonly")
+                && token_is_identifier_named(self.peek_next(), "class"))
+    }
+
     fn peek_starts_function_decl(&self) -> bool {
         if !matches!(self.peek().kind, TokenKind::Function) {
             return false;
@@ -4395,6 +4479,19 @@ fn visibility_rank(visibility: PropertyVisibility) -> u8 {
     }
 }
 
+fn default_set_visibility(
+    read_visibility: PropertyVisibility,
+    is_readonly: bool,
+) -> PropertyVisibility {
+    if !is_readonly {
+        return read_visibility;
+    }
+    match read_visibility {
+        PropertyVisibility::Public | PropertyVisibility::Protected => PropertyVisibility::Protected,
+        PropertyVisibility::Private => PropertyVisibility::Private,
+    }
+}
+
 fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
 }
@@ -4441,6 +4538,53 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
         if !names.contains(&parent_name.to_ascii_lowercase()) {
             return Err(Diagnostic::new(
                 format!("Class \"{parent_name}\" not found"),
+                Some(class.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_readonly_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        let Some(parent_name) = &class.parent_name else {
+            continue;
+        };
+        let parent = classes
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(parent_name));
+        if !class.is_readonly {
+            if let Some(parent) = parent {
+                if parent.is_readonly {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Non-readonly class {} cannot extend readonly class {parent_name}",
+                            class.name
+                        ),
+                        Some(class.span),
+                    ));
+                }
+            }
+            continue;
+        }
+        if parent_name.eq_ignore_ascii_case("stdClass") {
+            return Err(Diagnostic::new(
+                format!(
+                    "Readonly class {} cannot extend non-readonly class {parent_name}",
+                    class.name
+                ),
+                Some(class.span),
+            ));
+        }
+        let Some(parent) = parent else {
+            continue;
+        };
+        if !parent.is_readonly {
+            return Err(Diagnostic::new(
+                format!(
+                    "Readonly class {} cannot extend non-readonly class {parent_name}",
+                    class.name
+                ),
                 Some(class.span),
             ));
         }
