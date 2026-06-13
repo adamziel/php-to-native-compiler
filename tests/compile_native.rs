@@ -4884,6 +4884,66 @@ str_replace(): Argument #3 ($subject) must be of type array|string, resource giv
 }
 
 #[test]
+fn compile_str_replace_array_forms_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-array-forms");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-array-forms.php");
+    let output = root.join("str-replace-array-forms-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(str_replace(['a', 'b'], ['x'], 'ab', $count));\n\
+var_dump($count);\n\
+var_dump(str_replace(['ab', 'a'], ['X', 'Y'], 'zababa', $count));\n\
+var_dump($count);\n\
+var_dump(str_replace([''], 'x', 'ab', $count));\n\
+var_dump($count);\n\
+$subject = ['first' => 'ab', 4 => 'ba'];\n\
+var_dump(str_replace(['a', 'b'], ['x', 'y'], $subject, $count));\n\
+var_dump($count);\n\
+try { str_replace('a', [], 'aba'); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(str_replace('a', 'x', ['a' => 'aba', 'n' => null, 'arr' => ['a']], $count));\n\
+var_dump($count);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"x\"\n",
+            "int(2)\n",
+            "string(4) \"zXXY\"\n",
+            "int(3)\n",
+            "string(2) \"ab\"\n",
+            "int(0)\n",
+            "array(2) {\n",
+            "  [\"first\"]=>\n",
+            "  string(2) \"xy\"\n",
+            "  [4]=>\n",
+            "  string(2) \"yx\"\n",
+            "}\n",
+            "int(4)\n",
+            "str_replace(): Argument #2 ($replace) must be of type string when argument #1 ($search) is a string\n",
+            "Warning: Array to string conversion in ptn on line 12\n",
+            "array(3) {\n",
+            "  [\"a\"]=>\n",
+            "  string(3) \"xbx\"\n",
+            "  [\"n\"]=>\n",
+            "  string(0) \"\"\n",
+            "  [\"arr\"]=>\n",
+            "  string(5) \"Arrxy\"\n",
+            "}\n",
+            "int(3)\n",
+        )
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();

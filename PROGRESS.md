@@ -1,25 +1,25 @@
 # PTN Progress
 
-Refresh: 2026-06-13T07:51Z
-Measured: `ptn-98d8.2` rebased on current `origin/master` `7bc467b8`.
+Refresh: 2026-06-13T08:10Z
+Measured: `ptn-bf3f` rebased on current `origin/master` `217ccada8`.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, `explode()`,
 `strncmp()`, `strrchr()`, namespaces/imports, includes/once guards, closures,
 `stdClass`, properties/destructors, inherited static dispatch,
 `property_exists()` metadata, array helpers, `json_encode()`, `printf()`,
-`basename()`, `pathinfo()`,
-`strcasecmp()`, string search/slice/count internals, scalar `str_replace()`,
-`chr()` diagnostics, `crc32()`, standard streams, foreach destructuring,
-dynamic-variable writes/unsets, stream metadata, keyword boolean
-tails after direct assignments, locale constants/`setlocale()`, catchable
-divide/modulo/shift operator errors, alternate `<>` not-equal parsing, and
-offset compound/coalescing.
+`basename()`, `pathinfo()`, `strcasecmp()`, string search/slice/count
+internals, bounded `str_replace()` array forms, `chr()` diagnostics, `crc32()`,
+standard streams, foreach destructuring, dynamic-variable writes/unsets, stream
+metadata, keyword boolean tails after direct assignments, locale
+constants/`setlocale()`, catchable divide/modulo/shift operator errors,
+alternate `<>` not-equal parsing, and offset compound/coalescing.
 
 Recent movers include binary-safe search/count internals, PHP 8.4 array
 warning/overflow behavior, persistent standard streams, `pathinfo()`,
 `property_exists()`, PHPT manifests, keyword boolean tails, modeled `LC_*`
 constants with C/POSIX `setlocale()`, catchable operator exceptions,
-tests/lang 64-bit operator rows, `crc32()`, `str_replace()` counts, and stream
+tests/lang 64-bit operator rows, `crc32()`, scalar `str_replace()` counts,
+bounded `str_replace()` array search/replacement/subject forms, and stream
 preclassification.
 
 ## Dashboard
@@ -27,7 +27,7 @@ preclassification.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 587 | 587 | 0 |
+| Native/compiler Rust suite | 588 | 588 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 270 | 268 | 2 |
 | PHPT Zend rows | 88 | 88 | 0 |
@@ -66,15 +66,18 @@ and array/string-offset compound/null coalescing assignments.
 
 ## Verification
 
-Current slice `ptn-98d8.2` is green on diff check, `cargo fmt`, focused
-operator tests 3/3, `cargo test` 587/587 plus COW/doc tests, bounded PHPT
-268/268 with 2 classified exclusions, PHPT COW 29/29, and post-merge COW
-26/26.
+2026-06-13T08:10Z: passed `cargo fmt --check`, focused native
+`str_replace()` tests 2/2, focused PHPT
+`ext/standard/tests/strings/str_replace_basic.phpt` 1/1, and post-rebase
+`cargo test --test compile_native` 588/588 on current base `217ccada8`.
+Prior full post-rebase `cargo test` on `7bc467b8b` covered compile-native
+586/586 plus COW/doc tests. Earlier frontier evidence: bounded PHPT 260/260
+with 2 unsupported-ini exclusions, PHPT COW 29/29, and post-merge COW 26/26.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, namespaces, fallback/reflection, magic methods,
-first-class callables, dynamic includes,
-unsupported internals, scalar offset-lvalues, assertions, binary-safe array
-keys, append-form `??=`, embedded-NUL internals, object IDs,
-host-locale parity beyond the bounded C-locale slice, `str_replace()` array
-forms, and object/reference targets.
+first-class callables, dynamic includes, unsupported internals, scalar
+offset-lvalues, assertions, binary-safe array keys, append-form `??=`,
+embedded-NUL internals, object IDs, host-locale parity beyond the bounded
+C-locale slice, remaining `str_replace()` object/reference array-entry parity,
+and object/reference targets.
