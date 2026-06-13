@@ -9165,6 +9165,35 @@ var_dump(function_exists('zend_version'), function_exists('ini_get'), function_e
 }
 
 #[test]
+fn compile_locale_constants_and_setlocale_to_native_binary() {
+    let root = temp_dir("ptn-native-locale-setlocale");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("locale-setlocale.php");
+    let output = root.join("locale-setlocale-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(LC_CTYPE, LC_NUMERIC, LC_TIME, LC_COLLATE, LC_MONETARY, LC_MESSAGES, LC_ALL);\n\
+var_dump(defined('LC_ALL'), constant('LC_CTYPE'), function_exists('setlocale'));\n\
+var_dump(setlocale(LC_ALL, 'C'));\n\
+var_dump(setlocale(LC_CTYPE, 0));\n\
+var_dump(setlocale(LC_ALL, ['definitely-not-a-ptn-locale', 'C']));\n\
+var_dump(setlocale(123456, 'C'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(1)\nint(2)\nint(3)\nint(4)\nint(5)\nint(6)\nbool(true)\nint(0)\nbool(true)\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_scandir_and_preg_match_runner_probe_to_native_binary() {
     let root = temp_dir("ptn-native-scandir-preg-match-runner-probe");
     fs::create_dir_all(&root).unwrap();

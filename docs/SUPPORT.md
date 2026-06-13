@@ -357,8 +357,9 @@ Post-RC architecture remains explicit rather than hidden:
   `getmypid();`, `get_cfg_var(expr);`,
   `get_loaded_extensions([zend_extensions]);`, `ini_get(expr);`,
   `ob_get_contents();`, `php_ini_scanned_files();`, `php_sapi_name();`,
-  `php_uname([mode]);`, `phpversion([extension]);`, `preg_match(expr, expr);`,
-  `realpath(expr);`, `scandir(expr[, sorting_order[, context]]);`,
+  `php_uname([mode]);`, `phpversion([extension]);`,
+  `setlocale(expr, expr[, ...]);`, `preg_match(expr, expr);`, `realpath(expr);`,
+  `scandir(expr[, sorting_order[, context]]);`,
   `str_replace(expr, expr, expr[, count]);`, `zend_version();`,
   `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr[, mode]);`, `sizeof(expr[, mode]);`,
@@ -421,8 +422,9 @@ Post-RC architecture remains explicit rather than hidden:
   `getmypid()`, `get_cfg_var(expr)`,
   `get_loaded_extensions([zend_extensions])`, `ini_get(expr)`,
   `ob_get_contents()`, `php_ini_scanned_files()`, `php_sapi_name()`,
-  `php_uname([mode])`, `phpversion([extension])`, `preg_match(expr, expr)`,
-  `realpath(expr)`, `scandir(expr[, sorting_order[, context]])`,
+  `php_uname([mode])`, `phpversion([extension])`,
+  `setlocale(expr, expr[, ...])`, `preg_match(expr, expr)`, `realpath(expr)`,
+  `scandir(expr[, sorting_order[, context]])`,
   `str_replace(expr, expr, expr[, count])`, `zend_version()`, `intval(expr)`,
   `chr(expr)`, `ord(expr)`,
   `count(expr[, mode])`, `sizeof(expr[, mode])`,
@@ -705,6 +707,12 @@ Post-RC architecture remains explicit rather than hidden:
   `Core`, `date`, `pcre`, and `standard`; `get_loaded_extensions(true)`
   returns an empty array because Zend extensions are outside the current
   runtime boundary.
+- The `LC_CTYPE`, `LC_NUMERIC`, `LC_TIME`, `LC_COLLATE`, `LC_MONETARY`,
+  `LC_MESSAGES`, and `LC_ALL` constants expose the modeled locale categories.
+  `setlocale()` accepts string, array, and variadic locale candidates through
+  the shared scalar conversion path, supports current-locale queries with
+  `"0"`/`0`, returns the C runtime locale string on success, and returns
+  `false` for unsupported categories or unavailable locale names.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and

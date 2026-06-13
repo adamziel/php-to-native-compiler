@@ -8428,6 +8428,118 @@ static PtnValue ptn_internal_extension_loaded(PtnRuntime *runtime, size_t argc, 
     return ptn_bool(loaded);
 }
 
+static int ptn_setlocale_category_from_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    int *category_out
+) {
+    int64_t category = ptn_internal_expect_integer_arg(runtime, "setlocale", 1, "category", value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+
+    if (category == PTN_LC_CTYPE) {
+        *category_out = LC_CTYPE;
+        return 1;
+    }
+    if (category == PTN_LC_NUMERIC) {
+        *category_out = LC_NUMERIC;
+        return 1;
+    }
+    if (category == PTN_LC_TIME) {
+        *category_out = LC_TIME;
+        return 1;
+    }
+    if (category == PTN_LC_COLLATE) {
+        *category_out = LC_COLLATE;
+        return 1;
+    }
+    if (category == PTN_LC_MONETARY) {
+        *category_out = LC_MONETARY;
+        return 1;
+    }
+#if defined(LC_MESSAGES)
+    if (category == PTN_LC_MESSAGES) {
+        *category_out = LC_MESSAGES;
+        return 1;
+    }
+#endif
+    if (category == PTN_LC_ALL) {
+        *category_out = LC_ALL;
+        return 1;
+    }
+    return 0;
+}
+
+static const char *ptn_setlocale_apply_string_candidate(
+    PtnRuntime *runtime,
+    int category,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand locale = ptn_internal_expect_string_arg(runtime, "setlocale", 2, "locales", value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(locale);
+        return NULL;
+    }
+
+    if (locale.len == 1 && locale.data[0] == '0') {
+        ptn_string_operand_free(locale);
+        return setlocale(category, NULL);
+    }
+
+    char *locale_name = ptn_duplicate_string_len(locale.data, locale.len);
+    ptn_string_operand_free(locale);
+    const char *result = setlocale(category, locale_name);
+    free(locale_name);
+    return result;
+}
+
+static const char *ptn_setlocale_try_candidates(
+    PtnRuntime *runtime,
+    int category,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY) {
+        return ptn_setlocale_apply_string_candidate(runtime, category, value, line);
+    }
+
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        const char *result = ptn_setlocale_apply_string_candidate(
+            runtime,
+            category,
+            value.as.array->entries[i].value,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL || result != NULL) {
+            return result;
+        }
+    }
+    return NULL;
+}
+
+static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int category = LC_ALL;
+    if (!ptn_setlocale_category_from_value(runtime, args[0], line, &category)) {
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+    }
+
+    const char *result = NULL;
+    for (size_t i = 1; i < argc; i++) {
+        result = ptn_setlocale_try_candidates(runtime, category, args[i], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (result != NULL) {
+            return ptn_string(result);
+        }
+    }
+    return ptn_bool(0);
+}
+
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
     int value = -1;
     if (byte >= '0' && byte <= '9') {
@@ -8979,6 +9091,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
+        { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
