@@ -9107,6 +9107,39 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
 }
 
 #[test]
+fn compile_setlocale_constants_and_candidates_to_native_binary() {
+    let root = temp_dir("ptn-native-setlocale");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("setlocale.php");
+    let output = root.join("setlocale-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+setlocale(LC_ALL, \"C\");\n\
+var_dump(function_exists(\"setlocale\"), function_exists(\"SETLOCALE\"));\n\
+var_dump(defined(\"LC_ALL\"), defined(\"LC_CTYPE\"), constant(\"LC_ALL\") === LC_ALL);\n\
+var_dump(setlocale(LC_ALL, 0));\n\
+var_dump(setlocale(LC_NUMERIC, \"0\"));\n\
+var_dump(setlocale(LC_ALL, [\"bad.locale\", \"C\"]));\n\
+var_dump(setlocale(LC_ALL, \"bad.locale\", \"C\"));\n\
+var_dump(setlocale(999, \"C\"));\n\
+var_dump(setlocale(LC_ALL, str_repeat(\"A\", 255), \"C\"));\n\
+try { setlocale(\"LC_ALL\", \"C\"); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\nWarning: setlocale(): Specified locale name is too long in ptn on line 10\nstring(1) \"C\"\nsetlocale(): Argument #1 ($category) must be of type int, string given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_runner_environment_probes_to_native_binary() {
     let root = temp_dir("ptn-native-runner-environment-probes");
     fs::create_dir_all(&root).unwrap();

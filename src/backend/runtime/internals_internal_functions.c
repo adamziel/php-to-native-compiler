@@ -8236,6 +8236,112 @@ static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const Pt
 #endif
 }
 
+static int ptn_setlocale_category_from_value(int64_t category, int *out) {
+#if defined(LC_CTYPE)
+    if (category == LC_CTYPE) {
+        *out = LC_CTYPE;
+        return 1;
+    }
+#endif
+#if defined(LC_NUMERIC)
+    if (category == LC_NUMERIC) {
+        *out = LC_NUMERIC;
+        return 1;
+    }
+#endif
+#if defined(LC_TIME)
+    if (category == LC_TIME) {
+        *out = LC_TIME;
+        return 1;
+    }
+#endif
+#if defined(LC_COLLATE)
+    if (category == LC_COLLATE) {
+        *out = LC_COLLATE;
+        return 1;
+    }
+#endif
+#if defined(LC_MONETARY)
+    if (category == LC_MONETARY) {
+        *out = LC_MONETARY;
+        return 1;
+    }
+#endif
+#if defined(LC_MESSAGES)
+    if (category == LC_MESSAGES) {
+        *out = LC_MESSAGES;
+        return 1;
+    }
+#endif
+#if defined(LC_ALL)
+    if (category == LC_ALL) {
+        *out = LC_ALL;
+        return 1;
+    }
+#endif
+    return 0;
+}
+
+static int ptn_setlocale_candidate(
+    PtnRuntime *runtime,
+    int category,
+    PtnValue value,
+    size_t line,
+    PtnValue *out
+) {
+    PtnStringOperand locale = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (locale.len >= 255) {
+        ptn_emit_warning(&runtime->diagnostics, "setlocale(): Specified locale name is too long", line);
+        ptn_string_operand_free(locale);
+        return 0;
+    }
+
+    char *locale_name = ptn_duplicate_string_len(locale.data, locale.len);
+    ptn_string_operand_free(locale);
+    const char *selected = NULL;
+    if (strcmp(locale_name, "0") == 0) {
+        selected = setlocale(category, NULL);
+    } else {
+        selected = setlocale(category, locale_name);
+    }
+    free(locale_name);
+    if (selected == NULL) {
+        return 0;
+    }
+
+    *out = ptn_string(selected);
+    return 1;
+}
+
+static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t category_value = ptn_internal_expect_integer_arg(runtime, "setlocale", 1, "category", args[0], line);
+    int category = 0;
+    if (!ptn_setlocale_category_from_value(category_value, &category)) {
+        return ptn_bool(0);
+    }
+
+    for (size_t arg_index = 1; arg_index < argc; arg_index++) {
+        PtnValue locale_arg = ptn_value_deref(args[arg_index]);
+        if (locale_arg.type == PTN_ARRAY) {
+            PtnArray *locales = locale_arg.as.array;
+            for (size_t i = 0; i < locales->len; i++) {
+                PtnValue result;
+                if (ptn_setlocale_candidate(runtime, category, locales->entries[i].value, line, &result)) {
+                    return result;
+                }
+            }
+            continue;
+        }
+
+        PtnValue result;
+        if (ptn_setlocale_candidate(runtime, category, locale_arg, line, &result)) {
+            return result;
+        }
+    }
+
+    return ptn_bool(0);
+}
+
 static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal) {
     size_t literal_len = strlen(literal);
     if (value.len != literal_len) {
@@ -8979,6 +9085,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
+        { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },

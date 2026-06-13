@@ -359,6 +359,7 @@ Post-RC architecture remains explicit rather than hidden:
   `ob_get_contents();`, `php_ini_scanned_files();`, `php_sapi_name();`,
   `php_uname([mode]);`, `phpversion([extension]);`, `preg_match(expr, expr);`,
   `realpath(expr);`, `scandir(expr[, sorting_order[, context]]);`,
+  `setlocale(expr, expr[, ...]);`,
   `str_replace(expr, expr, expr[, count]);`, `zend_version();`,
   `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr[, mode]);`, `sizeof(expr[, mode]);`,
@@ -423,6 +424,7 @@ Post-RC architecture remains explicit rather than hidden:
   `ob_get_contents()`, `php_ini_scanned_files()`, `php_sapi_name()`,
   `php_uname([mode])`, `phpversion([extension])`, `preg_match(expr, expr)`,
   `realpath(expr)`, `scandir(expr[, sorting_order[, context]])`,
+  `setlocale(expr, expr[, ...])`,
   `str_replace(expr, expr, expr[, count])`, `zend_version()`, `intval(expr)`,
   `chr(expr)`, `ord(expr)`,
   `count(expr[, mode])`, `sizeof(expr[, mode])`,
@@ -701,6 +703,12 @@ Post-RC architecture remains explicit rather than hidden:
   `date`, `pcre`, `standard`, and an empty extension name, and `false` for
   unmodeled extension names.
 - `zend_version()` returns the modeled Zend Engine version string.
+- `setlocale()` accepts the modeled `LC_*` category constants, string locale
+  candidates, array candidate lists, and variadic candidates. Locale names are
+  passed to the C runtime `setlocale()` bridge; invalid candidates return
+  `false` after all candidates fail, `"0"` queries return the current category
+  locale, and 255-byte-or-longer locale names emit the modeled PHP warning
+  before trying later candidates.
 - `get_loaded_extensions()` returns the modeled loaded extension names
   `Core`, `date`, `pcre`, and `standard`; `get_loaded_extensions(true)`
   returns an empty array because Zend extensions are outside the current
@@ -887,9 +895,10 @@ Post-RC architecture remains explicit rather than hidden:
   PHP math constants `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`,
   `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`,
   `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, `M_SQRT3`,
-  `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `STR_PAD_LEFT`,
-  `STR_PAD_RIGHT`, and `STR_PAD_BOTH`. Other ordinary names report as
-  undefined.
+  `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `LC_CTYPE`,
+  `LC_NUMERIC`, `LC_TIME`, `LC_COLLATE`, `LC_MONETARY`, `LC_MESSAGES`,
+  `LC_ALL`, `STR_PAD_LEFT`, `STR_PAD_RIGHT`, and `STR_PAD_BOTH`. Other
+  ordinary names report as undefined.
 - Duplicate global `const` declarations and `const` redeclarations after
   `define()` emit the modeled duplicate-constant warning boundary and preserve
   the original runtime constant value.
@@ -1186,6 +1195,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `soundex()` locale/non-ASCII behavior plus resource/reference operand
   parity and object string conversion outside the current public declared
   `__toString()` support.
+- Complete locale support beyond the current `setlocale()` bridge, including
+  `localeconv()`, installed-locale-dependent PHPT rows, and locale-sensitive
+  internals such as locale sort behavior.
 - Complete `str_replace()` array search/replacement/subject semantics,
   array-to-string warnings, and nested replacement-count parity beyond the
   current scalar bounded path.
