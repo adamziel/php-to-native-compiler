@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T15:35Z
-Measured: `ptn-8fip` object clone/magic visibility integration on
+Last refresh: 2026-06-13T15:41Z
+Measured: `ptn-qsmv.4` broad ext/standard array PHPT expansion on
 
 ## Operating Goal
 
@@ -10,7 +10,7 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 641/641; Native smoke matrix 6/6; PHPT bounded manifest 284/284; PHPT Zend rows 89/89; PHPT ext/standard rows 140/140.
+Source unit tests 3/3; Native/compiler Rust suite 641/641; Native smoke matrix 6/6; PHPT bounded manifest 343/343; PHPT Zend rows 89/89; PHPT ext/standard rows 199/199.
 
 ## Active Buckets
 
@@ -19,9 +19,9 @@ Source unit tests 3/3; Native/compiler Rust suite 641/641; Native smoke matrix 6
 | Source unit tests | 3/3 |
 | Native/compiler Rust suite | 641/641 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 284/284 |
+| PHPT bounded manifest | 343/343 |
 | PHPT Zend rows | 89/89 |
-| PHPT ext/standard rows | 140/140 |
+| PHPT ext/standard rows | 199/199 |
 | PHPT focused stream rows | 2/2 |
 | PHPT focused cwd rows | 2/2 |
 | PHPT tests/basic+func+lang | 50/50 |
