@@ -450,6 +450,9 @@ impl IncludeCollector {
             ReferenceTarget::ArrayDim(target) => {
                 self.collect_array_dim_target(target, source_file, source_dir)
             }
+            ReferenceTarget::Property { receiver, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)
+            }
             ReferenceTarget::Variable { .. } => Ok(()),
         }
     }

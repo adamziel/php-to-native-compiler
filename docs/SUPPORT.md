@@ -542,8 +542,11 @@ Post-RC architecture remains explicit rather than hidden:
   `new Exception(...)` and modeled `Error` family names are boxed, shared by
   reference across variables/catches/rethrows, matched by `Throwable`,
   `Exception`, `Error`, and concrete subclasses, and expose `getMessage()`.
-  Declared user classes extending `Exception` remain bounded by the current
-  object/class metadata model.
+  Declared user classes extending modeled `Exception`/`Error` families can be
+  constructed through declared constructors, thrown as exception values using
+  their current `message` property, caught through declared ancestry, and
+  queried with `getMessage()`; broader exception APIs such as traces remain
+  bounded by the current object/class metadata model.
 - Top-level named user-defined functions with by-value positional parameters,
   direct by-reference positional parameters, final variadic parameters,
   trailing scalar and literal-array default parameter values including omitted
@@ -1173,10 +1176,12 @@ Post-RC architecture remains explicit rather than hidden:
   right-hand expression. Property `isset()`, `empty()`, and expression-form
   `??` quiet-probe the current object property storage; inaccessible private
   declared properties behave as missing outside their declaring class. Property
-  pre/post inc/dec and direct compound assignments use the modeled property
-  read/write path. Declared private/protected instance properties are
-  initialized with the same storage path and preserve metadata for `var_dump()`
-  private/protected labels and `property_exists()` checks. Private declared
+  pre/post inc/dec, direct compound assignments, by-reference assignment to
+  instance properties, and property reference sources use the modeled property
+  read/write and reference paths. Declared private/protected instance
+  properties are initialized with the same storage path and preserve metadata
+  for `var_dump()` private/protected labels and `property_exists()` checks.
+  Private declared
   properties are read/written from methods of their declaring class and
   rejected for outside reads/writes with modeled `Error`; full protected
   visibility, inherited property resolution beyond current metadata checks,

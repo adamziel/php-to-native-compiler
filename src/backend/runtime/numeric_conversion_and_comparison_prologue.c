@@ -76,6 +76,15 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     }
 }
 
+static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+);
+static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
+
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_global_symbol_table(PtnRuntime *runtime) {
     return runtime->global_symbols == NULL ? &runtime->symbols : runtime->global_symbols;
 }
@@ -491,6 +500,33 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
     exit(255);
 }
 
+static PTN_UNUSED int ptn_object_is_declared_throwable(PtnRuntime *runtime, PtnObject *object) {
+    return runtime->class_scope_allows != NULL &&
+        (runtime->class_scope_allows(object->class_name, "Exception") ||
+            runtime->class_scope_allows(object->class_name, "Error"));
+}
+
+static PTN_UNUSED char *ptn_object_exception_message(
+    PtnRuntime *runtime,
+    PtnValue object,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(object);
+    PtnLookupResult lookup = ptn_object_property_lookup_quiet(
+        runtime,
+        resolved,
+        "message",
+        resolved.as.object->class_name,
+        line
+    );
+    if (!lookup.exists) {
+        return ptn_duplicate_string("");
+    }
+    char *message = ptn_value_to_string(lookup.value);
+    ptn_value_destroy(&lookup.value);
+    return message;
+}
+
 static PTN_UNUSED PtnValue ptn_throw_value(
     PtnRuntime *runtime,
     PtnValue value,
@@ -498,6 +534,23 @@ static PTN_UNUSED PtnValue ptn_throw_value(
     size_t line
 ) {
     PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, resolved.as.object)) {
+        char *message = ptn_object_exception_message(runtime, resolved, line);
+        ptn_exception_free(runtime->exceptions->active_exception);
+        runtime->exceptions->active_exception = ptn_exception_new_owned(
+            runtime,
+            resolved.as.object->class_name,
+            message,
+            path,
+            line
+        );
+        if (runtime->exceptions->try_frame != NULL) {
+            longjmp(runtime->exceptions->try_frame->jump, 1);
+        }
+        ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+        exit(255);
+        return ptn_null();
+    }
     if (resolved.type != PTN_EXCEPTION) {
         ptn_throw_exception_at(runtime, "Error", "Can only throw objects", path, line);
         return ptn_null();
@@ -926,8 +979,18 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property(
 }
 
 static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *type_name) {
-    return runtime->exceptions->active_exception != NULL &&
-        ptn_exception_type_matches_name(runtime->exceptions->active_exception->class_name, type_name);
+    if (runtime->exceptions->active_exception == NULL) {
+        return 0;
+    }
+    const char *class_name = runtime->exceptions->active_exception->class_name;
+    if (ptn_exception_type_matches_name(class_name, type_name)) {
+        return 1;
+    }
+    if (type_name[0] == '\\') {
+        type_name++;
+    }
+    return runtime->class_scope_allows != NULL &&
+        runtime->class_scope_allows(class_name, type_name);
 }
 
 static PTN_UNUSED PtnValue ptn_current_exception_value(PtnRuntime *runtime) {

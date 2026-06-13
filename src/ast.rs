@@ -335,8 +335,16 @@ pub enum ListAssignmentElementTarget {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReferenceTarget {
-    Variable { name: String, span: SourceSpan },
+    Variable {
+        name: String,
+        span: SourceSpan,
+    },
     ArrayDim(ArrayDimTarget),
+    Property {
+        receiver: Box<Expr>,
+        name: String,
+        span: SourceSpan,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

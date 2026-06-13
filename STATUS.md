@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T23:15Z
-Measured: `ptn-begn` callable prefer-ref diagnostics after `ptn-f0rp`.
+Last refresh: 2026-06-13T23:24Z
+Measured: `ptn-5sca` property references after `ptn-begn`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 697/697; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 698/698; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 697/697 |
+| Native/compiler Rust suite | 698/698 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

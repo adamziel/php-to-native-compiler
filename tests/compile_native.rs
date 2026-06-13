@@ -2492,6 +2492,30 @@ fn parser_accepts_grouped_direct_and_single_dim_reference_targets() {
 }
 
 #[test]
+fn parser_accepts_property_reference_assignment_targets() {
+    let program = parser::parse("<?php $box->value =& $value; $alias =& $box->value;").unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected property assignment expression");
+    };
+    assert!(matches!(
+        expression,
+        Expr::AssignRef {
+            target: AssignmentTarget::Property { name, .. },
+            source,
+            ..
+        } if name == "value" && matches!(source.as_ref(), Expr::Variable(value, _) if value == "value")
+    ));
+
+    let Statement::AssignRef { name, source, .. } = &program.statements[1] else {
+        panic!("expected variable reference assignment");
+    };
+    assert_eq!(name, "alias");
+    assert!(matches!(source, Expr::PropertyFetch { name, .. } if name == "value"));
+}
+
+#[test]
 fn parser_accepts_by_reference_return_call_assignment_sources() {
     let program = parser::parse(
         "<?php function &id(&$value) { return $value; } $alias =& id($value); $value_alias =& factory(); var_dump($items[0] =& returnsVal());",
@@ -12879,6 +12903,77 @@ var_dump($arr[0], $other, $elem);",
         String::from_utf8(execution.stdout).unwrap(),
         "int(2)\nint(1)\nint(2)\nint(3)\nint(3)\nint(5)\nint(5)\nint(6)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_property_references_to_native_binary() {
+    let root = temp_dir("ptn-native-property-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-references.php");
+    let output = root.join("property-references-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Box { public $value = 'initial'; public $other = 'seed'; }\n\
+$box = new Box();\n\
+$value = 'a';\n\
+$box->value =& $value;\n\
+$value = 'b';\n\
+echo $box->value, ':', $value, \"\\n\";\n\
+$box->value = 'c';\n\
+echo $box->value, ':', $value, \"\\n\";\n\
+$alias =& $box->value;\n\
+$alias = 'd';\n\
+echo $box->value, ':', $value, ':', $alias, \"\\n\";\n\
+$box->other = 'x';\n\
+$other =& $box->other;\n\
+$other = 'y';\n\
+echo $box->other, ':', $other, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "b:b\nc:c\nd:d:d\ny:y\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_exception_subclass_by_reference_message_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-subclass-by-ref-message");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-subclass-by-ref-message.php");
+    let output = root.join("exception-subclass-by-ref-message-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class MyException extends Exception {\n\
+    public function __construct(&$msg) {\n\
+        $this->message =& $msg;\n\
+    }\n\
+}\n\
+$msg = 'first';\n\
+$exception = new MyException($msg);\n\
+$msg = 'second';\n\
+try {\n\
+    throw $exception;\n\
+} catch (MyException $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "second\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

@@ -66,7 +66,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `assert()` throws catchable `AssertionError`; userland `throw` statements
   and PHP 8 throw expressions propagate boxed built-in exception values
   through the shared `try`/`catch` runtime, including `Exception`, `Error`
-  families, `Throwable`, and `getMessage()`; bounded `highlight_file()`
+  families, declared `Exception`/`Error` subclasses with message-property
+  throw bridging, `Throwable`, and `getMessage()`; bounded `highlight_file()`
   shares file-return paths.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,
   `zend_version()`, PHP version/build/platform constants, `PHP_SAPI`,
@@ -78,7 +79,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable, variable-root array/append, property, and static-property
-  compounds share boxed operators and return assigned values.
+  compounds share boxed operators and return assigned values; instance
+  properties support by-reference assignment and property reference sources.
 - `join()` concatenates ordered-array values, `explode()`, `str_split()`, and
   `nl2br()` handle length-aware scalar strings, `strncmp()`/`strncasecmp()`
   compare bounded byte prefixes, bounded

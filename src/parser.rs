@@ -4379,6 +4379,9 @@ fn collect_arrow_captures_from_reference_target(
             add_arrow_capture(&target.array, target.span, exclusions, seen, captures);
             collect_arrow_captures_from_array_dim_target(target, exclusions, seen, captures);
         }
+        ReferenceTarget::Property { receiver, .. } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+        }
     }
 }
 
@@ -4532,6 +4535,22 @@ fn is_unsupported_class_like_declaration(name: &str) -> bool {
     )
 }
 
+fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
+    matches!(
+        name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+        "exception"
+            | "reflectionexception"
+            | "error"
+            | "typeerror"
+            | "argumentcounterror"
+            | "valueerror"
+            | "arithmeticerror"
+            | "divisionbyzeroerror"
+            | "assertionerror"
+            | "parseerror"
+    )
+}
+
 fn magic_method_requires_public_visibility(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -4619,7 +4638,9 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
         let Some(parent_name) = &class.parent_name else {
             continue;
         };
-        if parent_name.eq_ignore_ascii_case("stdClass") {
+        if parent_name.eq_ignore_ascii_case("stdClass")
+            || is_modeled_builtin_exception_class_name(parent_name)
+        {
             continue;
         }
         if !names.contains(&parent_name.to_ascii_lowercase()) {
@@ -4654,7 +4675,9 @@ fn validate_readonly_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
             }
             continue;
         }
-        if parent_name.eq_ignore_ascii_case("stdClass") {
+        if parent_name.eq_ignore_ascii_case("stdClass")
+            || is_modeled_builtin_exception_class_name(parent_name)
+        {
             return Err(Diagnostic::new(
                 format!(
                     "Readonly class {} cannot extend non-readonly class {parent_name}",
@@ -4905,7 +4928,7 @@ fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
 
 fn validate_reference_source_expr(source: &Expr) -> Result<()> {
     match source {
-        Expr::Variable(_, _) | Expr::Call { .. } => Ok(()),
+        Expr::Variable(_, _) | Expr::Call { .. } | Expr::PropertyFetch { .. } => Ok(()),
         Expr::Grouped { expr, .. } => validate_reference_source_expr(expr),
         Expr::ArrayAccess { .. } => validate_variable_root_array_reference_expr(
             source,
@@ -6249,6 +6272,15 @@ fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
         array_expr @ Expr::ArrayAccess { .. } => Ok(ReferenceTarget::ArrayDim(
             reference_array_dim_target_from_expr(array_expr, span)?,
         )),
+        Expr::PropertyFetch {
+            receiver,
+            name,
+            span,
+        } => Ok(ReferenceTarget::Property {
+            receiver,
+            name,
+            span,
+        }),
         other => Err(Diagnostic::new(
             "unsupported by-reference assignment target",
             Some(other.span()),
@@ -6517,12 +6549,7 @@ fn validate_reference_assignment_target_source(
                 ));
             }
         }
-        AssignmentTarget::Property { .. } => {
-            return Err(Diagnostic::new(
-                "unsupported by-reference assignment target",
-                Some(span),
-            ));
-        }
+        AssignmentTarget::Property { .. } => {}
         AssignmentTarget::StaticProperty { .. } => {
             return Err(Diagnostic::new(
                 "unsupported by-reference assignment target",

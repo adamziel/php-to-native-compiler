@@ -1536,10 +1536,13 @@ fn class_property_initialization_chain(
     properties
 }
 
-fn class_has_constructor(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
+fn class_constructor_method<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<&'a crate::ir::MethodDecl> {
     class_method_lookup_chain(class, classes)
-        .iter()
-        .any(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
+        .into_iter()
+        .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
 }
 
 fn class_magic_call_method<'a>(
@@ -3062,6 +3065,9 @@ fn collect_reference_target_legacy_dollar_brace_deprecations(
         ReferenceTarget::ArrayDim(target) => {
             collect_array_dim_target_legacy_dollar_brace_deprecations(target, deprecations);
         }
+        ReferenceTarget::Property { receiver, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+        }
     }
 }
 
@@ -3445,6 +3451,9 @@ fn collect_reference_target_runtime_requirements(
                     collect_value_runtime_requirements(dimension, functions, requirements);
                 }
             }
+        }
+        ReferenceTarget::Property { receiver, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
         }
     }
 }
@@ -3934,6 +3943,15 @@ fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
             line: *line,
         }),
         ValueExpr::ArrayAccess { .. } => reference_array_dim_target_from_value(value),
+        ValueExpr::PropertyFetch {
+            receiver,
+            name,
+            line,
+        } => Some(ReferenceTarget::Property {
+            receiver: receiver.clone(),
+            name: name.clone(),
+            line: *line,
+        }),
         _ => None,
     }
 }
@@ -4386,6 +4404,7 @@ impl AssignmentTargetLine for ReferenceTarget {
         match self {
             ReferenceTarget::Variable { line, .. } => *line,
             ReferenceTarget::ArrayDim(target) => target.line,
+            ReferenceTarget::Property { line, .. } => *line,
         }
     }
 }
@@ -4444,6 +4463,7 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
     match target {
         ReferenceTarget::Variable { name: target, .. } => target == name,
         ReferenceTarget::ArrayDim(target) => target.array == name,
+        ReferenceTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
     }
 }
 
@@ -5845,6 +5865,25 @@ impl ValueEmitter {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
             }
+            ReferenceTarget::Property {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                out.push_str("    ptn_object_bind_property_reference(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+            }
         }
     }
 
@@ -6789,10 +6828,6 @@ impl ValueEmitter {
             );
             return result_temp;
         }
-        let mut argument_temps = Vec::with_capacity(arguments.len());
-        for argument in arguments {
-            argument_temps.push(self.emit_materialized_value(out, argument));
-        }
         let result_temp = self.next_temp();
         if let Some(declared_class) = self
             .classes
@@ -6847,9 +6882,15 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &assigned_temp);
                 emit_value_cleanup(out, "    ", &value_temp);
             }
-            if class_has_constructor(&declared_class, &self.classes) {
+            if let Some(constructor_parameters) =
+                class_constructor_method(&declared_class, &self.classes).map(|constructor| {
+                    self.user_functions[constructor.function_index]
+                        .parameters
+                        .clone()
+                })
+            {
                 let constructor_result = self.next_temp();
-                if argument_temps.is_empty() {
+                if arguments.is_empty() {
                     out.push_str("    PtnValue ");
                     out.push_str(&constructor_result);
                     out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -6858,11 +6899,34 @@ impl ValueEmitter {
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
                 } else {
+                    let mut constructor_argument_temps = Vec::with_capacity(arguments.len());
+                    for (argument_index, argument) in arguments.iter().enumerate() {
+                        let by_ref_parameter =
+                            by_ref_parameter_for_argument(&constructor_parameters, argument_index);
+                        if let Some(parameter) = by_ref_parameter {
+                            constructor_argument_temps.push(self.emit_by_ref_call_argument(
+                                out,
+                                argument,
+                                "__construct",
+                                argument_index,
+                                &parameter.name,
+                                line,
+                                true,
+                            ));
+                        } else {
+                            constructor_argument_temps.push(self.emit_call_argument(
+                                out,
+                                "__construct",
+                                argument_index,
+                                argument,
+                            ));
+                        }
+                    }
                     let args_temp = self.next_temp();
                     out.push_str("    PtnValue ");
                     out.push_str(&args_temp);
                     out.push_str("[] = { ");
-                    for (index, temp) in argument_temps.iter().enumerate() {
+                    for (index, temp) in constructor_argument_temps.iter().enumerate() {
                         if index > 0 {
                             out.push_str(", ");
                         }
@@ -6876,47 +6940,61 @@ impl ValueEmitter {
                     out.push_str(" = ptn_call_declared_method(&runtime, ");
                     out.push_str(&result_temp);
                     out.push_str(", \"__construct\", ");
-                    out.push_str(&argument_temps.len().to_string());
+                    out.push_str(&constructor_argument_temps.len().to_string());
                     out.push_str(", ");
                     out.push_str(&args_temp);
                     out.push_str(", ");
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
-                    for index in 0..argument_temps.len() {
+                    for index in 0..constructor_argument_temps.len() {
                         emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+                    }
+                    for temp in constructor_argument_temps {
+                        emit_value_cleanup(out, "    ", &temp);
                     }
                 }
                 emit_value_cleanup(out, "    ", &constructor_result);
+            } else {
+                for argument in arguments {
+                    let argument_temp = self.emit_materialized_value(out, argument);
+                    emit_value_cleanup(out, "    ", &argument_temp);
+                }
             }
-        } else if argument_temps.is_empty() {
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_new_object(&runtime, \"");
-            out.push_str(&c_string(class_name));
-            out.push_str("\", 0, NULL, ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
         } else {
-            let args_temp = self.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&args_temp);
-            out.push_str("[] = { ");
-            out.push_str(&argument_temps.join(", "));
-            out.push_str(" };\n");
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_new_object(&runtime, \"");
-            out.push_str(&c_string(class_name));
-            out.push_str("\", ");
-            out.push_str(&argument_temps.len().to_string());
-            out.push_str(", ");
-            out.push_str(&args_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-        }
-        for argument_temp in argument_temps {
-            emit_value_cleanup(out, "    ", &argument_temp);
+            let mut argument_temps = Vec::with_capacity(arguments.len());
+            for argument in arguments {
+                argument_temps.push(self.emit_materialized_value(out, argument));
+            }
+            if argument_temps.is_empty() {
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_new_object(&runtime, \"");
+                out.push_str(&c_string(class_name));
+                out.push_str("\", 0, NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            } else {
+                let args_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&args_temp);
+                out.push_str("[] = { ");
+                out.push_str(&argument_temps.join(", "));
+                out.push_str(" };\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_new_object(&runtime, \"");
+                out.push_str(&c_string(class_name));
+                out.push_str("\", ");
+                out.push_str(&argument_temps.len().to_string());
+                out.push_str(", ");
+                out.push_str(&args_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            for argument_temp in argument_temps {
+                emit_value_cleanup(out, "    ", &argument_temp);
+            }
         }
         result_temp
     }
@@ -8400,6 +8478,27 @@ impl ValueEmitter {
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
+                temp
+            }
+            ReferenceTarget::Property {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_object_reference_for_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
                 temp
             }
         }

@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T23:15Z
+Last refresh: 2026-06-13T23:24Z
 Source: `PROGRESS.md`
-Measured: `ptn-begn` callable prefer-ref diagnostics after `ptn-f0rp`.
+Measured: `ptn-5sca` property references after `ptn-begn`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 697/697; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 698/698; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 697/697 |
+| Native/compiler Rust suite | 698/698 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

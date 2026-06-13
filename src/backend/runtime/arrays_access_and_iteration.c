@@ -890,8 +890,85 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         return;
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
+    if (metadata != NULL && metadata->is_readonly && entry != NULL) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_readonly_property_error(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name
+        );
+        return;
+    }
     ptn_array_set_entry(receiver.as.object->properties, key, ptn_value_clone(reference));
     free(storage_key);
+}
+
+static PTN_UNUSED PtnValue ptn_object_reference_for_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Attempt to assign property \"%s\" on %s",
+            property,
+            ptn_offset_container_type_name(receiver)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        1,
+        0
+    );
+    if (storage_key == NULL) {
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
+    if (metadata != NULL && metadata->is_readonly && entry != NULL) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_readonly_property_error(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name
+        );
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+    if (entry == NULL) {
+        PtnValue reference = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        ptn_array_set_entry(receiver.as.object->properties, key, ptn_value_clone(reference));
+        free(storage_key);
+        return reference;
+    }
+    ptn_array_key_free(key);
+    free(storage_key);
+    if (entry->value.type != PTN_REFERENCE) {
+        PtnValue current = entry->value;
+        entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+    return ptn_value_clone(entry->value);
 }
 
 static PTN_UNUSED void ptn_object_unset_property(

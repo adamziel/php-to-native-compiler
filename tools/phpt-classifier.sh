@@ -620,6 +620,10 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         {
             line = ptn_php_code_line($0)
             readonly_class_context = readonly_class_depth > 0 || readonly_class_pending || line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+class[[:space:]]+[a-z_\\]/
+            if (line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*readonly[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ ||
+                line ~ /(^|[[:space:]])readonly[[:space:]]+(public|protected|private|var)?[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
+                readonly_property_seen = 1
+            }
             if (line ~ /(^|[^[:alnum:]_$])enum[[:space:]]+[a-z_\\]/) {
                 print "unsupported-class-metadata\trequires enum declarations and case metadata, outside PTN modeled class metadata"
                 found = 1
@@ -689,8 +693,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /=[[:space:]]*&[[:space:]]*\$[a-z_][a-z0-9_]*->[a-z_][a-z0-9_]*/ ||
-                line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*&/ ||
+            if (((readonly_class_context || readonly_property_seen) &&
+                (line ~ /=[[:space:]]*&[[:space:]]*\$[a-z_][a-z0-9_]*->[a-z_][a-z0-9_]*/ ||
+                    line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*&/)) ||
                 line ~ /->[a-z_][a-z0-9_]*[[:space:]]*(\[|\+\+|--)/) {
                 print "unsupported-class-metadata\trequires indirect readonly property mutation diagnostics, outside PTN modeled readonly property subset"
                 found = 1

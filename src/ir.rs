@@ -479,8 +479,16 @@ pub enum ListAssignmentElementTarget {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReferenceTarget {
-    Variable { name: String, line: usize },
+    Variable {
+        name: String,
+        line: usize,
+    },
     ArrayDim(ArrayDimTarget),
+    Property {
+        receiver: Box<ValueExpr>,
+        name: String,
+        line: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1295,6 +1303,15 @@ impl<'a> LoweringContext<'a> {
             AstReferenceTarget::ArrayDim(target) => {
                 ReferenceTarget::ArrayDim(self.lower_array_dim_target(target))
             }
+            AstReferenceTarget::Property {
+                receiver,
+                name,
+                span,
+            } => ReferenceTarget::Property {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: name.clone(),
+                line: span.line,
+            },
         }
     }
 
@@ -2008,6 +2025,9 @@ fn assertion_reference_target_text(target: &AstReferenceTarget) -> String {
     match target {
         AstReferenceTarget::Variable { name, .. } => format!("${name}"),
         AstReferenceTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
+        AstReferenceTarget::Property { receiver, name, .. } => {
+            format!("{}->{name}", assertion_expr_text(receiver))
+        }
     }
 }
 
