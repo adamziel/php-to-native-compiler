@@ -15261,6 +15261,89 @@ var_dump($merged, $left, $right, function_exists(\"array_replace_recursive\"));"
 }
 
 #[test]
+fn compile_array_replace_to_native_binary() {
+    let root = temp_dir("ptn-native-array-replace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-replace.php");
+    let output = root.join("array-replace-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$x = 24;\n\
+$left = [0 => \"zero\", \"keep\" => [\"left\"], 10 => \"ten\", \"ref\" => &$x];\n\
+$right = [0 => \"changed\", \"keep\" => [\"right\"], 5 => \"five\", \"ref\" => \"new\"];\n\
+unset($x);\n\
+$replaced = array_replace($left, $right);\n\
+$right[\"keep\"][] = \"mutated\";\n\
+$replaced[\"keep\"][] = \"tail\";\n\
+var_dump($replaced, $left, $right, function_exists(\"array_replace\"), function_exists(\"ARRAY_REPLACE\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(5) {\n",
+            "  [0]=>\n",
+            "  string(7) \"changed\"\n",
+            "  [\"keep\"]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(5) \"right\"\n",
+            "    [1]=>\n",
+            "    string(4) \"tail\"\n",
+            "  }\n",
+            "  [10]=>\n",
+            "  string(3) \"ten\"\n",
+            "  [\"ref\"]=>\n",
+            "  string(3) \"new\"\n",
+            "  [5]=>\n",
+            "  string(4) \"five\"\n",
+            "}\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(4) \"zero\"\n",
+            "  [\"keep\"]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    string(4) \"left\"\n",
+            "  }\n",
+            "  [10]=>\n",
+            "  string(3) \"ten\"\n",
+            "  [\"ref\"]=>\n",
+            "  int(24)\n",
+            "}\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(7) \"changed\"\n",
+            "  [\"keep\"]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(5) \"right\"\n",
+            "    [1]=>\n",
+            "    string(7) \"mutated\"\n",
+            "  }\n",
+            "  [5]=>\n",
+            "  string(4) \"five\"\n",
+            "  [\"ref\"]=>\n",
+            "  string(3) \"new\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_replace"));
+    assert!(c_source.contains("ptn_array_replace_into"));
+}
+
+#[test]
 fn compile_array_copy_on_write_detaches_shared_payloads_to_native_binary() {
     let root = temp_dir("ptn-native-array-cow-detach");
     fs::create_dir_all(&root).unwrap();

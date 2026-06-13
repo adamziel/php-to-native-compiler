@@ -2,14 +2,14 @@
 
 Last refresh: 2026-06-13T13:26Z
 Source: `PROGRESS.md`
-Measured: `ptn-ftxi` integration on current `origin/master` `ad327ee`;
+Measured: `ptn-czkk` integration on current `origin/master` `89b4949`;
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 626/626; Native smoke matrix 6/6; PHPT bounded manifest 279/279; PHPT Zend rows 87/87; PHPT ext/standard rows 137/137.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 627/627; Native smoke matrix 6/6; PHPT bounded manifest 279/279; PHPT Zend rows 87/87; PHPT ext/standard rows 137/137.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 626/626 |
+| Native/compiler Rust suite | 627/627 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 279/279 |
 | PHPT Zend rows | 87/87 |

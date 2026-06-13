@@ -4708,6 +4708,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_product"
             | "array_push"
             | "array_reduce"
+            | "array_replace"
             | "array_replace_recursive"
             | "array_reverse"
             | "array_search"

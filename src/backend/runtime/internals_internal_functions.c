@@ -3520,6 +3520,27 @@ static PtnValue ptn_internal_array_merge_recursive(PtnRuntime *runtime, size_t a
     return result;
 }
 
+static void ptn_array_replace_into(PtnArray *target, PtnArray *source) {
+    for (size_t i = 0; i < source->len; i++) {
+        PtnArrayEntry *entry = &source->entries[i];
+        ptn_array_set_entry(
+            target,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone_deref(entry->value)
+        );
+    }
+}
+
+static PtnValue ptn_internal_array_replace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < argc; i++) {
+        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_replace", i + 1, "array", args[i]);
+        ptn_array_replace_into(result.as.array, array);
+    }
+    (void)line;
+    return result;
+}
+
 static void ptn_array_replace_recursive_into(PtnArray *target, PtnArray *source);
 
 static void ptn_array_replace_recursive_entry(PtnArray *target, PtnArrayKey key, PtnValue value) {
@@ -9355,6 +9376,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_product", 1, 1, ptn_internal_array_product },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
         { "array_reduce", 2, 3, ptn_internal_array_reduce },
+        { "array_replace", 1, PTN_VARIADIC_ARGS, ptn_internal_array_replace },
         { "array_replace_recursive", 1, PTN_VARIADIC_ARGS, ptn_internal_array_replace_recursive },
         { "array_reverse", 1, 2, ptn_internal_array_reverse },
         { "array_search", 2, 3, ptn_internal_array_search },

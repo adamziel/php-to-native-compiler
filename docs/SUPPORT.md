@@ -394,6 +394,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_values(expr);`, `array_keys(expr[, expr[, expr]]);`,
   `array_merge(expr, ...);`,
   `array_merge_recursive(expr, ...);`,
+  `array_replace(expr, ...);`,
   `array_replace_recursive(expr, ...);`,
   `call_user_func(expr[, ...]);`, `call_user_func_array(expr, expr);`,
   `assert(expr[, description]);`,
@@ -464,7 +465,8 @@ Post-RC architecture remains explicit rather than hidden:
   `array_slice(expr, expr[, expr[, expr]])`,
   `array_values(expr)`, `array_keys(expr[, expr[, expr]])`,
   `array_merge(expr, ...)`,
-  `array_merge_recursive(expr, ...)`, `array_replace_recursive(expr, ...)`,
+  `array_merge_recursive(expr, ...)`, `array_replace(expr, ...)`,
+  `array_replace_recursive(expr, ...)`,
   `call_user_func(expr[, ...])`, `call_user_func_array(expr, expr)`,
   `assert(expr[, description])`,
   `in_array(expr, expr[, expr])`,
@@ -869,9 +871,9 @@ Post-RC architecture remains explicit rather than hidden:
 - `range()` over current boxed integer-convertible start, end, and optional
   step arguments, returning ordered arrays of integer values and throwing the
   modeled `ValueError` for zero or out-of-range steps.
-- `array_merge_recursive()` and `array_replace_recursive()` over current boxed
-  arrays, preserving ordered-map key behavior while cloning dereferenced values
-  across COW boundaries.
+- `array_merge_recursive()`, `array_replace()`, and
+  `array_replace_recursive()` over current boxed arrays, preserving ordered-map
+  key behavior while cloning dereferenced values across COW boundaries.
 - `in_array()` over current boxed arrays, returning whether the needle matches
   any entry under loose or strict comparison. References are read through the
   same dereferencing path as other comparison internals.
