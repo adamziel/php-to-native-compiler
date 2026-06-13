@@ -104,7 +104,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   (`date.timezone`, `display_errors`, `error_reporting`, `extension_dir`,
   `include_path`, `pcre.backtrack_limit`, `precision`, and
   `zend.assertions`); child-process control rows are classified until PTN has a
-  native process boundary, and `PTN_PHPT_CLASSIFY=0` gives raw php-src
+  native process boundary, and broad unsupported language surfaces such as
+  anonymous classes, interfaces/traits, and call-site/array unpacking are
+  classified with source evidence. `PTN_PHPT_CLASSIFY=0` gives raw php-src
   `run-tests.php` pass-through.
 - Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from
   `Zend/tests`, `ext/standard/tests`, and core `tests`, recording the php-src

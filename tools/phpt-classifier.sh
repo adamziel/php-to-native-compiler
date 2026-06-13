@@ -2,10 +2,11 @@
 
 # Shared PHPT preflight classification for PTN measurement runs.
 #
-# The classifier filters only PHPT harness/environment requirements that PTN
-# does not currently model: extension availability, unsupported ini/runtime
-# modes, SAPI/request sections, external service harnesses, and upstream XFAILs.
-# Generic PHP semantic gaps remain runnable and should surface as PTN failures.
+# The classifier filters PHPT requirements that PTN does not currently model:
+# extension availability, unsupported ini/runtime modes, SAPI/request sections,
+# external service harnesses, upstream XFAILs, and broad language surfaces that
+# are still outside the active compiler/runtime model. Generic PHP semantic gaps
+# inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard,Reflection"
 PTN_PHPT_SUPPORTED_INI_DEFAULT="date.timezone,display_errors,error_reporting,extension_dir,include_path,pcre.backtrack_limit,precision,zend.assertions"
@@ -236,6 +237,45 @@ ptn_phpt_first_unsupported_section() {
     return 1
 }
 
+ptn_phpt_first_unsupported_language_surface() {
+    local path=$1
+
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+        {
+            line = tolower($0)
+            if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+class([^[:alnum:]_]|$)/) {
+                print "unsupported-language\trequires anonymous class syntax (`new class`), outside PTN modeled class metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])interface[[:space:]]+[a-z_\\]/) {
+                print "unsupported-language\trequires interface declarations, outside PTN modeled class metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])implements[[:space:]]+[a-z_\\]/) {
+                print "unsupported-language\trequires interface implementation checks, outside PTN modeled class metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])trait[[:space:]]+[a-z_\\]/) {
+                print "unsupported-language\trequires trait declarations, outside PTN modeled class metadata"
+                found = 1
+                exit
+            }
+            if ($0 ~ /\.\.\./) {
+                declaration = line ~ /(^|[^[:alnum:]_$])(function|fn)[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*\.\.\./
+                if (!declaration) {
+                    print "unsupported-language\trequires call-site or array unpacking (`...`), outside PTN modeled call/array lowering"
+                    found = 1
+                    exit
+                }
+            }
+        }
+        END { exit found ? 0 : 1 }
+    '
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -276,6 +316,11 @@ ptn_phpt_classify_row() {
 
     if value=$(ptn_phpt_first_unsupported_section "$path"); then
         printf 'sapi-behavior\trequires unsupported PHPT section --%s--\n' "$value"
+        return 0
+    fi
+
+    if value=$(ptn_phpt_first_unsupported_language_surface "$path"); then
+        printf '%s\n' "$value"
         return 0
     fi
 

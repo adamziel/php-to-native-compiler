@@ -1,9 +1,9 @@
 # PTN Progress
 
-Refresh: 2026-06-13T15:52Z
-Measured: `ptn-qsmv.6` broad scalar/operator/diagnostic PHPT expansion on
-`origin/master` `603e320f`; focused PHPT and formatting gates passed after
-conflict resolution.
+Refresh: 2026-06-13T16:02Z
+Measured: `ptn-oy6r` broad unsupported-language PHPT classification on
+`origin/master` `6b005389`; classifier/build gates passed after conflict
+resolution.
 
 Recent RC slices cover constants, inline HTML, includes/once guards, closures,
 `stdClass`, properties/destructors, ReflectionFunction metadata, array helpers,
@@ -11,20 +11,20 @@ Recent RC slices cover constants, inline HTML, includes/once guards, closures,
 `dirname()` levels, search/count/string internals, scalar/array type hints,
 ordered-array `str_replace()`, `str_split()`, `nl2br()`, `strncasecmp()`,
 `strncmp()`, `strcmp()`, trim-family aliases, `strpbrk()`, `array_unique()`,
-broad array PHPT coverage, scalar/operator/diagnostic PHPT coverage,
-inherited invokable object callables, callable-name output for `is_callable()`,
-static `__invoke` rejection, object clone expressions with public `__clone`,
-magic-method visibility warnings, `php_uname()` mode validation,
-environment/include-path helpers, `getcwd()`/`chdir()`, PHPT runner ini
-values, statement-form `(void)` casts, offset compound/coalescing, and
-property/static-property compounds.
+broad array/scalar/operator PHPT coverage, unsupported-language PHPT
+preclassification, inherited invokable object callables, callable-name output
+for `is_callable()`, static `__invoke` rejection, object clone expressions
+with public `__clone`, magic-method visibility warnings, `php_uname()` mode
+validation, environment/include-path helpers, `getcwd()`/`chdir()`, PHPT
+runner ini values, statement-form `(void)` casts, offset compound/coalescing,
+and property/static-property compounds.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 641 | 641 | 0 |
+| Native/compiler Rust suite | 643 | 643 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 400 | 400 | 0 |
 | PHPT Zend rows | 94 | 94 | 0 |
@@ -62,8 +62,9 @@ property/static-property compounds.
 
 ## Verification
 
-Current branch verification for `ptn-qsmv.6`: the 57 newly added bounded
-manifest rows and `cargo fmt --check` passed after conflict resolution.
+Current branch verification for `ptn-oy6r`: `cargo build --bin phpc`,
+`cargo test --test phpt_classifier`, focused 25-row unsupported-language PHPT
+classification, and `cargo fmt --check` passed after conflict resolution.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 first-class callables, dynamic includes, unsupported internals,

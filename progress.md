@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T15:52Z
+Last refresh: 2026-06-13T16:02Z
 Source: `PROGRESS.md`
-Measured: `ptn-qsmv.6` broad scalar/operator/diagnostic PHPT expansion on
+Measured: `ptn-oy6r` broad unsupported-language PHPT classification on
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 641/641; Native smoke matrix 6/6; PHPT bounded manifest 400/400; PHPT Zend rows 94/94; PHPT ext/standard rows 223/223.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 643/643; Native smoke matrix 6/6; PHPT bounded manifest 400/400; PHPT Zend rows 94/94; PHPT ext/standard rows 223/223.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 641/641 |
+| Native/compiler Rust suite | 643/643 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 400/400 |
 | PHPT Zend rows | 94/94 |
