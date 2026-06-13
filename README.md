@@ -67,8 +67,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   preserves embedded NULs; `basename()` handles binary-safe path segments and
   suffix stripping; `pathinfo()` returns binary-safe dirname/basename/
   extension/filename components with `PATHINFO_*` flags; `crc32()` computes
-  length-aware CRC-32 integers; trim-family internals, including the `chop()`
-  alias, use PHP default bytes plus bounded charlists.
+  length-aware CRC-32 integers; `strpbrk()` returns binary-safe suffix slices;
+  trim-family internals, including the `chop()` alias, use PHP default bytes
+  plus bounded charlists.
 - `str_replace()` supports scalar and ordered-array search/replacement/subject
   byte replacement, dereferences array entries, preserves subject-array keys,
   writes the optional `$count` argument by reference, and throws PHP-style

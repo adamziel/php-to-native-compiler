@@ -4613,6 +4613,42 @@ static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, con
     return ptn_bool(ends);
 }
 
+static PtnValue ptn_internal_strpbrk(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "strpbrk", 1, "string", args[0], line);
+    PtnStringOperand characters = ptn_internal_expect_string_arg(runtime, "strpbrk", 2, "characters", args[1], line);
+
+    if (characters.len == 0) {
+        ptn_string_operand_free(string);
+        ptn_string_operand_free(characters);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "strpbrk(): Argument #2 ($characters) must be a non-empty string"
+        );
+        return ptn_null();
+    }
+
+    unsigned char byte_set[256] = {0};
+    for (size_t i = 0; i < characters.len; i++) {
+        byte_set[(unsigned char)characters.data[i]] = 1;
+    }
+
+    for (size_t i = 0; i < string.len; i++) {
+        if (byte_set[(unsigned char)string.data[i]]) {
+            size_t result_len = string.len - i;
+            char *result = ptn_duplicate_string_len(string.data + i, result_len);
+            ptn_string_operand_free(string);
+            ptn_string_operand_free(characters);
+            return ptn_owned_string_len(result, result_len);
+        }
+    }
+
+    ptn_string_operand_free(string);
+    ptn_string_operand_free(characters);
+    return ptn_bool(0);
+}
+
 static int ptn_match_bytes_at(
     const char *haystack,
     const char *needle,
@@ -9687,6 +9723,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strlen", 1, 1, ptn_internal_strlen },
         { "strncasecmp", 3, 3, ptn_internal_strncasecmp },
         { "strncmp", 3, 3, ptn_internal_strncmp },
+        { "strpbrk", 2, 2, ptn_internal_strpbrk },
         { "strpos", 2, 3, ptn_internal_strpos },
         { "strrchr", 2, 3, ptn_internal_strrchr },
         { "strrev", 1, 1, ptn_internal_strrev },

@@ -352,7 +352,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strpos(expr, expr[, expr]);`, `stripos(expr, expr[, expr]);`,
   `strrpos(expr, expr[, expr]);`, `strripos(expr, expr[, expr]);`,
   `strstr(expr, expr[, expr]);`, `stristr(expr, expr[, expr]);`,
-  `substr_count(expr, expr[, expr[, expr]]);`,
+  `substr_count(expr, expr[, expr[, expr]]);`, `strpbrk(expr, expr);`,
   `str_ends_with(expr, expr);`, `str_pad(expr, expr[, expr[, expr]]);`,
   `str_repeat(expr, expr);`, `str_split(expr[, expr]);`,
   `strtolower(expr);`, `strtoupper(expr);`, `strrchr(expr, expr[, expr]);`,
@@ -424,7 +424,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strpos(expr, expr[, expr])`, `stripos(expr, expr[, expr])`,
   `strrpos(expr, expr[, expr])`, `strripos(expr, expr[, expr])`,
   `strstr(expr, expr[, expr])`, `stristr(expr, expr[, expr])`,
-  `substr_count(expr, expr[, expr[, expr]])`,
+  `substr_count(expr, expr[, expr[, expr]])`, `strpbrk(expr, expr)`,
   `str_ends_with(expr, expr)`, `str_pad(expr, expr[, expr[, expr]])`,
   `str_repeat(expr, expr)`, `str_split(expr[, expr])`,
   `strtolower(expr)`, `strtoupper(expr)`, `strrchr(expr, expr[, expr])`,
@@ -578,7 +578,8 @@ Post-RC architecture remains explicit rather than hidden:
   `ucfirst()`, `lcfirst()`,
   `strtolower()`,
   `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
-  `nl2br()`, `explode()` separator/string arguments,
+  `nl2br()`, `strpbrk()` string/characters arguments,
+  `explode()` separator/string arguments,
   `trim()`/`ltrim()`/`rtrim()`/`chop()` string and characters arguments,
   `strip_tags()`, `crc32()`, `md5()`, `sha1()`, `substr()`,
   `addcslashes()`, `addslashes()`, `stripcslashes()`, `stripslashes()`,
@@ -719,6 +720,10 @@ Post-RC architecture remains explicit rather than hidden:
 - `nl2br()` over current boxed scalar values after scalar string conversion,
   inserting `<br />` by default or `<br>` when the optional XHTML flag is false
   before `\n`, `\r`, `\r\n`, and `\n\r` newline sequences.
+- `strpbrk()` over current boxed scalar values after scalar string conversion,
+  returning the binary-safe suffix beginning at the first byte present in the
+  `characters` set, `false` when no byte matches, and a catchable `ValueError`
+  when `characters` is empty.
 - `getcwd()` returns the process current working directory as a string, and
   `chdir()` changes it for scalar path operands. Embedded NUL paths return
   `false` with the current warning boundary; failing host calls return `false`

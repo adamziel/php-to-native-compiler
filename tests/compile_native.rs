@@ -1369,6 +1369,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function Nl2Br($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function nl2br()");
 
+    let error = parser::parse("<?php function StrPbrk($value, $characters) { return $value; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strpbrk()");
+
     let error = parser::parse("<?php function STRTOLOWER($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strtolower()");
 
@@ -4437,6 +4441,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_internal_strstr",
         "ptn_internal_stristr",
         "ptn_internal_substr_count",
+        "ptn_internal_strpbrk",
         "ptn_internal_str_pad",
         "ptn_internal_strtolower",
         "ptn_internal_strtoupper",
@@ -4517,6 +4522,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "static char *ptn_first_char_case_string(",
         "static char *ptn_ascii_case_string(",
         "static int ptn_compare_string_prefix_bytes(",
+        "static PtnValue ptn_internal_strpbrk(",
         "static PtnValue ptn_internal_str_pad(",
         "static char *ptn_quotemeta_string(",
         "static char *ptn_chunk_split_string(",
@@ -4743,6 +4749,51 @@ bool(true)\n"
     let body = generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_nl2br(");
     assert!(body.contains("ptn_internal_expect_string_arg"));
     assert!(body.contains("ptn_string_buffer_append_len"));
+}
+
+#[test]
+fn compile_strpbrk_binary_safe_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-strpbrk-binary-safe");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strpbrk-binary-safe.php");
+    let output = root.join("strpbrk-binary-safe-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$haystack = \"foob\" . chr(0) . \"ar\";\n\
+$needle = \"a\" . chr(0) . \"b\";\n\
+var_dump(strpbrk($haystack, \"ar\"));\n\
+var_dump(bin2hex(strpbrk($haystack, chr(0))));\n\
+var_dump(bin2hex(strpbrk($haystack, $needle)));\n\
+var_dump(strpbrk(\"foobar\", $needle));\n\
+var_dump(strpbrk(\"xyz\", $needle));\n\
+try { strpbrk(\"abc\", \"\"); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { strpbrk([], \"a\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { strpbrk(\"abc\", []); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(strpbrk(5, 5));\n\
+var_dump(function_exists(\"strpbrk\"), function_exists(\"STRPBRK\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(2) \"ar\"\n\
+string(6) \"006172\"\n\
+string(8) \"62006172\"\n\
+string(3) \"bar\"\n\
+bool(false)\n\
+strpbrk(): Argument #2 ($characters) must be a non-empty string\n\
+strpbrk(): Argument #1 ($string) must be of type string, array given\n\
+strpbrk(): Argument #2 ($characters) must be of type string, array given\n\
+string(1) \"5\"\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

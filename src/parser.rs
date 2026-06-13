@@ -4564,6 +4564,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "strstr"
             | "stristr"
             | "substr_count"
+            | "strpbrk"
             | "str_pad"
             | "str_repeat"
             | "str_split"
