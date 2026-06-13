@@ -4869,6 +4869,39 @@ str_replace(): Argument #3 ($subject) must be of type array|string, resource giv
 }
 
 #[test]
+fn compile_str_replace_array_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-array-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-array-operands.php");
+    let output = root.join("str-replace-array-operands-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$subject = [0 => 'aba', 'x' => 'cab', 3 => 123];\n\
+var_dump(str_replace('a', 'A', $subject, $count));\n\
+var_dump($count);\n\
+$count = 0;\n\
+var_dump(str_replace(['a', 'b', ''], ['B', 'C', 'X'], 'aba', $count));\n\
+var_dump($count);\n\
+$count = 0;\n\
+var_dump(str_replace(['a', 'b', 'c'], ['A'], ['ab', 'ba'], $count));\n\
+var_dump($count);\n\
+try { str_replace('a', ['A'], 'a'); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n  [0]=>\n  string(3) \"AbA\"\n  [\"x\"]=>\n  string(3) \"cAb\"\n  [3]=>\n  string(3) \"123\"\n}\nint(3)\nstring(3) \"BCB\"\nint(3)\narray(2) {\n  [0]=>\n  string(1) \"A\"\n  [1]=>\n  string(1) \"A\"\n}\nint(4)\nstr_replace(): Argument #2 ($replace) must be of type string when argument #1 ($search) is a string\n"
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();

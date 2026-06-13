@@ -663,12 +663,15 @@ Post-RC architecture remains explicit rather than hidden:
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
 - `str_replace()` over current scalar and stringable-object search,
-  replacement, and subject operands after scalar string conversion, returning
-  the replaced byte string, writing the optional `$count` argument by
-  reference, and throwing catchable PHP-style `array|string` `TypeError`
-  diagnostics for invalid resource, closure, exception, and non-stringable
-  object operands. Array search/replacement/subject forms remain outside the
-  current bounded path.
+  replacement, and subject operands after scalar string conversion, plus
+  bounded array search/replacement/subject forms over current
+  string-convertible values. Array searches pair replacements by insertion
+  order, missing replacement entries become empty strings, empty search
+  entries are skipped, array subjects preserve keys, and the optional `$count`
+  argument records replacements across all subject elements. Invalid
+  top-level resource, closure, exception, non-stringable object, and
+  scalar-search/array-replacement operands throw catchable PHP-style
+  `TypeError` diagnostics.
 - `ceil()` and `floor()` over current boxed scalar values after PHP numeric
   parameter conversion, returning boxed floats. `null` emits the modeled
   deprecation and yields `0.0`; booleans, integers, floats, fully numeric
@@ -1189,9 +1192,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `soundex()` locale/non-ASCII behavior plus resource/reference operand
   parity and object string conversion outside the current public declared
   `__toString()` support.
-- Complete `str_replace()` array search/replacement/subject semantics,
-  array-to-string warnings, and nested replacement-count parity beyond the
-  current scalar bounded path.
+- Remaining `str_replace()` parity for non-stringable object elements,
+  resource/reference element diagnostics, and deeper nested array-to-string
+  warning/count edges beyond the current bounded array operand path.
 - Complete non-finite comparison parity for unsupported arrays, objects,
   resources, and references.
 - Remaining PHP float precision and formatting edge cases plus
