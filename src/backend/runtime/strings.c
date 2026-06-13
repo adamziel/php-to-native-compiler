@@ -267,6 +267,8 @@ static PTN_UNUSED char *ptn_callable_output_name(PtnValue callable) {
             scope_name = ptn_duplicate_string(scope.as.object->class_name);
         } else if (scope.type == PTN_EXCEPTION) {
             scope_name = ptn_duplicate_string(scope.as.exception->class_name);
+        } else if (scope.type == PTN_CLOSURE) {
+            scope_name = ptn_duplicate_string("Closure");
         } else if (scope.type == PTN_STRING) {
             scope_name = ptn_duplicate_string_len((const char *)scope.as.string.data, scope.as.string.len);
         }

@@ -34,6 +34,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->declared_class_is_readonly = caller_runtime->declared_class_is_readonly;
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
+    runtime->by_ref_argument_function_name_override =
+        caller_runtime->by_ref_argument_function_name_override;
     runtime->include_path = NULL;
     runtime->call_site_line = 0;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
@@ -173,6 +175,16 @@ static PTN_UNUSED void ptn_abort_by_reference_argument_error(
         parameter_name
     );
     exit(255);
+}
+
+static PTN_UNUSED const char *ptn_by_reference_argument_function_name(
+    PtnRuntime *runtime,
+    const char *fallback
+) {
+    if (runtime != NULL && runtime->by_ref_argument_function_name_override != NULL) {
+        return runtime->by_ref_argument_function_name_override;
+    }
+    return fallback;
 }
 
 static PTN_UNUSED void ptn_emit_by_reference_argument_warning(

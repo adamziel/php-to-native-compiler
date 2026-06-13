@@ -104,6 +104,9 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
         return;
     }
     ptn_symbols_free(&closure->captures);
+    if (closure->has_wrapped_callable) {
+        ptn_value_destroy(&closure->wrapped_callable);
+    }
     free(closure);
 }
 

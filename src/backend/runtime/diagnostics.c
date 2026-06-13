@@ -129,6 +129,40 @@ static PTN_UNUSED void ptn_runtime_import_closure_captures(PtnRuntime *runtime, 
     }
 }
 
+static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closure) {
+    PtnClosure *source = ptn_closure_from_value(closure);
+    PtnValue copy = ptn_closure(
+        runtime,
+        source->function_index,
+        source->display_name,
+        source->metadata
+    );
+    for (size_t i = 0; i < source->captures.len; i++) {
+        PtnSymbol *capture = &source->captures.items[i];
+        if (capture->value.type == PTN_REFERENCE) {
+            ptn_closure_bind_capture_reference(copy, capture->name, capture->value);
+        } else {
+            ptn_closure_set_capture(copy, capture->name, capture->value);
+        }
+    }
+    if (source->has_wrapped_callable) {
+        copy.as.closure->has_wrapped_callable = 1;
+        copy.as.closure->wrapped_callable = ptn_value_clone(source->wrapped_callable);
+    }
+    return copy;
+}
+
+static PTN_UNUSED PtnValue ptn_closure_wrap_callable(
+    PtnRuntime *runtime,
+    PtnValue callable,
+    PtnFunctionMetadata metadata
+) {
+    PtnValue closure = ptn_closure(runtime, (size_t)-1, "Closure::__invoke", metadata);
+    closure.as.closure->has_wrapped_callable = 1;
+    closure.as.closure->wrapped_callable = ptn_value_clone_deref(callable);
+    return closure;
+}
+
 static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *name) {
     size_t index = ptn_symbols_find(symbols, name);
     if (index >= symbols->len) {
@@ -428,6 +462,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->declared_class_is_readonly = NULL;
     runtime->source_path = NULL;
     runtime->current_function_name = NULL;
+    runtime->by_ref_argument_function_name_override = NULL;
     runtime->include_path = ptn_duplicate_string(".");
     runtime->call_site_line = 0;
     runtime->warn_by_ref_argument_mismatch = 0;

@@ -1377,6 +1377,7 @@ impl Parser {
         };
         let parameters = self.parse_function_parameters()?;
         let captures = self.parse_closure_use_captures()?;
+        validate_closure_use_parameter_names(&parameters, &captures)?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
             Some(self.parse_return_type_hint()?)
@@ -1405,7 +1406,11 @@ impl Parser {
         self.advance();
         self.expect_left_paren()?;
         let mut captures = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         loop {
+            if matches!(self.peek().kind, TokenKind::RightParen) {
+                break;
+            }
             let by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
                 self.advance();
                 true
@@ -1416,6 +1421,13 @@ impl Parser {
             let TokenKind::Variable(name) = &token.kind else {
                 return Err(syntax_error_unexpected(token, Some("variable")));
             };
+            validate_closure_use_name(name, token.span)?;
+            if !seen.insert(name.clone()) {
+                return Err(Diagnostic::new(
+                    format!("Cannot use variable ${name} twice"),
+                    Some(token.span),
+                ));
+            }
             captures.push(ClosureUseCapture {
                 name: name.clone(),
                 by_ref,
@@ -3944,6 +3956,58 @@ fn syntax_error_unexpected(token: &Token, expecting: Option<&str>) -> Diagnostic
         None => format!("syntax error, unexpected {unexpected}"),
     };
     Diagnostic::parse_error(message, Some(token.span))
+}
+
+fn validate_closure_use_name(name: &str, span: SourceSpan) -> Result<()> {
+    if name == "this" {
+        return Err(Diagnostic::new(
+            "Cannot use $this as lexical variable",
+            Some(span),
+        ));
+    }
+    if is_auto_global_name(name) {
+        return Err(Diagnostic::new(
+            "Cannot use auto-global as lexical variable",
+            Some(span),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_closure_use_parameter_names(
+    parameters: &[FunctionParameter],
+    captures: &[ClosureUseCapture],
+) -> Result<()> {
+    for capture in captures {
+        if parameters
+            .iter()
+            .any(|parameter| parameter.name == capture.name)
+        {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot use lexical variable ${} as a parameter name",
+                    capture.name
+                ),
+                Some(capture.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn is_auto_global_name(name: &str) -> bool {
+    matches!(
+        name,
+        "GLOBALS"
+            | "_SERVER"
+            | "_GET"
+            | "_POST"
+            | "_FILES"
+            | "_COOKIE"
+            | "_SESSION"
+            | "_REQUEST"
+            | "_ENV"
+    )
 }
 
 fn nested_ternary_message(first_is_short: bool, second_is_short: bool) -> &'static str {

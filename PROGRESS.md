@@ -1,17 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-13T21:40Z
-Measured: `ptn-qsmv.11` throw after `ptn-qsmv.12`.
+Refresh: 2026-06-13T21:46Z
+Measured: `ptn-8d2u` Closure callable/reference frontier.
 
 Slices cover callable/object, filesystem/string, property, COW, PHPT blockers,
-readonly, and userland `throw` through boxed exception propagation.
+readonly, userland `throw`, and Closure reference boundaries.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 684 | 684 | 0 |
+| Native/compiler Rust suite | 688 | 688 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
@@ -34,34 +34,32 @@ readonly, and userland `throw` through boxed exception propagation.
 
 ## Remaining Exclusions
 
-- No failures among 485 accepted bounded rows. Classify-only reports
-  459 runnable and 26 excluded rows outside the string slice.
-- Array-internal COW frontier: 72 selected, 0 runnable, 72 excluded. COW
-  foreach/reference frontier: 103 selected, 51 runnable, 31 passing.
+- Accepted bounded rows remain 485/485; classify-only reports 459 runnable
+  and 26 excluded rows outside the string slice.
+- COW frontiers: array-internal 72/0/72; foreach/reference 103 selected,
+  51 runnable, 31 passing.
 - Zend arrow rows 001-004 pass; remaining rows need closure metadata, nullable
   types, generator `yield`, or `assert.exception` ini.
 
 ## Verification
 
-`ptn-qsmv.11` adds parser/AST/IR/backend support for userland `throw`, boxed
-exception propagation, modeled `Exception`/`Error` construction, class lookup,
-catch matching, and non-object throw diagnostics.
-Worker gates before readonly rebase passed `cargo fmt --check`, full
-`cargo test`, smoke 6/6, and PHPT 2/4; blockers are `ptn-5sca`, `ptn-c284`,
-and `ptn-feps`. Refinery reran pass rows after rebase: 2/2.
+`ptn-8d2u` adds Closure `use` validation, capture-preserving
+`Closure::bindTo()` clones, `Closure::fromCallable()` wrappers,
+`ReflectionFunction` name/count metadata, and `Closure::__invoke` by-reference
+diagnostics. Gates: closure 8/8, call_user_func 3/3, reflection_function 1/1,
+is_callable 2/2, COW 26/26, smoke 6/6, `cargo build --bin phpc`, and inventory
+688 native/compiler plus 3 source tests.
 
-`ptn-qsmv.12` adds readonly parsing, write-once properties, inheritance guards,
-and classifier narrowing. Gates: readonly native/parser 5/5,
-classifier 15/15, Zend readonly PHPT selected 12, runnable 8, excluded 4,
-passed 8/8.
+Recent gates: `ptn-qsmv.11` userland `throw` support reran pass rows 2/2 after
+readonly rebase; remaining blockers are `ptn-5sca`, `ptn-c284`, and
+`ptn-feps`. `ptn-qsmv.12` readonly gates passed native/parser 5/5, classifier
+15/15, and Zend PHPT 8/8 runnable rows. `ptn-550s.9` Zend foreach
+object/property rerun passed 6/6. `ptn-x8p9` maps 73 `unsupported-ini` rows;
+`ptn-flje` COW classify-only is 46 selected, 31 runnable, 15 excluded.
 
-`ptn-550s.9` Zend foreach object/property rerun passed 6/6. `ptn-x8p9` maps
-73 `unsupported-ini` rows; `assert.exception` probe passed 5/17. `ptn-flje`
-COW classify-only is 46 selected, 31 runnable, 15 excluded.
-
-Follow-ups remain typed properties, traits, magic methods, attributes,
-heredoc, declared `Exception` subclasses, property by-reference
-assignment, `Exception::getTrace()`, `array_walk()` by-reference userdata,
-nullable types, generator `yield`, first-class callables, dynamic includes,
-unsupported internals, scalar-offset lvalues, `Traversable`, INI modes,
-process boundaries, formatter/callback parity, and classifier batching.
+Follow-ups remain typed properties, traits, magic methods, attributes, heredoc,
+declared `Exception` subclasses, property by-reference assignment,
+`Exception::getTrace()`, `array_walk()` by-reference userdata, nullable types,
+generator `yield`, first-class callables, dynamic includes, unsupported
+internals, scalar-offset lvalues, `Traversable`, INI modes, process
+boundaries, formatter/callback parity, and classifier batching.

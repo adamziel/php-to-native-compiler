@@ -1273,6 +1273,50 @@ fn parser_accepts_array_parameter_return_hints_for_functions_and_closures() {
 }
 
 #[test]
+fn parser_validates_closure_use_lists() {
+    let program = parser::parse("<?php $b = 'test'; $fn = function () use ($b, &$a,) {};").unwrap();
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert_eq!(
+        closure
+            .captures
+            .iter()
+            .map(|capture| (capture.name.as_str(), capture.by_ref))
+            .collect::<Vec<_>>(),
+        vec![("b", false), ("a", true)]
+    );
+
+    let cases = [
+        (
+            "<?php $fn = function() use ($a, &$a) {};",
+            "Cannot use variable $a twice",
+        ),
+        (
+            "<?php $fn = function() use ($GLOBALS) {};",
+            "Cannot use auto-global as lexical variable",
+        ),
+        (
+            "<?php $fn = function() use ($this) {};",
+            "Cannot use $this as lexical variable",
+        ),
+        (
+            "<?php $fn = function($a) use ($a) {};",
+            "Cannot use lexical variable $a as a parameter name",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{source}");
+        assert_eq!(error.message, message, "{source}");
+    }
+}
+
+#[test]
 fn parser_accepts_arrow_functions_as_implicit_capture_closures() {
     let program = parser::parse(
         "<?php $outer = 1; \
@@ -20566,6 +20610,155 @@ echo $x, \"\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_closure_bind_capture_reference("));
     assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"x\")"));
+}
+
+#[test]
+fn compile_closure_bindto_preserves_use_captures_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-bindto-preserves-captures");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-bindto-preserves-captures.php");
+    let output = root.join("closure-bindto-preserves-captures-bin");
+    fs::write(
+        &input,
+        "<?php
+$var = 0;
+$fn = function() use ($var) {
+    var_dump($var);
+};
+$fn();
+$fn = $fn->bindTo(null, null);
+$fn();
+var_dump(class_exists(\"Closure\"));
+var_dump(method_exists(\"Closure\", \"bindTo\"));
+var_dump(method_exists(\"Closure\", \"fromCallable\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(0)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure_clone("));
+    assert!(c_source.contains("ptn_internal_class_name_is_closure"));
+}
+
+#[test]
+fn compile_closure_from_callable_invocation_and_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-from-callable-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-from-callable-metadata.php");
+    let output = root.join("closure-from-callable-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+function add($value, $extra = 1) {
+    return $value + $extra;
+}
+
+class FromCallableWorker {
+    public static function twice($value) {
+        return $value * 2;
+    }
+
+    public function plus($value) {
+        return $value + 3;
+    }
+}
+
+$worker = new FromCallableWorker();
+$named = Closure::fromCallable(\"add\");
+$static = Closure::fromCallable(\"FromCallableWorker::twice\");
+$method = Closure::fromCallable([$worker, \"plus\"]);
+$same = function ($value) { return $value - 1; };
+$sameResult = Closure::fromCallable($same);
+
+var_dump($named(4));
+var_dump($static(4));
+var_dump($method(4));
+var_dump($sameResult === $same);
+var_dump($sameResult(4));
+
+$namedReflection = new ReflectionFunction($named);
+var_dump($namedReflection->getName());
+var_dump($namedReflection->getNumberOfParameters());
+var_dump($namedReflection->getNumberOfRequiredParameters());
+
+$staticReflection = new ReflectionFunction($static);
+var_dump($staticReflection->getName());
+var_dump($staticReflection->getNumberOfParameters());
+
+$sameReflection = new ReflectionFunction($sameResult);
+var_dump($sameReflection->getName());
+var_dump($sameReflection->getNumberOfParameters());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(5)\n",
+            "int(8)\n",
+            "int(7)\n",
+            "bool(true)\n",
+            "int(3)\n",
+            "string(3) \"add\"\n",
+            "int(2)\n",
+            "int(1)\n",
+            "string(25) \"FromCallableWorker::twice\"\n",
+            "int(1)\n",
+            "string(9) \"{closure}\"\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_closure_from_callable"));
+    assert!(c_source.contains("ptn_closure_wrap_callable"));
+    assert!(c_source.contains("resolved.as.closure->has_wrapped_callable"));
+}
+
+#[test]
+fn compile_closure_invoke_reference_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-invoke-reference-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-invoke-reference-warning.php");
+    let output = root.join("closure-invoke-reference-warning-bin");
+    fs::write(
+        &input,
+        "<?php
+$test = function (&$arg) {};
+call_user_func([$test, \"__invoke\"], null);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Closure::__invoke(): Argument #1 ($arg) must be passed by reference, value given in ptn on line 3\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("by_ref_argument_function_name_override = \"Closure::__invoke\""));
+    assert!(c_source.contains("ptn_callable_output_name"));
 }
 
 #[test]

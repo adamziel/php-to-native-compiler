@@ -21,7 +21,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Anonymous closures and arrow functions lower through the shared closure
   runtime, including explicit `use(...)` captures, implicit arrow by-value
   captures, nested capture propagation, by-reference returns, typed parameters,
-  variadics, and `static fn` `$this` exclusion.
+  variadics, validated `use` lists with trailing commas, and `static fn`
+  `$this` exclusion. `Closure::bindTo()` clones preserve captured variables,
+  `Closure::fromCallable()` wraps supported callables, and `Closure::__invoke`
+  reference diagnostics use Closure method names at callable boundaries.
 - Includes share caller file scope and return values; bounded dynamic
   include/require dispatch uses canonical once guards when candidate string
   paths are statically enumerable.
@@ -49,8 +52,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   embedded-NUL string escaping.
 - `pow()` uses the boxed exponentiation helper, `min()`/`max()` use the shared
   loose ordering helper, `flush()` flushes native stdout, `call_user_func_array()`
-  expands ordered arrays through callable dispatch, callback dispatch observes
-  `global` bindings for user functions reached through direct calls, and
+  expands ordered arrays through callable dispatch, `call_user_func()` and
+  `call_user_func_array()` downgrade callback by-reference mismatches to
+  warnings, callback dispatch observes `global` bindings for user functions
+  reached through direct calls, and
   public `__invoke` objects can be called directly or through callback
   dispatch; `is_callable()` writes callable-name output for supported callable
   shapes.
@@ -63,8 +68,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `zend_version()`, PHP version/build/platform constants, `PHP_SAPI`,
   `get_loaded_extensions()`, stable PHP locale constants, bounded
   `setlocale()`/`localeconv()` helpers, `spl_object_id()`/
-  `spl_object_hash()`, `get_parent_class()`, and bounded class/property
-  existence checks.
+  `spl_object_hash()`, `get_parent_class()`, Closure internal class metadata,
+  Closure-backed `ReflectionFunction` count/name metadata, and bounded
+  class/property existence checks.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable, variable-root array/append, property, and static-property

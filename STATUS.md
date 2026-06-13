@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T21:40Z
-Measured: `ptn-qsmv.11` throw after `ptn-qsmv.12`.
+Last refresh: 2026-06-13T21:46Z
+Measured: `ptn-8d2u` Closure callable/reference frontier.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 684/684; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 688/688; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 684/684 |
+| Native/compiler Rust suite | 688/688 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

@@ -232,12 +232,24 @@ typedef struct {
     size_t index_capacity;
 } PtnSymbolTable;
 
+typedef struct {
+    int found;
+    const char *name;
+    int is_internal;
+    size_t parameter_count;
+    size_t required_parameter_count;
+    int is_variadic;
+} PtnFunctionMetadata;
+
 struct PtnClosure {
     size_t refcount;
     size_t object_id;
     size_t function_index;
     const char *display_name;
+    PtnFunctionMetadata metadata;
     PtnSymbolTable captures;
+    int has_wrapped_callable;
+    PtnValue wrapped_callable;
 };
 
 struct PtnReference {
@@ -320,15 +332,6 @@ struct PtnObject {
     PtnRuntime *lifecycle_runtime;
     int destructor_called;
 };
-
-typedef struct {
-    int found;
-    const char *name;
-    int is_internal;
-    size_t parameter_count;
-    size_t required_parameter_count;
-    int is_variadic;
-} PtnFunctionMetadata;
 
 typedef struct {
     int has_key;
@@ -453,6 +456,7 @@ struct PtnRuntime {
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
     const char *source_path;
     const char *current_function_name;
+    const char *by_ref_argument_function_name_override;
     char *include_path;
     size_t call_site_line;
     int warn_by_ref_argument_mismatch;
@@ -801,7 +805,12 @@ static PTN_UNUSED PtnValue ptn_object(PtnObject *object) {
     return value;
 }
 
-static PTN_UNUSED PtnValue ptn_closure(PtnRuntime *runtime, size_t function_index, const char *display_name) {
+static PTN_UNUSED PtnValue ptn_closure(
+    PtnRuntime *runtime,
+    size_t function_index,
+    const char *display_name,
+    PtnFunctionMetadata metadata
+) {
     PtnClosure *closure = malloc(sizeof(PtnClosure));
     if (closure == NULL) {
         ptn_abort_out_of_memory();
@@ -810,11 +819,14 @@ static PTN_UNUSED PtnValue ptn_closure(PtnRuntime *runtime, size_t function_inde
     closure->object_id = ptn_runtime_alloc_object_id(runtime);
     closure->function_index = function_index;
     closure->display_name = display_name;
+    closure->metadata = metadata;
     closure->captures.items = NULL;
     closure->captures.len = 0;
     closure->captures.capacity = 0;
     closure->captures.index_slots = NULL;
     closure->captures.index_capacity = 0;
+    closure->has_wrapped_callable = 0;
+    closure->wrapped_callable = ptn_null();
     PtnValue value;
     value.type = PTN_CLOSURE;
     value.owned = 1;

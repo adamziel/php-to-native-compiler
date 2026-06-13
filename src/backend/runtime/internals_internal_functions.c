@@ -10813,13 +10813,17 @@ static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, con
 }
 
 static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    return ptn_call_callable(
+    int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    runtime->warn_by_ref_argument_mismatch = 1;
+    PtnValue result = ptn_call_callable(
         runtime,
         args[0],
         argc - 1,
         argc > 1 ? args + 1 : NULL,
         line
     );
+    runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    return result;
 }
 
 static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -10934,6 +10938,7 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(const char *name);
@@ -11035,6 +11040,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
         { "class_exists", 1, 2, ptn_internal_class_exists },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
+        { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 2, ptn_internal_count },
         { "crc32", 1, 1, ptn_internal_crc32 },
@@ -11264,13 +11270,41 @@ static PtnFunctionMetadata ptn_find_function_metadata(const char *name) {
     return ptn_internal_function_metadata(ptn_find_internal_function(name));
 }
 
+static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue callable = ptn_value_deref(args[0]);
+    if (callable.type == PTN_CLOSURE) {
+        return ptn_value_clone(callable);
+    }
+    if (!ptn_callable_is_valid(callable, 0)) {
+        char *message = ptn_invalid_callback_message(
+            "Closure::fromCallable",
+            1,
+            "callback",
+            callable
+        );
+        ptn_throw_exception_owned_message(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    char *name = ptn_callable_output_name(callable);
+    PtnFunctionMetadata metadata = ptn_find_function_metadata(name);
+    free(name);
+    return ptn_closure_wrap_callable(runtime, callable, metadata);
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ReflectionFunction");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Closure");
+}
+
 static int ptn_internal_class_exists_name(const char *class_name) {
-    return ptn_internal_class_name_is_reflection_function(class_name) ||
-        ptn_builtin_exception_class_name(class_name) != NULL;
+    return ptn_internal_class_name_is_reflection_function(class_name)
+        || ptn_internal_class_name_is_closure(class_name)
+        || ptn_builtin_exception_class_name(class_name) != NULL;
 }
 
 static int ptn_reflection_function_method_exists(const char *method_name) {
@@ -11285,9 +11319,18 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isVariadic");
 }
 
+static int ptn_closure_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__invoke")
+        || ptn_ascii_case_equal(method_name, "bindTo")
+        || ptn_ascii_case_equal(method_name, "fromCallable");
+}
+
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name) {
     if (ptn_internal_class_name_is_reflection_function(class_name)) {
         return ptn_reflection_function_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_closure(class_name)) {
+        return ptn_closure_method_exists(method_name);
     }
     return ptn_declared_class_method_exists(class_name, method_name);
 }
@@ -11375,15 +11418,22 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
         return ptn_null();
     }
 
-    char *name = ptn_value_to_string(args[0]);
-    PtnFunctionMetadata metadata = ptn_find_function_metadata(name);
+    PtnValue target = ptn_value_deref(args[0]);
+    char *name = NULL;
+    PtnFunctionMetadata metadata = ptn_function_metadata_not_found();
+    if (target.type == PTN_CLOSURE) {
+        metadata = target.as.closure->metadata;
+    } else {
+        name = ptn_value_to_string(target);
+        metadata = ptn_find_function_metadata(name);
+    }
     if (!metadata.found) {
         char message[256];
         int written = snprintf(
             message,
             sizeof(message),
             "Function %s() does not exist",
-            name
+            name == NULL ? "Closure" : name
         );
         free(name);
         if (written < 0 || (size_t)written >= sizeof(message)) {

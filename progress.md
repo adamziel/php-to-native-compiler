@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T21:40Z
+Last refresh: 2026-06-13T21:46Z
 Source: `PROGRESS.md`
-Measured: `ptn-qsmv.11` throw after `ptn-qsmv.12`.
+Measured: `ptn-8d2u` Closure callable/reference frontier.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 684/684; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 688/688; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 684/684 |
+| Native/compiler Rust suite | 688/688 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

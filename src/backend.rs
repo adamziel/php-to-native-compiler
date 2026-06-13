@@ -66,7 +66,11 @@ pub fn emit_c(module: &Module) -> String {
         emit_callable_validation_helpers(&mut out);
     }
     if needs_method_dispatch {
-        emit_method_dispatch(&mut out, &module.classes);
+        emit_method_dispatch(
+            &mut out,
+            &module.classes,
+            runtime_requirements.closure_invoke_method_dispatch,
+        );
     }
     if needs_callable_dispatch {
         emit_dynamic_function_dispatch(&mut out);
@@ -217,6 +221,7 @@ struct RuntimeRequirements {
     internal_function_dispatch: bool,
     dynamic_function_dispatch: bool,
     method_dispatch: bool,
+    closure_invoke_method_dispatch: bool,
     direct_internal_helpers: bool,
 }
 
@@ -500,10 +505,10 @@ fn emit_user_functions(
                 out.push_str(".type != PTN_REFERENCE) {\n");
                 out.push_str("        if (caller_runtime->warn_by_ref_argument_mismatch) {\n");
                 out.push_str(
-                    "            ptn_emit_by_reference_argument_warning(caller_runtime, \"",
+                    "            ptn_emit_by_reference_argument_warning(caller_runtime, ptn_by_reference_argument_function_name(caller_runtime, \"",
                 );
                 out.push_str(&c_string(&function.name));
-                out.push_str("\", ");
+                out.push_str("\"), ");
                 out.push_str(&(parameter_index + 1).to_string());
                 out.push_str(", \"");
                 out.push_str(&c_string(&parameter.name));
@@ -514,9 +519,9 @@ fn emit_user_functions(
                 out.push_str("            ptn_runtime_free(&runtime);\n");
                 out.push_str("            return ptn_null();\n");
                 out.push_str("        }\n");
-                out.push_str("        ptn_abort_by_reference_argument_error(\"");
+                out.push_str("        ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
                 out.push_str(&c_string(&function.name));
-                out.push_str("\", ");
+                out.push_str("\"), ");
                 out.push_str(&(parameter_index + 1).to_string());
                 out.push_str(", \"");
                 out.push_str(&c_string(&parameter.name));
@@ -643,9 +648,9 @@ fn emit_variadic_parameter_binding(
         out.push_str(&index_temp);
         out.push_str("].type != PTN_REFERENCE) {\n");
         out.push_str("            if (caller_runtime->warn_by_ref_argument_mismatch) {\n");
-        out.push_str("                ptn_emit_by_reference_argument_warning(caller_runtime, \"");
+        out.push_str("                ptn_emit_by_reference_argument_warning(caller_runtime, ptn_by_reference_argument_function_name(caller_runtime, \"");
         out.push_str(&c_string(&function.name));
-        out.push_str("\", ");
+        out.push_str("\"), ");
         out.push_str(&index_temp);
         out.push_str(" + 1, \"");
         out.push_str(&c_string(&parameter.name));
@@ -654,9 +659,9 @@ fn emit_variadic_parameter_binding(
         out.push_str("                ptn_runtime_free(&runtime);\n");
         out.push_str("                return ptn_null();\n");
         out.push_str("            }\n");
-        out.push_str("            ptn_abort_by_reference_argument_error(\"");
+        out.push_str("            ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
         out.push_str(&c_string(&function.name));
-        out.push_str("\", ");
+        out.push_str("\"), ");
         out.push_str(&index_temp);
         out.push_str(" + 1, \"");
         out.push_str(&c_string(&parameter.name));
@@ -1025,6 +1030,37 @@ fn emit_user_function_dispatch(
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(");\n");
         out.push_str("    }\n");
+    }
+    for class in classes {
+        for method in class_method_lookup_chain(class, classes) {
+            let function = &functions[method.function_index];
+            let required_parameter_count = function
+                .parameters
+                .iter()
+                .filter(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+                .count();
+            let is_variadic = function
+                .parameters
+                .iter()
+                .any(|parameter| parameter.is_variadic);
+            out.push_str("    if (ptn_ascii_case_equal(name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("::");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("        return ptn_function_metadata_found(\"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("::");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", 0, ");
+            out.push_str(&function.parameters.len().to_string());
+            out.push_str(", ");
+            out.push_str(&required_parameter_count.to_string());
+            out.push_str(", ");
+            out.push_str(if is_variadic { "1" } else { "0" });
+            out.push_str(");\n");
+            out.push_str("    }\n");
+        }
     }
     out.push_str("    return ptn_function_metadata_not_found();\n");
     out.push_str("}\n");
@@ -1550,7 +1586,18 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        char *name = ptn_value_to_string(resolved);\n");
-    out.push_str("        int valid = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;\n");
+    out.push_str("        char *separator = strstr(name, \"::\");\n");
+    out.push_str("        int valid = 0;\n");
+    out.push_str("        if (separator != NULL) {\n");
+    out.push_str("            *separator = '\\0';\n");
+    out.push_str(
+        "            valid = ptn_declared_class_static_method_exists(name, separator + 2);\n",
+    );
+    out.push_str("            *separator = ':';\n");
+    out.push_str("        }\n");
+    out.push_str("        if (!valid) {\n");
+    out.push_str("            valid = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;\n");
+    out.push_str("        }\n");
     out.push_str("        free(name);\n");
     out.push_str("        return valid;\n");
     out.push_str("    }\n");
@@ -1582,15 +1629,36 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        free(method_name);\n");
     out.push_str("        return valid;\n");
     out.push_str("    }\n");
+    out.push_str("    if (scope.type == PTN_CLOSURE) {\n");
+    out.push_str("        if (syntax_only) {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        char *method_name = ptn_value_to_string(method);\n");
+    out.push_str("        int valid = ptn_ascii_case_equal(method_name, \"__invoke\");\n");
+    out.push_str("        free(method_name);\n");
+    out.push_str("        return valid;\n");
+    out.push_str("    }\n");
     out.push_str("    if (scope.type == PTN_STRING) {\n");
     out.push_str("        if (syntax_only) {\n");
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        char *class_name = ptn_value_to_string(scope);\n");
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
-    out.push_str(
-        "        int valid = ptn_declared_class_static_method_exists(class_name, method_name);\n",
-    );
+    out.push_str("        int needed = snprintf(NULL, 0, \"%s::%s\", class_name, method_name);\n");
+    out.push_str("        if (needed < 0) {\n");
+    out.push_str("            free(method_name);\n");
+    out.push_str("            free(class_name);\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        char *function_name = malloc((size_t)needed + 1);\n");
+    out.push_str("        if (function_name == NULL) {\n");
+    out.push_str("            free(method_name);\n");
+    out.push_str("            free(class_name);\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        snprintf(function_name, (size_t)needed + 1, \"%s::%s\", class_name, method_name);\n");
+    out.push_str("        int valid = ptn_declared_class_static_method_exists(class_name, method_name) || ptn_find_internal_function(function_name) != NULL;\n");
+    out.push_str("        free(function_name);\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        free(class_name);\n");
     out.push_str("        return valid;\n");
@@ -1599,7 +1667,11 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("}\n");
 }
 
-fn emit_method_dispatch(out: &mut String, classes: &[ClassDecl]) {
+fn emit_method_dispatch(
+    out: &mut String,
+    classes: &[ClassDecl],
+    needs_closure_invoke_dispatch: bool,
+) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
@@ -1608,6 +1680,29 @@ fn emit_method_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str(
         "        return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
+    out.push_str("    }\n");
+    out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"bindTo\")) {\n");
+    out.push_str("            (void)argc;\n");
+    out.push_str("            (void)args;\n");
+    out.push_str("            (void)line;\n");
+    out.push_str("            return ptn_closure_clone(runtime, resolved);\n");
+    out.push_str("        }\n");
+    if needs_closure_invoke_dispatch {
+        out.push_str("        if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
+        out.push_str("            const char *previous_name = runtime->by_ref_argument_function_name_override;\n");
+        out.push_str("            runtime->by_ref_argument_function_name_override = \"Closure::__invoke\";\n");
+        out.push_str("            PtnValue result = ptn_call_callable(runtime, resolved, argc, args, line);\n");
+        out.push_str(
+            "            runtime->by_ref_argument_function_name_override = previous_name;\n",
+        );
+        out.push_str("            return result;\n");
+        out.push_str("        }\n");
+    }
+    out.push_str("        fputs(\"Fatal error: Call to undefined method Closure::\", stderr);\n");
+    out.push_str("        fputs(method_name, stderr);\n");
+    out.push_str("        fputc('\\n', stderr);\n");
+    out.push_str("        exit(255);\n");
     out.push_str("    }\n");
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
     out.push_str(
@@ -1737,6 +1832,20 @@ fn emit_callable_dispatch(
         out.push_str("        if (receiver_entry != NULL && method_entry != NULL) {\n");
         out.push_str("            PtnValue receiver = ptn_value_deref(receiver_entry->value);\n");
         out.push_str("            PtnValue method = ptn_value_deref(method_entry->value);\n");
+        out.push_str(
+            "            if (receiver.type == PTN_CLOSURE && method.type == PTN_STRING) {\n",
+        );
+        out.push_str("                char *method_name = ptn_value_to_string(method);\n");
+        out.push_str("                if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
+        out.push_str("                    const char *previous_name = runtime->by_ref_argument_function_name_override;\n");
+        out.push_str("                    runtime->by_ref_argument_function_name_override = \"Closure::__invoke\";\n");
+        out.push_str("                    PtnValue result = ptn_call_callable(runtime, receiver, argc, args, line);\n");
+        out.push_str("                    runtime->by_ref_argument_function_name_override = previous_name;\n");
+        out.push_str("                    free(method_name);\n");
+        out.push_str("                    return result;\n");
+        out.push_str("                }\n");
+        out.push_str("                free(method_name);\n");
+        out.push_str("            }\n");
         out.push_str("            if ((receiver.type == PTN_OBJECT || receiver.type == PTN_EXCEPTION) && method.type == PTN_STRING) {\n");
         out.push_str("                char *method_name = ptn_value_to_string(method);\n");
         out.push_str("                PtnValue result = ptn_call_declared_method(runtime, receiver, method_name, argc, args, line);\n");
@@ -1750,6 +1859,9 @@ fn emit_callable_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
+    out.push_str("        if (resolved.as.closure->has_wrapped_callable) {\n");
+    out.push_str("            return ptn_call_callable(runtime, resolved.as.closure->wrapped_callable, argc, args, line);\n");
+    out.push_str("        }\n");
     out.push_str("        switch (resolved.as.closure->function_index) {\n");
     for (index, function) in functions.iter().enumerate() {
         if !function.is_anonymous {
@@ -3515,6 +3627,7 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::MethodCall {
             receiver,
+            name,
             arguments,
             ..
         } => {
@@ -3523,6 +3636,11 @@ fn collect_value_runtime_requirements(
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
             requirements.method_dispatch = true;
+            if name.eq_ignore_ascii_case("__invoke") {
+                requirements.closure_invoke_method_dispatch = true;
+                requirements.internal_function_dispatch = true;
+                requirements.dynamic_function_dispatch = true;
+            }
         }
         ValueExpr::NewObject {
             class_name,
@@ -6550,11 +6668,27 @@ impl ValueEmitter {
         captures: &[ClosureCapture],
     ) -> String {
         let closure_temp = self.next_temp();
+        let function = &self.user_functions[function_index];
+        let required_parameter_count = function
+            .parameters
+            .iter()
+            .filter(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+            .count();
+        let is_variadic = function
+            .parameters
+            .iter()
+            .any(|parameter| parameter.is_variadic);
         out.push_str("    PtnValue ");
         out.push_str(&closure_temp);
         out.push_str(" = ptn_closure(&runtime, ");
         out.push_str(&function_index.to_string());
-        out.push_str(", \"{closure}\");\n");
+        out.push_str(", \"{closure}\", ptn_function_metadata_found(\"{closure}\", 0, ");
+        out.push_str(&function.parameters.len().to_string());
+        out.push_str(", ");
+        out.push_str(&required_parameter_count.to_string());
+        out.push_str(", ");
+        out.push_str(if is_variadic { "1" } else { "0" });
+        out.push_str("));\n");
 
         for capture in captures {
             let capture_temp = self.next_temp();
