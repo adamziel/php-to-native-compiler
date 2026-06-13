@@ -1215,6 +1215,25 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_has_invoke_magic(const char *class_name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if class_magic_invoke_method(class, classes).is_some() {
+            out.push_str("        return 1;\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
 }
 
 fn class_by_name<'a>(classes: &'a [ClassDecl], name: &str) -> Option<&'a ClassDecl> {
@@ -1366,6 +1385,15 @@ fn class_magic_call_method<'a>(
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__call"))
 }
 
+fn class_magic_invoke_method<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<&'a crate::ir::MethodDecl> {
+    class_method_lookup_chain(class, classes)
+        .into_iter()
+        .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__invoke"))
+}
+
 fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str(
         "\nstatic int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out) {\n",
@@ -1405,7 +1433,9 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        return valid;\n");
     out.push_str("    }\n");
     out.push_str("    if (resolved.type == PTN_OBJECT) {\n");
-    out.push_str("        return ptn_declared_class_method_exists(resolved.as.object->class_name, \"__invoke\");\n");
+    out.push_str(
+        "        return ptn_declared_class_has_invoke_magic(resolved.as.object->class_name);\n",
+    );
     out.push_str("    }\n");
     out.push_str("    PtnValue scope;\n");
     out.push_str("    PtnValue method;\n");
@@ -1575,9 +1605,6 @@ fn emit_callable_dispatch(
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
     if needs_method_dispatch {
-        out.push_str("    if (resolved.type == PTN_OBJECT) {\n");
-        out.push_str("        return ptn_call_declared_method(runtime, resolved, \"__invoke\", argc, args, line);\n");
-        out.push_str("    }\n");
         out.push_str("    if (resolved.type == PTN_ARRAY && resolved.as.array->len == 2) {\n");
         out.push_str("        PtnArrayKey receiver_key = ptn_array_int_key(0);\n");
         out.push_str("        PtnArrayKey method_key = ptn_array_int_key(1);\n");
@@ -1595,6 +1622,9 @@ fn emit_callable_dispatch(
         out.push_str("                return result;\n");
         out.push_str("            }\n");
         out.push_str("        }\n");
+        out.push_str("    }\n");
+        out.push_str("    if (resolved.type == PTN_OBJECT && ptn_declared_class_has_invoke_magic(resolved.as.object->class_name)) {\n");
+        out.push_str("        return ptn_call_declared_method(runtime, resolved, \"__invoke\", argc, args, line);\n");
         out.push_str("    }\n");
     }
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");

@@ -1,28 +1,30 @@
 # PTN Progress
 
-Refresh: 2026-06-13T14:41Z
-Measured: `ptn-yolh` `strpbrk()` integration on `origin/master`
-`5be72471c`; focused native/PHPT gates passed after conflict resolution.
+Refresh: 2026-06-13T14:49Z
+Measured: `ptn-s77w` inherited invokable-callable integration on
+`origin/master` `bf43741c`; focused native gate passed after conflict
+resolution.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
 closures, `stdClass`, properties/destructors, reflection, array helpers,
 `json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
 search/count/string internals, scalar/array type hints, ordered-array
 `str_replace()`, `str_split()`, `nl2br()`, `strncasecmp()`, `strpbrk()`,
-`chop()`, `array_unique()`, `getcwd()`/`chdir()`, PHPT runner ini values,
-statement-form `(void)` casts, offset compound/coalescing, and
-property/static-property compounds.
+`chop()`, `array_unique()`, inherited invokable object callables,
+`getcwd()`/`chdir()`, PHPT runner ini values, statement-form `(void)` casts,
+offset compound/coalescing, and property/static-property compounds.
 
-Recent movers include binary-safe `strpbrk()` suffix searches,
-`display_errors`/`zend.assertions` runner ini plumbing, bracketed namespace
-blocks, grouped imports, scalar conversions, `global`, PHP metadata constants,
-`dirname()` levels, `pathinfo()`, `LC_*`/`setlocale()`/`localeconv()`,
-invokable object callables, search/count internals, persistent standard
-streams, `property_exists()`, PHPT manifests, `crc32()`, `str_replace()` array
-operands/reference entries/counts, `str_split()`, `nl2br()`, `strncasecmp()`,
-array parameter/return hints, object IDs, cwd helpers, property/static-property
-compounds, `array_unique()`, `chop()`, and integer validation for
-`chr()`/`intdiv()`/file offsets.
+Recent movers include inherited `__invoke` callable dispatch,
+`call_user_func_array()` object callback coverage, binary-safe `strpbrk()`
+suffix searches, `display_errors`/`zend.assertions` runner ini plumbing,
+bracketed namespace blocks, grouped imports, scalar conversions, `global`, PHP
+metadata constants, `dirname()` levels, `pathinfo()`,
+`LC_*`/`setlocale()`/`localeconv()`, search/count internals, persistent
+standard streams, `property_exists()`, PHPT manifests, `crc32()`,
+`str_replace()` array operands/reference entries/counts, `str_split()`,
+`nl2br()`, `strncasecmp()`, array parameter/return hints, object IDs, cwd
+helpers, property/static-property compounds, `array_unique()`, `chop()`, and
+integer validation for `chr()`/`intdiv()`/file offsets.
 
 ## Dashboard
 
@@ -67,9 +69,9 @@ compounds.
 
 ## Verification
 
-Current branch verification for `ptn-yolh`: focused `strpbrk()` native reducer,
-modeled-internal parser guard, direct string-helper coverage, and
-`bug60801.phpt` passed after conflict resolution.
+Current branch verification for `ptn-s77w`: focused
+`compile_invokable_object_callables_to_native_binary` native reducer passed
+after conflict resolution.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 first-class callables, dynamic includes, unsupported internals,

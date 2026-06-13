@@ -41,18 +41,18 @@ Post-RC architecture remains explicit rather than hidden:
   fallback for direct object calls and supported object callable dispatch when
   no declared method matches. Public declared instance `__toString` is
   supported for current runtime string conversions. Public declared instance
-  `__invoke` is supported for object-as-callable dispatch. `__destruct`,
-  `__get`, `__set`, `__isset`, `__unset`, `__callStatic`, and related hooks
-  remain unsupported.
+  `__invoke` is supported for direct object callable values and internal
+  callback dispatch. `__destruct`, `__get`, `__set`, `__isset`, `__unset`,
+  `__callStatic`, and related hooks remain unsupported.
 - Non-static callables: direct object method calls and bounded
   `[$object, "method"]` callback dispatch work for declared and inherited
   public methods, and missing object methods fall through to supported
-  `__call`. `is_callable()` validates the current string, closure,
-  `["Class", "staticMethod"]`, and `[$object, "method"]` subset, including
-  `__call`-capable objects, invokable objects with declared public `__invoke`,
-  and syntax-only checks. First-class callable syntax, non-public visibility,
-  `__callStatic`, and arbitrary dynamic instance method metadata remain
-  post-RC.
+  `__call`. Objects with inherited public `__invoke` can be called directly or
+  through supported internal callbacks. `is_callable()` validates the current
+  string, closure, `["Class", "staticMethod"]`, `[$object, "method"]`, and
+  invokable-object subset, including `__call`-capable objects and syntax-only
+  checks. First-class callable syntax, non-public visibility, `__callStatic`,
+  and arbitrary dynamic instance method metadata remain post-RC.
 - Object destructuring and object `Traversable` remain unsupported; current
   destructuring support is array/list lvalues.
 - Property lvalues remain post-RC outside public property `??=`, modeled
@@ -941,13 +941,14 @@ Post-RC architecture remains explicit rather than hidden:
   operands throw modeled `TypeError`s; property-name arguments use the current
   weak string-argument coercion path.
 - `is_callable()` over current string, closure, static method array, object
-  method array, and invokable object callable values, including inherited
-  public object methods, supported `__call` fallback, and the optional
-  syntax-only flag. The third by-reference callable-name output parameter is
-  not yet supported.
+  method array, and public `__invoke` object callable values, including
+  inherited public object methods, supported `__call` fallback, inherited
+  `__invoke`, and the optional syntax-only flag. Plain objects without
+  `__invoke` are not callable, including in syntax-only mode. The third
+  by-reference callable-name output parameter is not yet supported.
 - `call_user_func()` dispatches current string, closure, static method array,
-  object method array, and invokable object callable values through the shared
-  callable path, including user-function `global` bindings.
+  object method array, and public `__invoke` object callable values through
+  the shared callable path, including user-function `global` bindings.
 - `call_user_func_array()` expands current ordered-array argument values through
   the shared callable dispatch path, preserving reference entries for the
   current by-reference callable subset. Unreferenced values passed to
@@ -1073,12 +1074,13 @@ Post-RC architecture remains explicit rather than hidden:
   cleanup as other declared instance methods. Missing direct and callable
   object method dispatch falls through to inherited public
   `__call($name, $args)` when present; the generated helper supplies the
-  attempted method name and an ordered argument array. Public declared
-  `__invoke` methods make objects callable for direct dynamic calls and current
-  callback helpers. `is_callable()` reports the supported string, closure,
-  static-method array, object-method array, inherited method, invokable object,
-  and `__call` fallback subset, with optional syntax-only checks for valid
-  callable shapes.
+  attempted method name and an ordered argument array. Objects with inherited
+  public `__invoke` can be called directly as `$object(...)` and through
+  `call_user_func()`/`call_user_func_array()` using the same declared-method
+  dispatch. `is_callable()` reports
+  the supported string, closure, static-method array, object-method array,
+  invokable-object, inherited method, and `__call` fallback subset, with
+  optional syntax-only checks for valid callable shapes.
 - Public static property declarations in top-level classes, using the supported
   constant-expression default subset. Generated native code initializes
   declaration-backed static slots before top-level statements, supports

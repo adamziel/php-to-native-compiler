@@ -7930,6 +7930,7 @@ $dynamic = $child;
 echo $child(\"direct\"), \"\\n\";
 echo $dynamic(\"dynamic\"), \"\\n\";
 echo call_user_func($child, \"user\"), \"\\n\";
+echo call_user_func_array($child, [\"array\"]), \"\\n\";
 var_dump(is_callable($child));
 var_dump(is_callable($child, true));
 var_dump(is_callable(new Plain()));
@@ -7948,6 +7949,7 @@ var_dump(is_callable(new Plain(), true));
             "base:direct\n",
             "base:dynamic\n",
             "base:user\n",
+            "base:array\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
@@ -7957,11 +7959,10 @@ var_dump(is_callable(new Plain(), true));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_has_invoke_magic"));
     assert!(c_source.contains("ptn_call_declared_method(runtime, resolved, \"__invoke\""));
-    assert!(c_source.contains(
-        "ptn_declared_class_method_exists(resolved.as.object->class_name, \"__invoke\")"
-    ));
     assert!(c_source.contains("InvokableBase::__invoke"));
+    assert!(c_source.contains("ptn_call_callable(&runtime"));
 }
 
 #[test]

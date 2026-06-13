@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T14:41Z
-Measured: `ptn-yolh` `strpbrk()` integration on `origin/master`
+Last refresh: 2026-06-13T14:49Z
+Measured: `ptn-s77w` inherited invokable-callable integration on
 
 ## Operating Goal
 

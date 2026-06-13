@@ -40,10 +40,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string escaping.
-- `pow()` uses the boxed exponentiation helper, and callback dispatch observes
-  `global` bindings for user functions reached through direct calls,
-  `call_user_func()`, `call_user_func_array()`, and invokable objects with
-  declared public `__invoke`.
+- `pow()` uses the boxed exponentiation helper, `call_user_func_array()`
+  expands ordered arrays through callable dispatch, callback dispatch observes
+  `global` bindings for user functions reached through direct calls, and
+  public `__invoke` objects can be called directly or through callback
+  dispatch.
 - `assert()` throws catchable `AssertionError`; bounded `highlight_file()`
   shares file-return paths.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,
