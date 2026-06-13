@@ -665,12 +665,13 @@ Post-RC architecture remains explicit rather than hidden:
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
 - `str_replace()` over current scalar and stringable-object search,
-  replacement, and subject operands after scalar string conversion, returning
-  the replaced byte string, writing the optional `$count` argument by
-  reference, and throwing catchable PHP-style `array|string` `TypeError`
-  diagnostics for invalid resource, closure, exception, and non-stringable
-  object operands. Array search/replacement/subject forms remain outside the
-  current bounded path.
+  replacement, and subject operands after scalar string conversion, plus
+  ordered-array search/replacement lists and subject arrays for the current
+  scalar/stringable value subset. Replacements run left-to-right, missing
+  replacement-list entries use the empty string, subject arrays preserve keys,
+  and the optional `$count` argument accumulates replacements by reference.
+  Invalid top-level resource, closure, exception, and non-stringable object
+  operands throw catchable PHP-style `array|string` `TypeError` diagnostics.
 - `ceil()` and `floor()` over current boxed scalar values after PHP numeric
   parameter conversion, returning boxed floats. `null` emits the modeled
   deprecation and yields `0.0`; booleans, integers, floats, fully numeric
@@ -1201,9 +1202,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `soundex()` locale/non-ASCII behavior plus resource/reference operand
   parity and object string conversion outside the current public declared
   `__toString()` support.
-- Complete `str_replace()` array search/replacement/subject semantics,
-  array-to-string warnings, and nested replacement-count parity beyond the
-  current scalar bounded path.
+- Complete `str_replace()` array-to-string warning parity and resource,
+  reference, non-stringable object, and nested replacement-count edge parity
+  beyond the current ordered-array operand slice.
 - Complete non-finite comparison parity for unsupported arrays, objects,
   resources, and references.
 - Remaining PHP float precision and formatting edge cases plus

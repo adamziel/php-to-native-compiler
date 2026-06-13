@@ -4884,6 +4884,61 @@ str_replace(): Argument #3 ($subject) must be of type array|string, resource giv
 }
 
 #[test]
+fn compile_str_replace_array_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-array-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-array-operands.php");
+    let output = root.join("str-replace-array-operands-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$count = -1;\n\
+var_dump(str_replace([\"a\", \"b\"], [\"x\"], [\"first\" => \"abc\", 2 => \"baba\"], $count));\n\
+var_dump($count);\n\
+var_dump(str_replace([\"a\", \"x\"], [\"x\", \"y\"], \"a\", $count));\n\
+var_dump($count);\n\
+var_dump(str_replace([\"\", \"a\"], [\"z\", \"q\"], \"a\", $count));\n\
+var_dump($count);\n\
+var_dump(str_replace(\"a\", \"x\", [\"left\" => \"a\", \"right\" => \"ba\"], $count));\n\
+var_dump($count);\n\
+try { str_replace([new stdClass], \"x\", \"Object?\"); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array(2) {\n",
+            "  [\"first\"]=>\n",
+            "  string(2) \"xc\"\n",
+            "  [2]=>\n",
+            "  string(2) \"xx\"\n",
+            "}\n",
+            "int(6)\n",
+            "string(1) \"y\"\n",
+            "int(2)\n",
+            "string(1) \"q\"\n",
+            "int(1)\n",
+            "array(2) {\n",
+            "  [\"left\"]=>\n",
+            "  string(1) \"x\"\n",
+            "  [\"right\"]=>\n",
+            "  string(2) \"bx\"\n",
+            "}\n",
+            "int(2)\n",
+            "Object of class stdClass could not be converted to string\n"
+        )
+        .as_bytes()
+        .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();
