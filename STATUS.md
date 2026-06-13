@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T20:23Z
-Measured: `ptn-550s.8` array_walk COW residual slice after `ptn-qsmv.10`.
+Last refresh: 2026-06-13T20:29Z
+Measured: `ptn-flje` broad COW/reference frontier after `ptn-550s.8`.
 
 ## Operating Goal
 

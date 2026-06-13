@@ -1,13 +1,12 @@
 # PTN Progress
 
-Refresh: 2026-06-13T20:23Z
-Measured: `ptn-550s.8` array_walk COW residual slice after `ptn-qsmv.10`.
+Refresh: 2026-06-13T20:29Z
+Measured: `ptn-flje` broad COW/reference frontier after `ptn-550s.8`.
 
 Recent RC slices cover constants, includes, closures/arrow functions, object
 callables, PHPT blockers, streams, filesystem/path helpers, strings,
-asymmetric property set visibility, COW maps, function-boundary PHPT, quiet
-string-offset diagnostics, foreach/reference COW classification, and
-non-recursive `array_walk()` callback/userdata separation.
+asymmetric property set visibility, COW maps, quiet string-offset diagnostics,
+`array_walk()` userdata separation, and broad COW blocker mapping.
 
 ## Dashboard
 
@@ -47,16 +46,14 @@ non-recursive `array_walk()` callback/userdata separation.
 
 ## Verification
 
-`ptn-550s.8` reruns the seven residual non-recursive `array_walk()` rows from
-the COW follow-up. Six runnable rows now pass: `array_walk_error2`,
-`array_walk_variation3`, `array_walk_variation6`, `array_walk_variation8`,
-`bug12776`, and `bug61730`; `bug39576` is classified as class-metadata because
-it needs `get_object_vars()` property-table export and property array-dimension
-lvalues before the userdata path.
+`ptn-flje` adds `tools/phpt-cow-broad-frontier-manifest.txt` and
+`docs/COW_BROAD_FRONTIER_BLOCKERS_2026-06-13.md`: current classify-only is
+46 selected, 31 runnable, 15 excluded. Historical worker execution before
+newer classifier blockers ran 42 rows, passed 11, and failed 31. Follow-ups
+are `ptn-begn`, `ptn-8d2u`, `ptn-1om3`, `ptn-vwyp`, and `ptn-f0rp`.
 
-`ptn-qsmv.10` lowers `fn`/`static fn` through closures with implicit by-value
-captures, nested capture propagation, by-reference returns, typed/variadic
-params, quiet missing-capture reads, and static-fn `$this` exclusion.
+`ptn-550s.8` reruns seven residual non-recursive `array_walk()` rows: six pass
+and `bug39576` is classified as class-metadata before the userdata path.
 
 Recent COW gates remain: `ptn-550s.5` string/scalar alias PHPT 23/23,
 `ptn-550s.4` COW manifest 54/54, and `ptn-550s.3` array-internal COW frontier

@@ -1,0 +1,71 @@
+# Broad PHPT COW/reference frontier rows.
+#
+# These rows are the broad 5k COW-sensitive rows that were listed as runnable
+# in docs/COW_BROAD_PHPT_RISK_MAP_2026-06-13.md but were not already covered by
+# tools/phpt-cow-manifest.txt. They intentionally mix passing rows with known
+# blocker rows so classify-only and execution evidence can track the remaining
+# prerequisite clusters.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+#
+# Run:
+#   tools/run-bounded-phpt.sh --classify-only tools/phpt-cow-broad-frontier-manifest.txt
+#   tools/run-bounded-phpt.sh tools/phpt-cow-broad-frontier-manifest.txt
+
+# bucket: reference-calls-and-diagnostics rows=12
+Zend/tests/__debugInfo_reference.phpt
+Zend/tests/add_optional_by_ref_arg.phpt
+Zend/tests/array_append_by_reference.phpt
+Zend/tests/array_unshift_COW.phpt
+Zend/tests/assign_ref_error_var_handling.phpt
+Zend/tests/bw_or_assign_with_ref.phpt
+Zend/tests/by_ref_optimization.phpt
+Zend/tests/call_user_functions/call_user_func_array_prefer_ref.phpt
+Zend/tests/call_user_functions/call_user_func_by_ref.phpt
+Zend/tests/div_by_zero_compound_refcounted.phpt
+Zend/tests/function_arguments/sensitive_parameter_value_reflection.phpt
+Zend/tests/indirect_reference_this.phpt
+
+# bucket: closure-reference-boundaries rows=7
+Zend/tests/closures/closure_bindTo_preserves_used_variables.phpt
+Zend/tests/closures/closure_from_callable_reflection.phpt
+Zend/tests/closures/closure_invoke_ref_warning.phpt
+Zend/tests/closures/closure_use_auto_global.phpt
+Zend/tests/closures/closure_use_parameter_name.phpt
+Zend/tests/closures/closure_use_trailing_comma.phpt
+Zend/tests/closures/closure_use_variable_twice.phpt
+
+# bucket: object-property-reference-targets rows=5
+Zend/tests/assign_obj_ref_byval_function.phpt
+Zend/tests/assign_obj_ref_return.phpt
+Zend/tests/assign_ref_to_overloaded_prop.phpt
+Zend/tests/exceptions/exception_getters_with_ref_props.phpt
+Zend/tests/foreach/foreach_by_ref_to_property.phpt
+
+# bucket: foreach-reference-control rows=4
+Zend/tests/foreach/foreach.phpt
+Zend/tests/foreach/foreach_005.phpt
+Zend/tests/foreach/foreach_unset_globals.phpt
+Zend/tests/foreach/goto_in_foreach.phpt
+
+# bucket: generator-fiber-reference-boundaries rows=12
+Zend/tests/fibers/return-by-ref.phpt
+Zend/tests/generators/errors/non_ref_generator_iterated_by_ref_error.phpt
+Zend/tests/generators/errors/yield_const_by_ref_error.phpt
+Zend/tests/generators/errors/yield_non_ref_function_call_by_ref_error.phpt
+Zend/tests/generators/gc_with_iterator_in_foreach.phpt
+Zend/tests/generators/no_foreach_var_leaks.phpt
+Zend/tests/generators/return_from_by_ref_generator.phpt
+Zend/tests/generators/yield_array_offset_by_ref.phpt
+Zend/tests/generators/yield_by_reference.phpt
+Zend/tests/generators/yield_by_reference_optimization.phpt
+Zend/tests/generators/yield_from_by_reference.phpt
+Zend/tests/generators/yield_ref_function_call_by_reference.phpt
+
+# bucket: array-internal-reference-parity rows=6
+ext/standard/tests/array/array_filter.phpt
+ext/standard/tests/array/array_replace.phpt
+ext/standard/tests/array/array_replace_merge_recursive_ref.phpt
+ext/standard/tests/array/array_shift_basic.phpt
+ext/standard/tests/array/array_splice_basic.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive.phpt

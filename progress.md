@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T20:23Z
+Last refresh: 2026-06-13T20:29Z
 Source: `PROGRESS.md`
-Measured: `ptn-550s.8` array_walk COW residual slice after `ptn-qsmv.10`.
+Measured: `ptn-flje` broad COW/reference frontier after `ptn-550s.8`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 670/670; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
