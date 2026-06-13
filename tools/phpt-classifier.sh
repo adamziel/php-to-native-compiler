@@ -50,6 +50,30 @@ ptn_phpt_classify_harness_programs() {
     [[ "${PTN_PHPT_CLASSIFY_HARNESS_PROGRAMS:-0}" == "1" ]]
 }
 
+ptn_phpt_php_int_size() {
+    if [[ -n "${PTN_PHPT_PHP_INT_SIZE:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_PHP_INT_SIZE"
+        return 0
+    fi
+
+    local bits
+    bits=$(getconf LONG_BIT 2>/dev/null || printf '64')
+    if [[ "$bits" -ge 64 ]]; then
+        printf '8\n'
+    else
+        printf '4\n'
+    fi
+}
+
+ptn_phpt_available_locales() {
+    if [[ -n "${PTN_PHPT_AVAILABLE_LOCALES:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_AVAILABLE_LOCALES" | tr ',:' '\n'
+        return 0
+    fi
+
+    locale -a 2>/dev/null || printf 'C\nPOSIX\n'
+}
+
 ptn_phpt_lower() {
     local value=$1
     printf '%s' "${value,,}"
@@ -159,6 +183,284 @@ ptn_phpt_first_section_in_sections_csv() {
     done
     IFS=$old_ifs
     return 1
+}
+
+ptn_phpt_squash_ws() {
+    sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'
+}
+
+ptn_phpt_skipif_code() {
+    local path=$1
+
+    ptn_phpt_section "$path" SKIPIF \
+        | tr '\n' ' ' \
+        | sed -E 's/<\?php//g; s/\?>//g' \
+        | ptn_phpt_squash_ws
+}
+
+ptn_phpt_strip_php_strings() {
+    LC_ALL=C awk '
+        {
+            quote = ""
+            escaped = 0
+            out = ""
+            for (i = 1; i <= length($0); i++) {
+                ch = substr($0, i, 1)
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    out = out " "
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    out = out " "
+                    continue
+                }
+                out = out ch
+            }
+            print out
+        }
+    '
+}
+
+ptn_phpt_php_string_literals() {
+    LC_ALL=C awk '
+        {
+            quote = ""
+            escaped = 0
+            value = ""
+            for (i = 1; i <= length($0); i++) {
+                ch = substr($0, i, 1)
+                if (quote != "") {
+                    if (escaped) {
+                        value = value ch
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        print value
+                        quote = ""
+                        value = ""
+                    } else {
+                        value = value ch
+                    }
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                }
+            }
+        }
+    '
+}
+
+ptn_phpt_count_matches() {
+    local pattern=$1
+    local text=$2
+    local matches
+    matches=$(printf '%s\n' "$text" | grep -Eo "$pattern" || true)
+    if [[ -z "$matches" ]]; then
+        printf '0\n'
+    else
+        printf '%s\n' "$matches" | wc -l | tr -d ' '
+    fi
+}
+
+ptn_phpt_eval_int_condition() {
+    local actual=$1
+    local op=$2
+    local expected=$3
+
+    case "$op" in
+        '!='|'!==') [[ "$actual" -ne "$expected" ]] ;;
+        '=='|'===') [[ "$actual" -eq "$expected" ]] ;;
+        '<') [[ "$actual" -lt "$expected" ]] ;;
+        '<=') [[ "$actual" -le "$expected" ]] ;;
+        '>') [[ "$actual" -gt "$expected" ]] ;;
+        '>=') [[ "$actual" -ge "$expected" ]] ;;
+        *) return 1 ;;
+    esac
+}
+
+ptn_phpt_normalized_locale_name() {
+    local value
+    value=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
+    value=${value//utf-8/utf8}
+    value=${value//-/_}
+    printf '%s\n' "$value"
+}
+
+ptn_phpt_locale_candidate_available() {
+    local candidate=$1
+    local normalized_candidate
+    normalized_candidate=$(ptn_phpt_normalized_locale_name "$candidate")
+    [[ -n "$normalized_candidate" ]] || return 1
+
+    local available
+    local normalized_available
+    while IFS= read -r available; do
+        normalized_available=$(ptn_phpt_normalized_locale_name "$available")
+        [[ -n "$normalized_available" ]] || continue
+        if [[ "$normalized_available" == "$normalized_candidate" ]]; then
+            return 0
+        fi
+        if [[ "$normalized_candidate" != *_* && "$normalized_available" == "$normalized_candidate"_* ]]; then
+            return 0
+        fi
+    done < <(ptn_phpt_available_locales)
+
+    return 1
+}
+
+ptn_phpt_skipif_locale_candidates() {
+    local code=$1
+    local literal
+
+    printf '%s\n' "$code" | ptn_phpt_php_string_literals | while IFS= read -r literal; do
+        literal=$(ptn_phpt_trim "$literal")
+        [[ -n "$literal" ]] || continue
+        case "$(ptn_phpt_lower "$literal")" in
+            invalid|skip*|xleak*) continue ;;
+        esac
+        if [[ "$literal" =~ [[:space:]] ]]; then
+            continue
+        fi
+        printf '%s\n' "$literal"
+    done
+}
+
+ptn_phpt_modeled_skipif_precondition() {
+    local path=$1
+    local code
+    local code_without_strings
+    code=$(ptn_phpt_skipif_code "$path")
+    [[ -n "$code" ]] || return 1
+
+    code_without_strings=$(printf '%s\n' "$code" | ptn_phpt_strip_php_strings | ptn_phpt_squash_ws)
+
+    local identifier
+    while IFS= read -r identifier; do
+        [[ -n "$identifier" ]] || continue
+        case "$identifier" in
+            if|getenv|die|exit|echo|print|PHP_INT_SIZE|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    done < <(printf '%s\n' "$code_without_strings" | grep -Eo '[A-Za-z_][A-Za-z0-9_]*' || true)
+
+    local if_count
+    local output_count
+    local getenv_count
+    local php_int_count
+    local setlocale_count
+    if_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])if[[:space:]]*\(' "$code_without_strings")
+    output_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(die|exit|echo|print)([[:space:]]*\(|[[:space:]])' "$code_without_strings")
+    getenv_count=$(ptn_phpt_count_matches 'getenv[[:space:]]*\(' "$code_without_strings")
+    php_int_count=$(ptn_phpt_count_matches 'PHP_INT_SIZE' "$code_without_strings")
+    setlocale_count=$(ptn_phpt_count_matches 'setlocale[[:space:]]*\(' "$code_without_strings")
+
+    local env_probe_lines
+    local parsed_env_count=0
+    env_probe_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "getenv[[:space:]]*\\([[:space:]]*['\"][A-Za-z_][A-Za-z0-9_]*['\"][[:space:]]*\\)" \
+        || true)
+    local env_var
+    local -a modeled_families=()
+    if [[ -n "$env_probe_lines" ]]; then
+        while IFS= read -r env_var; do
+            env_var=$(printf '%s\n' "$env_var" | sed -E "s/.*['\"]([^'\"]+)['\"].*/\\1/")
+            case "$env_var" in
+                SKIP_ASAN|SKIP_MSAN|SKIP_UBSAN|SKIP_PERF_SENSITIVE)
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+            parsed_env_count=$((parsed_env_count + 1))
+            if [[ -n "${!env_var:-}" ]]; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- sanitizer/environment gate requires %s unset; current environment sets it\n' "$env_var"
+                return 0
+            fi
+        done <<< "$env_probe_lines"
+        modeled_families+=("sanitizer-env")
+    fi
+    [[ "$getenv_count" -eq "$parsed_env_count" ]] || return 1
+
+    local int_condition_lines
+    local parsed_int_count=0
+    local int_size
+    int_size=$(ptn_phpt_php_int_size)
+    int_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo 'PHP_INT_SIZE[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*[0-9]+' \
+        || true)
+    local condition
+    local op
+    local expected
+    if [[ -n "$int_condition_lines" ]]; then
+        while IFS= read -r condition; do
+            op=$(printf '%s\n' "$condition" | sed -E 's/PHP_INT_SIZE[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*([0-9]+)/\1/')
+            expected=$(printf '%s\n' "$condition" | sed -E 's/PHP_INT_SIZE[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*([0-9]+)/\2/')
+            parsed_int_count=$((parsed_int_count + 1))
+            if ptn_phpt_eval_int_condition "$int_size" "$op" "$expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_INT_SIZE guard skips when PHP_INT_SIZE %s %s; modeled PHP_INT_SIZE=%s\n' \
+                    "$op" "$expected" "$int_size"
+                return 0
+            fi
+        done <<< "$int_condition_lines"
+        modeled_families+=("PHP_INT_SIZE")
+    fi
+    [[ "$php_int_count" -eq "$parsed_int_count" ]] || return 1
+
+    local locale_invalid_count
+    local locale_availability_count
+    local parsed_locale_count=0
+    locale_invalid_count=$(ptn_phpt_count_matches "setlocale[[:space:]]*\\([[:space:]]*LC_ALL[[:space:]]*,[[:space:]]*['\"]invalid['\"][[:space:]]*\\)[[:space:]]*===[[:space:]]*['\"]invalid['\"]" "$code")
+    locale_availability_count=$(ptn_phpt_count_matches '![[:space:]]*setlocale[[:space:]]*\([[:space:]]*LC_ALL[[:space:]]*,' "$code_without_strings")
+    if [[ "$locale_invalid_count" -gt 0 ]]; then
+        parsed_locale_count=$((parsed_locale_count + locale_invalid_count))
+        if ptn_phpt_locale_candidate_available invalid; then
+            printf 'skipif-precondition\tmodeled static --SKIPIF-- locale sanity guard rejects platforms accepting invalid locale names\n'
+            return 0
+        fi
+    fi
+    if [[ "$locale_availability_count" -gt 0 ]]; then
+        parsed_locale_count=$((parsed_locale_count + locale_availability_count))
+        local candidates
+        candidates=$(ptn_phpt_skipif_locale_candidates "$code" | sort -u)
+        [[ -n "$candidates" ]] || return 1
+        local candidate
+        local found_locale=0
+        while IFS= read -r candidate; do
+            if ptn_phpt_locale_candidate_available "$candidate"; then
+                found_locale=1
+                break
+            fi
+        done <<< "$candidates"
+        if [[ "$found_locale" -eq 0 ]]; then
+            printf 'skipif-precondition\tmodeled static --SKIPIF-- locale availability guard requires one listed locale candidate; none are available in modeled host locale set\n'
+            return 0
+        fi
+        modeled_families+=("locale-availability")
+    fi
+    [[ "$setlocale_count" -eq "$parsed_locale_count" ]] || return 1
+
+    local recognized_count=$((parsed_env_count + parsed_int_count + parsed_locale_count))
+    [[ "$recognized_count" -gt 0 ]] || return 1
+    [[ "$if_count" -eq "$recognized_count" ]] || return 1
+    [[ "$output_count" -eq "$recognized_count" ]] || return 1
+
+    local old_ifs=$IFS
+    IFS=,
+    printf 'modeled-skipif\tmodeled static --SKIPIF-- preconditions satisfied: %s\n' "${modeled_families[*]}"
+    IFS=$old_ifs
 }
 
 ptn_phpt_manifest_row() {
@@ -850,6 +1152,8 @@ ptn_phpt_classify_row() {
     local rel=$row
     local sections
     local value
+    local modeled_skipif_reason=""
+    local unmodeled_skipif=0
 
     if [[ -n "$php_src" ]]; then
         rel=$(ptn_phpt_manifest_row "$row" "$php_src")
@@ -902,6 +1206,21 @@ ptn_phpt_classify_row() {
         fi
     fi
 
+    if ptn_phpt_classify_harness_programs && ptn_phpt_csv_contains_ci "SKIPIF" "$sections"; then
+        if value=$(ptn_phpt_modeled_skipif_precondition "$path"); then
+            local skipif_category=${value%%$'\t'*}
+            local skipif_reason=${value#*$'\t'}
+            if [[ "$skipif_category" == "modeled-skipif" ]]; then
+                modeled_skipif_reason=$skipif_reason
+            else
+                printf '%s\n' "$value"
+                return 0
+            fi
+        else
+            unmodeled_skipif=1
+        fi
+    fi
+
     if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_unsupported_sections)"); then
         printf 'sapi-behavior\trequires unsupported PHPT section --%s--\n' "$value"
         return 0
@@ -942,11 +1261,16 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
-    if ptn_phpt_classify_harness_programs; then
+    if [[ "$unmodeled_skipif" -eq 1 ]]; then
         if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_skipif_harness_sections)"); then
             printf 'harness-skipif\trequires PHPT harness precondition section --%s-- evaluated before measured program output\n' "$value"
             return 0
         fi
+    fi
+
+    if [[ -n "$modeled_skipif_reason" ]]; then
+        printf 'runnable\tselected for PTN semantic measurement; %s\n' "$modeled_skipif_reason"
+        return 0
     fi
 
     printf 'runnable\tselected for PTN semantic measurement\n'

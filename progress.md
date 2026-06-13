@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T23:24Z
+Last refresh: 2026-06-13T23:38Z
 Source: `PROGRESS.md`
-Measured: `ptn-5sca` property references after `ptn-begn`.
+Measured: `ptn-awta` static SKIPIF preconditions after `ptn-5sca`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 698/698; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 701/701; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 698/698 |
+| Native/compiler Rust suite | 701/701 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -29,7 +29,6 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 698/698; Nativ
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |
 | PHPT formatted string rows | 25/75 |
-| PHPT string/scalar alias rows | 23/35 |
 | PHPT broad 1k baseline | 265/1000 |
 
 Canonical dashboard: `PROGRESS.md`. Regenerate with

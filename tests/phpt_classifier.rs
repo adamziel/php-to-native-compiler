@@ -18,13 +18,34 @@ fn classify(body: &str) -> String {
 }
 
 fn classify_with_harness_programs(body: &str, enabled: bool) -> String {
+    classify_with_harness_programs_and_env(body, enabled, &[])
+}
+
+fn classify_with_harness_programs_and_env(
+    body: &str,
+    enabled: bool,
+    env: &[(&str, &str)],
+) -> String {
     let root = temp_dir("ptn-phpt-classifier");
     let phpt = root.join("case.phpt");
     fs::write(&phpt, body).expect("write PHPT");
 
     let mut command = Command::new("bash");
+    for key in [
+        "PTN_PHPT_AVAILABLE_LOCALES",
+        "PTN_PHPT_PHP_INT_SIZE",
+        "SKIP_ASAN",
+        "SKIP_MSAN",
+        "SKIP_UBSAN",
+        "SKIP_PERF_SENSITIVE",
+    ] {
+        command.env_remove(key);
+    }
     if enabled {
         command.env("PTN_PHPT_CLASSIFY_HARNESS_PROGRAMS", "1");
+    }
+    for (key, value) in env {
+        command.env(key, value);
     }
     let output = command
         .arg("-c")
@@ -50,6 +71,62 @@ fn phpt_classifier_skipif_harness_is_opt_in() {
     let classification = classify_with_harness_programs(skipif, true);
     assert!(
         classification.starts_with("harness-skipif\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_models_static_skipif_preconditions() {
+    let sanitizer = "--TEST--\nsanitizer\n--SKIPIF--\n<?php\nif (getenv('SKIP_ASAN')) die('skip asan');\nif (getenv('SKIP_MSAN')) die('skip msan');\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(sanitizer, true);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("sanitizer-env"),
+        "{classification:?}"
+    );
+
+    let classification =
+        classify_with_harness_programs_and_env(sanitizer, true, &[("SKIP_ASAN", "1")]);
+    assert!(
+        classification.starts_with("skipif-precondition\t") && classification.contains("SKIP_ASAN"),
+        "{classification:?}"
+    );
+
+    let int64 = "--TEST--\nint64\n--SKIPIF--\n<?php if (PHP_INT_SIZE != 8) die('skip 64-bit only'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification =
+        classify_with_harness_programs_and_env(int64, true, &[("PTN_PHPT_PHP_INT_SIZE", "8")]);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PHP_INT_SIZE"),
+        "{classification:?}"
+    );
+
+    let int32 = "--TEST--\nint32\n--SKIPIF--\n<?php if (PHP_INT_SIZE != 4) die('skip 32-bit only'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification =
+        classify_with_harness_programs_and_env(int32, true, &[("PTN_PHPT_PHP_INT_SIZE", "8")]);
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("PHP_INT_SIZE guard"),
+        "{classification:?}"
+    );
+
+    let locale = "--TEST--\nlocale\n--SKIPIF--\n<?php\nif (!setlocale(LC_ALL, \"de_DE.UTF-8\", \"fr_FR.UTF-8\")) {\n    die('skip locale needed');\n}\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs_and_env(
+        locale,
+        true,
+        &[("PTN_PHPT_AVAILABLE_LOCALES", "C:de_DE.utf8")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("locale-availability"),
+        "{classification:?}"
+    );
+
+    let classification = classify_with_harness_programs_and_env(
+        locale,
+        true,
+        &[("PTN_PHPT_AVAILABLE_LOCALES", "C:POSIX")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("locale availability guard"),
         "{classification:?}"
     );
 }

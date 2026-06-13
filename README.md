@@ -148,8 +148,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   and currently unmodeled mutating array-internal helpers such as
   `array_multisort()`, `usort()`, `uasort()`, and `uksort()` plus
   destructor-reentrant `array_splice()` cases are mapped to blocker categories
-  with source evidence; broad
-  baseline runs also opt into `--SKIPIF--` precondition harness classification.
+  with source evidence; broad baseline runs also opt into `--SKIPIF--`
+  precondition harness classification,
+  with static modeling for sanitizer environment gates, `PHP_INT_SIZE`
+  comparisons, and host locale availability while arbitrary harness PHP remains
+  excluded.
   `PTN_PHPT_CLASSIFY=0` gives raw php-src `run-tests.php` pass-through.
 - Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from
   `Zend/tests`, `ext/standard/tests`, and core `tests`, recording the php-src
