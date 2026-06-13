@@ -513,32 +513,34 @@ fn emit_user_functions(
                 out.push_str(", \"");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\", line);\n");
-                if let Some(temp) = &parameter_cast_temp {
-                    emit_value_cleanup(out, "            ", temp);
-                }
-                out.push_str("            ptn_runtime_free(&runtime);\n");
-                out.push_str("            return ptn_null();\n");
-                out.push_str("        }\n");
-                out.push_str("        ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
+                out.push_str("            ptn_runtime_write_variable(&runtime, \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\", ");
+                out.push_str(&parameter_value);
+                out.push_str(");\n");
+                out.push_str("        } else {\n");
+                out.push_str("            ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
                 out.push_str(&c_string(&function.name));
                 out.push_str("\"), ");
                 out.push_str(&(parameter_index + 1).to_string());
                 out.push_str(", \"");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\");\n");
-                out.push_str("    }\n");
+                out.push_str("        }\n");
+                out.push_str("    } else {\n");
                 if let Some(temp) = &parameter_cast_temp {
-                    out.push_str("    ptn_reference_assign(");
+                    out.push_str("        ptn_reference_assign(");
                     out.push_str(&parameter_source);
                     out.push_str(".as.reference, ");
                     out.push_str(temp);
                     out.push_str(");\n");
                 }
-                out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+                out.push_str("        ptn_runtime_bind_variable_reference(&runtime, \"");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\", ");
                 out.push_str(&parameter_source);
                 out.push_str(");\n");
+                out.push_str("    }\n");
                 if default_guard.is_some() {
                     out.push_str("    } else {\n");
                     out.push_str("        ptn_runtime_write_variable(&runtime, \"");
@@ -3918,6 +3920,13 @@ fn emit_only_variables_assigned_by_reference_notice(out: &mut String, indent: &s
     out.push_str(");\n");
 }
 
+fn emit_only_variables_passed_by_reference_notice(out: &mut String, indent: &str, line: usize) {
+    out.push_str(indent);
+    out.push_str("ptn_emit_only_variables_passed_by_reference_notice(&runtime.diagnostics, ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+}
+
 fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
     match value {
         ValueExpr::Load { name, line } => Some(ReferenceTarget::Variable {
@@ -3927,6 +3936,15 @@ fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
         ValueExpr::ArrayAccess { .. } => reference_array_dim_target_from_value(value),
         _ => None,
     }
+}
+
+fn by_ref_temporary_argument_allowed(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::InternalCall { .. }
+            | ValueExpr::DynamicCall { .. }
+            | ValueExpr::MethodCall { .. }
+    )
 }
 
 fn reference_array_dim_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
@@ -5234,10 +5252,10 @@ impl ValueEmitter {
         out.push_str(&source_temp);
         out.push_str("));\n");
         out.push_str("    } else {\n");
+        let stored_temp = self.emit_store_assignment_target_from_temp(out, target, &source_temp);
         if !self.source_is_declared_by_ref_call(source) {
             emit_only_variables_assigned_by_reference_notice(out, "        ", target.line());
         }
-        let stored_temp = self.emit_store_assignment_target_from_temp(out, target, &source_temp);
         out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
@@ -8492,6 +8510,8 @@ impl ValueEmitter {
                     name,
                     argument_index,
                     &parameter.name,
+                    line,
+                    true,
                 ));
             } else if let Some(parameter_name) =
                 internal_by_ref_parameter_name(name, argument_index)
@@ -8502,6 +8522,8 @@ impl ValueEmitter {
                     name,
                     argument_index,
                     parameter_name,
+                    line,
+                    false,
                 ));
             } else {
                 temps.push(self.emit_call_argument(out, name, argument_index, argument));
@@ -8581,7 +8603,15 @@ impl ValueEmitter {
                 .get(slot_index)
                 .filter(|parameter| parameter.by_ref);
             let temp = if let Some(parameter) = by_ref_parameter {
-                self.emit_by_ref_call_argument(out, argument, name, slot_index, &parameter.name)
+                self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    name,
+                    slot_index,
+                    &parameter.name,
+                    line,
+                    true,
+                )
             } else {
                 self.emit_call_argument(out, name, argument_index, argument)
             };
@@ -8941,10 +8971,24 @@ impl ValueEmitter {
         function_name: &str,
         argument_index: usize,
         parameter_name: &str,
+        line: usize,
+        allow_temporary: bool,
     ) -> String {
         match reference_target_from_value(argument) {
             Some(target) => self.emit_reference_target(out, &target),
             None => {
+                if allow_temporary && by_ref_temporary_argument_allowed(argument) {
+                    let value_temp = self.emit_materialized_value(out, argument);
+                    emit_only_variables_passed_by_reference_notice(out, "    ", line);
+                    let reference_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&reference_temp);
+                    out.push_str(" = ptn_reference_value(ptn_reference_new_owned(ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&value_temp);
+                    out.push_str("))));\n");
+                    emit_value_cleanup(out, "    ", &value_temp);
+                    return reference_temp;
+                }
                 let temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&temp);
@@ -8997,7 +9041,7 @@ impl ValueEmitter {
 
         let mut temps = Vec::with_capacity(arguments.len());
         for argument in arguments {
-            temps.push(self.emit_materialized_value(out, argument));
+            temps.push(self.emit_dynamic_call_argument(out, argument));
         }
         let args_temp = self.next_temp();
         out.push_str("    PtnValue ");

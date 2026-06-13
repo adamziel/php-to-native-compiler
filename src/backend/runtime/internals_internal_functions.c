@@ -2127,6 +2127,32 @@ static PtnValue ptn_internal_rsort(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_bool(1);
 }
 
+static PtnValue ptn_internal_array_multisort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    for (size_t i = 0; i < argc; i++) {
+        PtnValue value = ptn_value_deref(args[i]);
+        if (value.type != PTN_ARRAY) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "array_multisort(): Argument #%zu ($array) must be of type array, %s given",
+                i + 1,
+                ptn_offset_container_type_name(value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_type_error(&runtime->diagnostics, message);
+            exit(255);
+        }
+        if (args[i].type == PTN_REFERENCE && args[i].as.reference->value.type == PTN_ARRAY) {
+            ptn_array_sort_values(args[i].as.reference->value.as.array);
+        }
+    }
+    return ptn_bool(1);
+}
+
 static const char *ptn_array_aggregate_type_name(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_OBJECT) {
@@ -11314,6 +11340,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
         { "array_merge", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
+        { "array_multisort", 1, PTN_VARIADIC_ARGS, ptn_internal_array_multisort },
         { "array_pad", 3, 3, ptn_internal_array_pad },
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_product", 1, 1, ptn_internal_array_product },

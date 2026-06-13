@@ -1,18 +1,18 @@
 # PTN Progress
 
-Refresh: 2026-06-13T22:45Z
-Measured: `ptn-f0rp` array-internal COW helpers after `ptn-550s.11`.
+Refresh: 2026-06-13T23:15Z
+Measured: `ptn-begn` callable prefer-ref diagnostics after `ptn-f0rp`.
 
 Slices cover callable/object, filesystem/string, property, COW, PHPT blockers,
-readonly metadata, `throw`, Closure references, nested `foreach`, and
-array-internal COW helper parity.
+readonly metadata, `throw`, Closure refs, nested `foreach`, array-internal COW,
+and callable prefer-ref diagnostics.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 693 | 693 | 0 |
+| Native/compiler Rust suite | 697 | 697 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
@@ -27,6 +27,7 @@ array-internal COW helper parity.
 | PHPT nested foreach/reference rows | 3 | 2 | 1 |
 | PHPT array-internal COW frontier | 72 | 17 | 55 |
 | PHPT COW foreach/reference frontier | 103 | 31 | 72 |
+| PHPT broad reference-call bucket | 12 | 8 | 4 |
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT callback manifest | 5 | 5 | 0 |
 | PHPT include manifest | 2 | 2 | 0 |
@@ -38,29 +39,29 @@ array-internal COW helper parity.
 
 - Accepted bounded rows remain 485/485; classify-only reports 459 runnable and
   26 excluded outside the string slice.
-- Array-internal COW frontier is 72 selected, 17 runnable, 17 passing, and 55
-  excluded; foreach/reference COW frontier remains 103/51/31.
-- Zend arrow rows 001-004 pass; remaining rows need closure metadata, nullable
-  types, generator `yield`, or `assert.exception`.
+- Array-internal COW frontier is 72/17/17; foreach/reference COW frontier is
+  103/51/31.
+- Broad reference-call bucket is 12 selected, 11 runnable, 1 excluded, and
+  8 passing. Follow-ups: append-form by-ref call args, class-name type checks,
+  and `SensitiveParameterValue` reflection.
 
 ## Verification
 
-`ptn-f0rp` preserves references for `array_replace*()`, adds modeled
-`array_splice()` mutation, and walks recursive leaves through callback dispatch.
-Array-internal COW frontier evidence: 72 selected, 17 runnable, 55 excluded,
-17/17 passed. `ptn-550s.11` nested by-reference `foreach` evidence remains
-2/2 runnable rows with one plain variable-variable unset blocker. COW oracle
-matched PHP 13/13; post-merge COW gate passed 26/26; COW PHPT passed 54/54;
-smoke passed 6/6; build passed; inventory is 693 native/compiler plus
-3 source.
+`ptn-begn` centralizes by-reference call arguments across direct calls,
+`call_user_func*()`, declared methods, and bounded callable `array_multisort()`.
+Call-result temporaries emit modeled only-variables notices; fixed-parameter
+dynamic mismatches warn and use by-value locals; method calls preserve
+reference candidates; append-reference overflow has diagnostic precedence.
+Worker evidence: broad reference-call PHPT selected 12, runnable 11, excluded
+1, passed 8/11; residuals are `ptn-hpxo`, `ptn-yl7i`, and `ptn-6x02`.
+`ptn-f0rp` remains 17/17 on array-internal COW, COW PHPT 54/54, and COW gate
+26/26.
 
-Recent gates: `ptn-8d2u` Closure references passed; `ptn-qsmv.11` throw rows
-2/2 with blockers `ptn-5sca`, `ptn-c284`, `ptn-feps`; `ptn-qsmv.12` readonly
-5/5, classifier 15/15, Zend PHPT 8/8.
+Recent gates: `ptn-550s.11` nested foreach/reference 2/2 with one classified
+blocker; `ptn-8d2u` Closure refs passed; `ptn-qsmv.11` throw rows 2/2.
 
 Follow-ups remain typed properties, traits, magic methods, attributes,
 heredoc/nowdoc, declared `Exception` subclasses, property/reference edges,
-nullable types, generator `yield`, first-class callables, dynamic includes,
-unsupported internals, destructor-reentrant `array_splice()`, `Traversable`,
-INI modes, process boundaries, formatter/callback parity, and classifier
-batching.
+nullable types, generator `yield`, dynamic includes, unsupported internals,
+`Traversable`, INI modes, process boundaries, formatter/callback parity, and
+classifier batching.

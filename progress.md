@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T22:45Z
+Last refresh: 2026-06-13T23:15Z
 Source: `PROGRESS.md`
-Measured: `ptn-f0rp` array-internal COW helpers after `ptn-550s.11`.
+Measured: `ptn-begn` callable prefer-ref diagnostics after `ptn-f0rp`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 693/693; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 697/697; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 693/693 |
+| Native/compiler Rust suite | 697/697 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -24,6 +24,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 693/693; Nativ
 | PHPT nested foreach/reference rows | 2/3 |
 | PHPT array-internal COW frontier | 17/72 |
 | PHPT COW foreach/reference frontier | 31/103 |
+| PHPT broad reference-call bucket | 8/12 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |

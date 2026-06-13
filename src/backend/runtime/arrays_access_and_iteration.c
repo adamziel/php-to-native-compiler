@@ -1035,6 +1035,25 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_for_reference_write(
     return NULL;
 }
 
+static PTN_UNUSED int ptn_array_append_key_available(PtnRuntime *runtime, PtnArray *array) {
+    if (array->next_auto_key < INT64_MAX) {
+        for (size_t i = 0; i < array->len; i++) {
+            if (array->entries[i].key.type == PTN_ARRAY_KEY_INT &&
+                array->entries[i].key.as.integer == INT64_MAX) {
+                goto unavailable;
+            }
+        }
+        return 1;
+    }
+unavailable:
+    ptn_throw_exception(
+        runtime,
+        "Error",
+        "Cannot add element to the array as the next element is already occupied"
+    );
+    return 0;
+}
+
 static PTN_UNUSED PtnArrayEntry *ptn_array_reference_entry(PtnArray *array, const PtnValue *key_value) {
     if (key_value == NULL) {
         PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
@@ -1067,6 +1086,9 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
 
+    if (key_value == NULL && !ptn_array_append_key_available(runtime, array)) {
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
     PtnArrayEntry *entry = ptn_array_reference_entry(array, key_value);
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
@@ -1106,6 +1128,9 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
 
+    if (key_value == NULL && !ptn_array_append_key_available(runtime, array)) {
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
     PtnArrayEntry *entry = ptn_array_reference_entry(array, key_value);
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
@@ -1127,6 +1152,9 @@ static PTN_UNUSED void ptn_runtime_bind_array_dim_reference(
     }
     PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
     if (array == NULL) {
+        return;
+    }
+    if (key_value == NULL && !ptn_array_append_key_available(runtime, array)) {
         return;
     }
     PtnArrayKey key = key_value == NULL
@@ -1999,10 +2027,14 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_root_for_write(
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_path_segment_key(
+    PtnRuntime *runtime,
     PtnArray *array,
     const PtnArrayPathSegment *segment
 ) {
     if (segment->append) {
+        if (!ptn_array_append_key_available(runtime, array)) {
+            return ptn_array_int_key(0);
+        }
         return ptn_array_int_key(array->next_auto_key);
     }
     return ptn_array_key_from_value(segment->value);
@@ -2147,7 +2179,7 @@ static PTN_UNUSED PtnArray *ptn_array_descend_for_reference_write(
     const char *path,
     size_t line
 ) {
-    PtnArrayKey key = ptn_array_path_segment_key(array, segment);
+    PtnArrayKey key = ptn_array_path_segment_key(runtime, array, segment);
     PtnArrayEntry *entry = segment->append ? NULL : ptn_array_entry_for_key(array, key);
 
     if (entry == NULL) {
@@ -2201,6 +2233,9 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
     }
 
     const PtnArrayPathSegment *leaf = &segments[segment_count - 1];
+    if (leaf->append && !ptn_array_append_key_available(runtime, array)) {
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
     PtnArrayEntry *entry = ptn_array_reference_entry(array, leaf->append ? NULL : &leaf->value);
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
@@ -2239,6 +2274,9 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
     }
 
     const PtnArrayPathSegment *leaf = &segments[segment_count - 1];
+    if (leaf->append && !ptn_array_append_key_available(runtime, array)) {
+        return;
+    }
     PtnArrayKey key = leaf->append
         ? ptn_array_int_key(array->next_auto_key)
         : ptn_array_key_from_value(leaf->value);
@@ -2253,7 +2291,7 @@ static PTN_UNUSED PtnArray *ptn_array_descend_for_write(
     int emit_null_key_deprecation
 ) {
     ptn_array_path_emit_null_key_deprecation(runtime, segment, line, emit_null_key_deprecation);
-    PtnArrayKey key = ptn_array_path_segment_key(array, segment);
+    PtnArrayKey key = ptn_array_path_segment_key(runtime, array, segment);
     PtnArrayEntry *entry = segment->append ? NULL : ptn_array_entry_for_key(array, key);
 
     if (entry == NULL) {
@@ -2288,7 +2326,7 @@ static PTN_UNUSED void ptn_array_set_path_leaf(
     int emit_null_key_deprecation
 ) {
     ptn_array_path_emit_null_key_deprecation(runtime, segment, line, emit_null_key_deprecation);
-    PtnArrayKey key = ptn_array_path_segment_key(array, segment);
+    PtnArrayKey key = ptn_array_path_segment_key(runtime, array, segment);
     ptn_array_write_entry(array, key, ptn_value_clone(ptn_value_deref(value)));
 }
 

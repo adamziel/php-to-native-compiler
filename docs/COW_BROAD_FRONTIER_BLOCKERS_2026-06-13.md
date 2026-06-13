@@ -81,7 +81,7 @@ ext/standard/tests/array/array_shift_basic.phpt
 
 | Cluster | Rows | Current result | Follow-up |
 | --- | ---: | --- | --- |
-| Callable prefer-ref diagnostics, inheritance checks, assignment error precedence, and sensitive-parameter reflection | 12 | 4 pass, 7 fail, 1 excluded | `ptn-begn` |
+| Callable prefer-ref diagnostics, inheritance checks, assignment error precedence, and sensitive-parameter reflection | 12 | 8 pass, 3 fail, 1 excluded | `ptn-begn` |
 | Closure capture, `Closure::bindTo()`, `Closure::fromCallable()`, and `Closure::__invoke` reference diagnostics | 7 | 0 pass, 7 fail | `ptn-8d2u` |
 | Object/property reference targets, overloaded property references, exception reference properties, and foreach-by-ref property writes | 5 | 0 pass, 4 fail, 1 excluded | `ptn-1om3` |
 | Plain foreach reference/control rows | 4 | 4 pass, 0 fail | can enter a future pass-count manifest after a 25-row aggregate exists |
@@ -93,9 +93,11 @@ ext/standard/tests/array/array_shift_basic.phpt
 The broad rows are COW/reference sensitive, but most failures are not isolated
 copy-on-write payload bugs. They sit behind generic runtime/compiler surfaces:
 
-- Reference diagnostics and callable dispatch need one prefer-ref/by-ref
-  argument path shared by direct calls, `call_user_func()`, and
-  `call_user_func_array()`.
+- Reference diagnostics and callable dispatch now share the fixed-parameter
+  prefer-ref/by-ref path across direct calls, `call_user_func()`,
+  `call_user_func_array()`, and declared methods. Remaining rows need
+  append-form call-argument lvalues, class-name type checks, and
+  `SensitiveParameterValue` reflection.
 - Closure rows need proper capture validation, closure metadata, callable
   reflection, and `Closure::__invoke` argument names before COW identity is the
   dominant question.

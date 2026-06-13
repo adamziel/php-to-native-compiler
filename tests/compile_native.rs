@@ -9306,6 +9306,39 @@ echo $child->same(), \"\\n\";
 }
 
 #[test]
+fn compile_inherited_optional_by_reference_method_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-inherited-optional-by-reference-method-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inherited-optional-by-reference-method-argument.php");
+    let output = root.join("inherited-optional-by-reference-method-argument-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Test1 {\n\
+    public function method1() {\n\
+        $this->method2($x);\n\
+        var_dump($x);\n\
+    }\n\
+    public function method2() {}\n\
+}\n\
+class Test2 extends Test1 {\n\
+    public function method2(&$x = null) {\n\
+        ++$x;\n\
+    }\n\
+}\n\
+(new Test2)->method1();",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(1)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_inherited_private_and_child_public_properties_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-private-child-public-properties");
     fs::create_dir_all(&root).unwrap();
@@ -13525,6 +13558,39 @@ fn compile_by_reference_argument_diagnostic_to_native_binary() {
 }
 
 #[test]
+fn compile_by_reference_call_result_argument_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-call-result-argument-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-call-result-argument-diagnostics.php");
+    let output = root.join("by-reference-call-result-argument-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+call_user_func('ref', function_exists('strlen'));\n\
+ref(function_exists('strlen'));\n\
+function ref(&$x) {\n\
+    var_dump($x);\n\
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: ref(): Argument #1 ($x) must be passed by reference, value given in ptn on line 2\n",
+            "bool(true)\n",
+            "\nNotice: Only variables should be passed by reference in ptn on line 3\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_by_reference_assignment_call_result_value_fallback_to_native_binary() {
     let root = temp_dir("ptn-native-by-reference-assignment-call-result-value-fallback");
     fs::create_dir_all(&root).unwrap();
@@ -13546,6 +13612,49 @@ echo $alias, \"\\n\";\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Notice: Only variables should be assigned by reference in ptn on line 3\n1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_by_reference_assignment_append_error_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-assignment-append-error-precedence");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-assignment-append-error-precedence.php");
+    let output = root.join("by-reference-assignment-append-error-precedence-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function val() { return 42; }\n\
+$var = 24;\n\
+$arr = [PHP_INT_MAX => \"foo\"];\n\
+try {\n\
+    var_dump($arr[] =& $var);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(count($arr));\n\
+try {\n\
+    var_dump($arr[] =& val());\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(count($arr));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot add element to the array as the next element is already occupied\n",
+            "int(1)\n",
+            "Cannot add element to the array as the next element is already occupied\n",
+            "int(1)\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -14337,6 +14446,66 @@ var_dump(function_exists(\"call_user_func_array\"), function_exists(\"CALL_USER_
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_call_user_func_array"));
     assert!(c_source.contains("ptn_call_callable(runtime, args[0], arguments->len"));
+}
+
+#[test]
+fn compile_call_user_func_array_multisort_prefer_ref_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-array-multisort-prefer-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-array-multisort-prefer-ref.php");
+    let output = root.join("call-user-func-array-multisort-prefer-ref-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$args = [[3, 2, 1]];\n\
+call_user_func_array('array_multisort', $args);\n\
+var_dump($args);\n\
+$items = [3, 2, 1];\n\
+call_user_func('array_multisort', $items);\n\
+var_dump($items);\n\
+$referenced = [3, 2, 1];\n\
+call_user_func_array('array_multisort', [&$referenced]);\n\
+var_dump($referenced);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  array(3) {\n",
+            "    [0]=>\n",
+            "    int(3)\n",
+            "    [1]=>\n",
+            "    int(2)\n",
+            "    [2]=>\n",
+            "    int(1)\n",
+            "  }\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(3)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

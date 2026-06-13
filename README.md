@@ -46,17 +46,20 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   diff/intersect helpers with user comparators, sum/product warning and
   overflow parity,
   `count()`/`sizeof()` modes, `array_splice()` mutation, sort mutators through
-  ordered-array/COW paths, and recursive/non-recursive `array_walk()` callback
-  diagnostics, userdata separation, key snapshots, and mutation visibility.
+  ordered-array/COW paths, a bounded callable `array_multisort()` path with
+  prefer-ref argument separation, and recursive/non-recursive `array_walk()`
+  callback diagnostics, userdata separation, key snapshots, and mutation
+  visibility.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string escaping.
 - `pow()` uses the boxed exponentiation helper, `min()`/`max()` use the shared
   loose ordering helper, `flush()` flushes native stdout, `call_user_func_array()`
   expands ordered arrays through callable dispatch, `call_user_func()` and
-  `call_user_func_array()` downgrade callback by-reference mismatches to
-  warnings, callback dispatch observes `global` bindings for user functions
-  reached through direct calls, and
+  `call_user_func_array()` downgrade fixed-parameter callback by-reference
+  mismatches to warnings while invoking user callbacks against by-value locals,
+  callback dispatch observes `global` bindings for user functions reached
+  through direct calls, and
   public `__invoke` objects can be called directly or through callback
   dispatch; `is_callable()` writes callable-name output for supported callable
   shapes.

@@ -306,9 +306,13 @@ Post-RC architecture remains explicit rather than hidden:
   `shuffle()`, and other non-direct-variable mutation targets fail before code
   generation with an explicit unsupported diagnostic.
 - Other sort flags, `natsort()` extra flags, dynamic flagged sort-family calls,
-  and remaining sort-family by-reference array mutators such as `usort()`,
-  `uasort()`, `uksort()`, and `array_multisort()` remain unsupported and fail
-  with an explicit unsupported diagnostic.
+  full direct/multi-array `array_multisort()`, and remaining sort-family
+  by-reference array mutators such as `usort()`, `uasort()`, and `uksort()`
+  remain unsupported and fail with an explicit unsupported diagnostic.
+- A bounded callable-dispatch `array_multisort()` path accepts array arguments
+  passed through `call_user_func()`/`call_user_func_array()`, sorts referenced
+  array arguments with the current regular value sort helper, and leaves
+  unreferenced prefer-ref arguments separated.
 - Broad PHPT rows for currently unmodeled mutating array-internal helpers
   (`array_multisort()`, `usort()`, `uasort()`, and `uksort()`) and
   destructor-reentrant `array_splice()` cases are classified as
@@ -1017,9 +1021,9 @@ Post-RC architecture remains explicit rather than hidden:
   the shared callable path, including user-function `global` bindings.
 - `call_user_func_array()` expands current ordered-array argument values through
   the shared callable dispatch path, preserving reference entries for the
-  current by-reference callable subset. Unreferenced values passed to
-  by-reference user parameters warn and return `null` without calling the
-  target.
+  current by-reference callable subset. Unreferenced values passed to fixed
+  by-reference user parameters warn and invoke the target against a by-value
+  local; variadic by-reference mismatch handling remains bounded.
 - `assert()` over current boxed assertion expressions. Truthy assertions return
   `true`; falsey assertions throw a modeled `AssertionError`. One-argument
   direct calls carry a compiler-generated default assertion message from the
