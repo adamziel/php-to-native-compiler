@@ -1,14 +1,14 @@
 # PTN Progress
 
 Refresh: 2026-06-13T13:26Z
-Measured: `ptn-czkk` integration on current `origin/master` `89b4949`;
-focused array replacement/native parser gates passed.
+Measured: `ptn-4bwx` `nl2br()` integration on current `origin/master`
+`5b69ed7`; focused native/parser/PHPT gates passed.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
 closures, `stdClass`, properties/destructors, reflection, array helpers,
 `json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
 search/count/string internals, scalar/array type hints, ordered-array
-`str_replace()`, `str_split()`, `strncasecmp()`, `chr()`, `crc32()`, PHP
+`str_replace()`, `str_split()`, `nl2br()`, `strncasecmp()`, `chr()`, `crc32()`, PHP
 metadata constants, standard streams, foreach destructuring,
 namespace/import forms, `global`, dynamic-variable writes/unsets, stream
 metadata, stable locale constants plus `localeconv()`, type predicates
@@ -22,7 +22,7 @@ grouped namespace imports, scalar conversions, `global`, PHP metadata
 constants, `dirname()` levels, `pathinfo()`, `LC_*`/`setlocale()`/`localeconv()`,
 invokable object callables, search/count internals, persistent standard
 streams, `property_exists()`, PHPT manifests, `crc32()`, `str_replace()` array
-operands/reference entries/counts, `str_split()`, `strncasecmp()`, array
+operands/reference entries/counts, `str_split()`, `nl2br()`, `strncasecmp()`, array
 parameter/return hints, runtime object IDs, and integer validation for
 `chr()`/`intdiv()`/file offsets plus `array_replace()` overwrite semantics.
 
@@ -31,11 +31,11 @@ parameter/return hints, runtime object IDs, and integer validation for
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 627 | 627 | 0 |
+| Native/compiler Rust suite | 628 | 628 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 279 | 279 | 0 |
+| PHPT bounded manifest | 280 | 280 | 0 |
 | PHPT Zend rows | 87 | 87 | 0 |
-| PHPT ext/standard rows | 137 | 137 | 0 |
+| PHPT ext/standard rows | 138 | 138 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT tests/basic+func+lang | 50 | 50 | 0 |
 | PHPT other rows | 5 | 5 | 0 |
@@ -54,8 +54,8 @@ namespace/import forms, streams, file reads/writes, array/string/numeric
 helpers through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`,
 `explode()`, string/path/search helpers, scalar conversions, `is_iterable()`,
 inline HTML, locale support including `localeconv()`, invokable object
-callables, scalar and ordered-array `str_replace()`, `str_split()`, PHP
-metadata constants, `strncasecmp()`, scalar/array type hints, SPL object
+callables, scalar and ordered-array `str_replace()`, `str_split()`, `nl2br()`,
+PHP metadata constants, `strncasecmp()`, scalar/array type hints, SPL object
 identity intrinsics, non-recursive `array_replace()`, PHPT runner ini values,
 statement-form `(void)`, array mutators, inc/dec, `global`, dynamic variables,
 and offset compound/null
@@ -69,9 +69,8 @@ coalescing.
 
 ## Verification
 
-Current branch verification for `ptn-czkk`: focused `array_replace()` reducer
-and parser internal-name guard passed; php-src `array_replace.phpt` is runnable
-but remains blocked by the existing recursive array-reference boundary.
+Current branch verification for `ptn-4bwx`: focused `nl2br()` reducer, parser
+internal-name guard, and `nl2br.phpt` passed.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 first-class callables, dynamic includes, unsupported internals, scalar

@@ -1366,6 +1366,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function Crc32($value) { return 0; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function crc32()");
 
+    let error = parser::parse("<?php function Nl2Br($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function nl2br()");
+
     let error = parser::parse("<?php function STRTOLOWER($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strtolower()");
 
@@ -4336,6 +4339,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_internal_str_rot13",
         "ptn_internal_strcmp",
         "ptn_internal_strcasecmp",
+        "ptn_internal_nl2br",
         "ptn_internal_str_contains",
         "ptn_internal_str_starts_with",
         "ptn_internal_str_ends_with",
@@ -4582,6 +4586,42 @@ var_dump(function_exists(\"strrev\"), function_exists(\"STRREV\"));",
         "string(5) \"olleH\"\nstring(6) \"420041\"\nstring(5) \"54321\"\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nl2br_newline_sequences_to_native_binary() {
+    let root = temp_dir("ptn-native-nl2br-newline-sequences");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nl2br-newline-sequences.php");
+    let output = root.join("nl2br-newline-sequences-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo bin2hex(nl2br(\"a\\nb\")), \"\\n\";\n\
+echo bin2hex(nl2br(\"a\\r\\nb\", false)), \"\\n\";\n\
+echo bin2hex(nl2br(\"a\\n\\rb\")), \"\\n\";\n\
+var_dump(nl2br(123), function_exists(\"NL2BR\"));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "613c6272202f3e0a62\n\
+613c62723e0d0a62\n\
+613c6272202f3e0a0d62\n\
+string(3) \"123\"\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let body = generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_nl2br(");
+    assert!(body.contains("ptn_internal_expect_string_arg"));
+    assert!(body.contains("ptn_string_buffer_append_len"));
 }
 
 #[test]

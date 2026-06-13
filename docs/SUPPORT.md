@@ -353,7 +353,8 @@ Post-RC architecture remains explicit rather than hidden:
   `strrev(expr);`, `ucfirst(expr);`,
   `lcfirst(expr);`, `quotemeta(expr);`,
   `trim(expr[, expr]);`, `ltrim(expr[, expr]);`, `rtrim(expr[, expr]);`,
-  `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
+  `chunk_split(expr[, expr[, expr]]);`, `nl2br(expr[, use_xhtml]);`,
+  `strip_tags(expr);`,
   `explode(expr, expr[, expr]);`,
   `join(expr[, expr]);`, `implode(expr[, expr]);`, `sprintf(expr, ...);`,
   `printf(expr, ...);`, `json_encode(expr[, expr[, expr]]);`,
@@ -423,7 +424,8 @@ Post-RC architecture remains explicit rather than hidden:
   `strrev(expr)`, `ucfirst(expr)`,
   `lcfirst(expr)`, `quotemeta(expr)`,
   `trim(expr[, expr])`, `ltrim(expr[, expr])`, `rtrim(expr[, expr])`,
-  `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
+  `chunk_split(expr[, expr[, expr]])`, `nl2br(expr[, use_xhtml])`,
+  `strip_tags(expr)`,
   `explode(expr, expr[, expr])`,
   `join(expr[, expr])`, `implode(expr[, expr])`, `sprintf(expr, ...)`,
   `printf(expr, ...)`, `json_encode(expr[, expr[, expr]])`,
@@ -568,7 +570,7 @@ Post-RC architecture remains explicit rather than hidden:
   `ucfirst()`, `lcfirst()`,
   `strtolower()`,
   `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
-  `explode()` separator/string arguments,
+  `nl2br()`, `explode()` separator/string arguments,
   `trim()`/`ltrim()`/`rtrim()` string and characters arguments,
   `strip_tags()`, `crc32()`, `md5()`, `sha1()`, `substr()`,
   `addcslashes()`, `addslashes()`, `stripcslashes()`, `stripslashes()`,
@@ -705,6 +707,9 @@ Post-RC architecture remains explicit rather than hidden:
   replacements by reference. Invalid resource, closure, exception,
   non-stringable object operands, and scalar-search/array-replace calls throw
   catchable PHP-style `TypeError` diagnostics.
+- `nl2br()` over current boxed scalar values after scalar string conversion,
+  inserting `<br />` by default or `<br>` when the optional XHTML flag is false
+  before `\n`, `\r`, `\r\n`, and `\n\r` newline sequences.
 - `ceil()` and `floor()` over current boxed scalar values after PHP numeric
   parameter conversion, returning boxed floats. `null` emits the modeled
   deprecation and yields `0.0`; booleans, integers, floats, fully numeric
@@ -1255,6 +1260,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `soundex()` locale/non-ASCII behavior plus resource/reference operand
   parity and object string conversion outside the current public declared
   `__toString()` support.
+- Exact `nl2br()` optional boolean argument diagnostics plus resource/reference
+  operand parity and object string conversion outside the current public
+  declared `__toString()` support.
 - Complete `str_replace()` object-element conversion/error parity and remaining
   diagnostic edge cases beyond the current ordered-array operand slice.
 - Complete non-finite comparison parity for unsupported arrays, objects,

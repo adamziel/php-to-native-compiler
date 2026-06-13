@@ -4728,6 +4728,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "end"
             | "key"
             | "next"
+            | "nl2br"
             | "prev"
             | "reset"
             | "mkdir"

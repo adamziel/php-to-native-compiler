@@ -5517,6 +5517,35 @@ static PtnValue ptn_internal_str_replace(PtnRuntime *runtime, size_t argc, const
     return result;
 }
 
+static PtnValue ptn_internal_nl2br(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "nl2br", 1, "string", args[0], line);
+    const char *break_tag = argc >= 2 && !ptn_is_truthy(args[1]) ? "<br>" : "<br />";
+    size_t break_tag_len = strlen(break_tag);
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < input.len; i++) {
+        char byte = input.data[i];
+        if (byte == '\r' || byte == '\n') {
+            ptn_string_buffer_append_len(&output, break_tag, break_tag_len);
+            ptn_string_buffer_append_char(&output, byte);
+            if (i + 1 < input.len) {
+                char next = input.data[i + 1];
+                if ((byte == '\r' && next == '\n') || (byte == '\n' && next == '\r')) {
+                    ptn_string_buffer_append_char(&output, next);
+                    i++;
+                }
+            }
+        } else {
+            ptn_string_buffer_append_char(&output, byte);
+        }
+    }
+
+    size_t len = output.len;
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(output.data, len);
+}
+
 static int ptn_regex_is_escaped(const char *data, size_t index) {
     size_t slash_count = 0;
     while (index > 0 && data[index - 1] == '\\') {
@@ -9476,6 +9505,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "natcasesort", 1, 1, ptn_internal_natcasesort },
         { "natsort", 1, 1, ptn_internal_natsort },
         { "next", 1, 1, ptn_internal_next },
+        { "nl2br", 1, 2, ptn_internal_nl2br },
         { "ob_get_contents", 0, 0, ptn_internal_ob_get_contents },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "ord", 1, 1, ptn_internal_ord },

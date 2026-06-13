@@ -198,6 +198,7 @@ ext/standard/tests/strings/md5.phpt
 ext/standard/tests/strings/md5_basic1.phpt
 ext/standard/tests/strings/md5_basic2.phpt
 ext/standard/tests/strings/md5raw.phpt
+ext/standard/tests/strings/nl2br.phpt
 ext/standard/tests/strings/ord_basic.phpt
 ext/standard/tests/strings/ord_not_1_byte.phpt
 ext/standard/tests/strings/quotemeta_basic.phpt
