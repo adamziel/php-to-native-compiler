@@ -4552,6 +4552,43 @@ dirname(): Argument #1 ($path) must be of type string, array given\n"
 }
 
 #[test]
+fn compile_dirname_levels_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-dirname-levels");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dirname-levels.php");
+    let output = root.join("dirname-levels-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+for ($i = 0; $i < 5; $i++) {\n\
+    try {\n\
+        var_dump(dirname(\"/foo/bar/baz\", $i));\n\
+    } catch (\\ValueError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+var_dump(dirname(\"/foo/bar/baz\", PHP_INT_MAX));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"dirname(): Argument #2 ($levels) must be greater than or equal to 1\n\
+string(8) \"/foo/bar\"\n\
+string(4) \"/foo\"\n\
+string(1) \"/\"\n\
+string(1) \"/\"\n\
+string(1) \"/\"\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_chunk_split_str_repeat_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chunk-split-str-repeat-phpt-shape");
     fs::create_dir_all(&root).unwrap();

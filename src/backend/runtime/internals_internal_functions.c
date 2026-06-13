@@ -6568,12 +6568,34 @@ static PtnValue ptn_internal_highlight_file(PtnRuntime *runtime, size_t argc, co
 }
 
 static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "dirname", 1, "path", args[0], line);
-    size_t dirname_len = 0;
-    char *dirname = ptn_dirname_string(path.data, path.len, &dirname_len);
+    int64_t levels = argc >= 2 ? ptn_value_to_integer(args[1]) : 1;
+    if (levels < 1) {
+        ptn_string_operand_free(path);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "dirname(): Argument #2 ($levels) must be greater than or equal to 1"
+        );
+    }
+
+    char *current = ptn_duplicate_string_len(path.data, path.len);
+    size_t current_len = path.len;
     ptn_string_operand_free(path);
-    return ptn_owned_string_len(dirname, dirname_len);
+    for (int64_t level = 0; level < levels; level++) {
+        size_t dirname_len = 0;
+        char *dirname = ptn_dirname_string(current, current_len, &dirname_len);
+        free(current);
+        current = dirname;
+        current_len = dirname_len;
+        if (current_len == 1 && ptn_is_path_separator(current[0])) {
+            break;
+        }
+        if (current_len == 1 && current[0] == '.') {
+            break;
+        }
+    }
+    return ptn_owned_string_len(current, current_len);
 }
 
 static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -8275,7 +8297,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
         { "define", 2, 3, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
-        { "dirname", 1, 1, ptn_internal_dirname },
+        { "dirname", 1, 2, ptn_internal_dirname },
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "explode", 2, 3, ptn_internal_explode },
