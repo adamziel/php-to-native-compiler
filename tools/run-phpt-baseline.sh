@@ -218,5 +218,5 @@ for tier in "${run_tiers[@]}"; do
   if [[ "$classify_only" -eq 1 ]]; then
     bounded_args+=(--classify-only)
   fi
-  "$repo_root/tools/run-bounded-phpt.sh" "${bounded_args[@]}" "$manifest"
+  "$repo_root/tools/run-bounded-phpt.sh" --classify-harness-programs "${bounded_args[@]}" "$manifest"
 done

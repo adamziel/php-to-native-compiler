@@ -14,11 +14,19 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
 }
 
 fn classify(body: &str) -> String {
+    classify_with_harness_programs(body, false)
+}
+
+fn classify_with_harness_programs(body: &str, enabled: bool) -> String {
     let root = temp_dir("ptn-phpt-classifier");
     let phpt = root.join("case.phpt");
     fs::write(&phpt, body).expect("write PHPT");
 
-    let output = Command::new("bash")
+    let mut command = Command::new("bash");
+    if enabled {
+        command.env("PTN_PHPT_CLASSIFY_HARNESS_PROGRAMS", "1");
+    }
+    let output = command
         .arg("-c")
         .arg("source tools/phpt-classifier.sh; ptn_phpt_classify_row tests/case.phpt \"$1\"")
         .arg("bash")
@@ -31,6 +39,30 @@ fn classify(body: &str) -> String {
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8(output.stdout).expect("classifier output should be utf8")
+}
+
+#[test]
+fn phpt_classifier_skipif_harness_is_opt_in() {
+    let skipif = "--TEST--\nskipif\n--SKIPIF--\n<?php echo getenv('PTN_SKIP') ? 'skip' : ''; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+
+    assert!(classify(skipif).starts_with("runnable\t"));
+
+    let classification = classify_with_harness_programs(skipif, true);
+    assert!(
+        classification.starts_with("harness-skipif\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_cleanup_harness_is_default_blocker() {
+    let cleanup = "--TEST--\ncleanup\n--FILE--\n<?php echo 1; ?>\n--CLEAN--\n<?php unlink(__DIR__ . '/case.tmp'); ?>\n--EXPECT--\n1\n";
+    let classification = classify(cleanup);
+
+    assert!(
+        classification.starts_with("harness-cleanup\t"),
+        "{classification:?}"
+    );
 }
 
 #[test]

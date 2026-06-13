@@ -4,16 +4,18 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 manifest="$repo_root/tools/phpt-bounded-manifest.txt"
 classify_only=0
+classify_harness_programs=${PTN_PHPT_CLASSIFY_HARNESS_PROGRAMS:-0}
 
 usage() {
     cat <<'EOF'
-Usage: tools/run-bounded-phpt.sh [--classify-only] [manifest]
+Usage: tools/run-bounded-phpt.sh [--classify-only] [--classify-harness-programs] [manifest]
 
 Classify a PHPT manifest, then run runnable rows through php-src run-tests.php.
 
 Options:
-  --classify-only   write classification and blocker manifests without building
-                    phpc or running runnable PHPT rows
+  --classify-only              write classification and blocker manifests without
+                               building phpc or running runnable PHPT rows
+  --classify-harness-programs  also classify SKIPIF precondition harness rows
 EOF
 }
 
@@ -22,6 +24,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --classify-only)
             classify_only=1
+            shift
+            ;;
+        --classify-harness-programs)
+            classify_harness_programs=1
             shift
             ;;
         -h|--help)
@@ -67,6 +73,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 source "$repo_root/tools/phpt-corpus.sh"
+export PTN_PHPT_CLASSIFY_HARNESS_PROGRAMS=$classify_harness_programs
 source "$repo_root/tools/phpt-classifier.sh"
 php_src="$(ptn_resolve_phpt_corpus "$repo_root")"
 corpus_revision="$(ptn_phpt_corpus_revision "$php_src")"
@@ -262,7 +269,12 @@ if [[ "$classify_only" -eq 1 ]]; then
         echo "corpus-revision: $corpus_revision"
         echo "manifest: $resolved_manifest"
         echo "runnable-manifest: $runnable_manifest"
-        echo "command: classification only; cargo build and run-tests.php skipped"
+        command_line="tools/run-bounded-phpt.sh --classify-only"
+        if [[ "$classify_harness_programs" == "1" ]]; then
+            command_line+=" --classify-harness-programs"
+        fi
+        command_line+=" $manifest"
+        echo "command: $command_line"
         echo "count: $selected_rows selected PHPT rows; $runnable_rows runnable; $excluded_rows excluded by classification in ${#bucket_order[@]} buckets"
     } | tee "$summary"
     emit_classification_summary | tee -a "$summary"

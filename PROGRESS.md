@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-13T18:49Z
-Measured: `ptn-4tfb` broad 1k blocker map rebased after `ptn-qsmv.9`.
+Refresh: 2026-06-13T18:54Z
+Measured: `ptn-qsmv.8` opt-in PHPT `--SKIPIF--` harness classification
+rebased after `ptn-4tfb`.
 
-Recent RC slices cover constants, includes, closures, object callables/cloning,
-reflection metadata, helper internals, PHPT blocker classification,
-environment/include-path, filesystem/path helpers, streams, `function_exists()`,
-`get_parent_class()`, 50 additional ext/standard string rows, broad 1k array
-and blocker maps, and asymmetric private(set)/protected(set) property metadata
-and write checks.
+Recent RC slices cover constants, includes, closures, object callables,
+reflection metadata, helper internals, PHPT blocker classification with opt-in
+SKIPIF preconditions, environment/include-path, filesystem/path helpers,
+streams, `function_exists()`, `get_parent_class()`, 50 string rows, broad 1k
+maps, and asymmetric property set visibility.
 
 ## Dashboard
 
@@ -39,33 +39,35 @@ Parser/IR/C backend, boxed values, variables/constants, strings, scalar
 operators, arrays, `foreach`, control flow, includes, selected internals,
 COW/reference slices, functions/closures, class/object shells, reflection,
 streams, file reads/writes, helper internals, runner state, PHPT blockers,
-filesystem/path helpers, dynamic variables, offset/property compounds,
-expanded string rows, and asymmetric property set-visibility metadata.
+filesystem/path helpers, offset/property compounds, expanded string rows,
+asymmetric metadata, and opt-in SKIPIF harness classification.
 
 ## Remaining Bounded Exclusions
 
 - No known failures among the 485 accepted rows in the bounded manifest.
-  Classify-only reports 459 runnable rows and 26 pre-existing excluded rows
-  outside the added string slice.
+  Classify-only reports 459 runnable rows and 26 excluded rows outside the
+  added string slice.
 - Callback frontier is 5/5; filesystem/path/process remains 13/46 with
   harness-cleanup and process-boundary exclusions.
 
 ## Verification
 
-`ptn-4tfb` evidence: broad 1k run selected 1,000 rows, excluded 549, ran 451,
-passed 265, and failed 186: Zend 45/139 pass, ext/standard 212/295 pass, core
-8/17 pass. Largest mapped blockers are standard array comparison/casting
-23 rows, standard callback dispatch/diagnostics 21 rows, and Zend
-class/object/property dispatch 24 rows.
+`ptn-qsmv.8` verification: `cargo fmt --check`, PHPT shell syntax checks,
+`cargo test --test phpt_classifier` 8/8, runner `--help`, and
+`cargo build --bin phpc` passed. Bounded classify-only: 485 selected,
+459 runnable, 26 excluded.
 
-`ptn-qsmv.9` rebase verification passed `cargo check`, `cargo fmt --check`,
-focused asymmetric/property native tests, `phpt_classifier`, and full
-`cargo test`. `ptn-qsmv.3` string manifest passed 50/50. `ptn-o7kg` maps
-274 runnable array rows by family.
+With `--classify-harness-programs`, broad 1k kept 424 runnable / 576 excluded;
+6 rows moved to `harness-skipif`. Broad 5k kept 2,254 runnable / 2,746
+excluded and moved 310 rows to `harness-skipif`.
 
-Follow-ups remain typed properties, interfaces/traits, magic methods,
-attributes/reflection, arrow functions, heredoc/nowdoc parsing, userland
-`throw`, readonly property metadata, first-class callables, dynamic includes,
-unsupported internals, scalar-offset lvalues, `Traversable`, embedded-NUL
-internals, conversion diagnostics, formatter/callback parity,
-filesystem/process boundaries, and process execution.
+`ptn-qsmv.9` passed `cargo check`, focused native tests,
+`phpt_classifier`, and full `cargo test`. `ptn-4tfb` maps broad 1k
+blockers: 265 pass / 186 fail among 451 runnable.
+
+Follow-ups remain typed properties, traits, magic methods, attributes,
+arrow functions, heredoc/nowdoc parsing, userland `throw`, readonly metadata,
+first-class callables, dynamic includes, unsupported internals, scalar-offset
+lvalues, `Traversable`, embedded-NUL internals, diagnostics, formatter/callback
+parity, process boundaries, SKIPIF modeling under `ptn-awta`, and classifier
+scan batching under `ptn-qwby`.

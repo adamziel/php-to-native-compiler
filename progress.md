@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T18:49Z
+Last refresh: 2026-06-13T18:54Z
 Source: `PROGRESS.md`
-Measured: `ptn-4tfb` broad 1k blocker map rebased after `ptn-qsmv.9`.
+Measured: `ptn-qsmv.8` opt-in PHPT `--SKIPIF--` harness classification
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 651/651; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 

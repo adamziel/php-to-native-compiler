@@ -5,9 +5,10 @@
 # The classifier filters only PHPT harness/environment requirements that PTN
 # does not currently model: extension availability, unsupported ini/runtime
 # modes, SAPI/request sections, external service harnesses, process-boundary
-# rows, broad harness cleanup/setup sections, noisy upstream rows, broad
-# unsupported language surfaces, and upstream XFAILs. Generic PHP semantic gaps
-# inside the modeled surface remain runnable and should surface as PTN failures.
+# rows, broad harness cleanup/setup sections, opt-in harness preconditions,
+# noisy upstream rows, broad unsupported language surfaces, and upstream XFAILs.
+# Generic PHP semantic gaps inside the modeled surface remain runnable and
+# should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard,Reflection"
 PTN_PHPT_SUPPORTED_INI_DEFAULT="date.timezone,display_errors,error_reporting,extension_dir,include_path,pcre.backtrack_limit,precision,zend.assertions"
@@ -15,6 +16,7 @@ PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CAPTURE_STDIO,CGI,COOKIE,COOKIE_RAW,
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT="ENV"
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT="CLEAN"
 PTN_PHPT_NOISY_SECTIONS_DEFAULT="EXPECT_EXTERNAL,EXPECTF_EXTERNAL,EXPECTREGEX_EXTERNAL,FLAKY,WHITESPACE_SENSITIVE"
+PTN_PHPT_SKIPIF_HARNESS_SECTIONS_DEFAULT="SKIPIF"
 
 ptn_phpt_supported_extensions() {
     printf '%s\n' "${PTN_PHPT_SUPPORTED_EXTENSIONS:-$PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT}"
@@ -38,6 +40,14 @@ ptn_phpt_harness_sections() {
 
 ptn_phpt_noisy_sections() {
     printf '%s\n' "${PTN_PHPT_NOISY_SECTIONS:-$PTN_PHPT_NOISY_SECTIONS_DEFAULT}"
+}
+
+ptn_phpt_skipif_harness_sections() {
+    printf '%s\n' "${PTN_PHPT_SKIPIF_HARNESS_SECTIONS:-$PTN_PHPT_SKIPIF_HARNESS_SECTIONS_DEFAULT}"
+}
+
+ptn_phpt_classify_harness_programs() {
+    [[ "${PTN_PHPT_CLASSIFY_HARNESS_PROGRAMS:-0}" == "1" ]]
 }
 
 ptn_phpt_lower() {
@@ -702,6 +712,13 @@ ptn_phpt_classify_row() {
     if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_noisy_sections)"); then
         printf 'noisy-expectation\trequires noisy or external PHPT expectation mode --%s--\n' "$value"
         return 0
+    fi
+
+    if ptn_phpt_classify_harness_programs; then
+        if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_skipif_harness_sections)"); then
+            printf 'harness-skipif\trequires PHPT harness precondition section --%s-- evaluated before measured program output\n' "$value"
+            return 0
+        fi
     fi
 
     printf 'runnable\tselected for PTN semantic measurement\n'
