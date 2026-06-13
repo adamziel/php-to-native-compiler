@@ -664,13 +664,15 @@ Post-RC architecture remains explicit rather than hidden:
   through the runtime path.
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
-- `str_replace()` over current scalar and stringable-object search,
-  replacement, and subject operands after scalar string conversion, returning
-  the replaced byte string, writing the optional `$count` argument by
-  reference, and throwing catchable PHP-style `array|string` `TypeError`
-  diagnostics for invalid resource, closure, exception, and non-stringable
-  object operands. Array search/replacement/subject forms remain outside the
-  current bounded path.
+- `str_replace()` over current scalar, stringable-object, and ordered-array
+  search, replacement, and subject operands after scalar string conversion,
+  returning the replaced byte string or key-preserving subject array, applying
+  array search entries in insertion order, using empty replacements for
+  missing replacement-array entries, writing the optional `$count` argument by
+  reference across scalar or array subjects, and throwing catchable PHP-style
+  `array|string` `TypeError` diagnostics for invalid top-level resource,
+  closure, exception, and non-stringable object operands. Replacement arrays
+  require array search operands.
 - `ceil()` and `floor()` over current boxed scalar values after PHP numeric
   parameter conversion, returning boxed floats. `null` emits the modeled
   deprecation and yields `0.0`; booleans, integers, floats, fully numeric
@@ -1197,9 +1199,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `soundex()` locale/non-ASCII behavior plus resource/reference operand
   parity and object string conversion outside the current public declared
   `__toString()` support.
-- Complete `str_replace()` array search/replacement/subject semantics,
-  array-to-string warnings, and nested replacement-count parity beyond the
-  current scalar bounded path.
+- Exact `str_replace()` edge parity for nested arrays, object/resource entries,
+  reference operands, and remaining array-to-string diagnostics beyond the
+  current ordered-array bounded path.
 - Complete non-finite comparison parity for unsupported arrays, objects,
   resources, and references.
 - Remaining PHP float precision and formatting edge cases plus

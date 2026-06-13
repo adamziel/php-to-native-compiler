@@ -4884,6 +4884,49 @@ str_replace(): Argument #3 ($subject) must be of type array|string, resource giv
 }
 
 #[test]
+fn compile_str_replace_array_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-array-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-array-operands.php");
+    let output = root.join("str-replace-array-operands-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(str_replace([\"a\", \"-\"], [\"x\", \"_\"], \"a-b-c\", $count));\n\
+var_dump($count);\n\
+var_dump(str_replace([\"a\", \"-\"], \"X\", \"a-b-c\", $count));\n\
+var_dump($count);\n\
+var_dump(str_replace([\"a\", \"-\"], [\"X\"], \"a-b-c\", $count));\n\
+var_dump($count);\n\
+$subject = [\"first\" => \"aba\", \"second\" => \"ba\"];\n\
+var_dump(str_replace([\"a\", \"b\"], [\"x\"], $subject, $count));\n\
+var_dump($count);\n\
+try { var_dump(str_replace(\"a\", [\"x\"], \"a\")); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"string(5) \"x_b_c\"\n\
+int(3)\n\
+string(5) \"XXbXc\"\n\
+int(3)\n\
+string(3) \"Xbc\"\n\
+int(3)\n\
+array(2) {\n  [\"first\"]=>\n  string(2) \"xx\"\n  [\"second\"]=>\n  string(1) \"x\"\n\
+}\n\
+int(5)\n\
+str_replace(): Argument #2 ($replace) must be of type string when argument #1 ($search) is a string\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();
