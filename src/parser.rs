@@ -256,33 +256,158 @@ impl Parser {
     }
 
     fn parse_use_import(&mut self, kind: UseDeclarationKind) -> Result<()> {
-        let target = self.parse_name("expected imported name")?;
-        if matches!(self.peek().kind, TokenKind::LeftBrace) {
-            return Err(Diagnostic::new(
-                "grouped use declarations are unsupported",
-                Some(self.peek().span),
-            ));
+        let (target, grouped) = self.parse_use_import_name("expected imported name")?;
+        if grouped {
+            return self.parse_grouped_use_imports(kind, target);
         }
-        let alias = if matches!(self.peek().kind, TokenKind::As) {
+        let alias = self.parse_optional_use_alias(&target.name)?;
+        let target_name = self.use_import_target_name(&target);
+        self.register_use_import(kind, target_name, alias);
+        Ok(())
+    }
+
+    fn parse_use_import_name(&mut self, expected: &str) -> Result<(ParsedName, bool)> {
+        let leading_backslash = matches!(self.peek().kind, TokenKind::Backslash);
+        let start_span = if leading_backslash {
+            Some(self.advance().span)
+        } else {
+            None
+        };
+        let first_token = self.advance().clone();
+        let TokenKind::Identifier(first_segment) = first_token.kind else {
+            return Err(Diagnostic::new(expected, Some(first_token.span)));
+        };
+        self.parse_use_import_name_from_first(first_segment, first_token.span, start_span, expected)
+    }
+
+    fn parse_use_import_name_from_first(
+        &mut self,
+        first_segment: String,
+        first_span: SourceSpan,
+        leading_span: Option<SourceSpan>,
+        expected: &str,
+    ) -> Result<(ParsedName, bool)> {
+        let mut span = leading_span
+            .map(|span| combine_spans(span, first_span))
+            .unwrap_or(first_span);
+        let mut segments = vec![first_segment];
+        let mut grouped = false;
+        while matches!(self.peek().kind, TokenKind::Backslash) {
+            self.advance();
+            if matches!(self.peek().kind, TokenKind::LeftBrace) {
+                self.advance();
+                grouped = true;
+                break;
+            }
+            let segment_token = self.advance().clone();
+            let TokenKind::Identifier(segment) = segment_token.kind else {
+                return Err(Diagnostic::new(expected, Some(segment_token.span)));
+            };
+            span = combine_spans(span, segment_token.span);
+            segments.push(segment);
+        }
+        let leading_backslash = leading_span.is_some();
+        let namespace_relative = !leading_backslash
+            && segments
+                .first()
+                .is_some_and(|segment| segment.eq_ignore_ascii_case("namespace"));
+        let resolution = if leading_backslash {
+            NameResolution::FullyQualified
+        } else if namespace_relative {
+            NameResolution::NamespaceRelative
+        } else if segments.len() == 1 {
+            NameResolution::Unqualified
+        } else {
+            NameResolution::Qualified
+        };
+        let name_segments = if namespace_relative {
+            &segments[1..]
+        } else {
+            &segments[..]
+        };
+        Ok((
+            ParsedName {
+                name: name_segments.join("\\"),
+                span,
+                resolution,
+            },
+            grouped,
+        ))
+    }
+
+    fn parse_grouped_use_imports(
+        &mut self,
+        default_kind: UseDeclarationKind,
+        prefix: ParsedName,
+    ) -> Result<()> {
+        let prefix_name = self.use_import_target_name(&prefix);
+        loop {
+            let kind = if matches!(self.peek().kind, TokenKind::Function) {
+                self.advance();
+                UseDeclarationKind::Function
+            } else if matches!(self.peek().kind, TokenKind::Const) {
+                self.advance();
+                UseDeclarationKind::Constant
+            } else {
+                default_kind
+            };
+            let item = self.parse_name("expected imported name")?;
+            if !matches!(
+                item.resolution,
+                NameResolution::Unqualified | NameResolution::Qualified
+            ) {
+                return Err(Diagnostic::new(
+                    "grouped use entries must be relative names",
+                    Some(item.span),
+                ));
+            }
+            let alias = self.parse_optional_use_alias(&item.name)?;
+            let target_name = if prefix_name.is_empty() {
+                item.name
+            } else {
+                format!("{prefix_name}\\{}", item.name)
+            };
+            self.register_use_import(kind, target_name, alias);
+            if !matches!(self.peek().kind, TokenKind::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        self.expect_right_brace()?;
+        Ok(())
+    }
+
+    fn parse_optional_use_alias(&mut self, target_name: &str) -> Result<String> {
+        if matches!(self.peek().kind, TokenKind::As) {
             self.advance();
             let token = self.advance().clone();
             let TokenKind::Identifier(alias) = token.kind else {
                 return Err(Diagnostic::new("expected import alias", Some(token.span)));
             };
-            alias
+            Ok(alias)
         } else {
-            target
-                .name
+            Ok(target_name
                 .rsplit('\\')
                 .next()
-                .unwrap_or(&target.name)
-                .to_string()
-        };
-        let target_name = match target.resolution {
-            NameResolution::FullyQualified => target.name,
+                .unwrap_or(target_name)
+                .to_string())
+        }
+    }
+
+    fn use_import_target_name(&self, target: &ParsedName) -> String {
+        match target.resolution {
+            NameResolution::FullyQualified => target.name.clone(),
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&target.name),
-            NameResolution::Unqualified | NameResolution::Qualified => target.name,
-        };
+            NameResolution::Unqualified | NameResolution::Qualified => target.name.clone(),
+        }
+    }
+
+    fn register_use_import(
+        &mut self,
+        kind: UseDeclarationKind,
+        target_name: String,
+        alias: String,
+    ) {
         let alias_key = alias.to_ascii_lowercase();
         match kind {
             UseDeclarationKind::Class => {
@@ -295,7 +420,6 @@ impl Parser {
                 self.constant_aliases.insert(alias_key, target_name);
             }
         }
-        Ok(())
     }
 
     fn clear_namespace_imports(&mut self) {

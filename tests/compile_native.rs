@@ -20722,6 +20722,55 @@ echo strlen("abc"), ":", PHP_INT_SIZE, "\n";
 }
 
 #[test]
+fn compile_grouped_namespace_imports_to_native_binary() {
+    let root = temp_dir("ptn-native-grouped-namespace-imports");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("grouped-namespace-imports.php");
+    let output = root.join("grouped-namespace-imports-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace Lib\Tools;
+
+const MARK = "const\n";
+
+function mark($value) {
+    return __NAMESPACE__ . ":" . $value . "\n";
+}
+
+class Widget {
+    function __construct() { echo __CLASS__, "\n"; }
+    static function name() { return __CLASS__; }
+}
+
+namespace App;
+
+use Lib\Tools     \{ Widget as ImportedWidget, function mark as label, const MARK as IMPORTED_MARK };
+
+$widget = new ImportedWidget;
+echo ImportedWidget::name(), "\n";
+echo label("call");
+echo IMPORTED_MARK;
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Lib\\Tools\\Widget\nLib\\Tools\\Widget\nLib\\Tools:call\nconst\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Lib\\\\Tools\\\\Widget"));
+    assert!(c_source.contains("Lib\\\\Tools\\\\mark"));
+}
+
+#[test]
 fn parser_rejects_namespace_after_function_declaration() {
     let error = parser::parse("<?php function foo() {} namespace Bar;").unwrap_err();
     assert_eq!(

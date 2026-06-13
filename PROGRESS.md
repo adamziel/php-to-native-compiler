@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-13T09:12Z
-Measured: `ptn-aigf` rebased on current `origin/master` `217ccada8`;
+Refresh: 2026-06-13T09:36Z
+Measured: `ptn-nuv7` rebased on current `origin/master` `ea501c3b`;
 full verification green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, includes/once
@@ -13,24 +13,26 @@ internals, scalar `str_replace()`, `chr()` diagnostics,
 writes/unsets, stream metadata, keyword boolean tails after direct
 assignments, locale constants/`setlocale()`, catchable divide/modulo/shift
 operator errors, alternate `<>` not-equal parsing, offset compound/coalescing,
-and non-finite float TypeErrors through shared integer-internal validation.
+grouped namespace imports, and non-finite float TypeErrors through shared
+integer-internal validation.
 
 Recent movers include binary-safe search/count internals, PHP 8.4 array
 warning/overflow behavior, persistent standard streams, `pathinfo()`,
 `property_exists()`, PHPT manifests, modeled `LC_*` constants, C/POSIX
 `setlocale()`, catchable operator exceptions, tests/lang operator rows,
 `crc32()`, `str_replace()` counts, stream preclassification, and integer
-internal argument validation for `chr()`, `intdiv()`, and file offsets.
+internal argument validation for `chr()`, `intdiv()`, and file offsets, plus
+`Zend/tests/namespaces/ns_093.phpt`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 588 | 588 | 0 |
+| Native/compiler Rust suite | 589 | 589 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 270 | 268 | 2 |
-| PHPT Zend rows | 88 | 88 | 0 |
+| PHPT bounded manifest | 271 | 269 | 2 |
+| PHPT Zend rows | 89 | 89 | 0 |
 | PHPT ext/standard rows | 130 | 130 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT tests/basic+func+lang | 47 | 47 | 0 |
@@ -55,20 +57,23 @@ string search/slice/count internals, `pathinfo()`, `crc32()`, `basename()`,
 `chr()` diagnostics, locale constants and `setlocale()`, `var_export()`,
 array mutators, inc/dec, foreach destructuring, dynamic-variable writes/unsets,
 catchable operator arithmetic exceptions, alternate not-equal parsing, keyword
-boolean tails, and array/string-offset compound/null coalescing assignments.
+boolean tails, array/string-offset compound/null coalescing assignments, and
+grouped namespace imports.
 
 ## Remaining Bounded Failures
 
-- None among the 268 runnable rows in the current 270-row bounded manifest.
+- None among the 269 runnable rows in the current 271-row bounded manifest.
   Two selected rows are classified out for unsupported ini requirements.
 
 ## Verification
 
-Current branch verification for `ptn-aigf`: `git diff --check`,
-`cargo fmt --check`, focused integer-internal diagnostics 3/3, `cargo test`
-native/compiler 588/588 plus ancillary suites, isolated bounded PHPT
-268/268 with 2 classified exclusions, PHPT COW 29/29, and post-merge COW
-26/26. Shared-corpus artifact failures passed isolated rerun/full manifest.
+Current branch verification for `ptn-nuv7`: `git diff --check`,
+`cargo fmt --check`, focused grouped namespace import native test 1/1,
+focused `Zend/tests/namespaces/ns_093.phpt` 1/1, `cargo test`
+native/compiler 589/589 plus ancillary suites, isolated bounded PHPT
+268/268 with 2 classified exclusions plus the focused added row 1/1
+(updated bounded manifest: 269 runnable rows), PHPT COW 29/29, and
+post-merge COW 26/26.
 
 Follow-ups remain visibility/exception/reference/global edges,
 typed/promoted properties, interfaces/traits, namespaces, fallback/reflection,

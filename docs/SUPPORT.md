@@ -27,11 +27,10 @@ Post-RC architecture remains explicit rather than hidden:
   resolution beyond the current declared-method and metadata slices remain
   outside the RC boundary.
 - Namespaces: unbracketed namespace declarations, qualified names, and simple
-  class/function/constant imports are supported for the current top-level
-  function/constant and declared-class subset. Bracketed namespace blocks,
-  grouped imports, namespace fallback parity for arbitrary userland symbols,
-  namespace/class constants, and namespace-sensitive reflection remain
-  post-RC.
+  plus grouped class/function/constant imports are supported for the current
+  top-level function/constant and declared-class subset. Bracketed namespace
+  blocks, namespace fallback parity for arbitrary userland symbols,
+  namespace/class constants, and namespace-sensitive reflection remain post-RC.
 - Static properties: direct public static reads/writes and `??=` are
   supported, and `property_exists()` can inspect the current declared static
   property metadata. Visibility, late static binding, typed/default metadata,
@@ -77,9 +76,13 @@ Post-RC architecture remains explicit rather than hidden:
   declaration must be the first declaration-bearing statement in the file.
 - Simple `use Name\Parts as Alias;`, `use function Name\Parts as alias;`, and
   `use const Name\Parts as ALIAS;` declarations resolve aliases for the
-  current namespace. Class imports apply to unqualified names and to the first
-  segment of qualified class names; function and constant imports apply to
-  unqualified calls/reads in the current supported subset.
+  current namespace. Grouped imports such as
+  `use Name\Parts\{ClassAlias, function fn as alias, const CONST_ALIAS};`
+  expand through the same class/function/constant alias tables, including
+  whitespace around the `\{` separator. Class imports apply to unqualified
+  names and to the first segment of qualified class names; function and
+  constant imports apply to unqualified calls/reads in the current supported
+  subset.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
 - Statement-form expressions over the currently supported expression subset.

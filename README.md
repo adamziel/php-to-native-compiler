@@ -20,7 +20,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Includes share caller file scope and return values; bounded dynamic
   include/require dispatch uses canonical once guards when candidate string
   paths are statically enumerable.
-  qualified names, `__NAMESPACE__`, and simple class/function/const imports.
+- Namespaces support unbracketed declarations, qualified names,
+  `__NAMESPACE__`, and simple/grouped class/function/const imports.
 - Full and short ternary expressions lower through lazy boxed branches;
   unparenthesized nested ternaries remain diagnostic.
 - Direct references and by-reference parameters cover the first COW/reference
