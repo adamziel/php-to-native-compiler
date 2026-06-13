@@ -1,14 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-13T18:54Z
-Measured: `ptn-qsmv.8` opt-in PHPT `--SKIPIF--` harness classification
-rebased after `ptn-4tfb`.
+Refresh: 2026-06-13T19:07Z
+Measured: `ptn-550s.3` array-internal COW frontier rebased after
+`ptn-qsmv.8`.
 
 Recent RC slices cover constants, includes, closures, object callables,
 reflection metadata, helper internals, PHPT blocker classification with opt-in
 SKIPIF preconditions, environment/include-path, filesystem/path helpers,
-streams, `function_exists()`, `get_parent_class()`, 50 string rows, broad 1k
-maps, and asymmetric property set visibility.
+streams, `function_exists()`, `get_parent_class()`, expanded string rows,
+broad 1k maps, asymmetric property set visibility, and array-internal COW
+blocker classification for unmodeled mutating helpers.
 
 ## Dashboard
 
@@ -27,43 +28,36 @@ maps, and asymmetric property set visibility.
 | PHPT tests/basic+func+lang | 78 | 78 | 0 |
 | PHPT other rows | 8 | 8 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
+| PHPT array-internal COW frontier | 72 | 0 | 72 |
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT callback manifest | 5 | 5 | 0 |
 | PHPT include manifest | 2 | 2 | 0 |
 | PHPT formatted string rows | 75 | 25 | 50 |
-| PHPT broad 1k baseline | 1,000 | 265 | 735 |
-
-## RC Surface
-
-Parser/IR/C backend, boxed values, variables/constants, strings, scalar
-operators, arrays, `foreach`, control flow, includes, selected internals,
-COW/reference slices, functions/closures, class/object shells, reflection,
-streams, file reads/writes, helper internals, runner state, PHPT blockers,
-filesystem/path helpers, offset/property compounds, expanded string rows,
-asymmetric metadata, and opt-in SKIPIF harness classification.
+| PHPT broad 1k baseline | 1000 | 265 | 735 |
 
 ## Remaining Bounded Exclusions
 
-- No known failures among the 485 accepted rows in the bounded manifest.
-  Classify-only reports 459 runnable rows and 26 excluded rows outside the
-  added string slice.
+- No known failures among the 485 accepted bounded rows. Classify-only reports
+  459 runnable rows and 26 excluded rows outside the string slice.
 - Callback frontier is 5/5; filesystem/path/process remains 13/46 with
   harness-cleanup and process-boundary exclusions.
+- The broad array-internal COW frontier now classifies all 72 selected
+  `ext/standard/tests/array` rows before execution: 58 `unsupported-internal`,
+  9 `unsupported-language`, and 5 `unsupported-class-metadata`.
 
 ## Verification
 
-`ptn-qsmv.8` verification: `cargo fmt --check`, PHPT shell syntax checks,
-`cargo test --test phpt_classifier` 8/8, runner `--help`, and
-`cargo build --bin phpc` passed. Bounded classify-only: 485 selected,
-459 runnable, 26 excluded.
+`ptn-550s.3` adds
+`tools/phpt-array-internal-cow-frontier-manifest.txt` for unmodeled mutating
+helpers including `array_splice()`, `array_walk_recursive()`,
+`array_multisort()`, `usort()`, `uasort()`, and `uksort()`. Worker evidence
+before the classifier change was 72 selected, 58 runnable, and 14 excluded;
+current classify-only output is 72 selected, 0 runnable, and 72 excluded.
 
-With `--classify-harness-programs`, broad 1k kept 424 runnable / 576 excluded;
-6 rows moved to `harness-skipif`. Broad 5k kept 2,254 runnable / 2,746
-excluded and moved 310 rows to `harness-skipif`.
-
-`ptn-qsmv.9` passed `cargo check`, focused native tests,
-`phpt_classifier`, and full `cargo test`. `ptn-4tfb` maps broad 1k
-blockers: 265 pass / 186 fail among 451 runnable.
+`ptn-qsmv.8` kept the PHPT shell checks, `phpt_classifier`, runner `--help`,
+and `cargo build --bin phpc` green. With `--classify-harness-programs`, broad
+1k kept 424 runnable / 576 excluded, moving 6 rows to `harness-skipif`; broad
+5k kept 2,254 runnable / 2,746 excluded, moving 310 rows.
 
 Follow-ups remain typed properties, traits, magic methods, attributes,
 arrow functions, heredoc/nowdoc parsing, userland `throw`, readonly metadata,

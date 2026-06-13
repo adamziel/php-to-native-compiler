@@ -623,6 +623,86 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
     '
 }
 
+ptn_phpt_first_unsupported_internal_surface() {
+    local path=$1
+
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+        function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
+            quote = ""
+            escaped = 0
+            out = ""
+            for (i = 1; i <= length(raw); i++) {
+                ch = substr(raw, i, 1)
+                next_ch = substr(raw, i + 1, 1)
+                if (ptn_block_comment) {
+                    if (ch == "*" && next_ch == "/") {
+                        ptn_block_comment = 0
+                        out = out "  "
+                        i++
+                    } else {
+                        out = out " "
+                    }
+                    continue
+                }
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    out = out " "
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    out = out " "
+                    continue
+                }
+                if (ch == "/" && next_ch == "/") {
+                    break
+                }
+                if (ch == "#") {
+                    break
+                }
+                if (ch == "/" && next_ch == "*") {
+                    ptn_block_comment = 1
+                    out = out "  "
+                    i++
+                    continue
+                }
+                out = out ch
+            }
+            return tolower(out)
+        }
+        {
+            line = ptn_php_code_line($0)
+            if (line ~ /(^|[^[:alnum:]_$])array_splice[[:space:]]*\(/) {
+                print "unsupported-internal\trequires array_splice() by-reference array mutation plus replacement/reindexing COW separation, outside PTN modeled array mutator helpers"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])array_walk_recursive[[:space:]]*\(/) {
+                print "unsupported-internal\trequires array_walk_recursive() recursive by-reference callback traversal and mutation visibility, outside PTN modeled array_walk helper"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])array_multisort[[:space:]]*\(/) {
+                print "unsupported-internal\trequires array_multisort() multi-array by-reference sorting and flag/cursor mutation semantics, outside PTN modeled sort helpers"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(u|ua|uk)sort[[:space:]]*\(/) {
+                print "unsupported-internal\trequires usort()/uasort()/uksort() user-comparator by-reference sort helpers and COW separation, outside PTN modeled sort helpers"
+                found = 1
+                exit
+            }
+        }
+        END { exit found ? 0 : 1 }
+    '
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -700,6 +780,11 @@ ptn_phpt_classify_row() {
     fi
 
     if value=$(ptn_phpt_first_unsupported_class_metadata_surface "$path"); then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    if value=$(ptn_phpt_first_unsupported_internal_surface "$path"); then
         printf '%s\n' "$value"
         return 0
     fi

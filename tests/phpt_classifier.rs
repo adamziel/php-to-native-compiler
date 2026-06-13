@@ -186,6 +186,56 @@ fn phpt_classifier_keeps_variadic_parameter_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_excludes_unsupported_mutating_array_internals() {
+    let cases = [
+        (
+            "array_splice",
+            "--TEST--\nsplice\n--FILE--\n<?php\n$items = [1, 2, 3];\narray_splice($items, 1, 1, [4]);\n--EXPECT--\n",
+            "requires array_splice() by-reference array mutation",
+        ),
+        (
+            "array_walk_recursive",
+            "--TEST--\nrecursive walk\n--FILE--\n<?php\narray_walk_recursive([1], \"var_dump\");\n--EXPECT--\n",
+            "requires array_walk_recursive() recursive by-reference callback traversal",
+        ),
+        (
+            "array_multisort",
+            "--TEST--\nmultisort\n--FILE--\n<?php\n$left = [2, 1];\n$right = [\"b\", \"a\"];\narray_multisort($left, $right);\n--EXPECT--\n",
+            "requires array_multisort() multi-array by-reference sorting",
+        ),
+        (
+            "user comparator sort",
+            "--TEST--\nusort\n--FILE--\n<?php\n$items = [3, 1, 2];\nusort($items, \"strcmp\");\n--EXPECT--\n",
+            "requires usort()/uasort()/uksort() user-comparator by-reference sort helpers",
+        ),
+    ];
+
+    for (name, phpt, reason) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("unsupported-internal\t"),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_unsupported_internal_names_in_strings_and_comments_runnable() {
+    let classification = classify(
+        "--TEST--\ninternal names text\n--FILE--\n<?php\n// array_splice($a, 0);\n# array_multisort($a)\n/* usort($a, \"cmp\"); array_walk_recursive($a, \"cb\"); */\necho \"array_splice array_multisort usort uasort uksort array_walk_recursive\";\n--EXPECT--\narray_splice array_multisort usort uasort uksort array_walk_recursive\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_attribute_text_in_strings_runnable() {
     let classification = classify(
         "--TEST--\nattribute text\n--FILE--\n<?php\necho \"prefix #[not an attribute]\";\n--EXPECT--\nprefix #[not an attribute]\n",

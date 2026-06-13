@@ -119,10 +119,12 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   expectation rows, and broad unsupported language surfaces such as anonymous
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
   arrow functions, userland `throw`, readonly modifiers, asymmetric property
-  visibility, heredoc/nowdoc strings, and class-metadata blockers are mapped to
-  blocker categories with source evidence; broad baseline runs also opt into
-  `--SKIPIF--` precondition harness classification. `PTN_PHPT_CLASSIFY=0`
-  gives raw php-src `run-tests.php` pass-through.
+  visibility, heredoc/nowdoc strings, class-metadata blockers, and currently
+  unmodeled mutating array-internal helpers such as `array_splice()`,
+  `array_walk_recursive()`, `array_multisort()`, `usort()`, `uasort()`, and
+  `uksort()` are mapped to blocker categories with source evidence; broad
+  baseline runs also opt into `--SKIPIF--` precondition harness classification.
+  `PTN_PHPT_CLASSIFY=0` gives raw php-src `run-tests.php` pass-through.
 - Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from
   `Zend/tests`, `ext/standard/tests`, and core `tests`, recording the php-src
   corpus revision plus pass/fail/skip/warn counts without requiring all rows to

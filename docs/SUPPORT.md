@@ -308,6 +308,11 @@ Post-RC architecture remains explicit rather than hidden:
   and remaining sort-family by-reference array mutators such as `usort()`,
   `uasort()`, `uksort()`, and `array_multisort()` remain unsupported and fail
   with an explicit unsupported diagnostic.
+- Broad PHPT rows for currently unmodeled mutating array-internal helpers
+  (`array_splice()`, `array_walk_recursive()`, `array_multisort()`, `usort()`,
+  `uasort()`, and `uksort()`) are classified as `unsupported-internal` before
+  execution, with source evidence, so they do not inflate runnable semantic
+  failures until generic helper implementations exist.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
   offset reads, property reads, static property reads, and currently supported
   value expressions. Variable, offset, property, and static-property operands

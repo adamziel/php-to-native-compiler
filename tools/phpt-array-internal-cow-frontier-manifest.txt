@@ -1,0 +1,93 @@
+# Broad ext/standard array-internal COW frontier rows.
+#
+# These rows exercise mutating helper families whose PHP semantics require
+# by-reference array mutation, copy-on-write separation, recursive callback
+# mutation visibility, or coordinated multi-array sorting. PTN classifies the
+# unsupported helper families before execution until the runtime has generic
+# implementations.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Bucket row counts are validated by tools/run-bounded-phpt.sh.
+#
+# Run:
+#   tools/run-bounded-phpt.sh --classify-only tools/phpt-array-internal-cow-frontier-manifest.txt
+
+# bucket: array-splice rows=12
+ext/standard/tests/array/array_splice_basic.phpt
+ext/standard/tests/array/array_splice_variation1.phpt
+ext/standard/tests/array/array_splice_variation3.phpt
+ext/standard/tests/array/array_splice_variation4.phpt
+ext/standard/tests/array/gh16649/array_splice_normal_destructor.phpt
+ext/standard/tests/array/gh16649/array_splice_uaf_add_elements.phpt
+ext/standard/tests/array/gh16649/array_splice_uaf_array_deallocated.phpt
+ext/standard/tests/array/gh16649/array_splice_uaf_complex_modification.phpt
+ext/standard/tests/array/gh16649/array_splice_uaf_multiple_destructors.phpt
+ext/standard/tests/array/gh16649/array_splice_uaf_original_case.phpt
+ext/standard/tests/array/gh16649/array_splice_uaf_packed_to_hash.phpt
+ext/standard/tests/array/gh16649/array_splice_with_replacement.phpt
+
+# bucket: recursive-walk rows=14
+ext/standard/tests/array/array_walk/array_walk_recursive.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive1.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_basic1.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_basic2.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_error2.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_object1.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_object2.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation3.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation4.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation5.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation6.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation7.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation8.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation9.phpt
+
+# bucket: array-multisort rows=20
+ext/standard/tests/array/sort/array_multisort_basic1.phpt
+ext/standard/tests/array/sort/array_multisort_basic2.phpt
+ext/standard/tests/array/sort/array_multisort_case.phpt
+ext/standard/tests/array/sort/array_multisort_error.phpt
+ext/standard/tests/array/sort/array_multisort_incase.phpt
+ext/standard/tests/array/sort/array_multisort_natural.phpt
+ext/standard/tests/array/sort/array_multisort_natural_case.phpt
+ext/standard/tests/array/sort/array_multisort_natural_incase.phpt
+ext/standard/tests/array/sort/array_multisort_stability.phpt
+ext/standard/tests/array/sort/array_multisort_variation1.phpt
+ext/standard/tests/array/sort/array_multisort_variation10.phpt
+ext/standard/tests/array/sort/array_multisort_variation11.phpt
+ext/standard/tests/array/sort/array_multisort_variation2.phpt
+ext/standard/tests/array/sort/array_multisort_variation3.phpt
+ext/standard/tests/array/sort/array_multisort_variation4.phpt
+ext/standard/tests/array/sort/array_multisort_variation5.phpt
+ext/standard/tests/array/sort/array_multisort_variation6.phpt
+ext/standard/tests/array/sort/array_multisort_variation7.phpt
+ext/standard/tests/array/sort/array_multisort_variation8.phpt
+ext/standard/tests/array/sort/array_multisort_variation9.phpt
+
+# bucket: user-comparator-sort rows=26
+ext/standard/tests/array/sort/uasort_basic1.phpt
+ext/standard/tests/array/sort/uasort_basic2.phpt
+ext/standard/tests/array/sort/uasort_object1.phpt
+ext/standard/tests/array/sort/uasort_object2.phpt
+ext/standard/tests/array/sort/uasort_variation10.phpt
+ext/standard/tests/array/sort/uasort_variation11.phpt
+ext/standard/tests/array/sort/uasort_variation3.phpt
+ext/standard/tests/array/sort/uasort_variation4.phpt
+ext/standard/tests/array/sort/uasort_variation5.phpt
+ext/standard/tests/array/sort/uasort_variation6.phpt
+ext/standard/tests/array/sort/uasort_variation7.phpt
+ext/standard/tests/array/sort/uasort_variation8.phpt
+ext/standard/tests/array/sort/uksort_basic.phpt
+ext/standard/tests/array/sort/usort_basic.phpt
+ext/standard/tests/array/sort/usort_object1.phpt
+ext/standard/tests/array/sort/usort_object2.phpt
+ext/standard/tests/array/sort/usort_stability.phpt
+ext/standard/tests/array/sort/usort_variation10.phpt
+ext/standard/tests/array/sort/usort_variation11.phpt
+ext/standard/tests/array/sort/usort_variation3.phpt
+ext/standard/tests/array/sort/usort_variation4.phpt
+ext/standard/tests/array/sort/usort_variation5.phpt
+ext/standard/tests/array/sort/usort_variation6.phpt
+ext/standard/tests/array/sort/usort_variation7.phpt
+ext/standard/tests/array/sort/usort_variation8.phpt
+ext/standard/tests/array/sort/usort_variation9.phpt

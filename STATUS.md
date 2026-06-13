@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T18:54Z
-Measured: `ptn-qsmv.8` opt-in PHPT `--SKIPIF--` harness classification
+Last refresh: 2026-06-13T19:07Z
+Measured: `ptn-550s.3` array-internal COW frontier rebased after
 
 ## Operating Goal
 
@@ -29,10 +29,12 @@ Source unit tests 3/3; Native/compiler Rust suite 651/651; Native smoke matrix 6
 | PHPT tests/basic+func+lang | 78/78 |
 | PHPT other rows | 8/8 |
 | PHPT COW manifest | 29/29 |
+| PHPT array-internal COW frontier | 0/72 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |
 | PHPT formatted string rows | 25/75 |
+| PHPT broad 1k baseline | 265/1000 |
 
 ## Rules
 
