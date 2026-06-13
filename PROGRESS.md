@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-13T03:06Z
-Measured: `ptn-98d8.7` rebased on current `origin/master` `05b4670fd`.
+Refresh: 2026-06-13T03:30Z
+Measured: `ptn-719w` rebased on current `origin/master` `d21b77f37`.
 
 Recent RC slices cover class constants, embedded-NUL `var_export()`,
 `explode()`, `strncmp()`, `strrchr()`, namespaces/imports, includes/once
@@ -11,25 +11,25 @@ array mutators/set/sort/udiff/list helpers, `json_encode()`,
 `printf()`/`sprintf()`, `basename()`, `file_get_contents()`, `strcasecmp()`,
 scalar `str_replace()` count outputs and TypeErrors, `chr()` diagnostics,
 length-aware `crc32()`, metadata, foreach list destructuring, dynamic-variable
-writes/unsets and `??=`, stream metadata, and array/string-offset
-compound/null coalescing.
+writes/unsets and `??=`, stream metadata, array/string-offset compound/null
+coalescing, and statement-form `(void)` casts.
 
-Recent movers include declared/static `property_exists()` metadata,
-inherited static method dispatch, broad PHPT baseline manifests,
-length-aware scalar `crc32()` checksums, scalar `str_replace()` count
-out-parameters, `chr()` integer diagnostics, `strncmp()`/`strrchr()`,
-`basename()`, `file_get_contents()`, `strcasecmp()`, streams, and PHPT
-preclassification.
+Recent movers include declared/static `property_exists()` metadata, inherited
+static method dispatch, broad PHPT baseline manifests, length-aware scalar
+`crc32()` checksums, scalar `str_replace()` count out-parameters, `chr()`
+integer diagnostics, `strncmp()`/`strrchr()`, `basename()`,
+`file_get_contents()`, `strcasecmp()`, streams, statement-form `(void)`, and
+PHPT preclassification.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 581 | 581 | 0 |
+| Native/compiler Rust suite | 583 | 583 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 237 | 235 | 2 |
-| PHPT Zend rows | 82 | 82 | 0 |
+| PHPT bounded manifest | 238 | 236 | 2 |
+| PHPT Zend rows | 83 | 83 | 0 |
 | PHPT ext/standard rows | 105 | 105 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT tests/basic+func+lang | 45 | 45 | 0 |
@@ -58,21 +58,22 @@ namespaces/imports, streams, file reads/writes, array/string/numeric helpers
 through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
 `str_replace()`, `strcasecmp()`, `strncmp()`, `strrchr()`, `crc32()`,
 `basename()`, `chr()` diagnostics, `var_export()`, array mutators, inc/dec,
-foreach destructuring, dynamic-variable writes/unsets, and
-array/string-offset compound/null coalescing assignments.
+foreach destructuring, dynamic-variable writes/unsets, statement-form
+`(void)` casts, and array/string-offset compound/null coalescing assignments.
 
 ## Remaining Bounded Failures
 
-- None among the 235 runnable rows in the current 237-row bounded manifest.
+- None among the 236 runnable rows in the current 238-row bounded manifest.
   Two selected rows are classified out for unsupported ini requirements.
 
 ## Verification
 
-Current slice verification: `git diff --check`; `cargo fmt --check`;
-focused parser/native `property_exists` tests 2/2; focused `property_exists`
-PHPT rows 2/2; full `cargo test` 581/581 plus auxiliary COW/doc tests;
-bounded PHPT 237 selected/235 runnable/2 excluded, 235/235 passed; PHPT COW
-29/29; and post-merge COW gate 17/17 oracle, 3/3 notice, 6/6 diagnostics.
+Current slice verification: upstream `property_exists()` slice had full
+`cargo test` 581/581, bounded PHPT 237 selected/235 runnable/2 excluded with
+235/235 passed, and post-merge COW gate 17/17 oracle, 3/3 notice, 6/6
+diagnostics; this slice adds focused Rust `void_cast` tests 4/4, focused
+`cast_to_void.phpt` row 1/1, PHPT COW 29/29, `cargo fmt --check`, and
+`git diff --check`.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, bracketed/grouped namespaces, broader

@@ -829,6 +829,9 @@ impl Parser {
             }
             TokenKind::Variable(_) => self.parse_variable_statement(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
+            TokenKind::LeftParen if self.peek_is_void_cast_prefix() => {
+                self.parse_void_cast_statement()
+            }
             _ if self.peek_starts_expression() => self.parse_expression_statement(),
             _ => Err(Diagnostic::new(
                 "expected statement",
@@ -1278,6 +1281,37 @@ impl Parser {
     fn parse_expression_statement(&mut self) -> Result<Statement> {
         let expression = self.parse_expr()?;
         let span = expression.span();
+        if matches!(self.peek().kind, TokenKind::Question) {
+            return self.reject_unsupported_ternary_expression();
+        }
+        if self.peek_is_assignment_op() {
+            return Err(Diagnostic::new(
+                "expected assignment",
+                Some(self.peek().span),
+            ));
+        }
+        self.expect_statement_terminator()?;
+        Ok(Statement::Expression { expression, span })
+    }
+
+    fn parse_void_cast_statement(&mut self) -> Result<Statement> {
+        let left_span = self.expect_left_paren()?;
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            return Err(Diagnostic::parse_error(
+                "syntax error, unexpected token \"(void)\"",
+                Some(left_span),
+            ));
+        };
+        if !name.eq_ignore_ascii_case("void") {
+            return Err(Diagnostic::parse_error(
+                "syntax error, unexpected token \"(void)\"",
+                Some(left_span),
+            ));
+        }
+        self.expect_right_paren()?;
+        let expression = self.parse_expr()?;
+        let span = combine_spans(left_span, expression.span());
         if matches!(self.peek().kind, TokenKind::Question) {
             return self.reject_unsupported_ternary_expression();
         }
@@ -2799,6 +2833,18 @@ impl Parser {
                 | TokenKind::LeftBracket
                 | TokenKind::Backslash
         )
+    }
+
+    fn peek_is_void_cast_prefix(&self) -> bool {
+        matches!(self.peek().kind, TokenKind::LeftParen)
+            && matches!(
+                self.tokens.get(self.index + 1).map(|token| &token.kind),
+                Some(TokenKind::Identifier(name)) if name.eq_ignore_ascii_case("void")
+            )
+            && matches!(
+                self.tokens.get(self.index + 2).map(|token| &token.kind),
+                Some(TokenKind::RightParen)
+            )
     }
 
     fn peek_is_identifier(&self, expected: &str) -> bool {

@@ -76,6 +76,7 @@ Zend/tests/type_coercion/float_to_int/negative_zero_check.phpt
 Zend/tests/type_coercion/float_to_int/no_warnings_compatible_float_literals_assignment_ops.phpt
 Zend/tests/type_coercion/float_to_int/warnings_float_literals_assignment_ops.phpt
 Zend/tests/type_coercion/float_to_int/warnings_string_float_literals_assignment_ops.phpt
+Zend/tests/type_coercion/type_casts/cast_to_void.phpt
 Zend/tests/type_coercion/type_casts/cast_to_void_statement.phpt
 Zend/tests/type_coercion/type_casts/non_canonical_binary_cast.phpt
 Zend/tests/type_coercion/type_casts/non_canonical_boolean_cast.phpt

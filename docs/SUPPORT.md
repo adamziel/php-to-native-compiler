@@ -197,6 +197,8 @@ Post-RC architecture remains explicit rather than hidden:
   fatal error through `phpc`.
 - Expression-context `(void)` cast syntax is rejected with a source-spanned
   PHP-style parse error through `phpc`.
+- Statement-form `(void) expr;` casts evaluate the operand through the ordinary
+  expression path for side effects and discard the resulting boxed value.
 - Unterminated block comments are rejected with a source-spanned PHP-style
   parse error through `phpc`.
 - Simple full ternaries `condition ? if_true : if_false` and short ternaries
@@ -1179,7 +1181,6 @@ Post-RC architecture remains explicit rather than hidden:
   CLI/core/standard names and loaded-extension list.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
-- Statement-form `(void) expr;` casts.
 - Scope-aware magic constants inside traits, includes, and eval contexts, plus
   remaining namespace-sensitive reflection and metadata parity.
 - PHP-exact file names, line numbers, custom error-handler routing, and

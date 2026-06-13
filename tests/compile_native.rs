@@ -1643,6 +1643,31 @@ fn parser_rejects_void_cast_expression_context_with_parse_error_kind() {
 }
 
 #[test]
+fn parser_accepts_statement_form_void_casts() {
+    let program = parser::parse("<?php (void)$value; (void)\"literal\";").unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Expression {
+        expression: Expr::Variable(name, _),
+        span,
+    } = &program.statements[0]
+    else {
+        panic!("expected statement-form void cast to lower as expression discard");
+    };
+    assert_eq!(name, "value");
+    assert_eq!(span.line, 1);
+
+    let Statement::Expression {
+        expression: Expr::String(value, _),
+        ..
+    } = &program.statements[1]
+    else {
+        panic!("expected literal void cast to lower as expression discard");
+    };
+    assert_eq!(value, "literal");
+}
+
+#[test]
 fn parser_rejects_unterminated_block_comment_with_parse_error_kind() {
     let error = parser::parse("<?php\n/* Foo\nBar").unwrap_err();
     assert_eq!(error.message, "Unterminated comment starting line 2");
@@ -19326,6 +19351,36 @@ fn compile_unary_parenthesized_and_cast_expressions_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "-5\n1 \n42.5 1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_statement_form_void_cast_discards_values_to_native_binary() {
+    let root = temp_dir("ptn-native-void-cast-statement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("void-cast-statement.php");
+    let output = root.join("void-cast-statement-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function mark($label) { echo \"mark:$label\\n\"; return [\"label\" => $label]; }\n\
+(void)mark(\"one\");\n\
+(void)[\"nested\" => mark(\"two\")];\n\
+$value = 0;\n\
+(void)($value = 7);\n\
+(void)\"literal\";\n\
+echo \"value=$value\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "mark:one\nmark:two\nvalue=7\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
