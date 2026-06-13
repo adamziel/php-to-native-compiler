@@ -16885,6 +16885,58 @@ echo \"Done\\n\";",
 }
 
 #[test]
+fn compile_quiet_string_offset_isset_empty_conversions_to_native_binary() {
+    let root = temp_dir("ptn-native-quiet-string-offset-isset-empty");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("quiet-string-offset-isset-empty.php");
+    let output = root.join("quiet-string-offset-isset-empty-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = \"test0123\";\n\
+$f = fopen(__FILE__, \"r\");\n\
+var_dump(isset($str[-1]));\n\
+var_dump(isset($str[-10]));\n\
+var_dump(isset($str[1.5]));\n\
+var_dump(isset($str[100.5]));\n\
+var_dump(isset($str[$f]));\n\
+var_dump(empty($str[-1]));\n\
+var_dump(empty($str[-10]));\n\
+var_dump(empty($str[0.2]));\n\
+var_dump(empty($str[100.5]));\n\
+var_dump(empty($str[$f]));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let normalized_stdout = stdout.replace(input.to_str().unwrap(), "ptn");
+    assert_eq!(
+        normalized_stdout,
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "\nDeprecated: Implicit conversion from float 1.5 to int loses precision in ptn on line 6\n",
+            "bool(true)\n",
+            "\nDeprecated: Implicit conversion from float 100.5 to int loses precision in ptn on line 7\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "\nDeprecated: Implicit conversion from float 0.2 to int loses precision in ptn on line 11\n",
+            "bool(false)\n",
+            "\nDeprecated: Implicit conversion from float 100.5 to int loses precision in ptn on line 12\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_string_offset_writes_to_native_binary() {
     let root = temp_dir("ptn-native-string-offset-writes");
     fs::create_dir_all(&root).unwrap();

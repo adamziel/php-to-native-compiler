@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T19:22Z
+Last refresh: 2026-06-13T19:34Z
 Source: `PROGRESS.md`
-Measured: `ptn-550s.4` COW function-boundary expansion after `ptn-550s.1`.
+Measured: `ptn-550s.5` string/scalar alias PHPT slice after `ptn-550s.4`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 651/651; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 652/652; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 651/651 |
+| Native/compiler Rust suite | 652/652 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -26,6 +26,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 651/651; Nativ
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |
 | PHPT formatted string rows | 25/75 |
+| PHPT string/scalar alias rows | 23/35 |
 | PHPT broad 1k baseline | 265/1000 |
 
 Canonical dashboard: `PROGRESS.md`. Regenerate with

@@ -1,0 +1,50 @@
+# Focused broad PHPT string/scalar alias and offset manifest.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Run:
+#   tools/run-phpt-manifest.sh tools/phpt-string-scalar-alias-manifest.txt
+
+# bucket: quiet-string-offsets rows=2 pass=2
+Zend/tests/empty_str_offset.phpt
+Zend/tests/isset/isset_str_offset.phpt
+
+# bucket: numeric-and-scalar-offsets rows=7 pass=7
+Zend/tests/numeric_strings/array_offset.phpt
+Zend/tests/numeric_strings/string_offset.phpt
+Zend/tests/offset_assign.phpt
+Zend/tests/offset_long.phpt
+Zend/tests/offset_null.phpt
+Zend/tests/string_offset_int_min_max.phpt
+Zend/tests/string_offset_optimization.phpt
+
+# bucket: string-offset-cow rows=4 pass=4
+Zend/tests/str_offset_001.phpt
+Zend/tests/str_offset_002.phpt
+Zend/tests/str_offset_003.phpt
+Zend/tests/str_offset_004.phpt
+
+# bucket: concat-and-ref-aliasing rows=10 pass=10
+Zend/tests/array_unshift_COW.phpt
+Zend/tests/assign_dim_op_undef.phpt
+Zend/tests/assign_ref_func_leak.phpt
+Zend/tests/bw_or_assign_with_ref.phpt
+Zend/tests/concat/bug32833.phpt
+Zend/tests/concat/bug40809.phpt
+Zend/tests/concat/bug44069.phpt
+Zend/tests/concat/bug79836_3.phpt
+Zend/tests/concat/concat_002.phpt
+Zend/tests/div_by_zero_compound_refcounted.phpt
+
+# bucket: classified-blockers rows=12 pass=0 classified=12
+Zend/tests/offsets/array_container_offset_behaviour.phpt
+Zend/tests/offsets/false_container_offset_behaviour.phpt
+Zend/tests/offsets/invalid_container_offset_behaviour.phpt
+Zend/tests/offsets/null_offset_dep_promoted.phpt
+Zend/tests/offsets/object_container_offset_behaviour.phpt
+Zend/tests/offsets/runtime_compile_time_offset_access.phpt
+Zend/tests/concat/bug79836.phpt
+Zend/tests/concat/bug79836_4.phpt
+Zend/tests/assign_obj_to_ref_inference.phpt
+Zend/tests/compound_assign_failure.phpt
+Zend/tests/offsets/internal_handlers.phpt
+Zend/tests/falsetoarray.phpt

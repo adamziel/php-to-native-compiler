@@ -66,6 +66,13 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
     size_t line
 );
 static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
+static PTN_UNUSED int ptn_float_to_int_loses_precision(double value);
+static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
+    PtnDiagnosticSink *diagnostics,
+    double value,
+    const char *path,
+    size_t line
+);
 static PTN_UNUSED PtnArray *ptn_runtime_array_detach_variable(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED PtnArray *ptn_value_replace_with_empty_array(PtnValue *value);
 
@@ -1141,12 +1148,24 @@ static PTN_UNUSED int ptn_string_offset_from_value(
             *offset = 0;
             return 1;
         case PTN_FLOAT:
-            if (!quiet) {
+            if (quiet) {
+                if (ptn_float_to_int_loses_precision(key_value.as.floating)) {
+                    ptn_emit_float_to_int_precision_deprecation_at(
+                        &runtime->diagnostics,
+                        key_value.as.floating,
+                        runtime->source_path == NULL ? "ptn" : runtime->source_path,
+                        line
+                    );
+                }
+            } else {
                 ptn_emit_string_offset_cast_warning(line);
             }
             *offset = (int64_t)key_value.as.floating;
             return 1;
         case PTN_RESOURCE:
+            if (quiet) {
+                return 0;
+            }
             if (!quiet) {
                 ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
             }

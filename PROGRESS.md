@@ -1,19 +1,19 @@
 # PTN Progress
 
-Refresh: 2026-06-13T19:22Z
-Measured: `ptn-550s.4` COW function-boundary expansion after `ptn-550s.1`.
+Refresh: 2026-06-13T19:34Z
+Measured: `ptn-550s.5` string/scalar alias PHPT slice after `ptn-550s.4`.
 
 Recent RC slices cover constants, includes, closures, object callables,
 helper internals, PHPT blockers, streams, filesystem/path helpers, strings,
-asymmetric property set visibility, array-internal COW, a broad COW map, and
-expanded COW function-boundary PHPT.
+asymmetric property set visibility, array-internal COW, broad COW maps,
+function-boundary PHPT, and quiet string-offset diagnostics.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 651 | 651 | 0 |
+| Native/compiler Rust suite | 652 | 652 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
@@ -30,6 +30,7 @@ expanded COW function-boundary PHPT.
 | PHPT callback manifest | 5 | 5 | 0 |
 | PHPT include manifest | 2 | 2 | 0 |
 | PHPT formatted string rows | 75 | 25 | 50 |
+| PHPT string/scalar alias rows | 35 | 23 | 12 |
 | PHPT broad 1k baseline | 1000 | 265 | 735 |
 
 ## Remaining Bounded Exclusions
@@ -44,25 +45,21 @@ expanded COW function-boundary PHPT.
 
 ## Verification
 
-`ptn-550s.4` adds 25 focused COW function-boundary rows for by-reference
-parameters/returns, call-frame snapshots, call-result reference fallback/leak,
-weak scalar reference typing, `call_user_func_array()` reference identity, and
-`array_reduce()` callbacks. Worker evidence: `cargo fmt --check`, focused COW
-native reducer, and full COW PHPT passed; manifest selected 54, ran 54, passed
-54, excluded 0. Final-base classify-only confirmed 54 runnable.
+`ptn-550s.5` adds quiet string-offset `isset()`/`empty()` float/resource
+diagnostics and `docs/PHPT_STRING_SCALAR_ALIAS_2026-06-13.md`. Broad candidate
+evidence selected 44 rows, ran 36, excluded 8, passed 11, and failed 25. The
+committed manifest selected 35, ran 23, excluded 12, and passed 23/23; blockers
+are heredoc/nowdoc, ini settings, typed property metadata, and `zend_test`.
 
-`ptn-550s.1` adds `docs/COW_BROAD_PHPT_RISK_MAP_2026-06-13.md`: 1k
-classify-only selected 1,000 rows, 431 runnable, 569 excluded; broad 5k
-selected 5,000 rows, 2,564 runnable, 2,436 excluded against php-src
-`8c63ec400ce8e07c57a8d9499317b96a8beafb8b`. The COW map classifies 92 broad
-COW-sensitive rows and follow-ups `ptn-550s.2` through `ptn-550s.7`.
-
-`ptn-550s.3` classifies the array-internal COW frontier at 72 selected,
-0 runnable, and 72 excluded. With `--classify-harness-programs`, broad 1k kept
-424 runnable / 576 excluded; broad 5k kept 2,254 runnable / 2,746 excluded.
+`ptn-550s.4` expanded focused COW function-boundary rows to 54/54, including
+25 new by-reference/call-frame/callable/`array_reduce()` rows. `ptn-550s.1`
+adds the broad COW risk map: 1k classify-only 431 runnable / 569 excluded; 5k
+2,564 runnable / 2,436 excluded against php-src
+`8c63ec400ce8e07c57a8d9499317b96a8beafb8b`. `ptn-550s.3` classifies the
+array-internal COW frontier at 72 selected, 0 runnable, and 72 excluded.
 
 Follow-ups remain typed properties, traits, magic methods, attributes,
 heredoc/nowdoc, userland `throw`, readonly metadata, first-class callables,
-dynamic includes, unsupported internals, scalar-offset lvalues, `Traversable`,
-embedded-NUL internals, formatter/callback parity, process boundaries, and
-classifier scan batching.
+dynamic includes, unsupported internals, remaining scalar-offset lvalues,
+`Traversable`, embedded-NUL internals, formatter/callback parity, process
+boundaries, and classifier scan batching.

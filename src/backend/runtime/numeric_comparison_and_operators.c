@@ -827,7 +827,7 @@ static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
         diagnostics->emitted_deprecation = 1;
     }
     printf(
-        "\nDeprecated: Implicit conversion from float %.14g to int loses precision in %s on line %zu\n",
+        "\nDeprecated: Implicit conversion from float %.16g to int loses precision in %s on line %zu\n",
         value,
         path,
         line

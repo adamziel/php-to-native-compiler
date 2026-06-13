@@ -130,6 +130,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   corpus revision plus pass/fail/skip/warn counts without requiring all rows to
   pass; `--classify-only` writes the same selected/runnable/excluded manifests
   without building or running rows.
+- Focused string/scalar alias telemetry covers quiet string-offset
+  `isset()`/`empty()` diagnostics, numeric string offsets, string-offset COW,
+  concat-assignment aliasing, and classified blocker rows for unsupported
+  heredoc/ini/typed-property/extension surfaces.
 
 ## Status
 
@@ -152,6 +156,7 @@ tools/update-progress-mirrors.sh
 tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
 tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-filesystem-path-process-manifest.txt
+tools/run-phpt-manifest.sh tools/phpt-string-scalar-alias-manifest.txt
 tools/run-phpt-baseline.sh --generate-only
 tools/run-phpt-baseline.sh --tier 1000 --classify-only
 tools/run-phpt-baseline.sh --tier 1000
