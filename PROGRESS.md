@@ -1,14 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-13T06:59Z
-Measured: `ptn-ryv4` rebased on current `origin/master` `eaa43afc9`.
+Refresh: 2026-06-13T07:23Z
+Measured: `ptn-zta9` rebased on current `origin/master` `7bc467b8b`.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, `explode()`,
 `strncmp()`, `strrchr()`, namespaces/imports, includes/once guards, closures,
 `stdClass`, properties/destructors/reflection, inherited static dispatch,
 `property_exists()` metadata, array helpers, `json_encode()`,
 `printf()`/`sprintf()`, `basename()`, `pathinfo()`, `file_get_contents()`,
-`strcasecmp()`, string search/slice/count internals, scalar `str_replace()`,
+`strcasecmp()`, string search/slice/count internals, `str_replace()` scalar
+and top-level array forms,
 `chr()` diagnostics, `crc32()`, standard streams, foreach destructuring,
 dynamic-variable writes/unsets and `??=`, stream metadata, keyword boolean
 tails after direct assignments, locale constants/`setlocale()`, and offset
@@ -18,8 +19,8 @@ Recent movers include binary-safe search/count internals, PHP 8.4
 `array_sum()`/`array_product()` warnings and overflow promotion, persistent
 `STDIN`/`STDOUT`/`STDERR`, binary-safe `pathinfo()`, `property_exists()`,
 PHPT manifests, keyword boolean assignment tails, modeled `LC_*` constants with
-C/POSIX `setlocale()` dispatch, `crc32()`, scalar `str_replace()` counts, and
-stream preclassification.
+C/POSIX `setlocale()` dispatch, `crc32()`, scalar `str_replace()` counts,
+top-level `str_replace()` array forms, and stream preclassification.
 
 ## Dashboard
 
@@ -50,7 +51,8 @@ class/object shells/constants, declared/static properties,
 destructors, reflection, assertions, namespaces/imports, streams and standard
 stream constants, file reads/writes, array/string/numeric helpers through
 `array_udiff*()`, `array_sum()`, `array_product()`, `json_encode()`,
-`printf()`, `fdiv()`, `explode()`, `str_replace()`, `strcasecmp()`,
+`printf()`, `fdiv()`, `explode()`, `str_replace()` scalar/top-level array
+forms, `strcasecmp()`,
 `strncmp()`, `strrchr()`, string search/slice/count internals, `pathinfo()`,
 `crc32()`, `basename()`, `chr()` diagnostics, locale constants and
 `setlocale()`, `var_export()`, array mutators, inc/dec, foreach destructuring,
@@ -64,15 +66,17 @@ tails, and array/string-offset compound/null coalescing assignments.
 
 ## Verification
 
-Current slice `ptn-ryv4` is green on diff check, `cargo fmt`, focused locale
-native test 1/1, `cargo test` 585/585 plus COW/doc tests, bounded PHPT
-260/260 with 2 classified exclusions, PHPT COW 29/29, and post-merge COW
-26/26.
+2026-06-13T07:23Z: before the final rebase, passed `cargo fmt --check`,
+focused `str_replace()` native reducers 2/2, `cargo test` 585/585 plus
+COW/doc tests, bounded PHPT 260/260 with 2 excluded, PHPT COW 29/29, and
+post-merge COW 26/26. After rebasing onto `origin/master` `7bc467b8b`, passed
+`cargo fmt --check`, focused `str_replace()` native reducers 2/2, and
+`str_replace_basic.phpt` 1/1.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, bracketed/grouped namespaces, broader
 fallback/reflection, magic methods, first-class callables, dynamic includes,
 unsupported internals, scalar offset-lvalues, assertion config, binary-safe
 array keys, append-form `??=`, embedded-NUL internals, object IDs,
-host-locale parity beyond the bounded C-locale slice, `str_replace()` array
-forms, and object/reference targets.
+host-locale parity beyond the bounded C-locale slice, nested `str_replace()`
+diagnostics, and object/reference targets.

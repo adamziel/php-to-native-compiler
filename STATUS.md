@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T06:59Z
-Measured: `ptn-ryv4` rebased on current `origin/master` `eaa43afc9`.
+Last refresh: 2026-06-13T07:23Z
+Measured: `ptn-zta9` rebased on current `origin/master` `7bc467b8b`.
 
 ## Operating Goal
 
