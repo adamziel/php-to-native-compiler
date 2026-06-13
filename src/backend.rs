@@ -4516,6 +4516,16 @@ impl ValueEmitter {
             line,
         } = target
         {
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                return self.emit_property_compound_assignment(
+                    out,
+                    receiver,
+                    name,
+                    *line,
+                    compound_op,
+                    value,
+                );
+            }
             let receiver_temp = self.emit_materialized_value(out, receiver);
             let value_temp = self.emit_materialized_value(out, value);
             let result_temp = self.next_temp();
@@ -4535,6 +4545,24 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &value_temp);
             emit_value_cleanup(out, "    ", &receiver_temp);
             return result_temp;
+        }
+
+        if let AssignmentTarget::StaticProperty {
+            class_name,
+            name,
+            line,
+        } = target
+        {
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                return self.emit_static_property_compound_assignment(
+                    out,
+                    class_name,
+                    name,
+                    *line,
+                    compound_op,
+                    value,
+                );
+            }
         }
 
         let value_temp = self.emit_materialized_value(out, value);
@@ -4576,34 +4604,8 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        let result_temp = self.next_temp();
-        out.push_str("    PtnValue ");
-        out.push_str(&result_temp);
-        out.push_str(" = ");
-        if matches!(op, BinaryOp::Concat) {
-            out.push_str("ptn_concat(&runtime, ");
-            out.push_str(&current_temp);
-            out.push_str(", ");
-            out.push_str(&value_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(")");
-        } else {
-            out.push_str(binary_runtime_function(op));
-            out.push('(');
-            if binary_runtime_function_uses_context(op) {
-                out.push_str("&runtime, ");
-            }
-            out.push_str(&current_temp);
-            out.push_str(", ");
-            out.push_str(&value_temp);
-            if binary_runtime_function_uses_context(op) {
-                out.push_str(", ");
-                out.push_str(&line.to_string());
-            }
-            out.push(')');
-        }
-        out.push_str(";\n");
+        let result_temp =
+            self.emit_compound_binary_from_temps(out, op, &current_temp, &value_temp, line);
 
         out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
         out.push_str(&c_string(array));
@@ -4622,6 +4624,138 @@ impl ValueEmitter {
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
+        result_temp
+    }
+
+    fn emit_property_compound_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+        op: BinaryOp,
+        value: &ValueExpr,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let value_temp = self.emit_materialized_value(out, value);
+
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp =
+            self.emit_compound_binary_from_temps(out, op, &current_temp, &value_temp, line);
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_object_write_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&result_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
+    }
+
+    fn emit_static_property_compound_assignment(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &str,
+        line: usize,
+        op: BinaryOp,
+        value: &ValueExpr,
+    ) -> String {
+        let resolved_class_name = self.static_property_class_name(class_name);
+        let value_temp = self.emit_materialized_value(out, value);
+
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp =
+            self.emit_compound_binary_from_temps(out, op, &current_temp, &value_temp, line);
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&result_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        result_temp
+    }
+
+    fn emit_compound_binary_from_temps(
+        &mut self,
+        out: &mut String,
+        op: BinaryOp,
+        current_temp: &str,
+        value_temp: &str,
+        line: usize,
+    ) -> String {
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        if matches!(op, BinaryOp::Concat) {
+            out.push_str("ptn_concat(&runtime, ");
+            out.push_str(current_temp);
+            out.push_str(", ");
+            out.push_str(value_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(")");
+        } else {
+            out.push_str(binary_runtime_function(op));
+            out.push('(');
+            if binary_runtime_function_uses_context(op) {
+                out.push_str("&runtime, ");
+            }
+            out.push_str(current_temp);
+            out.push_str(", ");
+            out.push_str(value_temp);
+            if binary_runtime_function_uses_context(op) {
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+            }
+            out.push(')');
+        }
+        out.push_str(";\n");
         result_temp
     }
 

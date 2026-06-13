@@ -32,10 +32,10 @@ Post-RC architecture remains explicit rather than hidden:
   grouped imports, namespace fallback parity for arbitrary userland symbols,
   namespace/class constants, and namespace-sensitive reflection remain
   post-RC.
-- Static properties: direct public static reads/writes and `??=` are
-  supported, and `property_exists()` can inspect the current declared static
-  property metadata. Visibility, late static binding, typed/default metadata,
-  and static-property compound lvalues outside `??=` and inc/dec are post-RC.
+- Static properties: direct public static reads/writes, compound assignments,
+  and `??=` are supported, and `property_exists()` can inspect the current
+  declared static property metadata. Visibility, late static binding, and
+  typed/default metadata are post-RC.
 - Magic methods: public declared instance `__construct` is supported during
   object construction, and public declared instance `__call` is supported as a
   fallback for direct object calls and supported object callable dispatch when
@@ -53,10 +53,10 @@ Post-RC architecture remains explicit rather than hidden:
   instance method metadata remain post-RC.
 - Object destructuring and object `Traversable` remain unsupported; current
   destructuring support is array/list lvalues.
-- Property compound lvalues remain post-RC except public property `??=` and
-  modeled property/static-property inc/dec: property `+=`, `.=` and other
-  compounds, nested/dynamic property lvalues, and static-property compounds
-  outside inc/dec are unsupported.
+- Public property compound lvalues are supported for direct property fetches,
+  alongside public property `??=` and modeled property/static-property inc/dec.
+  Nested/dynamic property lvalues and non-public/property-reference compound
+  edges remain unsupported.
 
 ## Supported
 
@@ -1241,11 +1241,11 @@ Post-RC architecture remains explicit rather than hidden:
 - PHP-exact file names, line numbers, custom error-handler routing, and
   overflow parity for remaining integer-only operator conversion diagnostics,
   including shift and modulo diagnostics.
-- Object lvalues, dynamic-variable by-reference lvalues, append-form
-  null-coalescing, property reference targets, property compound-assignment
-  operators outside modeled
-  public-property `??=`, and static-property compound-assignment lvalues
-  outside modeled direct reads/writes/`??=`/inc/dec and read-side quiet probes.
+- Dynamic-variable by-reference lvalues, append-form null-coalescing, property
+  reference targets, nested/dynamic property lvalues, and property/static
+  compound-assignment visibility/reference edges outside modeled direct public
+  property/static-property reads/writes/`??=`/inc/dec and read-side quiet
+  probes.
 - Remaining reference semantics for compound assignment outside direct
   variables and modeled array elements, including full copy-on-write
   interactions and by-reference visibility during writes.

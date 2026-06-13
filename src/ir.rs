@@ -1398,13 +1398,11 @@ impl<'a> LoweringContext<'a> {
                     AssignmentOp::Assign,
                     self.lower_assignment_value(&name, op, value, line),
                 ),
-                AssignmentTarget::ArrayDim { .. } | AssignmentTarget::DynamicArrayDim { .. } => {
-                    (op, self.lower_expr(value))
-                }
-                AssignmentTarget::DynamicVariable { .. }
+                AssignmentTarget::ArrayDim { .. }
+                | AssignmentTarget::DynamicArrayDim { .. }
                 | AssignmentTarget::Property { .. }
-                | AssignmentTarget::StaticProperty { .. }
-                | AssignmentTarget::List(_) => {
+                | AssignmentTarget::StaticProperty { .. } => (op, self.lower_expr(value)),
+                AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::List(_) => {
                     unreachable!("parser rejects compound assignment expression targets")
                 }
             },

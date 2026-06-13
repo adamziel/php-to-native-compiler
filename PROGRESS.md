@@ -1,8 +1,8 @@
 # PTN Progress
 
-Refresh: 2026-06-13T11:39Z
-Measured: `ptn-ijqx` integration on current `origin/master` `3a5068148`;
-focused scalar conversion verification green.
+Refresh: 2026-06-13T11:44Z
+Measured: `ptn-ooqj` integration on current `origin/master` `2f1950ea6`;
+verification green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, inline HTML
 output, includes/once guards, closures, `stdClass`, properties/destructors,
@@ -13,7 +13,8 @@ diagnostics, `crc32()`, `boolval()`/`floatval()`/`doubleval()`, PHP
 version/build/platform metadata constants, standard streams, foreach
 destructuring, `global` bindings, dynamic-variable writes/unsets, stream
 metadata, locale constants and `setlocale()`, catchable arithmetic/operator
-errors, alternate `<>` parsing, and offset compound/coalescing.
+errors, alternate `<>` parsing, offset compound/coalescing, and public
+property/static-property compound assignments.
 
 Recent movers include scalar conversion internals for
 `boolval()`/`floatval()`/`doubleval()`, `global` function-local binding to root
@@ -22,14 +23,14 @@ positive-level traversal, `pathinfo()`, modeled `LC_*` constants, C/POSIX
 `setlocale()`, search/count internals, PHP 8.4 array warning/overflow
 behavior, persistent standard streams, `property_exists()`, PHPT manifests,
 `crc32()`, `str_replace()` counts, and integer validation for `chr()`,
-`intdiv()`, and file offsets.
+`intdiv()`, file offsets, and direct property/static compound lvalues.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 589 | 589 | 0 |
+| Native/compiler Rust suite | 592 | 592 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 271 | 269 | 2 |
 | PHPT Zend rows | 85 | 84 | 1 |
@@ -55,7 +56,8 @@ through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`, `explode()`,
 `boolval()`/`floatval()`/`doubleval()`, inline HTML output, locale support,
 PHP version/build/platform metadata constants, `var_export()`, array mutators,
 inc/dec, `global` bindings, dynamic-variable writes/unsets, and offset
-compound/null coalescing assignments.
+compound/null coalescing assignments plus direct public property/static-property
+compound assignments.
 
 ## Remaining Bounded Exclusions
 
@@ -66,12 +68,15 @@ compound/null coalescing assignments.
 
 ## Verification
 
-Current branch verification for `ptn-ijqx`: diff check, `cargo fmt`, and
-focused scalar conversion native test.
+Current branch verification for `ptn-ooqj`: `cargo fmt --check`, focused
+`cargo test compound_assign` 13/13, full `cargo test` with source unit 3/3,
+native/compiler 592/592, and COW integration 13/13, isolated bounded PHPT
+269/269 plus 2 unsupported-ini exclusions, and PHPT COW 29/29.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic
 includes, unsupported internals, scalar offset-lvalues, assertions,
 binary-safe array keys, embedded-NUL internals, object IDs, host-locale parity,
 `str_replace()` array forms, exact scalar conversion diagnostics for edge
-values, and object/reference targets.
+values, and remaining object/reference targets including non-public,
+nested/dynamic, and by-reference property lvalue edges.
