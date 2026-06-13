@@ -1,18 +1,18 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T16:43Z
+Last refresh: 2026-06-13T16:51Z
 Source: `PROGRESS.md`
-Measured: `ptn-iwit` PHPT classify-only blocker maps on `origin/master`
+Measured: `ptn-oy8c` scalar/operator bounded-manifest expansion on
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 400/400; PHPT Zend rows 94/94; PHPT ext/standard rows 223/223.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 410/410; PHPT Zend rows 104/104; PHPT ext/standard rows 223/223.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
 | Native/compiler Rust suite | 645/645 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 400/400 |
-| PHPT Zend rows | 94/94 |
+| PHPT bounded manifest | 410/410 |
+| PHPT Zend rows | 104/104 |
 | PHPT ext/standard rows | 223/223 |
 | PHPT focused array key/callback set rows | 38/75 |
 | PHPT focused stream rows | 2/2 |

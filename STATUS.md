@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T16:43Z
-Measured: `ptn-iwit` PHPT classify-only blocker maps on `origin/master`
+Last refresh: 2026-06-13T16:51Z
+Measured: `ptn-oy8c` scalar/operator bounded-manifest expansion on
 
 ## Operating Goal
 
@@ -10,7 +10,7 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 400/400; PHPT Zend rows 94/94; PHPT ext/standard rows 223/223.
+Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 410/410; PHPT Zend rows 104/104; PHPT ext/standard rows 223/223.
 
 ## Active Buckets
 
@@ -19,8 +19,8 @@ Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6
 | Source unit tests | 3/3 |
 | Native/compiler Rust suite | 645/645 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 400/400 |
-| PHPT Zend rows | 94/94 |
+| PHPT bounded manifest | 410/410 |
+| PHPT Zend rows | 104/104 |
 | PHPT ext/standard rows | 223/223 |
 | PHPT focused array key/callback set rows | 38/75 |
 | PHPT focused stream rows | 2/2 |

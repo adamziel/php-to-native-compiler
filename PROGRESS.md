@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-13T16:43Z
-Measured: `ptn-iwit` PHPT classify-only blocker maps on `origin/master`
-`9e8306383`; broad 1k classification selected 1,000 rows, kept 742 runnable,
-and excluded 258 with blocker evidence.
+Refresh: 2026-06-13T16:51Z
+Measured: `ptn-oy8c` scalar/operator bounded-manifest expansion on
+`origin/master` `be870adb9`; the focused 30-row scalar/operator PHPT gate
+passed 30/30.
 
 Recent RC slices cover constants, includes, closures, `stdClass`,
 properties/destructors, ReflectionFunction metadata, array helpers, key-aware
 and callback-aware set operations, formatted output, path/search/count/string
-internals, scalar/array type hints, broad array/scalar/operator PHPT coverage,
+internals, scalar/array type hints, scalar/operator PHPT coverage,
 unsupported-language and harness PHPT preclassification, invokable object
 callables, object cloning, magic-method visibility warnings, `php_uname()`,
 environment/include-path helpers, `getcwd()`/`chdir()`, runner ini values,
@@ -22,8 +22,8 @@ property compounds.
 | Source unit tests | 3 | 3 | 0 |
 | Native/compiler Rust suite | 645 | 645 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 400 | 400 | 0 |
-| PHPT Zend rows | 94 | 94 | 0 |
+| PHPT bounded manifest | 410 | 410 | 0 |
+| PHPT Zend rows | 104 | 104 | 0 |
 | PHPT ext/standard rows | 223 | 223 | 0 |
 | PHPT focused array key/callback set rows | 75 | 38 | 37 |
 | PHPT focused stream rows | 2 | 2 | 0 |
@@ -53,18 +53,17 @@ compound/null coalescing, and direct property/static property compounds.
 
 ## Remaining Bounded Exclusions
 
-- None among the 400 runnable rows in the current bounded manifest.
+- None among the 410 runnable rows in the current bounded manifest.
 - None among the 5 callback/callable frontier rows in the current callback
   manifest.
 
 ## Verification
 
-`ptn-iwit` verification: classify-only broad 1k selected 1,000 rows, with 742
-runnable and 258 exclusions: unsupported-language 143, unsupported-ini 73,
-unsupported-extension 20, harness-cleanup 4, SAPI behavior 13,
-process-boundary 3, external-service 1, and environment-assumption 1. A 40-row
-5k cleanup slice classified 40/40 excluded rows, including 33
-`harness-cleanup`; `cargo fmt --check` and shell syntax checks passed.
+`ptn-oy8c` verification: focused scalar/operator PHPT manifest selected 30
+rows, ran 30, passed 30, failed 0, skipped 0, warned 0. The merged bounded
+manifest now has 410 rows: Zend 104, ext/standard 223, tests/basic+func+lang
+78, and other 5. `ptn-iwit` classify-only broad 1k remains selected 1,000,
+runnable 742, excluded 258 with blocker evidence.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 first-class callables, dynamic includes, unsupported internals,

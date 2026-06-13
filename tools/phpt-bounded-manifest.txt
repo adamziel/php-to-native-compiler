@@ -16,10 +16,19 @@ Zend/tests/add_005.phpt
 Zend/tests/add_006.phpt
 Zend/tests/add_007.phpt
 Zend/tests/and_001.phpt
+Zend/tests/array_add_indirect.phpt
 Zend/tests/array_addition_not_commutative.phpt
+Zend/tests/array_append_COW.phpt
 Zend/tests/array_hash_zero.phpt
+Zend/tests/array_self_add_globals.phpt
+Zend/tests/array_unshift_COW.phpt
+Zend/tests/array_with_refs_identical.phpt
+Zend/tests/assign_by_val_function_by_ref_return_value.phpt
 Zend/tests/assign_dim_op_same_var.phpt
 Zend/tests/assign_dim_op_undef.phpt
+Zend/tests/assign_dim_ref_free.phpt
+Zend/tests/assign_property_null_object.phpt
+Zend/tests/assign_ref_func_leak.phpt
 Zend/tests/assign_to_var_001.phpt
 Zend/tests/assign_to_var_002.phpt
 Zend/tests/assign_to_var_003.phpt
@@ -63,6 +72,7 @@ Zend/tests/namespaces/ns_001.phpt
 Zend/tests/namespaces/ns_002.phpt
 Zend/tests/namespaces/ns_003.phpt
 Zend/tests/namespaces/ns_014.phpt
+Zend/tests/mul_001.phpt
 Zend/tests/not_001.phpt
 Zend/tests/numeric_literal_separator/numeric_literal_separator_001.phpt
 Zend/tests/numeric_strings/array_offset.phpt
@@ -74,6 +84,7 @@ Zend/tests/property_exists.phpt
 Zend/tests/property_exists_basic.phpt
 Zend/tests/str_offset_001.phpt
 Zend/tests/string_offset_int_min_max.phpt
+Zend/tests/sub_001.phpt
 Zend/tests/switch/034.phpt
 Zend/tests/switch/bug26281.phpt
 Zend/tests/switch/bug26696.phpt
