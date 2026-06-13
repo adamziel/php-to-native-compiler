@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T17:00Z
+Last refresh: 2026-06-13T17:06Z
 Source: `PROGRESS.md`
-Measured: `ptn-hu7e` PHPT attribute-syntax classification on `origin/master`
+Measured: `ptn-cm8x` overlapping PHP-attribute PHPT classification coverage on
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 410/410; PHPT Zend rows 104/104; PHPT ext/standard rows 223/223.
 

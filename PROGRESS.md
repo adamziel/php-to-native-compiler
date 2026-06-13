@@ -1,8 +1,9 @@
 # PTN Progress
 
-Refresh: 2026-06-13T17:00Z
-Measured: `ptn-hu7e` PHPT attribute-syntax classification on `origin/master`
-`875f567e`; classifier/build gates passed.
+Refresh: 2026-06-13T17:06Z
+Measured: `ptn-cm8x` overlapping PHP-attribute PHPT classification coverage on
+`origin/master` `962a430f`; this keeps the stronger merged classifier and adds
+class-attribute regression coverage.
 
 Recent RC slices cover constants, includes, closures, `stdClass`,
 properties/destructors, ReflectionFunction metadata, array helpers, key-aware
@@ -59,11 +60,11 @@ property compounds.
 
 ## Verification
 
-`ptn-hu7e` verification: broad 1k raw `#[` scan found 203 rows; 153 `--FILE--`
-rows classify with PHP attribute syntax evidence, 44 are excluded by earlier
-extension/language/ini rules, and 6 title-only marker rows remain runnable.
-`cargo test --test phpt_classifier` passed 3/3, `cargo build --bin phpc`,
-`cargo fmt --check`, and `bash -n tools/phpt-classifier.sh` passed.
+`ptn-cm8x` verification: broad 1k raw `#[` scan remains 203 rows: 153
+PHP-attribute blockers, 44 earlier extension/language/ini exclusions, and 6
+title-only rows runnable. The focused attribute manifest selected 25, ran 0,
+and excluded 25 as unsupported-language; classifier tests passed 3/3,
+`cargo build --bin phpc`, `cargo fmt --check`, and classifier `bash -n` passed.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods, PHP
 attributes/reflection metadata, first-class callables, dynamic includes,

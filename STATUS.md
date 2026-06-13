@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T17:00Z
-Measured: `ptn-hu7e` PHPT attribute-syntax classification on `origin/master`
+Last refresh: 2026-06-13T17:06Z
+Measured: `ptn-cm8x` overlapping PHP-attribute PHPT classification coverage on
 
 ## Operating Goal
 

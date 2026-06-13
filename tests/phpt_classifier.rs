@@ -42,6 +42,11 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires anonymous class syntax",
         ),
         (
+            "attribute syntax on class",
+            "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nclass Bag {}\n--EXPECT--\n",
+            "requires PHP attribute syntax",
+        ),
+        (
             "interface implementation",
             "--TEST--\niface\n--FILE--\n<?php\nclass Bag implements ArrayAccess {}\n--EXPECT--\n",
             "requires interface implementation checks",
@@ -52,7 +57,7 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires call-site or array unpacking",
         ),
         (
-            "attribute syntax",
+            "attribute syntax on function",
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n",
             "requires PHP attribute syntax",
         ),
