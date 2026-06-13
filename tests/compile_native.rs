@@ -4643,6 +4643,55 @@ dirname(): Argument #1 ($path) must be of type string, array given\n"
 }
 
 #[test]
+fn compile_dirname_levels_to_native_binary() {
+    let root = temp_dir("ptn-native-dirname-levels");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dirname-levels.php");
+    let output = root.join("dirname-levels-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([1, 2, 3] as $levels) {\n\
+    echo $levels, ':', dirname('/a/b/c', $levels), \"\\n\";\n\
+}\n\
+var_dump(dirname('/foo' . chr(0) . 'bar/baz', 1));\n\
+var_dump(dirname('/foo' . chr(0) . 'bar/baz', 2));\n\
+var_dump(dirname('', 2), dirname('.', 2), dirname('file', 2));\n\
+try {\n\
+    dirname('/a/b/c', 0);\n\
+} catch (\\ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    dirname('/a/b/c', '2x');\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"1:/a/b\n\
+2:/a\n\
+3:/\n\
+string(8) \"/foo\0bar\"\n\
+string(1) \"/\"\n\
+string(0) \"\"\n\
+string(1) \".\"\n\
+string(1) \".\"\n\
+dirname(): Argument #2 ($levels) must be greater than or equal to 1\n\
+dirname(): Argument #2 ($levels) must be of type int, string given\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_chunk_split_str_repeat_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chunk-split-str-repeat-phpt-shape");
     fs::create_dir_all(&root).unwrap();
