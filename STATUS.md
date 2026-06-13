@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T16:02Z
-Measured: `ptn-oy6r` broad unsupported-language PHPT classification on
+Last refresh: 2026-06-13T16:07Z
+Measured: `ptn-ayfv` formatted string output family on `origin/master`
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 643/643; Native smoke matrix 6/6; PHPT bounded manifest 400/400; PHPT Zend rows 94/94; PHPT ext/standard rows 223/223.
+Source unit tests 3/3; Native/compiler Rust suite 644/644; Native smoke matrix 6/6; PHPT bounded manifest 400/400; PHPT Zend rows 94/94; PHPT ext/standard rows 223/223.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 643/643 |
+| Native/compiler Rust suite | 644/644 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 400/400 |
 | PHPT Zend rows | 94/94 |
@@ -30,6 +30,7 @@ Source unit tests 3/3; Native/compiler Rust suite 643/643; Native smoke matrix 6
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |
+| PHPT formatted string rows | 25/75 |
 
 ## Rules
 

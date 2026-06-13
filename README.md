@@ -77,6 +77,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   writes the optional `$count` argument by reference, and throws PHP-style
   TypeErrors for invalid resource/object operands and scalar-search/
   array-replace calls.
+- Formatted output covers bounded `sprintf()`/`printf()` plus `fprintf()`,
+  `vsprintf()`, `vprintf()`, and `vfprintf()` through one ordered-array
+  argument expansion and stream-write path; exact PHP parity for some
+  formatter flags and error diagnostics remains bounded.
 - Declared instance properties keep public/protected/private defaults, dump
   metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
   slots distinct from child public redeclarations; `property_exists()` covers

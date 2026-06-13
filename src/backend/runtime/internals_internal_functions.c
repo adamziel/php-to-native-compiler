@@ -4217,6 +4217,138 @@ static PtnValue ptn_internal_printf(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int(len);
 }
 
+static PtnValue ptn_internal_write_formatted_stream(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue stream_value,
+    PtnValue formatted,
+    size_t line
+) {
+    PtnValue stream = ptn_value_deref(stream_value);
+    if (stream.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($stream) must be of type resource, %s given",
+            function_name,
+            ptn_offset_container_type_name(stream)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_value_drop(&formatted);
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (stream.as.resource->stream == NULL) {
+        ptn_value_drop(&formatted);
+        char message[96];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): supplied resource is not a valid stream resource",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnValue string_value = ptn_value_deref(formatted);
+    if (string_value.type != PTN_STRING) {
+        return formatted;
+    }
+    size_t written = fwrite(string_value.as.string.data, 1, string_value.as.string.len, stream.as.resource->stream);
+    if (written != string_value.as.string.len) {
+        ptn_value_drop(&formatted);
+        ptn_emit_warning(&runtime->diagnostics, "fprintf(): failed to write formatted stream output", line);
+        return ptn_bool(0);
+    }
+    if (string_value.as.string.len > (size_t)INT64_MAX) {
+        ptn_value_drop(&formatted);
+        ptn_abort_out_of_memory();
+    }
+    int64_t len = (int64_t)string_value.as.string.len;
+    ptn_value_drop(&formatted);
+    return ptn_int(len);
+}
+
+static PtnValue ptn_internal_fprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue formatted = ptn_internal_sprintf_named(runtime, "fprintf", argc - 1, args + 1, line);
+    return ptn_internal_write_formatted_stream(runtime, "fprintf", args[0], formatted, line);
+}
+
+static PtnValue ptn_internal_vsprintf_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue format_value,
+    PtnValue values_value,
+    size_t line
+) {
+    values_value = ptn_value_deref(values_value);
+    if (values_value.type != PTN_ARRAY) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($values) must be of type array, %s given",
+            function_name,
+            ptn_offset_container_type_name(values_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    PtnArray *values = values_value.as.array;
+    if (values->len > SIZE_MAX - 1) {
+        ptn_abort_out_of_memory();
+    }
+    PtnValue *expanded = malloc((values->len + 1) * sizeof(PtnValue));
+    if (expanded == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    expanded[0] = format_value;
+    for (size_t i = 0; i < values->len; i++) {
+        expanded[i + 1] = values->entries[i].value;
+    }
+    PtnValue result = ptn_internal_sprintf_named(runtime, function_name, values->len + 1, expanded, line);
+    free(expanded);
+    return result;
+}
+
+static PtnValue ptn_internal_vsprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_vsprintf_named(runtime, "vsprintf", args[0], args[1], line);
+}
+
+static PtnValue ptn_internal_vprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue formatted = ptn_internal_vsprintf_named(runtime, "vprintf", args[0], args[1], line);
+    if (ptn_value_deref(formatted).type != PTN_STRING) {
+        return formatted;
+    }
+    PtnValue string_value = ptn_value_deref(formatted);
+    fwrite(string_value.as.string.data, 1, string_value.as.string.len, stdout);
+    if (string_value.as.string.len > (size_t)INT64_MAX) {
+        ptn_value_drop(&formatted);
+        ptn_abort_out_of_memory();
+    }
+    int64_t len = (int64_t)string_value.as.string.len;
+    ptn_value_drop(&formatted);
+    return ptn_int(len);
+}
+
+static PtnValue ptn_internal_vfprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue formatted = ptn_internal_vsprintf_named(runtime, "vfprintf", args[1], args[2], line);
+    return ptn_internal_write_formatted_stream(runtime, "vfprintf", args[0], formatted, line);
+}
+
 static char *ptn_rot13_string(const char *string, size_t len) {
     char *rotated = malloc(len + 1);
     if (rotated == NULL) {
@@ -9824,6 +9956,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "floatval", 1, 1, ptn_internal_floatval },
         { "floor", 1, 1, ptn_internal_floor },
         { "fopen", 2, 4, ptn_internal_fopen },
+        { "fprintf", 2, PTN_VARIADIC_ARGS, ptn_internal_fprintf },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
@@ -9956,6 +10089,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "unlink", 1, 1, ptn_internal_unlink },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "var_export", 1, 2, ptn_internal_var_export },
+        { "vfprintf", 3, 3, ptn_internal_vfprintf },
+        { "vprintf", 2, 2, ptn_internal_vprintf },
+        { "vsprintf", 2, 2, ptn_internal_vsprintf },
         { "zend_version", 0, 0, ptn_internal_zend_version },
     };
     *count = sizeof(functions) / sizeof(functions[0]);

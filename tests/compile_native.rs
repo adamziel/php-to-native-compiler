@@ -5680,6 +5680,64 @@ var_dump(function_exists(\"sprintf\"));",
 }
 
 #[test]
+fn compile_vprintf_and_fprintf_family_to_native_binary() {
+    let root = temp_dir("ptn-native-vprintf-fprintf-family");
+    fs::create_dir_all(&root).unwrap();
+    let data = root.join("formatted.txt");
+    let input = root.join("vprintf-fprintf-family.php");
+    let output = root.join("vprintf-fprintf-family-bin");
+    let data_path = data.to_string_lossy();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+var_dump(function_exists(\"fprintf\"), function_exists(\"vfprintf\"), function_exists(\"vprintf\"), function_exists(\"vsprintf\"));\n\
+echo vsprintf(\"%s:%04d:%x\", [\"id\", 7, 255]), \"\\n\";\n\
+var_dump(vprintf(\"[%s|%d]\\n\", [\"ok\", 12]));\n\
+$fp = fopen(\"{}\", \"wb\");\n\
+var_dump(fprintf($fp, \"%s=%d\\n\", \"a\", 5));\n\
+var_dump(vfprintf($fp, \"%s=%X\\n\", [\"b\", 15]));\n\
+fclose($fp);\n\
+echo file_get_contents(\"{}\");\n\
+try {{ vsprintf(\"%s\", \"x\"); }} catch (TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+$closed = fopen(\"{}\", \"rb\");\n\
+fclose($closed);\n\
+try {{ fprintf($closed, \"x\"); }} catch (TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}",
+            data_path, data_path, data_path
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+id:0007:ff\n\
+[ok|12]\n\
+int(8)\n\
+int(4)\n\
+int(4)\n\
+a=5\n\
+b=F\n\
+vsprintf(): Argument #2 ($values) must be of type array, string given\n\
+fprintf(): supplied resource is not a valid stream resource\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_fprintf("));
+    assert!(c_source.contains("static PtnValue ptn_internal_vsprintf("));
+    assert!(c_source.contains("static PtnValue ptn_internal_vprintf("));
+    assert!(c_source.contains("static PtnValue ptn_internal_vfprintf("));
+}
+
+#[test]
 fn compile_json_encode_and_printf_to_native_binary() {
     let root = temp_dir("ptn-native-json-printf");
     fs::create_dir_all(&root).unwrap();
