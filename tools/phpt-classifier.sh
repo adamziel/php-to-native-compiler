@@ -339,8 +339,56 @@ ptn_phpt_first_unsupported_language_surface() {
     local path=$1
 
     ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+        function ptn_has_php_attribute_syntax(raw,    i, ch, next_ch, prev, quote, escaped) {
+            quote = ""
+            escaped = 0
+            for (i = 1; i <= length(raw); i++) {
+                ch = substr(raw, i, 1)
+                next_ch = substr(raw, i + 1, 1)
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    continue
+                }
+                if (ch == "/" && next_ch == "/") {
+                    return 0
+                }
+                if (ch == "/" && next_ch == "*") {
+                    i += 2
+                    while (i <= length(raw) && !(substr(raw, i, 1) == "*" && substr(raw, i + 1, 1) == "/")) {
+                        i++
+                    }
+                    i++
+                    continue
+                }
+                if (ch == "#" && next_ch == "[") {
+                    prev = i == 1 ? "" : substr(raw, i - 1, 1)
+                    if (i == 1 || prev ~ /[[:space:]]/ || index("=({[,;", prev) > 0) {
+                        return 1
+                    }
+                }
+                if (ch == "#") {
+                    return 0
+                }
+            }
+            return 0
+        }
         {
             line = tolower($0)
+            if (ptn_has_php_attribute_syntax($0)) {
+                print "unsupported-language\trequires PHP attribute syntax (`#[...]`) and reflection metadata, outside PTN parser/metadata model"
+                found = 1
+                exit
+            }
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+class([^[:alnum:]_]|$)/) {
                 print "unsupported-language\trequires anonymous class syntax (`new class`), outside PTN modeled class metadata"
                 found = 1

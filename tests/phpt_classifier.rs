@@ -51,6 +51,11 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "--TEST--\nunpack\n--FILE--\n<?php\nfunction f(...$args) {}\nf(...[1, 2]);\n--EXPECT--\n",
             "requires call-site or array unpacking",
         ),
+        (
+            "attribute syntax",
+            "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n",
+            "requires PHP attribute syntax",
+        ),
     ];
 
     for (name, phpt, reason) in cases {
@@ -70,6 +75,18 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
 fn phpt_classifier_keeps_variadic_parameter_rows_runnable() {
     let classification = classify(
         "--TEST--\nvariadic\n--FILE--\n<?php\nfunction f(...$args) { var_dump($args); }\nf(1, 2);\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_attribute_text_in_strings_runnable() {
+    let classification = classify(
+        "--TEST--\nattribute text\n--FILE--\n<?php\necho \"prefix #[not an attribute]\";\n--EXPECT--\nprefix #[not an attribute]\n",
     );
 
     assert!(

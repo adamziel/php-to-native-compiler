@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T16:51Z
-Measured: `ptn-oy8c` scalar/operator bounded-manifest expansion on
+Last refresh: 2026-06-13T17:00Z
+Measured: `ptn-hu7e` PHPT attribute-syntax classification on `origin/master`
 
 ## Operating Goal
 
