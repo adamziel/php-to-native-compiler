@@ -256,33 +256,124 @@ impl Parser {
     }
 
     fn parse_use_import(&mut self, kind: UseDeclarationKind) -> Result<()> {
-        let target = self.parse_name("expected imported name")?;
-        if matches!(self.peek().kind, TokenKind::LeftBrace) {
-            return Err(Diagnostic::new(
-                "grouped use declarations are unsupported",
-                Some(self.peek().span),
-            ));
+        let (target, grouped) = self.parse_use_name("expected imported name")?;
+        if grouped {
+            self.expect_left_brace()?;
+            self.parse_grouped_use_imports(kind, target)?;
+        } else {
+            self.register_use_import(kind, target)?;
         }
-        let alias = if matches!(self.peek().kind, TokenKind::As) {
+        Ok(())
+    }
+
+    fn parse_use_name(&mut self, expected: &str) -> Result<(ParsedName, bool)> {
+        let leading_backslash = matches!(self.peek().kind, TokenKind::Backslash);
+        let start_span = if leading_backslash {
+            Some(self.advance().span)
+        } else {
+            None
+        };
+        let first_token = self.advance().clone();
+        let TokenKind::Identifier(first_segment) = first_token.kind else {
+            return Err(Diagnostic::new(expected, Some(first_token.span)));
+        };
+
+        let mut span = start_span
+            .map(|span| combine_spans(span, first_token.span))
+            .unwrap_or(first_token.span);
+        let mut segments = vec![first_segment];
+        while matches!(self.peek().kind, TokenKind::Backslash) {
+            if matches!(self.peek_next().kind, TokenKind::LeftBrace) {
+                let slash_span = self.advance().span;
+                span = combine_spans(span, slash_span);
+                return Ok((
+                    parsed_name_from_segments(segments, span, leading_backslash),
+                    true,
+                ));
+            }
+            self.advance();
+            let segment_token = self.advance().clone();
+            let TokenKind::Identifier(segment) = segment_token.kind else {
+                return Err(Diagnostic::new(expected, Some(segment_token.span)));
+            };
+            span = combine_spans(span, segment_token.span);
+            segments.push(segment);
+        }
+        Ok((
+            parsed_name_from_segments(segments, span, leading_backslash),
+            false,
+        ))
+    }
+
+    fn parse_grouped_use_imports(
+        &mut self,
+        default_kind: UseDeclarationKind,
+        prefix: ParsedName,
+    ) -> Result<()> {
+        let prefix_name = self.resolve_import_target_name(prefix);
+        loop {
+            let kind = if matches!(self.peek().kind, TokenKind::Function) {
+                self.advance();
+                UseDeclarationKind::Function
+            } else if matches!(self.peek().kind, TokenKind::Const) {
+                self.advance();
+                UseDeclarationKind::Constant
+            } else {
+                default_kind
+            };
+            let member = self.parse_name("expected imported name")?;
+            let target_name = match member.resolution {
+                NameResolution::FullyQualified => member.name.clone(),
+                NameResolution::NamespaceRelative => self.qualify_current_namespace(&member.name),
+                NameResolution::Unqualified | NameResolution::Qualified => {
+                    join_qualified_names(&prefix_name, &member.name)
+                }
+            };
+            let alias = self.parse_optional_use_alias(&member)?;
+            self.insert_use_alias(kind, alias, target_name);
+            if !matches!(self.peek().kind, TokenKind::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        self.expect_right_brace()?;
+        Ok(())
+    }
+
+    fn register_use_import(&mut self, kind: UseDeclarationKind, target: ParsedName) -> Result<()> {
+        let alias = self.parse_optional_use_alias(&target)?;
+        let target_name = self.resolve_import_target_name(target);
+        self.insert_use_alias(kind, alias, target_name);
+        Ok(())
+    }
+
+    fn parse_optional_use_alias(&mut self, target: &ParsedName) -> Result<String> {
+        if matches!(self.peek().kind, TokenKind::As) {
             self.advance();
             let token = self.advance().clone();
             let TokenKind::Identifier(alias) = token.kind else {
                 return Err(Diagnostic::new("expected import alias", Some(token.span)));
             };
-            alias
+            Ok(alias)
         } else {
-            target
+            Ok(target
                 .name
                 .rsplit('\\')
                 .next()
                 .unwrap_or(&target.name)
-                .to_string()
-        };
-        let target_name = match target.resolution {
+                .to_string())
+        }
+    }
+
+    fn resolve_import_target_name(&self, target: ParsedName) -> String {
+        match target.resolution {
             NameResolution::FullyQualified => target.name,
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&target.name),
             NameResolution::Unqualified | NameResolution::Qualified => target.name,
-        };
+        }
+    }
+
+    fn insert_use_alias(&mut self, kind: UseDeclarationKind, alias: String, target_name: String) {
         let alias_key = alias.to_ascii_lowercase();
         match kind {
             UseDeclarationKind::Class => {
@@ -295,7 +386,6 @@ impl Parser {
                 self.constant_aliases.insert(alias_key, target_name);
             }
         }
-        Ok(())
     }
 
     fn clear_namespace_imports(&mut self) {
@@ -5294,6 +5384,44 @@ fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<(
 
 fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {
     SourceSpan::new(left.byte_start, right.byte_end, left.line, left.column)
+}
+
+fn join_qualified_names(prefix: &str, suffix: &str) -> String {
+    match (prefix.is_empty(), suffix.is_empty()) {
+        (true, _) => suffix.to_string(),
+        (_, true) => prefix.to_string(),
+        (false, false) => format!("{prefix}\\{suffix}"),
+    }
+}
+
+fn parsed_name_from_segments(
+    segments: Vec<String>,
+    span: SourceSpan,
+    leading_backslash: bool,
+) -> ParsedName {
+    let namespace_relative = !leading_backslash
+        && segments
+            .first()
+            .is_some_and(|segment| segment.eq_ignore_ascii_case("namespace"));
+    let resolution = if leading_backslash {
+        NameResolution::FullyQualified
+    } else if namespace_relative {
+        NameResolution::NamespaceRelative
+    } else if segments.len() == 1 {
+        NameResolution::Unqualified
+    } else {
+        NameResolution::Qualified
+    };
+    let name_segments = if namespace_relative {
+        &segments[1..]
+    } else {
+        &segments[..]
+    };
+    ParsedName {
+        name: name_segments.join("\\"),
+        span,
+        resolution,
+    }
 }
 
 fn lower_string_part(part: TokenStringPart) -> StringPart {

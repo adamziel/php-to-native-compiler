@@ -20208,6 +20208,68 @@ ns1\Foo::baz();
 }
 
 #[test]
+fn compile_grouped_namespace_imports_to_native_binary() {
+    let root = temp_dir("ptn-native-grouped-namespace-imports");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("grouped-namespace-imports.php");
+    let output = root.join("grouped-namespace-imports-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace Lib\Things;
+
+const MARK = "mark\n";
+
+function label($value) {
+    return __NAMESPACE__ . ":" . $value . "\n";
+}
+
+class Alpha {
+    static function tag() { echo __CLASS__, "\n"; }
+}
+
+class Beta {
+    static function tag() { echo __CLASS__, "\n"; }
+}
+
+namespace App;
+
+use Lib\Things\{Alpha, Beta as RenamedBeta};
+use function Lib\Things\{label as make_label};
+use const Lib\Things\{MARK as IMPORTED_MARK};
+use Lib\Things\{Alpha as MixedAlpha, function label, const MARK};
+
+Alpha::tag();
+RenamedBeta::tag();
+MixedAlpha::tag();
+echo make_label("aliased");
+echo label("mixed");
+echo IMPORTED_MARK;
+echo MARK;
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Lib\\Things\\Alpha\n",
+            "Lib\\Things\\Beta\n",
+            "Lib\\Things\\Alpha\n",
+            "Lib\\Things:aliased\n",
+            "Lib\\Things:mixed\n",
+            "mark\n",
+            "mark\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_namespaced_function_and_constant_imports_to_native_binary() {
     let root = temp_dir("ptn-native-namespace-function-constant-imports");
     fs::create_dir_all(&root).unwrap();
