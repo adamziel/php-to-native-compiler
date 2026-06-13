@@ -8653,7 +8653,10 @@ fn compile_declared_class_metadata_intrinsics_to_native_binary() {
     fs::write(
         &input,
         "<?php
-class Worker {
+class BaseWorker {
+}
+
+class Worker extends BaseWorker {
     public function Run($value) {
         return $value;
     }
@@ -8676,8 +8679,16 @@ var_dump(method_exists(\"stdClass\", \"anything\"));
 var_dump(get_class($worker));
 var_dump(get_class(new stdClass));
 var_dump(get_class($callback));
+var_dump(get_parent_class($worker));
+var_dump(get_parent_class(\"worker\"));
+var_dump(get_parent_class(new stdClass));
 try {
     get_class(42);
+} catch (TypeError $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+try {
+    get_parent_class([]);
 } catch (TypeError $e) {
     echo get_class($e), \": \", $e->getMessage(), \"\\n\";
 }
@@ -8705,7 +8716,11 @@ var_dump(function_exists(\"get_class\"));
             "string(6) \"Worker\"\n",
             "string(8) \"stdClass\"\n",
             "string(7) \"Closure\"\n",
+            "string(10) \"BaseWorker\"\n",
+            "string(10) \"BaseWorker\"\n",
+            "bool(false)\n",
             "TypeError: get_class(): Argument #1 ($object) must be of type object, int given\n",
+            "TypeError: get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, array given\n",
             "bool(true)\n",
         )
     );
@@ -8714,8 +8729,10 @@ var_dump(function_exists(\"get_class\"));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("static int ptn_declared_class_exists("));
     assert!(c_source.contains("static int ptn_declared_class_method_exists("));
+    assert!(c_source.contains("static PTN_UNUSED const char *ptn_declared_class_parent_name("));
     assert!(c_source.contains("ptn_internal_class_exists"));
     assert!(c_source.contains("ptn_internal_get_class"));
+    assert!(c_source.contains("ptn_internal_get_parent_class"));
     assert!(c_source.contains("ptn_internal_method_exists"));
 }
 
@@ -9026,7 +9043,15 @@ fn compile_user_function_exists_registry_to_native_binary() {
     let output = root.join("user-function-exists-bin");
     fs::write(
         &input,
-        "<?php function local() { return null; } var_dump(function_exists(\"local\"), function_exists(\"LOCAL\"), function_exists(\"strlen\"), function_exists(\"missing\"));",
+        "<?php
+function local() { return null; }
+class FunctionExistsBox {
+    public static function helper() {}
+}
+var_dump(function_exists(\"local\"), function_exists(\"LOCAL\"), function_exists(\"strlen\"), function_exists(\"missing\"), function_exists(\"FunctionExistsBox::helper\"), function_exists(\"helper\"));
+var_dump(is_callable([\"FunctionExistsBox\", \"helper\"]));
+echo call_user_func(\"FunctionExistsBox::helper\");
+",
     )
     .unwrap();
 
@@ -9036,7 +9061,7 @@ fn compile_user_function_exists_registry_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(false)\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

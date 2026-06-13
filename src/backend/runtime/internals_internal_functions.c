@@ -10695,11 +10695,14 @@ static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
+static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
+static const char *ptn_property_exists_target_type_name(PtnValue value);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -10827,6 +10830,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_class", 1, 1, ptn_internal_get_class },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
+        { "get_parent_class", 1, 1, ptn_internal_get_parent_class },
         { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getenv", 0, 2, ptn_internal_getenv },
         { "getmypid", 0, 0, ptn_internal_getmypid },
@@ -11276,6 +11280,47 @@ static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const P
     }
     ptn_throw_exception(runtime, "TypeError", message);
     return ptn_null();
+}
+
+static void ptn_throw_get_parent_class_type_error(PtnRuntime *runtime, PtnValue value) {
+    char message[224];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, %s given",
+        ptn_property_exists_target_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue target = ptn_value_deref(args[0]);
+    char *class_name = NULL;
+    if (target.type == PTN_OBJECT) {
+        class_name = ptn_duplicate_string(target.as.object->class_name);
+    } else if (target.type == PTN_STRING) {
+        class_name = ptn_value_to_string(target);
+        if (!ptn_declared_class_exists(class_name) && !ptn_internal_class_exists_name(class_name)) {
+            free(class_name);
+            ptn_throw_get_parent_class_type_error(runtime, target);
+            return ptn_null();
+        }
+    } else {
+        ptn_throw_get_parent_class_type_error(runtime, target);
+        return ptn_null();
+    }
+
+    const char *parent_name = ptn_declared_class_parent_name(class_name);
+    free(class_name);
+    if (parent_name == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(ptn_duplicate_string(parent_name));
 }
 
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

@@ -952,13 +952,14 @@ fn emit_user_function_dispatch(
     classes: &[ClassDecl],
 ) {
     out.push_str("\nstatic int ptn_user_function_exists(const char *name) {\n");
-    if functions.iter().all(|function| {
-        function.is_anonymous || (function.class_name.is_some() && !function.is_static)
-    }) {
+    if functions
+        .iter()
+        .all(|function| function.is_anonymous || function.class_name.is_some())
+    {
         out.push_str("    (void)name;\n");
     }
     for function in functions {
-        if function.is_anonymous || (function.class_name.is_some() && !function.is_static) {
+        if function.is_anonymous || function.class_name.is_some() {
             continue;
         }
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
@@ -971,13 +972,14 @@ fn emit_user_function_dispatch(
     out.push_str("}\n");
 
     out.push_str("\nstatic PtnFunctionMetadata ptn_user_function_metadata(const char *name) {\n");
-    if functions.iter().all(|function| {
-        function.is_anonymous || (function.class_name.is_some() && !function.is_static)
-    }) {
+    if functions
+        .iter()
+        .all(|function| function.is_anonymous || function.class_name.is_some())
+    {
         out.push_str("    (void)name;\n");
     }
     for function in functions {
-        if function.is_anonymous || (function.class_name.is_some() && !function.is_static) {
+        if function.is_anonymous || function.class_name.is_some() {
             continue;
         }
         let required_parameter_count = function
@@ -1123,6 +1125,28 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_declared_class_parent_name(const char *name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if let Some(parent_name) = &class.parent_name {
+            out.push_str("        return \"");
+            out.push_str(&c_string(parent_name));
+            out.push_str("\";\n");
+        } else {
+            out.push_str("        return NULL;\n");
+        }
+        out.push_str("    }\n");
+    }
+    out.push_str("    return NULL;\n");
     out.push_str("}\n");
 
     out.push_str(

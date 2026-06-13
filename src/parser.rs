@@ -4751,6 +4751,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "function_exists"
             | "getcwd"
             | "get_class"
+            | "get_parent_class"
             | "stat"
             | "isset"
             | "empty"

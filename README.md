@@ -53,7 +53,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `zend_version()`, PHP version/build/platform constants, `PHP_SAPI`,
   `get_loaded_extensions()`, stable PHP locale constants, bounded
   `setlocale()`/`localeconv()` helpers, `spl_object_id()`/
-  `spl_object_hash()`, and bounded class/property existence checks.
+  `spl_object_hash()`, `get_parent_class()`, and bounded class/property
+  existence checks.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable, variable-root array/append, property, and static-property
