@@ -1,15 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-13T18:36Z
-Measured: `ptn-qsmv.9` asymmetric property visibility support rebased after
-`ptn-qsmv.3`, `ptn-6fbw`, and `ptn-o7kg`.
+Refresh: 2026-06-13T18:49Z
+Measured: `ptn-4tfb` broad 1k blocker map rebased after `ptn-qsmv.9`.
 
 Recent RC slices cover constants, includes, closures, object callables/cloning,
 reflection metadata, helper internals, PHPT blocker classification,
 environment/include-path, filesystem/path helpers, streams, `function_exists()`,
-`get_parent_class()`, 50 additional ext/standard string rows, the broad 1k
-array-frontier map, and asymmetric private(set)/protected(set) property
-metadata/write checks for declared instance and static properties.
+`get_parent_class()`, 50 additional ext/standard string rows, broad 1k array
+and blocker maps, and asymmetric private(set)/protected(set) property metadata
+and write checks.
 
 ## Dashboard
 
@@ -32,6 +31,7 @@ metadata/write checks for declared instance and static properties.
 | PHPT callback manifest | 5 | 5 | 0 |
 | PHPT include manifest | 2 | 2 | 0 |
 | PHPT formatted string rows | 75 | 25 | 50 |
+| PHPT broad 1k baseline | 1,000 | 265 | 735 |
 
 ## RC Surface
 
@@ -52,15 +52,16 @@ expanded string rows, and asymmetric property set-visibility metadata.
 
 ## Verification
 
-`ptn-qsmv.9` verification before rebase: `cargo check`, `cargo fmt --check`,
-focused `cargo test asymmetric --test compile_native`, focused
-`cargo test property --test compile_native`, `cargo test --test
-phpt_classifier`, and full `cargo test` passed. Asymmetric visibility rows now
-classify runnable instead of unsupported-language / unsupported-class-metadata.
+`ptn-4tfb` evidence: broad 1k run selected 1,000 rows, excluded 549, ran 451,
+passed 265, and failed 186: Zend 45/139 pass, ext/standard 212/295 pass, core
+8/17 pass. Largest mapped blockers are standard array comparison/casting
+23 rows, standard callback dispatch/diagnostics 21 rows, and Zend
+class/object/property dispatch 24 rows.
 
-`ptn-qsmv.3` verification: the rebased 50-row string manifest passed 50/50
-with no skips or warnings. `ptn-o7kg` records broad 1k classify-only at 430
-runnable / 570 classified and maps 274 runnable array rows by family.
+`ptn-qsmv.9` rebase verification passed `cargo check`, `cargo fmt --check`,
+focused asymmetric/property native tests, `phpt_classifier`, and full
+`cargo test`. `ptn-qsmv.3` string manifest passed 50/50. `ptn-o7kg` maps
+274 runnable array rows by family.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 attributes/reflection, arrow functions, heredoc/nowdoc parsing, userland

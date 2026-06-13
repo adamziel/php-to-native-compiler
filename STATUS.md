@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T18:36Z
-Measured: `ptn-qsmv.9` asymmetric property visibility support rebased after
+Last refresh: 2026-06-13T18:49Z
+Measured: `ptn-4tfb` broad 1k blocker map rebased after `ptn-qsmv.9`.
 
 ## Operating Goal
 
