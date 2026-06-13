@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-13T07:51Z
-Measured: `ptn-98d8.2` rebased on current `origin/master` `7bc467b8`.
+Refresh: 2026-06-13T09:07Z
+Measured: `ptn-any0` rebased on current `origin/master` `217ccada8`.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, `explode()`,
 `strncmp()`, `strrchr()`, namespaces/imports, includes/once guards, closures,
@@ -9,6 +9,7 @@ Recent RC slices cover constants, embedded-NUL `var_export()`, `explode()`,
 `property_exists()` metadata, array helpers, `json_encode()`, `printf()`,
 `basename()`, `pathinfo()`,
 `strcasecmp()`, string search/slice/count internals, scalar `str_replace()`,
+ordered-array `str_replace()` search/replacement/subject forms,
 `chr()` diagnostics, `crc32()`, standard streams, foreach destructuring,
 dynamic-variable writes/unsets, stream metadata, keyword boolean
 tails after direct assignments, locale constants/`setlocale()`, catchable
@@ -27,7 +28,7 @@ preclassification.
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 587 | 587 | 0 |
+| Native/compiler Rust suite | 588 | 588 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 270 | 268 | 2 |
 | PHPT Zend rows | 88 | 88 | 0 |
@@ -66,9 +67,10 @@ and array/string-offset compound/null coalescing assignments.
 
 ## Verification
 
-Current slice `ptn-98d8.2` is green on diff check, `cargo fmt`, focused
-operator tests 3/3, `cargo test` 587/587 plus COW/doc tests, bounded PHPT
-268/268 with 2 classified exclusions, PHPT COW 29/29, and post-merge COW
+Current slice `ptn-any0` is green on `cargo fmt --check`, focused
+`str_replace` native tests 2/2, focused PHPT `str_replace_basic` 1/1,
+`cargo test` 588/588 plus COW/doc tests, bounded PHPT 268/268 with 2
+classified unsupported-ini exclusions, PHPT COW 29/29, and post-merge COW
 26/26.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
@@ -76,5 +78,5 @@ properties, interfaces/traits, namespaces, fallback/reflection, magic methods,
 first-class callables, dynamic includes,
 unsupported internals, scalar offset-lvalues, assertions, binary-safe array
 keys, append-form `??=`, embedded-NUL internals, object IDs,
-host-locale parity beyond the bounded C-locale slice, `str_replace()` array
-forms, and object/reference targets.
+host-locale parity beyond the bounded C-locale slice, remaining
+`str_replace()` object/reference element edges, and object/reference targets.
