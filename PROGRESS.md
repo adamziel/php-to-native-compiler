@@ -1,20 +1,21 @@
 # PTN Progress
 
 Refresh: 2026-06-13T11:50Z
-Measured: `ptn-ud8s` integration on current `origin/master` `b356fbf4f`;
-focused `is_iterable()` verification green.
+Measured: `ptn-qeox` rebased on current `origin/master` `0f774e4ab`;
+verification green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, inline HTML
 output, includes/once guards, closures, `stdClass`, properties/destructors,
 inherited static dispatch, `property_exists()` metadata, array helpers,
 `json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
-`strcasecmp()`, search/count internals, scalar `str_replace()`, `chr()`
-diagnostics, `crc32()`, `boolval()`/`floatval()`/`doubleval()`, PHP
-version/build/platform metadata constants, standard streams, foreach
-destructuring, unbracketed namespaces with simple/grouped imports, `global`
-bindings, dynamic-variable writes/unsets, stream metadata, locale constants and
-`setlocale()`, catchable arithmetic/operator errors, type predicates including
-`is_iterable()`, alternate `<>` parsing, and offset compound/coalescing.
+`strcasecmp()`, search/count internals, scalar and ordered-array
+`str_replace()`, `chr()` diagnostics, `crc32()`,
+`boolval()`/`floatval()`/`doubleval()`, PHP version/build/platform metadata
+constants, standard streams, foreach destructuring, unbracketed namespaces with
+simple/grouped imports, `global` bindings, dynamic-variable writes/unsets,
+stream metadata, locale constants and `setlocale()`, catchable
+arithmetic/operator errors, type predicates including `is_iterable()`,
+alternate `<>` parsing, and offset compound/coalescing.
 
 Recent movers include `is_iterable()` for arrays in the current
 non-`Traversable` object subset, grouped namespace imports, scalar conversion
@@ -22,15 +23,15 @@ internals for `boolval()`/`floatval()`/`doubleval()`, `global` function-local
 binding to root globals, PHP version/build/platform metadata constants,
 `dirname()` positive-level traversal, `pathinfo()`, modeled `LC_*` constants,
 C/POSIX `setlocale()`, search/count internals, persistent standard streams,
-`property_exists()`, PHPT manifests, `crc32()`, `str_replace()` counts, and
-integer validation for `chr()`, `intdiv()`, and file offsets.
+`property_exists()`, PHPT manifests, `crc32()`, `str_replace()` array forms
+and counts, and integer validation for `chr()`, `intdiv()`, and file offsets.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 592 | 592 | 0 |
+| Native/compiler Rust suite | 597 | 597 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 271 | 269 | 2 |
 | PHPT Zend rows | 85 | 84 | 1 |
@@ -68,13 +69,14 @@ assignments.
 
 ## Verification
 
-Current branch verification for `ptn-ud8s`: diff check, `cargo fmt`, focused
-`is_iterable()` native test, and modeled-internal redeclaration parser test.
+Current branch verification for `ptn-qeox`: `cargo fmt --check`, focused
+`str_replace()` native reducers 2/2, focused `str_replace_basic.phpt` 1/1 on
+the final rebase, plus bounded PHPT 269/269 with 2 unsupported-ini exclusions
+and PHPT COW 29/29 on the str_replace checkpoint before the final docs rebase.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, bracketed namespace blocks, magic methods,
 first-class callables, dynamic includes, unsupported internals, scalar
 offset-lvalues, assertions, binary-safe array keys, `Traversable` objects,
-embedded-NUL internals, object IDs, host-locale parity, `str_replace()` array
-forms, exact scalar conversion diagnostics for edge values, and
-object/reference targets.
+embedded-NUL internals, object IDs, host-locale parity, exact scalar conversion
+diagnostics for edge values, and object/reference targets.

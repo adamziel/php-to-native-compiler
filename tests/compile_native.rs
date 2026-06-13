@@ -4960,6 +4960,63 @@ str_replace(): Argument #3 ($subject) must be of type array|string, resource giv
 }
 
 #[test]
+fn compile_str_replace_array_forms_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-array-forms");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-array-forms.php");
+    let output = root.join("str-replace-array-forms-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(str_replace(['a', 'b'], ['b', 'c'], 'ab', $count));\n\
+var_dump($count);\n\
+var_dump(str_replace(['a', 'b'], ['x'], 'ababa', $count));\n\
+var_dump($count);\n\
+var_dump(str_replace(['a', 'b'], ['x', 'y'], ['first' => 'aba', 2 => 'bab'], $count));\n\
+var_dump($count);\n\
+var_dump(str_replace(['a'], [], 'aba', $count));\n\
+var_dump($count);\n\
+var_dump(str_replace('a', 'x', ['nested' => ['aa'], 's' => 'a'], $count));\n\
+var_dump($count);\n\
+try { var_dump(str_replace('a', [], 'aa')); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(2) \"cc\"\n",
+            "int(3)\n",
+            "string(3) \"xxx\"\n",
+            "int(5)\n",
+            "array(2) {\n",
+            "  [\"first\"]=>\n",
+            "  string(3) \"xyx\"\n",
+            "  [2]=>\n",
+            "  string(3) \"yxy\"\n",
+            "}\n",
+            "int(6)\n",
+            "string(1) \"b\"\n",
+            "int(2)\n",
+            "Warning: Array to string conversion in ptn on line 10\n",
+            "array(2) {\n",
+            "  [\"nested\"]=>\n",
+            "  string(5) \"Arrxy\"\n",
+            "  [\"s\"]=>\n",
+            "  string(1) \"x\"\n",
+            "}\n",
+            "int(2)\n",
+            "str_replace(): Argument #2 ($replace) must be of type string when argument #1 ($search) is a string\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();
