@@ -9991,7 +9991,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     let output = root.join("versioning-registry-bin");
     fs::write(
         &input,
-        "<?php var_dump(function_exists(\"php_sapi_name\"), function_exists(\"PHPVERSION\"), function_exists(\"ZEND_VERSION\"), function_exists(\"get_loaded_extensions\"), PHP_SAPI, PHP_VERSION, defined(\"PHP_SAPI\"), constant(\"PHP_VERSION\"), phpversion(\"STANDARD\"), phpversion(\"missing_extension\"), zend_version()); echo implode(',', get_loaded_extensions()), \"\\n\"; var_dump(get_loaded_extensions(true));",
+        "<?php var_dump(function_exists(\"php_sapi_name\"), function_exists(\"PHPVERSION\"), function_exists(\"ZEND_VERSION\"), function_exists(\"get_loaded_extensions\"), PHP_SAPI, PHP_VERSION, defined(\"PHP_SAPI\"), constant(\"PHP_VERSION\"), phpversion(\"STANDARD\"), phpversion(\"Reflection\"), phpversion(\"missing_extension\"), zend_version()); echo implode(',', get_loaded_extensions()), \"\\n\"; var_dump(get_loaded_extensions(true));",
     )
     .unwrap();
 
@@ -10001,7 +10001,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-            "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,date,pcre,reflection,standard\narray(0) {\n}\n"
+            "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,date,pcre,Reflection,standard\narray(0) {\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -10069,8 +10069,8 @@ echo ini_get('date.timezone'), \"\\n\";\n\
 echo ini_get('extension_dir'), \"\\n\";\n\
 var_dump(get_cfg_var('cfg_file_path'));\n\
 echo php_ini_scanned_files(), \"\\n\";\n\
-var_dump(extension_loaded('standard'), extension_loaded('reflection'), extension_loaded('missing'));\n\
-var_dump(in_array('standard', get_loaded_extensions()), in_array('reflection', get_loaded_extensions()), in_array('Core', get_loaded_extensions()));\n\
+var_dump(extension_loaded('standard'), extension_loaded('Reflection'), extension_loaded('missing'));\n\
+var_dump(in_array('standard', get_loaded_extensions()), in_array('Reflection', get_loaded_extensions()), in_array('Core', get_loaded_extensions()));\n\
 echo str_replace(\"\\n\", \"\", \"a\\nb\"), \"\\n\";\n\
 var_dump(realpath('/definitely/not/a/ptn/path'));\n\
 var_dump(function_exists('zend_version'), function_exists('ini_get'), function_exists('get_loaded_extensions'), function_exists('extension_loaded'));\n",

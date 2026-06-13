@@ -1,8 +1,8 @@
 # PTN Progress
 
-Refresh: 2026-06-13T14:59Z
-Measured: `ptn-vk22` `display_errors` diagnostic suppression on
-`origin/master` `02c58dcfb`; focused native/PHPT gates passed after
+Refresh: 2026-06-13T15:05Z
+Measured: `ptn-4a67` canonical `Reflection` extension metadata on
+`origin/master` `8240cf70b`; focused native/PHPT gates passed after
 conflict resolution.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
@@ -14,15 +14,14 @@ ordered-array `str_replace()`, `str_split()`, `nl2br()`, `strncasecmp()`,
 `getcwd()`/`chdir()`, PHPT runner ini values, statement-form `(void)` casts,
 offset compound/coalescing, and property/static-property compounds.
 
-Recent movers include `display_errors` diagnostic display suppression,
-reflection extension visibility for PHPT metadata, inherited `__invoke`
+Recent movers include canonical `Reflection` loaded-extension metadata,
+`display_errors` diagnostic display suppression, inherited `__invoke`
 callable dispatch, `call_user_func_array()` object callback coverage,
-binary-safe `strpbrk()` suffix searches, `zend.assertions` runner ini
-plumbing, grouped imports, scalar conversions, `global`, PHP metadata
-constants, `dirname()` levels, `pathinfo()`, `LC_*`/`setlocale()`/
-`localeconv()`, search/count internals, standard streams, `property_exists()`,
-PHPT manifests, `crc32()`, `str_replace()` array operands/reference
-entries/counts, `str_split()`, `nl2br()`, and `strncasecmp()`.
+binary-safe `strpbrk()` suffix searches, runner ini plumbing, grouped imports,
+scalar conversions, `global`, PHP metadata constants, path/search/count
+internals, locale helpers, standard streams, `property_exists()`, PHPT
+manifests, `crc32()`, `str_replace()` arrays, `str_split()`, `nl2br()`, and
+`strncasecmp()`.
 
 ## Dashboard
 
@@ -67,9 +66,8 @@ compounds.
 
 ## Verification
 
-Current branch verification for `ptn-vk22`: focused runner ini/display-errors
-native reducer and two former ini-exclusion PHPT rows passed after conflict
-resolution.
+Current branch verification for `ptn-4a67`: focused version/runner metadata
+reducers and callback PHPT manifest passed after conflict resolution.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 first-class callables, dynamic includes, unsupported internals,

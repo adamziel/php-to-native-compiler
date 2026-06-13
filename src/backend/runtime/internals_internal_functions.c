@@ -8706,7 +8706,7 @@ static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
     return ptn_string_operand_ascii_case_equal(extension, "Core") ||
         ptn_string_operand_ascii_case_equal(extension, "date") ||
         ptn_string_operand_ascii_case_equal(extension, "pcre") ||
-        ptn_string_operand_ascii_case_equal(extension, "reflection") ||
+        ptn_string_operand_ascii_case_equal(extension, "Reflection") ||
         ptn_string_operand_ascii_case_equal(extension, "standard");
 }
 
@@ -8878,7 +8878,7 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("date"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("pcre"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("reflection"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("Reflection"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("standard"));
     return result;
 }

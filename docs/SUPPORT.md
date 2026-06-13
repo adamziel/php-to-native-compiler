@@ -767,7 +767,7 @@ Post-RC architecture remains explicit rather than hidden:
   extension name, and `false` for unmodeled extension names.
 - `zend_version()` returns the modeled Zend Engine version string.
 - `get_loaded_extensions()` returns the modeled loaded extension names
-  `Core`, `date`, `pcre`, `reflection`, and `standard`;
+  `Core`, `date`, `pcre`, `Reflection`, and `standard`;
   `get_loaded_extensions(true)` returns an empty array because Zend extensions
   are outside the current runtime boundary.
 - Locale category constants `LC_ALL`, `LC_COLLATE`, `LC_CTYPE`,
@@ -1305,7 +1305,7 @@ Post-RC architecture remains explicit rather than hidden:
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
 - PHP-exact version, SAPI, and extension metadata beyond the modeled CLI/core/
-  standard/reflection names and loaded-extension list.
+  standard/Reflection names and loaded-extension list.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
 - Scope-aware magic constants inside traits, includes, and eval contexts, plus
