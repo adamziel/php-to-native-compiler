@@ -353,7 +353,7 @@ Post-RC architecture remains explicit rather than hidden:
   `crc32(expr);`,
   `md5(expr[, raw_output]);`,
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
-  `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr);`,
+  `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr[, levels]);`,
   `highlight_string(expr[, return]);`, `highlight_file(expr[, return]);`,
   `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
   `pow(expr, expr);`, `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
@@ -418,7 +418,7 @@ Post-RC architecture remains explicit rather than hidden:
   `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `quoted_printable_decode(expr)`,
-  `basename(expr[, suffix])`, `dirname(expr)`, `pathinfo(expr[, flags])`,
+  `basename(expr[, suffix])`, `dirname(expr[, levels])`, `pathinfo(expr[, flags])`,
   `highlight_string(expr[, return])`, `highlight_file(expr[, return])`,
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `abs(expr)`, `sqrt(expr)`, `pow(expr, expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
@@ -652,10 +652,11 @@ Post-RC architecture remains explicit rather than hidden:
   quote, and backslash bytes; `stripslashes()` removes backslashes and decodes
   backslash-zero to NUL.
 - `dirname()` over current boxed scalar values after scalar string conversion,
-  returning the parent directory for the current binary-safe path. Empty paths,
-  embedded NUL bytes, platform directory separators, null-argument
-  deprecations, and modeled TypeError diagnostics for array/object operands are
-  handled through the runtime path.
+  returning the parent directory for the current binary-safe path. Optional
+  `levels` values use the shared integer argument path and reject values below
+  one with a modeled `ValueError`. Empty paths, embedded NUL bytes, platform
+  directory separators, null-argument deprecations, and modeled TypeError
+  diagnostics for array/object operands are handled through the runtime path.
 - `pathinfo()` over current boxed scalar values after scalar string conversion,
   returning ordered dirname/basename/extension/filename arrays or individual
   components selected by `PATHINFO_*` flags. Empty paths, trailing separators,

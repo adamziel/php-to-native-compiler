@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T07:51Z
-Measured: `ptn-98d8.2` rebased on current `origin/master` `7bc467b8`.
+Last refresh: 2026-06-13T07:59Z
+Measured: `ptn-yiif` rebased on current `origin/master` `217ccada8`.
 
 ## Operating Goal
 

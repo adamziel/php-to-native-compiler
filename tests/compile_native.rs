@@ -4343,7 +4343,8 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
         "ptn_crc32_bytes((const unsigned char *)input.data, input.len)",
-        "ptn_dirname_string(path.data, path.len, &dirname_len)",
+        "ptn_duplicate_string_len(path.data, path.len)",
+        "ptn_dirname_string(current, current_len, &dirname_len)",
         "ptn_quoted_printable_decode_string(input.data, input.len, &output_len)",
         "ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line)",
         "ptn_base_string_to_number(runtime, string.data, string.len, 16, 'x', line)",
@@ -4603,6 +4604,20 @@ $paths = [\"\", \"c:\\\\test\\\\afile\", \"c://test//afile\", \"/foo\" . chr(0) 
 foreach ($paths as $path) {\n\
     var_dump(dirname($path));\n\
 }\n\
+var_dump(dirname('/a/b/c', 2));\n\
+var_dump(dirname('c://test//afile', 2));\n\
+var_dump(dirname('a/b/', '2'));\n\
+var_dump(dirname('/foo' . chr(0) . 'bar/t.gz', 2));\n\
+try {\n\
+    dirname('/a', 0);\n\
+} catch (\\ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    dirname('/a', 'abc');\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
 try {\n\
     dirname([]);\n\
 } catch (\\TypeError $e) {\n\
@@ -4622,6 +4637,12 @@ string(1) \".\"\n\
 string(8) \"c://test\"\n\
 string(8) \"/foo\0bar\"\n\
 string(1) \"/\"\n\
+string(2) \"/a\"\n\
+string(2) \"c:\"\n\
+string(1) \".\"\n\
+string(1) \"/\"\n\
+dirname(): Argument #2 ($levels) must be greater than or equal to 1\n\
+dirname(): Argument #2 ($levels) must be of type int, string given\n\
 dirname(): Argument #1 ($path) must be of type string, array given\n"
             .to_vec()
     );
