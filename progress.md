@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T19:34Z
+Last refresh: 2026-06-13T19:49Z
 Source: `PROGRESS.md`
-Measured: `ptn-550s.5` string/scalar alias PHPT slice after `ptn-550s.4`.
+Measured: `ptn-550s.2` COW foreach/reference frontier after `ptn-550s.5`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 652/652; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
@@ -22,6 +22,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 652/652; Nativ
 | PHPT other rows | 8/8 |
 | PHPT COW manifest | 54/54 |
 | PHPT array-internal COW frontier | 0/72 |
+| PHPT COW foreach/reference frontier | 31/103 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |

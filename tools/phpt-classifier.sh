@@ -490,6 +490,21 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
+            if (line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+\$[a-z_]/) {
+                print "unsupported-language\trequires static local variables, outside PTN function-local static storage model"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*\$[a-z_][a-z0-9_]*[[:space:]]*\[[[:space:]]*\][^)]*as([^[:alnum:]_]|$)/) {
+                print "unsupported-language\trequires array-append read diagnostics (`[]` in read context), outside PTN expression diagnostics"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*\$this([^[:alnum:]_]|$)/) {
+                print "unsupported-language\trequires foreach assignment diagnostics for `$this`, outside PTN special-variable assignment diagnostics"
+                found = 1
+                exit
+            }
             if ($0 ~ /\.\.\./) {
                 declaration = line ~ /(^|[^[:alnum:]_$])(function|fn)[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*\.\.\./
                 if (!declaration) {
@@ -580,6 +595,11 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+(static[[:space:]]+)?function[[:space:]]+[a-z_]/) {
                 print "unsupported-class-metadata\trequires non-public method visibility dispatch and diagnostics, outside PTN modeled method visibility"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+(static[[:space:]]+)?\$[a-z_]/) {
+                print "unsupported-class-metadata\trequires non-public property visibility metadata, outside PTN modeled property visibility"
                 found = 1
                 exit
             }
@@ -698,8 +718,20 @@ ptn_phpt_first_unsupported_internal_surface() {
                 found = 1
                 exit
             }
+            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*&/) {
+                byref_foreach = 1
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(array_shift|array_unshift)[[:space:]]*\(/) {
+                positional_mutator = 1
+            }
         }
-        END { exit found ? 0 : 1 }
+        END {
+            if (!found && byref_foreach && positional_mutator) {
+                print "unsupported-internal\trequires by-reference foreach iterator-pointer preservation under positional array mutation, outside PTN foreach iterator model"
+                found = 1
+            }
+            exit found ? 0 : 1
+        }
     '
 }
 

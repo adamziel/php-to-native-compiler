@@ -113,6 +113,21 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "--TEST--\nthrow\n--FILE--\n<?php\ntry { throw new Exception('boom'); } catch (Exception $e) {}\n--EXPECT--\n",
             "requires userland throw expression/statement lowering",
         ),
+        (
+            "static local variable",
+            "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
+            "requires static local variables",
+        ),
+        (
+            "foreach append read",
+            "--TEST--\nappend read\n--FILE--\n<?php\nforeach ($items[] as $value) {}\n--EXPECTF--\n",
+            "requires array-append read diagnostics",
+        ),
+        (
+            "foreach assigns this",
+            "--TEST--\nthis target\n--FILE--\n<?php\nforeach ($items as list($this)) {}\n--EXPECTF--\n",
+            "requires foreach assignment diagnostics for `$this`",
+        ),
     ];
 
     for (name, phpt, reason) in cases {
@@ -158,12 +173,45 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "--TEST--\nvisibility\n--FILE--\n<?php\nclass Box { private function run() {} }\n--EXPECT--\n",
             "requires non-public method visibility dispatch",
         ),
+        (
+            "non-public property visibility",
+            "--TEST--\nproperty visibility\n--FILE--\n<?php\nclass Box { protected $value = 1; }\n--EXPECT--\n",
+            "requires non-public property visibility metadata",
+        ),
     ];
 
     for (name, phpt, reason) in cases {
         let classification = classify(phpt);
         assert!(
             classification.starts_with("unsupported-class-metadata\t"),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_excludes_unsupported_foreach_internal_surfaces() {
+    let cases = [
+        (
+            "array_walk_recursive",
+            "--TEST--\nrecursive walk\n--FILE--\n<?php\narray_walk_recursive($items, 'visit');\n--EXPECT--\n",
+            "requires array_walk_recursive() recursive by-reference callback traversal",
+        ),
+        (
+            "by-ref foreach positional mutation",
+            "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_unshift($items, 0); }\n--EXPECT--\n",
+            "requires by-reference foreach iterator-pointer preservation",
+        ),
+    ];
+
+    for (name, phpt, reason) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("unsupported-internal\t"),
             "{name}: {classification:?}"
         );
         assert!(
@@ -250,7 +298,7 @@ fn phpt_classifier_keeps_attribute_text_in_strings_runnable() {
 #[test]
 fn phpt_classifier_keeps_unsupported_syntax_words_in_strings_and_comments_runnable() {
     let classification = classify(
-        "--TEST--\nsyntax text\n--FILE--\n<?php\n// throw new Exception();\n# fn($x) => $x\n/* public private(set) int $value; */\necho \"readonly class fn throw private(set) <<<HEREDOC\";\n--EXPECT--\nreadonly class fn throw private(set) <<<HEREDOC\n",
+        "--TEST--\nsyntax text\n--FILE--\n<?php\n// throw new Exception();\n# fn($x) => $x\n/* public private(set) int $value; static $value; array_walk_recursive($a, 'f'); */\necho \"readonly class fn throw private(set) static $value array_walk_recursive($a, 'f') <<<HEREDOC\";\n--EXPECT--\nreadonly class fn throw private(set) static $value array_walk_recursive($a, 'f') <<<HEREDOC\n",
     );
 
     assert!(

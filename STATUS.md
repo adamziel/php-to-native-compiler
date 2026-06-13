@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T19:34Z
-Measured: `ptn-550s.5` string/scalar alias PHPT slice after `ptn-550s.4`.
+Last refresh: 2026-06-13T19:49Z
+Measured: `ptn-550s.2` COW foreach/reference frontier after `ptn-550s.5`.
 
 ## Operating Goal
 
@@ -30,6 +30,7 @@ Source unit tests 3/3; Native/compiler Rust suite 652/652; Native smoke matrix 6
 | PHPT other rows | 8/8 |
 | PHPT COW manifest | 54/54 |
 | PHPT array-internal COW frontier | 0/72 |
+| PHPT COW foreach/reference frontier | 31/103 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |
