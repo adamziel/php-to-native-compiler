@@ -395,10 +395,18 @@ Post-RC architecture remains explicit rather than hidden:
   `array_map(expr, expr[, ...]);`, `array_reduce(expr, expr[, expr]);`,
   `array_walk(expr, expr[, expr]);`,
   `array_intersect(expr, ...);`, `array_intersect_assoc(expr, ...);`,
+  `array_diff_key(expr, ...);`, `array_intersect_key(expr, ...);`,
+  `array_diff_uassoc(expr, expr, callback);`,
+  `array_diff_ukey(expr, expr, callback);`,
+  `array_intersect_uassoc(expr, expr, callback);`,
+  `array_intersect_ukey(expr, expr, callback);`,
   `array_is_list(expr);`, `array_key_first(expr);`, `array_key_last(expr);`,
   `array_udiff(expr, expr, callback);`,
   `array_udiff_assoc(expr, expr, callback);`,
   `array_udiff_uassoc(expr, expr, callback, callback);`,
+  `array_uintersect(expr, expr, callback);`,
+  `array_uintersect_assoc(expr, expr, callback);`,
+  `array_uintersect_uassoc(expr, expr, callback, callback);`,
   `array_product(expr);`, `array_search(expr, expr[, expr]);`,
   `array_slice(expr, expr[, expr[, expr]]);`,
   `array_values(expr);`, `array_keys(expr[, expr[, expr]]);`,
@@ -469,10 +477,18 @@ Post-RC architecture remains explicit rather than hidden:
   `array_map(expr, expr[, ...])`, `array_reduce(expr, expr[, expr])`,
   `array_walk(expr, expr[, expr])`,
   `array_intersect(expr, ...)`, `array_intersect_assoc(expr, ...)`,
+  `array_diff_key(expr, ...)`, `array_intersect_key(expr, ...)`,
+  `array_diff_uassoc(expr, expr, callback)`,
+  `array_diff_ukey(expr, expr, callback)`,
+  `array_intersect_uassoc(expr, expr, callback)`,
+  `array_intersect_ukey(expr, expr, callback)`,
   `array_is_list(expr)`, `array_key_first(expr)`, `array_key_last(expr)`,
   `array_udiff(expr, expr, callback)`,
   `array_udiff_assoc(expr, expr, callback)`,
   `array_udiff_uassoc(expr, expr, callback, callback)`,
+  `array_uintersect(expr, expr, callback)`,
+  `array_uintersect_assoc(expr, expr, callback)`,
+  `array_uintersect_uassoc(expr, expr, callback, callback)`,
   `array_product(expr)`, `array_search(expr, expr[, expr])`,
   `array_slice(expr, expr[, expr[, expr]])`,
   `array_values(expr)`, `array_keys(expr[, expr[, expr]])`,
@@ -894,9 +910,16 @@ Post-RC architecture remains explicit rather than hidden:
   preserving entries from the first array in a fresh ordered result. Value
   matches use PHP-style string forms; the associative variant also requires a
   matching key in every compared array.
-- `array_udiff()`, `array_udiff_assoc()`, and `array_udiff_uassoc()` over
-  current boxed arrays, using shared callable dispatch for value comparisons
-  and, for `array_udiff_uassoc()`, key comparisons.
+- `array_diff_key()`, `array_intersect_key()`,
+  `array_diff_uassoc()`, `array_diff_ukey()`,
+  `array_intersect_uassoc()`, and `array_intersect_ukey()` over current boxed
+  arrays, preserving first-array keys and values while comparing keys either
+  exactly or through shared callable dispatch.
+- `array_udiff()`, `array_udiff_assoc()`, `array_udiff_uassoc()`,
+  `array_uintersect()`, `array_uintersect_assoc()`, and
+  `array_uintersect_uassoc()` over current boxed arrays, using shared callable
+  dispatch for value comparisons and, for `*uassoc()` variants, key
+  comparisons.
 - `array_product()` over current boxed arrays, multiplying entries after the
   same dereferencing and numeric conversion path used by `array_sum()`, and
   returning `1` for empty arrays.

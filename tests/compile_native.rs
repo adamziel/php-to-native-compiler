@@ -15712,6 +15712,116 @@ var_dump(function_exists(\"array_udiff\"), function_exists(\"ARRAY_UDIFF_ASSOC\"
 }
 
 #[test]
+fn compile_array_key_and_callback_set_operations_to_native_binary() {
+    let root = temp_dir("ptn-native-array-key-callback-set-operations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-key-callback-set-operations.php");
+    let output = root.join("array-key-callback-set-operations-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function cmp_value($a, $b) {\n\
+    if ($a === $b) return 0;\n\
+    return ($a > $b) ? 1 : -1;\n\
+}\n\
+function cmp_key($a, $b) {\n\
+    $a = (string)$a;\n\
+    $b = (string)$b;\n\
+    if ($a === $b) return 0;\n\
+    return ($a > $b) ? 1 : -1;\n\
+}\n\
+$left = [\"a\" => \"green\", \"b\" => \"brown\", \"c\" => \"blue\", 0 => \"red\", 4 => \"four\"];\n\
+$right = [\"a\" => \"green\", \"x\" => \"brown\", 0 => \"red\", 4 => \"changed\"];\n\
+$third = [\"a\" => \"green\", 0 => \"other\", 9 => \"red\", \"b\" => \"brown\"];\n\
+var_dump(array_diff_key($left, $right));\n\
+var_dump(array_intersect_key($left, $right, $third));\n\
+var_dump(array_diff_uassoc($left, $right, \"cmp_key\"));\n\
+var_dump(array_diff_ukey($left, $right, \"cmp_key\"));\n\
+var_dump(array_intersect_uassoc($left, $right, $third, \"cmp_key\"));\n\
+var_dump(array_intersect_ukey($left, $right, $third, \"cmp_key\"));\n\
+var_dump(array_uintersect($left, [\"n\" => \"brown\", \"m\" => \"red\"], \"cmp_value\"));\n\
+var_dump(array_uintersect_assoc($left, [\"a\" => \"green\", \"b\" => \"other\", 0 => \"red\"], \"cmp_value\"));\n\
+var_dump(array_uintersect_uassoc($left, [\"A\" => \"green\", \"b\" => \"brown\", 0 => \"red\"], \"cmp_value\", \"cmp_key\"));\n\
+var_dump(function_exists(\"array_diff_key\"), function_exists(\"ARRAY_UINTERSECT_UASSOC\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [\"b\"]=>\n",
+            "  string(5) \"brown\"\n",
+            "  [\"c\"]=>\n",
+            "  string(4) \"blue\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  string(5) \"green\"\n",
+            "  [0]=>\n",
+            "  string(3) \"red\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"b\"]=>\n",
+            "  string(5) \"brown\"\n",
+            "  [\"c\"]=>\n",
+            "  string(4) \"blue\"\n",
+            "  [4]=>\n",
+            "  string(4) \"four\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"b\"]=>\n",
+            "  string(5) \"brown\"\n",
+            "  [\"c\"]=>\n",
+            "  string(4) \"blue\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"a\"]=>\n",
+            "  string(5) \"green\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  string(5) \"green\"\n",
+            "  [0]=>\n",
+            "  string(3) \"red\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"b\"]=>\n",
+            "  string(5) \"brown\"\n",
+            "  [0]=>\n",
+            "  string(3) \"red\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  string(5) \"green\"\n",
+            "  [0]=>\n",
+            "  string(3) \"red\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"b\"]=>\n",
+            "  string(5) \"brown\"\n",
+            "  [0]=>\n",
+            "  string(3) \"red\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_diff_key"));
+    assert!(c_source.contains("ptn_internal_array_intersect_key"));
+    assert!(c_source.contains("ptn_internal_array_diff_uassoc"));
+    assert!(c_source.contains("ptn_internal_array_intersect_ukey"));
+    assert!(c_source.contains("ptn_internal_array_uintersect_uassoc"));
+}
+
+#[test]
 fn compile_array_merge_recursive_to_native_binary() {
     let root = temp_dir("ptn-native-array-merge-recursive");
     fs::create_dir_all(&root).unwrap();

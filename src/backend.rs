@@ -3513,8 +3513,18 @@ fn bind_named_call_arguments(
 
 fn internal_call_may_invoke_callable(name: &str) -> bool {
     name.eq_ignore_ascii_case("array_filter")
+        || name.eq_ignore_ascii_case("array_diff_uassoc")
+        || name.eq_ignore_ascii_case("array_diff_ukey")
+        || name.eq_ignore_ascii_case("array_intersect_uassoc")
+        || name.eq_ignore_ascii_case("array_intersect_ukey")
         || name.eq_ignore_ascii_case("array_map")
         || name.eq_ignore_ascii_case("array_reduce")
+        || name.eq_ignore_ascii_case("array_udiff")
+        || name.eq_ignore_ascii_case("array_udiff_assoc")
+        || name.eq_ignore_ascii_case("array_udiff_uassoc")
+        || name.eq_ignore_ascii_case("array_uintersect")
+        || name.eq_ignore_ascii_case("array_uintersect_assoc")
+        || name.eq_ignore_ascii_case("array_uintersect_uassoc")
         || name.eq_ignore_ascii_case("array_walk")
         || name.eq_ignore_ascii_case("call_user_func")
         || name.eq_ignore_ascii_case("call_user_func_array")

@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T16:07Z
-Measured: `ptn-ayfv` formatted string output family on `origin/master`
+Last refresh: 2026-06-13T16:27Z
+Measured: `ptn-nid9` key/callback array set-operation expansion on
 
 ## Operating Goal
 
@@ -10,18 +10,19 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 644/644; Native smoke matrix 6/6; PHPT bounded manifest 400/400; PHPT Zend rows 94/94; PHPT ext/standard rows 223/223.
+Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 400/400; PHPT Zend rows 94/94; PHPT ext/standard rows 223/223.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 644/644 |
+| Native/compiler Rust suite | 645/645 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 400/400 |
 | PHPT Zend rows | 94/94 |
 | PHPT ext/standard rows | 223/223 |
+| PHPT focused array key/callback set rows | 38/75 |
 | PHPT focused stream rows | 2/2 |
 | PHPT focused cwd rows | 2/2 |
 | PHPT tests/basic+func+lang | 78/78 |

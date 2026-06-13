@@ -33,7 +33,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   leading-numeric warnings; float stringification honors `phpc -d precision=N`
   and PHP-style exponent spelling.
 - Array internals cover set/key/list/search/unique/slice/pad/reverse/
-  sum/product/fill/filter/chunk/merge/replace helpers, sum/product warning and
+  sum/product/fill/filter/chunk/merge/replace helpers, key-aware
+  diff/intersect helpers with user comparators, sum/product warning and
   overflow parity,
   `count()`/`sizeof()` modes, and sort mutators through ordered-array/COW
   paths.

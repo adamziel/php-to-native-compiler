@@ -2571,6 +2571,56 @@ static PtnValue ptn_internal_array_diff_assoc(PtnRuntime *runtime, size_t argc, 
     return result;
 }
 
+static int ptn_array_entry_key_matches_all(PtnArrayEntry *entry, size_t array_count, PtnArray **arrays) {
+    for (size_t i = 0; i < array_count; i++) {
+        if (ptn_array_entry_for_key(arrays[i], entry->key) == NULL) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_array_entry_key_matches_any(PtnArrayEntry *entry, size_t array_count, PtnArray **arrays) {
+    for (size_t i = 0; i < array_count; i++) {
+        if (ptn_array_entry_for_key(arrays[i], entry->key) != NULL) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_array_key_intersect_or_diff(
+    PtnArray *source,
+    size_t array_count,
+    PtnArray **arrays,
+    int keep_matches
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < source->len; i++) {
+        PtnArrayEntry *entry = &source->entries[i];
+        int keep = keep_matches
+            ? ptn_array_entry_key_matches_all(entry, array_count, arrays)
+            : !ptn_array_entry_key_matches_any(entry, array_count, arrays);
+        if (keep) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone(ptn_array_reindexing_internal_value(entry->value))
+            );
+        }
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_array_diff_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_diff_key", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_diff_key", argc, args);
+    PtnValue result = ptn_array_key_intersect_or_diff(source, argc - 1, arrays, 0);
+    free(arrays);
+    return result;
+}
+
 static PtnValue ptn_internal_array_intersect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect", 1, "array", args[0]);
@@ -2585,6 +2635,15 @@ static PtnValue ptn_internal_array_intersect_assoc(PtnRuntime *runtime, size_t a
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect_assoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_intersect_assoc", argc, args);
     PtnValue result = ptn_array_intersect_or_diff(source, argc - 1, arrays, 1, 1);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_intersect_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect_key", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_intersect_key", argc, args);
+    PtnValue result = ptn_array_key_intersect_or_diff(source, argc - 1, arrays, 1);
     free(arrays);
     return result;
 }
@@ -2614,19 +2673,30 @@ static int ptn_array_user_compare(
     return 0;
 }
 
-static int ptn_array_udiff_keys_match(
+typedef enum {
+    PTN_ARRAY_SET_VALUE_NONE,
+    PTN_ARRAY_SET_VALUE_STRING,
+    PTN_ARRAY_SET_VALUE_CALLBACK
+} PtnArraySetValueMode;
+
+typedef enum {
+    PTN_ARRAY_SET_KEY_NONE,
+    PTN_ARRAY_SET_KEY_EXACT,
+    PTN_ARRAY_SET_KEY_CALLBACK
+} PtnArraySetKeyMode;
+
+static int ptn_array_custom_keys_match(
     PtnRuntime *runtime,
     PtnArrayKey left,
     PtnArrayKey right,
-    int compare_keys,
-    int use_key_callback,
+    PtnArraySetKeyMode key_mode,
     PtnValue key_callback,
     size_t line
 ) {
-    if (!compare_keys) {
+    if (key_mode == PTN_ARRAY_SET_KEY_NONE) {
         return 1;
     }
-    if (!use_key_callback) {
+    if (key_mode == PTN_ARRAY_SET_KEY_EXACT) {
         return ptn_array_keys_equal(left, right);
     }
 
@@ -2638,68 +2708,107 @@ static int ptn_array_udiff_keys_match(
     return matched;
 }
 
-static int ptn_array_udiff_entry_matches_array(
+static int ptn_array_custom_values_match(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    PtnArraySetValueMode value_mode,
+    PtnValue value_callback,
+    size_t line
+) {
+    if (value_mode == PTN_ARRAY_SET_VALUE_NONE) {
+        return 1;
+    }
+    if (value_mode == PTN_ARRAY_SET_VALUE_STRING) {
+        return ptn_array_value_strings_equal(left, right);
+    }
+    return ptn_array_user_compare(runtime, value_callback, left, right, line) == 0;
+}
+
+static int ptn_array_custom_entry_matches_candidate(
+    PtnRuntime *runtime,
+    PtnArrayEntry *entry,
+    PtnArrayEntry *candidate,
+    PtnArraySetValueMode value_mode,
+    PtnValue value_callback,
+    PtnArraySetKeyMode key_mode,
+    PtnValue key_callback,
+    size_t line
+) {
+    if (!ptn_array_custom_keys_match(runtime, entry->key, candidate->key, key_mode, key_callback, line)) {
+        return 0;
+    }
+    return ptn_array_custom_values_match(runtime, entry->value, candidate->value, value_mode, value_callback, line);
+}
+
+static int ptn_array_custom_entry_matches_array(
     PtnRuntime *runtime,
     PtnArrayEntry *entry,
     PtnArray *array,
+    PtnArraySetValueMode value_mode,
     PtnValue value_callback,
-    int compare_keys,
-    int use_key_callback,
+    PtnArraySetKeyMode key_mode,
     PtnValue key_callback,
     size_t line
 ) {
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *candidate = &array->entries[i];
-        if (!ptn_array_udiff_keys_match(
+        if (ptn_array_custom_entry_matches_candidate(
                 runtime,
-                entry->key,
-                candidate->key,
-                compare_keys,
-                use_key_callback,
+                entry,
+                candidate,
+                value_mode,
+                value_callback,
+                key_mode,
                 key_callback,
                 line
             )) {
-            continue;
-        }
-        if (ptn_array_user_compare(runtime, value_callback, entry->value, candidate->value, line) == 0) {
             return 1;
         }
     }
     return 0;
 }
 
-static PtnValue ptn_array_udiff_impl(
+static PtnValue ptn_array_custom_set_operation(
     PtnRuntime *runtime,
-    const char *function_name,
     PtnArray *source,
     size_t array_count,
     PtnArray **arrays,
+    PtnArraySetValueMode value_mode,
     PtnValue value_callback,
-    int compare_keys,
-    int use_key_callback,
+    PtnArraySetKeyMode key_mode,
     PtnValue key_callback,
+    int keep_matches,
     size_t line
 ) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayEntry *entry = &source->entries[i];
-        int matched = 0;
+        size_t matched_arrays = 0;
         for (size_t array_index = 0; array_index < array_count; array_index++) {
-            if (ptn_array_udiff_entry_matches_array(
+            int matched = ptn_array_custom_entry_matches_array(
                     runtime,
                     entry,
                     arrays[array_index],
+                    value_mode,
                     value_callback,
-                    compare_keys,
-                    use_key_callback,
+                    key_mode,
                     key_callback,
                     line
-                )) {
-                matched = 1;
+                );
+            if (keep_matches && !matched) {
+                matched_arrays = 0;
                 break;
             }
+            if (matched) {
+                matched_arrays++;
+                if (!keep_matches) {
+                    break;
+                }
+            }
         }
-        if (!matched) {
+        int keep = keep_matches ? matched_arrays == array_count : matched_arrays == 0;
+        if (keep) {
             ptn_array_set_entry(
                 result.as.array,
                 ptn_array_key_clone(entry->key),
@@ -2707,7 +2816,6 @@ static PtnValue ptn_array_udiff_impl(
             );
         }
     }
-    (void)function_name;
     return result;
 }
 
@@ -2716,16 +2824,16 @@ static PtnValue ptn_internal_array_udiff(PtnRuntime *runtime, size_t argc, const
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_udiff", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff", array_count, args);
     PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
-    PtnValue result = ptn_array_udiff_impl(
+    PtnValue result = ptn_array_custom_set_operation(
         runtime,
-        "array_udiff",
         source,
         array_count,
         arrays,
+        PTN_ARRAY_SET_VALUE_CALLBACK,
         value_callback,
-        0,
-        0,
+        PTN_ARRAY_SET_KEY_NONE,
         ptn_null(),
+        0,
         line
     );
     ptn_value_destroy(&value_callback);
@@ -2738,16 +2846,16 @@ static PtnValue ptn_internal_array_udiff_assoc(PtnRuntime *runtime, size_t argc,
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_udiff_assoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff_assoc", array_count, args);
     PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
-    PtnValue result = ptn_array_udiff_impl(
+    PtnValue result = ptn_array_custom_set_operation(
         runtime,
-        "array_udiff_assoc",
         source,
         array_count,
         arrays,
+        PTN_ARRAY_SET_VALUE_CALLBACK,
         value_callback,
-        1,
-        0,
+        PTN_ARRAY_SET_KEY_EXACT,
         ptn_null(),
+        0,
         line
     );
     ptn_value_destroy(&value_callback);
@@ -2761,16 +2869,172 @@ static PtnValue ptn_internal_array_udiff_uassoc(PtnRuntime *runtime, size_t argc
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff_uassoc", array_count, args);
     PtnValue value_callback = ptn_value_clone_deref(args[argc - 2]);
     PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
-    PtnValue result = ptn_array_udiff_impl(
+    PtnValue result = ptn_array_custom_set_operation(
         runtime,
-        "array_udiff_uassoc",
         source,
         array_count,
         arrays,
+        PTN_ARRAY_SET_VALUE_CALLBACK,
         value_callback,
-        1,
-        1,
+        PTN_ARRAY_SET_KEY_CALLBACK,
         key_callback,
+        0,
+        line
+    );
+    ptn_value_destroy(&value_callback);
+    ptn_value_destroy(&key_callback);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_diff_uassoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 2;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_diff_uassoc", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_diff_uassoc", array_count, args);
+    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_custom_set_operation(
+        runtime,
+        source,
+        array_count,
+        arrays,
+        PTN_ARRAY_SET_VALUE_STRING,
+        ptn_null(),
+        PTN_ARRAY_SET_KEY_CALLBACK,
+        key_callback,
+        0,
+        line
+    );
+    ptn_value_destroy(&key_callback);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_diff_ukey(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 2;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_diff_ukey", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_diff_ukey", array_count, args);
+    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_custom_set_operation(
+        runtime,
+        source,
+        array_count,
+        arrays,
+        PTN_ARRAY_SET_VALUE_NONE,
+        ptn_null(),
+        PTN_ARRAY_SET_KEY_CALLBACK,
+        key_callback,
+        0,
+        line
+    );
+    ptn_value_destroy(&key_callback);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_intersect_uassoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 2;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect_uassoc", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_intersect_uassoc", array_count, args);
+    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_custom_set_operation(
+        runtime,
+        source,
+        array_count,
+        arrays,
+        PTN_ARRAY_SET_VALUE_STRING,
+        ptn_null(),
+        PTN_ARRAY_SET_KEY_CALLBACK,
+        key_callback,
+        1,
+        line
+    );
+    ptn_value_destroy(&key_callback);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_intersect_ukey(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 2;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect_ukey", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_intersect_ukey", array_count, args);
+    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_custom_set_operation(
+        runtime,
+        source,
+        array_count,
+        arrays,
+        PTN_ARRAY_SET_VALUE_NONE,
+        ptn_null(),
+        PTN_ARRAY_SET_KEY_CALLBACK,
+        key_callback,
+        1,
+        line
+    );
+    ptn_value_destroy(&key_callback);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_uintersect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 2;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_uintersect", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_uintersect", array_count, args);
+    PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_custom_set_operation(
+        runtime,
+        source,
+        array_count,
+        arrays,
+        PTN_ARRAY_SET_VALUE_CALLBACK,
+        value_callback,
+        PTN_ARRAY_SET_KEY_NONE,
+        ptn_null(),
+        1,
+        line
+    );
+    ptn_value_destroy(&value_callback);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_uintersect_assoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 2;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_uintersect_assoc", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_uintersect_assoc", array_count, args);
+    PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_custom_set_operation(
+        runtime,
+        source,
+        array_count,
+        arrays,
+        PTN_ARRAY_SET_VALUE_CALLBACK,
+        value_callback,
+        PTN_ARRAY_SET_KEY_EXACT,
+        ptn_null(),
+        1,
+        line
+    );
+    ptn_value_destroy(&value_callback);
+    free(arrays);
+    return result;
+}
+
+static PtnValue ptn_internal_array_uintersect_uassoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    size_t array_count = argc - 3;
+    PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_uintersect_uassoc", 1, "array", args[0]);
+    PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_uintersect_uassoc", array_count, args);
+    PtnValue value_callback = ptn_value_clone_deref(args[argc - 2]);
+    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
+    PtnValue result = ptn_array_custom_set_operation(
+        runtime,
+        source,
+        array_count,
+        arrays,
+        PTN_ARRAY_SET_VALUE_CALLBACK,
+        value_callback,
+        PTN_ARRAY_SET_KEY_CALLBACK,
+        key_callback,
+        1,
         line
     );
     ptn_value_destroy(&value_callback);
@@ -9887,12 +10151,18 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_count_values", 1, 1, ptn_internal_array_count_values },
         { "array_diff", 2, PTN_VARIADIC_ARGS, ptn_internal_array_diff },
         { "array_diff_assoc", 2, PTN_VARIADIC_ARGS, ptn_internal_array_diff_assoc },
+        { "array_diff_key", 2, PTN_VARIADIC_ARGS, ptn_internal_array_diff_key },
+        { "array_diff_uassoc", 3, PTN_VARIADIC_ARGS, ptn_internal_array_diff_uassoc },
+        { "array_diff_ukey", 3, PTN_VARIADIC_ARGS, ptn_internal_array_diff_ukey },
         { "array_fill", 3, 3, ptn_internal_array_fill },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
         { "array_filter", 1, 3, ptn_internal_array_filter },
         { "array_flip", 1, 1, ptn_internal_array_flip },
         { "array_intersect", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect },
         { "array_intersect_assoc", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_assoc },
+        { "array_intersect_key", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_key },
+        { "array_intersect_uassoc", 3, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_uassoc },
+        { "array_intersect_ukey", 3, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_ukey },
         { "array_is_list", 1, 1, ptn_internal_array_is_list },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_key_first", 1, 1, ptn_internal_array_key_first },
@@ -9916,6 +10186,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_udiff", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff },
         { "array_udiff_assoc", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff_assoc },
         { "array_udiff_uassoc", 4, PTN_VARIADIC_ARGS, ptn_internal_array_udiff_uassoc },
+        { "array_uintersect", 3, PTN_VARIADIC_ARGS, ptn_internal_array_uintersect },
+        { "array_uintersect_assoc", 3, PTN_VARIADIC_ARGS, ptn_internal_array_uintersect_assoc },
+        { "array_uintersect_uassoc", 4, PTN_VARIADIC_ARGS, ptn_internal_array_uintersect_uassoc },
         { "array_unique", 1, 2, ptn_internal_array_unique },
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
