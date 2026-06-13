@@ -862,6 +862,10 @@ Post-RC architecture remains explicit rather than hidden:
   returning a freshly reindexed array of integer/string keys. Optional
   `search_value` filtering uses the shared loose comparison path by default and
   the shared identity path when `strict` is truthy.
+- `array_unique()` over current boxed arrays, preserving the first key/value
+  for each value under PHP's default string-value comparison and returning a
+  fresh ordered array. Omitted flags and `SORT_STRING` use this supported path;
+  other sort flags remain an explicit unsupported runtime boundary.
 - `array_search()` over current boxed arrays, returning the first matching
   integer/string key under the same loose or strict comparison path as
   `in_array()`, or `false` when no entry matches.
@@ -1174,8 +1178,8 @@ Post-RC architecture remains explicit rather than hidden:
   currently modeled `E_*` error masks, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, modeled PHP math `M_*` constants,
-  array-filter mode constants, `STR_PAD_*` constants, and modeled `LC_*`
-  locale constants in `defined()`/`constant()`.
+  array-filter mode constants, sort mode constants, `STR_PAD_*` constants, and
+  modeled `LC_*` locale constants in `defined()`/`constant()`.
 - Function forms beyond top-level named declarations and the public class-method
   callable slice, plus the bounded `stdClass` public-property storage slice,
   including array/object default arguments, named arguments outside direct

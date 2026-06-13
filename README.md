@@ -32,8 +32,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Arithmetic models non-numeric string/array `TypeError`s while preserving
   leading-numeric warnings; float stringification honors `phpc -d precision=N`
   and PHP-style exponent spelling.
-- Array internals cover set/key/list/search/slice/pad/reverse/sum/product/
-  fill/filter/chunk/merge/replace helpers, sum/product warning and overflow parity,
+- Array internals cover set/key/list/search/unique/slice/pad/reverse/
+  sum/product/fill/filter/chunk/merge/replace helpers, sum/product warning and
+  overflow parity,
   `count()`/`sizeof()` modes, and sort mutators through ordered-array/COW
   paths.
 - `var_export()` covers scalars, arrays, declared objects through

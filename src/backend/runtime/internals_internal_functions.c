@@ -3081,6 +3081,53 @@ static PtnValue ptn_internal_array_unshift(PtnRuntime *runtime, size_t argc, con
     return ptn_int(ptn_array_unshift_values(array, argc - 1, args + 1));
 }
 
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+);
+
+static int ptn_array_unique_contains_string_value(PtnArray *array, PtnValue value) {
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_array_value_strings_equal(value, array->entries[i].value)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_array_unique(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unique", 1, "array", args[0]);
+    if (argc >= 2) {
+        int64_t flags = ptn_internal_expect_integer_arg(runtime, "array_unique", 2, "flags", args[1], line);
+        if (flags != PTN_SORT_STRING) {
+            ptn_throw_exception(
+                runtime,
+                "Error",
+                "array_unique() flags are unsupported; default string value comparison is supported"
+            );
+            return ptn_null();
+        }
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        if (ptn_array_unique_contains_string_value(result.as.array, entry->value)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(ptn_array_reindexing_internal_value(entry->value))
+        );
+    }
+    return result;
+}
+
 static PtnValue ptn_internal_array_values(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -9486,6 +9533,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_udiff", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff },
         { "array_udiff_assoc", 3, PTN_VARIADIC_ARGS, ptn_internal_array_udiff_assoc },
         { "array_udiff_uassoc", 4, PTN_VARIADIC_ARGS, ptn_internal_array_udiff_uassoc },
+        { "array_unique", 1, 2, ptn_internal_array_unique },
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
         { "array_walk", 2, 3, ptn_internal_array_walk },

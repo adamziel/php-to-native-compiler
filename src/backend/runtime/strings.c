@@ -604,7 +604,27 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         return 1;
     }
     if (strcmp(name, "SORT_REGULAR") == 0) {
-        *out = ptn_int(0);
+        *out = ptn_int(PTN_SORT_REGULAR);
+        return 1;
+    }
+    if (strcmp(name, "SORT_NUMERIC") == 0) {
+        *out = ptn_int(PTN_SORT_NUMERIC);
+        return 1;
+    }
+    if (strcmp(name, "SORT_STRING") == 0) {
+        *out = ptn_int(PTN_SORT_STRING);
+        return 1;
+    }
+    if (strcmp(name, "SORT_LOCALE_STRING") == 0) {
+        *out = ptn_int(PTN_SORT_LOCALE_STRING);
+        return 1;
+    }
+    if (strcmp(name, "SORT_NATURAL") == 0) {
+        *out = ptn_int(PTN_SORT_NATURAL);
+        return 1;
+    }
+    if (strcmp(name, "SORT_FLAG_CASE") == 0) {
+        *out = ptn_int(PTN_SORT_FLAG_CASE);
         return 1;
     }
     if (strcmp(name, "ARRAY_FILTER_USE_BOTH") == 0) {

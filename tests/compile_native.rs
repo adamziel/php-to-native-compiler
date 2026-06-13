@@ -12870,6 +12870,73 @@ var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));"
 }
 
 #[test]
+fn compile_array_unique_to_native_binary() {
+    let root = temp_dir("ptn-native-array-unique");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-unique.php");
+    let output = root.join("array-unique-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [0 => 1, 1 => 2, 2 => \"1\", \"keep\" => \"2\", \"empty\" => false, \"blank\" => \"\", \"zero\" => 0];\n\
+$unique = array_unique($items);\n\
+$unique[0] = \"changed\";\n\
+var_dump($unique, $items);\n\
+var_dump(array_unique([], SORT_STRING));\n\
+try { array_unique($items, SORT_REGULAR); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), defined(\"SORT_STRING\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(7) \"changed\"\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [\"empty\"]=>\n",
+            "  bool(false)\n",
+            "  [\"zero\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "array(7) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  string(1) \"1\"\n",
+            "  [\"keep\"]=>\n",
+            "  string(1) \"2\"\n",
+            "  [\"empty\"]=>\n",
+            "  bool(false)\n",
+            "  [\"blank\"]=>\n",
+            "  string(0) \"\"\n",
+            "  [\"zero\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "array_unique() flags are unsupported; default string value comparison is supported\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_unique"));
+    assert!(c_source.contains("ptn_array_unique_contains_string_value"));
+}
+
+#[test]
 fn compile_array_keys_to_native_binary() {
     let root = temp_dir("ptn-native-array-keys");
     fs::create_dir_all(&root).unwrap();
