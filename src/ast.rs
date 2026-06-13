@@ -433,6 +433,25 @@ pub enum IncludeKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ListExpr {
+    pub elements: Vec<ListExprElement>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListExprElement {
+    pub key: Option<Expr>,
+    pub target: Option<ListExprElementTarget>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListExprElementTarget {
+    Value(Expr),
+    Reference(ReferenceTarget),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     String(String, SourceSpan),
     InterpolatedString(Vec<StringPart>, SourceSpan),
@@ -513,6 +532,7 @@ pub enum Expr {
         elements: Vec<ArrayElement>,
         span: SourceSpan,
     },
+    List(ListExpr),
     ArrayAccess {
         array: Box<Expr>,
         index: Option<Box<Expr>>,
@@ -677,6 +697,7 @@ impl Expr {
             | Expr::StaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. } => *span,
             Expr::Array { span, .. } => *span,
+            Expr::List(list) => list.span,
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,
             Expr::Empty { span, .. } => *span,

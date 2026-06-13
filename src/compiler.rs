@@ -342,6 +342,23 @@ impl IncludeCollector {
                 }
                 Ok(())
             }
+            Expr::List(list) => {
+                for element in &list.elements {
+                    if let Some(key) = &element.key {
+                        self.collect_expr(key, source_file, source_dir)?;
+                    }
+                    match &element.target {
+                        Some(crate::ast::ListExprElementTarget::Value(value)) => {
+                            self.collect_expr(value, source_file, source_dir)?;
+                        }
+                        Some(crate::ast::ListExprElementTarget::Reference(target)) => {
+                            self.collect_reference_target(target, source_file, source_dir)?;
+                        }
+                        None => {}
+                    }
+                }
+                Ok(())
+            }
             Expr::ArrayAccess { array, index, .. } => {
                 self.collect_expr(array, source_file, source_dir)?;
                 if let Some(index) = index {

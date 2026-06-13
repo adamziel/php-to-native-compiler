@@ -5,9 +5,10 @@ use crate::ast::{
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassConstantDecl, ClassDecl,
     ClosureUseCapture, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
     IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElement, ListAssignmentElementTarget,
-    ListAssignmentTarget, MagicConstantKind, MethodDecl, Program, PropertyDecl, PropertyVisibility,
-    ReferenceTarget, Statement, StaticPropertyDecl, StringInterpolationIndex, StringPart,
-    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    ListAssignmentTarget, ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind,
+    MethodDecl, Program, PropertyDecl, PropertyVisibility, ReferenceTarget, Statement,
+    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp,
+    UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -2030,6 +2031,12 @@ impl Parser {
                     Some(first.span),
                 ));
             }
+            if matches!(first.target, AssignmentTarget::List(_)) {
+                return Err(Diagnostic::new(
+                    "Cannot use list as key element",
+                    Some(assignment_target_span(&first.target)),
+                ));
+            }
             self.advance();
             let value = self.parse_foreach_variable()?;
             (Some(first.target), value.target, value.by_ref)
@@ -2057,8 +2064,13 @@ impl Parser {
         }
         let target_expr = self.parse_expr()?;
         let target_span = target_expr.span();
-        let target = assignment_target_from_expr(target_expr)
-            .map_err(|_| Diagnostic::new("expected foreach variable", Some(target_span)))?;
+        let target = assignment_target_from_expr(target_expr).map_err(|diagnostic| {
+            if diagnostic.message == "Cannot use empty list" {
+                diagnostic
+            } else {
+                Diagnostic::new("expected foreach variable", Some(target_span))
+            }
+        })?;
         if by_ref {
             validate_foreach_by_reference_target(&target, span)?;
         }
@@ -2958,6 +2970,7 @@ impl Parser {
                 } else if matches!(self.peek().kind, TokenKind::LeftParen) {
                     match (unqualified, lowercase.as_str()) {
                         (true, "array") => self.parse_long_array_literal(parsed_name.span),
+                        (true, "list") => self.parse_long_list_expr(parsed_name.span),
                         (true, "isset") => self.parse_isset_expr(parsed_name.span),
                         (true, "empty") => self.parse_empty_expr(parsed_name.span),
                         _ => {
@@ -3204,6 +3217,88 @@ impl Parser {
         })
     }
 
+    fn parse_long_list_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        self.expect_left_paren()?;
+        let (elements, right_span) = self.parse_list_expr_elements()?;
+        Ok(Expr::List(ListExpr {
+            elements,
+            span: combine_spans(start_span, right_span),
+        }))
+    }
+
+    fn parse_list_expr_elements(&mut self) -> Result<(Vec<ListExprElement>, SourceSpan)> {
+        let mut elements = Vec::new();
+        loop {
+            if matches!(self.peek().kind, TokenKind::RightParen) {
+                break;
+            }
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                let span = self.advance().span;
+                elements.push(ListExprElement {
+                    key: None,
+                    target: None,
+                    span,
+                });
+                continue;
+            }
+
+            elements.push(self.parse_list_expr_element()?);
+            if !matches!(self.peek().kind, TokenKind::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        let right_span = self.expect_right_paren()?;
+        Ok((elements, right_span))
+    }
+
+    fn parse_list_expr_element(&mut self) -> Result<ListExprElement> {
+        if matches!(self.peek().kind, TokenKind::Ampersand) {
+            let span = self.advance().span;
+            let target = ListExprElementTarget::Reference(self.parse_reference_target()?);
+            if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+                return Err(Diagnostic::new(
+                    "Key element cannot be a reference",
+                    Some(self.peek().span),
+                ));
+            }
+            return Ok(ListExprElement {
+                key: None,
+                target: Some(target),
+                span,
+            });
+        }
+
+        let first = self.parse_expr()?;
+        let first_span = first.span();
+        if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+            self.advance();
+            let target = self.parse_list_expr_element_value()?;
+            let span = combine_spans(first_span, list_expr_element_target_span(&target));
+            Ok(ListExprElement {
+                key: Some(first),
+                target: Some(target),
+                span,
+            })
+        } else {
+            Ok(ListExprElement {
+                key: None,
+                target: Some(ListExprElementTarget::Value(first)),
+                span: first_span,
+            })
+        }
+    }
+
+    fn parse_list_expr_element_value(&mut self) -> Result<ListExprElementTarget> {
+        if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            return Ok(ListExprElementTarget::Reference(
+                self.parse_reference_target()?,
+            ));
+        }
+        Ok(ListExprElementTarget::Value(self.parse_expr()?))
+    }
+
     fn parse_array_elements(
         &mut self,
         terminator: TokenKind,
@@ -3323,6 +3418,9 @@ impl Parser {
             argument_names.push(name);
             while matches!(self.peek().kind, TokenKind::Comma) {
                 self.advance();
+                if matches!(self.peek().kind, TokenKind::RightParen) {
+                    break;
+                }
                 let (name, argument, span) = self.parse_call_argument()?;
                 if let Some(name) = &name {
                     seen_named_argument = true;
@@ -4252,6 +4350,24 @@ fn collect_arrow_captures_from_expr(
                 }
             }
         }
+        Expr::List(list) => {
+            for element in &list.elements {
+                if let Some(key) = &element.key {
+                    collect_arrow_captures_from_expr(key, exclusions, seen, captures);
+                }
+                match &element.target {
+                    Some(ListExprElementTarget::Value(value)) => {
+                        collect_arrow_captures_from_expr(value, exclusions, seen, captures);
+                    }
+                    Some(ListExprElementTarget::Reference(target)) => {
+                        collect_arrow_captures_from_reference_target(
+                            target, exclusions, seen, captures,
+                        );
+                    }
+                    None => {}
+                }
+            }
+        }
         Expr::ArrayAccess { array, index, .. } => {
             collect_arrow_captures_from_expr(array, exclusions, seen, captures);
             if let Some(index) = index {
@@ -4820,6 +4936,21 @@ fn expr_array_literal_reference_to_variable(
         Expr::Array { elements, .. } => elements
             .iter()
             .find_map(|element| array_element_reference_to_variable(element, variable)),
+        Expr::List(list) => list.elements.iter().find_map(|element| {
+            element
+                .key
+                .as_ref()
+                .and_then(|key| expr_array_literal_reference_to_variable(key, variable))
+                .or_else(|| match &element.target {
+                    Some(ListExprElementTarget::Value(value)) => {
+                        expr_array_literal_reference_to_variable(value, variable)
+                    }
+                    Some(ListExprElementTarget::Reference(target)) => {
+                        reference_target_reference_to_variable(target, variable)
+                    }
+                    None => None,
+                })
+        }),
         Expr::Ternary {
             condition,
             if_true,
@@ -5246,6 +5377,16 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
                     validate_anonymous_functions_in_expr(key, functions)?;
                 }
                 if let ArrayElementValue::Value(value) = &element.value {
+                    validate_anonymous_functions_in_expr(value, functions)?;
+                }
+            }
+        }
+        Expr::List(list) => {
+            for element in &list.elements {
+                if let Some(key) = &element.key {
+                    validate_anonymous_functions_in_expr(key, functions)?;
+                }
+                if let Some(ListExprElementTarget::Value(value)) = &element.target {
                     validate_anonymous_functions_in_expr(value, functions)?;
                 }
             }
@@ -6353,6 +6494,9 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
         Expr::Array { elements, span } => Ok(AssignmentTarget::List(
             list_assignment_target_from_array_elements(elements, span)?,
         )),
+        Expr::List(list) => Ok(AssignmentTarget::List(
+            list_assignment_target_from_list_expr(list)?,
+        )),
         Expr::Call {
             name,
             arguments,
@@ -6432,6 +6576,21 @@ fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
         | AssignmentTarget::StaticProperty { span, .. } => *span,
         AssignmentTarget::ArrayDim(target) => target.span,
         AssignmentTarget::List(target) => target.span,
+    }
+}
+
+fn reference_target_span(target: &ReferenceTarget) -> SourceSpan {
+    match target {
+        ReferenceTarget::Variable { span, .. } => *span,
+        ReferenceTarget::ArrayDim(target) => target.span,
+        ReferenceTarget::Property { span, .. } => *span,
+    }
+}
+
+fn list_expr_element_target_span(target: &ListExprElementTarget) -> SourceSpan {
+    match target {
+        ListExprElementTarget::Value(value) => value.span(),
+        ListExprElementTarget::Reference(target) => reference_target_span(target),
     }
 }
 
@@ -6589,6 +6748,37 @@ fn list_assignment_target_from_array_elements(
     })
 }
 
+fn list_assignment_target_from_list_expr(list: ListExpr) -> Result<ListAssignmentTarget> {
+    let mut lowered = Vec::with_capacity(list.elements.len());
+    for (index, element) in list.elements.into_iter().enumerate() {
+        let Some(target) = element.target else {
+            continue;
+        };
+        let key = element.key.or_else(|| {
+            Some(Expr::Int(
+                i64::try_from(index).expect("list destructuring index fits in i64"),
+                element.span,
+            ))
+        });
+        let target = match target {
+            ListExprElementTarget::Value(value) => {
+                ListAssignmentElementTarget::Value(Box::new(assignment_target_from_expr(value)?))
+            }
+            ListExprElementTarget::Reference(target) => {
+                ListAssignmentElementTarget::Reference(target)
+            }
+        };
+        lowered.push(ListAssignmentElement { key, target });
+    }
+    if lowered.is_empty() {
+        return Err(Diagnostic::new("Cannot use empty list", Some(list.span)));
+    }
+    Ok(ListAssignmentTarget {
+        elements: lowered,
+        span: list.span,
+    })
+}
+
 fn reject_append_array_read(expr: &Expr) -> Result<()> {
     match expr {
         Expr::ArrayAccess { array, index, span } => {
@@ -6644,6 +6834,16 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
                     reject_append_array_read(key)?;
                 }
                 if let ArrayElementValue::Value(value) = &element.value {
+                    reject_append_array_read(value)?;
+                }
+            }
+        }
+        Expr::List(list) => {
+            for element in &list.elements {
+                if let Some(key) = &element.key {
+                    reject_append_array_read(key)?;
+                }
+                if let Some(ListExprElementTarget::Value(value)) = &element.target {
                     reject_append_array_read(value)?;
                 }
             }
@@ -6798,6 +6998,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::IncDec { .. }
         | Expr::Assign { .. }
         | Expr::AssignRef { .. }
+        | Expr::List(_)
         | Expr::Print { .. }
         | Expr::Include { .. }
         | Expr::Throw { .. }

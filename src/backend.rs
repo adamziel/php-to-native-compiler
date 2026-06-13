@@ -5673,7 +5673,7 @@ impl ValueEmitter {
                     let element_temp = self.next_temp();
                     out.push_str("    PtnValue ");
                     out.push_str(&element_temp);
-                    out.push_str(" = ptn_array_read(&runtime, ");
+                    out.push_str(" = ptn_array_read_for_list_destructure(&runtime, ");
                     out.push_str(value_temp);
                     out.push_str(", ");
                     out.push_str(&key_temp);
@@ -5743,7 +5743,7 @@ impl ValueEmitter {
                     let element_temp = self.next_temp();
                     out.push_str("    PtnValue ");
                     out.push_str(&element_temp);
-                    out.push_str(" = ptn_array_read(&runtime, ");
+                    out.push_str(" = ptn_array_read_for_list_destructure(&runtime, ");
                     out.push_str(&source_value_temp);
                     out.push_str(", ");
                     out.push_str(&key_temp);

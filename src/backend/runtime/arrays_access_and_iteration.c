@@ -1957,6 +1957,44 @@ static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue containe
     return result.value;
 }
 
+static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    size_t line
+) {
+    container = ptn_value_deref(container);
+    key_value = ptn_value_deref(key_value);
+    if (container.type == PTN_NULL) {
+        return ptn_null();
+    }
+    if (container.type != PTN_ARRAY) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot use %s as array",
+            ptn_offset_container_type_name(container)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_array_runtime_diagnostic("Warning", message, line);
+        return ptn_null();
+    }
+
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
+    if (entry == NULL) {
+        ptn_emit_undefined_array_key_warning(runtime, key, line);
+        ptn_array_key_free(key);
+        return ptn_null();
+    }
+    PtnValue value = ptn_value_clone_deref(entry->value);
+    ptn_array_key_free(key);
+    return value;
+}
+
 static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
     container = ptn_value_deref(container);
     key_value = ptn_value_deref(key_value);

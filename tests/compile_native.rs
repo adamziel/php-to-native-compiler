@@ -649,6 +649,14 @@ fn parser_rejects_unsupported_foreach_bindings() {
         parser::parse("<?php foreach ($items as &$key => $value) { echo $value; }").unwrap_err();
     assert_eq!(by_ref_key.message, "Key element cannot be a reference");
 
+    let list_key = parser::parse("<?php foreach ($items as list($key) => $value) { echo $value; }")
+        .unwrap_err();
+    assert_eq!(list_key.message, "Cannot use list as key element");
+
+    let empty_list =
+        parser::parse("<?php foreach ($items as $key => list()) { echo $key; }").unwrap_err();
+    assert_eq!(empty_list.message, "Cannot use empty list");
+
     let destructuring =
         parser::parse("<?php foreach ($items as &[$value]) { echo $value; }").unwrap_err();
     assert_eq!(
@@ -13437,6 +13445,10 @@ foreach ($pairs as [$a, [$b]]) {\n\
 $keyed = [[\"name\" => \"Ada\", \"meta\" => [\"id\" => 10]], [\"name\" => \"Lin\", \"meta\" => [\"id\" => 20]]];\n\
 foreach ($keyed as [\"name\" => $name, \"meta\" => [\"id\" => $id]]) {\n\
     echo $name, \"#\", $id, \"\\n\";\n\
+}\n\
+$points = [[\"x\" => 1, \"y\" => 2], [\"x\" => 2, \"y\" => 1]];\n\
+foreach ($points as list(\"x\" => $x, \"y\" => $y)) {\n\
+    var_dump($x, $y);\n\
 }\n",
     )
     .unwrap();
@@ -13447,13 +13459,72 @@ foreach ($keyed as [\"name\" => $name, \"meta\" => [\"id\" => $id]]) {\n\
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "left:inner\nright:next\nAda#10\nLin#20\n"
+        "left:inner\nright:next\nAda#10\nLin#20\nint(1)\nint(2)\nint(2)\nint(1)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_array_iterator_current_value"));
-    assert!(c_source.contains("ptn_array_read(&runtime"));
+    assert!(c_source.contains("ptn_array_read_for_list_destructure(&runtime"));
+}
+
+#[test]
+fn compile_foreach_long_list_holes_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-long-list-holes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-long-list-holes.php");
+    let output = root.join("foreach-long-list-holes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach (array(array(1, 2), array(3, 4)) as list($a, )) {\n\
+    var_dump($a);\n\
+}\n\
+echo \"Array of strings:\\n\";\n\
+$array = [[\"a\", \"b\"], \"c\", \"d\"];\n\
+foreach ($array as list(, $a)) {\n\
+    var_dump($a);\n\
+}\n\
+echo \"Array of ints:\\n\";\n\
+$array = [[5, 6], 10, 20];\n\
+foreach ($array as list(, $a)) {\n\
+    var_dump($a);\n\
+}\n\
+echo \"Array of nulls:\\n\";\n\
+$array = [[null, null], null, null];\n\
+foreach ($array as list(, $a)) {\n\
+    var_dump($a);\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\
+int(1)\n\
+int(3)\n\
+Array of strings:\n\
+string(1) \"b\"\n\
+\nWarning: Cannot use string as array in ptn on line 7\n\
+NULL\n\
+\nWarning: Cannot use string as array in ptn on line 7\n\
+NULL\n\
+Array of ints:\n\
+int(6)\n\
+\nWarning: Cannot use int as array in ptn on line 12\n\
+NULL\n\
+\nWarning: Cannot use int as array in ptn on line 12\n\
+NULL\n\
+Array of nulls:\n\
+NULL\n\
+NULL\n\
+NULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

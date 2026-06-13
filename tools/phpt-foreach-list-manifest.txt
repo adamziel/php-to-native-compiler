@@ -1,0 +1,4 @@
+Zend/tests/foreach/foreach_list_002.phpt
+Zend/tests/foreach/foreach_list_003.phpt
+Zend/tests/foreach/foreach_list_004.phpt
+Zend/tests/foreach/foreach_list_keyed.phpt

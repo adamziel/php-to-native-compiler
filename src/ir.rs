@@ -9,7 +9,8 @@ use crate::ast::{
     IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
     IncludeKind as AstIncludeKind, ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
-    ListAssignmentTarget as AstListAssignmentTarget, MagicConstantKind as AstMagicConstantKind,
+    ListAssignmentTarget as AstListAssignmentTarget,
+    ListExprElementTarget as AstListExprElementTarget, MagicConstantKind as AstMagicConstantKind,
     Program, PropertyVisibility as AstPropertyVisibility, ReferenceTarget as AstReferenceTarget,
     Statement, StringInterpolationIndex as AstStringInterpolationIndex,
     StringPart as AstStringPart, TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
@@ -1549,6 +1550,9 @@ impl<'a> LoweringContext<'a> {
                     .map(|element| self.lower_array_element(element))
                     .collect(),
             ),
+            Expr::List(_) => {
+                unreachable!("list destructuring syntax must lower through assignment targets")
+            }
             Expr::ArrayAccess { array, index, span } => {
                 ValueExpr::ArrayAccess {
                     array: Box::new(self.lower_expr(array)),
@@ -1889,6 +1893,14 @@ fn assertion_expr_text(expr: &Expr) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        Expr::List(list) => format!(
+            "list({})",
+            list.elements
+                .iter()
+                .map(assertion_list_expr_element_text)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         Expr::ArrayAccess { array, index, .. } => {
             let index = index
                 .as_ref()
@@ -1969,6 +1981,23 @@ fn assertion_array_element_text(element: &AstArrayElement) -> String {
     let value = match &element.value {
         AstArrayElementValue::Value(value) => assertion_expr_text(value),
         AstArrayElementValue::Reference(target) => {
+            format!("&{}", assertion_reference_target_text(target))
+        }
+    };
+    if let Some(key) = &element.key {
+        format!("{} => {value}", assertion_expr_text(key))
+    } else {
+        value
+    }
+}
+
+fn assertion_list_expr_element_text(element: &crate::ast::ListExprElement) -> String {
+    let Some(target) = &element.target else {
+        return String::new();
+    };
+    let value = match target {
+        AstListExprElementTarget::Value(value) => assertion_expr_text(value),
+        AstListExprElementTarget::Reference(target) => {
             format!("&{}", assertion_reference_target_text(target))
         }
     };

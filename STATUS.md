@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T00:23Z
-Measured: `ptn-2juv` broad 1k frontier map after `ptn-vwyp`.
+Last refresh: 2026-06-14T00:32Z
+Measured: `ptn-550s.10` foreach list diagnostics after `ptn-2juv`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 704/704; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 705/705; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 704/704 |
+| Native/compiler Rust suite | 705/705 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -32,6 +32,7 @@ Source unit tests 3/3; Native/compiler Rust suite 704/704; Native smoke matrix 6
 | PHPT nested foreach/reference rows | 2/3 |
 | PHPT array-internal COW frontier | 17/72 |
 | PHPT COW foreach/reference frontier | 31/103 |
+| PHPT foreach list destructuring rows | 4/4 |
 | PHPT broad reference-call bucket | 8/12 |
 | PHPT generator/fiber COW boundary bucket | 0/12 |
 | Post-merge COW gate | 26/26 |
