@@ -359,6 +359,7 @@ Post-RC architecture remains explicit rather than hidden:
   `ob_get_contents();`, `php_ini_scanned_files();`, `php_sapi_name();`,
   `php_uname([mode]);`, `phpversion([extension]);`, `preg_match(expr, expr);`,
   `realpath(expr);`, `scandir(expr[, sorting_order[, context]]);`,
+  `setlocale(expr, expr[, ...]);`,
   `str_replace(expr, expr, expr[, count]);`, `zend_version();`,
   `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `count(expr[, mode]);`, `sizeof(expr[, mode]);`,
@@ -423,6 +424,7 @@ Post-RC architecture remains explicit rather than hidden:
   `ob_get_contents()`, `php_ini_scanned_files()`, `php_sapi_name()`,
   `php_uname([mode])`, `phpversion([extension])`, `preg_match(expr, expr)`,
   `realpath(expr)`, `scandir(expr[, sorting_order[, context]])`,
+  `setlocale(expr, expr[, ...])`,
   `str_replace(expr, expr, expr[, count])`, `zend_version()`, `intval(expr)`,
   `chr(expr)`, `ord(expr)`,
   `count(expr[, mode])`, `sizeof(expr[, mode])`,
@@ -888,8 +890,14 @@ Post-RC architecture remains explicit rather than hidden:
   `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`,
   `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, `M_SQRT3`,
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `STR_PAD_LEFT`,
-  `STR_PAD_RIGHT`, and `STR_PAD_BOTH`. Other ordinary names report as
-  undefined.
+  `STR_PAD_RIGHT`, `STR_PAD_BOTH`, `LC_ALL`, `LC_COLLATE`, `LC_CTYPE`,
+  `LC_MONETARY`, `LC_NUMERIC`, `LC_TIME`, and platform-provided
+  `LC_MESSAGES`. Other ordinary names report as undefined.
+- `setlocale()` is backed by the generated C runtime's libc locale API for the
+  current process. It supports scalar locale conversion, array and variadic
+  fallbacks, `"0"` query semantics, `C`/`POSIX` locale selection, and `false`
+  for unavailable locales or invalid categories. Platform locale availability
+  remains delegated to libc.
 - Duplicate global `const` declarations and `const` redeclarations after
   `define()` emit the modeled duplicate-constant warning boundary and preserve
   the original runtime constant value.

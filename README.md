@@ -42,7 +42,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   shares file-return paths.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,
   `zend_version()`, `PHP_VERSION`, `PHP_SAPI`, `get_loaded_extensions()`,
-  and bounded class/property existence checks.
+  bounded class/property existence checks, locale `LC_*` constants, and
+  libc-backed `setlocale()` fallbacks.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable and variable-root array/append compounds share boxed

@@ -8428,6 +8428,97 @@ static PtnValue ptn_internal_extension_loaded(PtnRuntime *runtime, size_t argc, 
     return ptn_bool(loaded);
 }
 
+static PtnValue ptn_setlocale_result(const char *locale) {
+    if (locale == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(ptn_duplicate_string(locale));
+}
+
+static PtnValue ptn_setlocale_apply_operand(int category, PtnStringOperand locale) {
+    char *locale_copy = NULL;
+    const char *locale_arg = NULL;
+    if (!(locale.len == 1 && locale.data[0] == '0')) {
+        locale_copy = ptn_duplicate_string_len(locale.data, locale.len);
+        locale_arg = locale_copy;
+    }
+    const char *result = setlocale(category, locale_arg);
+    PtnValue value = ptn_setlocale_result(result);
+    free(locale_copy);
+    return value;
+}
+
+static void ptn_setlocale_throw_object_conversion(PtnRuntime *runtime, const char *class_name) {
+    PtnStringBuffer message;
+    ptn_string_buffer_init(&message);
+    ptn_string_buffer_append(&message, "Object of class ");
+    ptn_string_buffer_append(&message, class_name);
+    ptn_string_buffer_append(&message, " could not be converted to string");
+    ptn_throw_exception_owned_message(runtime, "Error", message.data);
+}
+
+static PtnStringOperand ptn_setlocale_locale_operand(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+        return ptn_string_operand_borrowed("Array");
+    }
+    if (value.type == PTN_OBJECT) {
+        PtnStringOperand object_string;
+        if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+            return object_string;
+        }
+        ptn_setlocale_throw_object_conversion(runtime, value.as.object->class_name);
+        return ptn_string_operand_borrowed("");
+    }
+    if (value.type == PTN_CLOSURE) {
+        ptn_setlocale_throw_object_conversion(runtime, "Closure");
+        return ptn_string_operand_borrowed("");
+    }
+    if (value.type == PTN_EXCEPTION) {
+        ptn_setlocale_throw_object_conversion(runtime, value.as.exception->class_name);
+        return ptn_string_operand_borrowed("");
+    }
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
+static PtnValue ptn_setlocale_apply_value(PtnRuntime *runtime, int category, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            PtnStringOperand locale = ptn_setlocale_locale_operand(runtime, value.as.array->entries[i].value, line);
+            PtnValue result = ptn_setlocale_apply_operand(category, locale);
+            ptn_string_operand_free(locale);
+            if (ptn_value_deref(result).type != PTN_BOOL || ptn_value_deref(result).as.boolean) {
+                return result;
+            }
+            ptn_value_destroy(&result);
+        }
+        return ptn_bool(0);
+    }
+
+    PtnStringOperand locale = ptn_setlocale_locale_operand(runtime, value, line);
+    PtnValue result = ptn_setlocale_apply_operand(category, locale);
+    ptn_string_operand_free(locale);
+    return result;
+}
+
+static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t category_value = ptn_internal_expect_integer_arg(runtime, "setlocale", 1, "category", args[0], line);
+    if (category_value < (int64_t)INT_MIN || category_value > (int64_t)INT_MAX) {
+        return ptn_bool(0);
+    }
+    int category = (int)category_value;
+    for (size_t i = 1; i < argc; i++) {
+        PtnValue result = ptn_setlocale_apply_value(runtime, category, args[i], line);
+        if (ptn_value_deref(result).type != PTN_BOOL || ptn_value_deref(result).as.boolean) {
+            return result;
+        }
+        ptn_value_destroy(&result);
+    }
+    return ptn_bool(0);
+}
+
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
     int value = -1;
     if (byte >= '0' && byte <= '9') {
@@ -8979,6 +9070,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
+        { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
