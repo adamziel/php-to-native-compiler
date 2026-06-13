@@ -22,6 +22,7 @@ pub struct ClassDecl {
 pub struct PropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub set_visibility: PropertyVisibility,
     pub value: Option<Expr>,
     pub span: SourceSpan,
 }
@@ -43,6 +44,7 @@ impl Default for PropertyVisibility {
 pub struct StaticPropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub set_visibility: PropertyVisibility,
     pub value: Option<Expr>,
     pub span: SourceSpan,
 }

@@ -3140,6 +3140,70 @@ class Box {
 }
 
 #[test]
+fn parser_accepts_asymmetric_property_visibility_metadata() {
+    let program = parser::parse(
+        "<?php
+class Book {
+    public private(set) string $title = \"ptn\";
+    protected private(set) int $year;
+    protected(set) array $tags;
+    public protected(set) static int $reads = 0;
+}
+",
+    )
+    .unwrap();
+
+    assert_eq!(
+        program.classes[0].properties[0].visibility,
+        PropertyVisibility::Public
+    );
+    assert_eq!(
+        program.classes[0].properties[0].set_visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(
+        program.classes[0].properties[1].visibility,
+        PropertyVisibility::Protected
+    );
+    assert_eq!(
+        program.classes[0].properties[1].set_visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(
+        program.classes[0].properties[2].visibility,
+        PropertyVisibility::Public
+    );
+    assert_eq!(
+        program.classes[0].properties[2].set_visibility,
+        PropertyVisibility::Protected
+    );
+    assert_eq!(
+        program.classes[0].static_properties[0].visibility,
+        PropertyVisibility::Public
+    );
+    assert_eq!(
+        program.classes[0].static_properties[0].set_visibility,
+        PropertyVisibility::Protected
+    );
+}
+
+#[test]
+fn parser_rejects_invalid_asymmetric_property_visibility_metadata() {
+    let error =
+        parser::parse("<?php class Bad { protected public(set) string $name; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "set visibility must be the same as get visibility or more restrictive"
+    );
+
+    let error = parser::parse("<?php class Bad { public private(set) $name; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "asymmetric property visibility requires typed property"
+    );
+}
+
+#[test]
 fn parser_rejects_non_public_methods_before_visibility_dispatch() {
     let error = parser::parse("<?php class Box { private function hidden() {} }").unwrap_err();
     assert_eq!(error.message, "non-public class methods are unsupported");
@@ -20341,6 +20405,57 @@ echo Counter::$value, \"\\n\";
 }
 
 #[test]
+fn compile_asymmetric_static_property_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-static-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-static-property.php");
+    let output = root.join("asymmetric-static-property-bin");
+    fs::write(
+        &input,
+        "<?php
+class Counter {
+    public private(set) static int $calls = 0;
+
+    public static function bump() {
+        self::$calls++;
+        return self::$calls;
+    }
+}
+
+echo Counter::$calls, \"\\n\";
+echo Counter::bump(), \"\\n\";
+echo Counter::$calls, \"\\n\";
+
+try {
+    Counter::$calls = 5;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "0\n",
+            "1\n",
+            "1\n",
+            "Cannot modify private(set) property Counter::$calls from global scope\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
+    assert!(c_source.contains("runtime.class_scope_allows = ptn_declared_class_scope_allows"));
+}
+
+#[test]
 fn compile_property_exists_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-property-exists-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -22193,6 +22308,99 @@ echo var_export($object, true), \"\\n\";
             "   'shared' => 8,\n",
             "   'visible' => 'ok',\n",
             "))\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_declare_property(&runtime"));
+    assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
+    assert!(c_source.contains("PTN_PROPERTY_PROTECTED"));
+}
+
+#[test]
+fn compile_asymmetric_instance_property_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-instance-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-instance-property.php");
+    let output = root.join("asymmetric-instance-property-bin");
+    fs::write(
+        &input,
+        "<?php
+class Book {
+    public private(set) string $title = \"draft\";
+    public protected(set) string $author = \"anon\";
+    protected private(set) int $year = 2024;
+
+    public function retitle($title) {
+        $this->title = $title;
+    }
+
+    public function readYear() {
+        return $this->year;
+    }
+}
+
+class SpecialBook extends Book {
+    public function renameAuthor($author) {
+        $this->author = $author;
+    }
+
+    public function rewriteYear($year) {
+        $this->year = $year;
+    }
+}
+
+$book = new SpecialBook();
+echo $book->title, \"\\n\";
+$book->retitle(\"final\");
+echo $book->title, \"\\n\";
+$book->renameAuthor(\"PTN\");
+echo $book->author, \"\\n\";
+echo $book->readYear(), \"\\n\";
+
+try {
+    $book->title = \"global\";
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $book->author = \"global\";
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $book->rewriteYear(2025);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    echo $book->year;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "draft\n",
+            "final\n",
+            "PTN\n",
+            "2024\n",
+            "Cannot modify private(set) property Book::$title from global scope\n",
+            "Cannot modify protected(set) property Book::$author from global scope\n",
+            "Cannot modify private(set) property Book::$year from scope SpecialBook\n",
+            "Cannot access protected property Book::$year\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

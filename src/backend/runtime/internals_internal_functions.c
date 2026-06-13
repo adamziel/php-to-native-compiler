@@ -328,11 +328,11 @@ static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key)
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(object, key.as.string);
     const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
-    if (metadata == NULL || metadata->visibility == PTN_PROPERTY_PUBLIC) {
+    if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
         printf("[\"%s\"]=>\n", display_name);
         return;
     }
-    if (metadata->visibility == PTN_PROPERTY_PROTECTED) {
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
         printf("[\"%s\":protected]=>\n", display_name);
         return;
     }
@@ -1013,7 +1013,7 @@ static void ptn_json_encode_append_object(
         }
         const PtnObjectPropertyMetadata *metadata =
             ptn_object_property_metadata(object, entry->key.as.string);
-        if (metadata != NULL && metadata->visibility != PTN_PROPERTY_PUBLIC) {
+        if (metadata != NULL && metadata->read_visibility != PTN_PROPERTY_PUBLIC) {
             continue;
         }
         if (emitted != 0) {

@@ -67,11 +67,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires PHP attribute syntax",
         ),
         (
-            "asymmetric property visibility",
-            "--TEST--\nasymmetric visibility\n--FILE--\n<?php\nclass Bag { public private(set) int $value; }\n--EXPECT--\n",
-            "requires PHP asymmetric property visibility",
-        ),
-        (
             "readonly property modifier",
             "--TEST--\nreadonly property\n--FILE--\n<?php\nclass Bag { public readonly int $value; }\n--EXPECT--\n",
             "requires readonly class/property modifiers",
@@ -99,6 +94,18 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_asymmetric_property_visibility_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nasymmetric visibility\n--FILE--\n<?php\nclass Bag { public private(set) int $value; }\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
 }
 
 #[test]

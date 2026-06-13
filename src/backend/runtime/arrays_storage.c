@@ -496,9 +496,9 @@ static PTN_UNUSED char *ptn_object_private_storage_key(
 static PTN_UNUSED char *ptn_object_storage_key_for_declaration(
     const char *property,
     const char *declaring_class,
-    PtnPropertyVisibility visibility
+    PtnPropertyVisibility read_visibility
 ) {
-    if (visibility == PTN_PROPERTY_PRIVATE) {
+    if (read_visibility == PTN_PROPERTY_PRIVATE) {
         return ptn_object_private_storage_key(declaring_class, property);
     }
     return ptn_duplicate_string(property);
@@ -523,7 +523,8 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     PtnObject *object,
     const char *property,
     const char *declaring_class,
-    PtnPropertyVisibility visibility
+    PtnPropertyVisibility read_visibility,
+    PtnPropertyVisibility set_visibility
 ) {
     if (object == NULL || property == NULL || declaring_class == NULL) {
         return;
@@ -531,7 +532,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     char *storage_name = ptn_object_storage_key_for_declaration(
         property,
         declaring_class,
-        visibility
+        read_visibility
     );
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         if (strcmp(object->property_metadata[i].storage_name, storage_name) == 0) {
@@ -540,7 +541,8 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             free(object->property_metadata[i].declaring_class);
             object->property_metadata[i].display_name = ptn_duplicate_string(property);
             object->property_metadata[i].declaring_class = ptn_duplicate_string(declaring_class);
-            object->property_metadata[i].visibility = visibility;
+            object->property_metadata[i].read_visibility = read_visibility;
+            object->property_metadata[i].set_visibility = set_visibility;
             return;
         }
     }
@@ -567,7 +569,8 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->storage_name = storage_name;
     metadata->display_name = ptn_duplicate_string(property);
     metadata->declaring_class = ptn_duplicate_string(declaring_class);
-    metadata->visibility = visibility;
+    metadata->read_visibility = read_visibility;
+    metadata->set_visibility = set_visibility;
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {

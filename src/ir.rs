@@ -58,6 +58,7 @@ pub struct ClassDecl {
 pub struct PropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub set_visibility: PropertyVisibility,
     pub value: Option<ValueExpr>,
     pub line: usize,
 }
@@ -73,6 +74,7 @@ pub enum PropertyVisibility {
 pub struct StaticPropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub set_visibility: PropertyVisibility,
     pub value: Option<ValueExpr>,
 }
 
@@ -717,6 +719,7 @@ impl<'a> LoweringContext<'a> {
             .map(|property| PropertyDecl {
                 name: property.name.clone(),
                 visibility: lower_property_visibility(property.visibility),
+                set_visibility: lower_property_visibility(property.set_visibility),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
                 line: property.span.line,
             })
@@ -727,6 +730,7 @@ impl<'a> LoweringContext<'a> {
             .map(|property| StaticPropertyDecl {
                 name: property.name.clone(),
                 visibility: lower_property_visibility(property.visibility),
+                set_visibility: lower_property_visibility(property.set_visibility),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
             })
             .collect();

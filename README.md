@@ -83,14 +83,15 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `vsprintf()`, `vprintf()`, and `vfprintf()` through one ordered-array
   argument expansion and stream-write path; exact PHP parity for some
   formatter flags and error diagnostics remains bounded.
-- Declared instance properties keep public/protected/private defaults, dump
+- Declared instance properties keep public/protected/private defaults,
+  asymmetric private(set)/protected(set) write visibility metadata, dump
   metadata, quiet `isset()`, `empty()`, and `??`, and inherited parent-private
   slots distinct from child public redeclarations; `property_exists()` covers
   the current declared/static property metadata and stdClass dynamic slots.
   Public `__destruct()` runs on last-reference release and shutdown. Full
   visibility and inheritance remain bounded.
-- Static properties support reads/writes, compounds, `??=`, plus quiet
-  `isset()`, `empty()`, and `??`.
+- Static properties support read/write visibility, asymmetric set visibility,
+  reads/writes, compounds, `??=`, plus quiet `isset()`, `empty()`, and `??`.
 - Public class constants support scalar/array defaults, direct
   `Class::CONST`/`self::CONST` reads, and `constant()`/`defined()` lookup;
   typed/non-public/inherited/dynamic constants remain bounded.
@@ -112,13 +113,14 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `pcre`, `Reflection`, and `standard` extension surface plus accepted runner ini keys
   (`date.timezone`, `display_errors`, `error_reporting`, `extension_dir`,
   `include_path`, `pcre.backtrack_limit`, `precision`, and
+  `zend.assertions`); child-process control rows are classified until PTN has a
   native process boundary. Harness cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, and broad unsupported language surfaces such as anonymous
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
-  arrow functions, userland `throw`, readonly modifiers, and asymmetric
-  property visibility, heredoc/nowdoc strings, and class-metadata blockers are
-  mapped to blocker categories with source evidence.
+  arrow functions, userland `throw`, readonly modifiers, heredoc/nowdoc
+  strings, and class-metadata blockers are mapped to blocker categories with
+  source evidence.
   `PTN_PHPT_CLASSIFY=0` gives raw php-src `run-tests.php` pass-through.
 - Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from
   `Zend/tests`, `ext/standard/tests`, and core `tests`, recording the php-src

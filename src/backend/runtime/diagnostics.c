@@ -404,6 +404,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->class_constants = &runtime->owned_class_constants;
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = &runtime->owned_static_properties;
+    ptn_symbols_init(&runtime->owned_static_property_read_visibility);
+    runtime->static_property_read_visibility = &runtime->owned_static_property_read_visibility;
+    ptn_symbols_init(&runtime->owned_static_property_set_visibility);
+    runtime->static_property_set_visibility = &runtime->owned_static_property_set_visibility;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
@@ -420,6 +424,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->next_object_id = 1;
     runtime->method_dispatch = NULL;
     runtime->declared_method_exists = NULL;
+    runtime->class_scope_allows = NULL;
     runtime->source_path = NULL;
     runtime->current_function_name = NULL;
     runtime->include_path = ptn_duplicate_string(".");

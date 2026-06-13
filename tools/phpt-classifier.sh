@@ -463,12 +463,6 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(public|protected|private)[[:space:]]+(public|protected|private)[[:space:]]*\([[:space:]]*(set|get)[[:space:]]*\)/ ||
-                line ~ /(^|[^[:alnum:]_$])(public|protected|private)[[:space:]]*\([[:space:]]*(set|get)[[:space:]]*\)/) {
-                print "unsupported-language\trequires PHP asymmetric property visibility (`private(set)`/`protected(set)`), outside PTN property metadata and access checks"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+class[[:space:]]+[a-z_\\]/ ||
                 line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+[$?a-z_\\]/ ||
                 line ~ /(^|[^[:alnum:]_$])(public|protected|private|static)[[:space:]]+readonly([^[:alnum:]_]|$)/) {
@@ -571,11 +565,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+(class|public|protected|private|static|[a-z_\\?]|\$)/) {
                 print "unsupported-class-metadata\trequires readonly class/property write-once metadata, outside PTN modeled property metadata"
-                found = 1
-                exit
-            }
-            if (line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]*\([[:space:]]*set[[:space:]]*\)/) {
-                print "unsupported-class-metadata\trequires asymmetric property visibility metadata, outside PTN modeled property visibility"
                 found = 1
                 exit
             }

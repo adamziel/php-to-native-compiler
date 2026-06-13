@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T18:28Z
+Last refresh: 2026-06-13T18:36Z
 Source: `PROGRESS.md`
-Measured: `ptn-qsmv.3` string manifest expansion and `ptn-o7kg` broad 1k
+Measured: `ptn-qsmv.9` asymmetric property visibility support rebased after
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 651/651; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 645/645 |
+| Native/compiler Rust suite | 651/651 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

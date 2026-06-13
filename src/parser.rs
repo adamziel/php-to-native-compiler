@@ -109,6 +109,8 @@ struct ClassModifiers {
     is_static: bool,
     visibility: PropertyVisibility,
     visibility_span: Option<SourceSpan>,
+    set_visibility: Option<PropertyVisibility>,
+    set_visibility_span: Option<SourceSpan>,
 }
 
 impl Default for ClassModifiers {
@@ -117,6 +119,8 @@ impl Default for ClassModifiers {
             is_static: false,
             visibility: PropertyVisibility::Public,
             visibility_span: None,
+            set_visibility: None,
+            set_visibility_span: None,
         }
     }
 }
@@ -794,13 +798,41 @@ impl Parser {
             ));
         }
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
+            let set_visibility = modifiers.set_visibility.unwrap_or(modifiers.visibility);
             if modifiers.is_static {
                 return Ok(ParsedClassMember::StaticProperties(
-                    self.parse_static_property_declarations(modifiers.visibility)?,
+                    self.parse_static_property_declarations(
+                        modifiers.visibility,
+                        set_visibility,
+                        modifiers.set_visibility_span,
+                    )?,
                 ));
             }
             return Ok(ParsedClassMember::Properties(
-                self.parse_property_declarations(modifiers.visibility)?,
+                self.parse_property_declarations(
+                    modifiers.visibility,
+                    set_visibility,
+                    modifiers.set_visibility_span,
+                )?,
+            ));
+        }
+        if self.peek_starts_property_type_hint() {
+            let set_visibility = modifiers.set_visibility.unwrap_or(modifiers.visibility);
+            if modifiers.is_static {
+                return Ok(ParsedClassMember::StaticProperties(
+                    self.parse_static_property_declarations(
+                        modifiers.visibility,
+                        set_visibility,
+                        modifiers.set_visibility_span,
+                    )?,
+                ));
+            }
+            return Ok(ParsedClassMember::Properties(
+                self.parse_property_declarations(
+                    modifiers.visibility,
+                    set_visibility,
+                    modifiers.set_visibility_span,
+                )?,
             ));
         }
         if !matches!(self.peek().kind, TokenKind::Function) {
@@ -829,6 +861,13 @@ impl Parser {
             };
             match modifier.to_ascii_lowercase().as_str() {
                 "public" => {
+                    if self.peek_starts_set_visibility_modifier() {
+                        self.parse_set_visibility_modifier(
+                            &mut modifiers,
+                            PropertyVisibility::Public,
+                        )?;
+                        continue;
+                    }
                     modifiers.visibility = PropertyVisibility::Public;
                     modifiers.visibility_span = Some(self.peek().span);
                     self.advance();
@@ -838,11 +877,25 @@ impl Parser {
                     self.advance();
                 }
                 "private" => {
+                    if self.peek_starts_set_visibility_modifier() {
+                        self.parse_set_visibility_modifier(
+                            &mut modifiers,
+                            PropertyVisibility::Private,
+                        )?;
+                        continue;
+                    }
                     modifiers.visibility = PropertyVisibility::Private;
                     modifiers.visibility_span = Some(self.peek().span);
                     self.advance();
                 }
                 "protected" => {
+                    if self.peek_starts_set_visibility_modifier() {
+                        self.parse_set_visibility_modifier(
+                            &mut modifiers,
+                            PropertyVisibility::Protected,
+                        )?;
+                        continue;
+                    }
                     modifiers.visibility = PropertyVisibility::Protected;
                     modifiers.visibility_span = Some(self.peek().span);
                     self.advance();
@@ -862,14 +915,50 @@ impl Parser {
         Ok(modifiers)
     }
 
+    fn parse_set_visibility_modifier(
+        &mut self,
+        modifiers: &mut ClassModifiers,
+        visibility: PropertyVisibility,
+    ) -> Result<()> {
+        let visibility_span = self.advance().span;
+        self.expect_left_paren()?;
+        if !self.peek_is_identifier("set") {
+            return Err(Diagnostic::new(
+                "expected set visibility operation",
+                Some(self.peek().span),
+            ));
+        }
+        self.advance();
+        self.expect_right_paren()?;
+        if !visibility_allows_set_visibility(modifiers.visibility, visibility) {
+            return Err(Diagnostic::new(
+                "set visibility must be the same as get visibility or more restrictive",
+                Some(visibility_span),
+            ));
+        }
+        modifiers.set_visibility = Some(visibility);
+        modifiers.set_visibility_span = Some(visibility_span);
+        Ok(())
+    }
+
     fn parse_static_property_declarations(
         &mut self,
         visibility: PropertyVisibility,
+        set_visibility: PropertyVisibility,
+        set_visibility_span: Option<SourceSpan>,
     ) -> Result<Vec<StaticPropertyDecl>> {
-        let mut properties = vec![self.parse_static_property_declaration(visibility)?];
+        let has_type = self.parse_optional_property_type_hint()?;
+        if set_visibility_span.is_some() && !has_type {
+            return Err(Diagnostic::new(
+                "asymmetric property visibility requires typed property",
+                set_visibility_span,
+            ));
+        }
+        let mut properties =
+            vec![self.parse_static_property_declaration(visibility, set_visibility)?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
-            properties.push(self.parse_static_property_declaration(visibility)?);
+            properties.push(self.parse_static_property_declaration(visibility, set_visibility)?);
         }
         self.expect_semicolon()?;
         Ok(properties)
@@ -928,11 +1017,20 @@ impl Parser {
     fn parse_property_declarations(
         &mut self,
         visibility: PropertyVisibility,
+        set_visibility: PropertyVisibility,
+        set_visibility_span: Option<SourceSpan>,
     ) -> Result<Vec<PropertyDecl>> {
-        let mut properties = vec![self.parse_property_declaration(visibility)?];
+        let has_type = self.parse_optional_property_type_hint()?;
+        if set_visibility_span.is_some() && !has_type {
+            return Err(Diagnostic::new(
+                "asymmetric property visibility requires typed property",
+                set_visibility_span,
+            ));
+        }
+        let mut properties = vec![self.parse_property_declaration(visibility, set_visibility)?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
-            properties.push(self.parse_property_declaration(visibility)?);
+            properties.push(self.parse_property_declaration(visibility, set_visibility)?);
         }
         self.expect_semicolon()?;
         Ok(properties)
@@ -941,6 +1039,7 @@ impl Parser {
     fn parse_property_declaration(
         &mut self,
         visibility: PropertyVisibility,
+        set_visibility: PropertyVisibility,
     ) -> Result<PropertyDecl> {
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
@@ -962,6 +1061,7 @@ impl Parser {
         Ok(PropertyDecl {
             name,
             visibility,
+            set_visibility,
             value,
             span: token.span,
         })
@@ -970,6 +1070,7 @@ impl Parser {
     fn parse_static_property_declaration(
         &mut self,
         visibility: PropertyVisibility,
+        set_visibility: PropertyVisibility,
     ) -> Result<StaticPropertyDecl> {
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
@@ -994,9 +1095,66 @@ impl Parser {
         Ok(StaticPropertyDecl {
             name,
             visibility,
+            set_visibility,
             value,
             span: token.span,
         })
+    }
+
+    fn parse_optional_property_type_hint(&mut self) -> Result<bool> {
+        if matches!(self.peek().kind, TokenKind::Variable(_)) {
+            return Ok(false);
+        }
+        if !self.peek_starts_property_type_hint() {
+            return Ok(false);
+        }
+        self.parse_property_type_atom()?;
+        while matches!(self.peek().kind, TokenKind::Pipe | TokenKind::Ampersand) {
+            self.advance();
+            self.parse_property_type_atom()?;
+        }
+        Ok(true)
+    }
+
+    fn parse_property_type_atom(&mut self) -> Result<()> {
+        if matches!(self.peek().kind, TokenKind::Question) {
+            self.advance();
+        }
+        if matches!(self.peek().kind, TokenKind::Backslash) {
+            self.advance();
+        }
+        match &self.peek().kind {
+            TokenKind::Null
+            | TokenKind::IntType
+            | TokenKind::IntegerType
+            | TokenKind::FloatType
+            | TokenKind::DoubleType
+            | TokenKind::StringType
+            | TokenKind::BinaryType
+            | TokenKind::BoolType
+            | TokenKind::BooleanType
+            | TokenKind::Identifier(_) => {
+                self.advance();
+            }
+            _ => {
+                return Err(Diagnostic::new(
+                    "expected property type",
+                    Some(self.peek().span),
+                ));
+            }
+        }
+        while matches!(self.peek().kind, TokenKind::Backslash) {
+            self.advance();
+            if matches!(self.peek().kind, TokenKind::Identifier(_)) {
+                self.advance();
+            } else {
+                return Err(Diagnostic::new(
+                    "expected property type",
+                    Some(self.peek().span),
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn parse_method_decl(&mut self, modifiers: ClassModifiers) -> Result<MethodDecl> {
@@ -1312,6 +1470,24 @@ impl Parser {
             | TokenKind::BoolType
             | TokenKind::BooleanType => true,
             TokenKind::Identifier(name) => name.eq_ignore_ascii_case("array"),
+            _ => false,
+        }
+    }
+
+    fn peek_starts_property_type_hint(&self) -> bool {
+        match &self.peek().kind {
+            TokenKind::Question
+            | TokenKind::Backslash
+            | TokenKind::Null
+            | TokenKind::IntType
+            | TokenKind::IntegerType
+            | TokenKind::FloatType
+            | TokenKind::DoubleType
+            | TokenKind::StringType
+            | TokenKind::BinaryType
+            | TokenKind::BoolType
+            | TokenKind::BooleanType => true,
+            TokenKind::Identifier(_) => true,
             _ => false,
         }
     }
@@ -3224,6 +3400,15 @@ impl Parser {
         )
     }
 
+    fn peek_starts_set_visibility_modifier(&self) -> bool {
+        matches!(self.peek_next().kind, TokenKind::LeftParen)
+            && matches!(
+                &self.peek_n(2).kind,
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("set")
+            )
+            && matches!(self.peek_n(3).kind, TokenKind::RightParen)
+    }
+
     fn peek_starts_function_decl(&self) -> bool {
         if !matches!(self.peek().kind, TokenKind::Function) {
             return false;
@@ -3565,6 +3750,12 @@ impl Parser {
             .unwrap_or_else(|| self.peek())
     }
 
+    fn peek_n(&self, offset: usize) -> &Token {
+        self.tokens
+            .get(self.index + offset)
+            .unwrap_or_else(|| self.peek())
+    }
+
     fn advance(&mut self) -> &Token {
         let token = &self.tokens[self.index];
         self.index += 1;
@@ -3756,6 +3947,21 @@ fn magic_method_requires_public_visibility(name: &str) -> bool {
             | "__set_state"
             | "__debuginfo"
     )
+}
+
+fn visibility_allows_set_visibility(
+    read_visibility: PropertyVisibility,
+    set_visibility: PropertyVisibility,
+) -> bool {
+    visibility_rank(set_visibility) >= visibility_rank(read_visibility)
+}
+
+fn visibility_rank(visibility: PropertyVisibility) -> u8 {
+    match visibility {
+        PropertyVisibility::Public => 0,
+        PropertyVisibility::Protected => 1,
+        PropertyVisibility::Private => 2,
+    }
 }
 
 fn token_is_identifier_named(token: &Token, expected: &str) -> bool {

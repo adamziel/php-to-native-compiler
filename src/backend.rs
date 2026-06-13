@@ -79,6 +79,7 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str("    runtime.method_dispatch = ptn_call_declared_method;\n");
         out.push_str("    runtime.declared_method_exists = ptn_declared_class_method_exists;\n");
     }
+    out.push_str("    runtime.class_scope_allows = ptn_declared_class_scope_allows;\n");
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
@@ -821,6 +822,10 @@ fn emit_static_property_initializers(
             out.push_str("\", \"");
             out.push_str(&c_string(&property.name));
             out.push_str("\", ");
+            out.push_str(c_property_visibility(property.visibility));
+            out.push_str(", ");
+            out.push_str(c_property_visibility(property.set_visibility));
+            out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &value_temp);
@@ -1147,6 +1152,36 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    }\n");
     }
     out.push_str("    return NULL;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name) {\n",
+    );
+    out.push_str("    if (class_name == NULL || ancestor_name == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *current = class_name;\n");
+    out.push_str("    while (current != NULL) {\n");
+    out.push_str("        if (ptn_ascii_case_equal(current, ancestor_name)) {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        current = ptn_declared_class_parent_name(current);\n");
+    out.push_str("    }\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_scope_allows(const char *access_scope, const char *declaring_class) {\n",
+    );
+    out.push_str("    if (access_scope == NULL || declaring_class == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    return ptn_declared_class_is_same_or_descendant(access_scope, declaring_class) ||\n",
+    );
+    out.push_str(
+        "        ptn_declared_class_is_same_or_descendant(declaring_class, access_scope);\n",
+    );
     out.push_str("}\n");
 
     out.push_str(
@@ -4919,6 +4954,8 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
@@ -4932,6 +4969,8 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
         out.push_str(&result_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
@@ -5308,6 +5347,8 @@ impl ValueEmitter {
                 out.push_str("\", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
                 out.push_str(value_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
@@ -6315,6 +6356,8 @@ impl ValueEmitter {
                 out.push_str("\", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
 
@@ -6348,6 +6391,8 @@ impl ValueEmitter {
                 out.push_str("\", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
                 out.push_str(&result_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
@@ -6466,6 +6511,8 @@ impl ValueEmitter {
                 out.push_str(&c_string(&declaring_class_name));
                 out.push_str("\", ");
                 out.push_str(c_property_visibility(property.visibility));
+                out.push_str(", ");
+                out.push_str(c_property_visibility(property.set_visibility));
                 out.push_str(", ");
                 out.push_str(&value_temp);
                 out.push_str(", ");
@@ -6597,6 +6644,8 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
         result_temp
@@ -6639,6 +6688,8 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
         result_temp
@@ -7302,6 +7353,8 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
@@ -7329,6 +7382,8 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
         out.push_str(&value_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());

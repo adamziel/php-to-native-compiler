@@ -254,7 +254,8 @@ typedef struct {
     char *storage_name;
     char *display_name;
     char *declaring_class;
-    PtnPropertyVisibility visibility;
+    PtnPropertyVisibility read_visibility;
+    PtnPropertyVisibility set_visibility;
 } PtnObjectPropertyMetadata;
 
 typedef void (*PtnObjectNativeDataFree)(void *data);
@@ -411,6 +412,10 @@ typedef PtnValue (*PtnMethodDispatchHandler)(
     size_t line
 );
 typedef int (*PtnDeclaredMethodExistsHandler)(const char *class_name, const char *method_name);
+typedef int (*PtnClassScopeAllowsHandler)(
+    const char *access_scope,
+    const char *declaring_class
+);
 
 struct PtnRuntime {
     PtnSymbolTable symbols;
@@ -421,6 +426,10 @@ struct PtnRuntime {
     PtnSymbolTable *class_constants;
     PtnSymbolTable owned_static_properties;
     PtnSymbolTable *static_properties;
+    PtnSymbolTable owned_static_property_read_visibility;
+    PtnSymbolTable *static_property_read_visibility;
+    PtnSymbolTable owned_static_property_set_visibility;
+    PtnSymbolTable *static_property_set_visibility;
     PtnDiagnosticSink diagnostics;
     PtnExceptionState owned_exceptions;
     PtnExceptionState *exceptions;
@@ -433,6 +442,7 @@ struct PtnRuntime {
     size_t next_object_id;
     PtnMethodDispatchHandler method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
+    PtnClassScopeAllowsHandler class_scope_allows;
     const char *source_path;
     const char *current_function_name;
     char *include_path;

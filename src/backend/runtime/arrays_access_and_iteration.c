@@ -233,7 +233,8 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
             cloned,
             metadata->display_name,
             metadata->declaring_class,
-            metadata->visibility
+            metadata->read_visibility,
+            metadata->set_visibility
         );
     }
 
@@ -290,20 +291,6 @@ static PTN_UNUSED void ptn_emit_undefined_property_warning(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
-static PTN_UNUSED int ptn_property_class_names_equal(const char *left, const char *right) {
-    if (left == NULL || right == NULL) {
-        return 0;
-    }
-    while (*left != '\0' && *right != '\0') {
-        if (tolower((unsigned char)*left) != tolower((unsigned char)*right)) {
-            return 0;
-        }
-        left++;
-        right++;
-    }
-    return *left == '\0' && *right == '\0';
-}
-
 static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_private_property_for_scope(
     PtnObject *object,
     const char *property,
@@ -315,7 +302,7 @@ static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_private_property_f
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
         if (
-            metadata->visibility == PTN_PROPERTY_PRIVATE
+            metadata->read_visibility == PTN_PROPERTY_PRIVATE
             && strcmp(metadata->display_name, property) == 0
             && ptn_property_class_names_equal(metadata->declaring_class, access_scope)
         ) {
@@ -335,7 +322,7 @@ static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_own_private_proper
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
         if (
-            metadata->visibility == PTN_PROPERTY_PRIVATE
+            metadata->read_visibility == PTN_PROPERTY_PRIVATE
             && strcmp(metadata->display_name, property) == 0
             && ptn_property_class_names_equal(metadata->declaring_class, object->class_name)
         ) {
@@ -345,17 +332,16 @@ static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_own_private_proper
     return NULL;
 }
 
-static PTN_UNUSED int ptn_object_has_public_property_slot(
+static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_named_shared_property(
     PtnObject *object,
     const char *property
 ) {
-    if (ptn_object_property_metadata(object, property) != NULL) {
-        return 1;
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, property);
+    if (metadata != NULL && metadata->read_visibility != PTN_PROPERTY_PRIVATE) {
+        return metadata;
     }
-    PtnArrayKey key = ptn_array_string_key(property);
-    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
-    ptn_array_key_free(key);
-    return entry != NULL;
+    return NULL;
 }
 
 static PTN_UNUSED int ptn_object_public_property_slot_exists(
@@ -376,15 +362,78 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     PtnObject *object,
     const char *property,
     const char *access_scope,
+    int for_write,
     int quiet
 ) {
     const PtnObjectPropertyMetadata *scoped_private =
         ptn_object_private_property_for_scope(object, property, access_scope);
     if (scoped_private != NULL) {
+        PtnPropertyVisibility visibility = for_write
+            ? scoped_private->set_visibility
+            : scoped_private->read_visibility;
+        if (!ptn_property_visibility_allows(
+            runtime,
+            visibility,
+            scoped_private->declaring_class,
+            access_scope
+        )) {
+            if (quiet) {
+                return NULL;
+            }
+            if (for_write && scoped_private->set_visibility != scoped_private->read_visibility) {
+                ptn_throw_property_set_visibility_error(
+                    runtime,
+                    scoped_private->set_visibility,
+                    scoped_private->declaring_class,
+                    property,
+                    access_scope
+                );
+            } else {
+                ptn_throw_property_visibility_error(
+                    runtime,
+                    visibility,
+                    scoped_private->declaring_class,
+                    property
+                );
+            }
+            return NULL;
+        }
         return ptn_duplicate_string(scoped_private->storage_name);
     }
-    if (ptn_object_has_public_property_slot(object, property)) {
-        return ptn_duplicate_string(property);
+    const PtnObjectPropertyMetadata *shared_property =
+        ptn_object_named_shared_property(object, property);
+    if (shared_property != NULL) {
+        PtnPropertyVisibility visibility = for_write
+            ? shared_property->set_visibility
+            : shared_property->read_visibility;
+        if (!ptn_property_visibility_allows(
+            runtime,
+            visibility,
+            shared_property->declaring_class,
+            access_scope
+        )) {
+            if (quiet) {
+                return NULL;
+            }
+            if (for_write && shared_property->set_visibility != shared_property->read_visibility) {
+                ptn_throw_property_set_visibility_error(
+                    runtime,
+                    shared_property->set_visibility,
+                    shared_property->declaring_class,
+                    property,
+                    access_scope
+                );
+            } else {
+                ptn_throw_property_visibility_error(
+                    runtime,
+                    visibility,
+                    shared_property->declaring_class,
+                    property
+                );
+            }
+            return NULL;
+        }
+        return ptn_duplicate_string(shared_property->storage_name);
     }
     const PtnObjectPropertyMetadata *own_private =
         ptn_object_own_private_property(object, property);
@@ -426,6 +475,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         receiver.as.object,
         property,
         access_scope,
+        0,
         0
     );
     if (storage_key == NULL) {
@@ -459,6 +509,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         receiver.as.object,
         property,
         access_scope,
+        0,
         1
     );
     if (storage_key == NULL) {
@@ -491,6 +542,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         receiver.as.object,
         property,
         access_scope,
+        0,
         1
     );
     if (storage_key == NULL) {
@@ -536,6 +588,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
         receiver.as.object,
         property,
         access_scope,
+        1,
         0
     );
     if (storage_key == NULL) {
@@ -554,7 +607,8 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
     PtnValue receiver,
     const char *property,
     const char *declaring_class,
-    PtnPropertyVisibility visibility,
+    PtnPropertyVisibility read_visibility,
+    PtnPropertyVisibility set_visibility,
     PtnValue value,
     size_t line
 ) {
@@ -564,7 +618,8 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
             receiver.as.object,
             property,
             declaring_class,
-            visibility
+            read_visibility,
+            set_visibility
         );
     }
     return ptn_object_write_property(runtime, receiver, property, declaring_class, value, line);
