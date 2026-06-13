@@ -4951,6 +4951,7 @@ $fp = fopen(__FILE__, 'r');\n\
 try { var_dump(str_replace($fp, 'x', 'x')); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump(str_replace('x', $fp, 'x')); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump(str_replace('x', 'x', $fp)); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(str_replace($fp, ['x'], 'x')); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 fclose($fp);\n",
     )
     .unwrap();
@@ -4967,7 +4968,53 @@ string(1) \"q\"\n\
 int(1)\n\
 str_replace(): Argument #1 ($search) must be of type array|string, resource given\n\
 str_replace(): Argument #2 ($replace) must be of type array|string, resource given\n\
-str_replace(): Argument #3 ($subject) must be of type array|string, resource given\n"
+str_replace(): Argument #3 ($subject) must be of type array|string, resource given\n\
+str_replace(): Argument #1 ($search) must be of type array|string, resource given\n"
+            .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
+fn compile_str_replace_array_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-array-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-array-operands.php");
+    let output = root.join("str-replace-array-operands-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$count = null;\n\
+var_dump(str_replace(['a', 'b'], ['x'], 'abcab', $count));\n\
+var_dump($count);\n\
+$count = null;\n\
+var_dump(str_replace(['a', 'b'], 'X', 'abcab', $count));\n\
+var_dump($count);\n\
+$count = null;\n\
+var_dump(str_replace('a', 'X', ['first' => 'ab', 2 => 'ca'], $count));\n\
+var_dump($count);\n\
+$count = null;\n\
+var_dump(str_replace(['a', 'b'], ['A', 'B'], ['k' => 'ab', 2 => 'ba'], $count));\n\
+var_dump($count);\n\
+try { var_dump(str_replace('a', ['x'], 'a')); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"string(3) \"xcx\"\n\
+int(4)\n\
+string(5) \"XXcXX\"\n\
+int(4)\n\
+array(2) {\n  [\"first\"]=>\n  string(2) \"Xb\"\n  [2]=>\n  string(2) \"cX\"\n}\n\
+int(2)\n\
+array(2) {\n  [\"k\"]=>\n  string(2) \"AB\"\n  [2]=>\n  string(2) \"BA\"\n}\n\
+int(4)\n\
+str_replace(): Argument #2 ($replace) must be of type string when argument #1 ($search) is a string\n"
             .to_vec()
     );
     assert_eq!(execution.stderr, Vec::<u8>::new());

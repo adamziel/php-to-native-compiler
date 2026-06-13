@@ -1,19 +1,19 @@
 # PTN Progress
 
-Refresh: 2026-06-13T12:28Z
-Measured: `ptn-vrmy` integration on current `origin/master` `e29340d`;
-focused invokable-object callable verification passed.
+Refresh: 2026-06-13T12:34Z
+Measured: `ptn-79ha` integration on current `origin/master` `31a3b89`;
+focused `str_replace()` array-operand verification passed.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
 closures, `stdClass`, properties/destructors, reflection, array helpers,
 `json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
-search/count/string internals, scalar `str_replace()`, `chr()` diagnostics,
-`crc32()`, scalar conversion internals, PHP metadata constants, standard
-streams, foreach destructuring, namespace/import forms, `global` bindings,
-dynamic-variable writes/unsets, stream metadata, locale support including
-`localeconv()`, type predicates including `is_iterable()`, invokable object
-callables through public `__invoke`, PHPT runner ini values, statement-form
-`(void)` casts, and offset compound/coalescing.
+search/count/string internals, scalar and ordered-array `str_replace()`,
+`chr()` diagnostics, `crc32()`, scalar conversion internals, PHP metadata
+constants, standard streams, foreach destructuring, namespace/import forms,
+`global` bindings, dynamic-variable writes/unsets, stream metadata, locale
+support including `localeconv()`, type predicates including `is_iterable()`,
+invokable object callables through public `__invoke`, PHPT runner ini values,
+statement-form `(void)` casts, and offset compound/coalescing.
 
 Recent movers include statement-form `(void)` expression discard,
 `display_errors`/`zend.assertions` runner ini plumbing, bracketed namespace
@@ -22,14 +22,15 @@ grouped namespace imports, scalar conversions, `global`, PHP metadata
 constants, `dirname()` levels, `pathinfo()`, `LC_*`/`setlocale()`/`localeconv()`,
 invokable object callables, search/count internals, persistent standard
 streams, `property_exists()`, PHPT manifests, `crc32()`, `str_replace()`
-counts, and integer validation for `chr()`, `intdiv()`, and file offsets.
+array operands/counts, and integer validation for `chr()`, `intdiv()`, and
+file offsets.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 620 | 620 | 0 |
+| Native/compiler Rust suite | 621 | 621 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 272 | 272 | 0 |
 | PHPT Zend rows | 86 | 86 | 0 |
@@ -52,9 +53,9 @@ namespace/import forms, streams, file reads/writes, array/string/numeric
 helpers through `array_udiff*()`, `json_encode()`, `printf()`, `fdiv()`,
 `explode()`, string/path/search helpers, scalar conversions, `is_iterable()`,
 inline HTML, locale support including `localeconv()`, invokable object
-callables, PHP metadata constants, PHPT runner ini values, statement-form
-`(void)`, array mutators, inc/dec, `global`, dynamic variables, and offset
-compound/null coalescing.
+callables, scalar and ordered-array `str_replace()`, PHP metadata constants,
+PHPT runner ini values, statement-form `(void)`, array mutators, inc/dec,
+`global`, dynamic variables, and offset compound/null coalescing.
 
 ## Remaining Bounded Exclusions
 
@@ -64,13 +65,13 @@ compound/null coalescing.
 
 ## Verification
 
-Current branch verification for `ptn-vrmy`: focused
-`compile_invokable_object_callables_to_native_binary` reducer and 620-test
-inventory passed.
+Current branch verification for `ptn-79ha`: focused
+`compile_str_replace_array_operands_to_native_binary` reducer, scalar/count
+`str_replace()` regression, and 621-test inventory passed.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, magic methods, first-class callables, dynamic
 includes, unsupported internals, scalar offset-lvalues, assertions,
 binary-safe array keys, `Traversable` objects, embedded-NUL internals, object
-IDs, host-locale parity, `str_replace()` array forms, exact scalar conversion
-diagnostics, broad callable syntax, and object/reference targets.
+IDs, host-locale parity, `str_replace()` object/diagnostic edges, exact scalar
+conversion diagnostics, broad callable syntax, and object/reference targets.
