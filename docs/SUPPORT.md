@@ -807,6 +807,11 @@ Post-RC architecture remains explicit rather than hidden:
   `integer`, `double`, `string`, `array`, `object`, `resource`, or
   `resource (closed)` for the currently modeled scalar, array, object,
   Closure, exception, and stream-resource value domains.
+- `setlocale()` accepts modeled LC category constants, scalar/null locale
+  operands, variadic locale candidates, and ordered-array candidate lists. It
+  uses the host C locale API for current-locale queries, environment/default
+  locale selection, candidate selection, and invalid-category/unknown-locale
+  `false` results.
 - Type predicates over current boxed scalar and selected non-scalar values:
   `is_array()`, `is_object()`, `is_null()`,
   `is_bool()`, `is_int()`, `is_integer()`, `is_long()`, `is_float()`,
@@ -857,8 +862,9 @@ Post-RC architecture remains explicit rather than hidden:
   `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`,
   `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, `M_SQRT3`,
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `STR_PAD_LEFT`,
-  `STR_PAD_RIGHT`, and `STR_PAD_BOTH`. Other ordinary names report as
-  undefined.
+  `STR_PAD_RIGHT`, `STR_PAD_BOTH`, and modeled host LC category constants
+  such as `LC_ALL`, `LC_CTYPE`, `LC_NUMERIC`, and `LC_TIME`. Other ordinary
+  names report as undefined.
 - Duplicate global `const` declarations and `const` redeclarations after
   `define()` emit the modeled duplicate-constant warning boundary and preserve
   the original runtime constant value.
@@ -1150,6 +1156,9 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `soundex()` locale/non-ASCII behavior plus resource/reference operand
   parity and object string conversion outside the current public declared
   `__toString()` support.
+- Exact `setlocale()` strict-types diagnostics, resource/object operand
+  parity, embedded-NUL locale names, and platform-specific locale-category
+  behavior beyond the modeled host C locale path.
 - Complete `str_replace()` array search/replacement/subject semantics,
   array-to-string warnings, and nested replacement-count parity beyond the
   current scalar bounded path.

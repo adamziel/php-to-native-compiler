@@ -7642,6 +7642,144 @@ static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const Pt
 #endif
 }
 
+static int ptn_locale_category_from_value(PtnValue value, int *category_out) {
+    int64_t category = ptn_value_to_integer(value);
+    if (category == LC_ALL) {
+        *category_out = LC_ALL;
+        return 1;
+    }
+    if (category == LC_COLLATE) {
+        *category_out = LC_COLLATE;
+        return 1;
+    }
+    if (category == LC_CTYPE) {
+        *category_out = LC_CTYPE;
+        return 1;
+    }
+    if (category == LC_MONETARY) {
+        *category_out = LC_MONETARY;
+        return 1;
+    }
+    if (category == LC_NUMERIC) {
+        *category_out = LC_NUMERIC;
+        return 1;
+    }
+    if (category == LC_TIME) {
+        *category_out = LC_TIME;
+        return 1;
+    }
+#if defined(LC_MESSAGES)
+    if (category == LC_MESSAGES) {
+        *category_out = LC_MESSAGES;
+        return 1;
+    }
+#endif
+#if defined(LC_PAPER)
+    if (category == LC_PAPER) {
+        *category_out = LC_PAPER;
+        return 1;
+    }
+#endif
+#if defined(LC_NAME)
+    if (category == LC_NAME) {
+        *category_out = LC_NAME;
+        return 1;
+    }
+#endif
+#if defined(LC_ADDRESS)
+    if (category == LC_ADDRESS) {
+        *category_out = LC_ADDRESS;
+        return 1;
+    }
+#endif
+#if defined(LC_TELEPHONE)
+    if (category == LC_TELEPHONE) {
+        *category_out = LC_TELEPHONE;
+        return 1;
+    }
+#endif
+#if defined(LC_MEASUREMENT)
+    if (category == LC_MEASUREMENT) {
+        *category_out = LC_MEASUREMENT;
+        return 1;
+    }
+#endif
+#if defined(LC_IDENTIFICATION)
+    if (category == LC_IDENTIFICATION) {
+        *category_out = LC_IDENTIFICATION;
+        return 1;
+    }
+#endif
+    return 0;
+}
+
+static int ptn_setlocale_scalar_candidate(
+    PtnRuntime *runtime,
+    int category,
+    PtnValue value,
+    size_t line,
+    PtnValue *result_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+    PtnStringOperand locale = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    const char *selected = NULL;
+    if (locale.len == 1 && locale.data[0] == '0') {
+        selected = setlocale(category, NULL);
+    } else {
+        char *locale_name = ptn_duplicate_string_len(locale.data, locale.len);
+        selected = setlocale(category, locale_name);
+        free(locale_name);
+    }
+    ptn_string_operand_free(locale);
+    if (selected == NULL) {
+        return 0;
+    }
+    *result_out = ptn_string(selected);
+    return 1;
+}
+
+static int ptn_setlocale_candidate(
+    PtnRuntime *runtime,
+    int category,
+    PtnValue value,
+    size_t line,
+    PtnValue *result_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY) {
+        return ptn_setlocale_scalar_candidate(runtime, category, value, line, result_out);
+    }
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        if (ptn_setlocale_scalar_candidate(
+                runtime,
+                category,
+                value.as.array->entries[i].value,
+                line,
+                result_out
+            )) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int category = 0;
+    if (!ptn_locale_category_from_value(args[0], &category)) {
+        return ptn_bool(0);
+    }
+    for (size_t i = 1; i < argc; i++) {
+        PtnValue result;
+        if (ptn_setlocale_candidate(runtime, category, args[i], line, &result)) {
+            return result;
+        }
+    }
+    return ptn_bool(0);
+}
+
 static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal) {
     size_t literal_len = strlen(literal);
     if (value.len != literal_len) {
@@ -8381,6 +8519,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
+        { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
