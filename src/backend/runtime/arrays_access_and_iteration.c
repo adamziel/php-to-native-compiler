@@ -258,6 +258,57 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     return clone;
 }
 
+static PTN_UNUSED PtnValue ptn_cast_object(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT) {
+        return ptn_value_clone(value);
+    }
+
+    PtnValue object_value = ptn_object_new_shell(runtime, "stdClass");
+    PtnObject *object = object_value.as.object;
+    if (value.type == PTN_NULL) {
+        return object_value;
+    }
+
+    if (value.type == PTN_ARRAY) {
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            PtnArrayEntry *entry = &value.as.array->entries[i];
+            PtnArrayKey property_key;
+            if (entry->key.type == PTN_ARRAY_KEY_INT) {
+                char key_buffer[64];
+                int written = snprintf(
+                    key_buffer,
+                    sizeof(key_buffer),
+                    "%lld",
+                    (long long)entry->key.as.integer
+                );
+                if (written < 0 || (size_t)written >= sizeof(key_buffer)) {
+                    ptn_abort_out_of_memory();
+                }
+                property_key = ptn_array_string_key(key_buffer);
+            } else {
+                property_key = ptn_array_string_key_len(
+                    entry->key.as.string,
+                    entry->key.string_len
+                );
+            }
+            ptn_array_set_entry(
+                object->properties,
+                property_key,
+                ptn_value_clone_deref(entry->value)
+            );
+        }
+        return object_value;
+    }
+
+    ptn_array_set_entry(
+        object->properties,
+        ptn_array_string_key("scalar"),
+        ptn_value_clone(value)
+    );
+    return object_value;
+}
+
 static PTN_UNUSED void ptn_emit_non_object_property_read_warning(
     PtnRuntime *runtime,
     const char *property,
@@ -609,6 +660,78 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
     return result;
 }
 
+static PTN_UNUSED void ptn_object_bind_property_reference(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue reference,
+    size_t line
+) {
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Attempt to assign property \"%s\" on %s",
+            property,
+            ptn_offset_container_type_name(receiver)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return;
+    }
+    if (reference.type != PTN_REFERENCE) {
+        ptn_abort_out_of_memory();
+    }
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        1,
+        0
+    );
+    if (storage_key == NULL) {
+        return;
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    ptn_array_set_entry(receiver.as.object->properties, key, ptn_value_clone(reference));
+    free(storage_key);
+}
+
+static PTN_UNUSED void ptn_object_unset_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return;
+    }
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        1,
+        1
+    );
+    if (storage_key == NULL) {
+        return;
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    ptn_array_unset_entry(receiver.as.object->properties, key);
+    free(storage_key);
+}
+
 static PTN_UNUSED PtnValue ptn_object_declare_property(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -816,9 +939,82 @@ static PTN_UNUSED void ptn_runtime_bind_array_dim_reference(
     ptn_array_set_entry(array, key, ptn_value_clone(reference));
 }
 
+static PTN_UNUSED int ptn_object_property_visible_for_foreach(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    PtnArrayKey key,
+    const char *access_scope
+) {
+    if (object == NULL || key.type != PTN_ARRAY_KEY_STRING) {
+        return 1;
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, key.as.string);
+    if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        return 1;
+    }
+    return ptn_property_visibility_allows(
+        runtime,
+        metadata->read_visibility,
+        metadata->declaring_class,
+        access_scope
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_object_foreach_key_value(
+    PtnObject *object,
+    PtnArrayKey key
+) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        return ptn_int(key.as.integer);
+    }
+    if (object != NULL) {
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(object, key.as.string);
+        if (metadata != NULL) {
+            return ptn_string(metadata->display_name);
+        }
+    }
+    if (key.string_len >= 3 && key.as.string[0] == '\0') {
+        const char *second_nul = memchr(key.as.string + 1, '\0', key.string_len - 1);
+        if (second_nul != NULL) {
+            size_t prefix_len = (size_t)(second_nul - key.as.string) + 1;
+            if (prefix_len <= key.string_len) {
+                size_t display_len = key.string_len - prefix_len;
+                return ptn_owned_string_len(
+                    ptn_duplicate_string_len(key.as.string + prefix_len, display_len),
+                    display_len
+                );
+            }
+        }
+    }
+    return ptn_owned_string_len(ptn_duplicate_string_len(key.as.string, key.string_len), key.string_len);
+}
+
+static PTN_UNUSED void ptn_array_iterator_skip_invisible_object_properties(PtnArrayIterator *iterator) {
+    if (iterator->object == NULL || iterator->array == NULL) {
+        return;
+    }
+    size_t limit = iterator->live ? iterator->array->len : iterator->length;
+    while (iterator->index < limit &&
+        !ptn_object_property_visible_for_foreach(
+            iterator->runtime,
+            iterator->object,
+            iterator->array->entries[iterator->index].key,
+            iterator->access_scope
+        )) {
+        iterator->index++;
+        limit = iterator->live ? iterator->array->len : iterator->length;
+    }
+    iterator->valid = iterator->index < limit;
+}
+
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
     PtnArrayIterator iterator;
     iterator.array = NULL;
+    iterator.object = NULL;
+    iterator.runtime = NULL;
+    iterator.access_scope = NULL;
     iterator.index = 0;
     iterator.length = 0;
     iterator.valid = 0;
@@ -826,21 +1022,30 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
     return iterator;
 }
 
-static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(PtnObject *object) {
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *access_scope
+) {
     PtnArrayIterator iterator = ptn_array_iterator_empty();
     if (object == NULL || object->properties == NULL) {
         return iterator;
     }
     iterator.array = object->properties;
+    iterator.object = object;
+    iterator.runtime = runtime;
+    iterator.access_scope = access_scope;
     iterator.valid = iterator.array->len != 0;
     iterator.live = 1;
     ptn_array_iterator_retain(iterator.array);
+    ptn_array_iterator_skip_invisible_object_properties(&iterator);
     return iterator;
 }
 
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     PtnRuntime *runtime,
     PtnValue value,
+    const char *access_scope,
     const char *path,
     size_t line
 ) {
@@ -849,7 +1054,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     PtnArrayIterator iterator = ptn_array_iterator_empty();
     if (value.type != PTN_ARRAY) {
         if (value.type == PTN_OBJECT) {
-            return ptn_array_iterator_from_object_properties(value.as.object);
+            return ptn_array_iterator_from_object_properties(runtime, value.as.object, access_scope);
         }
         ptn_emit_foreach_non_array_warning(value, path, line);
         return iterator;
@@ -864,6 +1069,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
     PtnRuntime *runtime,
     PtnValue *slot,
+    const char *access_scope,
     const char *path,
     size_t line
 ) {
@@ -876,7 +1082,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
 
     PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
     if (value->type == PTN_OBJECT) {
-        return ptn_array_iterator_from_object_properties(value->as.object);
+        return ptn_array_iterator_from_object_properties(runtime, value->as.object, access_scope);
     }
     if (value->type != PTN_ARRAY) {
         ptn_emit_foreach_non_array_warning(ptn_value_deref(*value), path, line);
@@ -901,6 +1107,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_variable(
     PtnRuntime *runtime,
     const char *name,
+    const char *access_scope,
     const char *path,
     size_t line
 ) {
@@ -910,36 +1117,41 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_variable(
         ptn_emit_foreach_non_array_warning(ptn_null(), path, line);
         return ptn_array_iterator_empty();
     }
-    return ptn_array_iterator_by_ref_from_slot(runtime, slot, path, line);
+    return ptn_array_iterator_by_ref_from_slot(runtime, slot, access_scope, path, line);
 }
 
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_reference(
     PtnRuntime *runtime,
     PtnValue reference,
+    const char *access_scope,
     const char *path,
     size_t line
 ) {
     if (reference.type != PTN_REFERENCE) {
         ptn_abort_out_of_memory();
     }
-    return ptn_array_iterator_by_ref_from_slot(runtime, &reference, path, line);
+    return ptn_array_iterator_by_ref_from_slot(runtime, &reference, access_scope, path, line);
 }
 
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_value(
     PtnRuntime *runtime,
     PtnValue *value,
+    const char *access_scope,
     const char *path,
     size_t line
 ) {
-    return ptn_array_iterator_by_ref_from_slot(runtime, value, path, line);
+    return ptn_array_iterator_by_ref_from_slot(runtime, value, access_scope, path, line);
 }
 
 static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iterator) {
     PtnArrayKey key = iterator->array->entries[iterator->index].key;
+    if (iterator->object != NULL) {
+        return ptn_object_foreach_key_value(iterator->object, key);
+    }
     if (key.type == PTN_ARRAY_KEY_INT) {
         return ptn_int(key.as.integer);
     }
-    return ptn_string(key.as.string);
+    return ptn_owned_string_len(ptn_duplicate_string_len(key.as.string, key.string_len), key.string_len);
 }
 
 static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *iterator) {
@@ -959,6 +1171,7 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
     iterator->index++;
     size_t limit = iterator->live && iterator->array != NULL ? iterator->array->len : iterator->length;
     iterator->valid = iterator->array != NULL && iterator->index < limit;
+    ptn_array_iterator_skip_invisible_object_properties(iterator);
 }
 
 static PTN_UNUSED void ptn_array_iterator_release(PtnArray *array) {
@@ -983,6 +1196,9 @@ static PTN_UNUSED void ptn_array_iterator_destroy(PtnArrayIterator *iterator) {
         }
         iterator->array = NULL;
     }
+    iterator->object = NULL;
+    iterator->runtime = NULL;
+    iterator->access_scope = NULL;
     iterator->index = 0;
     iterator->length = 0;
     iterator->valid = 0;
@@ -999,7 +1215,7 @@ static PTN_UNUSED char *ptn_array_key_diagnostic_name(PtnArrayKey key) {
         return ptn_duplicate_string(buffer);
     }
 
-    size_t key_len = strlen(key.as.string);
+    size_t key_len = key.string_len;
     if (key_len > SIZE_MAX - 3) {
         ptn_abort_out_of_memory();
     }
@@ -1446,7 +1662,7 @@ static PTN_UNUSED PtnValue ptn_array_key_value(PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         return ptn_int(key.as.integer);
     }
-    return ptn_owned_string(ptn_duplicate_string(key.as.string));
+    return ptn_owned_string_len(ptn_duplicate_string_len(key.as.string, key.string_len), key.string_len);
 }
 
 static PTN_UNUSED void ptn_emit_assign_op_missing_array_key(PtnRuntime *runtime, PtnValue key_value, size_t line) {
@@ -2461,9 +2677,9 @@ static int ptn_array_key_compare_ascending(PtnArrayKey left, PtnArrayKey right) 
     if (left.type == PTN_ARRAY_KEY_STRING && right.type == PTN_ARRAY_KEY_STRING) {
         return ptn_compare_string_bytes(
             (const unsigned char *)left.as.string,
-            strlen(left.as.string),
+            left.string_len,
             (const unsigned char *)right.as.string,
-            strlen(right.as.string)
+            right.string_len
         );
     }
     return left.type == PTN_ARRAY_KEY_INT ? -1 : 1;

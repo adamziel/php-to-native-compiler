@@ -3823,10 +3823,25 @@ fn parser_accepts_simple_array_and_legacy_dollar_brace_interpolation() {
 }
 
 #[test]
-fn parser_rejects_unsupported_braced_property_interpolation() {
-    let error = parser::parse("<?php echo \"name={$object->name}\\n\";").unwrap_err();
-    assert_eq!(error.message, "complex string interpolation is unsupported");
-    assert_eq!(error.span.unwrap().line, 1);
+fn parser_accepts_braced_property_interpolation() {
+    let program = parser::parse("<?php echo \"name={$object->name}\\n\";").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            StringPart::Literal("name=".to_string()),
+            StringPart::PropertyFetch {
+                variable: "object".to_string(),
+                property: "name".to_string(),
+            },
+            StringPart::Literal("\n".to_string()),
+        ]
+    );
 }
 
 #[test]
@@ -11951,6 +11966,169 @@ echo $object->a, \":\", $object->b, \"\\n\";",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "a=1\nb=2\n11:12\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_object_cast_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-object-cast-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-object-cast-properties.php");
+    let output = root.join("foreach-object-cast-properties-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$object = (object)[1 => 2, \"foo\" => \"bar\"];\n\
+foreach ($object as $name => $value) {\n\
+    echo $name, \" -> \", $value, \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1 -> 2\nfoo -> bar\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_object_cast_mangled_property_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-object-cast-mangled-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-object-cast-mangled-properties.php");
+    let output = root.join("foreach-object-cast-mangled-properties-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$object = (object)[\"\\0A\\0b\" => 42, \"\\0*\\0c\" => 24];\n\
+foreach ($object as $key => $value) {\n\
+    var_dump($key, $value);\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"b\"\nint(42)\nstring(1) \"c\"\nint(24)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_property_targets_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-property-targets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-property-targets.php");
+    let output = root.join("foreach-property-targets-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class C { public $d; }\n\
+$c = new C();\n\
+$items = [1 => \"a\", 2 => \"b\", 3 => \"c\"];\n\
+foreach ($items as $key => $c->d) {\n\
+    echo \"{$key} => {$c->d}\\n\";\n\
+}\n\
+foreach ($items as $c->d => $value) {\n\
+    echo \"{$c->d} => {$value}\\n\";\n\
+}\n\
+$object = new stdClass;\n\
+foreach ([0] as &$object->prop) {\n\
+    var_dump($object->prop);\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1 => a\n2 => b\n3 => c\n1 => a\n2 => b\n3 => c\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_object_live_unset_and_append_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-object-live-unset-append");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-object-live-unset-append.php");
+    let output = root.join("foreach-object-live-unset-append-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$object = (object)[\"a\" => 0, \"b\" => 1, \"c\" => 2, \"d\" => 3, \"e\" => 4, \"f\" => 5, \"g\" => 6, \"h\" => 7];\n\
+unset($object->a, $object->b, $object->c, $object->d);\n\
+foreach ($object as $v1) {\n\
+    foreach ($object as $v2) {\n\
+        echo $v1, \"-\", $v2, \"\\n\";\n\
+        if ($v1 == 5 && $v2 == 6) {\n\
+            $object->i = 8;\n\
+        }\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "4-4\n4-5\n4-6\n4-7\n5-4\n5-5\n5-6\n5-7\n5-8\n6-4\n6-5\n6-6\n6-7\n6-8\n7-4\n7-5\n7-6\n7-7\n7-8\n8-4\n8-5\n8-6\n8-7\n8-8\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_declared_object_property_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-object-property-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-object-property-visibility.php");
+    let output = root.join("foreach-object-property-visibility-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Box {\n\
+    private $hidden = 1;\n\
+    protected $shared = 2;\n\
+    public $visible = 3;\n\
+\n\
+    public function dump() {\n\
+        foreach ($this as $key => $value) {\n\
+            echo \"in:\", $key, \"=\", $value, \"\\n\";\n\
+        }\n\
+    }\n\
+}\n\
+\n\
+$box = new Box();\n\
+foreach ($box as $key => $value) {\n\
+    echo \"out:\", $key, \"=\", $value, \"\\n\";\n\
+}\n\
+$box->dump();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "out:visible=3\nin:hidden=1\nin:shared=2\nin:visible=3\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -20236,6 +20414,12 @@ class ArrowThis {
 (new ArrowThis())->run();
 $adder = fn(int $x, int ...$rest): int => $x + array_sum($rest);
 var_dump($adder(\"3\", 4, 5));
+$object = new stdClass;
+$object->name = \"captured\";
+$propertyText = fn() => \"name={$object->name}\\n\";
+echo $propertyText();
+$object->name = \"changed\";
+echo $propertyText();
 ",
     )
     .unwrap();
@@ -20247,7 +20431,7 @@ var_dump($adder(\"3\", 4, 5));
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "int(6)\nint(5)\nint(6)\nmade\n{}NULL\nbool(true)\nbool(false)\nint(12)\n",
+            "int(6)\nint(5)\nint(6)\nmade\n{}NULL\nbool(true)\nbool(false)\nint(12)\nname=captured\nname=changed\n",
             undefined_variable_warning(&input, "missing", 8)
         )
     );

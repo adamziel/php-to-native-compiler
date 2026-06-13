@@ -2329,6 +2329,15 @@ impl Parser {
         match target {
             Expr::Variable(name, span) => Ok(UnsetTarget::Variable { name, span }),
             Expr::ArrayAccess { .. } => unset_array_dim_target_from_expr(target),
+            Expr::PropertyFetch {
+                receiver,
+                name,
+                span,
+            } => Ok(UnsetTarget::Property {
+                receiver,
+                name,
+                span,
+            }),
             _ => Err(Diagnostic::new(
                 "unsupported unset target",
                 Some(target.span()),
@@ -3333,6 +3342,9 @@ impl Parser {
             TokenKind::BinaryType => Some(CastKind::Binary),
             TokenKind::BoolType => Some(CastKind::Bool),
             TokenKind::BooleanType => Some(CastKind::Boolean),
+            TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("object") => {
+                Some(CastKind::Object)
+            }
             _ => None,
         }
     }
@@ -4257,6 +4269,15 @@ fn collect_arrow_captures_from_string_part(
         StringPart::Variable(name) | StringPart::LegacyDollarBraceVariable(name) => {
             add_arrow_capture(
                 name,
+                SourceSpan::new(0, 0, 0, 0),
+                exclusions,
+                seen,
+                captures,
+            );
+        }
+        StringPart::PropertyFetch { variable, .. } => {
+            add_arrow_capture(
+                variable,
                 SourceSpan::new(0, 0, 0, 0),
                 exclusions,
                 seen,
@@ -6148,7 +6169,9 @@ fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
 
 fn validate_foreach_by_reference_target(target: &AssignmentTarget, span: SourceSpan) -> Result<()> {
     match target {
-        AssignmentTarget::Variable { .. } | AssignmentTarget::ArrayDim(_) => Ok(()),
+        AssignmentTarget::Variable { .. }
+        | AssignmentTarget::ArrayDim(_)
+        | AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "foreach destructuring is unsupported",
             Some(assignment_target_span(target)),
@@ -6455,6 +6478,9 @@ fn lower_string_part(part: TokenStringPart) -> StringPart {
         TokenStringPart::Variable(name) => StringPart::Variable(name),
         TokenStringPart::LegacyDollarBraceVariable(name) => {
             StringPart::LegacyDollarBraceVariable(name)
+        }
+        TokenStringPart::PropertyFetch { variable, property } => {
+            StringPart::PropertyFetch { variable, property }
         }
         TokenStringPart::ArrayAccess { array, indices } => StringPart::ArrayAccess {
             array,

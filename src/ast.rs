@@ -372,6 +372,11 @@ pub enum UnsetTarget {
         dimensions: Vec<Expr>,
         span: SourceSpan,
     },
+    Property {
+        receiver: Box<Expr>,
+        name: String,
+        span: SourceSpan,
+    },
     ArrayDim(ArrayDimTarget),
 }
 
@@ -561,6 +566,10 @@ pub enum StringPart {
     Literal(String),
     Variable(String),
     LegacyDollarBraceVariable(String),
+    PropertyFetch {
+        variable: String,
+        property: String,
+    },
     ArrayAccess {
         array: String,
         indices: Vec<StringInterpolationIndex>,
@@ -622,6 +631,7 @@ pub enum CastKind {
     Binary,
     Bool,
     Boolean,
+    Object,
 }
 
 impl Expr {

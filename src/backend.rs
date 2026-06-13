@@ -1954,6 +1954,23 @@ fn emit_instruction(
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
         }
+        Instruction::UnsetProperty {
+            receiver,
+            name,
+            line,
+        } => {
+            let receiver_temp = values.emit_materialized_value(out, receiver);
+            out.push_str("    ptn_object_unset_property(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &receiver_temp);
+        }
         Instruction::InternalCall {
             name,
             arguments,
@@ -2213,7 +2230,9 @@ fn emit_instruction(
                         out.push_str(&iterator_temp);
                         out.push_str(" = ptn_array_iterator_by_ref_from_variable(&runtime, \"");
                         out.push_str(&c_string(name));
-                        out.push_str("\", \"");
+                        out.push_str("\", ");
+                        out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+                        out.push_str(", \"");
                         out.push_str(&c_string(source_path));
                         out.push_str("\", ");
                         out.push_str(&line.to_string());
@@ -2227,6 +2246,8 @@ fn emit_instruction(
                             out.push_str(&iterator_temp);
                             out.push_str(" = ptn_array_iterator_by_ref_from_reference(&runtime, ");
                             out.push_str(&reference_temp);
+                            out.push_str(", ");
+                            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
                             out.push_str(", \"");
                             out.push_str(&c_string(source_path));
                             out.push_str("\", ");
@@ -2240,6 +2261,8 @@ fn emit_instruction(
                             out.push_str(&iterator_temp);
                             out.push_str(" = ptn_array_iterator_by_ref_from_value(&runtime, &");
                             out.push_str(&iterable_temp);
+                            out.push_str(", ");
+                            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
                             out.push_str(", \"");
                             out.push_str(&c_string(source_path));
                             out.push_str("\", ");
@@ -2255,6 +2278,8 @@ fn emit_instruction(
                 out.push_str(&iterator_temp);
                 out.push_str(" = ptn_array_iterator_from_value(&runtime, ");
                 out.push_str(&iterable_temp);
+                out.push_str(", ");
+                out.push_str(&c_optional_string(values.current_class_name.as_deref()));
                 out.push_str(", \"");
                 out.push_str(&c_string(source_path));
                 out.push_str("\", ");
@@ -2751,6 +2776,9 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
             }
         }
+        Instruction::UnsetProperty { receiver, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+        }
         Instruction::InternalCall { arguments, .. } => {
             for argument in arguments {
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
@@ -3160,6 +3188,9 @@ fn collect_instruction_runtime_requirements(
             for dimension in dimensions {
                 collect_value_runtime_requirements(dimension, functions, requirements);
             }
+        }
+        Instruction::UnsetProperty { receiver, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
         }
         Instruction::InternalCall {
             name,
@@ -5202,8 +5233,24 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
-            AssignmentTarget::Property { .. } => {
-                unreachable!("parser rejects by-reference assignment to property targets");
+            AssignmentTarget::Property {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                out.push_str("    ptn_object_bind_property_reference(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
             }
             AssignmentTarget::StaticProperty { .. } => {
                 unreachable!("parser rejects by-reference assignment to static property targets");
@@ -5680,49 +5727,61 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 match kind {
-                    CastKind::Int | CastKind::Float | CastKind::String | CastKind::Bool => {
-                        match kind {
-                            CastKind::String => {
-                                out.push_str("ptn_cast_string_with_runtime(&runtime, ");
-                                out.push_str(&expr_temp);
-                                out.push_str(", ");
-                                out.push_str(&line.to_string());
-                                out.push_str(");\n");
-                            }
-                            CastKind::Int | CastKind::Float | CastKind::Bool => {
-                                out.push_str(match kind {
-                                    CastKind::Int => "ptn_cast_int",
-                                    CastKind::Float => "ptn_cast_float",
-                                    CastKind::Bool => "ptn_cast_bool",
-                                    CastKind::String
-                                    | CastKind::Integer
-                                    | CastKind::Double
-                                    | CastKind::Binary
-                                    | CastKind::Boolean => {
-                                        unreachable!(
-                                            "only int/float/bool canonical casts use this branch"
-                                        )
-                                    }
-                                });
-                                out.push('(');
-                                out.push_str(&expr_temp);
-                                out.push_str(");\n");
-                            }
-                            CastKind::Integer
-                            | CastKind::Double
-                            | CastKind::Binary
-                            | CastKind::Boolean => {
-                                unreachable!("non-canonical casts are handled separately")
-                            }
+                    CastKind::Int
+                    | CastKind::Float
+                    | CastKind::String
+                    | CastKind::Bool
+                    | CastKind::Object => match kind {
+                        CastKind::String => {
+                            out.push_str("ptn_cast_string_with_runtime(&runtime, ");
+                            out.push_str(&expr_temp);
+                            out.push_str(", ");
+                            out.push_str(&line.to_string());
+                            out.push_str(");\n");
                         }
-                    }
+                        CastKind::Object => {
+                            out.push_str("ptn_cast_object(&runtime, ");
+                            out.push_str(&expr_temp);
+                            out.push_str(");\n");
+                        }
+                        CastKind::Int | CastKind::Float | CastKind::Bool => {
+                            out.push_str(match kind {
+                                CastKind::Int => "ptn_cast_int",
+                                CastKind::Float => "ptn_cast_float",
+                                CastKind::Bool => "ptn_cast_bool",
+                                CastKind::String
+                                | CastKind::Object
+                                | CastKind::Integer
+                                | CastKind::Double
+                                | CastKind::Binary
+                                | CastKind::Boolean => {
+                                    unreachable!(
+                                        "only int/float/bool canonical casts use this branch"
+                                    )
+                                }
+                            });
+                            out.push('(');
+                            out.push_str(&expr_temp);
+                            out.push_str(");\n");
+                        }
+                        CastKind::Integer
+                        | CastKind::Double
+                        | CastKind::Binary
+                        | CastKind::Boolean => {
+                            unreachable!("non-canonical casts are handled separately")
+                        }
+                    },
                     CastKind::Integer | CastKind::Double | CastKind::Binary | CastKind::Boolean => {
                         let (spelling, canonical, target) = match kind {
                             CastKind::Integer => ("integer", "int", "PTN_CAST_TARGET_INT"),
                             CastKind::Double => ("double", "float", "PTN_CAST_TARGET_FLOAT"),
                             CastKind::Binary => ("binary", "string", "PTN_CAST_TARGET_STRING"),
                             CastKind::Boolean => ("boolean", "bool", "PTN_CAST_TARGET_BOOL"),
-                            CastKind::Int | CastKind::Float | CastKind::String | CastKind::Bool => {
+                            CastKind::Int
+                            | CastKind::Float
+                            | CastKind::String
+                            | CastKind::Bool
+                            | CastKind::Object => {
                                 unreachable!("canonical casts are handled separately")
                             }
                         };

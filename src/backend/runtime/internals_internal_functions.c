@@ -2194,6 +2194,7 @@ static PtnArrayKey ptn_array_change_key_case_key(PtnArrayKey source, int upperca
 
     PtnArrayKey key;
     key.type = PTN_ARRAY_KEY_STRING;
+    key.string_len = len;
     key.as.string = changed;
     return key;
 }

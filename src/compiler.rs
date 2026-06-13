@@ -148,6 +148,9 @@ impl IncludeCollector {
                                 self.collect_expr(dimension, source_file, source_dir)?;
                             }
                         }
+                        UnsetTarget::Property { receiver, .. } => {
+                            self.collect_expr(receiver, source_file, source_dir)?;
+                        }
                         UnsetTarget::Variable { .. } => {}
                     }
                 }

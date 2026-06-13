@@ -36,15 +36,21 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
     PtnArrayKey key;
     key.type = PTN_ARRAY_KEY_INT;
+    key.string_len = 0;
     key.as.integer = integer;
     return key;
 }
 
-static PTN_UNUSED PtnArrayKey ptn_array_string_key(const char *string) {
+static PTN_UNUSED PtnArrayKey ptn_array_string_key_len(const char *string, size_t len) {
     PtnArrayKey key;
     key.type = PTN_ARRAY_KEY_STRING;
-    key.as.string = ptn_duplicate_string(string);
+    key.string_len = len;
+    key.as.string = ptn_duplicate_string_len(string, len);
     return key;
+}
+
+static PTN_UNUSED PtnArrayKey ptn_array_string_key(const char *string) {
+    return ptn_array_string_key_len(string, strlen(string));
 }
 
 static PTN_UNUSED int ptn_string_is_integer_array_key(const char *string, int64_t *integer) {
@@ -81,6 +87,13 @@ static PTN_UNUSED int ptn_string_is_integer_array_key(const char *string, int64_
     return 1;
 }
 
+static PTN_UNUSED int ptn_string_is_integer_array_key_len(const char *string, size_t len, int64_t *integer) {
+    if (memchr(string, '\0', len) != NULL) {
+        return 0;
+    }
+    return ptn_string_is_integer_array_key(string, integer);
+}
+
 static PTN_UNUSED void ptn_abort_illegal_array_key(void) {
     fputs("Fatal error: Illegal offset type\n", stderr);
     exit(255);
@@ -102,10 +115,10 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
         case PTN_STRING: {
             int64_t integer = 0;
             const char *string = (const char *)value.as.string.data;
-            if (ptn_string_is_integer_array_key(string, &integer)) {
+            if (ptn_string_is_integer_array_key_len(string, value.as.string.len, &integer)) {
                 return ptn_array_int_key(integer);
             }
-            return ptn_array_string_key(string);
+            return ptn_array_string_key_len(string, value.as.string.len);
         }
         case PTN_ARRAY:
         case PTN_OBJECT:
@@ -130,7 +143,8 @@ static PTN_UNUSED int ptn_array_keys_equal(PtnArrayKey left, PtnArrayKey right) 
     if (left.type == PTN_ARRAY_KEY_INT) {
         return left.as.integer == right.as.integer;
     }
-    return strcmp(left.as.string, right.as.string) == 0;
+    return left.string_len == right.string_len &&
+        memcmp(left.as.string, right.as.string, left.string_len) == 0;
 }
 
 static PTN_UNUSED uint64_t ptn_hash_mix_uint64(uint64_t value) {
@@ -148,8 +162,9 @@ static PTN_UNUSED uint64_t ptn_array_key_hash(PtnArrayKey key) {
     }
 
     uint64_t hash = 1469598103934665603ULL ^ 0x517cc1b727220a95ULL;
-    for (const unsigned char *cursor = (const unsigned char *)key.as.string; *cursor != '\0'; cursor++) {
-        hash ^= (uint64_t)*cursor;
+    const unsigned char *string = (const unsigned char *)key.as.string;
+    for (size_t i = 0; i < key.string_len; i++) {
+        hash ^= (uint64_t)string[i];
         hash *= 1099511628211ULL;
     }
     return ptn_hash_mix_uint64(hash);
@@ -577,7 +592,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         return ptn_array_int_key(key.as.integer);
     }
-    return ptn_array_string_key(key.as.string);
+    return ptn_array_string_key_len(key.as.string, key.string_len);
 }
 
 static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {

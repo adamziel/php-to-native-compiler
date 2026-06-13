@@ -170,6 +170,11 @@ pub enum Instruction {
         dimensions: Vec<ValueExpr>,
         line: usize,
     },
+    UnsetProperty {
+        receiver: ValueExpr,
+        name: String,
+        line: usize,
+    },
     DefineConstant {
         name: String,
         value: ValueExpr,
@@ -516,6 +521,7 @@ pub enum CastKind {
     Binary,
     Bool,
     Boolean,
+    Object,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1306,6 +1312,15 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 line: span.line,
             },
+            AstUnsetTarget::Property {
+                receiver,
+                name,
+                span,
+            } => Instruction::UnsetProperty {
+                receiver: self.lower_expr(receiver),
+                name: name.clone(),
+                line: span.line,
+            },
         }
     }
 }
@@ -1722,6 +1737,18 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
             }),
             line,
         }),
+        AstStringPart::PropertyFetch { variable, property } => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(ValueExpr::PropertyFetch {
+                receiver: Box::new(ValueExpr::Load {
+                    name: variable.clone(),
+                    line,
+                }),
+                name: property.clone(),
+                line,
+            }),
+            line,
+        }),
         AstStringPart::ArrayAccess { array, indices } => Some(ValueExpr::Cast {
             kind: CastKind::String,
             expr: Box::new(lower_interpolated_array_access(array, indices, line)),
@@ -2061,6 +2088,7 @@ fn assertion_cast_kind_text(kind: AstCastKind) -> &'static str {
         AstCastKind::Binary => "binary",
         AstCastKind::Bool => "bool",
         AstCastKind::Boolean => "boolean",
+        AstCastKind::Object => "object",
     }
 }
 
@@ -2136,6 +2164,7 @@ fn lower_cast_kind(kind: AstCastKind) -> CastKind {
         AstCastKind::Binary => CastKind::Binary,
         AstCastKind::Bool => CastKind::Bool,
         AstCastKind::Boolean => CastKind::Boolean,
+        AstCastKind::Object => CastKind::Object,
     }
 }
 

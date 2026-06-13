@@ -122,6 +122,10 @@ pub enum StringPart {
     Literal(String),
     Variable(String),
     LegacyDollarBraceVariable(String),
+    PropertyFetch {
+        variable: String,
+        property: String,
+    },
     ArrayAccess {
         array: String,
         indices: Vec<StringInterpolationIndex>,
@@ -716,6 +720,23 @@ impl<'a> Lexer<'a> {
                 Some('}') => {
                     self.bump_char();
                     break;
+                }
+                Some('-') if self.rest().starts_with("->") && indices.is_empty() => {
+                    self.bump_char();
+                    self.bump_char();
+                    let property = self.read_interpolation_variable_name(start)?;
+                    self.skip_interpolation_whitespace();
+                    if !matches!(self.peek_char(), Some('}')) {
+                        return Err(Diagnostic::new(
+                            "complex string interpolation is unsupported",
+                            Some(self.current_char_span()),
+                        ));
+                    }
+                    self.bump_char();
+                    return Ok(StringPart::PropertyFetch {
+                        variable: array,
+                        property,
+                    });
                 }
                 Some('[') => {
                     self.bump_char();

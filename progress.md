@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T20:48Z
+Last refresh: 2026-06-13T20:59Z
 Source: `PROGRESS.md`
-Measured: `ptn-x8p9` / `ptn-j2ar` broad PHPT INI blocker split after
+Measured: `ptn-550s.9` foreach object/property residuals after `ptn-x8p9`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 671/671; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 676/676; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 671/671 |
+| Native/compiler Rust suite | 676/676 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

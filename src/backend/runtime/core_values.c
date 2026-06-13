@@ -189,6 +189,7 @@ typedef struct {
 
 typedef struct {
     PtnArrayKeyType type;
+    size_t string_len;
     union {
         int64_t integer;
         const char *string;
@@ -283,6 +284,9 @@ typedef struct {
 
 typedef struct {
     PtnArray *array;
+    PtnObject *object;
+    PtnRuntime *runtime;
+    const char *access_scope;
     size_t index;
     size_t length;
     int valid;
