@@ -1266,6 +1266,93 @@ fn parser_accepts_array_parameter_return_hints_for_functions_and_closures() {
 }
 
 #[test]
+fn parser_accepts_arrow_functions_as_implicit_capture_closures() {
+    let program = parser::parse(
+        "<?php $outer = 1; \
+         $callback = fn(int $x, string &...$rest): array => [$x, $rest, $outer];",
+    )
+    .unwrap();
+
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected arrow function assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected arrow function to lower to anonymous function");
+    };
+
+    assert_eq!(closure.return_type, Some(TypeHint::Array));
+    assert!(!closure.return_by_ref);
+    assert_eq!(closure.parameters.len(), 2);
+    assert_eq!(closure.parameters[0].type_hint, Some(TypeHint::Int));
+    assert_eq!(closure.parameters[1].type_hint, Some(TypeHint::String));
+    assert!(closure.parameters[1].by_ref);
+    assert!(closure.parameters[1].is_variadic);
+    assert_eq!(closure.captures.len(), 1);
+    assert_eq!(closure.captures[0].name, "outer");
+    assert!(!closure.captures[0].by_ref);
+    assert!(!closure.captures[0].warn_if_missing);
+    assert!(matches!(
+        &closure.body[..],
+        [Statement::Return {
+            value: Some(Expr::Array { .. }),
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn parser_propagates_nested_arrow_captures_to_outer_arrow_scope() {
+    let program =
+        parser::parse("<?php $outer = 1; $callback = fn($x) => fn() => $x + $outer;").unwrap();
+
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected arrow function assignment");
+    };
+    let Expr::AnonymousFunction(outer) = value else {
+        panic!("expected outer arrow closure");
+    };
+    assert_eq!(
+        outer
+            .captures
+            .iter()
+            .map(|capture| capture.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["outer"]
+    );
+
+    let [Statement::Return {
+        value: Some(Expr::AnonymousFunction(inner)),
+        ..
+    }] = &outer.body[..]
+    else {
+        panic!("expected nested arrow closure return");
+    };
+    assert_eq!(
+        inner
+            .captures
+            .iter()
+            .map(|capture| capture.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["x", "outer"]
+    );
+}
+
+#[test]
+fn parser_accepts_arrow_function_by_reference_returns() {
+    let program = parser::parse("<?php $value = 1; $callback = fn&() => $value;").unwrap();
+
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected arrow function assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected arrow function to lower to anonymous function");
+    };
+    assert!(closure.return_by_ref);
+    assert_eq!(closure.captures.len(), 1);
+    assert_eq!(closure.captures[0].name, "value");
+}
+
+#[test]
 fn parser_accepts_global_variable_statements() {
     let program = parser::parse("<?php function read_globals() { global $left, $right; }").unwrap();
 
@@ -20089,6 +20176,57 @@ echo $x, \"\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_closure_bind_capture_reference("));
     assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"x\")"));
+}
+
+#[test]
+fn compile_arrow_functions_to_native_binary() {
+    let root = temp_dir("ptn-native-arrow-functions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrow-functions.php");
+    let output = root.join("arrow-functions-bin");
+    fs::write(
+        &input,
+        "<?php
+$x = 5;
+$copy = fn() => ++$x;
+var_dump($copy());
+var_dump($x);
+$outer = 6;
+var_dump((fn() => fn() => $outer)()());
+$missingFn = fn() => $missing;
+echo \"made\\n\";
+var_dump($missingFn());
+class ArrowThis {
+    public function run() {
+        $fn = fn() => isset($this);
+        $static = static fn() => isset($this);
+        var_dump($fn(), $static());
+    }
+}
+(new ArrowThis())->run();
+$adder = fn(int $x, int ...$rest): int => $x + array_sum($rest);
+var_dump($adder(\"3\", 4, 5));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "int(6)\nint(5)\nint(6)\nmade\n{}NULL\nbool(true)\nbool(false)\nint(12)\n",
+            undefined_variable_warning(&input, "missing", 8)
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure("));
+    assert!(c_source.contains("ptn_runtime_read_variable_quiet(&runtime, \"outer\")"));
+    assert!(c_source.contains("ptn_runtime_read_variable_quiet(&runtime, \"this\")"));
 }
 
 #[test]

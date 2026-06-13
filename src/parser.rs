@@ -1340,6 +1340,7 @@ impl Parser {
             captures.push(ClosureUseCapture {
                 name: name.clone(),
                 by_ref,
+                warn_if_missing: true,
                 span: token.span,
             });
 
@@ -2820,6 +2821,14 @@ impl Parser {
             TokenKind::Function => self.parse_anonymous_function_expr(token.span),
             TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Identifier(name) => {
+                if name.eq_ignore_ascii_case("fn") {
+                    return self.parse_arrow_function_expr(token.span, false);
+                }
+                if name.eq_ignore_ascii_case("static") && self.peek_is_identifier("fn") {
+                    let fn_span = self.advance().span;
+                    return self
+                        .parse_arrow_function_expr(combine_spans(token.span, fn_span), true);
+                }
                 let parsed_name =
                     self.parse_name_from_first(name, token.span, None, "expected name")?;
                 let unqualified = matches!(parsed_name.resolution, NameResolution::Unqualified);
@@ -2924,6 +2933,45 @@ impl Parser {
             TokenKind::LeftBracket => self.parse_array_literal(token.span),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
+    }
+
+    fn parse_arrow_function_expr(
+        &mut self,
+        start_span: SourceSpan,
+        is_static: bool,
+    ) -> Result<Expr> {
+        let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        let parameters = self.parse_function_parameters()?;
+        let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            Some(self.parse_return_type_hint()?)
+        } else {
+            None
+        };
+        self.expect_double_arrow()?;
+        self.function_depth += 1;
+        let expression = self.parse_expr();
+        self.function_depth -= 1;
+        let expression = expression?;
+        let captures = arrow_function_captures(&parameters, &expression, is_static);
+        let expression_span = expression.span();
+        let span = combine_spans(start_span, expression_span);
+        Ok(Expr::AnonymousFunction(AnonymousFunction {
+            parameters,
+            captures,
+            return_type,
+            return_by_ref,
+            body: vec![Statement::Return {
+                value: Some(expression),
+                span: expression_span,
+            }],
+            span,
+        }))
     }
 
     fn parse_dynamic_variable_expr(&mut self, dollar_span: SourceSpan) -> Result<Expr> {
@@ -3643,6 +3691,15 @@ impl Parser {
         }
     }
 
+    fn expect_double_arrow(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::DoubleArrow) {
+            Ok(token.span)
+        } else {
+            Err(syntax_error_unexpected(token, Some("=>")))
+        }
+    }
+
     fn expect_statement_terminator(&mut self) -> Result<()> {
         match self.peek().kind {
             TokenKind::Semicolon => {
@@ -3907,6 +3964,359 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::BooleanType => "boolean",
         TokenKind::Eof => "end of file",
     }
+}
+
+fn arrow_function_captures(
+    parameters: &[FunctionParameter],
+    expression: &Expr,
+    is_static: bool,
+) -> Vec<ClosureUseCapture> {
+    let mut exclusions = HashSet::new();
+    for parameter in parameters {
+        exclusions.insert(parameter.name.clone());
+    }
+    if is_static {
+        exclusions.insert("this".to_string());
+    }
+
+    let mut seen = HashSet::new();
+    let mut captures = Vec::new();
+    collect_arrow_captures_from_expr(expression, &exclusions, &mut seen, &mut captures);
+    captures
+}
+
+fn collect_arrow_captures_from_expr(
+    expr: &Expr,
+    exclusions: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureUseCapture>,
+) {
+    match expr {
+        Expr::Variable(name, span) => {
+            add_arrow_capture(name, *span, exclusions, seen, captures);
+        }
+        Expr::DynamicVariable { name, .. } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
+        Expr::AnonymousFunction(function) => {
+            for capture in &function.captures {
+                add_arrow_capture(&capture.name, capture.span, exclusions, seen, captures);
+            }
+        }
+        Expr::IncDec { target, .. } => {
+            collect_arrow_captures_from_inc_dec_target(target, exclusions, seen, captures);
+        }
+        Expr::Assign {
+            target, op, value, ..
+        } => {
+            collect_arrow_captures_from_assignment_target(
+                target,
+                !matches!(op, AssignmentOp::Assign),
+                exclusions,
+                seen,
+                captures,
+            );
+            collect_arrow_captures_from_expr(value, exclusions, seen, captures);
+        }
+        Expr::AssignRef { target, source, .. } => {
+            collect_arrow_captures_from_assignment_target(
+                target, false, exclusions, seen, captures,
+            );
+            collect_arrow_captures_from_expr(source, exclusions, seen, captures);
+        }
+        Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => {
+            for argument in arguments {
+                collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
+            }
+        }
+        Expr::DynamicCall {
+            callee, arguments, ..
+        } => {
+            collect_arrow_captures_from_expr(callee, exclusions, seen, captures);
+            for argument in arguments {
+                collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
+            }
+        }
+        Expr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            for argument in arguments {
+                collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
+            }
+        }
+        Expr::PropertyFetch { receiver, .. } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+        }
+        Expr::Clone { expr, .. } => {
+            collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
+        }
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    collect_arrow_captures_from_expr(key, exclusions, seen, captures);
+                }
+                match &element.value {
+                    ArrayElementValue::Value(value) => {
+                        collect_arrow_captures_from_expr(value, exclusions, seen, captures);
+                    }
+                    ArrayElementValue::Reference(target) => {
+                        collect_arrow_captures_from_reference_target(
+                            target, exclusions, seen, captures,
+                        );
+                    }
+                }
+            }
+        }
+        Expr::ArrayAccess { array, index, .. } => {
+            collect_arrow_captures_from_expr(array, exclusions, seen, captures);
+            if let Some(index) = index {
+                collect_arrow_captures_from_expr(index, exclusions, seen, captures);
+            }
+        }
+        Expr::Isset { targets, .. } => {
+            for target in targets {
+                collect_arrow_captures_from_expr(target, exclusions, seen, captures);
+            }
+        }
+        Expr::Empty { target, .. }
+        | Expr::Print {
+            expression: target, ..
+        }
+        | Expr::Include { path: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::Cast { expr: target, .. }
+        | Expr::Grouped { expr: target, .. } => {
+            collect_arrow_captures_from_expr(target, exclusions, seen, captures);
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_arrow_captures_from_expr(left, exclusions, seen, captures);
+            collect_arrow_captures_from_expr(right, exclusions, seen, captures);
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            collect_arrow_captures_from_expr(condition, exclusions, seen, captures);
+            if let Some(if_true) = if_true {
+                collect_arrow_captures_from_expr(if_true, exclusions, seen, captures);
+            }
+            collect_arrow_captures_from_expr(if_false, exclusions, seen, captures);
+        }
+        Expr::InterpolatedString(parts, _) => {
+            for part in parts {
+                collect_arrow_captures_from_string_part(part, exclusions, seen, captures);
+            }
+        }
+        Expr::String(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _)
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. } => {}
+    }
+}
+
+fn collect_arrow_captures_from_assignment_target(
+    target: &AssignmentTarget,
+    reads_target: bool,
+    exclusions: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureUseCapture>,
+) {
+    match target {
+        AssignmentTarget::Variable { name, span } => {
+            if reads_target {
+                add_arrow_capture(name, *span, exclusions, seen, captures);
+            }
+        }
+        AssignmentTarget::DynamicVariable { name, .. } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
+        AssignmentTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
+        }
+        AssignmentTarget::ArrayDim(target) => {
+            if reads_target {
+                add_arrow_capture(&target.array, target.span, exclusions, seen, captures);
+            }
+            collect_arrow_captures_from_array_dim_target(target, exclusions, seen, captures);
+        }
+        AssignmentTarget::Property { receiver, .. } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+        }
+        AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::List(target) => {
+            for element in &target.elements {
+                if let Some(key) = &element.key {
+                    collect_arrow_captures_from_expr(key, exclusions, seen, captures);
+                }
+                match &element.target {
+                    ListAssignmentElementTarget::Value(target) => {
+                        collect_arrow_captures_from_assignment_target(
+                            target, false, exclusions, seen, captures,
+                        );
+                    }
+                    ListAssignmentElementTarget::Reference(target) => {
+                        collect_arrow_captures_from_reference_target(
+                            target, exclusions, seen, captures,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn collect_arrow_captures_from_reference_target(
+    target: &ReferenceTarget,
+    exclusions: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureUseCapture>,
+) {
+    match target {
+        ReferenceTarget::Variable { name, span } => {
+            add_arrow_capture(name, *span, exclusions, seen, captures);
+        }
+        ReferenceTarget::ArrayDim(target) => {
+            add_arrow_capture(&target.array, target.span, exclusions, seen, captures);
+            collect_arrow_captures_from_array_dim_target(target, exclusions, seen, captures);
+        }
+    }
+}
+
+fn collect_arrow_captures_from_inc_dec_target(
+    target: &IncDecTarget,
+    exclusions: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureUseCapture>,
+) {
+    match target {
+        IncDecTarget::Variable { name, span } => {
+            add_arrow_capture(name, *span, exclusions, seen, captures);
+        }
+        IncDecTarget::DynamicVariable { name, .. } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
+        IncDecTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
+        }
+        IncDecTarget::ArrayDim(target) => {
+            add_arrow_capture(&target.array, target.span, exclusions, seen, captures);
+            collect_arrow_captures_from_array_dim_target(target, exclusions, seen, captures);
+        }
+        IncDecTarget::Property { receiver, .. } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+        }
+        IncDecTarget::StaticProperty { .. } => {}
+    }
+}
+
+fn collect_arrow_captures_from_array_dim_target(
+    target: &ArrayDimTarget,
+    exclusions: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureUseCapture>,
+) {
+    for dimension in &target.dimensions {
+        if let Some(dimension) = dimension {
+            collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+        }
+    }
+}
+
+fn collect_arrow_captures_from_string_part(
+    part: &StringPart,
+    exclusions: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureUseCapture>,
+) {
+    match part {
+        StringPart::Literal(_) => {}
+        StringPart::Variable(name) | StringPart::LegacyDollarBraceVariable(name) => {
+            add_arrow_capture(
+                name,
+                SourceSpan::new(0, 0, 0, 0),
+                exclusions,
+                seen,
+                captures,
+            );
+        }
+        StringPart::ArrayAccess { array, indices } => {
+            add_arrow_capture(
+                array,
+                SourceSpan::new(0, 0, 0, 0),
+                exclusions,
+                seen,
+                captures,
+            );
+            for index in indices {
+                if let StringInterpolationIndex::Variable(name) = index {
+                    add_arrow_capture(
+                        name,
+                        SourceSpan::new(0, 0, 0, 0),
+                        exclusions,
+                        seen,
+                        captures,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn add_arrow_capture(
+    name: &str,
+    span: SourceSpan,
+    exclusions: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureUseCapture>,
+) {
+    if exclusions.contains(name) || is_php_auto_global(name) || !seen.insert(name.to_string()) {
+        return;
+    }
+    captures.push(ClosureUseCapture {
+        name: name.to_string(),
+        by_ref: false,
+        warn_if_missing: false,
+        span,
+    });
+}
+
+fn is_php_auto_global(name: &str) -> bool {
+    matches!(
+        name,
+        "GLOBALS"
+            | "_SERVER"
+            | "_GET"
+            | "_POST"
+            | "_FILES"
+            | "_COOKIE"
+            | "_SESSION"
+            | "_REQUEST"
+            | "_ENV"
+    )
 }
 
 fn escape_token_text(value: &str) -> String {

@@ -104,9 +104,19 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires readonly class/property modifiers",
         ),
         (
-            "arrow function",
-            "--TEST--\narrow\n--FILE--\n<?php\n$fn = fn($value) => $value + 1;\n--EXPECT--\n",
-            "requires arrow function syntax",
+            "generator yield",
+            "--TEST--\nyield\n--FILE--\n<?php\n$fn = fn() => yield 123;\n--EXPECT--\n",
+            "requires generator/yield lowering",
+        ),
+        (
+            "nullable type hint",
+            "--TEST--\nnullable\n--FILE--\n<?php\n$fn = fn(?int... $args): array => $args;\n--EXPECT--\n",
+            "requires nullable type-hint metadata",
+        ),
+        (
+            "never return type",
+            "--TEST--\nnever\n--FILE--\n<?php\n$fn = fn(): never => 42;\n--EXPECT--\n",
+            "requires `never` return type",
         ),
         (
             "userland throw",
@@ -156,6 +166,18 @@ fn phpt_classifier_keeps_asymmetric_property_visibility_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_supported_arrow_functions_runnable() {
+    let classification = classify(
+        "--TEST--\narrow\n--FILE--\n<?php\n$fn = fn($value) => $value + 1;\nvar_dump($fn(1));\n--EXPECT--\nint(2)\n",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
 fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
     let cases = [
         (
@@ -167,6 +189,11 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "autoload",
             "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register(function ($class) {});\n--EXPECT--\n",
             "requires runtime class autoload symbol-table mutation",
+        ),
+        (
+            "reflection closure binding",
+            "--TEST--\nreflection\n--FILE--\n<?php\n$r = new ReflectionFunction(fn() => 1);\nvar_dump($r->getClosureThis());\n--EXPECT--\n",
+            "requires ReflectionFunction closure binding metadata",
         ),
         (
             "non-public method visibility",

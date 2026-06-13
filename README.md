@@ -17,6 +17,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   introspection, scalar, array, and void return type hints, array defaults,
   by-reference returns, typed coercion, constructor dispatch, public destructor
   dispatch, inherited static call dispatch, and metadata intrinsics.
+- Anonymous closures and arrow functions lower through the shared closure
+  runtime, including explicit `use(...)` captures, implicit arrow by-value
+  captures, nested capture propagation, by-reference returns, typed parameters,
+  variadics, and `static fn` `$this` exclusion.
 - Includes share caller file scope and return values; bounded dynamic
   include/require dispatch uses canonical once guards when candidate string
   paths are statically enumerable.
@@ -118,8 +122,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, and broad unsupported language surfaces such as anonymous
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
-  arrow functions, userland `throw`, readonly modifiers, asymmetric property
-  visibility, heredoc/nowdoc strings, class-metadata blockers, and currently
+  generator `yield`, nullable type hints, userland `throw`, readonly modifiers,
+  heredoc/nowdoc strings, class/reflection-metadata blockers, and currently
   unmodeled mutating array-internal helpers such as `array_splice()`,
   `array_walk_recursive()`, `array_multisort()`, `usort()`, `uasort()`, and
   `uksort()` are mapped to blocker categories with source evidence; broad

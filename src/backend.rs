@@ -6433,14 +6433,32 @@ impl ValueEmitter {
                 out.push_str("\");\n");
                 out.push_str("    ptn_closure_bind_capture_reference(");
             } else {
-                out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
-                out.push_str(&c_string(&capture.name));
-                out.push_str("\", \"");
-                out.push_str(&c_string(&self.source_file));
-                out.push_str("\", ");
-                out.push_str(&capture.line.to_string());
-                out.push_str(");\n");
-                out.push_str("    ptn_closure_set_capture(");
+                if capture.warn_if_missing {
+                    out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+                    out.push_str(&c_string(&capture.name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&capture.line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    ptn_closure_set_capture(");
+                } else {
+                    out.push_str(";\n");
+                    out.push_str("    PtnLookupResult ");
+                    out.push_str(&capture_temp);
+                    out.push_str("_lookup = ptn_runtime_read_variable_quiet(&runtime, \"");
+                    out.push_str(&c_string(&capture.name));
+                    out.push_str("\");\n");
+                    out.push_str("    if (");
+                    out.push_str(&capture_temp);
+                    out.push_str("_lookup.exists) {\n");
+                    out.push_str("        ");
+                    out.push_str(&capture_temp);
+                    out.push_str(" = ");
+                    out.push_str(&capture_temp);
+                    out.push_str("_lookup.value;\n");
+                    out.push_str("        ptn_closure_set_capture(");
+                }
             }
             out.push_str(&closure_temp);
             out.push_str(", \"");
@@ -6448,7 +6466,11 @@ impl ValueEmitter {
             out.push_str("\", ");
             out.push_str(&capture_temp);
             out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &capture_temp);
+            if capture.by_ref || capture.warn_if_missing {
+                emit_value_cleanup(out, "    ", &capture_temp);
+            } else {
+                out.push_str("    }\n");
+            }
         }
 
         closure_temp

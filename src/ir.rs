@@ -388,6 +388,7 @@ pub enum ValueExpr {
 pub struct ClosureCapture {
     pub name: String,
     pub by_ref: bool,
+    pub warn_if_missing: bool,
     pub line: usize,
 }
 
@@ -1077,6 +1078,7 @@ fn lower_closure_capture(capture: &AstClosureUseCapture) -> ClosureCapture {
     ClosureCapture {
         name: capture.name.clone(),
         by_ref: capture.by_ref,
+        warn_if_missing: capture.warn_if_missing,
         line: capture.span.line,
     }
 }

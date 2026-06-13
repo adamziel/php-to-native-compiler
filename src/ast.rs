@@ -103,6 +103,7 @@ pub struct AnonymousFunction {
 pub struct ClosureUseCapture {
     pub name: String,
     pub by_ref: bool,
+    pub warn_if_missing: bool,
     pub span: SourceSpan,
 }
 

@@ -480,8 +480,19 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(static[[:space:]]+)?fn[[:space:]]*\(/ && line ~ /=>/) {
-                print "unsupported-language\trequires arrow function syntax (`fn(...) => ...`) and lexical capture lowering, outside PTN closure parser/lowering"
+            if (line ~ /(^|[^[:alnum:]_$])yield([[:space:];(),]|$)/) {
+                print "unsupported-language\trequires generator/yield lowering, outside PTN function and iterator runtime"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[,(])[[:space:]]*\?[[:space:]]*([a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:].&]*\$[a-z_]/ ||
+                line ~ /\)[[:space:]]*:[[:space:]]*\?[[:space:]]*([a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)([^[:alnum:]_]|$)/) {
+                print "unsupported-language\trequires nullable type-hint metadata and coercion (`?T`), outside PTN modeled type hints"
+                found = 1
+                exit
+            }
+            if (line ~ /\)[[:space:]]*:[[:space:]]*never([^[:alnum:]_]|$)/) {
+                print "unsupported-language\trequires `never` return type control-flow validation, outside PTN modeled type hints"
                 found = 1
                 exit
             }
@@ -505,7 +516,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if ($0 ~ /\.\.\./) {
+            if (line ~ /\.\.\./) {
                 declaration = line ~ /(^|[^[:alnum:]_$])(function|fn)[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*\.\.\./
                 if (!declaration) {
                     print "unsupported-language\trequires call-site or array unpacking (`...`), outside PTN modeled call/array lowering"
@@ -610,6 +621,11 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])(spl_autoload_[a-z0-9_]*|__autoload)[[:space:]]*\(/) {
                 print "unsupported-class-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /->[[:space:]]*getclosurethis[[:space:]]*\(/) {
+                print "unsupported-class-metadata\trequires ReflectionFunction closure binding metadata (`getClosureThis()`), outside PTN modeled reflection metadata"
                 found = 1
                 exit
             }
