@@ -363,6 +363,7 @@ typedef struct {
     int emitted_deprecation;
     int emitted_warning;
     int suppressed;
+    int display_errors;
     int64_t error_reporting;
 } PtnDiagnosticSink;
 

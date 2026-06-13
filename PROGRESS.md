@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-13T10:06Z
-Measured: `ptn-ih9g` rebased on current `origin/master` `ea501c3b5`;
+Refresh: 2026-06-13T10:30Z
+Measured: `ptn-cijm` rebased on current `origin/master` `527a6eb99`;
 verification green.
 
 Recent RC slices cover constants, embedded-NUL `var_export()`, includes/once
@@ -14,25 +14,27 @@ metadata, keyword boolean tails after direct assignments, locale constants and
 `setlocale()` current/C/POSIX queries including `null`, catchable
 divide/modulo/shift operator errors, alternate `<>` not-equal parsing, offset
 compound/coalescing, and non-finite float TypeErrors through shared
-integer-internal validation.
+integer-internal validation, plus modeled `display_errors` and
+`zend.assertions` ini keys.
 
 Recent movers include search/count internals, PHP 8.4 array warning/overflow
 behavior, persistent standard streams, `pathinfo()`,
 `property_exists()`, PHPT manifests, modeled `LC_*` constants, C/POSIX
 `setlocale()`, catchable operator exceptions, tests/lang operator rows,
 `crc32()`, `str_replace()` counts, and integer validation for `chr()`,
-`intdiv()`, and file offsets.
+`intdiv()`, and file offsets, plus unsupported-ini PHPT promotion for
+`display_errors` and `zend.assertions`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 588 | 588 | 0 |
+| Native/compiler Rust suite | 590 | 590 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 270 | 268 | 2 |
-| PHPT Zend rows | 88 | 88 | 0 |
-| PHPT ext/standard rows | 130 | 130 | 0 |
+| PHPT bounded manifest | 270 | 270 | 0 |
+| PHPT Zend rows | 89 | 89 | 0 |
+| PHPT ext/standard rows | 131 | 131 | 0 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT tests/basic+func+lang | 47 | 47 | 0 |
 | PHPT other rows | 5 | 5 | 0 |
@@ -56,19 +58,19 @@ search/slice/count internals, `pathinfo()`, `crc32()`, `basename()`, `chr()`
 diagnostics, locale constants and `setlocale()`, `var_export()`, array
 mutators, inc/dec, foreach destructuring, dynamic-variable writes/unsets,
 catchable operator arithmetic exceptions, alternate not-equal parsing, keyword
-boolean tails, and array/string-offset compound/null coalescing assignments.
+boolean tails, array/string-offset compound/null coalescing assignments, and
+the current `display_errors`/`zend.assertions` ini surface.
 
 ## Remaining Bounded Failures
 
-- None among the 268 runnable rows in the current 270-row bounded manifest.
-  Two selected rows are classified out for unsupported ini requirements.
+- None among the current 270-row bounded manifest.
 
 ## Verification
 
-Current branch verification for `ptn-ih9g`: diff check, `cargo fmt`, focused
-setlocale native test and `gh19070.phpt` 1/1, `cargo test` native/compiler
-588/588 plus ancillary suites, isolated bounded PHPT 268/268 plus 2
-exclusions, PHPT COW 29/29, and post-merge COW 26/26.
+Current branch verification for `ptn-cijm`: `cargo fmt --check`, focused ini
+native tests 2/2, direct former unsupported-ini PHPT rows 2/2, `cargo test`
+with `compile_native` 590/590 plus source/COW/doc tests, bounded PHPT 270/270
+with 0 classified exclusions, PHPT COW 29/29, and prior post-merge COW 26/26.
 
 Follow-ups remain visibility/exception/reference/global edges, typed/promoted
 properties, interfaces/traits, namespaces, fallback/reflection, magic methods,

@@ -15877,6 +15877,55 @@ fn phpc_error_reporting_ini_sets_initial_level() {
 }
 
 #[test]
+fn phpc_display_errors_ini_controls_warning_output() {
+    let root = temp_dir("ptn-phpc-display-errors-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("display-errors-ini.php");
+    fs::write(
+        &input,
+        "<?php echo ini_get('display_errors'), \"\\n\"; echo $missing; echo \"done\\n\";",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("display_errors=false")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "\ndone\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_zend_assertions_ini_is_exposed_to_runtime() {
+    let root = temp_dir("ptn-phpc-zend-assertions-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-assertions-ini.php");
+    fs::write(
+        &input,
+        "<?php echo ini_get('zend.assertions'), \"\\n\"; try { assert(false); } catch (AssertionError $e) { echo \"asserted\\n\"; }",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.assertions=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1\nasserted\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_if_elseif_else_to_native_binary() {
     let root = temp_dir("ptn-native-if-elseif-else");
     fs::create_dir_all(&root).unwrap();

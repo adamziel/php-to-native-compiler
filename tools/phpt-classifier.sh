@@ -8,7 +8,7 @@
 # Generic PHP semantic gaps remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="date.timezone,error_reporting,extension_dir,pcre.backtrack_limit,precision"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="date.timezone,display_errors,error_reporting,extension_dir,pcre.backtrack_limit,precision,zend.assertions"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,GET,HEADERS,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
 
 ptn_phpt_supported_extensions() {

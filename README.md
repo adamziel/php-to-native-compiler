@@ -43,7 +43,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,
   `zend_version()`, `PHP_VERSION`, `PHP_SAPI`, `get_loaded_extensions()`,
   locale constants, bounded `setlocale()` current/C/POSIX queries and sets,
-  and bounded class/property existence checks.
+  and bounded class/property existence checks; `ini_get()` exposes the current
+  modeled ini keys including `display_errors` and `zend.assertions`.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable and variable-root array/append compounds share boxed
@@ -84,8 +85,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - PHPT runners preclassify broad rows before execution and write selected,
   runnable, classification, excluded, and per-category manifests under
   `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
-  `pcre`, and `standard` extension surface plus the supported ini keys; set
-  `PTN_PHPT_CLASSIFY=0` for raw php-src `run-tests.php` pass-through.
+  `pcre`, and `standard` extension surface plus the supported ini keys,
+  including `display_errors` and `zend.assertions`; set `PTN_PHPT_CLASSIFY=0`
+  for raw php-src `run-tests.php` pass-through.
 - Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from
   `Zend/tests`, `ext/standard/tests`, and core `tests`, recording the php-src
   corpus revision plus pass/fail/skip/warn counts without requiring all rows to

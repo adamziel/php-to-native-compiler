@@ -838,6 +838,11 @@ Post-RC architecture remains explicit rather than hidden:
   PHP-style mask on writes or current mask on reads, and filters the modeled
   shared warning/deprecation/notice emitters. Expression-level `@` suppression
   still stacks independently with the configured mask.
+- `phpc -d display_errors=...` accepts the current boolean-like ini values for
+  the generated native diagnostics path and exposes the normalized value through
+  `ini_get('display_errors')`. `phpc -d zend.assertions=N` is accepted and
+  exposed through `ini_get('zend.assertions')`; the current `assert()` runtime
+  remains active for the modeled assertion slice.
 - `basename()` strips trailing platform path separators from the current
   binary-safe string path, returns the final path segment, and removes a
   matching non-empty suffix only when the suffix is shorter than that segment.

@@ -95,6 +95,8 @@ enum Mode {
 struct RuntimeIni {
     precision: Option<u8>,
     error_reporting: Option<i64>,
+    display_errors: Option<String>,
+    zend_assertions: Option<i64>,
 }
 
 impl Invocation {
@@ -203,6 +205,28 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         if let Ok(parsed) = raw_value.trim().parse::<i64>() {
             ini.error_reporting = Some(parsed);
         }
+    } else if name.eq_ignore_ascii_case("display_errors") {
+        ini.display_errors = Some(normalize_boolish_ini_string(raw_value).to_string());
+    } else if name.eq_ignore_ascii_case("zend.assertions") {
+        if let Ok(parsed) = raw_value.parse::<i64>() {
+            ini.zend_assertions = Some(parsed);
+        }
+    }
+}
+
+fn normalize_boolish_ini_string(value: &str) -> &str {
+    if value.eq_ignore_ascii_case("false")
+        || value.eq_ignore_ascii_case("off")
+        || value.eq_ignore_ascii_case("no")
+    {
+        ""
+    } else if value.eq_ignore_ascii_case("true")
+        || value.eq_ignore_ascii_case("on")
+        || value.eq_ignore_ascii_case("yes")
+    {
+        "1"
+    } else {
+        value
     }
 }
 
@@ -226,6 +250,12 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     }
     if let Some(error_reporting) = ini.error_reporting {
         command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());
+    }
+    if let Some(display_errors) = &ini.display_errors {
+        command.env("PTN_PHP_DISPLAY_ERRORS", display_errors);
+    }
+    if let Some(zend_assertions) = ini.zend_assertions {
+        command.env("PTN_PHP_ZEND_ASSERTIONS", zend_assertions.to_string());
     }
     let status = command
         .status()

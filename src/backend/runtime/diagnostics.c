@@ -164,6 +164,12 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->emitted_deprecation = 0;
     diagnostics->emitted_warning = 0;
     diagnostics->suppressed = 0;
+    diagnostics->display_errors = 1;
+    const char *configured_display_errors = getenv("PTN_PHP_DISPLAY_ERRORS");
+    if (configured_display_errors != NULL) {
+        diagnostics->display_errors =
+            configured_display_errors[0] != '\0' && strcmp(configured_display_errors, "0") != 0;
+    }
     diagnostics->error_reporting = PTN_E_ALL;
     int64_t configured_error_reporting = 0;
     if (ptn_parse_int64_env("PTN_PHP_ERROR_REPORTING", &configured_error_reporting)) {
@@ -172,7 +178,9 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
 }
 
 static PTN_UNUSED int ptn_diagnostics_should_emit(PtnDiagnosticSink *diagnostics, int64_t severity) {
-    return diagnostics->suppressed <= 0 && (diagnostics->error_reporting & severity) != 0;
+    return diagnostics->display_errors &&
+        diagnostics->suppressed <= 0 &&
+        (diagnostics->error_reporting & severity) != 0;
 }
 
 static void ptn_emit_undefined_variable_warning(

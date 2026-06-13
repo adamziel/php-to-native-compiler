@@ -8273,6 +8273,16 @@ static int ptn_ini_value(PtnStringOperand option, PtnValue *out) {
         *out = ptn_string("14");
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "display_errors")) {
+        const char *configured = getenv("PTN_PHP_DISPLAY_ERRORS");
+        *out = ptn_string(configured == NULL ? "1" : configured);
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
+        const char *configured = getenv("PTN_PHP_ZEND_ASSERTIONS");
+        *out = ptn_string(configured == NULL ? "1" : configured);
+        return 1;
+    }
     return 0;
 }
 
