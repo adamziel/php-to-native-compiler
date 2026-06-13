@@ -6796,6 +6796,15 @@ static void ptn_emit_file_warning(
     free(message);
 }
 
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+);
+
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "fopen", 1, "filename", args[0], line);
@@ -6857,6 +6866,101 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
     ptn_resource_close(value.as.resource);
     (void)line;
     return ptn_bool(1);
+}
+
+static PtnResource *ptn_internal_expect_open_stream_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($stream) must be of type resource, %s given",
+            function_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    if (value.as.resource->stream == NULL) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($stream) must be an open stream resource",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    (void)line;
+    return value.as.resource;
+}
+
+static PtnValue ptn_internal_fwrite_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, function_name, args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, function_name, 2, "data", args[1], line);
+    size_t length = data.len;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        int64_t requested = ptn_internal_expect_integer_arg(runtime, function_name, 3, "length", args[2], line);
+        if (requested < 0) {
+            ptn_string_operand_free(data);
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #3 ($length) must be greater than or equal to 0",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            return ptn_null();
+        }
+        if ((uint64_t)requested < length) {
+            length = (size_t)requested;
+        }
+    }
+
+    size_t written = fwrite(data.data, 1, length, resource->stream);
+    ptn_string_operand_free(data);
+    if (written != length && ferror(resource->stream)) {
+        clearerr(resource->stream);
+        return ptn_bool(0);
+    }
+    if (written > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)written);
+}
+
+static PtnValue ptn_internal_fwrite(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_fwrite_named(runtime, "fwrite", argc, args, line);
+}
+
+static PtnValue ptn_internal_fputs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_fwrite_named(runtime, "fputs", argc, args, line);
 }
 
 static void ptn_stream_meta_set(PtnArray *array, const char *key, PtnValue value) {
@@ -7210,6 +7314,14 @@ static int ptn_stat_path(const char *path, struct stat *info) {
     return stat(path, info);
 }
 
+static int ptn_lstat_path(const char *path, struct stat *info) {
+#if defined(_WIN32)
+    return stat(path, info);
+#else
+    return lstat(path, info);
+#endif
+}
+
 static int ptn_path_exists_c(const char *path) {
     struct stat info;
     return ptn_stat_path(path, &info) == 0;
@@ -7223,6 +7335,38 @@ static int ptn_path_is_directory_c(const char *path) {
 static int ptn_path_is_regular_file_c(const char *path) {
     struct stat info;
     return ptn_stat_path(path, &info) == 0 && S_ISREG(info.st_mode);
+}
+
+static int ptn_path_is_link_c(const char *path) {
+    struct stat info;
+    if (ptn_lstat_path(path, &info) != 0) {
+        return 0;
+    }
+#if defined(S_ISLNK)
+    return S_ISLNK(info.st_mode);
+#else
+    return 0;
+#endif
+}
+
+static int ptn_platform_access(const char *path, int mode) {
+#if defined(_WIN32)
+    return _access(path, mode) == 0;
+#else
+    return access(path, mode) == 0;
+#endif
+}
+
+static int ptn_path_is_readable_c(const char *path) {
+    return ptn_platform_access(path, R_OK);
+}
+
+static int ptn_path_is_writable_c(const char *path) {
+    return ptn_platform_access(path, W_OK);
+}
+
+static int ptn_path_is_executable_c(const char *path) {
+    return ptn_platform_access(path, X_OK);
 }
 
 static int ptn_platform_mkdir(const char *path, int64_t mode) {
@@ -7331,6 +7475,413 @@ static PtnValue ptn_internal_file_exists(PtnRuntime *runtime, size_t argc, const
     return ptn_path_predicate(runtime, "file_exists", args[0], line, ptn_path_exists_c);
 }
 
+static void ptn_emit_stat_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *failure_kind,
+    const char *path,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "%s(): %s failed for %s", function_name, failure_kind, path);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, "%s(): %s failed for %s", function_name, failure_kind, path);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        fputc('\n', stdout);
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static void ptn_emit_function_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *detail,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "%s(): %s", function_name, detail);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, "%s(): %s", function_name, detail);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        fputc('\n', stdout);
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+typedef enum {
+    PTN_STAT_FIELD_DEV,
+    PTN_STAT_FIELD_INO,
+    PTN_STAT_FIELD_MODE,
+    PTN_STAT_FIELD_NLINK,
+    PTN_STAT_FIELD_UID,
+    PTN_STAT_FIELD_GID,
+    PTN_STAT_FIELD_RDEV,
+    PTN_STAT_FIELD_SIZE,
+    PTN_STAT_FIELD_ATIME,
+    PTN_STAT_FIELD_MTIME,
+    PTN_STAT_FIELD_CTIME,
+    PTN_STAT_FIELD_BLKSIZE,
+    PTN_STAT_FIELD_BLOCKS
+} PtnStatField;
+
+static int64_t ptn_stat_field_value(const struct stat *info, PtnStatField field) {
+    switch (field) {
+        case PTN_STAT_FIELD_DEV:
+            return (int64_t)info->st_dev;
+        case PTN_STAT_FIELD_INO:
+            return (int64_t)info->st_ino;
+        case PTN_STAT_FIELD_MODE:
+            return (int64_t)info->st_mode;
+        case PTN_STAT_FIELD_NLINK:
+            return (int64_t)info->st_nlink;
+        case PTN_STAT_FIELD_UID:
+            return (int64_t)info->st_uid;
+        case PTN_STAT_FIELD_GID:
+            return (int64_t)info->st_gid;
+        case PTN_STAT_FIELD_RDEV:
+            return (int64_t)info->st_rdev;
+        case PTN_STAT_FIELD_SIZE:
+            return (int64_t)info->st_size;
+        case PTN_STAT_FIELD_ATIME:
+            return (int64_t)info->st_atime;
+        case PTN_STAT_FIELD_MTIME:
+            return (int64_t)info->st_mtime;
+        case PTN_STAT_FIELD_CTIME:
+            return (int64_t)info->st_ctime;
+        case PTN_STAT_FIELD_BLKSIZE:
+#if defined(_WIN32)
+            return -1;
+#else
+            return (int64_t)info->st_blksize;
+#endif
+        case PTN_STAT_FIELD_BLOCKS:
+#if defined(_WIN32)
+            return -1;
+#else
+            return (int64_t)info->st_blocks;
+#endif
+    }
+    return 0;
+}
+
+static void ptn_stat_array_set(PtnValue *array, int64_t index, const char *name, int64_t value) {
+    ptn_array_set_entry(array->as.array, ptn_array_int_key(index), ptn_int(value));
+    ptn_array_set_entry(array->as.array, ptn_array_string_key(name), ptn_int(value));
+}
+
+static PtnValue ptn_stat_array_from_info(const struct stat *info) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_stat_array_set(&result, 0, "dev", ptn_stat_field_value(info, PTN_STAT_FIELD_DEV));
+    ptn_stat_array_set(&result, 1, "ino", ptn_stat_field_value(info, PTN_STAT_FIELD_INO));
+    ptn_stat_array_set(&result, 2, "mode", ptn_stat_field_value(info, PTN_STAT_FIELD_MODE));
+    ptn_stat_array_set(&result, 3, "nlink", ptn_stat_field_value(info, PTN_STAT_FIELD_NLINK));
+    ptn_stat_array_set(&result, 4, "uid", ptn_stat_field_value(info, PTN_STAT_FIELD_UID));
+    ptn_stat_array_set(&result, 5, "gid", ptn_stat_field_value(info, PTN_STAT_FIELD_GID));
+    ptn_stat_array_set(&result, 6, "rdev", ptn_stat_field_value(info, PTN_STAT_FIELD_RDEV));
+    ptn_stat_array_set(&result, 7, "size", ptn_stat_field_value(info, PTN_STAT_FIELD_SIZE));
+    ptn_stat_array_set(&result, 8, "atime", ptn_stat_field_value(info, PTN_STAT_FIELD_ATIME));
+    ptn_stat_array_set(&result, 9, "mtime", ptn_stat_field_value(info, PTN_STAT_FIELD_MTIME));
+    ptn_stat_array_set(&result, 10, "ctime", ptn_stat_field_value(info, PTN_STAT_FIELD_CTIME));
+    ptn_stat_array_set(&result, 11, "blksize", ptn_stat_field_value(info, PTN_STAT_FIELD_BLKSIZE));
+    ptn_stat_array_set(&result, 12, "blocks", ptn_stat_field_value(info, PTN_STAT_FIELD_BLOCKS));
+    return result;
+}
+
+static int ptn_stat_path_from_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue path_value,
+    size_t line,
+    int use_lstat,
+    const char *failure_kind,
+    struct stat *info
+) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(path_value);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        char message[96];
+        int written = snprintf(message, sizeof(message), "%s(): Filename contains null byte", function_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+            fputc('\n', stdout);
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return 0;
+    }
+    if (path[0] == '\0') {
+        free(path);
+        return 0;
+    }
+
+    int ok = use_lstat ? ptn_lstat_path(path, info) == 0 : ptn_stat_path(path, info) == 0;
+    if (!ok) {
+        ptn_emit_stat_warning(runtime, function_name, failure_kind, path, line);
+        free(path);
+        return 0;
+    }
+    free(path);
+    return 1;
+}
+
+static PtnValue ptn_internal_stat_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue path_value,
+    size_t line,
+    int use_lstat,
+    const char *failure_kind
+) {
+    struct stat info;
+    if (!ptn_stat_path_from_value(runtime, function_name, path_value, line, use_lstat, failure_kind, &info)) {
+        return ptn_bool(0);
+    }
+    return ptn_stat_array_from_info(&info);
+}
+
+static PtnValue ptn_internal_file_stat_field(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue path_value,
+    size_t line,
+    int use_lstat,
+    const char *failure_kind,
+    PtnStatField field
+) {
+    struct stat info;
+    if (!ptn_stat_path_from_value(runtime, function_name, path_value, line, use_lstat, failure_kind, &info)) {
+        return ptn_bool(0);
+    }
+    return ptn_int(ptn_stat_field_value(&info, field));
+}
+
+static const char *ptn_filetype_from_mode(mode_t mode) {
+    if (S_ISREG(mode)) {
+        return "file";
+    }
+    if (S_ISDIR(mode)) {
+        return "dir";
+    }
+#if defined(S_ISLNK)
+    if (S_ISLNK(mode)) {
+        return "link";
+    }
+#endif
+#if defined(S_ISCHR)
+    if (S_ISCHR(mode)) {
+        return "char";
+    }
+#endif
+#if defined(S_ISBLK)
+    if (S_ISBLK(mode)) {
+        return "block";
+    }
+#endif
+#if defined(S_ISFIFO)
+    if (S_ISFIFO(mode)) {
+        return "fifo";
+    }
+#endif
+#if defined(S_ISSOCK)
+    if (S_ISSOCK(mode)) {
+        return "socket";
+    }
+#endif
+    return "unknown";
+}
+
+static PtnValue ptn_internal_filetype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    struct stat info;
+    if (!ptn_stat_path_from_value(runtime, "filetype", args[0], line, 1, "Lstat", &info)) {
+        return ptn_bool(0);
+    }
+    return ptn_string(ptn_filetype_from_mode(info.st_mode));
+}
+
+static PtnValue ptn_internal_stat(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_stat_named(runtime, "stat", args[0], line, 0, "stat");
+}
+
+static PtnValue ptn_internal_lstat(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_stat_named(runtime, "lstat", args[0], line, 1, "Lstat");
+}
+
+static PtnValue ptn_internal_fileatime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_file_stat_field(runtime, "fileatime", args[0], line, 0, "stat", PTN_STAT_FIELD_ATIME);
+}
+
+static PtnValue ptn_internal_filectime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_file_stat_field(runtime, "filectime", args[0], line, 0, "stat", PTN_STAT_FIELD_CTIME);
+}
+
+static PtnValue ptn_internal_filegroup(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_file_stat_field(runtime, "filegroup", args[0], line, 0, "stat", PTN_STAT_FIELD_GID);
+}
+
+static PtnValue ptn_internal_fileinode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_file_stat_field(runtime, "fileinode", args[0], line, 0, "stat", PTN_STAT_FIELD_INO);
+}
+
+static PtnValue ptn_internal_filemtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_file_stat_field(runtime, "filemtime", args[0], line, 0, "stat", PTN_STAT_FIELD_MTIME);
+}
+
+static PtnValue ptn_internal_fileowner(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_file_stat_field(runtime, "fileowner", args[0], line, 0, "stat", PTN_STAT_FIELD_UID);
+}
+
+static PtnValue ptn_internal_fileperms(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_file_stat_field(runtime, "fileperms", args[0], line, 0, "stat", PTN_STAT_FIELD_MODE);
+}
+
+static PtnValue ptn_internal_filesize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_file_stat_field(runtime, "filesize", args[0], line, 0, "stat", PTN_STAT_FIELD_SIZE);
+}
+
+static PtnValue ptn_internal_clearstatcache(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_chmod(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "chmod(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    int64_t permissions = ptn_internal_expect_integer_arg(runtime, "chmod", 2, "permissions", args[1], line);
+#if defined(_WIN32)
+    int ok = _chmod(path, (int)permissions) == 0;
+#else
+    int ok = chmod(path, (mode_t)permissions) == 0;
+#endif
+    if (ok) {
+        free(path);
+        return ptn_bool(1);
+    }
+
+    ptn_emit_function_warning(runtime, "chmod", strerror(errno), line);
+    free(path);
+    return ptn_bool(0);
+}
+
+static int ptn_platform_touch_times(const char *path, int64_t atime_value, int64_t mtime_value) {
+#if defined(_WIN32)
+    struct _utimbuf times;
+    times.actime = (time_t)atime_value;
+    times.modtime = (time_t)mtime_value;
+    return _utime(path, &times) == 0;
+#else
+    struct utimbuf times;
+    times.actime = (time_t)atime_value;
+    times.modtime = (time_t)mtime_value;
+    return utime(path, &times) == 0;
+#endif
+}
+
+static PtnValue ptn_internal_touch(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "touch(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+    if (path[0] == '\0') {
+        free(path);
+        return ptn_bool(0);
+    }
+
+    int64_t mtime_value = argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL
+        ? ptn_internal_expect_integer_arg(runtime, "touch", 2, "mtime", args[1], line)
+        : (int64_t)time(NULL);
+    int64_t atime_value = argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL
+        ? ptn_internal_expect_integer_arg(runtime, "touch", 3, "atime", args[2], line)
+        : mtime_value;
+
+    if (ptn_path_exists_c(path)) {
+        if (ptn_platform_touch_times(path, atime_value, mtime_value)) {
+            free(path);
+            return ptn_bool(1);
+        }
+        ptn_emit_file_warning(runtime, "touch", path, strerror(errno), line);
+        free(path);
+        return ptn_bool(0);
+    }
+
+    FILE *stream = fopen(path, "ab");
+    if (stream == NULL) {
+        int needed = snprintf(NULL, 0, "touch(): Unable to create file %s because %s", path, strerror(errno));
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(message, (size_t)needed + 1, "touch(): Unable to create file %s because %s", path, strerror(errno));
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+            fputc('\n', stdout);
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(message);
+        free(path);
+        return ptn_bool(0);
+    }
+    fclose(stream);
+    if (!ptn_platform_touch_times(path, atime_value, mtime_value)) {
+        ptn_emit_file_warning(runtime, "touch", path, strerror(errno), line);
+        free(path);
+        return ptn_bool(0);
+    }
+    free(path);
+    return ptn_bool(1);
+}
+
 static char *ptn_platform_getcwd_alloc(void) {
     size_t capacity = 256;
     for (;;) {
@@ -7429,9 +7980,34 @@ static PtnValue ptn_internal_is_dir(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_path_predicate(runtime, "is_dir", args[0], line, ptn_path_is_directory_c);
 }
 
+static PtnValue ptn_internal_is_executable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_path_predicate(runtime, "is_executable", args[0], line, ptn_path_is_executable_c);
+}
+
 static PtnValue ptn_internal_is_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     return ptn_path_predicate(runtime, "is_file", args[0], line, ptn_path_is_regular_file_c);
+}
+
+static PtnValue ptn_internal_is_link(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_path_predicate(runtime, "is_link", args[0], line, ptn_path_is_link_c);
+}
+
+static PtnValue ptn_internal_is_readable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_path_predicate(runtime, "is_readable", args[0], line, ptn_path_is_readable_c);
+}
+
+static PtnValue ptn_internal_is_writable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_path_predicate(runtime, "is_writable", args[0], line, ptn_path_is_writable_c);
+}
+
+static PtnValue ptn_internal_is_writeable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_path_predicate(runtime, "is_writeable", args[0], line, ptn_path_is_writable_c);
 }
 
 static int ptn_scandir_name_compare(const void *left, const void *right) {
@@ -10204,10 +10780,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "call_user_func_array", 2, 2, ptn_internal_call_user_func_array },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chdir", 1, 1, ptn_internal_chdir },
+        { "chmod", 2, 2, ptn_internal_chmod },
         { "chop", 1, 2, ptn_internal_chop },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
         { "class_exists", 1, 2, ptn_internal_class_exists },
+        { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 2, ptn_internal_count },
         { "crc32", 1, 1, ptn_internal_crc32 },
@@ -10226,14 +10804,25 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "file_exists", 1, 1, ptn_internal_file_exists },
         { "file_get_contents", 1, 5, ptn_internal_file_get_contents },
         { "file_put_contents", 2, 2, ptn_internal_file_put_contents },
+        { "fileatime", 1, 1, ptn_internal_fileatime },
+        { "filectime", 1, 1, ptn_internal_filectime },
+        { "filegroup", 1, 1, ptn_internal_filegroup },
+        { "fileinode", 1, 1, ptn_internal_fileinode },
+        { "filemtime", 1, 1, ptn_internal_filemtime },
+        { "fileowner", 1, 1, ptn_internal_fileowner },
+        { "fileperms", 1, 1, ptn_internal_fileperms },
+        { "filesize", 1, 1, ptn_internal_filesize },
+        { "filetype", 1, 1, ptn_internal_filetype },
         { "floatval", 1, 1, ptn_internal_floatval },
         { "floor", 1, 1, ptn_internal_floor },
         { "fopen", 2, 4, ptn_internal_fopen },
         { "fprintf", 2, PTN_VARIADIC_ARGS, ptn_internal_fprintf },
+        { "fputs", 2, 3, ptn_internal_fputs },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
         { "function_exists", 1, 1, ptn_internal_function_exists },
+        { "fwrite", 2, 3, ptn_internal_fwrite },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 1, 1, ptn_internal_get_class },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
@@ -10259,6 +10848,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_countable", 1, 1, ptn_internal_is_countable },
         { "is_dir", 1, 1, ptn_internal_is_dir },
         { "is_double", 1, 1, ptn_internal_is_float },
+        { "is_executable", 1, 1, ptn_internal_is_executable },
         { "is_file", 1, 1, ptn_internal_is_file },
         { "is_finite", 1, 1, ptn_internal_is_finite },
         { "is_float", 1, 1, ptn_internal_is_float },
@@ -10266,13 +10856,17 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_int", 1, 1, ptn_internal_is_int },
         { "is_integer", 1, 1, ptn_internal_is_int },
         { "is_iterable", 1, 1, ptn_internal_is_iterable },
+        { "is_link", 1, 1, ptn_internal_is_link },
         { "is_long", 1, 1, ptn_internal_is_int },
         { "is_nan", 1, 1, ptn_internal_is_nan },
         { "is_null", 1, 1, ptn_internal_is_null },
         { "is_object", 1, 1, ptn_internal_is_object },
+        { "is_readable", 1, 1, ptn_internal_is_readable },
         { "is_resource", 1, 1, ptn_internal_is_resource },
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
         { "is_string", 1, 1, ptn_internal_is_string },
+        { "is_writable", 1, 1, ptn_internal_is_writable },
+        { "is_writeable", 1, 1, ptn_internal_is_writeable },
         { "join", 1, 2, ptn_internal_join },
         { "json_encode", 1, 3, ptn_internal_json_encode },
         { "key", 1, 1, ptn_internal_key },
@@ -10280,6 +10874,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ksort", 1, 2, ptn_internal_ksort },
         { "lcfirst", 1, 1, ptn_internal_lcfirst },
         { "localeconv", 0, 0, ptn_internal_localeconv },
+        { "lstat", 1, 1, ptn_internal_lstat },
         { "ltrim", 1, 2, ptn_internal_ltrim },
         { "md5", 1, 2, ptn_internal_md5 },
         { "method_exists", 2, 2, ptn_internal_method_exists },
@@ -10325,6 +10920,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "spl_object_id", 1, 1, ptn_internal_spl_object_id },
         { "sprintf", 1, PTN_VARIADIC_ARGS, ptn_internal_sprintf },
         { "sqrt", 1, 1, ptn_internal_sqrt },
+        { "stat", 1, 1, ptn_internal_stat },
         { "str_contains", 2, 2, ptn_internal_str_contains },
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
         { "str_pad", 2, 4, ptn_internal_str_pad },
@@ -10357,6 +10953,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strtr", 2, 3, ptn_internal_strtr },
         { "substr", 2, 3, ptn_internal_substr },
         { "substr_count", 2, 4, ptn_internal_substr_count },
+        { "touch", 1, 3, ptn_internal_touch },
         { "trim", 1, 2, ptn_internal_trim },
         { "ucfirst", 1, 1, ptn_internal_ucfirst },
         { "unlink", 1, 1, ptn_internal_unlink },

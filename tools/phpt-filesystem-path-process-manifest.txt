@@ -1,0 +1,51 @@
+# Focused filesystem/path/process PHPT frontier.
+#
+# Rows here exercise generic path metadata helpers, empty/embedded-NUL path
+# diagnostics, chmod/touch/stat cache call sites, and process-boundary rows
+# that PTN classifies until native child-process execution exists.
+ext/standard/tests/file/005_error.phpt
+ext/standard/tests/file/005_variation2.phpt
+ext/standard/tests/file/006_basic.phpt
+ext/standard/tests/file/006_error.phpt
+ext/standard/tests/file/file_exists_variation1.phpt
+ext/standard/tests/file/filegroup_basic.phpt
+ext/standard/tests/file/filegroup_error.phpt
+ext/standard/tests/file/fileinode_basic.phpt
+ext/standard/tests/file/fileinode_error.phpt
+ext/standard/tests/file/fileowner_basic.phpt
+ext/standard/tests/file/fileowner_error.phpt
+ext/standard/tests/file/fileperms_variation2.phpt
+ext/standard/tests/file/fileperms_variation3.phpt
+ext/standard/tests/file/filesize_basic.phpt
+ext/standard/tests/file/filesize_error.phpt
+ext/standard/tests/file/filestat.phpt
+ext/standard/tests/file/filetype_basic.phpt
+ext/standard/tests/file/filetype_error.phpt
+ext/standard/tests/file/is_dir_basic.phpt
+ext/standard/tests/file/is_file_basic.phpt
+ext/standard/tests/file/lstat_stat_error.phpt
+ext/standard/tests/general_functions/proc_nice_basic-win.phpt
+ext/standard/tests/general_functions/proc_nice_basic.phpt
+ext/standard/tests/general_functions/proc_nice_variation2.phpt
+ext/standard/tests/general_functions/proc_nice_variation5.phpt
+ext/standard/tests/general_functions/proc_open-mb0.phpt
+ext/standard/tests/general_functions/proc_open-mb1.phpt
+ext/standard/tests/general_functions/proc_open.phpt
+ext/standard/tests/general_functions/proc_open02.phpt
+ext/standard/tests/general_functions/proc_open_array.phpt
+ext/standard/tests/general_functions/proc_open_cmd.phpt
+ext/standard/tests/general_functions/proc_open_cwd_null_bytes.phpt
+ext/standard/tests/general_functions/proc_open_multiplex.phpt
+ext/standard/tests/general_functions/proc_open_null.phpt
+ext/standard/tests/general_functions/proc_open_pipes1.phpt
+ext/standard/tests/general_functions/proc_open_pipes2.phpt
+ext/standard/tests/general_functions/proc_open_pipes3.phpt
+ext/standard/tests/general_functions/proc_open_redirect.phpt
+ext/standard/tests/general_functions/proc_open_sockets1.phpt
+ext/standard/tests/general_functions/proc_open_sockets2.phpt
+ext/standard/tests/general_functions/proc_open_sockets3.phpt
+ext/standard/tests/streams/proc_open_bug51800_right.phpt
+ext/standard/tests/streams/proc_open_bug51800_right2.phpt
+ext/standard/tests/streams/proc_open_bug60120.phpt
+ext/standard/tests/streams/proc_open_bug64438.phpt
+ext/standard/tests/streams/proc_open_bug69900.phpt

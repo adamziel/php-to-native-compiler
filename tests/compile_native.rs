@@ -5876,6 +5876,115 @@ done\n"
 }
 
 #[test]
+fn compile_file_stat_metadata_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-file-stat-metadata-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-stat-metadata.php");
+    let output = root.join("file-stat-metadata-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$dir = __DIR__ . \"/stat-dir\";\n\
+$file = $dir . \"/leaf.txt\";\n\
+mkdir($dir);\n\
+$handle = fopen($file, \"w\");\n\
+var_dump(fwrite($handle, \"ab\" . chr(0) . \"c\"));\n\
+var_dump(fputs($handle, \"de\", 1));\n\
+var_dump(fclose($handle));\n\
+$stat = stat($file);\n\
+$lstat = lstat($file);\n\
+var_dump(function_exists(\"stat\"), function_exists(\"LSTAT\"), function_exists(\"filemtime\"), function_exists(\"clearstatcache\"));\n\
+var_dump(is_array($stat), count($stat), $stat[7] === $stat[\"size\"], $stat[9] === $stat[\"mtime\"], $lstat[2] === $lstat[\"mode\"]);\n\
+var_dump(filesize($file), filetype($file), filetype($dir));\n\
+var_dump(is_int(fileinode($file)), is_int(fileowner($file)), is_int(filegroup($file)), is_int(fileatime($file)), is_int(filemtime($file)), is_int(filectime($file)), is_int(fileperms($file)));\n\
+var_dump(is_readable($file), is_writable($file), is_writeable($file), is_executable($file), is_link($file));\n\
+var_dump(chmod($file, 0600));\n\
+printf(\"%o\\n\", fileperms($file) & 0777);\n\
+clearstatcache(true, $file);\n\
+var_dump(@filesize($dir . \"/missing\"));\n\
+@unlink($file);\n\
+rmdir($dir);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(4)\n\
+int(1)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+int(26)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+int(5)\n\
+string(4) \"file\"\n\
+string(3) \"dir\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n\
+600\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_file_metadata_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-file-metadata-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-metadata-diagnostics.php");
+    let output = root.join("file-metadata-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(filesize(\"missing-file\"));\n\
+var_dump(filetype(\"missing-file\"));\n\
+var_dump(fileperms(\"bad\" . chr(0) . \"path\"));\n\
+var_dump(touch(__DIR__ . \"/missing-parent/leaf\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "Warning: filesize(): stat failed for missing-file in ptn on line 2\nbool(false)\n"
+    ));
+    assert!(stdout.contains(
+        "Warning: filetype(): Lstat failed for missing-file in ptn on line 3\nbool(false)\n"
+    ));
+    assert!(stdout.contains(
+        "Warning: fileperms(): Filename contains null byte in ptn on line 4\nbool(false)\n"
+    ));
+    assert!(stdout.contains("Warning: touch(): Unable to create file "));
+    assert!(stdout.contains(
+        "missing-parent/leaf because No such file or directory in ptn on line 5\nbool(false)\n"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_str_rot13_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-str-rot13-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

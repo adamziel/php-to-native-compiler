@@ -96,7 +96,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Stream resources from `STDIN`/`STDOUT`/`STDERR` and `fopen()`/`fclose()` are
   boxed with type, dump, and array-key cast behavior; `file_get_contents()`
   reads filesystem paths into binary-safe strings with bounded offset/length
-  handling.
+  handling, `fwrite()`/`fputs()` write stream bytes, and filesystem metadata
+  helpers cover `stat()`/`lstat()`, scalar `file*` metadata, `filetype()`,
+  `chmod()`/`touch()`, `clearstatcache()`, and readable/writable/executable/link
+  path predicates.
 - Environment and include-path helpers cover `getenv()` snapshots/lookups,
   `putenv()` set/unset plus embedded-NUL/invalid-assignment diagnostics, and
   bounded `get_include_path()`/`set_include_path()`/`ini_restore()` state.
@@ -139,6 +142,7 @@ cargo build --bin phpc
 tools/update-progress-mirrors.sh
 tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
 tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
+tools/run-phpt-manifest.sh tools/phpt-filesystem-path-process-manifest.txt
 tools/run-phpt-baseline.sh --generate-only
 tools/run-phpt-baseline.sh --tier 1000 --classify-only
 tools/run-phpt-baseline.sh --tier 1000

@@ -18,11 +18,14 @@
 #include <time.h>
 #if defined(_WIN32)
 #include <direct.h>
+#include <io.h>
 #include <process.h>
+#include <sys/utime.h>
 #else
 #include <dirent.h>
 #include <regex.h>
 #include <sys/utsname.h>
+#include <utime.h>
 #include <unistd.h>
 #endif
 
@@ -39,6 +42,16 @@ extern char **_environ;
 #define PTN_UNUSED __attribute__((unused))
 #else
 #define PTN_UNUSED
+#endif
+
+#ifndef R_OK
+#define R_OK 4
+#endif
+#ifndef W_OK
+#define W_OK 2
+#endif
+#ifndef X_OK
+#define X_OK 1
 #endif
 
 #if defined(__GNUC__) && !defined(__clang__)
