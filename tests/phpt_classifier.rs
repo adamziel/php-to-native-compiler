@@ -52,6 +52,11 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires interface implementation checks",
         ),
         (
+            "attribute syntax",
+            "--TEST--\nattr\n--FILE--\n<?php\n#[Deprecated]\nfunction f() {}\n--EXPECT--\n",
+            "requires PHP attribute syntax",
+        ),
+        (
             "call-site unpack",
             "--TEST--\nunpack\n--FILE--\n<?php\nfunction f(...$args) {}\nf(...[1, 2]);\n--EXPECT--\n",
             "requires call-site or array unpacking",
@@ -157,6 +162,18 @@ fn phpt_classifier_keeps_attribute_text_in_strings_runnable() {
 fn phpt_classifier_keeps_unsupported_syntax_words_in_strings_and_comments_runnable() {
     let classification = classify(
         "--TEST--\nsyntax text\n--FILE--\n<?php\n// throw new Exception();\n# fn($x) => $x\n/* public private(set) int $value; */\necho \"readonly class fn throw private(set) <<<HEREDOC\";\n--EXPECT--\nreadonly class fn throw private(set) <<<HEREDOC\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_hash_comments_runnable() {
+    let classification = classify(
+        "--TEST--\ncomment\n--FILE--\n<?php\n# ordinary comment\nvar_dump(1);\n--EXPECT--\nint(1)\n",
     );
 
     assert!(

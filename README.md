@@ -112,7 +112,6 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `pcre`, `Reflection`, and `standard` extension surface plus accepted runner ini keys
   (`date.timezone`, `display_errors`, `error_reporting`, `extension_dir`,
   `include_path`, `pcre.backtrack_limit`, `precision`, and
-  `zend.assertions`); child-process control rows are classified until PTN has a
   native process boundary. Harness cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, and broad unsupported language surfaces such as anonymous

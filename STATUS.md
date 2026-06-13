@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T17:49Z
-Measured: `ptn-c7iw` asymmetric visibility blocker evidence rebased after
+Last refresh: 2026-06-13T17:51Z
+Measured: `ptn-7o62` attribute syntax blocker documentation/evidence rebased
 
 ## Operating Goal
 

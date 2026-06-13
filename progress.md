@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T17:49Z
+Last refresh: 2026-06-13T17:51Z
 Source: `PROGRESS.md`
-Measured: `ptn-c7iw` asymmetric visibility blocker evidence rebased after
+Measured: `ptn-7o62` attribute syntax blocker documentation/evidence rebased
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 435/435; PHPT Zend rows 119/119; PHPT ext/standard rows 230/230.
 

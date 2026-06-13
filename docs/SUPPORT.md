@@ -27,6 +27,9 @@ Post-RC architecture remains explicit rather than hidden:
   constructors, class constants, and complete inherited property/method
   resolution beyond the current declared-method and metadata slices remain
   outside the RC boundary.
+- Attributes: PHP `#[...]` declarations, attribute metadata storage, target
+  validation, `ReflectionAttribute`, and built-in attribute classes/constants
+  remain outside the current parser and metadata/reflection boundary.
 - Namespaces: unbracketed namespace declarations, qualified names, and simple
   plus grouped class/function/constant imports are supported for the current
   top-level function/constant and declared-class subset. Bracketed namespace

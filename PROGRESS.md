@@ -1,17 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-13T17:49Z
-Measured: `ptn-c7iw` asymmetric visibility blocker evidence rebased after
-`ptn-i8vw` heredoc/nowdoc PHPT classification.
+Refresh: 2026-06-13T17:51Z
+Measured: `ptn-7o62` attribute syntax blocker documentation/evidence rebased
+after `ptn-c7iw` asymmetric visibility classification.
 
 Recent RC slices cover constants, includes, closures, `stdClass`,
 properties/destructors, reflection metadata, array helpers, formatted output,
-string/path/count internals, scalar/operator PHPT rows, PHPT classification
-including PHP attributes, broad syntax blockers, class-metadata blockers,
-heredoc/nowdoc syntax, and asymmetric property visibility, object callables,
-object cloning, environment/include-path helpers, filesystem metadata/path
-helpers, stream writes, `function_exists()` static-method separation, and
-bounded `get_parent_class()`.
+scalar/operator PHPT rows, PHPT classification for attributes and other broad
+syntax blockers, object callables/cloning, environment/include-path helpers,
+filesystem metadata/path helpers, stream writes, `function_exists()`
+static-method separation, and bounded `get_parent_class()`.
 
 ## Dashboard
 
@@ -40,12 +38,11 @@ bounded `get_parent_class()`.
 Parser/IR/C backend, boxed values, variables/constants, strings, scalar
 operators, arrays, `foreach`, control flow, includes, selected internals,
 COW/reference slices, functions, closures, `stdClass`, class/object shells,
-properties, destructors, reflection, namespaces, streams, file reads/writes,
+properties/destructors, reflection, namespaces, streams, file reads/writes,
 array/string/numeric helpers, runner ini/include-path state, PHPT blocker
-categories, filesystem metadata/path helpers, statement-form `(void)`, array
-mutators, inc/dec, dynamic variables, offset compound/null coalescing,
-property compounds, static-method-aware `function_exists()`, and bounded
-`get_parent_class()` metadata.
+categories, filesystem metadata/path helpers, `(void)`, mutators, inc/dec,
+dynamic variables, offset/property compounds, static-method-aware
+`function_exists()`, and bounded `get_parent_class()` metadata.
 
 ## Remaining Bounded Exclusions
 
@@ -57,13 +54,15 @@ property compounds, static-method-aware `function_exists()`, and bounded
 
 ## Verification
 
-`ptn-c7iw` verification: the submitting broad 1k classify-only evidence moved
-38 rows from runnable to `unsupported-language` asymmetric property visibility
-blockers, from 614 runnable / 386 excluded to 576 runnable / 424 excluded.
-Current-branch classifier syntax, classifier tests, and fmt passed.
+`ptn-7o62` evidence: focused attributes manifest selected 204 rows, classified
+187 unsupported-language and 8 unsupported-extension rows, and left 9 runnable
+attribute API rows failing. Before this slice, the same manifest had 137
+runnable rows, 59 unsupported-language rows, and 8 unsupported-extension rows,
+so 128 broad rows moved into blocker evidence. Current-branch classifier
+syntax, classifier tests, and fmt passed.
 
-Previous `ptn-i8vw` verification remains: submitting evidence selected 73
-heredoc/nowdoc rows and moved 71 from runnable to unsupported-language.
+Previous `ptn-c7iw` evidence moved 38 rows from runnable to
+`unsupported-language` asymmetric property visibility blockers.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods, PHP
 attributes/reflection metadata, arrow functions, heredoc/nowdoc parsing,
