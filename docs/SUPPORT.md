@@ -332,7 +332,8 @@ Post-RC architecture remains explicit rather than hidden:
   `var_export(expr[, return]);`, `print_r(expr[, return]);`, `strlen(expr);`,
   `addcslashes(expr, expr);`,
   `stripcslashes(expr);`, `addslashes(expr);`, `stripslashes(expr);`,
-  `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
+  `str_rot13(expr);`, `str_shuffle(expr);`, `str_split(expr[, expr]);`,
+  `strcmp(expr, expr);`,
   `strcasecmp(expr, expr);`,
   `strncmp(expr, expr, expr);`, `str_contains(expr, expr);`,
   `str_starts_with(expr, expr);`,
@@ -396,7 +397,8 @@ Post-RC architecture remains explicit rather than hidden:
   including `var_export(expr[, return])`, `print_r(expr[, return])`,
   `strlen(expr)`, `addcslashes(expr, expr)`,
   `stripcslashes(expr)`, `addslashes(expr)`, `stripslashes(expr)`,
-  `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
+  `str_rot13(expr)`, `str_shuffle(expr)`, `str_split(expr[, expr])`,
+  `strcmp(expr, expr)`,
   `strcasecmp(expr, expr)`,
   `strncmp(expr, expr, expr)`, `str_contains(expr, expr)`,
   `str_starts_with(expr, expr)`,
@@ -545,7 +547,7 @@ Post-RC architecture remains explicit rather than hidden:
   deprecation, and arrays, objects without the current `__toString()` support,
   closures, and exceptions throw the modeled `TypeError` boundary, including
   object class names and `Closure` in the reported given-type, for `strlen()`,
-  `str_rot13()`, `str_shuffle()`, `strcmp()`, `strcasecmp()`, `strncmp()`,
+  `str_rot13()`, `str_shuffle()`, `str_split()`, `strcmp()`, `strcasecmp()`, `strncmp()`,
   `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
   `strtr()`, `strrchr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,
@@ -599,6 +601,10 @@ Post-RC architecture remains explicit rather than hidden:
   conversion, repeating the input by a count converted through the current
   scalar integer conversion path and rejecting negative counts with the modeled
   `ValueError` boundary.
+- `str_split()` over current boxed scalar values after scalar string
+  conversion, returning a fresh ordered array of length-aware byte chunks.
+  Omitted length defaults to 1, empty input returns an empty array, and
+  non-positive lengths throw the modeled PHP `ValueError` boundary.
 - `strtolower()` and `strtoupper()` over current boxed scalar values after
   scalar string conversion, mapping ASCII letters and preserving other bytes.
 - `strrev()` over current boxed scalar values after scalar string conversion,

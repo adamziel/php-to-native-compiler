@@ -4255,6 +4255,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "str_contains"
             | "str_starts_with"
             | "str_ends_with"
+            | "str_split"
             | "strpos"
             | "stripos"
             | "strrpos"

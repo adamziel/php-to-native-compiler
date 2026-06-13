@@ -4308,6 +4308,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_internal_quotemeta",
         "ptn_internal_chunk_split",
         "ptn_internal_str_repeat",
+        "ptn_internal_str_split",
         "ptn_internal_strip_tags",
         "ptn_internal_crc32",
         "ptn_internal_md5",
@@ -4839,6 +4840,76 @@ var_dump(function_exists('explode'), function_exists('EXPLODE'));\n",
     let body = generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_explode(");
     assert!(body.contains("ptn_internal_expect_string_arg"));
     assert!(!body.contains("strtok"));
+}
+
+#[test]
+fn compile_str_split_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-str-split-internal-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-split.php");
+    let output = root.join("str-split-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(str_split('This is basic testcase', 5));\n\
+var_dump(str_split('abc'));\n\
+var_dump(str_split(''));\n\
+var_dump(str_split('', 100));\n\
+var_dump(bin2hex(str_split('A' . chr(0) . 'BC', 2)[0]));\n\
+try { str_split('abc', 0); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { str_split('abc', -1); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { str_split('abc', []); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists('str_split'), function_exists('STR_SPLIT'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(5) {\n",
+            "  [0]=>\n",
+            "  string(5) \"This \"\n",
+            "  [1]=>\n",
+            "  string(5) \"is ba\"\n",
+            "  [2]=>\n",
+            "  string(5) \"sic t\"\n",
+            "  [3]=>\n",
+            "  string(5) \"estca\"\n",
+            "  [4]=>\n",
+            "  string(2) \"se\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  string(1) \"c\"\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "string(4) \"4100\"\n",
+            "str_split(): Argument #2 ($length) must be greater than 0\n",
+            "str_split(): Argument #2 ($length) must be greater than 0\n",
+            "str_split(): Argument #2 ($length) must be of type int, array given\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let body =
+        generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_str_split(");
+    assert!(body.contains("ptn_internal_expect_string_arg"));
+    assert!(body.contains("ptn_internal_expect_integer_arg"));
+    assert!(!body.contains("strlen("));
 }
 
 #[test]
