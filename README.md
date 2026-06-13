@@ -44,7 +44,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   expands ordered arrays through callable dispatch, callback dispatch observes
   `global` bindings for user functions reached through direct calls, and
   public `__invoke` objects can be called directly or through callback
-  dispatch.
+  dispatch; `is_callable()` writes callable-name output for supported callable
+  shapes.
 - `assert()` throws catchable `AssertionError`; bounded `highlight_file()`
   shares file-return paths.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,

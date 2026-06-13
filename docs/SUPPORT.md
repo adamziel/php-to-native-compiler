@@ -50,8 +50,9 @@ Post-RC architecture remains explicit rather than hidden:
   `__call`. Objects with inherited public `__invoke` can be called directly or
   through supported internal callbacks. `is_callable()` validates the current
   string, closure, `["Class", "staticMethod"]`, `[$object, "method"]`, and
-  invokable-object subset, including `__call`-capable objects and syntax-only
-  checks. First-class callable syntax, non-public visibility, `__callStatic`,
+  invokable-object subset, including `__call`-capable objects, syntax-only
+  checks, and callable-name output for supported callable shapes. First-class
+  callable syntax, non-public visibility, `__callStatic`,
   and arbitrary dynamic instance method metadata remain post-RC.
 - Object destructuring and object `Traversable` remain unsupported; current
   destructuring support is array/list lvalues.
@@ -948,7 +949,8 @@ Post-RC architecture remains explicit rather than hidden:
   inherited public object methods, supported `__call` fallback, inherited
   `__invoke`, and the optional syntax-only flag. Plain objects without
   `__invoke` are not callable, including in syntax-only mode. The third
-  by-reference callable-name output parameter is not yet supported.
+  by-reference callable-name output parameter writes PHP-style names for
+  supported callable shapes.
 - `call_user_func()` dispatches current string, closure, static method array,
   object method array, and public `__invoke` object callable values through
   the shared callable path, including user-function `global` bindings.

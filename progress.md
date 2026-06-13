@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T15:05Z
+Last refresh: 2026-06-13T15:12Z
 Source: `PROGRESS.md`
-Measured: `ptn-4a67` canonical `Reflection` extension metadata on
+Measured: `ptn-jrtp` `is_callable()` callable-name output merged on
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 634/634; Native smoke matrix 6/6; PHPT bounded manifest 282/282; PHPT Zend rows 87/87; PHPT ext/standard rows 140/140.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 635/635; Native smoke matrix 6/6; PHPT bounded manifest 282/282; PHPT Zend rows 87/87; PHPT ext/standard rows 140/140.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 634/634 |
+| Native/compiler Rust suite | 635/635 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 282/282 |
 | PHPT Zend rows | 87/87 |

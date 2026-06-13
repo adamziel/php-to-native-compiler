@@ -9637,7 +9637,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intval", 1, 2, ptn_internal_intval },
         { "is_array", 1, 1, ptn_internal_is_array },
         { "is_bool", 1, 1, ptn_internal_is_bool },
-        { "is_callable", 1, 2, ptn_internal_is_callable },
+        { "is_callable", 1, 3, ptn_internal_is_callable },
         { "is_countable", 1, 1, ptn_internal_is_countable },
         { "is_dir", 1, 1, ptn_internal_is_dir },
         { "is_double", 1, 1, ptn_internal_is_float },
@@ -10062,6 +10062,11 @@ static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const
     (void)runtime;
     (void)line;
     int syntax_only = argc >= 2 && ptn_is_truthy(args[1]);
+    if (argc >= 3 && args[2].type == PTN_REFERENCE) {
+        PtnValue callable_name = ptn_owned_string(ptn_callable_output_name(args[0]));
+        ptn_reference_assign(args[2].as.reference, callable_name);
+        ptn_value_destroy(&callable_name);
+    }
     return ptn_bool(ptn_callable_is_valid(args[0], syntax_only));
 }
 

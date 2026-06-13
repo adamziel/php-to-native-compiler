@@ -8040,6 +8040,89 @@ var_dump(is_callable([1, \"x\"], true));
 }
 
 #[test]
+fn compile_is_callable_writes_callable_name_to_native_binary() {
+    let root = temp_dir("ptn-native-is-callable-output-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("is-callable-output-name.php");
+    let output = root.join("is-callable-output-name-bin");
+    fs::write(
+        &input,
+        "<?php
+class CallableNameBase {
+    public function inherited() {
+    }
+}
+
+class CallableNameWorker extends CallableNameBase {
+    public static function stat() {
+    }
+
+    public function own() {
+    }
+}
+
+$worker = new CallableNameWorker();
+$closure = function () { return 1; };
+$cases = [
+    \"strlen\",
+    \"missing_function\",
+    $closure,
+    [$worker, \"inherited\"],
+    [$worker, \"missing\"],
+    [\"CallableNameWorker\", \"stat\"],
+    [\"CallableNameWorker\", \"own\"],
+    [1, \"x\"],
+];
+
+foreach ($cases as $case) {
+    $name = \"initial\";
+    var_dump(is_callable($case, false, $name));
+    var_dump($name);
+}
+
+$name = \"initial\";
+var_dump(is_callable(\"missing_function\", true, $name));
+var_dump($name);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(6) \"strlen\"\n",
+            "bool(false)\n",
+            "string(16) \"missing_function\"\n",
+            "bool(true)\n",
+            "string(17) \"Closure::__invoke\"\n",
+            "bool(true)\n",
+            "string(29) \"CallableNameWorker::inherited\"\n",
+            "bool(false)\n",
+            "string(27) \"CallableNameWorker::missing\"\n",
+            "bool(true)\n",
+            "string(24) \"CallableNameWorker::stat\"\n",
+            "bool(false)\n",
+            "string(23) \"CallableNameWorker::own\"\n",
+            "bool(false)\n",
+            "string(5) \"Array\"\n",
+            "bool(true)\n",
+            "string(16) \"missing_function\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_is_callable"));
+    assert!(c_source.contains("ptn_callable_output_name"));
+    assert!(c_source.contains("ptn_reference_assign"));
+}
+
+#[test]
 fn compile_declared_public_instance_properties_to_native_binary() {
     let root = temp_dir("ptn-native-declared-public-properties");
     fs::create_dir_all(&root).unwrap();
