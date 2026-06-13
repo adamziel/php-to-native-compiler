@@ -4240,6 +4240,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "substr_count"
             | "str_pad"
             | "str_repeat"
+            | "str_split"
             | "strrev"
             | "stripcslashes"
             | "stripslashes"

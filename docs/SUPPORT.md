@@ -341,7 +341,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strstr(expr, expr[, expr]);`, `stristr(expr, expr[, expr]);`,
   `substr_count(expr, expr[, expr[, expr]]);`,
   `str_ends_with(expr, expr);`, `str_pad(expr, expr[, expr[, expr]]);`,
-  `str_repeat(expr, expr);`,
+  `str_repeat(expr, expr);`, `str_split(expr[, expr]);`,
   `strtolower(expr);`, `strtoupper(expr);`, `strrchr(expr, expr[, expr]);`,
   `strrev(expr);`, `ucfirst(expr);`,
   `lcfirst(expr);`, `quotemeta(expr);`,
@@ -405,7 +405,7 @@ Post-RC architecture remains explicit rather than hidden:
   `strstr(expr, expr[, expr])`, `stristr(expr, expr[, expr])`,
   `substr_count(expr, expr[, expr[, expr]])`,
   `str_ends_with(expr, expr)`, `str_pad(expr, expr[, expr[, expr]])`,
-  `str_repeat(expr, expr)`,
+  `str_repeat(expr, expr)`, `str_split(expr[, expr])`,
   `strtolower(expr)`, `strtoupper(expr)`, `strrchr(expr, expr[, expr])`,
   `strrev(expr)`, `ucfirst(expr)`,
   `lcfirst(expr)`, `quotemeta(expr)`,
@@ -543,10 +543,10 @@ Post-RC architecture remains explicit rather than hidden:
   object class names and `Closure` in the reported given-type, for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `strcasecmp()`, `strncmp()`,
   `str_contains()`,
-  `str_starts_with()`, `str_ends_with()`, `str_repeat()`, three-argument
-  `strtr()`, `strrchr()`, `strrev()`, `str_pad()`, `ucfirst()`, `lcfirst()`,
-  `strtolower()`,
-  `strtoupper()`, `quotemeta()`, `chunk_split()` string/separator arguments,
+  `str_starts_with()`, `str_ends_with()`, `str_repeat()`, `str_split()`,
+  three-argument `strtr()`, `strrchr()`, `strrev()`, `str_pad()`,
+  `ucfirst()`, `lcfirst()`, `strtolower()`, `strtoupper()`, `quotemeta()`,
+  `chunk_split()` string/separator arguments,
   `explode()` separator/string arguments,
   `trim()`/`ltrim()`/`rtrim()` string and characters arguments,
   `strip_tags()`, `crc32()`, `md5()`, `sha1()`, `substr()`,
@@ -595,6 +595,11 @@ Post-RC architecture remains explicit rather than hidden:
   conversion, repeating the input by a count converted through the current
   scalar integer conversion path and rejecting negative counts with the modeled
   `ValueError` boundary.
+- `str_split()` over current boxed scalar values after scalar string
+  conversion, splitting bytes into a fresh ordered array. The optional length
+  uses the shared scalar integer conversion path, defaults to `1`, preserves
+  embedded NUL bytes, returns an empty array for an empty input string, and
+  rejects non-positive lengths with the modeled `ValueError` boundary.
 - `strtolower()` and `strtoupper()` over current boxed scalar values after
   scalar string conversion, mapping ASCII letters and preserving other bytes.
 - `strrev()` over current boxed scalar values after scalar string conversion,
@@ -1145,6 +1150,9 @@ Post-RC architecture remains explicit rather than hidden:
   and object string conversion outside the current public declared
   `__toString()` support.
 - Exact `str_pad()` resource/reference operand parity, oversized allocation
+  diagnostics, and object string conversion outside the current public declared
+  `__toString()` support.
+- Exact `str_split()` resource/reference operand parity, oversized allocation
   diagnostics, and object string conversion outside the current public declared
   `__toString()` support.
 - Exact `quotemeta()` resource/reference operand parity and object string

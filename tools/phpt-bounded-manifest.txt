@@ -206,6 +206,7 @@ ext/standard/tests/strings/str_pad.phpt
 ext/standard/tests/strings/str_replace_basic.phpt
 ext/standard/tests/strings/str_rot13_basic.phpt
 ext/standard/tests/strings/str_shuffle_basic.phpt
+ext/standard/tests/strings/str_split_basic.phpt
 ext/standard/tests/strings/strrchr.phpt
 ext/standard/tests/strings/strripos_basic1.phpt
 ext/standard/tests/strings/strrpos_basic1.phpt
