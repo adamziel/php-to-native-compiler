@@ -159,20 +159,60 @@ static int ptn_parse_int64_env(const char *name, int64_t *out) {
     return 1;
 }
 
+static int ptn_ascii_case_equal_literal(const char *value, const char *literal) {
+    while (*value != '\0' && *literal != '\0') {
+        if (tolower((unsigned char)*value) != tolower((unsigned char)*literal)) {
+            return 0;
+        }
+        value++;
+        literal++;
+    }
+    return *value == '\0' && *literal == '\0';
+}
+
+static int ptn_parse_bool_env(const char *name, int *out) {
+    const char *configured = getenv(name);
+    if (configured == NULL) {
+        return 0;
+    }
+    if (configured[0] == '\0') {
+        *out = 0;
+        return 1;
+    }
+    if (
+        strcmp(configured, "0") == 0 ||
+        ptn_ascii_case_equal_literal(configured, "false") ||
+        ptn_ascii_case_equal_literal(configured, "off") ||
+        ptn_ascii_case_equal_literal(configured, "no")
+    ) {
+        *out = 0;
+        return 1;
+    }
+    *out = 1;
+    return 1;
+}
+
 static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->stream = stream;
     diagnostics->emitted_deprecation = 0;
     diagnostics->emitted_warning = 0;
     diagnostics->suppressed = 0;
     diagnostics->error_reporting = PTN_E_ALL;
+    diagnostics->display_errors = 1;
     int64_t configured_error_reporting = 0;
     if (ptn_parse_int64_env("PTN_PHP_ERROR_REPORTING", &configured_error_reporting)) {
         diagnostics->error_reporting = configured_error_reporting;
     }
+    int configured_display_errors = 1;
+    if (ptn_parse_bool_env("PTN_PHP_DISPLAY_ERRORS", &configured_display_errors)) {
+        diagnostics->display_errors = configured_display_errors;
+    }
 }
 
 static PTN_UNUSED int ptn_diagnostics_should_emit(PtnDiagnosticSink *diagnostics, int64_t severity) {
-    return diagnostics->suppressed <= 0 && (diagnostics->error_reporting & severity) != 0;
+    return diagnostics->display_errors &&
+        diagnostics->suppressed <= 0 &&
+        (diagnostics->error_reporting & severity) != 0;
 }
 
 static void ptn_emit_undefined_variable_warning(
@@ -197,6 +237,9 @@ static void ptn_emit_undefined_variable_warning(
 }
 
 static PTN_UNUSED void ptn_emit_undefined_function_error(PtnDiagnosticSink *diagnostics, const char *name) {
+    if (!diagnostics->display_errors) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: Call to undefined function ", stream);
     fputs(name, stream);
@@ -204,6 +247,9 @@ static PTN_UNUSED void ptn_emit_undefined_function_error(PtnDiagnosticSink *diag
 }
 
 static void ptn_emit_undefined_constant_error(PtnDiagnosticSink *diagnostics, const char *name) {
+    if (!diagnostics->display_errors) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: Undefined constant \"", stream);
     fputs(name, stream);
@@ -216,6 +262,9 @@ static PTN_UNUSED void ptn_emit_argument_count_error(
     size_t min_args,
     size_t argc
 ) {
+    if (!diagnostics->display_errors) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: ", stream);
     fputs(name, stream);
@@ -236,6 +285,9 @@ static PTN_UNUSED void ptn_emit_too_many_arguments_error(
     size_t max_args,
     size_t argc
 ) {
+    if (!diagnostics->display_errors) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: ", stream);
     fputs(name, stream);
@@ -251,6 +303,9 @@ static PTN_UNUSED void ptn_emit_too_many_arguments_error(
 }
 
 static PTN_UNUSED void ptn_emit_type_error(PtnDiagnosticSink *diagnostics, const char *message) {
+    if (!diagnostics->display_errors) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: ", stream);
     fputs(message, stream);
@@ -350,15 +405,6 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = &runtime->owned_static_properties;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
-    const char *configured_error_reporting = getenv("PTN_PHP_ERROR_REPORTING");
-    if (configured_error_reporting != NULL && configured_error_reporting[0] != '\0') {
-        char *end = NULL;
-        errno = 0;
-        long long parsed = strtoll(configured_error_reporting, &end, 10);
-        if (errno == 0 && end != configured_error_reporting && *end == '\0') {
-            runtime->diagnostics.error_reporting = (int64_t)parsed;
-        }
-    }
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
     runtime->exceptions = &runtime->owned_exceptions;

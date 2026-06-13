@@ -356,6 +356,9 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
 
 static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
     fflush(stdout);
+    if (!runtime->diagnostics.display_errors) {
+        return;
+    }
     if (exception->path == NULL || exception->line == 0) {
         fputs("Fatal error: ", stderr);
         fputs(exception->message, stderr);

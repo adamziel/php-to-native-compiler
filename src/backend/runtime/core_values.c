@@ -381,6 +381,7 @@ typedef struct {
     int emitted_warning;
     int suppressed;
     int64_t error_reporting;
+    int display_errors;
 } PtnDiagnosticSink;
 
 typedef PtnValue (*PtnMethodDispatchHandler)(

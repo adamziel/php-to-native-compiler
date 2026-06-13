@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T14:54Z
-Measured: `ptn-on53` reflection extension metadata integration on
+Last refresh: 2026-06-13T14:59Z
+Measured: `ptn-vk22` `display_errors` diagnostic suppression on
 
 ## Operating Goal
 

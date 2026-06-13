@@ -16898,13 +16898,13 @@ fn phpc_error_reporting_ini_sets_initial_level() {
 }
 
 #[test]
-fn phpc_ini_get_reports_bounded_runner_ini_values() {
+fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors() {
     let root = temp_dir("ptn-phpc-bounded-runner-ini");
     fs::create_dir_all(&root).unwrap();
     let input = root.join("bounded-runner-ini.php");
     fs::write(
         &input,
-        "<?php var_dump(ini_get('display_errors'), ini_get('zend.assertions'));",
+        "<?php var_dump(ini_get('display_errors'), ini_get('zend.assertions')); echo $undefined; echo \"done\\n\";",
     )
     .unwrap();
 
@@ -16920,7 +16920,7 @@ fn phpc_ini_get_reports_bounded_runner_ini_values() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(0) \"\"\nstring(1) \"1\"\n"
+        "string(0) \"\"\nstring(1) \"1\"\ndone\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

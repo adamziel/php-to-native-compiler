@@ -906,8 +906,11 @@ Post-RC architecture remains explicit rather than hidden:
   same dereferencing path as other comparison internals.
 - `error_reporting()` accepts zero or one scalar argument, returns the previous
   PHP-style mask on writes or current mask on reads, and filters the modeled
-  shared warning/deprecation/notice emitters. Expression-level `@` suppression
-  still stacks independently with the configured mask.
+  shared warning/deprecation/notice emitters. The `phpc` runner also accepts
+  bounded `-d display_errors=false/0/off/no` settings to suppress modeled
+  diagnostic display while preserving catchable exception values.
+  Expression-level `@` suppression still stacks independently with the
+  configured mask.
 - `basename()` strips trailing platform path separators from the current
   binary-safe string path, returns the final path segment, and removes a
   matching non-empty suffix only when the suffix is shorter than that segment.
