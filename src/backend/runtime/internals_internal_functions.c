@@ -4424,6 +4424,18 @@ static int ptn_compare_string_prefix_bytes(
     return ptn_compare_string_bytes(left, left_prefix_len, right, right_prefix_len);
 }
 
+static int ptn_compare_string_prefix_bytes_ascii_case_insensitive(
+    const unsigned char *left,
+    size_t left_len,
+    const unsigned char *right,
+    size_t right_len,
+    size_t limit
+) {
+    size_t left_prefix_len = left_len < limit ? left_len : limit;
+    size_t right_prefix_len = right_len < limit ? right_len : limit;
+    return ptn_compare_string_bytes_ascii_case_insensitive(left, left_prefix_len, right, right_prefix_len);
+}
+
 static PtnValue ptn_internal_strncmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "strncmp", 1, "string1", args[0], line);
@@ -4439,6 +4451,38 @@ static PtnValue ptn_internal_strncmp(PtnRuntime *runtime, size_t argc, const Ptn
         );
     }
     int compared = ptn_compare_string_prefix_bytes(
+        (const unsigned char *)left.data,
+        left.len,
+        (const unsigned char *)right.data,
+        right.len,
+        (size_t)length
+    );
+    ptn_string_operand_free(left);
+    ptn_string_operand_free(right);
+    if (compared < 0) {
+        return ptn_int(-1);
+    }
+    if (compared > 0) {
+        return ptn_int(1);
+    }
+    return ptn_int(0);
+}
+
+static PtnValue ptn_internal_strncasecmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "strncasecmp", 1, "string1", args[0], line);
+    PtnStringOperand right = ptn_internal_expect_string_arg(runtime, "strncasecmp", 2, "string2", args[1], line);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "strncasecmp", 3, "length", args[2], line);
+    if (length < 0) {
+        ptn_string_operand_free(left);
+        ptn_string_operand_free(right);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "strncasecmp(): Argument #3 ($length) must be greater than or equal to 0"
+        );
+    }
+    int compared = ptn_compare_string_prefix_bytes_ascii_case_insensitive(
         (const unsigned char *)left.data,
         left.len,
         (const unsigned char *)right.data,
@@ -9382,6 +9426,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stripslashes", 1, 1, ptn_internal_stripslashes },
         { "stristr", 2, 3, ptn_internal_stristr },
         { "strlen", 1, 1, ptn_internal_strlen },
+        { "strncasecmp", 3, 3, ptn_internal_strncasecmp },
         { "strncmp", 3, 3, ptn_internal_strncmp },
         { "strpos", 2, 3, ptn_internal_strpos },
         { "strrchr", 2, 3, ptn_internal_strrchr },

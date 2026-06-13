@@ -340,7 +340,8 @@ Post-RC architecture remains explicit rather than hidden:
   `stripcslashes(expr);`, `addslashes(expr);`, `stripslashes(expr);`,
   `str_rot13(expr);`, `str_shuffle(expr);`, `strcmp(expr, expr);`,
   `strcasecmp(expr, expr);`,
-  `strncmp(expr, expr, expr);`, `str_contains(expr, expr);`,
+  `strncmp(expr, expr, expr);`, `strncasecmp(expr, expr, expr);`,
+  `str_contains(expr, expr);`,
   `str_starts_with(expr, expr);`,
   `strpos(expr, expr[, expr]);`, `stripos(expr, expr[, expr]);`,
   `strrpos(expr, expr[, expr]);`, `strripos(expr, expr[, expr]);`,
@@ -406,7 +407,8 @@ Post-RC architecture remains explicit rather than hidden:
   `stripcslashes(expr)`, `addslashes(expr)`, `stripslashes(expr)`,
   `str_rot13(expr)`, `str_shuffle(expr)`, `strcmp(expr, expr)`,
   `strcasecmp(expr, expr)`,
-  `strncmp(expr, expr, expr)`, `str_contains(expr, expr)`,
+  `strncmp(expr, expr, expr)`, `strncasecmp(expr, expr, expr)`,
+  `str_contains(expr, expr)`,
   `str_starts_with(expr, expr)`,
   `strpos(expr, expr[, expr])`, `stripos(expr, expr[, expr])`,
   `strrpos(expr, expr[, expr])`, `strripos(expr, expr[, expr])`,
@@ -556,7 +558,7 @@ Post-RC architecture remains explicit rather than hidden:
   closures, and exceptions throw the modeled `TypeError` boundary, including
   object class names and `Closure` in the reported given-type, for `strlen()`,
   `str_rot13()`, `str_shuffle()`, `strcmp()`, `strcasecmp()`, `strncmp()`,
-  `str_contains()`,
+  `strncasecmp()`, `str_contains()`,
   `str_starts_with()`, `str_ends_with()`, `str_repeat()`, `str_split()`,
   three-argument `strtr()`, `strrchr()`, `strrev()`, `str_pad()`,
   `ucfirst()`, `lcfirst()`,
@@ -587,6 +589,12 @@ Post-RC architecture remains explicit rather than hidden:
   It compares at most the requested byte prefix length, preserves embedded NUL
   bytes, returns a normalized negative/zero/positive integer, and throws the
   modeled `ValueError` boundary for negative lengths.
+- `strncasecmp()` over current boxed scalar values after scalar string
+  conversion, with the length argument converted through the shared scalar
+  integer path. It compares at most the requested byte prefix length after
+  ASCII-only case folding, preserves embedded NUL bytes, returns a normalized
+  negative/zero/positive integer, and throws the modeled `ValueError` boundary
+  for negative lengths.
 - `str_contains()` over current boxed scalar values after scalar string
   conversion, returning whether the needle string is present in the haystack
   string through the current C-string-backed value path.
