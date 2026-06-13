@@ -4884,6 +4884,69 @@ str_replace(): Argument #3 ($subject) must be of type array|string, resource giv
 }
 
 #[test]
+fn compile_str_replace_array_forms_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-array-forms");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-array-forms.php");
+    let output = root.join("str-replace-array-forms-bin");
+    fs::write(
+        &input,
+        concat!(
+            "<?php\n",
+            "$count = 0;\n",
+            "var_dump(str_replace(['a', 'b'], ['x'], ['first' => 'abc', 'second' => 'banana', 4 => 'cab'], $count));\n",
+            "var_dump($count);\n",
+            "$count = 0;\n",
+            "var_dump(str_replace(['oo', ''], '-', 'foooo', $count));\n",
+            "var_dump($count);\n",
+            "$count = 0;\n",
+            "var_dump(str_replace('a', 'x', ['a', 'ba'], $count));\n",
+            "var_dump($count);\n",
+            "try { str_replace('a', ['x'], 'a'); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+            "$fp = fopen(__FILE__, 'r');\n",
+            "try { str_replace($fp, 'x', []); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+            "try { str_replace([], $fp, 'x'); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+            "fclose($fp);\n",
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array(3) {\n",
+            "  [\"first\"]=>\n",
+            "  string(2) \"xc\"\n",
+            "  [\"second\"]=>\n",
+            "  string(5) \"xnxnx\"\n",
+            "  [4]=>\n",
+            "  string(2) \"cx\"\n",
+            "}\n",
+            "int(8)\n",
+            "string(3) \"f--\"\n",
+            "int(2)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"x\"\n",
+            "  [1]=>\n",
+            "  string(2) \"bx\"\n",
+            "}\n",
+            "int(2)\n",
+            "str_replace(): Argument #2 ($replace) must be of type string when argument #1 ($search) is a string\n",
+            "str_replace(): Argument #1 ($search) must be of type array|string, resource given\n",
+            "str_replace(): Argument #2 ($replace) must be of type array|string, resource given\n"
+        )
+        .as_bytes()
+        .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();
