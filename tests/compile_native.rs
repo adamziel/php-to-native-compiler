@@ -4884,6 +4884,48 @@ str_replace(): Argument #3 ($subject) must be of type array|string, resource giv
 }
 
 #[test]
+fn compile_str_replace_scalar_search_over_array_subject_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-array-subject");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-array-subject.php");
+    let output = root.join("str-replace-array-subject-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$result = str_replace('foo', 'baz', ['named' => 'foo', 'barfoo', 123, true, null], $count);\n\
+var_dump($result);\n\
+var_dump($count);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array(5) {\n",
+            "  [\"named\"]=>\n",
+            "  string(3) \"baz\"\n",
+            "  [0]=>\n",
+            "  string(6) \"barbaz\"\n",
+            "  [1]=>\n",
+            "  string(3) \"123\"\n",
+            "  [2]=>\n",
+            "  string(1) \"1\"\n",
+            "  [3]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "int(2)\n"
+        )
+        .as_bytes()
+        .to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
 fn compile_double_quoted_byte_escapes_to_native_binary() {
     let root = temp_dir("ptn-native-double-quoted-byte-escapes");
     fs::create_dir_all(&root).unwrap();

@@ -5244,40 +5244,91 @@ static PtnStringOperand ptn_internal_expect_str_replace_arg(
     return ptn_value_to_string_operand_with_runtime(runtime, value, line);
 }
 
-static PtnValue ptn_internal_str_replace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand search = ptn_internal_expect_str_replace_arg(runtime, 1, "search", args[0], line);
-    PtnStringOperand replace = ptn_internal_expect_str_replace_arg(runtime, 2, "replace", args[1], line);
-    PtnStringOperand subject = ptn_internal_expect_str_replace_arg(runtime, 3, "subject", args[2], line);
-    int64_t replacement_count = 0;
-
-    PtnValue result;
+static PtnValue ptn_str_replace_string_subject(
+    PtnStringOperand search,
+    PtnStringOperand replace,
+    PtnStringOperand subject,
+    int64_t *replacement_count
+) {
     if (search.len == 0) {
-        result = ptn_owned_string_len(
+        return ptn_owned_string_len(
             ptn_duplicate_string_len(subject.data, subject.len),
             subject.len
         );
-    } else {
-        PtnStringBuffer output;
-        ptn_string_buffer_init(&output);
-        size_t offset = 0;
-        while (offset < subject.len) {
-            const char *matched = ptn_find_bytes(
-                subject.data + offset,
-                subject.len - offset,
-                search.data,
-                search.len
-            );
-            if (matched == NULL) {
-                ptn_string_buffer_append_len(&output, subject.data + offset, subject.len - offset);
-                break;
-            }
-            size_t prefix_len = (size_t)(matched - (subject.data + offset));
-            ptn_string_buffer_append_len(&output, subject.data + offset, prefix_len);
-            ptn_string_buffer_append_len(&output, replace.data, replace.len);
-            offset += prefix_len + search.len;
-            replacement_count++;
+    }
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t offset = 0;
+    while (offset < subject.len) {
+        const char *matched = ptn_find_bytes(
+            subject.data + offset,
+            subject.len - offset,
+            search.data,
+            search.len
+        );
+        if (matched == NULL) {
+            ptn_string_buffer_append_len(&output, subject.data + offset, subject.len - offset);
+            break;
         }
-        result = ptn_owned_string_len(output.data, output.len);
+        size_t prefix_len = (size_t)(matched - (subject.data + offset));
+        ptn_string_buffer_append_len(&output, subject.data + offset, prefix_len);
+        ptn_string_buffer_append_len(&output, replace.data, replace.len);
+        offset += prefix_len + search.len;
+        (*replacement_count)++;
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_internal_str_replace_array_subject(
+    PtnRuntime *runtime,
+    PtnStringOperand search,
+    PtnStringOperand replace,
+    PtnArray *subject,
+    int64_t *replacement_count,
+    size_t line
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < subject->len; i++) {
+        PtnValue entry_value = ptn_value_deref(subject->entries[i].value);
+        if (entry_value.type == PTN_ARRAY) {
+            ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+        }
+        PtnStringOperand entry_subject =
+            ptn_value_to_string_operand_with_runtime(runtime, entry_value, line);
+        PtnValue replaced =
+            ptn_str_replace_string_subject(search, replace, entry_subject, replacement_count);
+        ptn_string_operand_free(entry_subject);
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(subject->entries[i].key),
+            replaced
+        );
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_str_replace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand search = ptn_internal_expect_str_replace_arg(runtime, 1, "search", args[0], line);
+    PtnStringOperand replace = ptn_internal_expect_str_replace_arg(runtime, 2, "replace", args[1], line);
+    PtnValue subject_value = ptn_value_deref(args[2]);
+    int64_t replacement_count = 0;
+
+    PtnValue result;
+    if (subject_value.type == PTN_ARRAY) {
+        result = ptn_internal_str_replace_array_subject(
+            runtime,
+            search,
+            replace,
+            subject_value.as.array,
+            &replacement_count,
+            line
+        );
+    } else {
+        PtnStringOperand subject =
+            ptn_internal_expect_str_replace_arg(runtime, 3, "subject", args[2], line);
+        result = ptn_str_replace_string_subject(search, replace, subject, &replacement_count);
+        ptn_string_operand_free(subject);
     }
 
     if (argc >= 4 && args[3].type == PTN_REFERENCE) {
@@ -5287,7 +5338,6 @@ static PtnValue ptn_internal_str_replace(PtnRuntime *runtime, size_t argc, const
 
     ptn_string_operand_free(search);
     ptn_string_operand_free(replace);
-    ptn_string_operand_free(subject);
     return result;
 }
 
