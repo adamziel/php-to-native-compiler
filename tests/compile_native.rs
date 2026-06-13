@@ -10001,7 +10001,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,date,pcre,standard\narray(0) {\n}\n"
+            "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,date,pcre,reflection,standard\narray(0) {\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -10069,8 +10069,8 @@ echo ini_get('date.timezone'), \"\\n\";\n\
 echo ini_get('extension_dir'), \"\\n\";\n\
 var_dump(get_cfg_var('cfg_file_path'));\n\
 echo php_ini_scanned_files(), \"\\n\";\n\
-var_dump(extension_loaded('standard'), extension_loaded('missing'));\n\
-var_dump(in_array('standard', get_loaded_extensions()), in_array('Core', get_loaded_extensions()));\n\
+var_dump(extension_loaded('standard'), extension_loaded('reflection'), extension_loaded('missing'));\n\
+var_dump(in_array('standard', get_loaded_extensions()), in_array('reflection', get_loaded_extensions()), in_array('Core', get_loaded_extensions()));\n\
 echo str_replace(\"\\n\", \"\", \"a\\nb\"), \"\\n\";\n\
 var_dump(realpath('/definitely/not/a/ptn/path'));\n\
 var_dump(function_exists('zend_version'), function_exists('ini_get'), function_exists('get_loaded_extensions'), function_exists('extension_loaded'));\n",
@@ -10102,7 +10102,7 @@ var_dump(function_exists('zend_version'), function_exists('ini_get'), function_e
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "cli\n8.4.0\n{php_os}\n{shlib_suffix}\n{php_os}\n4.4.0\nUTC\n.\nbool(false)\n\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nab\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+            "cli\n8.4.0\n{php_os}\n{shlib_suffix}\n{php_os}\n4.4.0\nUTC\n.\nbool(false)\n\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nab\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

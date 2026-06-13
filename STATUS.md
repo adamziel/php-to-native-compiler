@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T14:49Z
-Measured: `ptn-s77w` inherited invokable-callable integration on
+Last refresh: 2026-06-13T14:54Z
+Measured: `ptn-on53` reflection extension metadata integration on
 
 ## Operating Goal
 
@@ -28,7 +28,7 @@ Source unit tests 3/3; Native/compiler Rust suite 634/634; Native smoke matrix 6
 | PHPT other rows | 5/5 |
 | PHPT COW manifest | 29/29 |
 | Post-merge COW gate | 26/26 |
-| PHPT callback manifest | 3/5 |
+| PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |
 
 ## Rules

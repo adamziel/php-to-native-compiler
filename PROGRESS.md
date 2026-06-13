@@ -1,30 +1,28 @@
 # PTN Progress
 
-Refresh: 2026-06-13T14:49Z
-Measured: `ptn-s77w` inherited invokable-callable integration on
-`origin/master` `bf43741c`; focused native gate passed after conflict
+Refresh: 2026-06-13T14:54Z
+Measured: `ptn-on53` reflection extension metadata integration on
+`origin/master` `77588a5a`; focused native/PHPT gates passed after conflict
 resolution.
 
 Recent RC slices cover constants, inline HTML, includes/once guards,
-closures, `stdClass`, properties/destructors, reflection, array helpers,
-`json_encode()`, `printf()`, `basename()`, `pathinfo()`, `dirname()` levels,
-search/count/string internals, scalar/array type hints, ordered-array
-`str_replace()`, `str_split()`, `nl2br()`, `strncasecmp()`, `strpbrk()`,
-`chop()`, `array_unique()`, inherited invokable object callables,
+closures, `stdClass`, properties/destructors, ReflectionFunction metadata,
+array helpers, `json_encode()`, `printf()`, `basename()`, `pathinfo()`,
+`dirname()` levels, search/count/string internals, scalar/array type hints,
+ordered-array `str_replace()`, `str_split()`, `nl2br()`, `strncasecmp()`,
+`strpbrk()`, `chop()`, `array_unique()`, inherited invokable object callables,
 `getcwd()`/`chdir()`, PHPT runner ini values, statement-form `(void)` casts,
 offset compound/coalescing, and property/static-property compounds.
 
-Recent movers include inherited `__invoke` callable dispatch,
-`call_user_func_array()` object callback coverage, binary-safe `strpbrk()`
-suffix searches, `display_errors`/`zend.assertions` runner ini plumbing,
-bracketed namespace blocks, grouped imports, scalar conversions, `global`, PHP
-metadata constants, `dirname()` levels, `pathinfo()`,
-`LC_*`/`setlocale()`/`localeconv()`, search/count internals, persistent
+Recent movers include reflection extension visibility for PHPT metadata,
+inherited `__invoke` callable dispatch, `call_user_func_array()` object
+callback coverage, binary-safe `strpbrk()` suffix searches,
+`display_errors`/`zend.assertions` runner ini plumbing, grouped imports,
+scalar conversions, `global`, PHP metadata constants, `dirname()` levels,
+`pathinfo()`, `LC_*`/`setlocale()`/`localeconv()`, search/count internals,
 standard streams, `property_exists()`, PHPT manifests, `crc32()`,
 `str_replace()` array operands/reference entries/counts, `str_split()`,
-`nl2br()`, `strncasecmp()`, array parameter/return hints, object IDs, cwd
-helpers, property/static-property compounds, `array_unique()`, `chop()`, and
-integer validation for `chr()`/`intdiv()`/file offsets.
+`nl2br()`, and `strncasecmp()`.
 
 ## Dashboard
 
@@ -42,7 +40,7 @@ integer validation for `chr()`/`intdiv()`/file offsets.
 | PHPT other rows | 5 | 5 | 0 |
 | PHPT COW manifest | 29 | 29 | 0 |
 | Post-merge COW gate | 26 | 26 | 0 |
-| PHPT callback manifest | 5 | 3 | 2 |
+| PHPT callback manifest | 5 | 5 | 0 |
 | PHPT include manifest | 2 | 2 | 0 |
 
 ## RC Surface
@@ -64,14 +62,14 @@ compounds.
 ## Remaining Bounded Exclusions
 
 - None among the 282 runnable rows in the current bounded manifest.
-- Callback manifest has 3 runnable passing rows and 2 unsupported-extension
-  exclusions.
+- None among the 5 callback/callable frontier rows in the current callback
+  manifest.
 
 ## Verification
 
-Current branch verification for `ptn-s77w`: focused
-`compile_invokable_object_callables_to_native_binary` native reducer passed
-after conflict resolution.
+Current branch verification for `ptn-on53`: focused version/runner metadata
+reducers, ReflectionFunction metadata reducer, `phpversion.phpt`, and callback
+manifest 5/5 passed after conflict resolution.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 first-class callables, dynamic includes, unsupported internals,

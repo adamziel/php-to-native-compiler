@@ -763,13 +763,13 @@ Post-RC architecture remains explicit rather than hidden:
   `PHP_MINOR_VERSION`, `PHP_RELEASE_VERSION`, `PHP_EXTRA_VERSION`,
   `PHP_VERSION_ID`, `PHP_ZTS`, and `PHP_DEBUG` constants return modeled PHP
   version/build metadata. The optional extension argument returns the same
-  version for `core`, `date`, `pcre`, `standard`, and an empty extension name,
-  and `false` for unmodeled extension names.
+  version for `core`, `date`, `pcre`, `reflection`, `standard`, and an empty
+  extension name, and `false` for unmodeled extension names.
 - `zend_version()` returns the modeled Zend Engine version string.
 - `get_loaded_extensions()` returns the modeled loaded extension names
-  `Core`, `date`, `pcre`, and `standard`; `get_loaded_extensions(true)`
-  returns an empty array because Zend extensions are outside the current
-  runtime boundary.
+  `Core`, `date`, `pcre`, `reflection`, and `standard`;
+  `get_loaded_extensions(true)` returns an empty array because Zend extensions
+  are outside the current runtime boundary.
 - Locale category constants `LC_ALL`, `LC_COLLATE`, `LC_CTYPE`,
   `LC_MESSAGES`, `LC_MONETARY`, `LC_NUMERIC`, and `LC_TIME` are available
   through the modeled constant registry with stable PHP values. `setlocale()`
@@ -1301,8 +1301,8 @@ Post-RC architecture remains explicit rather than hidden:
   still bypass the shared warning/deprecation/notice emitters.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
-- PHP-exact version, SAPI, and extension metadata beyond the modeled
-  CLI/core/standard names and loaded-extension list.
+- PHP-exact version, SAPI, and extension metadata beyond the modeled CLI/core/
+  standard/reflection names and loaded-extension list.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
 - Scope-aware magic constants inside traits, includes, and eval contexts, plus
