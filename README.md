@@ -142,7 +142,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, and broad unsupported language surfaces such as anonymous
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
-  generator `yield`, nullable type hints, heredoc/nowdoc strings,
+  generator/Fiber execution boundaries including by-reference yields/returns,
+  nullable type hints, heredoc/nowdoc strings,
   plain variable-variable unsets,
   class/reflection-metadata blockers, readonly static property diagnostics,
   and currently unmodeled mutating array-internal helpers such as

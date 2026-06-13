@@ -51,6 +51,11 @@ execution. The additional exclusions are source-specific blockers for 11
 generator/yield rows; the historical execution row above remains the worker
 branch evidence for the original blocker clustering.
 
+`ptn-vwyp` revalidation after `ptn-awta` keeps the same 46 selected rows and
+classifies 32 runnable plus 14 excluded rows. The delta is the Fiber
+return-by-reference row, so all 12 generator/fiber boundary rows are now
+classified before execution instead of entering COW pass counts.
+
 Excluded rows:
 
 | Row | Classification |
@@ -59,6 +64,23 @@ Excluded rows:
 | `Zend/tests/assign_ref_to_overloaded_prop.phpt` | `unsupported-class-metadata`: needs non-public property visibility metadata |
 | `ext/standard/tests/array/array_splice_basic.phpt` | `unsupported-internal`: needs `array_splice()` by-reference array mutation plus replacement/reindexing COW separation |
 | `ext/standard/tests/array/array_walk/array_walk_recursive.phpt` | `unsupported-internal`: needs recursive by-reference callback traversal and mutation visibility |
+
+Additional `ptn-vwyp` generator/fiber exclusions:
+
+| Row | Classification |
+| --- | --- |
+| `Zend/tests/fibers/return-by-ref.phpt` | `unsupported-language`: needs Fiber coroutine runtime and by-reference return/getReturn boundary |
+| `Zend/tests/generators/errors/non_ref_generator_iterated_by_ref_error.phpt` | `unsupported-language`: needs generator foreach by-reference iteration boundary and generator reference diagnostics |
+| `Zend/tests/generators/errors/yield_const_by_ref_error.phpt` | `unsupported-language`: needs by-reference generator yield boundary and only-variable-yield diagnostics |
+| `Zend/tests/generators/errors/yield_non_ref_function_call_by_ref_error.phpt` | `unsupported-language`: needs by-reference generator yield boundary and only-variable-yield diagnostics |
+| `Zend/tests/generators/gc_with_iterator_in_foreach.phpt` | `unsupported-language`: needs generator suspension cleanup for live foreach variables and premature close |
+| `Zend/tests/generators/no_foreach_var_leaks.phpt` | `unsupported-language`: needs generator suspension cleanup for live foreach variables and premature close |
+| `Zend/tests/generators/return_from_by_ref_generator.phpt` | `unsupported-language`: needs generator `yield from` delegation and return-value propagation diagnostics |
+| `Zend/tests/generators/yield_array_offset_by_ref.phpt` | `unsupported-language`: needs generator foreach by-reference iteration boundary and generator reference diagnostics |
+| `Zend/tests/generators/yield_by_reference.phpt` | `unsupported-language`: needs generator foreach by-reference iteration boundary and generator reference diagnostics |
+| `Zend/tests/generators/yield_by_reference_optimization.phpt` | `unsupported-language`: needs by-reference generator yield boundary and only-variable-yield diagnostics |
+| `Zend/tests/generators/yield_from_by_reference.phpt` | `unsupported-language`: needs generator `yield from` delegation and by-reference rejection diagnostics |
+| `Zend/tests/generators/yield_ref_function_call_by_reference.phpt` | `unsupported-language`: needs generator foreach by-reference iteration boundary and generator reference diagnostics |
 
 The 11 passing rows are useful regression sentinels, but they are not enough
 to expand the accepted COW manifest as a standalone pass-count slice:
@@ -85,7 +107,7 @@ ext/standard/tests/array/array_shift_basic.phpt
 | Closure capture, `Closure::bindTo()`, `Closure::fromCallable()`, and `Closure::__invoke` reference diagnostics | 7 | 0 pass, 7 fail | `ptn-8d2u` |
 | Object/property reference targets, overloaded property references, exception reference properties, and foreach-by-ref property writes | 5 | 0 pass, 4 fail, 1 excluded | `ptn-1om3` |
 | Plain foreach reference/control rows | 4 | 4 pass, 0 fail | can enter a future pass-count manifest after a 25-row aggregate exists |
-| Generator/fiber by-reference yields, returns, cleanup, and foreach iteration | 12 | 0 pass, 12 fail | `ptn-vwyp` |
+| Generator/fiber by-reference yields, returns, cleanup, and foreach iteration | 12 | 12 excluded, 0 runnable | `ptn-vwyp` |
 | Array internal reference parity around replace, splice, recursive walk, filter, and shift | 6 | 3 pass, 1 fail, 2 excluded | `ptn-f0rp` |
 
 ## Interpretation

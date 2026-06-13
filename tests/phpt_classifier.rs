@@ -226,6 +226,54 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
 }
 
 #[test]
+fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
+    let cases = [
+        (
+            "fiber by-ref return",
+            "--TEST--\nfiber\n--FILE--\n<?php\n$fiber = new Fiber(function &() {\n    Fiber::suspend();\n    return $var;\n});\n--EXPECT--\n",
+            "requires Fiber coroutine runtime and by-reference return/getReturn boundary",
+        ),
+        (
+            "non-ref generator iterated by-ref",
+            "--TEST--\ngenerator foreach by ref\n--FILE--\n<?php\nfunction gen() { yield; }\n$gen = gen();\nforeach ($gen as &$value) {}\n--EXPECTF--\n",
+            "requires generator foreach by-reference iteration boundary",
+        ),
+        (
+            "by-ref generator yielding expression",
+            "--TEST--\nyield const by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield \"foo\";\n}\n--EXPECTF--\n",
+            "requires by-reference generator yield boundary",
+        ),
+        (
+            "by-ref generator yield from",
+            "--TEST--\nyield from by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield from [];\n}\n--EXPECTF--\n",
+            "requires generator yield-from delegation diagnostics",
+        ),
+        (
+            "generator foreach cleanup",
+            "--TEST--\ngenerator foreach cleanup\n--FILE--\n<?php\nfunction gen(array $array) {\n    foreach ($array as $value) {\n        yield $value;\n    }\n}\n--EXPECT--\n",
+            "requires generator suspension cleanup for live foreach variables and premature close",
+        ),
+        (
+            "by-ref function call yielded by ref",
+            "--TEST--\nyield ref function call\n--FILE--\n<?php\nfunction &nop(&$var) { return $var; }\nfunction &gen(&$var) {\n    yield nop($var);\n}\n--EXPECT--\n",
+            "requires by-reference generator yield boundary",
+        ),
+    ];
+
+    for (name, phpt, reason) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("unsupported-language\t"),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_asymmetric_property_visibility_rows_runnable() {
     let classification = classify(
         "--TEST--\nasymmetric visibility\n--FILE--\n<?php\nclass Bag { public private(set) int $value; }\n--EXPECT--\n",

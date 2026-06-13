@@ -785,6 +785,11 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             return 0
         }
+        function ptn_defer_generator_reason(reason) {
+            if (ptn_deferred_generator_reason == "") {
+                ptn_deferred_generator_reason = reason
+            }
+        }
         {
             if (ptn_has_php_attribute_syntax($0)) {
                 print "unsupported-language\trequires PHP attribute syntax (`#[...]`) and reflection metadata, outside PTN parser/metadata model"
@@ -792,6 +797,11 @@ ptn_phpt_first_unsupported_language_surface() {
                 exit
             }
             line = ptn_php_code_line($0)
+            if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/) {
+                print "unsupported-language\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
+                found = 1
+                exit
+            }
             if (line ~ /<<<[[:space:]]*["'\''"]?[a-z_][a-z0-9_]*/) {
                 print "unsupported-language\trequires heredoc/nowdoc string syntax (`<<<`), outside PTN modeled string parser"
                 found = 1
@@ -817,10 +827,32 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])yield([[:space:];(),]|$)/) {
-                print "unsupported-language\trequires generator/yield lowering, outside PTN function and iterator runtime"
+            if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]*&[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\(/) {
+                ptn_by_ref_function_context = 1
+            }
+            if (ptn_deferred_generator_reason != "" &&
+                line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*&[[:space:]]*\$[a-z_]/) {
+                print "unsupported-language\trequires generator foreach by-reference iteration boundary and generator reference diagnostics, outside PTN generator runtime"
                 found = 1
                 exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\(/) {
+                ptn_generator_foreach_context = 1
+            }
+            if (line ~ /(^|[^[:alnum:]_$])yield[[:space:]]+from([^[:alnum:]_]|$)/) {
+                print "unsupported-language\trequires generator yield-from delegation diagnostics, return-value propagation, and by-reference rejection, outside PTN generator runtime"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])yield([[:space:];(),]|$)/) {
+                if (ptn_by_ref_function_context) {
+                    ptn_defer_generator_reason("requires by-reference generator yield boundary, reference identity, and only-variable-yield diagnostics, outside PTN generator runtime")
+                } else if (ptn_generator_foreach_context) {
+                    ptn_defer_generator_reason("requires generator suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
+                } else {
+                    ptn_defer_generator_reason("requires generator/yield lowering, outside PTN function and iterator runtime")
+                }
+                next
             }
             if (line ~ /(^|[,(])[[:space:]]*\?[[:space:]]*([a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:].&]*\$[a-z_]/ ||
                 line ~ /\)[[:space:]]*:[[:space:]]*\?[[:space:]]*([a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)([^[:alnum:]_]|$)/) {
@@ -862,7 +894,13 @@ ptn_phpt_first_unsupported_language_surface() {
                 }
             }
         }
-        END { exit found ? 0 : 1 }
+        END {
+            if (!found && ptn_deferred_generator_reason != "") {
+                print "unsupported-language\t" ptn_deferred_generator_reason
+                found = 1
+            }
+            exit found ? 0 : 1
+        }
     '
 }
 

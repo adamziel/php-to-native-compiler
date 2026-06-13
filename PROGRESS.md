@@ -1,17 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-13T23:47Z
-Measured: `ptn-feps` array_walk closure userdata parity after `ptn-awta`.
+Refresh: 2026-06-13T23:50Z
+Measured: `ptn-vwyp` generator/fiber COW frontier classification after `ptn-feps`.
 
-Slices cover callable/object, filesystem/string, property, COW, PHPT blockers,
-by-ref diagnostics, and SKIPIF preconditions.
+Slices cover callable/object, filesystem/string, property, COW, by-ref
+diagnostics, and generator/Fiber blockers.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 703 | 703 | 0 |
+| Native/compiler Rust suite | 704 | 704 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
@@ -27,6 +27,7 @@ by-ref diagnostics, and SKIPIF preconditions.
 | PHPT array-internal COW frontier | 72 | 17 | 55 |
 | PHPT COW foreach/reference frontier | 103 | 31 | 72 |
 | PHPT broad reference-call bucket | 12 | 8 | 4 |
+| PHPT generator/fiber COW boundary bucket | 12 | 0 | 12 |
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT callback manifest | 5 | 5 | 0 |
 | PHPT include manifest | 2 | 2 | 0 |
@@ -42,27 +43,26 @@ by-ref diagnostics, and SKIPIF preconditions.
 - Broad reference-call bucket is 12 selected, 11 runnable, 1 excluded, 8
   passing; residuals cover append args, class-name checks, and
   `SensitiveParameterValue`.
-- Static SKIPIF modeling current 1k classify-only is 447 runnable, 553
-  excluded, 0 `harness-skipif`, 2 `skipif-precondition`; worker 5k evidence is
-  2,070 runnable, 275 `harness-skipif`, 27 `skipif-precondition`.
+- Static SKIPIF current 1k classify-only is 447 runnable and 553 excluded;
+  worker 5k is 2,070 runnable.
+- Generator/fiber COW boundary bucket is 12 selected, 0 runnable, 12 excluded.
 
 ## Verification
 
-`ptn-begn` centralizes by-reference call arguments across direct calls,
-`call_user_func*()`, methods, and bounded callable `array_multisort()`;
-residual PHPTs are `ptn-hpxo`, `ptn-yl7i`, and `ptn-6x02`.
+`ptn-vwyp` classifies the broad COW generator/fiber bucket before it enters pass
+counts: COW classify-only selected 46 rows, kept 32 runnable, and excluded 14;
+classifier tests passed 18/18.
 
-`ptn-5sca` adds property refs, constructor by-reference args, Exception/Error
-`message` throws, and classifier narrowing. `ptn-awta` models static
-`--SKIPIF--` sanitizer, `PHP_INT_SIZE`, and host-locale preconditions.
+`ptn-begn` centralizes by-reference call arguments; residual PHPTs are
+`ptn-hpxo`, `ptn-yl7i`, and `ptn-6x02`. `ptn-5sca` adds property refs,
+constructor by-reference args, Exception/Error `message` throws, and classifier
+narrowing. `ptn-awta` models static `--SKIPIF--` preconditions.
 
 `ptn-feps` adds `array_walk()` warning-and-continue semantics for by-reference
-userdata mismatches plus root-scoped object handle reuse. Focused evidence:
-`cargo test array_walk`, object-handle reuse 1/1, and smoke 6/6; focused
+userdata mismatches plus root-scoped object handle reuse. Focused
 `array_walk_closure.phpt` reaches the remaining exception trace section.
 
-Follow-ups remain typed properties, traits, magic methods, attributes, heredoc,
-broader `Exception` APIs, static-property refs, `Exception::getTrace()`,
-array_walk closure exception traces, nullable types, generator `yield`, dynamic
-includes, unsupported internals, `Traversable`, INI modes, and classifier
-batching.
+Follow-ups remain typed properties, traits, magic methods, attributes,
+broader `Exception` APIs, static-property refs, trace APIs, nullable types,
+generator/Fiber execution, dynamic includes, unsupported internals,
+`Traversable`, INI modes, and classifier batching.
