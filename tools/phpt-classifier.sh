@@ -275,6 +275,48 @@ ptn_phpt_first_unsupported_ini() {
     return 1
 }
 
+ptn_phpt_unsupported_ini_blocker() {
+    local key
+    key=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
+
+    case "$key" in
+        assert.exception)
+            printf 'unsupported-assertion-ini\trequires configurable assert.exception assertion mode; PTN currently models catchable AssertionError but not assertion INI/runtime mode switching\n'
+            return 0
+            ;;
+        memory_limit)
+            printf 'unsupported-resource-limit-ini\trequires PHP memory_limit parsing/enforcement; PTN has no Zend memory manager/resource limit boundary\n'
+            return 0
+            ;;
+        register_argc_argv|variables_order|enable_post_data_reading|file_uploads|max_input_vars|max_input_nesting_level|post_max_size|always_populate_raw_post_data)
+            printf 'unsupported-request-input-ini\trequires request/input/upload SAPI state controlled by %s; PTN native CLI currently has no request boundary\n' "$key"
+            return 0
+            ;;
+        fatal_error_backtraces|error_log|report_memleaks)
+            printf 'unsupported-diagnostics-ini\trequires engine diagnostic/logging mode %s; PTN diagnostics do not yet model that runtime channel\n' "$key"
+            return 0
+            ;;
+        disable_functions)
+            printf 'unsupported-function-disable-ini\trequires runtime function table mutation from disable_functions; PTN currently emits a fixed function registry\n'
+            return 0
+            ;;
+        opcache.enable_cli|opcache.optimization_level)
+            printf 'unsupported-opcache-ini\trequires Zend OPcache configuration; PTN native compiler has no OPcache runtime layer\n'
+            return 0
+            ;;
+        default_charset|serialize_precision)
+            printf 'unsupported-scalar-format-ini\trequires runtime scalar/string formatting default %s; PTN only models bounded precision/display ini state\n' "$key"
+            return 0
+            ;;
+        sendmail_path|sys_temp_dir)
+            printf 'unsupported-host-path-ini\trequires host path ini %s; PTN runtime does not yet model this process-global configuration\n' "$key"
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
 ptn_phpt_has_external_service_harness() {
     local path=$1
 
@@ -806,6 +848,9 @@ ptn_phpt_classify_row() {
 
     if ptn_phpt_csv_contains_ci "INI" "$sections"; then
         if value=$(ptn_phpt_first_unsupported_ini "$path"); then
+            if ptn_phpt_unsupported_ini_blocker "$value"; then
+                return 0
+            fi
             printf 'unsupported-ini\trequires unsupported ini setting %s; modeled ini keys: %s\n' \
                 "$value" "$(ptn_phpt_supported_ini)"
             return 0

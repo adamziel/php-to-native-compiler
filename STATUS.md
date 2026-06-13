@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T20:29Z
-Measured: `ptn-flje` broad COW/reference frontier after `ptn-550s.8`.
+Last refresh: 2026-06-13T20:48Z
+Measured: `ptn-x8p9` / `ptn-j2ar` broad PHPT INI blocker split after
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 670/670; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 671/671; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 670/670 |
+| Native/compiler Rust suite | 671/671 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

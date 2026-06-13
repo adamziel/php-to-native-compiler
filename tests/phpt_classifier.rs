@@ -254,6 +254,74 @@ fn phpt_classifier_excludes_unsupported_foreach_internal_surfaces() {
 }
 
 #[test]
+fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
+    let cases = [
+        (
+            "assertion mode",
+            "assert.exception=1",
+            "unsupported-assertion-ini\t",
+            "configurable assert.exception assertion mode",
+        ),
+        (
+            "request input",
+            "enable_post_data_reading=0",
+            "unsupported-request-input-ini\t",
+            "request/input/upload SAPI state",
+        ),
+        (
+            "resource limits",
+            "memory_limit=2M",
+            "unsupported-resource-limit-ini\t",
+            "memory_limit parsing/enforcement",
+        ),
+        (
+            "diagnostics",
+            "fatal_error_backtraces=0",
+            "unsupported-diagnostics-ini\t",
+            "engine diagnostic/logging mode",
+        ),
+        (
+            "function disabling",
+            "disable_functions=assert",
+            "unsupported-function-disable-ini\t",
+            "runtime function table mutation",
+        ),
+        (
+            "opcache",
+            "opcache.enable_cli=1",
+            "unsupported-opcache-ini\t",
+            "Zend OPcache configuration",
+        ),
+        (
+            "scalar formatting",
+            "serialize_precision=17",
+            "unsupported-scalar-format-ini\t",
+            "runtime scalar/string formatting default",
+        ),
+        (
+            "host path",
+            "sys_temp_dir=/tmp",
+            "unsupported-host-path-ini\t",
+            "host path ini",
+        ),
+    ];
+
+    for (name, ini, category, reason) in cases {
+        let classification = classify(&format!(
+            "--TEST--\n{name}\n--INI--\n{ini}\n--FILE--\n<?php\necho \"ok\\n\";\n--EXPECT--\nok\n"
+        ));
+        assert!(
+            classification.starts_with(category),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_variadic_parameter_rows_runnable() {
     let classification = classify(
         "--TEST--\nvariadic\n--FILE--\n<?php\nfunction f(...$args) { var_dump($args); }\nf(1, 2);\n--EXPECT--\n",
