@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T23:38Z
+Last refresh: 2026-06-13T23:47Z
 Source: `PROGRESS.md`
-Measured: `ptn-awta` static SKIPIF preconditions after `ptn-5sca`.
+Measured: `ptn-feps` array_walk closure userdata parity after `ptn-awta`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 701/701; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 703/703; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 701/701 |
+| Native/compiler Rust suite | 703/703 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

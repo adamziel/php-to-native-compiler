@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T23:38Z
-Measured: `ptn-awta` static SKIPIF preconditions after `ptn-5sca`.
+Last refresh: 2026-06-13T23:47Z
+Measured: `ptn-feps` array_walk closure userdata parity after `ptn-awta`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 701/701; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 703/703; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 701/701 |
+| Native/compiler Rust suite | 703/703 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

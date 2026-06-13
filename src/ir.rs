@@ -99,6 +99,7 @@ pub struct MethodDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
     pub name: String,
+    pub display_name: String,
     pub class_name: Option<String>,
     pub method_name: Option<String>,
     pub is_static: bool,
@@ -677,6 +678,7 @@ impl<'a> LoweringContext<'a> {
                 .collect();
             context.functions.push(FunctionDecl {
                 name: function.name.clone(),
+                display_name: function.name.clone(),
                 class_name: None,
                 method_name: None,
                 is_static: false,
@@ -715,6 +717,7 @@ impl<'a> LoweringContext<'a> {
             .collect();
         self.functions.push(FunctionDecl {
             name: "{closure}".to_string(),
+            display_name: format!("{{closure:{}:{}}}", self.source_file, function.span.line),
             class_name: None,
             method_name: None,
             is_static: false,
@@ -781,6 +784,7 @@ impl<'a> LoweringContext<'a> {
                     .collect();
                 self.functions.push(FunctionDecl {
                     name: format!("{}::{}", class.name, method.name),
+                    display_name: format!("{}::{}", class.name, method.name),
                     class_name: Some(class.name.clone()),
                     method_name: Some(method.name.clone()),
                     is_static: method.is_static,

@@ -28,6 +28,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
     runtime->next_object_id = 0;
+    runtime->free_object_ids = NULL;
+    runtime->free_object_ids_len = 0;
+    runtime->free_object_ids_capacity = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
     runtime->class_scope_allows = caller_runtime->class_scope_allows;
@@ -73,6 +76,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->live_objects = NULL;
         runtime->live_objects_len = 0;
         runtime->live_objects_capacity = 0;
+        free(runtime->free_object_ids);
+        runtime->free_object_ids = NULL;
+        runtime->free_object_ids_len = 0;
+        runtime->free_object_ids_capacity = 0;
     }
 }
 
@@ -318,6 +325,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     }
     exception->refcount = 1;
     exception->object_id = ptn_runtime_alloc_object_id(runtime);
+    exception->lifecycle_runtime = ptn_runtime_root(runtime);
     exception->class_name = class_name;
     exception->message = message;
     exception->path = path;

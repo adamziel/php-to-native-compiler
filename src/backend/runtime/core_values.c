@@ -244,6 +244,7 @@ typedef struct {
 struct PtnClosure {
     size_t refcount;
     size_t object_id;
+    PtnRuntime *lifecycle_runtime;
     size_t function_index;
     const char *display_name;
     PtnFunctionMetadata metadata;
@@ -372,6 +373,7 @@ typedef struct {
 struct PtnException {
     size_t refcount;
     size_t object_id;
+    PtnRuntime *lifecycle_runtime;
     const char *class_name;
     char *message;
     const char *path;
@@ -452,6 +454,9 @@ struct PtnRuntime {
     size_t live_objects_len;
     size_t live_objects_capacity;
     size_t next_object_id;
+    size_t *free_object_ids;
+    size_t free_object_ids_len;
+    size_t free_object_ids_capacity;
     PtnMethodDispatchHandler method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
     PtnClassScopeAllowsHandler class_scope_allows;
@@ -546,11 +551,21 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     return metadata;
 }
 
-static PTN_UNUSED size_t ptn_runtime_alloc_object_id(PtnRuntime *runtime) {
+static PTN_UNUSED PtnRuntime *ptn_runtime_root(PtnRuntime *runtime) {
     if (runtime == NULL) {
+        return NULL;
+    }
+    return runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+}
+
+static PTN_UNUSED size_t ptn_runtime_alloc_object_id(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
         return 0;
     }
-    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->free_object_ids_len > 0) {
+        return root->free_object_ids[--root->free_object_ids_len];
+    }
     if (root->next_object_id == 0) {
         root->next_object_id = 1;
     }
@@ -560,11 +575,27 @@ static PTN_UNUSED size_t ptn_runtime_alloc_object_id(PtnRuntime *runtime) {
     return root->next_object_id++;
 }
 
-static PTN_UNUSED PtnRuntime *ptn_runtime_root(PtnRuntime *runtime) {
-    if (runtime == NULL) {
-        return NULL;
+static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t object_id) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || object_id == 0) {
+        return;
     }
-    return runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->free_object_ids_len == root->free_object_ids_capacity) {
+        size_t new_capacity = root->free_object_ids_capacity == 0
+            ? 8
+            : root->free_object_ids_capacity * 2;
+        if (new_capacity < root->free_object_ids_capacity ||
+            new_capacity > SIZE_MAX / sizeof(size_t)) {
+            ptn_abort_out_of_memory();
+        }
+        size_t *new_ids = realloc(root->free_object_ids, new_capacity * sizeof(size_t));
+        if (new_ids == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->free_object_ids = new_ids;
+        root->free_object_ids_capacity = new_capacity;
+    }
+    root->free_object_ids[root->free_object_ids_len++] = object_id;
 }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -819,6 +850,7 @@ static PTN_UNUSED PtnValue ptn_closure(
     }
     closure->refcount = 1;
     closure->object_id = ptn_runtime_alloc_object_id(runtime);
+    closure->lifecycle_runtime = ptn_runtime_root(runtime);
     closure->function_index = function_index;
     closure->display_name = display_name;
     closure->metadata = metadata;

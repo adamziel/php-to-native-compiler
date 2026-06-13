@@ -1,17 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-13T23:38Z
-Measured: `ptn-awta` static SKIPIF preconditions after `ptn-5sca`.
+Refresh: 2026-06-13T23:47Z
+Measured: `ptn-feps` array_walk closure userdata parity after `ptn-awta`.
 
 Slices cover callable/object, filesystem/string, property, COW, PHPT blockers,
-readonly metadata, `throw`, by-ref diagnostics, and SKIPIF preconditions.
+by-ref diagnostics, and SKIPIF preconditions.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 701 | 701 | 0 |
+| Native/compiler Rust suite | 703 | 703 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
@@ -49,19 +49,20 @@ readonly metadata, `throw`, by-ref diagnostics, and SKIPIF preconditions.
 ## Verification
 
 `ptn-begn` centralizes by-reference call arguments across direct calls,
-`call_user_func*()`, methods, and bounded callable `array_multisort()`.
-Evidence: Rust 11/11, foreach COW 13/13, broad PHPT 8/11; residuals are
-`ptn-hpxo`, `ptn-yl7i`, and `ptn-6x02`.
+`call_user_func*()`, methods, and bounded callable `array_multisort()`;
+residual PHPTs are `ptn-hpxo`, `ptn-yl7i`, and `ptn-6x02`.
 
 `ptn-5sca` adds property refs, constructor by-reference args, Exception/Error
-`message` throws, and classifier narrowing. Evidence: native reducers 3/3,
-PHPT `exception_with_by_ref_message` 1/1, smoke 6/6, COW gate 26/26.
+`message` throws, and classifier narrowing. `ptn-awta` models static
+`--SKIPIF--` sanitizer, `PHP_INT_SIZE`, and host-locale preconditions.
 
-`ptn-awta` adds static PHPT `--SKIPIF--` precondition modeling for
-sanitizer env gates, `PHP_INT_SIZE`, and host locale availability. Worker
-evidence: classifier 17/17 plus broad 1k/5k classify-only before/after.
+`ptn-feps` adds `array_walk()` warning-and-continue semantics for by-reference
+userdata mismatches plus root-scoped object handle reuse. Focused evidence:
+`cargo test array_walk`, object-handle reuse 1/1, and smoke 6/6; focused
+`array_walk_closure.phpt` reaches the remaining exception trace section.
 
 Follow-ups remain typed properties, traits, magic methods, attributes, heredoc,
 broader `Exception` APIs, static-property refs, `Exception::getTrace()`,
-`array_walk()` userdata, nullable types, generator `yield`, dynamic includes,
-unsupported internals, `Traversable`, INI modes, and classifier batching.
+array_walk closure exception traces, nullable types, generator `yield`, dynamic
+includes, unsupported internals, `Traversable`, INI modes, and classifier
+batching.

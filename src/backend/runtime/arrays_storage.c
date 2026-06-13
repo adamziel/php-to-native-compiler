@@ -672,6 +672,7 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     }
     object->refcount = 0;
     ptn_runtime_unregister_object(object->lifecycle_runtime, object);
+    ptn_runtime_release_object_id(object->lifecycle_runtime, object->object_id);
     if (object->native_data_free != NULL) {
         object->native_data_free(object->native_data);
     }

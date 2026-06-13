@@ -9197,6 +9197,37 @@ try {
 }
 
 #[test]
+fn compile_object_handles_reuse_released_closure_ids_to_native_binary() {
+    let root = temp_dir("ptn-native-object-handle-reuse");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-handle-reuse.php");
+    let output = root.join("object-handle-reuse-bin");
+    fs::write(
+        &input,
+        "<?php
+$func = function() {};
+var_dump(spl_object_id($func));
+$func = function() {};
+var_dump(spl_object_id($func));
+$object = new stdClass();
+var_dump(spl_object_id($object));
+var_dump(spl_object_id($func));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\nint(1)\nint(2)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_function_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-function-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -21436,6 +21467,73 @@ var_dump($userdata);
             "bool(true)\n",
             "array(0) {\n",
             "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_walk_closure_userdata_by_ref_warning_and_separation_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-closure-userdata-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-closure-userdata-ref.php");
+    let output = root.join("array-walk-closure-userdata-ref-bin");
+    fs::write(
+        &input,
+        "<?php
+$ar = [\"one\" => 1, \"two\" => 2, \"three\" => 3];
+$user_data = [\"sum\" => 42];
+$func = function($value, $key, &$udata) {
+    echo \"array before=\", $udata[\"sum\"], \"\\n\";
+    $udata[\"sum\"] += $value;
+};
+var_dump(array_walk($ar, $func, $user_data));
+echo \"array end=\";
+var_dump($user_data[\"sum\"]);
+
+$user_data = (object)[\"sum\" => 42];
+$func = function($value, $key, &$udata) {
+    echo \"object before=\", $udata->sum, \"\\n\";
+    $udata->sum += $value;
+};
+var_dump(array_walk($ar, $func, $user_data));
+echo \"object end=\";
+var_dump($user_data->sum);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "\nWarning: {{closure:{}:4}}(): Argument #3 ($udata) must be passed by reference, value given in ptn on line 8\n",
+                "array before=42\n",
+                "\nWarning: {{closure:{}:4}}(): Argument #3 ($udata) must be passed by reference, value given in ptn on line 8\n",
+                "array before=42\n",
+                "\nWarning: {{closure:{}:4}}(): Argument #3 ($udata) must be passed by reference, value given in ptn on line 8\n",
+                "array before=42\n",
+                "bool(true)\n",
+                "array end=int(42)\n",
+                "\nWarning: {{closure:{}:13}}(): Argument #3 ($udata) must be passed by reference, value given in ptn on line 17\n",
+                "object before=42\n",
+                "\nWarning: {{closure:{}:13}}(): Argument #3 ($udata) must be passed by reference, value given in ptn on line 17\n",
+                "object before=43\n",
+                "\nWarning: {{closure:{}:13}}(): Argument #3 ($udata) must be passed by reference, value given in ptn on line 17\n",
+                "object before=45\n",
+                "bool(true)\n",
+                "object end=int(48)\n",
+            ),
+            input.display(),
+            input.display(),
+            input.display(),
+            input.display(),
+            input.display(),
+            input.display(),
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

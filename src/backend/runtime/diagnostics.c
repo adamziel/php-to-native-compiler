@@ -466,6 +466,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
     runtime->next_object_id = 1;
+    runtime->free_object_ids = NULL;
+    runtime->free_object_ids_len = 0;
+    runtime->free_object_ids_capacity = 0;
     runtime->method_dispatch = NULL;
     runtime->declared_method_exists = NULL;
     runtime->class_scope_allows = NULL;

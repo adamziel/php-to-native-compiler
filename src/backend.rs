@@ -348,7 +348,7 @@ fn emit_user_functions(
             out.push_str(") {\n");
             out.push_str("        if (caller_runtime->throw_argument_count_errors) {\n");
             out.push_str("            ptn_throw_user_argument_count_error(caller_runtime, \"");
-            out.push_str(&c_string(&function.name));
+            out.push_str(&c_string(&function.display_name));
             out.push_str("\", ");
             out.push_str(&required_parameter_count.to_string());
             out.push_str(", argc, ");
@@ -357,7 +357,7 @@ fn emit_user_functions(
             out.push_str("            return ptn_null();\n");
             out.push_str("        }\n");
             out.push_str("        ptn_emit_argument_count_error(&caller_runtime->diagnostics, \"");
-            out.push_str(&c_string(&function.name));
+            out.push_str(&c_string(&function.display_name));
             out.push_str("\", ");
             out.push_str(&required_parameter_count.to_string());
             out.push_str(", argc);\n");
@@ -455,7 +455,7 @@ fn emit_user_functions(
                 }
                 out.push_str(") {\n");
                 out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-                out.push_str(&c_string(&function.name));
+                out.push_str(&c_string(&function.display_name));
                 out.push_str("() argument $");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str(" must be of type null\");\n");
@@ -468,7 +468,7 @@ fn emit_user_functions(
                 out.push_str(&parameter_source);
                 out.push_str(").type != PTN_ARRAY) {\n");
                 out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-                out.push_str(&c_string(&function.name));
+                out.push_str(&c_string(&function.display_name));
                 out.push_str("() argument $");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str(" must be of type array\");\n");
@@ -507,27 +507,25 @@ fn emit_user_functions(
                 out.push_str(
                     "            ptn_emit_by_reference_argument_warning(caller_runtime, ptn_by_reference_argument_function_name(caller_runtime, \"",
                 );
-                out.push_str(&c_string(&function.name));
+                out.push_str(&c_string(&function.display_name));
                 out.push_str("\"), ");
                 out.push_str(&(parameter_index + 1).to_string());
                 out.push_str(", \"");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\", line);\n");
-                out.push_str("            ptn_runtime_write_variable(&runtime, \"");
-                out.push_str(&c_string(&parameter.name));
-                out.push_str("\", ");
-                out.push_str(&parameter_value);
-                out.push_str(");\n");
                 out.push_str("        } else {\n");
                 out.push_str("            ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
-                out.push_str(&c_string(&function.name));
+                out.push_str(&c_string(&function.display_name));
                 out.push_str("\"), ");
                 out.push_str(&(parameter_index + 1).to_string());
                 out.push_str(", \"");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\");\n");
                 out.push_str("        }\n");
-                out.push_str("    } else {\n");
+                out.push_str("    }\n");
+                out.push_str("    if (");
+                out.push_str(&parameter_source);
+                out.push_str(".type == PTN_REFERENCE) {\n");
                 if let Some(temp) = &parameter_cast_temp {
                     out.push_str("        ptn_reference_assign(");
                     out.push_str(&parameter_source);
@@ -539,6 +537,12 @@ fn emit_user_functions(
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\", ");
                 out.push_str(&parameter_source);
+                out.push_str(");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\", ");
+                out.push_str(&parameter_value);
                 out.push_str(");\n");
                 out.push_str("    }\n");
                 if default_guard.is_some() {
@@ -585,7 +589,12 @@ fn emit_user_functions(
         out.push_str(&return_label);
         out.push_str(":\n");
         if let Some(return_type) = function.return_type {
-            emit_return_type_boundary(out, return_type, &function.name, function.return_by_ref);
+            emit_return_type_boundary(
+                out,
+                return_type,
+                &function.display_name,
+                function.return_by_ref,
+            );
         }
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
         out.push_str("    ptn_runtime_free(&runtime);\n");
@@ -651,7 +660,7 @@ fn emit_variadic_parameter_binding(
         out.push_str("].type != PTN_REFERENCE) {\n");
         out.push_str("            if (caller_runtime->warn_by_ref_argument_mismatch) {\n");
         out.push_str("                ptn_emit_by_reference_argument_warning(caller_runtime, ptn_by_reference_argument_function_name(caller_runtime, \"");
-        out.push_str(&c_string(&function.name));
+        out.push_str(&c_string(&function.display_name));
         out.push_str("\"), ");
         out.push_str(&index_temp);
         out.push_str(" + 1, \"");
@@ -662,7 +671,7 @@ fn emit_variadic_parameter_binding(
         out.push_str("                return ptn_null();\n");
         out.push_str("            }\n");
         out.push_str("            ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
-        out.push_str(&c_string(&function.name));
+        out.push_str(&c_string(&function.display_name));
         out.push_str("\"), ");
         out.push_str(&index_temp);
         out.push_str(" + 1, \"");
@@ -676,7 +685,7 @@ fn emit_variadic_parameter_binding(
         out.push_str(&index_temp);
         out.push_str("]).type != PTN_NULL) {\n");
         out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-        out.push_str(&c_string(&function.name));
+        out.push_str(&c_string(&function.display_name));
         out.push_str("() argument $");
         out.push_str(&c_string(&parameter.name));
         out.push_str(" must be of type null\");\n");
@@ -692,7 +701,7 @@ fn emit_variadic_parameter_binding(
         out.push_str(&index_temp);
         out.push_str("]).type != PTN_ARRAY) {\n");
         out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-        out.push_str(&c_string(&function.name));
+        out.push_str(&c_string(&function.display_name));
         out.push_str("() argument $");
         out.push_str(&c_string(&parameter.name));
         out.push_str(" must be of type array\");\n");
@@ -6750,7 +6759,9 @@ impl ValueEmitter {
         out.push_str(&closure_temp);
         out.push_str(" = ptn_closure(&runtime, ");
         out.push_str(&function_index.to_string());
-        out.push_str(", \"{closure}\", ptn_function_metadata_found(\"{closure}\", 0, ");
+        out.push_str(", \"");
+        out.push_str(&c_string(&function.display_name));
+        out.push_str("\", ptn_function_metadata_found(\"{closure}\", 0, ");
         out.push_str(&function.parameters.len().to_string());
         out.push_str(", ");
         out.push_str(&required_parameter_count.to_string());

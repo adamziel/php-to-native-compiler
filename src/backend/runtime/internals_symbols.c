@@ -6,6 +6,7 @@ static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
         exception->refcount--;
         return;
     }
+    ptn_runtime_release_object_id(exception->lifecycle_runtime, exception->object_id);
     free(exception->message);
     free(exception);
 }
@@ -103,6 +104,7 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
     if (closure->refcount != 0) {
         return;
     }
+    ptn_runtime_release_object_id(closure->lifecycle_runtime, closure->object_id);
     ptn_symbols_free(&closure->captures);
     if (closure->has_wrapped_callable) {
         ptn_value_destroy(&closure->wrapped_callable);
