@@ -1498,6 +1498,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function is_countable($value) { return false; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function is_countable()");
 
+    let error = parser::parse("<?php function is_iterable($value) { return false; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function is_iterable()");
+
     let error =
         parser::parse("<?php function IN_ARRAY($needle, $haystack) { return true; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function in_array()");
@@ -8427,6 +8430,70 @@ var_dump(function_exists(\"is_countable\"), function_exists(\"IS_COUNTABLE\"));
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_is_countable"));
+}
+
+#[test]
+fn compile_is_iterable_current_value_subset_to_native_binary() {
+    let root = temp_dir("ptn-native-is-iterable-current-subset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("is-iterable-current-subset.php");
+    let output = root.join("is-iterable-current-subset-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {}
+
+$items = [1, 2, 3];
+$alias =& $items;
+$nested = [[\"x\" => 1]];
+$box = new Box();
+$std = new stdClass;
+$callback = function () { return 1; };
+
+var_dump(is_iterable($items));
+var_dump(is_iterable($alias));
+var_dump(is_iterable($nested[0]));
+var_dump(is_iterable($box));
+var_dump(is_iterable($std));
+var_dump(is_iterable($callback));
+var_dump(is_iterable(null), is_iterable(false), is_iterable(1), is_iterable(\"x\"));
+if (is_iterable($items)) {
+    foreach ($items as $value) {
+        echo $value;
+    }
+    echo \"\\n\";
+}
+var_dump(function_exists(\"is_iterable\"), function_exists(\"IS_ITERABLE\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "123\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_is_iterable"));
 }
 
 #[test]

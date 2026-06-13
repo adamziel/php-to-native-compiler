@@ -4492,6 +4492,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "is_file"
             | "is_int"
             | "is_integer"
+            | "is_iterable"
             | "is_long"
             | "is_float"
             | "is_double"

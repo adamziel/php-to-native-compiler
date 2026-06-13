@@ -393,7 +393,7 @@ Post-RC architecture remains explicit rather than hidden:
   `assert(expr[, description]);`,
   `in_array(expr, expr[, expr]);`,
   `is_callable(expr[, syntax_only]);`, `is_finite(expr);`,
-  `is_countable(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
+  `is_countable(expr);`, `is_iterable(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
   including `var_export(expr[, return])`, `print_r(expr[, return])`,
@@ -461,7 +461,7 @@ Post-RC architecture remains explicit rather than hidden:
   `fopen(expr, expr[, expr[, expr]])`, `fclose(expr)`,
   `stream_get_meta_data(expr)`,
   `file_get_contents(expr[, use_include_path[, context[, offset[, length]]]])`,
-  `is_callable(expr[, syntax_only])`, `is_countable(expr)`, `is_finite(expr)`,
+  `is_callable(expr[, syntax_only])`, `is_countable(expr)`, `is_iterable(expr)`, `is_finite(expr)`,
   `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar plus array/object/resource
   `is_*` type predicates, and
@@ -864,6 +864,7 @@ Post-RC architecture remains explicit rather than hidden:
   `is_array()`, `is_object()`, `is_null()`,
   `is_bool()`, `is_int()`, `is_integer()`, `is_long()`, `is_float()`,
   `is_double()`, `is_string()`, `is_scalar()`, `is_countable()` for arrays,
+  `is_iterable()` for arrays in the current non-`Traversable` object subset,
   `is_finite()`,
   `is_infinite()`, `is_nan()`, and `is_resource()` for open stream resources.
 - `fopen()` opens filesystem-backed streams through the shared resource value
