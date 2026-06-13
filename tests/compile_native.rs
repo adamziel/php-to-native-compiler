@@ -1323,6 +1323,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         parser::parse("<?php function StrNCmp($left, $right, $length) { return 0; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strncmp()");
 
+    let error = parser::parse("<?php function StrNCaseCmp($left, $right, $length) { return 0; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strncasecmp()");
+
     let error = parser::parse("<?php function Crc32($value) { return 0; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function crc32()");
 
@@ -4232,6 +4236,8 @@ echo trim(\" \\tHi\\r\\n\"), \"|\", ltrim(\"==left\", \"=\"), \"|\", rtrim(\"rig
 echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
 var_dump(strncmp(\"abc\", \"abd\", 3), strncmp(\"abc\", \"abd\", 2), strncmp(\"a\" . chr(0) . \"c\", \"a\" . chr(0) . \"d\", 3), strncmp(\"a\", \"a\" . chr(0), 2), strncmp(12345, \"123\", \"3\"), function_exists(\"strncmp\"), function_exists(\"STRNCMP\"));\n\
 try { strncmp(\"a\", \"b\", -1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(strncasecmp(\"AbCd\", \"aBcE\", 3), strncasecmp(\"AbCd\", \"aBcE\", 4), strncasecmp(\"a\" . chr(0) . \"C\", \"A\" . chr(0) . \"d\", 3), strncasecmp(\"a\", \"A\" . chr(0), 2), strncasecmp(12345, \"123\", \"3\"), function_exists(\"strncasecmp\"), function_exists(\"STRNCASECMP\"));\n\
+try { strncasecmp(\"a\", \"b\", -1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(crc32(\"string_val1234\"), crc32(\"a\" . chr(0) . \"b\"), crc32(12345), function_exists(\"CRC32\"));\n\
 var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2), strtolower(true), strtoupper(false), function_exists(\"str_pad\"), function_exists(\"STRCASECMP\"), defined(\"STR_PAD_BOTH\"));",
     )
@@ -4258,6 +4264,8 @@ Hi|left|right\n\
 d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
 int(-1)\nint(0)\nint(-1)\nint(-1)\nint(0)\nbool(true)\nbool(true)\n\
 strncmp(): Argument #3 ($length) must be greater than or equal to 0\n\
+int(0)\nint(-1)\nint(-1)\nint(-1)\nint(0)\nbool(true)\nbool(true)\n\
+strncasecmp(): Argument #3 ($length) must be greater than or equal to 0\n\
 int(256895812)\nint(367556721)\nint(3421846044)\nbool(true)\n\
 int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\nstring(1) \"1\"\nstring(0) \"\"\n\
 bool(true)\nbool(true)\nbool(true)\n"
@@ -4275,6 +4283,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_internal_str_rot13",
         "ptn_internal_strcmp",
         "ptn_internal_strcasecmp",
+        "ptn_internal_strncasecmp",
         "ptn_internal_str_contains",
         "ptn_internal_str_starts_with",
         "ptn_internal_str_ends_with",

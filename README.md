@@ -49,7 +49,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Direct variable and variable-root array/append compounds share boxed
   operators and return assigned values.
 - `join()` concatenates ordered-array values, `explode()` splits length-aware
-  scalar strings, `strncmp()` compares bounded byte prefixes, bounded
+  scalar strings, `strncmp()`/`strncasecmp()` compare bounded byte prefixes, bounded
   `sprintf()`/`printf()` cover common formats, and `json_encode()` covers
   current boxed values.
 - `strpos()`/`stripos()` and `strrpos()`/`strripos()` use length-aware byte

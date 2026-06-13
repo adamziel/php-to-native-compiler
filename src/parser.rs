@@ -4227,6 +4227,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "str_rot13"
             | "strcmp"
             | "strcasecmp"
+            | "strncasecmp"
             | "strncmp"
             | "str_contains"
             | "str_starts_with"
