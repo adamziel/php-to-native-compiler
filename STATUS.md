@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T21:46Z
-Measured: `ptn-8d2u` Closure callable/reference frontier.
+Last refresh: 2026-06-13T22:38Z
+Measured: `ptn-550s.11` nested foreach/reference PHPT slice.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 688/688; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 692/692; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 688/688 |
+| Native/compiler Rust suite | 692/692 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -29,6 +29,7 @@ Source unit tests 3/3; Native/compiler Rust suite 688/688; Native smoke matrix 6
 | PHPT tests/basic+func+lang | 78/78 |
 | PHPT other rows | 8/8 |
 | PHPT COW manifest | 54/54 |
+| PHPT nested foreach/reference rows | 2/3 |
 | PHPT array-internal COW frontier | 0/72 |
 | PHPT COW foreach/reference frontier | 31/103 |
 | Post-merge COW gate | 26/26 |

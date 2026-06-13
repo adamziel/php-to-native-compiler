@@ -302,6 +302,8 @@ typedef struct {
     const char *access_scope;
     size_t index;
     size_t length;
+    PtnArrayKey current_key;
+    int has_current_key;
     int valid;
     int live;
 } PtnArrayIterator;

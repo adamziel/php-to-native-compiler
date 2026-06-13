@@ -210,6 +210,68 @@ var_dump($items);
 var_dump($copy);
 "#,
     },
+    Case {
+        name: "nested_unset_current_and_future_by_ref_iterators",
+        source: r#"<?php
+$a = [0, 1, 2, 3];
+foreach ($a as &$x) {
+    foreach ($a as &$y) {
+        echo $x, " - ", $y, "\n";
+        if ($x == 0 && $y == 1) {
+            unset($a[2]);
+            unset($a[1]);
+        }
+    }
+}
+"#,
+    },
+    Case {
+        name: "function_child_rekey_by_reference",
+        source: r#"<?php
+$arr = [
+    "a" => [
+        "a" => "apple",
+        "b" => "banana",
+        "c" => "cranberry",
+        "d" => "mango",
+        "e" => "pineapple",
+    ],
+    "b" => [
+        "a" => "apple",
+        "b" => "banana",
+        "c" => "cranberry",
+        "d" => "mango",
+        "e" => "pineapple",
+    ],
+    "c" => "cranberry",
+    "d" => "mango",
+    "e" => "pineapple",
+];
+
+function test_child_rekey(&$child) {
+    $i = 1;
+    foreach ($child as $key => $fruit) {
+        if (!is_numeric($key)) {
+            $child[$i] = $fruit;
+            unset($child[$key]);
+            $i++;
+        }
+    }
+}
+
+$i = 1;
+foreach ($arr as $key => $fruit) {
+    $arr[$i] = $fruit;
+    if (is_array($fruit)) {
+        test_child_rekey($arr[$i]);
+    }
+    unset($arr[$key]);
+    $i++;
+}
+
+var_dump($arr);
+"#,
+    },
 ];
 
 fn run_php(path: &Path) -> ProcessOutput {

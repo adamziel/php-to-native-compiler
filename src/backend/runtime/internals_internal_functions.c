@@ -8871,6 +8871,71 @@ static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const P
     return ptn_is_scalar(args[0]);
 }
 
+static int ptn_is_numeric_function_string(PtnString string) {
+    if (ptn_string_has_embedded_nul(string)) {
+        return 0;
+    }
+
+    const char *cursor = (const char *)string.data;
+    while (isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor == '+' || *cursor == '-') {
+        cursor++;
+    }
+
+    int digits = 0;
+    while (isdigit((unsigned char)*cursor)) {
+        digits = 1;
+        cursor++;
+    }
+    if (*cursor == '.') {
+        cursor++;
+        while (isdigit((unsigned char)*cursor)) {
+            digits = 1;
+            cursor++;
+        }
+    }
+    if (!digits) {
+        return 0;
+    }
+
+    if (*cursor == 'e' || *cursor == 'E') {
+        const char *exponent = cursor + 1;
+        if (*exponent == '+' || *exponent == '-') {
+            exponent++;
+        }
+        int exponent_digits = 0;
+        while (isdigit((unsigned char)*exponent)) {
+            exponent_digits = 1;
+            exponent++;
+        }
+        if (!exponent_digits) {
+            return 0;
+        }
+        cursor = exponent;
+    }
+
+    while (isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    return *cursor == '\0';
+}
+
+static PtnValue ptn_internal_is_numeric(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type == PTN_INT || value.type == PTN_FLOAT) {
+        return ptn_bool(1);
+    }
+    if (value.type == PTN_STRING) {
+        return ptn_bool(ptn_is_numeric_function_string(value.as.string));
+    }
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_is_finite(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -11117,6 +11182,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_long", 1, 1, ptn_internal_is_int },
         { "is_nan", 1, 1, ptn_internal_is_nan },
         { "is_null", 1, 1, ptn_internal_is_null },
+        { "is_numeric", 1, 1, ptn_internal_is_numeric },
         { "is_object", 1, 1, ptn_internal_is_object },
         { "is_readable", 1, 1, ptn_internal_is_readable },
         { "is_resource", 1, 1, ptn_internal_is_resource },

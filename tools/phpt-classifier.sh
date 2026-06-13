@@ -546,7 +546,12 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /\.\.\./) {
+            if (line ~ /(^|[^[:alnum:]_$])unset[[:space:]]*\([[:space:]]*[$][$]/) {
+                print "unsupported-language\trequires plain variable-variable unset, outside PTN modeled dynamic-root array unset/write support"
+                found = 1
+                exit
+            }
+            if ($0 ~ /\.\.\./) {
                 declaration = line ~ /(^|[^[:alnum:]_$])(function|fn)[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*\.\.\./
                 if (!declaration) {
                     print "unsupported-language\trequires call-site or array unpacking (`...`), outside PTN modeled call/array lowering"

@@ -1,0 +1,14 @@
+# Focused PHPT manifest for nested foreach/reference mutation parity.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Run:
+#   tools/run-phpt-manifest.sh tools/phpt-foreach-nested-ref-manifest.txt
+
+# bucket: nested-live-by-reference-foreach rows=1
+Zend/tests/foreach/foreach_008.phpt
+
+# bucket: by-reference-child-rekey-through-function rows=1
+Zend/tests/foreach/bug68215.phpt
+
+# bucket: classified-dynamic-variable-unset rows=1
+Zend/tests/foreach/bug39036.phpt

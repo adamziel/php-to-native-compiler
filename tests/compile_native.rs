@@ -9811,6 +9811,59 @@ fn compile_bug30726_is_float_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_is_numeric_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-is-numeric-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("is-numeric-function.php");
+    let output = root.join("is-numeric-function-bin");
+    fs::write(
+        &input,
+        "<?php
+$values = [0, 1, 1.5, NAN, INF, \"42\", \" 42 \", \"+.5\", \"-.5\", \"1e309\", \"NAN\", \"INF\", \"42x\", \"0x10\", \"\", [], true, null];
+foreach ($values as $value) {
+    var_dump(is_numeric($value));
+}
+var_dump(function_exists(\"is_numeric\"), function_exists(\"IS_NUMERIC\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_is_numeric"));
+}
+
+#[test]
 fn compile_chr_internal_function_to_native_binary() {
     let root = temp_dir("ptn-native-chr-function");
     fs::create_dir_all(&root).unwrap();

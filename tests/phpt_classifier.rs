@@ -128,6 +128,11 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "--TEST--\nthis target\n--FILE--\n<?php\nforeach ($items as list($this)) {}\n--EXPECTF--\n",
             "requires foreach assignment diagnostics for `$this`",
         ),
+        (
+            "plain variable-variable unset",
+            "--TEST--\ndynamic unset\n--FILE--\n<?php\n$name = 'value';\nunset($$name);\n--EXPECT--\n",
+            "requires plain variable-variable unset",
+        ),
     ];
 
     for (name, phpt, reason) in cases {

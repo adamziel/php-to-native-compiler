@@ -35,7 +35,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Statement-form `(void)` casts evaluate operands for side effects and discard
   results while expression-context `(void)` remains diagnostic.
 - Direct references and by-reference parameters cover the first COW/reference
-  slice; dynamic roots support reads/writes, array/string-offset writes,
+  slice; live by-reference `foreach` iterators keep nested unset/rekey mutation
+  parity; dynamic roots support reads/writes, array/string-offset writes,
   unsets, compounds, null coalescing assignments, and inc/dec targets.
 - Arithmetic models non-numeric string/array `TypeError`s while preserving
   leading-numeric warnings; float stringification honors `phpc -d precision=N`
@@ -137,6 +138,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   expectation rows, and broad unsupported language surfaces such as anonymous
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
   generator `yield`, nullable type hints, heredoc/nowdoc strings,
+  plain variable-variable unsets,
   class/reflection-metadata blockers, readonly static property diagnostics,
   and currently
   unmodeled mutating array-internal helpers such as `array_splice()`,
@@ -153,6 +155,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `isset()`/`empty()` diagnostics, numeric string offsets, string-offset COW,
   concat-assignment aliasing, and classified blocker rows for unsupported
   heredoc/ini/typed-property/extension surfaces.
+- Focused nested foreach/reference telemetry covers live by-reference iterator
+  unset/rekey behavior, child-array rekeying through by-reference function
+  parameters, and classified plain variable-variable unset blockers.
 
 ## Status
 
@@ -176,6 +181,7 @@ tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
 tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-filesystem-path-process-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-string-scalar-alias-manifest.txt
+tools/run-phpt-manifest.sh tools/phpt-foreach-nested-ref-manifest.txt
 tools/run-phpt-baseline.sh --generate-only
 tools/run-phpt-baseline.sh --tier 1000 --classify-only
 tools/run-phpt-baseline.sh --tier 1000
