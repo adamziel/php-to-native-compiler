@@ -1,24 +1,19 @@
 # PTN Progress
 
-Refresh: 2026-06-13T16:27Z
-Measured: `ptn-nid9` key/callback array set-operation expansion on
-`origin/master` `d4e5e187`; native reducer and focused array PHPT gates
-passed.
+Refresh: 2026-06-13T16:43Z
+Measured: `ptn-iwit` PHPT classify-only blocker maps on `origin/master`
+`9e8306383`; broad 1k classification selected 1,000 rows, kept 742 runnable,
+and excluded 258 with blocker evidence.
 
-Recent RC slices cover constants, inline HTML, includes/once guards, closures,
-`stdClass`, properties/destructors, ReflectionFunction metadata, array helpers,
-key-aware `array_diff*()`/`array_intersect*()` and user-comparator
-`array_uintersect*()` helpers, `json_encode()`, formatted output,
-`basename()`, `pathinfo()`, `dirname()` levels, search/count/string internals,
-scalar/array type hints, ordered-array `str_replace()`, `str_split()`,
-`nl2br()`, `strncasecmp()`, `strncmp()`, `strcmp()`, trim-family aliases,
-`strpbrk()`, `array_unique()`, broad array/scalar/operator PHPT coverage,
-unsupported-language PHPT preclassification, inherited invokable object
-callables, callable-name output, static `__invoke` rejection, object clone
-expressions, magic-method visibility warnings, `php_uname()` mode validation,
-environment/include-path helpers, `getcwd()`/`chdir()`, PHPT runner ini
-values, statement-form `(void)` casts, offset compound/coalescing, and
-property/static-property compounds.
+Recent RC slices cover constants, includes, closures, `stdClass`,
+properties/destructors, ReflectionFunction metadata, array helpers, key-aware
+and callback-aware set operations, formatted output, path/search/count/string
+internals, scalar/array type hints, broad array/scalar/operator PHPT coverage,
+unsupported-language and harness PHPT preclassification, invokable object
+callables, object cloning, magic-method visibility warnings, `php_uname()`,
+environment/include-path helpers, `getcwd()`/`chdir()`, runner ini values,
+statement-form `(void)` casts, offset compound/coalescing, and property/static
+property compounds.
 
 ## Dashboard
 
@@ -48,14 +43,13 @@ operators, arrays, `foreach`, control flow, includes/once guards, selected
 internals, COW/reference slices, functions, closures, `stdClass`, class/object
 shells/constants, properties, destructors, reflection, assertions,
 namespace/import forms, streams, file reads/writes, array/string/numeric
-helpers through key-aware and callback-aware set operations, expanded
-array/string/operator PHPT variations, PHP metadata constants, scalar
-conversions, `is_iterable()`, locale support, invokable object callables,
-callable-name output, static `__invoke` validation, SPL object identity
-intrinsics, object clone expressions, non-recursive `array_replace()`, runner
-ini/include-path state, `getcwd()`/`chdir()`, formatted stream/output helpers,
-statement-form `(void)`, array mutators, inc/dec, `global`, dynamic variables,
-offset compound/null coalescing, and direct property/static-property compounds.
+helpers through key-aware/callback-aware set operations, expanded
+array/string/operator PHPT variations, metadata constants, scalar conversions,
+locale/callable diagnostics, SPL object identity, object cloning, runner
+ini/include-path state, formatted stream/output helpers, PHPT blocker
+categories for cleanup/env/noisy/SAPI harness sections, statement-form
+`(void)`, array mutators, inc/dec, `global`, dynamic variables, offset
+compound/null coalescing, and direct property/static property compounds.
 
 ## Remaining Bounded Exclusions
 
@@ -65,11 +59,12 @@ offset compound/null coalescing, and direct property/static-property compounds.
 
 ## Verification
 
-`ptn-nid9` verification: native
-`compile_array_key_and_callback_set_operations_to_native_binary`,
-`cargo fmt --check`, and focused array key/callback PHPT passed. The PHPT
-selected 75 rows, ran 73, passed 38, failed 35, and excluded 2
-unsupported-language.
+`ptn-iwit` verification: classify-only broad 1k selected 1,000 rows, with 742
+runnable and 258 exclusions: unsupported-language 143, unsupported-ini 73,
+unsupported-extension 20, harness-cleanup 4, SAPI behavior 13,
+process-boundary 3, external-service 1, and environment-assumption 1. A 40-row
+5k cleanup slice classified 40/40 excluded rows, including 33
+`harness-cleanup`; `cargo fmt --check` and shell syntax checks passed.
 
 Follow-ups remain typed properties, interfaces/traits, magic methods,
 first-class callables, dynamic includes, unsupported internals,

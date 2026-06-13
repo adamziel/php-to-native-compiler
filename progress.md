@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T16:27Z
+Last refresh: 2026-06-13T16:43Z
 Source: `PROGRESS.md`
-Measured: `ptn-nid9` key/callback array set-operation expansion on
+Measured: `ptn-iwit` PHPT classify-only blocker maps on `origin/master`
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 400/400; PHPT Zend rows 94/94; PHPT ext/standard rows 223/223.
 

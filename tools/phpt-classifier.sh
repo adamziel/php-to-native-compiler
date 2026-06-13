@@ -2,15 +2,19 @@
 
 # Shared PHPT preflight classification for PTN measurement runs.
 #
-# The classifier filters PHPT requirements that PTN does not currently model:
-# extension availability, unsupported ini/runtime modes, SAPI/request sections,
-# external service harnesses, upstream XFAILs, and broad language surfaces that
-# are still outside the active compiler/runtime model. Generic PHP semantic gaps
+# The classifier filters only PHPT harness/environment requirements that PTN
+# does not currently model: extension availability, unsupported ini/runtime
+# modes, SAPI/request sections, external service harnesses, process-boundary
+# rows, broad harness cleanup/setup sections, noisy upstream rows, broad
+# unsupported language surfaces, and upstream XFAILs. Generic PHP semantic gaps
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard,Reflection"
 PTN_PHPT_SUPPORTED_INI_DEFAULT="date.timezone,display_errors,error_reporting,extension_dir,include_path,pcre.backtrack_limit,precision,zend.assertions"
-PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,GET,HEADERS,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
+PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CAPTURE_STDIO,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,GET,HEADERS,PHPDBG,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
+PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT="ENV"
+PTN_PHPT_HARNESS_SECTIONS_DEFAULT="CLEAN"
+PTN_PHPT_NOISY_SECTIONS_DEFAULT="EXPECT_EXTERNAL,EXPECTF_EXTERNAL,EXPECTREGEX_EXTERNAL,FLAKY,WHITESPACE_SENSITIVE"
 
 ptn_phpt_supported_extensions() {
     printf '%s\n' "${PTN_PHPT_SUPPORTED_EXTENSIONS:-$PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT}"
@@ -24,8 +28,21 @@ ptn_phpt_unsupported_sections() {
     printf '%s\n' "${PTN_PHPT_UNSUPPORTED_SECTIONS:-$PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT}"
 }
 
+ptn_phpt_environment_sections() {
+    printf '%s\n' "${PTN_PHPT_ENVIRONMENT_SECTIONS:-$PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT}"
+}
+
+ptn_phpt_harness_sections() {
+    printf '%s\n' "${PTN_PHPT_HARNESS_SECTIONS:-$PTN_PHPT_HARNESS_SECTIONS_DEFAULT}"
+}
+
+ptn_phpt_noisy_sections() {
+    printf '%s\n' "${PTN_PHPT_NOISY_SECTIONS:-$PTN_PHPT_NOISY_SECTIONS_DEFAULT}"
+}
+
 ptn_phpt_lower() {
-    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+    local value=$1
+    printf '%s' "${value,,}"
 }
 
 ptn_phpt_trim() {
@@ -101,6 +118,39 @@ ptn_phpt_sections() {
     ' "$path"
 }
 
+ptn_phpt_sections_csv() {
+    local path=$1
+    local -a sections=()
+    local section
+
+    while IFS= read -r section; do
+        sections+=("$section")
+    done < <(ptn_phpt_sections "$path")
+
+    local old_ifs=$IFS
+    IFS=,
+    printf '%s\n' "${sections[*]}"
+    IFS=$old_ifs
+}
+
+ptn_phpt_first_section_in_sections_csv() {
+    local sections_csv=$1
+    local search_csv=$2
+    local section
+    local old_ifs=$IFS
+
+    IFS=,
+    for section in $sections_csv; do
+        if ptn_phpt_csv_contains_ci "$section" "$search_csv"; then
+            IFS=$old_ifs
+            printf '%s\n' "$section"
+            return 0
+        fi
+    done
+    IFS=$old_ifs
+    return 1
+}
+
 ptn_phpt_manifest_row() {
     local row=$1
     local php_src=$2
@@ -120,6 +170,21 @@ ptn_phpt_path_extension() {
         printf '%s\n' "${rest%%/*}"
     fi
     return 0
+}
+
+ptn_phpt_first_unsupported_path_extension() {
+    local row=$1
+    local supported
+    supported=$(ptn_phpt_supported_extensions)
+    local extension
+
+    extension=$(ptn_phpt_path_extension "$row")
+    if [[ -n "$extension" ]] && ! ptn_phpt_csv_contains_ci "$extension" "$supported"; then
+        printf '%s\n' "$extension"
+        return 0
+    fi
+
+    return 1
 }
 
 ptn_phpt_declared_extensions() {
@@ -210,25 +275,58 @@ ptn_phpt_has_external_service_harness() {
 
 ptn_phpt_has_process_boundary() {
     local path=$1
-    local section
 
-    for section in FILE CLEAN SKIPIF; do
-        if ptn_phpt_section "$path" "$section" \
-            | grep -Eiq '(^|[^[:alnum:]_\\$])(proc_open|proc_close|proc_get_status|proc_terminate|proc_nice|popen|pclose|exec|system|passthru|shell_exec)[[:space:]]*\('; then
-            return 0
-        fi
-    done
-    return 1
+    awk '
+        /^--[A-Z0-9_]+--[[:space:]]*$/ {
+            section = $0
+            sub(/^--/, "", section)
+            sub(/--[[:space:]]*$/, "", section)
+            active = section == "FILE" || section == "CLEAN" || section == "SKIPIF"
+            next
+        }
+        active && /(^|[^[:alnum:]_\$])(proc_open|proc_close|proc_get_status|proc_terminate|proc_nice|popen|pclose|exec|system|passthru|shell_exec)[[:space:]]*\(/ {
+            found = 1
+            exit
+        }
+        END { exit found ? 0 : 1 }
+    ' "$path"
 }
 
 ptn_phpt_first_unsupported_section() {
     local path=$1
     local unsupported
     unsupported=$(ptn_phpt_unsupported_sections)
+    ptn_phpt_first_section_in_csv "$path" "$unsupported"
+}
+
+ptn_phpt_first_environment_section() {
+    local path=$1
+    local sections
+    sections=$(ptn_phpt_environment_sections)
+    ptn_phpt_first_section_in_csv "$path" "$sections"
+}
+
+ptn_phpt_first_harness_section() {
+    local path=$1
+    local sections
+    sections=$(ptn_phpt_harness_sections)
+    ptn_phpt_first_section_in_csv "$path" "$sections"
+}
+
+ptn_phpt_first_noisy_section() {
+    local path=$1
+    local sections
+    sections=$(ptn_phpt_noisy_sections)
+    ptn_phpt_first_section_in_csv "$path" "$sections"
+}
+
+ptn_phpt_first_section_in_csv() {
+    local path=$1
+    local csv=$2
     local section
 
     while IFS= read -r section; do
-        if ptn_phpt_csv_contains_ci "$section" "$unsupported"; then
+        if ptn_phpt_csv_contains_ci "$section" "$csv"; then
             printf '%s\n' "$section"
             return 0
         fi
@@ -281,16 +379,27 @@ ptn_phpt_classify_row() {
     local path=$2
     local php_src=${3:-}
     local rel=$row
+    local sections
     local value
 
     if [[ -n "$php_src" ]]; then
         rel=$(ptn_phpt_manifest_row "$row" "$php_src")
     fi
 
-    if value=$(ptn_phpt_first_unsupported_extension "$rel" "$path"); then
+    sections=$(ptn_phpt_sections_csv "$path")
+
+    if value=$(ptn_phpt_first_unsupported_path_extension "$rel"); then
         printf 'unsupported-extension\trequires unavailable PTN extension %s; modeled extensions: %s\n' \
             "$value" "$(ptn_phpt_supported_extensions)"
         return 0
+    fi
+
+    if ptn_phpt_csv_contains_ci "EXTENSIONS" "$sections" || ptn_phpt_csv_contains_ci "SKIPIF" "$sections"; then
+        if value=$(ptn_phpt_first_unsupported_extension "$rel" "$path"); then
+            printf 'unsupported-extension\trequires unavailable PTN extension %s; modeled extensions: %s\n' \
+                "$value" "$(ptn_phpt_supported_extensions)"
+            return 0
+        fi
     fi
 
     if ptn_phpt_has_external_service_harness "$path"; then
@@ -303,19 +412,36 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
+    if [[ "$rel" == tests/run-test/* ]]; then
+        printf 'harness-self-test\texercises php-src run-tests.php harness behavior instead of PTN PHP semantics\n'
+        return 0
+    fi
+
     if ptn_phpt_has_process_boundary "$path"; then
         printf 'process-boundary\trequires child-process execution/control and pipe semantics outside PTN native runtime boundary\n'
         return 0
     fi
 
-    if value=$(ptn_phpt_first_unsupported_ini "$path"); then
-        printf 'unsupported-ini\trequires unsupported ini setting %s; modeled ini keys: %s\n' \
-            "$value" "$(ptn_phpt_supported_ini)"
+    if ptn_phpt_csv_contains_ci "INI" "$sections"; then
+        if value=$(ptn_phpt_first_unsupported_ini "$path"); then
+            printf 'unsupported-ini\trequires unsupported ini setting %s; modeled ini keys: %s\n' \
+                "$value" "$(ptn_phpt_supported_ini)"
+            return 0
+        fi
+    fi
+
+    if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_unsupported_sections)"); then
+        printf 'sapi-behavior\trequires unsupported PHPT section --%s--\n' "$value"
         return 0
     fi
 
-    if value=$(ptn_phpt_first_unsupported_section "$path"); then
-        printf 'sapi-behavior\trequires unsupported PHPT section --%s--\n' "$value"
+    if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_environment_sections)"); then
+        printf 'environment-assumption\trequires PHPT environment setup section --%s-- outside PTN script semantics\n' "$value"
+        return 0
+    fi
+
+    if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_harness_sections)"); then
+        printf 'harness-cleanup\trequires PHPT harness post-test/setup section --%s-- executed outside measured program output\n' "$value"
         return 0
     fi
 
@@ -324,8 +450,13 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
-    if ptn_phpt_has_section "$path" XFAIL; then
+    if ptn_phpt_csv_contains_ci "XFAIL" "$sections"; then
         printf 'intentional-nongoal\tupstream XFAIL row is excluded from PTN pass-count campaign\n'
+        return 0
+    fi
+
+    if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_noisy_sections)"); then
+        printf 'noisy-expectation\trequires noisy or external PHPT expectation mode --%s--\n' "$value"
         return 0
     fi
 

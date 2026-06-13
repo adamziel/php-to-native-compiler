@@ -2,7 +2,70 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-manifest=${1:-$repo_root/tools/phpt-bounded-manifest.txt}
+manifest="$repo_root/tools/phpt-bounded-manifest.txt"
+classify_only=0
+
+usage() {
+    cat <<'EOF'
+Usage: tools/run-bounded-phpt.sh [--classify-only] [manifest]
+
+Classify a PHPT manifest, then run runnable rows through php-src run-tests.php.
+
+Options:
+  --classify-only   write classification and blocker manifests without building
+                    phpc or running runnable PHPT rows
+EOF
+}
+
+manifest_set=0
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --classify-only)
+            classify_only=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            echo "unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+        *)
+            if [[ "$manifest_set" -eq 1 ]]; then
+                echo "multiple manifests supplied: $manifest and $1" >&2
+                usage >&2
+                exit 2
+            fi
+            manifest=$1
+            manifest_set=1
+            shift
+            ;;
+    esac
+done
+
+if [[ $# -gt 0 ]]; then
+    if [[ "$manifest_set" -eq 1 ]]; then
+        echo "multiple manifests supplied: $manifest and $1" >&2
+        usage >&2
+        exit 2
+    fi
+    manifest=$1
+    shift
+fi
+
+if [[ $# -gt 0 ]]; then
+    echo "unexpected extra arguments: $*" >&2
+    usage >&2
+    exit 2
+fi
+
 source "$repo_root/tools/phpt-corpus.sh"
 source "$repo_root/tools/phpt-classifier.sh"
 php_src="$(ptn_resolve_phpt_corpus "$repo_root")"
@@ -151,7 +214,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     printf '%s\n' "$test_path" >> "${bucket_abs_manifest[$current_bucket]}"
     bucket_count[$current_bucket]=$((bucket_count[$current_bucket] + 1))
     runnable_rows=$((runnable_rows + 1))
-done < "$manifest"
+done < <(sed -e '$a\' "$manifest")
 
 if [[ "$selected_rows" -eq 0 ]]; then
     echo "manifest contains no selected rows after comments/blank lines: $manifest" >&2
@@ -187,6 +250,23 @@ if [[ "$runnable_rows" -eq 0 ]]; then
     } | tee "$summary"
     emit_classification_summary | tee -a "$summary"
     echo "result: buckets=${#bucket_order[@]} selected=$selected_rows runnable=0 excluded=$excluded_rows tests=0 passed=0 failed=0 skipped=0 warned=0 elapsed=0s" | tee -a "$summary"
+    echo "run-tests-exit: 0" | tee -a "$summary"
+    exit 0
+fi
+
+if [[ "$classify_only" -eq 1 ]]; then
+    {
+        echo "PHPT bounded patrol $timestamp"
+        echo "commit: $(git rev-parse --short=12 HEAD)"
+        echo "corpus: $php_src"
+        echo "corpus-revision: $corpus_revision"
+        echo "manifest: $resolved_manifest"
+        echo "runnable-manifest: $runnable_manifest"
+        echo "command: classification only; cargo build and run-tests.php skipped"
+        echo "count: $selected_rows selected PHPT rows; $runnable_rows runnable; $excluded_rows excluded by classification in ${#bucket_order[@]} buckets"
+    } | tee "$summary"
+    emit_classification_summary | tee -a "$summary"
+    echo "result: buckets=${#bucket_order[@]} selected=$selected_rows runnable=$runnable_rows excluded=$excluded_rows tests=0 passed=0 failed=0 skipped=0 warned=0 elapsed=0s" | tee -a "$summary"
     echo "run-tests-exit: 0" | tee -a "$summary"
     exit 0
 fi

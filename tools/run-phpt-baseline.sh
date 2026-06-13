@@ -6,10 +6,12 @@ source "$repo_root/tools/phpt-corpus.sh"
 
 usage() {
   cat <<'EOF'
-Usage: tools/run-phpt-baseline.sh [--tier N|all] [--generate-only] [--out-dir DIR]
+Usage: tools/run-phpt-baseline.sh [--tier N|all] [--generate-only] [--classify-only] [--out-dir DIR]
 
 Generate deterministic broad PHPT baseline manifests from the canonical
 php-src corpus and, by default, run the 1,000-row tier through run-tests.php.
+Use --classify-only to generate blocker maps without building phpc or running
+the selected runnable rows.
 
 Defaults:
   --tier 1000
@@ -25,11 +27,16 @@ EOF
 out_dir=${PHPT_BASELINE_DIR:-$repo_root/.runtime/phpt-baseline}
 run_tier=${PHPT_BASELINE_TIER:-1000}
 generate_only=0
+classify_only=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --generate-only)
       generate_only=1
+      shift
+      ;;
+    --classify-only)
+      classify_only=1
       shift
       ;;
     --tier)
@@ -57,6 +64,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$generate_only" -eq 1 && "$classify_only" -eq 1 ]]; then
+  echo "--generate-only and --classify-only are mutually exclusive" >&2
+  exit 2
+fi
 
 if [[ "$run_tier" != "all" && ! "$run_tier" =~ ^[0-9]+$ ]]; then
   echo "--tier must be a positive integer or 'all': $run_tier" >&2
@@ -202,5 +214,9 @@ for tier in "${run_tiers[@]}"; do
     exit 1
   fi
   echo "running: tier=$tier manifest=$manifest"
-  "$repo_root/tools/run-bounded-phpt.sh" "$manifest"
+  bounded_args=()
+  if [[ "$classify_only" -eq 1 ]]; then
+    bounded_args+=(--classify-only)
+  fi
+  "$repo_root/tools/run-bounded-phpt.sh" "${bounded_args[@]}" "$manifest"
 done
