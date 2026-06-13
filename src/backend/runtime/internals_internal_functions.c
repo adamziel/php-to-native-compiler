@@ -6545,6 +6545,28 @@ static PtnValue ptn_internal_pathinfo(PtnRuntime *runtime, size_t argc, const Pt
     return result;
 }
 
+static char *ptn_dirname_string_levels(const char *path, size_t len, int64_t levels, size_t *dirname_len) {
+    const char *current_data = path;
+    size_t current_len = len;
+    char *current_owned = NULL;
+
+    for (int64_t level = 0; level < levels; level++) {
+        size_t next_len = 0;
+        char *next = ptn_dirname_string(current_data, current_len, &next_len);
+        int is_stable = next_len == current_len && memcmp(next, current_data, current_len) == 0;
+        free(current_owned);
+        current_owned = next;
+        current_data = current_owned;
+        current_len = next_len;
+        if (is_stable) {
+            break;
+        }
+    }
+
+    *dirname_len = current_len;
+    return current_owned;
+}
+
 static const char *ptn_internal_string_arg_type_name(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -6733,10 +6755,20 @@ static PtnValue ptn_internal_highlight_file(PtnRuntime *runtime, size_t argc, co
 }
 
 static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "dirname", 1, "path", args[0], line);
+    int64_t levels = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "dirname", 2, "levels", args[1], line)
+        : 1;
+    if (levels < 1) {
+        ptn_string_operand_free(path);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "dirname(): Argument #2 ($levels) must be greater than or equal to 1"
+        );
+    }
     size_t dirname_len = 0;
-    char *dirname = ptn_dirname_string(path.data, path.len, &dirname_len);
+    char *dirname = ptn_dirname_string_levels(path.data, path.len, levels, &dirname_len);
     ptn_string_operand_free(path);
     return ptn_owned_string_len(dirname, dirname_len);
 }
@@ -8443,7 +8475,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
         { "define", 2, 3, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
-        { "dirname", 1, 1, ptn_internal_dirname },
+        { "dirname", 1, 2, ptn_internal_dirname },
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "explode", 2, 3, ptn_internal_explode },

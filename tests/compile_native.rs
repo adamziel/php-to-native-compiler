@@ -4278,7 +4278,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
         "ptn_strip_tags_string(input.data, input.len, &output_len)",
         "ptn_crc32_bytes((const unsigned char *)input.data, input.len)",
-        "ptn_dirname_string(path.data, path.len, &dirname_len)",
+        "ptn_dirname_string_levels(path.data, path.len, levels, &dirname_len)",
         "ptn_quoted_printable_decode_string(input.data, input.len, &output_len)",
         "ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line)",
         "ptn_base_string_to_number(runtime, string.data, string.len, 16, 'x', line)",
@@ -4304,6 +4304,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "static char *ptn_chunk_split_string(",
         "static char *ptn_strip_tags_string(",
         "static char *ptn_dirname_string(",
+        "static char *ptn_dirname_string_levels(",
         "static char *ptn_quoted_printable_decode_string(",
         "static char *ptn_addslashes_string(",
         "static char *ptn_stripslashes_string(",
@@ -4561,6 +4562,42 @@ dirname(): Argument #1 ($path) must be of type string, array given\n"
             .to_vec()
     );
     assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
+fn compile_dirname_levels_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-dirname-levels-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dirname-levels.php");
+    let output = root.join("dirname-levels-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+for ($i = 0; $i < 5; $i++) {\n\
+    try {\n\
+        var_dump(dirname(\"/foo/bar/baz\", $i));\n\
+    } catch (\\ValueError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+var_dump(dirname(\"/foo/bar/baz\", PHP_INT_MAX));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "dirname(): Argument #2 ($levels) must be greater than or equal to 1\n\
+string(8) \"/foo/bar\"\n\
+string(4) \"/foo\"\n\
+string(1) \"/\"\n\
+string(1) \"/\"\n\
+string(1) \"/\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

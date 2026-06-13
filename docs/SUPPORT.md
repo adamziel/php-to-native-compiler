@@ -628,10 +628,13 @@ Post-RC architecture remains explicit rather than hidden:
   quote, and backslash bytes; `stripslashes()` removes backslashes and decodes
   backslash-zero to NUL.
 - `dirname()` over current boxed scalar values after scalar string conversion,
-  returning the parent directory for the current binary-safe path. Empty paths,
-  embedded NUL bytes, platform directory separators, null-argument
-  deprecations, and modeled TypeError diagnostics for array/object operands are
-  handled through the runtime path.
+  returning the parent directory for the current binary-safe path. The optional
+  `levels` argument uses the current scalar integer conversion path, repeatedly
+  applies the same parent-directory helper, stops once the result is stable, and
+  throws the modeled `ValueError` for values below one. Empty paths, embedded
+  NUL bytes, platform directory separators, null-argument deprecations, and
+  modeled TypeError diagnostics for array/object operands are handled through
+  the runtime path.
 - `pathinfo()` over current boxed scalar values after scalar string conversion,
   returning ordered dirname/basename/extension/filename arrays or individual
   components selected by `PATHINFO_*` flags. Empty paths, trailing separators,
@@ -1162,8 +1165,7 @@ Post-RC architecture remains explicit rather than hidden:
 - Exact `hex2bin()` warning text/file-name parity plus resource/reference
   operand parity and object string conversion outside the current public
   declared `__toString()` support.
-- Exact `dirname()` object class-name TypeError wording and unsupported
-  resource/reference operand parity.
+- Exact `dirname()` resource/reference operand parity.
 - Exact `soundex()` locale/non-ASCII behavior plus resource/reference operand
   parity and object string conversion outside the current public declared
   `__toString()` support.

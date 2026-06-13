@@ -168,6 +168,7 @@ ext/standard/tests/strings/chunk_split_variation7.phpt
 ext/standard/tests/strings/crc32.phpt
 ext/standard/tests/strings/crc32_basic.phpt
 ext/standard/tests/strings/dirname_basic.phpt
+ext/standard/tests/strings/dirname_multi.phpt
 ext/standard/tests/strings/hex2bin_basic.phpt
 ext/standard/tests/strings/pathinfo.phpt
 ext/standard/tests/strings/ltrim_basic.phpt
