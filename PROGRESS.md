@@ -1,15 +1,17 @@
 # PTN Progress
 
-Refresh: 2026-06-13T17:51Z
-Measured: `ptn-7o62` attribute syntax blocker documentation/evidence rebased
-after `ptn-c7iw` asymmetric visibility classification.
+Refresh: 2026-06-13T18:17Z
+Measured: `ptn-qsmv.3` broad ext/standard strings manifest expansion rebased
+after `ptn-7o62` attribute syntax blocker evidence; the integrated 50-row
+ext/standard string manifest passed 50/50.
 
-Recent RC slices cover constants, includes, closures, `stdClass`,
-properties/destructors, reflection metadata, array helpers, formatted output,
-scalar/operator PHPT rows, PHPT classification for attributes and other broad
-syntax blockers, object callables/cloning, environment/include-path helpers,
-filesystem metadata/path helpers, stream writes, `function_exists()`
-static-method separation, and bounded `get_parent_class()`.
+Recent RC slices cover constants, includes, closures, `stdClass`, object
+callables/cloning, reflection metadata, helper internals, formatted output,
+PHPT blocker classification, environment/include-path, filesystem/path
+helpers, streams, `function_exists()` static-method separation, bounded
+`get_parent_class()`, and 50 additional ext/standard
+string rows across cslashes, basename, bug regressions, chop/chunk-split,
+explode, `str_split()`, `strncmp()`, and `strncasecmp()`.
 
 ## Dashboard
 
@@ -18,9 +20,9 @@ static-method separation, and bounded `get_parent_class()`.
 | Source unit tests | 3 | 3 | 0 |
 | Native/compiler Rust suite | 645 | 645 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 435 | 435 | 0 |
+| PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
-| PHPT ext/standard rows | 230 | 230 | 0 |
+| PHPT ext/standard rows | 280 | 280 | 0 |
 | PHPT focused array key/callback set rows | 75 | 38 | 37 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT focused cwd rows | 2 | 2 | 0 |
@@ -37,37 +39,33 @@ static-method separation, and bounded `get_parent_class()`.
 
 Parser/IR/C backend, boxed values, variables/constants, strings, scalar
 operators, arrays, `foreach`, control flow, includes, selected internals,
-COW/reference slices, functions, closures, `stdClass`, class/object shells,
-properties/destructors, reflection, namespaces, streams, file reads/writes,
-array/string/numeric helpers, runner ini/include-path state, PHPT blocker
-categories, filesystem metadata/path helpers, `(void)`, mutators, inc/dec,
-dynamic variables, offset/property compounds, static-method-aware
-`function_exists()`, and bounded `get_parent_class()` metadata.
+COW/reference slices, functions/closures, class/object shells, reflection,
+namespaces, streams, file reads/writes, helper internals, runner state, PHPT
+blockers, filesystem/path helpers, dynamic variables, offset/property
+compounds, `function_exists()`, `get_parent_class()`, and expanded string rows.
 
 ## Remaining Bounded Exclusions
 
-- None among the 435 runnable rows in the current bounded manifest.
-- None among the 5 callback/callable frontier rows in the current callback
-  manifest.
-- The focused filesystem/path/process manifest classifies 8 harness-cleanup
-  rows and 25 process-boundary rows.
+- No known failures among the 485 accepted rows in the bounded manifest.
+  Classify-only reports 459 runnable rows and 26
+  pre-existing excluded rows outside the added string slice.
+- Callback frontier is 5/5; filesystem/path/process remains 13/46 with
+  harness-cleanup and process-boundary exclusions.
 
 ## Verification
 
-`ptn-7o62` evidence: focused attributes manifest selected 204 rows, classified
-187 unsupported-language and 8 unsupported-extension rows, and left 9 runnable
-attribute API rows failing. Before this slice, the same manifest had 137
-runnable rows, 59 unsupported-language rows, and 8 unsupported-extension rows,
-so 128 broad rows moved into blocker evidence. Current-branch classifier
-syntax, classifier tests, and fmt passed.
+`ptn-qsmv.3` verification: broad ext/standard strings classify-only selected
+734 rows, runnable 677, excluded 57. Candidate runs found passing families:
+120 rows yielded 30 passes, then 45 rows yielded 38 passes. The rebased
+50-row string manifest selected 50, runnable 50, ran 50, passed 50, and had
+0 failures/skips/warnings. The bounded manifest is now 485 rows: Zend 119,
+ext/standard 280, tests/basic+func+lang 78, and other 8. Full bounded
+classify-only selected 485 rows, runnable 459, excluded 26; none of the added
+50 string rows were excluded.
 
-Previous `ptn-c7iw` evidence moved 38 rows from runnable to
-`unsupported-language` asymmetric property visibility blockers.
-
-Follow-ups remain typed properties, interfaces/traits, magic methods, PHP
-attributes/reflection metadata, arrow functions, heredoc/nowdoc parsing,
-userland `throw`, readonly and asymmetric property metadata, first-class
-callables, dynamic includes, unsupported internals, scalar-offset lvalues,
-`Traversable`, embedded-NUL internals, host-locale parity, conversion
-diagnostics, formatter edge parity, array callback diagnostic parity,
-filesystem/process boundaries, and process execution.
+Follow-ups remain typed properties, interfaces/traits, magic methods,
+attributes/reflection, arrow functions, heredoc/nowdoc parsing, userland
+`throw`, readonly/asymmetric metadata, first-class callables, dynamic includes,
+unsupported internals, scalar-offset lvalues, `Traversable`, embedded-NUL
+internals, conversion diagnostics, formatter/callback
+parity, filesystem/process boundaries, and process execution.

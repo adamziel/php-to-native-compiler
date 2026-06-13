@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T17:51Z
-Measured: `ptn-7o62` attribute syntax blocker documentation/evidence rebased
+Last refresh: 2026-06-13T18:17Z
+Measured: `ptn-qsmv.3` broad ext/standard strings manifest expansion rebased
 
 ## Operating Goal
 
@@ -10,7 +10,7 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 435/435; PHPT Zend rows 119/119; PHPT ext/standard rows 230/230.
+Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
@@ -19,9 +19,9 @@ Source unit tests 3/3; Native/compiler Rust suite 645/645; Native smoke matrix 6
 | Source unit tests | 3/3 |
 | Native/compiler Rust suite | 645/645 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 435/435 |
+| PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
-| PHPT ext/standard rows | 230/230 |
+| PHPT ext/standard rows | 280/280 |
 | PHPT focused array key/callback set rows | 38/75 |
 | PHPT focused stream rows | 2/2 |
 | PHPT focused cwd rows | 2/2 |
