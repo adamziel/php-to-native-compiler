@@ -200,6 +200,16 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_reflection_function(class_name)) {
         return ptn_reflection_function_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_reflection_class(class_name)) {
+        return ptn_reflection_class_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_reflection_property(class_name)) {
+        ptn_throw_exception(runtime, "Error", "ReflectionProperty objects cannot be constructed directly");
+        return ptn_null();
+    }
+    if (ptn_internal_class_name_is_sensitive_parameter_value(class_name)) {
+        return ptn_sensitive_parameter_value_new(runtime, argc, args, line);
+    }
 #endif
     const char *exception_class_name = ptn_builtin_exception_class_name(class_name);
     if (exception_class_name != NULL) {

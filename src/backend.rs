@@ -3678,7 +3678,7 @@ fn collect_value_runtime_requirements(
             for argument in arguments {
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
-            if class_name.eq_ignore_ascii_case("ReflectionFunction") {
+            if is_internal_object_class(class_name) {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
             }
@@ -3711,6 +3711,13 @@ fn collect_value_runtime_requirements(
             collect_value_runtime_requirements(if_false, functions, requirements);
         }
     }
+}
+
+fn is_internal_object_class(class_name: &str) -> bool {
+    class_name.eq_ignore_ascii_case("ReflectionFunction")
+        || class_name.eq_ignore_ascii_case("ReflectionClass")
+        || class_name.eq_ignore_ascii_case("ReflectionProperty")
+        || class_name.eq_ignore_ascii_case("SensitiveParameterValue")
 }
 
 fn collect_call_runtime_requirements(

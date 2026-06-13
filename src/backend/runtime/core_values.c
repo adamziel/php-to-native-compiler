@@ -600,6 +600,9 @@ static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED PtnValue ptn_reflection_function_new(
     PtnRuntime *runtime,
@@ -607,7 +610,35 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_reflection_class_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

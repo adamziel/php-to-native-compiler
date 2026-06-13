@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T23:50Z
-Measured: `ptn-vwyp` generator/fiber COW frontier classification after `ptn-feps`.
+Last refresh: 2026-06-14T00:46Z
+Measured: `ptn-6x02` SensitiveParameterValue reflection after `ptn-vwyp`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 704/704; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 705/705; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 704/704 |
+| Native/compiler Rust suite | 705/705 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -32,7 +32,7 @@ Source unit tests 3/3; Native/compiler Rust suite 704/704; Native smoke matrix 6
 | PHPT nested foreach/reference rows | 2/3 |
 | PHPT array-internal COW frontier | 17/72 |
 | PHPT COW foreach/reference frontier | 31/103 |
-| PHPT broad reference-call bucket | 8/12 |
+| PHPT broad reference-call bucket | 9/12 |
 | PHPT generator/fiber COW boundary bucket | 0/12 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |

@@ -9306,6 +9306,69 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
 }
 
 #[test]
+fn compile_sensitive_parameter_value_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-sensitive-parameter-value-reflection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sensitive-parameter-value-reflection.php");
+    let output = root.join("sensitive-parameter-value-reflection-bin");
+    fs::write(
+        &input,
+        "<?php
+$v = new SensitiveParameterValue('secret');
+$r = new ReflectionClass($v);
+$p = $r->getProperty('value');
+
+var_dump(class_exists('SensitiveParameterValue'));
+var_dump(class_exists('ReflectionClass'));
+var_dump(class_exists('ReflectionProperty'));
+var_dump(method_exists('ReflectionClass', 'getProperty'));
+var_dump(method_exists('ReflectionProperty', 'getValue'));
+var_dump(property_exists($v, 'value'));
+var_dump(property_exists('SensitiveParameterValue', 'value'));
+var_dump($r->getName());
+var_dump($p->getName());
+var_dump($p->isPrivate());
+var_dump($p->getValue($v));
+
+try {
+    var_dump($v->value);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(23) \"SensitiveParameterValue\"\n",
+            "string(5) \"value\"\n",
+            "bool(true)\n",
+            "string(6) \"secret\"\n",
+            "Cannot access private property SensitiveParameterValue::$value\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_sensitive_parameter_value_new"));
+    assert!(c_source.contains("ptn_reflection_class_call_method"));
+    assert!(c_source.contains("ptn_reflection_property_call_method"));
+}
+
+#[test]
 fn compile_inherited_public_instance_methods_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-public-instance-methods");
     fs::create_dir_all(&root).unwrap();
