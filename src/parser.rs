@@ -43,6 +43,7 @@ pub fn parse(source: &str) -> Result<Program> {
         function_depth: 0,
         current_namespace: None,
         seen_namespace_declaration: false,
+        namespace_declaration_style: None,
         class_aliases: HashMap::new(),
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
@@ -57,9 +58,22 @@ struct Parser {
     function_depth: usize,
     current_namespace: Option<String>,
     seen_namespace_declaration: bool,
+    namespace_declaration_style: Option<NamespaceDeclarationStyle>,
     class_aliases: HashMap<String, String>,
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NamespaceDeclarationStyle {
+    Bracketed,
+    Unbracketed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TopLevelScope {
+    Program,
+    NamespaceBlock,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,31 +140,12 @@ impl Parser {
         let mut classes = Vec::new();
         let mut functions = Vec::new();
         let mut statements = Vec::new();
-        while !matches!(self.peek().kind, TokenKind::Eof) {
-            self.skip_php_tags();
-            if matches!(self.peek().kind, TokenKind::Eof) {
-                break;
-            }
-            if token_is_identifier_named(self.peek(), "namespace") {
-                if !self.seen_namespace_declaration
-                    && (!classes.is_empty() || !functions.is_empty() || !statements.is_empty())
-                {
-                    return Err(Diagnostic::new(
-                        "Namespace declaration statement has to be the very first statement or after any declare call in the script",
-                        Some(self.peek().span),
-                    ));
-                }
-                self.parse_namespace_declaration()?;
-            } else if token_is_identifier_named(self.peek(), "use") {
-                self.parse_use_declarations()?;
-            } else if self.peek_starts_function_decl() {
-                functions.push(self.parse_function_decl()?);
-            } else if token_is_identifier_named(self.peek(), "class") {
-                classes.push(self.parse_class_decl()?);
-            } else {
-                statements.push(self.parse_statement()?);
-            }
-        }
+        self.parse_top_level_items(
+            &mut classes,
+            &mut functions,
+            &mut statements,
+            TopLevelScope::Program,
+        )?;
         validate_class_names(&classes)?;
         validate_parent_class_names(&classes)?;
         for class in &classes {
@@ -189,8 +184,73 @@ impl Parser {
         })
     }
 
-    fn parse_namespace_declaration(&mut self) -> Result<()> {
-        self.advance();
+    fn parse_top_level_items(
+        &mut self,
+        classes: &mut Vec<ClassDecl>,
+        functions: &mut Vec<FunctionDecl>,
+        statements: &mut Vec<Statement>,
+        scope: TopLevelScope,
+    ) -> Result<()> {
+        while !matches!(self.peek().kind, TokenKind::Eof) {
+            self.skip_php_tags();
+            if matches!(self.peek().kind, TokenKind::Eof)
+                || (scope == TopLevelScope::NamespaceBlock
+                    && matches!(self.peek().kind, TokenKind::RightBrace))
+            {
+                break;
+            }
+            if token_is_identifier_named(self.peek(), "namespace") {
+                if scope == TopLevelScope::NamespaceBlock {
+                    return Err(Diagnostic::new(
+                        "Namespace declarations cannot be nested",
+                        Some(self.peek().span),
+                    ));
+                }
+                if !self.seen_namespace_declaration
+                    && (!classes.is_empty() || !functions.is_empty() || !statements.is_empty())
+                {
+                    return Err(Diagnostic::new(
+                        "Namespace declaration statement has to be the very first statement or after any declare call in the script",
+                        Some(self.peek().span),
+                    ));
+                }
+                self.parse_namespace_declaration(classes, functions, statements)?;
+            } else if token_is_identifier_named(self.peek(), "use") {
+                self.reject_code_outside_bracketed_namespace(scope)?;
+                self.parse_use_declarations()?;
+            } else if self.peek_starts_function_decl() {
+                self.reject_code_outside_bracketed_namespace(scope)?;
+                functions.push(self.parse_function_decl()?);
+            } else if token_is_identifier_named(self.peek(), "class") {
+                self.reject_code_outside_bracketed_namespace(scope)?;
+                classes.push(self.parse_class_decl()?);
+            } else {
+                self.reject_code_outside_bracketed_namespace(scope)?;
+                statements.push(self.parse_statement()?);
+            }
+        }
+        Ok(())
+    }
+
+    fn reject_code_outside_bracketed_namespace(&self, scope: TopLevelScope) -> Result<()> {
+        if scope == TopLevelScope::Program
+            && self.namespace_declaration_style == Some(NamespaceDeclarationStyle::Bracketed)
+        {
+            return Err(Diagnostic::new(
+                "No code may exist outside of namespace {}",
+                Some(self.peek().span),
+            ));
+        }
+        Ok(())
+    }
+
+    fn parse_namespace_declaration(
+        &mut self,
+        classes: &mut Vec<ClassDecl>,
+        functions: &mut Vec<FunctionDecl>,
+        statements: &mut Vec<Statement>,
+    ) -> Result<()> {
+        let namespace_span = self.advance().span;
         let namespace = if matches!(
             self.peek().kind,
             TokenKind::Semicolon | TokenKind::LeftBrace
@@ -200,16 +260,75 @@ impl Parser {
             Some(self.parse_namespace_name()?)
         };
         if matches!(self.peek().kind, TokenKind::LeftBrace) {
-            return Err(Diagnostic::new(
-                "bracketed namespace declarations are unsupported",
-                Some(self.peek().span),
-            ));
+            self.note_namespace_declaration_style(
+                NamespaceDeclarationStyle::Bracketed,
+                namespace_span,
+            )?;
+            self.seen_namespace_declaration = true;
+            return self.parse_bracketed_namespace_block(namespace, classes, functions, statements);
         }
+        self.note_namespace_declaration_style(
+            NamespaceDeclarationStyle::Unbracketed,
+            namespace_span,
+        )?;
         self.expect_semicolon()?;
         self.current_namespace = namespace;
         self.seen_namespace_declaration = true;
         self.clear_namespace_imports();
         Ok(())
+    }
+
+    fn note_namespace_declaration_style(
+        &mut self,
+        style: NamespaceDeclarationStyle,
+        span: SourceSpan,
+    ) -> Result<()> {
+        if let Some(existing) = self.namespace_declaration_style {
+            if existing != style {
+                return Err(Diagnostic::new(
+                    "Cannot mix bracketed namespace declarations with unbracketed namespace declarations",
+                    Some(span),
+                ));
+            }
+        } else {
+            self.namespace_declaration_style = Some(style);
+        }
+        Ok(())
+    }
+
+    fn parse_bracketed_namespace_block(
+        &mut self,
+        namespace: Option<String>,
+        classes: &mut Vec<ClassDecl>,
+        functions: &mut Vec<FunctionDecl>,
+        statements: &mut Vec<Statement>,
+    ) -> Result<()> {
+        self.expect_left_brace()?;
+
+        let saved_namespace = self.current_namespace.clone();
+        let saved_class_aliases = self.class_aliases.clone();
+        let saved_function_aliases = self.function_aliases.clone();
+        let saved_constant_aliases = self.constant_aliases.clone();
+
+        self.current_namespace = namespace;
+        self.clear_namespace_imports();
+        let result = (|| {
+            self.parse_top_level_items(
+                classes,
+                functions,
+                statements,
+                TopLevelScope::NamespaceBlock,
+            )?;
+            self.expect_right_brace()?;
+            Ok(())
+        })();
+
+        self.current_namespace = saved_namespace;
+        self.class_aliases = saved_class_aliases;
+        self.function_aliases = saved_function_aliases;
+        self.constant_aliases = saved_constant_aliases;
+
+        result
     }
 
     fn parse_namespace_name(&mut self) -> Result<String> {

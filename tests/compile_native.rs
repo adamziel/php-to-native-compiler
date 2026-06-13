@@ -21114,6 +21114,55 @@ echo ENABLED;
 }
 
 #[test]
+fn compile_bracketed_namespace_blocks_to_native_binary() {
+    let root = temp_dir("ptn-native-bracketed-namespace-blocks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bracketed-namespace-blocks.php");
+    let output = root.join("bracketed-namespace-blocks-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace Lib\Tools {
+const MARK = "const\n";
+
+function mark($value) {
+    return __NAMESPACE__ . ":" . $value . "\n";
+}
+
+echo __NAMESPACE__, "\n";
+}
+
+namespace App {
+use function Lib\Tools\mark as label;
+use const Lib\Tools\MARK as IMPORTED_MARK;
+
+echo __NAMESPACE__, "\n";
+echo label("call");
+echo IMPORTED_MARK;
+?>
+inline-html
+<?php
+}
+
+namespace {
+echo "global:", __NAMESPACE__, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Lib\\Tools\nApp\nLib\\Tools:call\nconst\ninline-html\nglobal:\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_rejects_unsupported_grouped_namespace_import_forms() {
     let cases = [
         (
@@ -21142,6 +21191,21 @@ fn parser_rejects_namespace_after_function_declaration() {
         error.message,
         "Namespace declaration statement has to be the very first statement or after any declare call in the script"
     );
+}
+
+#[test]
+fn parser_rejects_mixed_namespace_declaration_styles() {
+    let error = parser::parse("<?php namespace A; namespace B {}").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot mix bracketed namespace declarations with unbracketed namespace declarations"
+    );
+}
+
+#[test]
+fn parser_rejects_code_outside_bracketed_namespace_blocks() {
+    let error = parser::parse("<?php namespace A {} echo \"outside\";").unwrap_err();
+    assert_eq!(error.message, "No code may exist outside of namespace {}");
 }
 
 #[test]
