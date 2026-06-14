@@ -271,6 +271,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_CLASS_DECLARATION_SPLIT_PTN_GKVR_2026-06-14.md`:
   current broad 1k class-declaration classifier split for trait, interface,
   implementation-check, and anonymous-class blocker categories.
+- `docs/PHPT_BROAD_1K_TRAIT_DECLARATION_CATEGORY_PTN_YXV2_2026-06-14.md`:
+  current broad 1k `unsupported-trait-declaration` category map with a
+  committed 25-row focused manifest.
 - `docs/PHPT_BROAD_1K_PLAIN_HEREDOC_CLASSIFIER_2026-06-14.md`: broad 1k
   plain heredoc/nowdoc classifier refinement and focused PHPT evidence.
 - `docs/PHPT_BROAD_1K_MAGIC_METADATA_BLOCKERS_2026-06-14.md`: current broad

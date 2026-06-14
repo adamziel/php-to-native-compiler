@@ -1,0 +1,38 @@
+# Broad 1k unsupported-trait-declaration frontier rows.
+#
+# Issue: ptn-yxv2
+# Source: `.runtime/phpt-progress/classification-20260614T111331Z.tsv` from:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only \
+#     --out-dir .runtime/ptn-yxv2-postrebase-baseline-1k
+#
+# Selection: rows classified as `unsupported-trait-declaration`.
+#
+# Focused evidence: 25 selected, 0 runnable, 25 excluded as
+# `unsupported-trait-declaration` in:
+#   .runtime/ptn-yxv2-trait-declaration-focused/classification-20260614T111915Z.tsv
+#
+Zend/tests/ArrayAccess/bug64417.phpt
+Zend/tests/abstract_implicit.phpt
+Zend/tests/anon/009.phpt
+Zend/tests/anon/010.phpt
+Zend/tests/anon/014.phpt
+Zend/tests/attributes/nodiscard/003.phpt
+Zend/tests/attributes/override/007.phpt
+Zend/tests/attributes/override/008.phpt
+Zend/tests/attributes/override/009.phpt
+Zend/tests/attributes/override/016.phpt
+Zend/tests/attributes/override/017.phpt
+Zend/tests/attributes/override/gh12189_2.phpt
+Zend/tests/attributes/override/gh12189_3.phpt
+Zend/tests/attributes/override/gh12189_4.phpt
+Zend/tests/attributes/override/gh12189_5.phpt
+Zend/tests/attributes/override/gh12189_6.phpt
+Zend/tests/attributes/override/properties_06.phpt
+Zend/tests/attributes/override/properties_07.phpt
+Zend/tests/attributes/override/properties_08.phpt
+Zend/tests/attributes/override/properties_13.phpt
+Zend/tests/backtrace/bug64239_2.phpt
+Zend/tests/backtrace/bug64239_3.phpt
+Zend/tests/backtrace/bug64239_4.phpt
+Zend/tests/backtrace/bug69180-backtrace.phpt
+tests/basic/bug73969.phpt
