@@ -996,6 +996,8 @@ ptn_phpt_first_unsupported_language_surface() {
             exit found ? 0 : 1
         }
     '
+    local -a ptn_status=("${PIPESTATUS[@]}")
+    return "${ptn_status[1]}"
 }
 
 ptn_phpt_first_unsupported_class_metadata_surface() {
@@ -1119,7 +1121,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /->[[:space:]]*getattributes[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])attribute[[:space:]]*::/ ||
                 line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?(deprecated|nodiscard)([^[:alnum:]_]|$)/) {
-                print "unsupported-class-metadata\trequires internal attribute/reflection metadata such as Reflection*::getAttributes(), Attribute constants, Deprecated, or NoDiscard"
+                print "unsupported-attribute-metadata\trequires internal attribute/reflection metadata such as Reflection*::getAttributes(), Attribute constants, Deprecated, or NoDiscard"
                 found = 1
                 exit
             }
@@ -1193,6 +1195,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         }
         END { exit found ? 0 : 1 }
     '
+    local -a ptn_status=("${PIPESTATUS[@]}")
+    return "${ptn_status[1]}"
 }
 
 ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
@@ -1301,6 +1305,8 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
         }
         END { exit found ? 0 : 1 }
     '
+    local -a ptn_status=("${PIPESTATUS[@]}")
+    return "${ptn_status[1]}"
 }
 
 ptn_phpt_first_unsupported_internal_surface() {
@@ -1413,6 +1419,8 @@ ptn_phpt_first_unsupported_internal_surface() {
             exit found ? 0 : 1
         }
     '
+    local -a ptn_status=("${PIPESTATUS[@]}")
+    return "${ptn_status[1]}"
 }
 
 ptn_phpt_classify_row() {

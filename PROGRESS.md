@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T08:09Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8`; COW-foreach 69/103 passed.
+Refresh: 2026-06-14T09:02Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n`; COW-foreach 69/103 passed.
 
 ## Dashboard
 
@@ -49,7 +49,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8`; COW-foreach 69/103 passed.
 | Map/filter | 30 | 21 | 9 |
 | Request/SAPI | 41 | 1 | 40 |
 | Unsupported-lang | 147 | 0 | 147 |
-| Attribute-blockers | 141 | 0 | 141 |
+| Attribute-blockers | 149 | 0 | 149 |
 | Attribute-meta | 204 | 0 | 204 |
 | Heredoc-array | 70 | 14 | 56 |
 | Std-array-tdei | 71 | 61 | 10 |

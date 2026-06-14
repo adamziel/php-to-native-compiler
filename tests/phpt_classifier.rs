@@ -17,6 +17,10 @@ fn classify(body: &str) -> String {
     classify_with_harness_programs(body, false)
 }
 
+fn classify_with_pipefail(body: &str) -> String {
+    classify_with_options(body, false, true, &[])
+}
+
 fn classify_with_harness_programs(body: &str, enabled: bool) -> String {
     classify_with_harness_programs_and_env(body, enabled, &[])
 }
@@ -24,6 +28,15 @@ fn classify_with_harness_programs(body: &str, enabled: bool) -> String {
 fn classify_with_harness_programs_and_env(
     body: &str,
     enabled: bool,
+    env: &[(&str, &str)],
+) -> String {
+    classify_with_options(body, enabled, false, env)
+}
+
+fn classify_with_options(
+    body: &str,
+    enabled: bool,
+    pipefail: bool,
     env: &[(&str, &str)],
 ) -> String {
     let root = temp_dir("ptn-phpt-classifier");
@@ -49,7 +62,11 @@ fn classify_with_harness_programs_and_env(
     }
     let output = command
         .arg("-c")
-        .arg("source tools/phpt-classifier.sh; ptn_phpt_classify_row tests/case.phpt \"$1\"")
+        .arg(if pipefail {
+            "set -o pipefail; source tools/phpt-classifier.sh; ptn_phpt_classify_row tests/case.phpt \"$1\""
+        } else {
+            "source tools/phpt-classifier.sh; ptn_phpt_classify_row tests/case.phpt \"$1\""
+        })
         .arg("bash")
         .arg(&phpt)
         .output()
@@ -60,6 +77,22 @@ fn classify_with_harness_programs_and_env(
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8(output.stdout).expect("classifier output should be utf8")
+}
+
+#[test]
+fn phpt_classifier_file_section_helpers_survive_pipefail() {
+    let mut phpt =
+        String::from("--TEST--\npipefail early exit\n--FILE--\n<?php\nnew ErrorException();\n");
+    for _ in 0..5000 {
+        phpt.push_str("echo 1;\n");
+    }
+    phpt.push_str("--EXPECT--\n");
+
+    let classification = classify_with_pipefail(&phpt);
+    assert!(
+        classification.starts_with("unsupported-diagnostics-runtime\t"),
+        "{classification:?}"
+    );
 }
 
 #[test]
@@ -152,34 +185,16 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires anonymous class syntax",
         ),
         (
-            "attribute syntax on class",
-            "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nclass Bag {}\n--EXPECT--\n",
-            "unsupported-attribute-metadata",
-            "requires PHP attribute syntax",
-        ),
-        (
             "interface implementation",
             "--TEST--\niface\n--FILE--\n<?php\nclass Bag implements ArrayAccess {}\n--EXPECT--\n",
             "unsupported-language",
             "requires interface implementation checks",
         ),
         (
-            "attribute syntax",
-            "--TEST--\nattr\n--FILE--\n<?php\n#[Deprecated]\nfunction f() {}\n--EXPECT--\n",
-            "unsupported-attribute-metadata",
-            "requires PHP attribute syntax",
-        ),
-        (
             "call-site unpack",
             "--TEST--\nunpack\n--FILE--\n<?php\nfunction f(...$args) {}\nf(...[1, 2]);\n--EXPECT--\n",
             "unsupported-language",
             "requires call-site or array unpacking",
-        ),
-        (
-            "attribute syntax on function",
-            "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n",
-            "unsupported-attribute-metadata",
-            "requires PHP attribute syntax",
         ),
         (
             "generator yield",
@@ -247,6 +262,44 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
         let classification = classify(phpt);
         assert!(
             classification.starts_with(&format!("{category}\t")),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_splits_attribute_metadata_blockers() {
+    let cases = [
+        (
+            "attribute syntax on class",
+            "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nclass Bag {}\n--EXPECT--\n",
+            "requires PHP attribute syntax",
+        ),
+        (
+            "attribute syntax on function",
+            "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n",
+            "requires PHP attribute syntax",
+        ),
+        (
+            "internal attribute reflection metadata",
+            "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
+            "requires internal attribute/reflection metadata",
+        ),
+        (
+            "internal Deprecated attribute object",
+            "--TEST--\ndeprecated attribute\n--FILE--\n<?php\n$d = new \\Deprecated(\"message\");\n$d->message = \"updated\";\n--EXPECT--\n",
+            "requires internal attribute/reflection metadata",
+        ),
+    ];
+
+    for (name, phpt, reason) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("unsupported-attribute-metadata\t"),
             "{name}: {classification:?}"
         );
         assert!(
@@ -484,16 +537,6 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "readonly indirect property mutation",
             "--TEST--\nreadonly indirect mutation\n--FILE--\n<?php\nclass Bag { public readonly array $value; }\n$bag = new Bag();\n$ref =& $bag->value;\n--EXPECT--\n",
             "requires indirect readonly property mutation diagnostics",
-        ),
-        (
-            "internal attribute reflection metadata",
-            "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
-            "requires internal attribute/reflection metadata",
-        ),
-        (
-            "internal Deprecated attribute object",
-            "--TEST--\ndeprecated attribute\n--FILE--\n<?php\n$d = new \\Deprecated(\"message\");\n$d->message = \"updated\";\n--EXPECT--\n",
-            "requires internal attribute/reflection metadata",
         ),
         (
             "complete arginfo registry reflection",
