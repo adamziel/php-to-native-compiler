@@ -51,8 +51,8 @@ Measured: `ptn-7xxw` resource-limit classifier.
 
 ## Verification
 
-`ptn-7xxw` guards `array_fill()` rows with `PHP_INT_MAX`-scale counts. Its
-blocker map records broad evidence and 32/32 passing `array_chunk()` rows.
+`ptn-7xxw` guards huge `array_fill()` rows; `ptn-v1mu` records 34 unpacking
+blockers and confirms the adjacent broad `array_chunk()` probe is 32/32.
 
 `ptn-zzr2` maps class declaration blockers; 78 selected rows stay classified.
 `ptn-ndkl` adds `array_first()`/`array_last()`; helper PHPT is 6/6.

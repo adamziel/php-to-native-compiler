@@ -178,6 +178,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   runnable array-frontier blocker map.
 - `docs/PHPT_BROAD_1K_ARRAY_CALLBACK_FRONTIER_2026-06-13.md`: current broad
   1k callback/set-operation array-helper blocker map.
+- `docs/PHPT_BROAD_1K_UNPACKING_BLOCKERS_2026-06-14.md`: broad 1k
+  argument/array unpacking blocker map.
 - `docs/PHPT_BROAD_1K_ZEND_ASSIGNMENT_FRONTIER_2026-06-14.md`: broad 1k
   Zend assignment/reference/object-write blocker map and focused manifest.
 - `docs/PHPT_BROAD_1K_HEREDOC_NOWDOC_FRONTIER_2026-06-14.md`: plain
