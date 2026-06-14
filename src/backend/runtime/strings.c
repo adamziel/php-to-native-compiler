@@ -456,6 +456,43 @@ static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnVal
 }
 
 static PTN_UNUSED PtnValue ptn_cast_string_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
+        PtnStringOperand object_string;
+        if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+            char *copy = ptn_duplicate_string_len(object_string.data, object_string.len);
+            size_t len = object_string.len;
+            ptn_string_operand_free(object_string);
+            return ptn_owned_string_len(copy, len);
+        }
+
+        const char *class_name = "Object";
+        if (value.type == PTN_OBJECT) {
+            class_name = value.as.object->class_name;
+        } else if (value.type == PTN_CLOSURE) {
+            class_name = "Closure";
+        } else if (value.type == PTN_EXCEPTION) {
+            class_name = value.as.exception->class_name;
+        }
+
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Object of class %s could not be converted to string",
+            class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        if (runtime != NULL) {
+            ptn_throw_exception(runtime, "Error", message);
+            return ptn_string("");
+        }
+        fprintf(stderr, "Fatal error: %s\n", message);
+        exit(255);
+    }
+
     PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
     char *copy = ptn_duplicate_string_len(string.data, string.len);
     size_t len = string.len;

@@ -802,11 +802,17 @@ fn phpt_classifier_keeps_get_object_vars_runnable() {
 #[test]
 fn phpt_classifier_splits_magic_method_metadata_blockers() {
     let classification = classify(
-        "--TEST--\nmagic tostring\n--FILE--\n<?php\nclass Box { public function __toString() { return 'box'; } }\n--EXPECT--\n",
+        "--TEST--\nmagic tostring\n--FILE--\n<?php\nclass Box { public function __toString() { return 'box'; } }\narray_udiff([new Box()], [new Box()], fn($a, $b) => 0);\n--EXPECT--\n",
     );
-    assert_eq!(
-        classification,
-        "runnable\tselected for PTN semantic measurement\n"
+    assert!(
+        classification.starts_with("unsupported-object-string-conversion-metadata\t"),
+        "{classification:?}"
+    );
+    assert!(
+        classification.contains(
+            "requires object-to-string conversion through array key or comparator helpers"
+        ),
+        "{classification:?}"
     );
 
     let cases = [
@@ -839,6 +845,18 @@ fn phpt_classifier_splits_magic_method_metadata_blockers() {
 fn phpt_classifier_keeps_array_column_magic_property_path_runnable() {
     let classification = classify(
         "--TEST--\narray column magic property\n--FILE--\n<?php\nclass Test { private $prop; public function __isset($name) { return true; } public function __get($name) { return 'value'; } }\nvar_dump(array_column([new Test()], 'prop'));\n--EXPECT--\n",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_supported_public_tostring_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nmagic tostring supported\n--FILE--\n<?php\nclass Box { public function __toString() { return 'box'; } }\necho new Box(), \"\\n\";\n--EXPECT--\nbox\n",
     );
 
     assert_eq!(

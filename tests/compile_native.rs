@@ -4766,6 +4766,11 @@ var_dump(strlen($value));
 var_dump(strlen(\"$value\"));
 echo $value, \"\\n\";
 echo \"prefix:$value\\n\";
+try {
+    var_dump((string) new stdClass());
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
 ",
     )
     .unwrap();
@@ -4776,7 +4781,7 @@ echo \"prefix:$value\\n\";
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(12)\nint(12)\nHello, world\nprefix:Hello, world\n"
+        "int(12)\nint(12)\nHello, world\nprefix:Hello, world\nObject of class stdClass could not be converted to string\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

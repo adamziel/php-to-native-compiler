@@ -3867,8 +3867,8 @@ static int ptn_array_value_strings_equal(
             ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
         }
     }
-    PtnStringOperand left_string = ptn_value_to_string_operand(left);
-    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+    PtnStringOperand left_string = ptn_value_to_string_operand_with_runtime(runtime, left, line);
+    PtnStringOperand right_string = ptn_value_to_string_operand_with_runtime(runtime, right, line);
     int equal = left_string.len == right_string.len &&
         memcmp(left_string.data, right_string.data, left_string.len) == 0;
     ptn_string_operand_free(left_string);
@@ -4819,7 +4819,7 @@ static PtnValue ptn_internal_array_fill(PtnRuntime *runtime, size_t argc, const 
 static PtnArrayKey ptn_array_key_from_key_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
-        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+        ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
     }
 
     PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);

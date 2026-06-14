@@ -1,7 +1,7 @@
 # PTN Progress
 
 Refresh: 2026-06-14T20:09Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; COW 69/103 passed.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; `ptn-g7ta` object-string array row pack +24 broad 1k rows and focused 23/23; COW 69/103 passed.
 
 ## Dashboard
 
@@ -283,6 +283,54 @@ Newly passing broad rows:
 - `Zend/tests/array_unpack_string_keys.phpt`
 
 Implemented behavior: parser/IR/backend support for array-literal unpack (`...`) in short and long array literals; classifier split that keeps call-site unpacking blocked while allowing array-literal unpack rows to run; array-literal spread runtime append semantics with integer-key reindexing, string-key preservation/overwrite, reference dereference on spread, append-overflow errors, runtime invalid-operand `Error` ordering, destructuring spread diagnostics, and constant-expression array-unpack errors.
+
+## 2026-06-14 ptn-g7ta Object/String Array Row Pack
+
+Final manifest: `tools/phpt-object-string-array-conversion-ptn-g7ta-manifest.txt`.
+
+Broad 1k before (`a82844e88cf6`, stamp `20260614T172503Z`): 1,000
+selected, 462 runnable, 538 classified out, 389 passed, 73 failed. The
+object-string conversion classifier bucket held 62 rows.
+
+Broad 1k after (`cab98ce6ba9e`, stamp `20260614T184356Z`): 1,000
+selected, 497 runnable, 503 classified out, 413 passed, 84 failed. The
+object-string conversion classifier bucket dropped to 26 rows. Exact broad
+newly passing rows:
+
+- `Zend/tests/bug37811.phpt`
+- `ext/standard/tests/array/array_column_basic.phpt`
+- `ext/standard/tests/array/array_column_object_cast.phpt`
+- `ext/standard/tests/array/array_combine_variation5.phpt`
+- `ext/standard/tests/array/array_diff_assoc_variation3.phpt`
+- `ext/standard/tests/array/array_diff_variation8.phpt`
+- `ext/standard/tests/array/array_fill_keys_variation1.phpt`
+- `ext/standard/tests/array/array_fill_keys_variation2.phpt`
+- `ext/standard/tests/array/array_fill_keys_variation4.phpt`
+- `ext/standard/tests/array/array_fill_variation3.phpt`
+- `ext/standard/tests/array/array_flip_variation4.phpt`
+- `ext/standard/tests/array/array_intersect_assoc_variation7.phpt`
+- `ext/standard/tests/array/array_intersect_assoc_variation8.phpt`
+- `ext/standard/tests/array/array_intersect_variation7.phpt`
+- `ext/standard/tests/array/array_intersect_variation8.phpt`
+- `ext/standard/tests/array/array_key_exists_variation1.phpt`
+- `ext/standard/tests/array/array_key_exists_variation8.phpt`
+- `ext/standard/tests/array/array_merge_recursive_variation5.phpt`
+- `ext/standard/tests/array/array_merge_variation3.phpt`
+- `ext/standard/tests/array/array_pad_variation3.phpt`
+- `ext/standard/tests/array/array_push_variation2.phpt`
+- `ext/standard/tests/array/array_reverse_variation3.phpt`
+- `ext/standard/tests/array/array_reverse_variation5.phpt`
+- `ext/standard/tests/array/array_shift_variation2.phpt`
+
+Focused PHPT command:
+`PHPT_PROGRESS_DIR=.runtime/ptn-g7ta-focused-progress-rebased tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-object-string-array-conversion-ptn-g7ta-manifest.txt`
+selected 23 rows, 23 runnable, 23 passed.
+
+Implemented behavior: runtime-aware object `__toString()` conversion for
+array-column keys, array key values, array set-operation string comparisons,
+and `(string)` object casts that throw catchable `Error` for objects without
+public `__toString()`. Array key conversion now emits the same spaced
+array-to-string warning form used by set operations.
 
 ## 2026-06-14 ptn-j6gv Broad String/Runtime Row Pack
 

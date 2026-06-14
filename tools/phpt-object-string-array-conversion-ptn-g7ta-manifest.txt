@@ -1,0 +1,32 @@
+# Broad 1k ptn-g7ta object-string array conversion row pack.
+#
+# Source: broad 1k rows previously classified as
+# `unsupported-object-string-conversion-metadata`.
+# Scope: public __toString() conversion through explicit string casts,
+# array_column() key arguments, array key normalization helpers, and simple
+# array value-preserving/comparison helpers. Comparator/callback/key-diff rows
+# remain outside this slice.
+
+Zend/tests/bug37811.phpt
+ext/standard/tests/array/array_column_basic.phpt
+ext/standard/tests/array/array_column_object_cast.phpt
+ext/standard/tests/array/array_combine_variation5.phpt
+ext/standard/tests/array/array_diff_assoc_variation3.phpt
+ext/standard/tests/array/array_diff_variation8.phpt
+ext/standard/tests/array/array_fill_keys_variation1.phpt
+ext/standard/tests/array/array_fill_keys_variation2.phpt
+ext/standard/tests/array/array_fill_keys_variation4.phpt
+ext/standard/tests/array/array_fill_variation3.phpt
+ext/standard/tests/array/array_flip_variation4.phpt
+ext/standard/tests/array/array_intersect_assoc_variation7.phpt
+ext/standard/tests/array/array_intersect_assoc_variation8.phpt
+ext/standard/tests/array/array_intersect_variation7.phpt
+ext/standard/tests/array/array_intersect_variation8.phpt
+ext/standard/tests/array/array_key_exists_variation1.phpt
+ext/standard/tests/array/array_merge_recursive_variation5.phpt
+ext/standard/tests/array/array_merge_variation3.phpt
+ext/standard/tests/array/array_pad_variation3.phpt
+ext/standard/tests/array/array_push_variation2.phpt
+ext/standard/tests/array/array_reverse_variation3.phpt
+ext/standard/tests/array/array_reverse_variation5.phpt
+ext/standard/tests/array/array_shift_variation2.phpt
