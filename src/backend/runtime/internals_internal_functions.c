@@ -1541,12 +1541,30 @@ static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
-static PtnArray *ptn_internal_expect_array_arg(
+static const char *ptn_internal_argument_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_BOOL) {
+        return value.as.boolean ? "true" : "false";
+    }
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_EXCEPTION) {
+        return value.as.exception->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static PtnArray *ptn_internal_expect_array_arg_at(
     PtnRuntime *runtime,
     const char *function_name,
     size_t position,
     const char *argument_name,
-    PtnValue value
+    PtnValue value,
+    size_t line
 ) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
@@ -1562,7 +1580,7 @@ static PtnArray *ptn_internal_expect_array_arg(
             function_name,
             position,
             argument_name,
-            ptn_offset_container_type_name(value)
+            ptn_internal_argument_type_name(value)
         )
         : snprintf(
             message,
@@ -1570,13 +1588,41 @@ static PtnArray *ptn_internal_expect_array_arg(
             "%s(): Argument #%zu must be of type array, %s given",
             function_name,
             position,
-            ptn_offset_container_type_name(value)
+            ptn_internal_argument_type_name(value)
         );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "TypeError", message);
+    if (line == 0) {
+        ptn_throw_exception(runtime, "TypeError", message);
+    } else {
+        ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+    }
     return NULL;
+}
+
+static PtnArray *ptn_internal_expect_array_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    return ptn_internal_expect_array_arg_at(runtime, function_name, position, argument_name, value, 0);
+}
+
+static PtnValue ptn_call_internal_callback(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    runtime->throw_argument_count_errors = 1;
+    PtnValue result = ptn_call_callable(runtime, callback, argc, args, line);
+    runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
+    return result;
 }
 
 static PtnArray *ptn_internal_expect_mutable_array_variable_arg(
@@ -2088,7 +2134,7 @@ static void ptn_array_walk_call_function(
         key,
         has_userdata ? ptn_value_clone_deref(userdata) : ptn_null()
     };
-    PtnValue callback_result = ptn_call_callable(
+    PtnValue callback_result = ptn_call_internal_callback(
         runtime,
         callback,
         has_userdata ? 3 : 2,
@@ -3446,7 +3492,7 @@ static int ptn_array_user_compare(
         ptn_value_clone_deref(left),
         ptn_value_clone_deref(right)
     };
-    PtnValue callback_result = ptn_call_callable(runtime, callback, 2, callback_args, line);
+    PtnValue callback_result = ptn_call_internal_callback(runtime, callback, 2, callback_args, line);
     int64_t compared = ptn_value_to_integer(callback_result);
     ptn_value_destroy(&callback_args[0]);
     ptn_value_destroy(&callback_args[1]);
@@ -3842,7 +3888,7 @@ static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, cons
         };
         carry = ptn_null();
         ptn_value_debug_hide_ref(callback_args[0]);
-        PtnValue callback_result = ptn_call_callable(runtime, callback, 2, callback_args, line);
+        PtnValue callback_result = ptn_call_internal_callback(runtime, callback, 2, callback_args, line);
         ptn_value_debug_unhide_ref(callback_args[0]);
         ptn_value_destroy(&callback_args[0]);
         ptn_value_destroy(&callback_args[1]);
@@ -3961,7 +4007,7 @@ static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const P
                 callback_args[arg_index] = ptn_array_map_argument_at(arrays[arg_index], i);
             }
 
-            PtnValue callback_result = ptn_call_callable(runtime, callback, array_count, callback_args, line);
+            PtnValue callback_result = ptn_call_internal_callback(runtime, callback, array_count, callback_args, line);
             for (size_t arg_index = 0; arg_index < array_count; arg_index++) {
                 ptn_value_destroy(&callback_args[arg_index]);
             }
@@ -4116,7 +4162,7 @@ static int ptn_array_callback_predicate_matches(
         ptn_value_clone_deref(entry->value),
         ptn_array_key_value(entry->key)
     };
-    PtnValue callback_result = ptn_call_callable(runtime, callback, 2, callback_args, line);
+    PtnValue callback_result = ptn_call_internal_callback(runtime, callback, 2, callback_args, line);
     ptn_value_destroy(&callback_args[0]);
     ptn_value_destroy(&callback_args[1]);
     if (runtime->exceptions->active_exception != NULL) {
@@ -4274,7 +4320,7 @@ static PtnValue ptn_internal_array_filter(PtnRuntime *runtime, size_t argc, cons
                 callback_args[0] = ptn_value_clone_deref(entry->value);
             }
 
-            PtnValue callback_result = ptn_call_callable(runtime, callback, callback_argc, callback_args, line);
+            PtnValue callback_result = ptn_call_internal_callback(runtime, callback, callback_argc, callback_args, line);
             keep = ptn_is_truthy(callback_result);
             ptn_value_destroy(&callback_result);
             for (size_t arg_index = 0; arg_index < callback_argc; arg_index++) {
@@ -4838,7 +4884,7 @@ static void ptn_array_merge_into(PtnRuntime *runtime, PtnArray *target, PtnArray
 static PtnValue ptn_internal_array_merge(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge", i + 1, "arrays", args[i]);
+        PtnArray *array = ptn_internal_expect_array_arg_at(runtime, "array_merge", i + 1, NULL, args[i], line);
         ptn_array_merge_into(runtime, result.as.array, array);
     }
     (void)line;
@@ -4909,7 +4955,14 @@ static void ptn_array_merge_recursive_into(PtnRuntime *runtime, PtnArray *target
 static PtnValue ptn_internal_array_merge_recursive(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge_recursive", i + 1, "array", args[i]);
+        PtnArray *array = ptn_internal_expect_array_arg_at(
+            runtime,
+            "array_merge_recursive",
+            i + 1,
+            NULL,
+            args[i],
+            line
+        );
         ptn_array_merge_recursive_into(runtime, result.as.array, array);
     }
     (void)line;
@@ -4937,7 +4990,7 @@ static void ptn_array_replace_into(PtnArray *target, PtnArray *source) {
 static PtnValue ptn_internal_array_replace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_replace", i + 1, "array", args[i]);
+        PtnArray *array = ptn_internal_expect_array_arg_at(runtime, "array_replace", i + 1, NULL, args[i], line);
         ptn_array_replace_into(result.as.array, array);
     }
     (void)line;
@@ -4982,7 +5035,14 @@ static void ptn_array_replace_recursive_into(PtnArray *target, PtnArray *source)
 static PtnValue ptn_internal_array_replace_recursive(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_replace_recursive", i + 1, "array", args[i]);
+        PtnArray *array = ptn_internal_expect_array_arg_at(
+            runtime,
+            "array_replace_recursive",
+            i + 1,
+            NULL,
+            args[i],
+            line
+        );
         ptn_array_replace_recursive_into(result.as.array, array);
     }
     (void)line;
@@ -11797,7 +11857,7 @@ static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, con
 static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     runtime->warn_by_ref_argument_mismatch = 1;
-    PtnValue result = ptn_call_callable(
+    PtnValue result = ptn_call_internal_callback(
         runtime,
         args[0],
         argc - 1,
@@ -11824,7 +11884,7 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
 
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     runtime->warn_by_ref_argument_mismatch = 1;
-    PtnValue result = ptn_call_callable(runtime, args[0], arguments->len, expanded, line);
+    PtnValue result = ptn_call_internal_callback(runtime, args[0], arguments->len, expanded, line);
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     for (size_t i = 0; i < arguments->len; i++) {
         ptn_value_destroy(&expanded[i]);

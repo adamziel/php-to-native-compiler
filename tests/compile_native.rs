@@ -14778,6 +14778,56 @@ var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));"
 }
 
 #[test]
+fn compile_internal_array_argument_type_names_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-array-argument-type-names");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-array-argument-type-names.php");
+    let output = root.join("internal-array-argument-type-names-bin");
+    fs::write(
+        &input,
+        "<?php
+class ArrayArgName {}
+foreach ([true, false, new ArrayArgName] as $value) {
+    try {
+        array_diff_key($value, []);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+foreach ([true, false, new ArrayArgName] as $value) {
+    try {
+        array_merge([], $value);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array_diff_key(): Argument #1 ($array) must be of type array, true given\n",
+            "array_diff_key(): Argument #1 ($array) must be of type array, false given\n",
+            "array_diff_key(): Argument #1 ($array) must be of type array, ArrayArgName given\n",
+            "array_merge(): Argument #2 must be of type array, true given\n",
+            "array_merge(): Argument #2 must be of type array, false given\n",
+            "array_merge(): Argument #2 must be of type array, ArrayArgName given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_argument_type_name"));
+    assert!(c_source.contains("ptn_internal_expect_array_arg_at"));
+}
+
+#[test]
 fn compile_array_unique_to_native_binary() {
     let root = temp_dir("ptn-native-array-unique");
     fs::create_dir_all(&root).unwrap();

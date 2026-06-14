@@ -1,0 +1,50 @@
+# ptn-jsvb broad-1k COW/reference row pack (46 rows).
+# Run with:
+#   PHPT_PROGRESS_DIR=.runtime/ptn-jsvb-focused tools/run-bounded-phpt.sh tools/phpt-ptn-jsvb-cow-reference-row-pack.txt
+# bucket: cow-reference rows=46
+Zend/tests/add_optional_by_ref_arg.phpt
+Zend/tests/array_add_indirect.phpt
+Zend/tests/array_addition_not_commutative.phpt
+Zend/tests/array_append_COW.phpt
+Zend/tests/array_append_by_reference.phpt
+Zend/tests/array_append_reading_error.phpt
+Zend/tests/array_hash_zero.phpt
+Zend/tests/array_literal_next_element_error.phpt
+Zend/tests/array_merge_recursive_next_key_overflow.phpt
+Zend/tests/array_self_add_globals.phpt
+Zend/tests/array_splice_empty_ht_iter_removal.phpt
+Zend/tests/array_unshift_COW.phpt
+Zend/tests/array_with_refs_identical.phpt
+Zend/tests/assign_array_object_property.phpt
+Zend/tests/assign_by_val_function_by_ref_return_value.phpt
+Zend/tests/assign_dim_obj_null_return.phpt
+Zend/tests/assign_dim_op_same_var.phpt
+Zend/tests/assign_dim_op_undef.phpt
+Zend/tests/assign_dim_ref_free.phpt
+Zend/tests/assign_obj_op_cache_slot.phpt
+Zend/tests/assign_obj_ref_byval_function.phpt
+Zend/tests/assign_obj_ref_return.phpt
+Zend/tests/assign_op_type_error.phpt
+Zend/tests/assign_property_null_object.phpt
+Zend/tests/assign_ref_error_var_handling.phpt
+Zend/tests/assign_ref_func_leak.phpt
+Zend/tests/assign_to_obj_001.phpt
+Zend/tests/assign_to_obj_002.phpt
+Zend/tests/assign_to_var_001.phpt
+Zend/tests/assign_to_var_002.phpt
+Zend/tests/assign_to_var_003.phpt
+Zend/tests/assign_to_var_004.phpt
+Zend/tests/bug35163.phpt
+Zend/tests/bug38469.phpt
+ext/standard/tests/array/array_filter.phpt
+ext/standard/tests/array/array_merge_recursive_basic1.phpt
+ext/standard/tests/array/array_merge_replace_recursive_refs.phpt
+ext/standard/tests/array/array_reduce.phpt
+ext/standard/tests/array/array_reduce_accumulator_refcount.phpt
+ext/standard/tests/array/array_reduce_return_by_ref.phpt
+ext/standard/tests/array/array_reduce_variation3.phpt
+ext/standard/tests/array/array_replace.phpt
+ext/standard/tests/array/array_replace_merge_recursive_ref.phpt
+ext/standard/tests/array/array_shift_basic.phpt
+ext/standard/tests/array/array_splice_basic.phpt
+ext/standard/tests/array/array_sum_on_reference.phpt
