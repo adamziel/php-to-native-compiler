@@ -213,6 +213,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_RESIDUAL_PTN_KE94_2026-06-14.md`:
   current broad 1k standard-array residual blocker map after recent array and
   binary-string movement.
+- `docs/PHPT_BROAD_1K_STANDARD_ARRAY_G7C1_BLOCKER_MAP_2026-06-14.md`:
+  refreshed broad 1k standard-array blocker map for the current 294-row
+  runnable subset, including the two rows now classified out of the older
+  296-row frontier.
 - `docs/PHPT_BROAD_1K_UNPACKING_BLOCKERS_2026-06-14.md`: broad 1k
   argument/array unpacking blocker map.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_FRONTIER_2026-06-14.md`: broad 1k
