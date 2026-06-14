@@ -1082,7 +1082,7 @@ fn emit_class_constant_initializers(
     for class in classes {
         let previous_class_name = values.current_class_name.replace(class.name.clone());
         for constant in &class.constants {
-            let value_temp = values.emit_materialized_value(out, &constant.value);
+            let value_temp = values.emit_const_materialized_value(out, &constant.value);
             out.push_str("    ptn_runtime_define_class_constant(&runtime, \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\", \"");
@@ -2551,7 +2551,7 @@ fn emit_instruction(
             values.emit_store_reference_source_to_array_dim(out, target, source, source_path);
         }
         Instruction::DefineConstant { name, value, line } => {
-            let emitted_value = values.emit_materialized_value(out, value);
+            let emitted_value = values.emit_const_materialized_value(out, value);
             out.push_str("    (void)ptn_runtime_define_constant_if_absent(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
@@ -3774,7 +3774,8 @@ fn collect_value_legacy_dollar_brace_deprecations(
                     collect_value_legacy_dollar_brace_deprecations(key, deprecations);
                 }
                 match &element.value {
-                    IrArrayElementValue::Value(value) => {
+                    IrArrayElementValue::Value(value)
+                    | IrArrayElementValue::Unpack { value, .. } => {
                         collect_value_legacy_dollar_brace_deprecations(value, deprecations);
                     }
                     IrArrayElementValue::Reference(target) => {
@@ -4253,7 +4254,8 @@ fn collect_value_runtime_requirements(
                     collect_value_runtime_requirements(key, functions, requirements);
                 }
                 match &element.value {
-                    IrArrayElementValue::Value(value) => {
+                    IrArrayElementValue::Value(value)
+                    | IrArrayElementValue::Unpack { value, .. } => {
                         collect_value_runtime_requirements(value, functions, requirements);
                     }
                     IrArrayElementValue::Reference(target) => {
@@ -5196,6 +5198,7 @@ struct ValueEmitter {
     next_label: usize,
     source_file: String,
     source_dir: String,
+    in_const_declaration: bool,
     current_function_name: Option<String>,
     current_method_name: Option<String>,
     current_class_name: Option<String>,
@@ -5367,7 +5370,10 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                 .as_ref()
                 .is_some_and(|key| value_mentions_variable(key, name))
                 || match &element.value {
-                    IrArrayElementValue::Value(value) => value_mentions_variable(value, name),
+                    IrArrayElementValue::Value(value)
+                    | IrArrayElementValue::Unpack { value, .. } => {
+                        value_mentions_variable(value, name)
+                    }
                     IrArrayElementValue::Reference(target) => {
                         reference_target_mentions_variable(target, name)
                     }
@@ -5453,6 +5459,24 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
     }
 }
 
+fn unpack_requires_literal_fatal(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::String(_)
+            | ValueExpr::Int(_)
+            | ValueExpr::Float(_)
+            | ValueExpr::Bool(_)
+            | ValueExpr::Null
+    )
+}
+
+fn const_array_unpack_operand_short_circuits(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::NewObject { .. } | ValueExpr::DynamicNewObject { .. }
+    )
+}
+
 fn static_call_receiver_class_name(call_name: &str, function: &FunctionDecl) -> Option<String> {
     if !function.is_static {
         return None;
@@ -5535,6 +5559,7 @@ impl ValueEmitter {
             next_label: 0,
             source_file: source_file.to_string(),
             source_dir: source_dir.to_string(),
+            in_const_declaration: false,
             current_function_name: current_function_name.map(str::to_string),
             current_method_name: current_method_name.map(str::to_string),
             current_class_name: current_class_name.map(str::to_string),
@@ -5543,6 +5568,14 @@ impl ValueEmitter {
             classes: classes.to_vec(),
             includes: includes.to_vec(),
         }
+    }
+
+    fn emit_const_materialized_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        let previous = self.in_const_declaration;
+        self.in_const_declaration = true;
+        let value_temp = self.emit_materialized_value(out, value);
+        self.in_const_declaration = previous;
+        value_temp
     }
 
     fn declared_class_name(&self, class_name: &str) -> Option<&str> {
@@ -9647,6 +9680,78 @@ impl ValueEmitter {
             return result_temp;
         }
 
+        if elements
+            .iter()
+            .any(|element| matches!(element.value, IrArrayElementValue::Unpack { .. }))
+        {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+            for element in elements {
+                match &element.value {
+                    IrArrayElementValue::Value(_) | IrArrayElementValue::Reference(_) => {
+                        let (has_key, key_temp) = if let Some(key) = &element.key {
+                            let key_temp = self.emit_materialized_value(out, key);
+                            ("1", key_temp)
+                        } else {
+                            ("0", "ptn_null()".to_string())
+                        };
+                        let value_temp = match &element.value {
+                            IrArrayElementValue::Value(value) => {
+                                self.emit_materialized_value(out, value)
+                            }
+                            IrArrayElementValue::Reference(target) => {
+                                self.emit_reference_target(out, target)
+                            }
+                            IrArrayElementValue::Unpack { .. } => unreachable!(),
+                        };
+                        out.push_str("    ptn_array_literal_append_entry(&runtime, ");
+                        out.push_str(&result_temp);
+                        out.push_str(".as.array, runtime.call_site_line, ");
+                        out.push_str(has_key);
+                        out.push_str(", ");
+                        out.push_str(&key_temp);
+                        out.push_str(", ");
+                        out.push_str(&value_temp);
+                        out.push_str(");\n");
+                        if element.key.is_some() {
+                            emit_value_cleanup(out, "    ", &key_temp);
+                        }
+                        emit_value_cleanup(out, "    ", &value_temp);
+                    }
+                    IrArrayElementValue::Unpack { value, line } => {
+                        if self.in_const_declaration
+                            && const_array_unpack_operand_short_circuits(value)
+                        {
+                            out.push_str("    ptn_array_unpack_const_invalid(&runtime, ");
+                            out.push_str(&line.to_string());
+                            out.push_str(");\n");
+                            continue;
+                        }
+                        let value_temp = self.emit_materialized_value(out, value);
+                        let unpack_fn = if self.in_const_declaration {
+                            "ptn_array_unpack_const_into"
+                        } else if unpack_requires_literal_fatal(value) {
+                            "ptn_array_unpack_into_or_fatal"
+                        } else {
+                            "ptn_array_unpack_into"
+                        };
+                        out.push_str("    ");
+                        out.push_str(unpack_fn);
+                        out.push_str("(&runtime, ");
+                        out.push_str(&result_temp);
+                        out.push_str(".as.array, ");
+                        out.push_str(&value_temp);
+                        out.push_str(", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                        emit_value_cleanup(out, "    ", &value_temp);
+                    }
+                }
+            }
+            return result_temp;
+        }
+
         let mut entries = Vec::with_capacity(elements.len());
         let mut entry_temps = Vec::with_capacity(elements.len() * 2);
         for element in elements {
@@ -9660,6 +9765,7 @@ impl ValueEmitter {
             let value_temp = match &element.value {
                 IrArrayElementValue::Value(value) => self.emit_materialized_value(out, value),
                 IrArrayElementValue::Reference(target) => self.emit_reference_target(out, target),
+                IrArrayElementValue::Unpack { .. } => unreachable!(),
             };
             entry_temps.push(value_temp.clone());
             entries.push(format!("{{ {has_key}, {key_temp}, {value_temp} }}"));

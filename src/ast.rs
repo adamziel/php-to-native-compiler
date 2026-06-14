@@ -635,6 +635,7 @@ pub struct ArrayElement {
 pub enum ArrayElementValue {
     Value(Expr),
     Reference(ReferenceTarget),
+    Unpack(Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]

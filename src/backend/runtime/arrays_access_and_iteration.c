@@ -1189,6 +1189,155 @@ unavailable:
     return 0;
 }
 
+static PTN_UNUSED void ptn_array_literal_append_entry(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    size_t line,
+    int has_key,
+    PtnValue key_value,
+    PtnValue value
+) {
+    if (has_key) {
+        if (ptn_value_deref(key_value).type == PTN_NULL) {
+            ptn_emit_null_array_offset_deprecation(runtime, line);
+        }
+        PtnArrayKey key = ptn_array_key_from_value(key_value);
+        ptn_array_set_entry(array, key, ptn_value_clone(value));
+        return;
+    }
+
+    if (!ptn_array_append_key_available(runtime, array)) {
+        return;
+    }
+    PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
+    ptn_array_set_entry(array, key, ptn_value_clone(value));
+}
+
+static PTN_UNUSED void ptn_array_unpack_invalid_operand_message(
+    PtnValue value,
+    char *message,
+    size_t message_len
+) {
+    const char *given = ptn_offset_container_type_name(value);
+    snprintf(
+        message,
+        message_len,
+        "Only arrays and Traversables can be unpacked, %s given",
+        given
+    );
+}
+
+static PTN_UNUSED void ptn_array_unpack_invalid_operand_fatal(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    char message[160];
+    ptn_array_unpack_invalid_operand_message(value, message, sizeof(message));
+    if (runtime->diagnostics.display_errors) {
+        FILE *stream = runtime->diagnostics.stream == NULL ? stderr : runtime->diagnostics.stream;
+        fputs("Fatal error: ", stream);
+        fputs(message, stream);
+        fputs(" in ", stream);
+        fputs(runtime->source_path, stream);
+        fputs(" on line ", stream);
+        fprintf(stream, "%zu", line);
+        fputc('\n', stream);
+    }
+    exit(255);
+}
+
+static PTN_UNUSED void ptn_array_unpack_invalid_operand_throw(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    char message[160];
+    ptn_array_unpack_invalid_operand_message(value, message, sizeof(message));
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_array_unpack_array_into(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnArray *source
+) {
+    for (size_t i = 0; i < source->len; i++) {
+        PtnArrayEntry *entry = &source->entries[i];
+        PtnArrayKey key = entry->key.type == PTN_ARRAY_KEY_INT
+            ? ptn_array_int_key(target->next_auto_key)
+            : ptn_array_key_clone(entry->key);
+        if (entry->key.type == PTN_ARRAY_KEY_INT &&
+            !ptn_array_append_key_available(runtime, target)) {
+            ptn_array_key_free(key);
+            return;
+        }
+        ptn_array_set_entry(target, key, ptn_value_clone_deref(entry->value));
+    }
+}
+
+static PTN_UNUSED void ptn_array_unpack_into_common(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnValue value,
+    size_t line,
+    int fatal_on_invalid_operand
+) {
+    PtnValue source = ptn_value_deref(value);
+    if (source.type != PTN_ARRAY) {
+        if (fatal_on_invalid_operand) {
+            ptn_array_unpack_invalid_operand_fatal(runtime, source, line);
+        } else {
+            ptn_array_unpack_invalid_operand_throw(runtime, source, line);
+        }
+        return;
+    }
+
+    ptn_array_unpack_array_into(runtime, target, source.as.array);
+}
+
+static PTN_UNUSED void ptn_array_unpack_into(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnValue value,
+    size_t line
+) {
+    ptn_array_unpack_into_common(runtime, target, value, line, 0);
+}
+
+static PTN_UNUSED void ptn_array_unpack_const_invalid(PtnRuntime *runtime, size_t line) {
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Only arrays can be unpacked in constant expression",
+        runtime->source_path,
+        line
+    );
+}
+
+static PTN_UNUSED void ptn_array_unpack_const_into(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue source = ptn_value_deref(value);
+    if (source.type != PTN_ARRAY) {
+        ptn_array_unpack_const_invalid(runtime, line);
+        return;
+    }
+    ptn_array_unpack_array_into(runtime, target, source.as.array);
+}
+
+static PTN_UNUSED void ptn_array_unpack_into_or_fatal(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnValue value,
+    size_t line
+) {
+    ptn_array_unpack_into_common(runtime, target, value, line, 1);
+}
+
 static PTN_UNUSED PtnArrayEntry *ptn_array_reference_entry(PtnArray *array, const PtnValue *key_value) {
     if (key_value == NULL) {
         PtnArrayKey key = ptn_array_int_key(array->next_auto_key);

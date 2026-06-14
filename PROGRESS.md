@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T16:55Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; COW 69/103 passed.
+Refresh: 2026-06-14T17:43Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; COW 69/103 passed.
 
 ## Dashboard
 
@@ -56,7 +56,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Interface-impl|15|0|15|
 |Trait-decl|25|0|25|
 |Call-unpack|20|0|20|
-|Array-unpack|14|0|14|
+|Array-unpack|14|10|4|
 |Type-hint|14|0|14|
 |Function-state|11|0|11|
 |Dynamic-symbol|8|3|5|
@@ -76,6 +76,29 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |COW-gate|26|26|0|
 |COW-reference-tiqh|21|21|0|
 |1k-baseline|1000|379|621|
+
+## 2026-06-14 ptn-55u0 Broad Array-Unpack Row Pack
+
+Final manifest: `tools/phpt-ptn-55u0-array-unpack-row-pack-manifest.txt`.
+
+Baseline `origin/master` (`a82844e88cf6`) selected 34 broad 1k unpack rows with classification disabled: 34 runnable, 2 passed, 32 failed. The two passes were unrelated ext/standard array callback rows in the same former bucket.
+
+Current branch selected the same 34 rows with the refined classifier: 10 runnable, 10 passed, 0 failed, 24 classified separately (`unsupported-call-unpacking` 20, `unsupported-generator-runtime` 3, `unsupported-typed-property-metadata` 1).
+
+Newly passing broad rows:
+
+- `Zend/tests/array_unpack/already_occupied.phpt`
+- `Zend/tests/array_unpack/gh19303.phpt`
+- `Zend/tests/array_unpack/gh9769.phpt`
+- `Zend/tests/array_unpack/in_destructuring.phpt`
+- `Zend/tests/array_unpack/in_destructuring_2.phpt`
+- `Zend/tests/array_unpack/ref1.phpt`
+- `Zend/tests/array_unpack/undef_var.phpt`
+- `Zend/tests/array_unpack/unpack_invalid_type_compile_time.phpt`
+- `Zend/tests/array_unpack/unpack_string_keys_compile_time.phpt`
+- `Zend/tests/array_unpack_string_keys.phpt`
+
+Implemented behavior: parser/IR/backend support for array-literal unpack (`...`) in short and long array literals; classifier split that keeps call-site unpacking blocked while allowing array-literal unpack rows to run; array-literal spread runtime append semantics with integer-key reindexing, string-key preservation/overwrite, reference dereference on spread, append-overflow errors, runtime invalid-operand `Error` ordering, destructuring spread diagnostics, and constant-expression array-unpack errors.
 
 ## 2026-06-14 ptn-j6gv Broad String/Runtime Row Pack
 

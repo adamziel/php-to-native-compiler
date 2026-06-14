@@ -13751,6 +13751,123 @@ echo $items[0], \":\", $keyed[\"k\"], \"\\n\";",
 }
 
 #[test]
+fn compile_array_literal_unpack_to_native_binary() {
+    let root = temp_dir("ptn-native-array-literal-unpack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-literal-unpack.php");
+    let output = root.join("array-literal-unpack-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$base = [1, 2, 'foo' => 3, 4];\n\
+$extra = ['foo' => 9, 'bar' => 10];\n\
+var_dump([0, ...$base, ...$extra, 'foo' => 11]);\n\
+var_dump(array('a', ...[2], 'k' => 3));\n\
+$a = 1;\n\
+$refs = [&$a];\n\
+$copy = [...$refs];\n\
+$a = 2;\n\
+var_dump($copy);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(6) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n  [\"foo\"]=>\n  int(11)\n  [3]=>\n  int(4)\n  [\"bar\"]=>\n  int(10)\n}\narray(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  int(2)\n  [\"k\"]=>\n  int(3)\n}\narray(1) {\n  [0]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_rejects_array_spread_destructuring_with_native_diagnostic() {
+    let error = parser::parse("<?php [$head, ...$tail] = [1, 2];").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Spread operator is not supported in assignments"
+    );
+    assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
+fn compile_array_literal_unpack_runtime_scalar_error_to_native_binary() {
+    let root = temp_dir("ptn-native-array-literal-unpack-runtime-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-literal-unpack-runtime-error.php");
+    let output = root.join("array-literal-unpack-runtime-error-bin");
+    fs::write(&input, "<?php\nvar_dump([...$missing]);\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        undefined_variable_warning(&input, "missing", 2)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Only arrays and Traversables can be unpacked, null given in {}:2\nStack trace:\n#0 {{main}}\n  thrown in {} on line 2\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn compile_array_literal_unpack_literal_scalar_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-array-literal-unpack-literal-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-literal-unpack-literal-error.php");
+    let output = root.join("array-literal-unpack-literal-error-bin");
+    fs::write(&input, "<?php\nvar_dump([...1]);\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Only arrays and Traversables can be unpacked, int given in {} on line 2\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn compile_const_array_literal_unpack_non_array_error_to_native_binary() {
+    let root = temp_dir("ptn-native-const-array-literal-unpack-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("const-array-literal-unpack-error.php");
+    let output = root.join("const-array-literal-unpack-error-bin");
+    fs::write(
+        &input,
+        "<?php\n\nconst A = [...[1, 2, 3]];\nconst B = [...['a' => 1]];\nconst C = [...new ArrayObject()];\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Only arrays can be unpacked in constant expression in {}:5\nStack trace:\n#0 {{main}}\n  thrown in {} on line 5\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_append_expression_with_reference_list_assignment_to_native_binary() {
     let root = temp_dir("ptn-native-append-reference-list-assignment-expression");
     fs::create_dir_all(&root).unwrap();

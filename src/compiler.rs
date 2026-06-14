@@ -359,7 +359,7 @@ impl IncludeCollector {
                         self.collect_expr(key, source_file, source_dir)?;
                     }
                     match &element.value {
-                        ArrayElementValue::Value(value) => {
+                        ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
                             self.collect_expr(value, source_file, source_dir)?;
                         }
                         ArrayElementValue::Reference(target) => {

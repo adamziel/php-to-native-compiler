@@ -456,6 +456,7 @@ pub struct ArrayElement {
 pub enum ArrayElementValue {
     Value(ValueExpr),
     Reference(ReferenceTarget),
+    Unpack { value: ValueExpr, line: usize },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1887,6 +1888,10 @@ impl<'a> LoweringContext<'a> {
             AstArrayElementValue::Reference(target) => {
                 ArrayElementValue::Reference(self.lower_reference_target(target))
             }
+            AstArrayElementValue::Unpack(value) => ArrayElementValue::Unpack {
+                value: self.lower_expr(value),
+                line: value.span().line,
+            },
         }
     }
 
@@ -2151,6 +2156,7 @@ fn assertion_array_element_text(element: &AstArrayElement) -> String {
         AstArrayElementValue::Reference(target) => {
             format!("&{}", assertion_reference_target_text(target))
         }
+        AstArrayElementValue::Unpack(value) => format!("...{}", assertion_expr_text(value)),
     };
     if let Some(key) = &element.key {
         format!("{} => {value}", assertion_expr_text(key))

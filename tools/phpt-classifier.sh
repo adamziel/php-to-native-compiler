@@ -1117,13 +1117,11 @@ ptn_phpt_first_unsupported_language_surface() {
                 first_class_callable = line ~ /\([[:space:]]*\.\.\.[[:space:]]*\)/
                 if (!declaration && !first_class_callable) {
                     spread_context = ptn_spread_context(line)
-                    if (spread_context == "array") {
-                        print "unsupported-array-unpacking\trequires array literal/destructuring unpacking (`...`), outside PTN modeled array lowering"
-                    } else {
+                    if (spread_context != "array") {
                         print "unsupported-call-unpacking\trequires call-site argument unpacking (`...`), outside PTN modeled call lowering"
+                        found = 1
+                        exit
                     }
-                    found = 1
-                    exit
                 }
             }
         }

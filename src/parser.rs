@@ -1217,7 +1217,7 @@ impl Parser {
         };
         self.expect_equal()?;
         let value = self.parse_expr()?;
-        if !is_supported_global_const_expr(&value) {
+        if !is_supported_const_declaration_expr(&value) {
             return Err(Diagnostic::new(
                 "class constant value must be a supported constant expression",
                 Some(value.span()),
@@ -2200,7 +2200,7 @@ impl Parser {
         let (name, token_span) = self.parse_declaration_name("expected constant name")?;
         self.expect_equal()?;
         let value = self.parse_expr()?;
-        if !is_supported_global_const_expr(&value) {
+        if !is_supported_const_declaration_expr(&value) {
             return Err(Diagnostic::new(
                 "constant expression contains invalid operation",
                 Some(value.span()),
@@ -2818,12 +2818,20 @@ impl Parser {
         let operator = self.peek().clone();
         let op = self.expect_assignment_op()?;
         let left_span = left.span();
-        let target = assignment_target_from_expr(left).map_err(|_| {
-            Diagnostic::new(
-                "assignment expression target must be a variable, array dimension, or list",
-                Some(operator.span),
-            )
-        })?;
+        let target = match assignment_target_from_expr(left) {
+            Ok(target) => target,
+            Err(diagnostic)
+                if diagnostic.message == "Spread operator is not supported in assignments" =>
+            {
+                return Err(diagnostic);
+            }
+            Err(_) => {
+                return Err(Diagnostic::new(
+                    "assignment expression target must be a variable, array dimension, or list",
+                    Some(operator.span),
+                ));
+            }
+        };
         validate_expression_assignment_target(op, &target, operator.span)?;
         if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
@@ -3715,6 +3723,15 @@ impl Parser {
     }
 
     fn parse_array_element(&mut self) -> Result<ArrayElement> {
+        if matches!(self.peek().kind, TokenKind::Ellipsis) {
+            self.advance();
+            let value = self.parse_expr()?;
+            return Ok(ArrayElement {
+                key: None,
+                value: ArrayElementValue::Unpack(value),
+            });
+        }
+
         if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             let value = ArrayElementValue::Reference(self.parse_reference_target()?);
@@ -4778,7 +4795,7 @@ fn collect_arrow_captures_from_expr(
                     collect_arrow_captures_from_expr(key, exclusions, seen, captures);
                 }
                 match &element.value {
-                    ArrayElementValue::Value(value) => {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
                         collect_arrow_captures_from_expr(value, exclusions, seen, captures);
                     }
                     ArrayElementValue::Reference(target) => {
@@ -5551,6 +5568,9 @@ fn array_element_reference_to_variable(
             ArrayElementValue::Value(value) => {
                 expr_array_literal_reference_to_variable(value, variable)
             }
+            ArrayElementValue::Unpack(value) => {
+                expr_array_literal_reference_to_variable(value, variable)
+            }
         })
 }
 
@@ -5924,8 +5944,11 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
                 if let Some(key) = &element.key {
                     validate_anonymous_functions_in_expr(key, functions)?;
                 }
-                if let ArrayElementValue::Value(value) = &element.value {
-                    validate_anonymous_functions_in_expr(value, functions)?;
+                match &element.value {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        validate_anonymous_functions_in_expr(value, functions)?;
+                    }
+                    ArrayElementValue::Reference(_) => {}
                 }
             }
         }
@@ -7392,6 +7415,12 @@ fn list_assignment_target_from_array_elements(
                 ListAssignmentElementTarget::Value(Box::new(assignment_target_from_expr(value)?))
             }
             ArrayElementValue::Reference(target) => ListAssignmentElementTarget::Reference(target),
+            ArrayElementValue::Unpack(value) => {
+                return Err(Diagnostic::new(
+                    "Spread operator is not supported in assignments",
+                    Some(value.span()),
+                ));
+            }
         };
         lowered.push(ListAssignmentElement {
             key: element.key,
@@ -7472,8 +7501,11 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
                 if let Some(key) = &element.key {
                     reject_append_array_read(key)?;
                 }
-                if let ArrayElementValue::Value(value) = &element.value {
-                    reject_append_array_read(value)?;
+                match &element.value {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        reject_append_array_read(value)?;
+                    }
+                    ArrayElementValue::Reference(_) => {}
                 }
             }
         }
@@ -7618,6 +7650,17 @@ fn dynamic_class_name_fetch_has_illegal_literal_receiver(expr: &Expr) -> bool {
 }
 
 fn is_supported_global_const_expr(expr: &Expr) -> bool {
+    is_supported_global_const_expr_with_options(expr, false)
+}
+
+fn is_supported_const_declaration_expr(expr: &Expr) -> bool {
+    is_supported_global_const_expr_with_options(expr, true)
+}
+
+fn is_supported_global_const_expr_with_options(
+    expr: &Expr,
+    allow_const_array_unpack_error_operands: bool,
+) -> bool {
     match expr {
         Expr::String(_, _)
         | Expr::Int(_, _)
@@ -7628,23 +7671,43 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::MagicConstant(_, _)
         | Expr::ClassConstantFetch { .. } => true,
         Expr::Array { elements, .. } => elements.iter().all(|element| {
-            element
-                .key
-                .as_ref()
-                .is_none_or(is_supported_global_const_expr)
-                && match &element.value {
-                    ArrayElementValue::Value(value) => is_supported_global_const_expr(value),
-                    ArrayElementValue::Reference(_) => false,
+            element.key.as_ref().is_none_or(|key| {
+                is_supported_global_const_expr_with_options(
+                    key,
+                    allow_const_array_unpack_error_operands,
+                )
+            }) && match &element.value {
+                ArrayElementValue::Value(value) => is_supported_global_const_expr_with_options(
+                    value,
+                    allow_const_array_unpack_error_operands,
+                ),
+                ArrayElementValue::Unpack(value) => {
+                    is_supported_global_const_expr_with_options(
+                        value,
+                        allow_const_array_unpack_error_operands,
+                    ) || (allow_const_array_unpack_error_operands
+                        && is_supported_const_array_unpack_error_operand(value))
                 }
+                ArrayElementValue::Reference(_) => false,
+            }
         }),
         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
-            is_supported_global_const_expr(expr)
+            is_supported_global_const_expr_with_options(
+                expr,
+                allow_const_array_unpack_error_operands,
+            )
         }
         Expr::FirstClassCallable { callable, .. } => {
             is_supported_first_class_callable_const_target(callable)
         }
         Expr::Binary { left, right, .. } => {
-            is_supported_global_const_expr(left) && is_supported_global_const_expr(right)
+            is_supported_global_const_expr_with_options(
+                left,
+                allow_const_array_unpack_error_operands,
+            ) && is_supported_global_const_expr_with_options(
+                right,
+                allow_const_array_unpack_error_operands,
+            )
         }
         Expr::Ternary { .. } => false,
         Expr::InterpolatedString(_, _)
@@ -7670,6 +7733,21 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,
+    }
+}
+
+fn is_supported_const_array_unpack_error_operand(expr: &Expr) -> bool {
+    match expr {
+        Expr::NewObject {
+            arguments,
+            argument_names,
+            ..
+        } => {
+            argument_names.iter().all(Option::is_none)
+                && arguments.iter().all(is_supported_global_const_expr)
+        }
+        Expr::Grouped { expr, .. } => is_supported_const_array_unpack_error_operand(expr),
+        _ => false,
     }
 }
 
@@ -7706,6 +7784,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
                 .is_none_or(is_supported_parameter_default_expr)
                 && match &element.value {
                     ArrayElementValue::Value(value) => is_supported_parameter_default_expr(value),
+                    ArrayElementValue::Unpack(value) => is_supported_parameter_default_expr(value),
                     ArrayElementValue::Reference(_) => false,
                 }
         }),
@@ -7801,8 +7880,11 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
                 if let Some(key) = &element.key {
                     validate_class_scoped_constant_expr(key, parent_name)?;
                 }
-                if let ArrayElementValue::Value(value) = &element.value {
-                    validate_class_scoped_constant_expr(value, parent_name)?;
+                match &element.value {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        validate_class_scoped_constant_expr(value, parent_name)?;
+                    }
+                    ArrayElementValue::Reference(_) => {}
                 }
             }
             Ok(())

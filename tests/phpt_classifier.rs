@@ -402,36 +402,25 @@ fn phpt_classifier_keeps_supported_interface_rows_runnable() {
 
 #[test]
 fn phpt_classifier_splits_unpacking_blockers() {
-    let cases = [
-        (
-            "call-site unpack",
-            "--TEST--\ncall unpack\n--FILE--\n<?php\nfunction collect(...$args) { return $args; }\nvar_dump(collect(...[1, 2]));\n--EXPECT--\n",
-            "unsupported-call-unpacking\t",
-            "requires call-site argument unpacking",
-        ),
-        (
-            "array literal unpack",
-            "--TEST--\narray unpack\n--FILE--\n<?php\nvar_dump([0, ...[1, 2]]);\n--EXPECT--\n",
-            "unsupported-array-unpacking\t",
-            "requires array literal/destructuring unpacking",
-        ),
-        (
-            "long array literal unpack",
-            "--TEST--\narray unpack\n--FILE--\n<?php\nvar_dump(array(0, ...[1, 2]));\n--EXPECT--\n",
-            "unsupported-array-unpacking\t",
-            "requires array literal/destructuring unpacking",
-        ),
-    ];
+    let call_unpack = classify(
+        "--TEST--\ncall unpack\n--FILE--\n<?php\nfunction collect(...$args) { return $args; }\nvar_dump(collect(...[1, 2]));\n--EXPECT--\n",
+    );
+    assert!(
+        call_unpack.starts_with("unsupported-call-unpacking\t"),
+        "{call_unpack:?}"
+    );
+    assert!(
+        call_unpack.contains("requires call-site argument unpacking"),
+        "{call_unpack:?}"
+    );
 
-    for (name, phpt, category, reason) in cases {
-        let classification = classify(phpt);
-        assert!(
-            classification.starts_with(category),
-            "{name}: {classification:?}"
-        );
-        assert!(
-            classification.contains(reason),
-            "{name}: {classification:?}"
+    for phpt in [
+        "--TEST--\narray unpack\n--FILE--\n<?php\nvar_dump([0, ...[1, 2]]);\n--EXPECT--\n",
+        "--TEST--\narray unpack\n--FILE--\n<?php\nvar_dump(array(0, ...[1, 2]));\n--EXPECT--\n",
+    ] {
+        assert_eq!(
+            classify(phpt).trim_end(),
+            "runnable\tselected for PTN semantic measurement"
         );
     }
 }
