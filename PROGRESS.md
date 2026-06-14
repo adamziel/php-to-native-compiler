@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T07:58Z.
-Measured: `ptn-c284`; COW-foreach 103 selected, 69 passed.
+Refresh: 2026-06-14T07:59Z.
+Measured: `ptn-c284`; `ptn-xymv`; COW-foreach 69/103 passed.
 
 ## Dashboard
 
@@ -38,6 +38,7 @@ Measured: `ptn-c284`; COW-foreach 103 selected, 69 passed.
 | Dynamic-type | 44 | 0 | 44 |
 | Diagnostics | 47 | 0 | 47 |
 | Non-array-meta | 74 | 0 | 74 |
+| Class/object-meta | 221 | 0 | 221 |
 | Core/basic-op | 34 | 18 | 16 |
 | Runtime-INI | 73 | 0 | 73 |
 | Resource-limit | 1 | 0 | 1 |
