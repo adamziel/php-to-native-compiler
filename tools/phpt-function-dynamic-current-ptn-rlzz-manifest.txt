@@ -1,0 +1,41 @@
+# Broad 1k function/dynamic type current frontier for ptn-rlzz.
+# Generated from .runtime/phpt-progress/classification-20260614T084529Z.tsv.
+# Selection:
+#   unsupported-language rows requiring nullable type hints, function-local
+#   static variables, variable variables, generator/yield lowering, or named
+#   internal-call argument binding.
+Zend/tests/anon/015.phpt
+Zend/tests/anon/016.phpt
+Zend/tests/arrow_functions/003.phpt
+Zend/tests/arrow_functions/005.phpt
+Zend/tests/arrow_functions/006.phpt
+Zend/tests/arrow_functions/007.phpt
+Zend/tests/assert/bug70241.phpt
+Zend/tests/assert/expect_015.phpt
+Zend/tests/attributes/deprecated/class_constants/deprecated_constant_as_message_002.phpt
+Zend/tests/attributes/deprecated/class_constants/error_code_001.phpt
+Zend/tests/attributes/deprecated/constants/deprecated_constant_as_message_002.phpt
+Zend/tests/attributes/deprecated/constants/error_code.phpt
+Zend/tests/attributes/deprecated/functions/deprecated_handler_002.phpt
+Zend/tests/attributes/deprecated/functions/error_code_001.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_001.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_002.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_003.phpt
+Zend/tests/attributes/deprecated/traits/throwing_error_handler.phpt
+Zend/tests/attributes/nodiscard/error_code_001.phpt
+Zend/tests/attributes/nodiscard/throwing_error_handler_001.phpt
+Zend/tests/autoload/bug78868.phpt
+Zend/tests/backtrace/bug76047.phpt
+Zend/tests/bind_static_exception.phpt
+Zend/tests/bug26802.phpt
+Zend/tests/bug28072.phpt
+Zend/tests/bug28442.phpt
+Zend/tests/bug32322.phpt
+Zend/tests/bug35163_2.phpt
+Zend/tests/bug35470.phpt
+Zend/tests/bug38211.phpt
+Zend/tests/bug38287.phpt
+ext/standard/tests/array/array_combine.phpt
+ext/standard/tests/array/array_filter_invalid_mode.phpt
+ext/standard/tests/array/array_filter_object.phpt
+ext/standard/tests/array/array_map_object1.phpt
