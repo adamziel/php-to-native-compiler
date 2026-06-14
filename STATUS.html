@@ -2,8 +2,8 @@
 <meta charset="utf-8">
 <title>PTN Status</title>
 <h1>PTN Status</h1>
-<p><strong>Last refresh:</strong> 2026-06-14T14:35Z.<br>
-<strong>Measured:</strong> <code>ptn-c284; ptn-xymv; ptn-j8b8/b35n/18tp/gkvr; ptn-gt7b; ptn-30ji; ptn-h0qa broad 1k classify-only 424 runnable / 576 classified; ptn-dkcs call-unpacking 34 selected / 0 runnable / 34 classified; ptn-ei36 unpacking split 20 call / 14 array classified; ptn-550s.12 broad 1k array-helper row pack 0/10 -&gt; 10/10; ptn-qsmv.16 array callback/map-filter row pack; ptn-qsmv.17 assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; ptn-s80e broad 1k array/reference row pack 10/20 -&gt; 20/20; COW 69/103 passed.</code></p>
+<p><strong>Last refresh:</strong> 2026-06-14T16:07Z.<br>
+<strong>Measured:</strong> <code>ptn-c284; ptn-xymv; ptn-j8b8/b35n/18tp/gkvr; ptn-gt7b; ptn-30ji; ptn-h0qa broad 1k classify-only 424 runnable / 576 classified; ptn-dkcs call-unpacking 34 selected / 0 runnable / 34 classified; ptn-ei36 unpacking split 20 call / 14 array classified; ptn-550s.12 broad 1k array-helper row pack 0/10 -&gt; 10/10; ptn-qsmv.16 array callback/map-filter row pack; ptn-qsmv.17 assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; ptn-s80e broad 1k array/reference row pack 10/20 -&gt; 20/20; ptn-qsmv.15 object-key/string-conversion row pack 0/25 -&gt; 25/25, broad 1k classify-only 501/499, broad 1k full 365/501; COW 69/103 passed.</code></p>
 <p>Hold the RC line to generic PHP semantics while expanding toward broad php-src PHPT coverage.</p>
 <table>
   <thead><tr><th>Bucket</th><th>Count</th></tr></thead>
@@ -47,9 +47,10 @@
     <tr><td>Resource-limit</td><td>0/1</td></tr>
     <tr><td>Magic/object</td><td>20/69</td></tr>
     <tr><td>Magic-methods</td><td>0/8</td></tr>
-    <tr><td>Object-string-meta</td><td>0/61</td></tr>
+    <tr><td>Object-string-meta</td><td>25/61</td></tr>
+    <tr><td>Object-key-string</td><td>25/25</td></tr>
     <tr><td>Std-array-map</td><td>0/297</td></tr>
-    <tr><td>Std-arrays</td><td>263/296</td></tr>
+    <tr><td>Std-arrays</td><td>285/353</td></tr>
     <tr><td>Map/filter</td><td>25/30</td></tr>
     <tr><td>Request/SAPI</td><td>1/41</td></tr>
     <tr><td>Anon-class</td><td>0/15</td></tr>
@@ -75,7 +76,7 @@
     <tr><td>Binary-key</td><td>1/1</td></tr>
     <tr><td>Runtime-config</td><td>10/54</td></tr>
     <tr><td>COW-gate</td><td>26/26</td></tr>
-    <tr><td>1k-baseline</td><td>285/1000</td></tr>
+    <tr><td>1k-baseline</td><td>365/1000</td></tr>
   </tbody>
 </table>
 <p>Canonical text status lives in <code>STATUS.md</code>.</p>

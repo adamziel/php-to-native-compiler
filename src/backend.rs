@@ -3687,7 +3687,7 @@ fn collect_value_legacy_dollar_brace_deprecations(
         | ValueExpr::Null
         | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
-        | ValueExpr::Constant(_)
+        | ValueExpr::Constant(_, _)
         | ValueExpr::MagicConstant { .. }
         | ValueExpr::StaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. } => {}
@@ -4009,7 +4009,7 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
         | ValueExpr::LegacyDollarBraceStringVariable { .. }
-        | ValueExpr::Constant(_)
+        | ValueExpr::Constant(_, _)
         | ValueExpr::MagicConstant { .. } => {}
         ValueExpr::IncDec { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
@@ -4927,6 +4927,68 @@ impl AssignmentTargetLine for ReferenceTarget {
     }
 }
 
+fn array_literal_line(elements: &[IrArrayElement]) -> usize {
+    elements.iter().find_map(array_element_line).unwrap_or(0)
+}
+
+fn array_element_line(element: &IrArrayElement) -> Option<usize> {
+    element
+        .key
+        .as_ref()
+        .and_then(value_expr_line)
+        .or_else(|| match &element.value {
+            IrArrayElementValue::Value(value) => value_expr_line(value),
+            IrArrayElementValue::Reference(target) => Some(target.line()),
+        })
+}
+
+fn value_expr_line(value: &ValueExpr) -> Option<usize> {
+    match value {
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null => None,
+        ValueExpr::Constant(_, line) => Some(*line),
+        ValueExpr::Closure { line, .. }
+        | ValueExpr::Load { line, .. }
+        | ValueExpr::LegacyDollarBraceStringVariable { line, .. }
+        | ValueExpr::DynamicVariable { line, .. }
+        | ValueExpr::IncDec { line, .. }
+        | ValueExpr::MagicConstant { line, .. }
+        | ValueExpr::ArrayAccess { line, .. }
+        | ValueExpr::ArrayAppendAccess { line, .. }
+        | ValueExpr::Include { line, .. }
+        | ValueExpr::Throw { line, .. }
+        | ValueExpr::InternalCall { line, .. }
+        | ValueExpr::FirstClassCallable { line, .. }
+        | ValueExpr::DynamicCall { line, .. }
+        | ValueExpr::MethodCall { line, .. }
+        | ValueExpr::NewObject { line, .. }
+        | ValueExpr::DynamicNewObject { line, .. }
+        | ValueExpr::Clone { line, .. }
+        | ValueExpr::PropertyFetch { line, .. }
+        | ValueExpr::StaticPropertyFetch { line, .. }
+        | ValueExpr::ClassConstantFetch { line, .. }
+        | ValueExpr::DynamicClassNameFetch { line, .. }
+        | ValueExpr::Unary { line, .. }
+        | ValueExpr::Cast { line, .. }
+        | ValueExpr::Binary { line, .. }
+        | ValueExpr::Ternary { line, .. } => Some(*line),
+        ValueExpr::Assign { target, value, .. } => {
+            Some(target.line()).or_else(|| value_expr_line(value))
+        }
+        ValueExpr::AssignRef { target, source } => {
+            Some(target.line()).or_else(|| value_expr_line(source))
+        }
+        ValueExpr::Array(elements) => elements.iter().find_map(array_element_line),
+        ValueExpr::Isset { targets } => targets.iter().find_map(value_expr_line),
+        ValueExpr::Empty { target } | ValueExpr::Print { expression: target } => {
+            value_expr_line(target)
+        }
+    }
+}
+
 fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
     target.elements.iter().any(|element| match &element.target {
         ListAssignmentElementTarget::Reference(_) => true,
@@ -5119,7 +5181,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::Bool(_)
         | ValueExpr::Null
         | ValueExpr::Closure { .. }
-        | ValueExpr::Constant(_)
+        | ValueExpr::Constant(_, _)
         | ValueExpr::MagicConstant { .. } => false,
     }
 }
@@ -6836,7 +6898,7 @@ impl ValueEmitter {
                 result,
                 line,
             } => self.emit_inc_dec_expression(out, target, *op, *result, *line),
-            ValueExpr::Constant(name) => {
+            ValueExpr::Constant(name, _) => {
                 format!("ptn_read_constant(&runtime, \"{}\")", c_string(name))
             }
             ValueExpr::MagicConstant { kind, line } => match kind {
@@ -9126,7 +9188,9 @@ impl ValueEmitter {
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_array_from_literal_entries_at(&runtime, runtime.call_site_line, ");
+        out.push_str(" = ptn_array_from_literal_entries_at(&runtime, ");
+        out.push_str(&array_literal_line(elements).to_string());
+        out.push_str(", ");
         out.push_str(&elements.len().to_string());
         out.push_str(", ");
         out.push_str(&entries_temp);

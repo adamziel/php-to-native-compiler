@@ -667,10 +667,10 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires magic method dispatch/reflection metadata",
         ),
         (
-            "object string conversion metadata",
+            "object string conversion",
             "--TEST--\nstring conversion\n--FILE--\n<?php\nclass Bag { public function __toString() { return 'bag'; } }\n--EXPECT--\n",
-            "unsupported-object-string-conversion-metadata\t",
-            "requires object-to-string magic conversion metadata",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "autoload",
@@ -771,11 +771,11 @@ fn phpt_classifier_splits_magic_method_metadata_blockers() {
         "--TEST--\nmagic tostring\n--FILE--\n<?php\nclass Box { public function __toString() { return 'box'; } }\n--EXPECT--\n",
     );
     assert!(
-        classification.starts_with("unsupported-object-string-conversion-metadata\t"),
+        classification.starts_with("runnable\t"),
         "{classification:?}"
     );
     assert!(
-        classification.contains("requires object-to-string magic conversion metadata"),
+        classification.contains("selected for PTN semantic measurement"),
         "{classification:?}"
     );
 

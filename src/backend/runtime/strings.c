@@ -388,14 +388,50 @@ static PTN_UNUSED int ptn_try_object_to_string_operand(
     return 1;
 }
 
+static PTN_UNUSED const char *ptn_string_conversion_class_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && value.as.object != NULL) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_EXCEPTION && value.as.exception != NULL) {
+        return value.as.exception->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    return "Object";
+}
+
+static PTN_UNUSED void ptn_throw_object_to_string_conversion_error(PtnRuntime *runtime, PtnValue value) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Object of class %s could not be converted to string",
+        ptn_string_conversion_class_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
     PtnRuntime *runtime,
     PtnValue value,
     size_t line
 ) {
+    value = ptn_value_deref(value);
     PtnStringOperand object_string;
     if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
         return object_string;
+    }
+    if (
+        runtime != NULL &&
+        (value.type == PTN_OBJECT || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION)
+    ) {
+        ptn_throw_object_to_string_conversion_error(runtime, value);
+        return ptn_string_operand_borrowed("");
     }
     return ptn_value_to_string_operand(value);
 }

@@ -51,7 +51,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   sum/product/fill/filter/chunk/merge/replace helpers, predicate/find helpers
   (`array_all()`, `array_any()`, `array_find()`, and `array_find_key()`), key-aware
   diff/intersect helpers with user comparators and PHP-style array-to-string
-  conversion warnings for set-operation normalization, `array_rand()` key selection,
+  conversion warnings for set-operation normalization, runtime-aware object
+  `__toString()` conversion for key-producing helpers, resource-key diagnostics
+  for user array literals, `array_rand()` key selection,
   sum/product warning and
   overflow parity,
   `count()`/`sizeof()` modes, `array_splice()` mutation, sort mutators through
@@ -313,6 +315,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_OBJECT_STRING_CONVERSION_CLASSIFIER_PTN_I0P3_2026-06-14.md`:
   current broad 1k classifier split moving 61 `__toString()` object
   conversion rows into `unsupported-object-string-conversion-metadata`.
+- `docs/PHPT_BROAD_1K_OBJECT_KEY_STRING_CONVERSION_PTN_QSMV15_2026-06-14.md`:
+  broad 1k object key/string conversion row pack with a committed 25-row
+  focused manifest and rebased full broad evidence.
 - `docs/PHPT_BROAD_1K_MAGIC_OBJECT_CONVERSION_FRONTIER_2026-06-14.md`: broad
   1k magic-method/object-conversion blocker map and raw focused evidence.
 - `docs/PHPT_BROAD_1K_MAGIC_METHOD_METADATA_CURRENT_PTN_7FYM_2026-06-14.md`:

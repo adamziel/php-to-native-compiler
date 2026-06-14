@@ -4266,10 +4266,13 @@ static PtnValue ptn_internal_array_fill(PtnRuntime *runtime, size_t argc, const 
 static PtnArrayKey ptn_array_key_from_key_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
+        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+            fputc('\n', stdout);
+        }
         ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
     }
 
-    PtnStringOperand string = ptn_value_to_string_operand(value);
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
     PtnValue key_value = ptn_string_literal(string.data, string.len);
     PtnArrayKey key = ptn_array_key_from_value(key_value);
     ptn_string_operand_free(string);

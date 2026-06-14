@@ -15568,6 +15568,61 @@ var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'))
 }
 
 #[test]
+fn compile_array_key_string_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-array-key-string-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-key-string-conversion.php");
+    let output = root.join("array-key-string-conversion-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class KeyObj { public function __toString() { return \"magic-key\"; } }\n\
+var_dump(array_fill_keys(array(new KeyObj(), STDERR, array(), false, 2.4), \"v\"));\n\
+var_dump(array_combine(array(new KeyObj()), array(\"obj\")));\n\
+$array = array(STDERR => \"resource\");\n\
+var_dump($array);\n\
+try { var_dump(array_fill_keys(array(new stdClass()), \"x\")); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\n",
+            "Warning: Array to string conversion in ptn on line 3\n",
+            "array(5) {\n",
+            "  [\"magic-key\"]=>\n",
+            "  string(1) \"v\"\n",
+            "  [\"Resource id #3\"]=>\n",
+            "  string(1) \"v\"\n",
+            "  [\"Array\"]=>\n",
+            "  string(1) \"v\"\n",
+            "  [\"\"]=>\n",
+            "  string(1) \"v\"\n",
+            "  [\"2.4\"]=>\n",
+            "  string(1) \"v\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"magic-key\"]=>\n",
+            "  string(3) \"obj\"\n",
+            "}\n",
+            "\n",
+            "Warning: Resource ID#3 used as offset, casting to integer (3) in ptn on line 5\n",
+            "array(1) {\n",
+            "  [3]=>\n",
+            "  string(8) \"resource\"\n",
+            "}\n",
+            "Object of class stdClass could not be converted to string\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_predicate_find_helpers_to_native_binary() {
     let root = temp_dir("ptn-native-array-predicate-find");
     fs::create_dir_all(&root).unwrap();

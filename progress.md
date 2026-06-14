@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T14:35Z.
+Last refresh: 2026-06-14T16:07Z.
 Source: `PROGRESS.md`
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; COW 69/103 passed.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-qsmv.15` object-key/string-conversion row pack 0/25 -> 25/25, broad 1k classify-only 501/499, broad 1k full 365/501; COW 69/103 passed.
 
 Compact signal: Units 3/3; Native 730/730; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/281; Array-key/cb 38/75.
 
@@ -47,9 +47,10 @@ Compact signal: Units 3/3; Native 730/730; Bounded 479/486; Zend 119/119; ext/st
 | Resource-limit | 0/1 |
 | Magic/object | 20/69 |
 | Magic-methods | 0/8 |
-| Object-string-meta | 0/61 |
+| Object-string-meta | 25/61 |
+| Object-key-string | 25/25 |
 | Std-array-map | 0/297 |
-| Std-arrays | 263/296 |
+| Std-arrays | 285/353 |
 | Map/filter | 25/30 |
 | Request/SAPI | 1/41 |
 | Anon-class | 0/15 |
@@ -75,7 +76,7 @@ Compact signal: Units 3/3; Native 730/730; Bounded 479/486; Zend 119/119; ext/st
 | Binary-key | 1/1 |
 | Runtime-config | 10/54 |
 | COW-gate | 26/26 |
-| 1k-baseline | 285/1000 |
+| 1k-baseline | 365/1000 |
 
 Canonical dashboard: `PROGRESS.md`. Regenerate with
 `tools/update-progress-mirrors.sh` after changing canonical progress.

@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T14:35Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; COW 69/103 passed.
+Refresh: 2026-06-14T16:07Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-qsmv.15` object-key/string-conversion row pack 0/25 -> 25/25, broad 1k classify-only 501/499, broad 1k full 365/501; COW 69/103 passed.
 
 ## Dashboard
 
@@ -46,9 +46,10 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Resource-limit|1|0|1|
 |Magic/object|69|20|49|
 |Magic-methods|8|0|8|
-|Object-string-meta|61|0|61|
+|Object-string-meta|61|25|36|
+|Object-key-string|25|25|0|
 |Std-array-map|297|0|297|
-|Std-arrays|296|263|33|
+|Std-arrays|353|285|68|
 |Map/filter|30|25|5|
 |Request/SAPI|41|1|40|
 |Anon-class|15|0|15|
@@ -74,4 +75,4 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Binary-key|1|1|0|
 |Runtime-config|54|10|44|
 |COW-gate|26|26|0|
-|1k-baseline|1000|285|715|
+|1k-baseline|1000|365|635|
