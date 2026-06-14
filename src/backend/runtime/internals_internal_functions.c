@@ -1680,9 +1680,15 @@ static PtnArray *ptn_internal_expect_array_arg(
         return value.as.array;
     }
 
-    const char *given = value.type == PTN_OBJECT
-        ? value.as.object->class_name
-        : ptn_offset_container_type_name(value);
+    const char *given_type = ptn_offset_container_type_name(value);
+    if (value.type == PTN_OBJECT) {
+        given_type = value.as.object->class_name;
+    } else if (value.type == PTN_EXCEPTION) {
+        given_type = value.as.exception->class_name;
+    } else if (value.type == PTN_CLOSURE) {
+        given_type = "Closure";
+    }
+
     char message[192];
     int written = argument_name != NULL && argument_name[0] != '\0'
         ? snprintf(
@@ -1692,7 +1698,7 @@ static PtnArray *ptn_internal_expect_array_arg(
             function_name,
             position,
             argument_name,
-            given
+            given_type
         )
         : snprintf(
             message,
@@ -1700,7 +1706,7 @@ static PtnArray *ptn_internal_expect_array_arg(
             "%s(): Argument #%zu must be of type array, %s given",
             function_name,
             position,
-            given
+            given_type
         );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
@@ -2755,9 +2761,6 @@ static void ptn_array_aggregate_warn_unsupported(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        fputc('\n', stdout);
-    }
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
@@ -3436,20 +3439,46 @@ static int ptn_array_contains_value(PtnArray *array, PtnValue value) {
     return 0;
 }
 
-static int ptn_array_contains_assoc_value(PtnArray *array, PtnArrayKey key, PtnValue value) {
+static int ptn_array_value_strings_equal_with_warnings(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    ptn_array_emit_string_conversion_warning_for_value(runtime, left, line);
+    ptn_array_emit_string_conversion_warning_for_value(runtime, right, line);
+    return ptn_array_value_strings_equal(left, right);
+}
+
+static int ptn_array_contains_assoc_value(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnArrayKey key,
+    PtnValue value,
+    int warn_value_comparison,
+    size_t line
+) {
     PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
-    return entry != NULL && ptn_array_value_strings_equal(value, entry->value);
+    if (entry == NULL) {
+        return 0;
+    }
+    if (warn_value_comparison) {
+        return ptn_array_value_strings_equal_with_warnings(runtime, value, entry->value, line);
+    }
+    return ptn_array_value_strings_equal(value, entry->value);
 }
 
 static int ptn_array_entry_matches_all(
+    PtnRuntime *runtime,
     PtnArrayEntry *entry,
     size_t array_count,
     PtnArray **arrays,
-    int compare_keys
+    int compare_keys,
+    size_t line
 ) {
     for (size_t i = 0; i < array_count; i++) {
         int found = compare_keys
-            ? ptn_array_contains_assoc_value(arrays[i], entry->key, entry->value)
+            ? ptn_array_contains_assoc_value(runtime, arrays[i], entry->key, entry->value, 1, line)
             : ptn_array_contains_value(arrays[i], entry->value);
         if (!found) {
             return 0;
@@ -3459,14 +3488,16 @@ static int ptn_array_entry_matches_all(
 }
 
 static int ptn_array_entry_matches_any(
+    PtnRuntime *runtime,
     PtnArrayEntry *entry,
     size_t array_count,
     PtnArray **arrays,
-    int compare_keys
+    int compare_keys,
+    size_t line
 ) {
     for (size_t i = 0; i < array_count; i++) {
         int found = compare_keys
-            ? ptn_array_contains_assoc_value(arrays[i], entry->key, entry->value)
+            ? ptn_array_contains_assoc_value(runtime, arrays[i], entry->key, entry->value, 1, line)
             : ptn_array_contains_value(arrays[i], entry->value);
         if (found) {
             return 1;
@@ -3484,7 +3515,7 @@ static PtnValue ptn_array_intersect_or_diff(
     int keep_matches,
     size_t line
 ) {
-    if (array_count != 0) {
+    if (!compare_keys && !keep_matches) {
         ptn_array_emit_set_operation_string_conversion_warnings(runtime, source, line);
         for (size_t i = 0; i < array_count; i++) {
             ptn_array_emit_set_operation_string_conversion_warnings(runtime, arrays[i], line);
@@ -3495,8 +3526,8 @@ static PtnValue ptn_array_intersect_or_diff(
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayEntry *entry = &source->entries[i];
         int keep = keep_matches
-            ? ptn_array_entry_matches_all(entry, array_count, arrays, compare_keys)
-            : !ptn_array_entry_matches_any(entry, array_count, arrays, compare_keys);
+            ? ptn_array_entry_matches_all(runtime, entry, array_count, arrays, compare_keys, line)
+            : !ptn_array_entry_matches_any(runtime, entry, array_count, arrays, compare_keys, line);
         if (keep) {
             ptn_array_set_entry(
                 result.as.array,
@@ -8157,9 +8188,6 @@ static void ptn_emit_file_warning(
         free(message);
         ptn_abort_out_of_memory();
     }
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        fputc('\n', stdout);
-    }
     ptn_emit_warning(&runtime->diagnostics, message, line);
     free(message);
 }
@@ -8863,9 +8891,6 @@ static void ptn_emit_stat_warning(
         free(message);
         ptn_abort_out_of_memory();
     }
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        fputc('\n', stdout);
-    }
     ptn_emit_warning(&runtime->diagnostics, message, line);
     free(message);
 }
@@ -8888,9 +8913,6 @@ static void ptn_emit_function_warning(
     if (written < 0 || written != needed) {
         free(message);
         ptn_abort_out_of_memory();
-    }
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        fputc('\n', stdout);
     }
     ptn_emit_warning(&runtime->diagnostics, message, line);
     free(message);
@@ -8992,9 +9014,6 @@ static int ptn_stat_path_from_value(
         int written = snprintf(message, sizeof(message), "%s(): Filename contains null byte", function_name);
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
-        }
-        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-            fputc('\n', stdout);
         }
         ptn_emit_warning(&runtime->diagnostics, message, line);
         return 0;
@@ -9231,9 +9250,6 @@ static PtnValue ptn_internal_touch(PtnRuntime *runtime, size_t argc, const PtnVa
         if (written < 0 || written != needed) {
             free(message);
             ptn_abort_out_of_memory();
-        }
-        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-            fputc('\n', stdout);
         }
         ptn_emit_warning(&runtime->diagnostics, message, line);
         free(message);

@@ -310,9 +310,6 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
         position,
         parameter_name
     );
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        fputc('\n', stdout);
-    }
     ptn_emit_warning(&runtime->diagnostics, message, line);
     free(message);
 }

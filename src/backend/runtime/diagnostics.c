@@ -436,6 +436,7 @@ static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const ch
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
+    fputc('\n', stdout);
     fputs("Warning: ", stdout);
     fputs(message, stdout);
     fputs(" in ptn on line ", stdout);

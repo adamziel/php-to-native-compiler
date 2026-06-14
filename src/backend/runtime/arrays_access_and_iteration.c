@@ -152,7 +152,6 @@ static PTN_UNUSED void ptn_emit_resource_offset_warning(PtnRuntime *runtime, Ptn
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    fputc('\n', stdout);
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
