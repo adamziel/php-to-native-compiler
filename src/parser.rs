@@ -6,9 +6,9 @@ use crate::ast::{
     ClosureUseCapture, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
     IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind,
-    MethodDecl, Program, PropertyDecl, PropertyVisibility, ReferenceTarget, Statement,
-    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp,
-    UnsetTarget,
+    MethodDecl, Program, PromotedProperty, PropertyDecl, PropertyVisibility, ReferenceTarget,
+    Statement, StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint,
+    UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -144,6 +144,12 @@ impl Default for ClassModifiers {
     }
 }
 
+impl ClassModifiers {
+    fn has_promoted_property_modifier(&self) -> bool {
+        self.visibility_span.is_some() || self.set_visibility_span.is_some() || self.is_readonly
+    }
+}
+
 enum ParsedClassMember {
     Method(MethodDecl),
     Properties(Vec<PropertyDecl>),
@@ -176,6 +182,7 @@ impl Parser {
         validate_abstract_methods(&classes)?;
         validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
+        validate_property_override_set_visibility(&classes)?;
         validate_class_scoped_constant_exprs(&classes)?;
         for class in &classes {
             validate_method_names(class)?;
@@ -866,7 +873,13 @@ impl Parser {
         let mut methods = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             match self.parse_class_member(is_readonly, is_interface, &class_name)? {
-                ParsedClassMember::Method(method) => methods.push(method),
+                ParsedClassMember::Method(method) => {
+                    if method.name.eq_ignore_ascii_case("__construct") {
+                        properties
+                            .extend(promoted_properties_from_constructor(&method, is_readonly));
+                    }
+                    methods.push(method);
+                }
                 ParsedClassMember::Properties(parsed_properties) => {
                     properties.extend(parsed_properties);
                 }
@@ -960,6 +973,7 @@ impl Parser {
                         modifiers.visibility,
                         set_visibility,
                         modifiers.set_visibility_span,
+                        class_name,
                     )?,
                 ));
             }
@@ -986,6 +1000,7 @@ impl Parser {
                         modifiers.visibility,
                         set_visibility,
                         modifiers.set_visibility_span,
+                        class_name,
                     )?,
                 ));
             }
@@ -1008,7 +1023,7 @@ impl Parser {
         if class_is_interface {
             modifiers.is_abstract = true;
         }
-        let method = self.parse_method_decl(modifiers)?;
+        let method = self.parse_method_decl(modifiers, class_is_readonly, class_name)?;
         if class_is_interface && method.visibility != PropertyVisibility::Public {
             return Err(Diagnostic::new(
                 format!(
@@ -1147,9 +1162,9 @@ impl Parser {
         }
         self.advance();
         self.expect_right_paren()?;
-        if !visibility_allows_set_visibility(modifiers.visibility, visibility) {
+        if modifiers.set_visibility.is_some() {
             return Err(Diagnostic::new(
-                "set visibility must be the same as get visibility or more restrictive",
+                "Multiple access type modifiers are not allowed",
                 Some(visibility_span),
             ));
         }
@@ -1163,19 +1178,30 @@ impl Parser {
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
         set_visibility_span: Option<SourceSpan>,
+        class_name: &str,
     ) -> Result<Vec<StaticPropertyDecl>> {
         let has_type = self.parse_optional_property_type_hint()?;
         if set_visibility_span.is_some() && !has_type {
+            let property_name = match &self.peek().kind {
+                TokenKind::Variable(name) => name.as_str(),
+                _ => "",
+            };
             return Err(Diagnostic::new(
-                "asymmetric property visibility requires typed property",
+                format!(
+                    "Property with asymmetric visibility {class_name}::${property_name} must have type"
+                ),
                 set_visibility_span,
             ));
         }
         let mut properties =
-            vec![self.parse_static_property_declaration(visibility, set_visibility)?];
+            vec![self.parse_static_property_declaration(visibility, set_visibility, class_name)?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
-            properties.push(self.parse_static_property_declaration(visibility, set_visibility)?);
+            properties.push(self.parse_static_property_declaration(
+                visibility,
+                set_visibility,
+                class_name,
+            )?);
         }
         self.expect_semicolon()?;
         Ok(properties)
@@ -1251,8 +1277,14 @@ impl Parser {
             ));
         }
         if set_visibility_span.is_some() && !has_type {
+            let property_name = match &self.peek().kind {
+                TokenKind::Variable(name) => name.as_str(),
+                _ => "",
+            };
             return Err(Diagnostic::new(
-                "asymmetric property visibility requires typed property",
+                format!(
+                    "Property with asymmetric visibility {class_name}::${property_name} must have type"
+                ),
                 set_visibility_span,
             ));
         }
@@ -1286,6 +1318,13 @@ impl Parser {
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new("expected property name", Some(token.span)));
         };
+        validate_asymmetric_property_visibility(
+            class_name,
+            &name,
+            visibility,
+            set_visibility,
+            token.span,
+        )?;
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
@@ -1319,6 +1358,7 @@ impl Parser {
         &mut self,
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
+        class_name: &str,
     ) -> Result<StaticPropertyDecl> {
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
@@ -1327,6 +1367,13 @@ impl Parser {
                 Some(token.span),
             ));
         };
+        validate_asymmetric_property_visibility(
+            class_name,
+            &name,
+            visibility,
+            set_visibility,
+            token.span,
+        )?;
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
@@ -1405,7 +1452,12 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_method_decl(&mut self, modifiers: ClassModifiers) -> Result<MethodDecl> {
+    fn parse_method_decl(
+        &mut self,
+        modifiers: ClassModifiers,
+        class_is_readonly: bool,
+        class_name: &str,
+    ) -> Result<MethodDecl> {
         let span = self.expect_function()?;
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
@@ -1420,14 +1472,22 @@ impl Parser {
                 Some(name_token.span),
             ));
         };
-        let parameters = self.parse_function_parameters()?;
+        let allow_promoted_properties = name.eq_ignore_ascii_case("__construct");
+        let parameters = self.parse_function_parameters_with_promotions(
+            if allow_promoted_properties {
+                Some(class_name)
+            } else {
+                None
+            },
+            class_is_readonly,
+        )?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
             Some(self.parse_return_type_hint()?)
         } else {
             None
         };
-        let body = if modifiers.is_abstract {
+        let mut body = if modifiers.is_abstract {
             self.expect_semicolon()?;
             Vec::new()
         } else {
@@ -1436,6 +1496,13 @@ impl Parser {
             self.function_depth -= 1;
             body?
         };
+        if allow_promoted_properties && !modifiers.is_abstract {
+            let mut promoted_assignments = constructor_promoted_property_assignments(&parameters);
+            if !promoted_assignments.is_empty() {
+                promoted_assignments.extend(body);
+                body = promoted_assignments;
+            }
+        }
         Ok(MethodDecl {
             name,
             visibility: modifiers.visibility,
@@ -1627,13 +1694,27 @@ impl Parser {
     }
 
     fn parse_function_parameters(&mut self) -> Result<Vec<FunctionParameter>> {
+        self.parse_function_parameters_with_promotions(None, false)
+    }
+
+    fn parse_function_parameters_with_promotions(
+        &mut self,
+        class_name_for_promotions: Option<&str>,
+        class_is_readonly: bool,
+    ) -> Result<Vec<FunctionParameter>> {
         self.expect_left_paren()?;
         let mut parameters = Vec::new();
         if !matches!(self.peek().kind, TokenKind::RightParen) {
-            parameters.push(self.parse_function_parameter()?);
+            parameters
+                .push(self.parse_function_parameter(class_name_for_promotions, class_is_readonly)?);
             while matches!(self.peek().kind, TokenKind::Comma) {
                 self.advance();
-                parameters.push(self.parse_function_parameter()?);
+                if matches!(self.peek().kind, TokenKind::RightParen) {
+                    break;
+                }
+                parameters.push(
+                    self.parse_function_parameter(class_name_for_promotions, class_is_readonly)?,
+                );
             }
         }
         self.expect_right_paren()?;
@@ -1653,7 +1734,21 @@ impl Parser {
         Ok(parameters)
     }
 
-    fn parse_function_parameter(&mut self) -> Result<FunctionParameter> {
+    fn parse_function_parameter(
+        &mut self,
+        class_name_for_promotions: Option<&str>,
+        class_is_readonly: bool,
+    ) -> Result<FunctionParameter> {
+        let promotion_modifiers = if class_name_for_promotions.is_some() {
+            let modifiers = self.parse_class_modifiers()?;
+            if modifiers.has_promoted_property_modifier() {
+                Some(modifiers)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let type_hint = if self.peek_is_type_hint() {
             Some(self.parse_type_hint()?)
         } else {
@@ -1678,6 +1773,36 @@ impl Parser {
                 Some(token.span),
             ));
         };
+        let promoted_property = if let Some(modifiers) = promotion_modifiers {
+            let class_name = class_name_for_promotions.expect("promotion modifiers require class");
+            let is_readonly = class_is_readonly || modifiers.is_readonly;
+            let set_visibility = modifiers
+                .set_visibility
+                .unwrap_or_else(|| default_set_visibility(modifiers.visibility, is_readonly));
+            if modifiers.set_visibility_span.is_some() && type_hint.is_none() {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Property with asymmetric visibility {class_name}::${name} must have type"
+                    ),
+                    modifiers.set_visibility_span,
+                ));
+            }
+            validate_asymmetric_property_visibility(
+                class_name,
+                &name,
+                modifiers.visibility,
+                set_visibility,
+                modifiers.set_visibility_span.unwrap_or(token.span),
+            )?;
+            Some(PromotedProperty {
+                visibility: modifiers.visibility,
+                set_visibility,
+                is_readonly,
+                span: modifiers.visibility_span.unwrap_or(token.span),
+            })
+        } else {
+            None
+        };
         let default_value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
@@ -1697,6 +1822,7 @@ impl Parser {
             by_ref,
             is_variadic,
             default_value,
+            promoted_property,
             span: token.span,
         })
     }
@@ -5205,11 +5331,81 @@ fn visibility_allows_set_visibility(
     visibility_rank(set_visibility) >= visibility_rank(read_visibility)
 }
 
+fn validate_asymmetric_property_visibility(
+    class_name: &str,
+    property_name: &str,
+    read_visibility: PropertyVisibility,
+    set_visibility: PropertyVisibility,
+    span: SourceSpan,
+) -> Result<()> {
+    if visibility_allows_set_visibility(read_visibility, set_visibility) {
+        return Ok(());
+    }
+    Err(Diagnostic::new(
+        format!(
+            "Visibility of property {class_name}::${property_name} must not be weaker than set visibility"
+        ),
+        Some(span),
+    ))
+}
+
+fn promoted_properties_from_constructor(
+    method: &MethodDecl,
+    class_is_readonly: bool,
+) -> Vec<PropertyDecl> {
+    method
+        .parameters
+        .iter()
+        .filter_map(|parameter| {
+            let promoted = parameter.promoted_property.as_ref()?;
+            Some(PropertyDecl {
+                name: parameter.name.clone(),
+                visibility: promoted.visibility,
+                set_visibility: promoted.set_visibility,
+                is_readonly: class_is_readonly || promoted.is_readonly,
+                value: None,
+                span: promoted.span,
+            })
+        })
+        .collect()
+}
+
+fn constructor_promoted_property_assignments(parameters: &[FunctionParameter]) -> Vec<Statement> {
+    parameters
+        .iter()
+        .filter(|parameter| parameter.promoted_property.is_some())
+        .map(|parameter| {
+            let span = parameter.span;
+            Statement::Expression {
+                expression: Expr::Assign {
+                    target: AssignmentTarget::Property {
+                        receiver: Box::new(Expr::Variable("this".to_string(), span)),
+                        name: parameter.name.clone(),
+                        span,
+                    },
+                    op: AssignmentOp::Assign,
+                    value: Box::new(Expr::Variable(parameter.name.clone(), span)),
+                    span,
+                },
+                span,
+            }
+        })
+        .collect()
+}
+
 fn visibility_rank(visibility: PropertyVisibility) -> u8 {
     match visibility {
         PropertyVisibility::Public => 0,
         PropertyVisibility::Protected => 1,
         PropertyVisibility::Private => 2,
+    }
+}
+
+fn property_visibility_name(visibility: PropertyVisibility) -> &'static str {
+    match visibility {
+        PropertyVisibility::Public => "public",
+        PropertyVisibility::Protected => "protected",
+        PropertyVisibility::Private => "private",
     }
 }
 
@@ -5417,6 +5613,45 @@ fn validate_readonly_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
                     class.name
                 ),
                 Some(class.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        let Some(parent_name) = &class.parent_name else {
+            continue;
+        };
+        let Some(parent) = classes
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(parent_name))
+        else {
+            continue;
+        };
+        for property in &class.properties {
+            let Some(parent_property) = parent
+                .properties
+                .iter()
+                .find(|candidate| candidate.name == property.name)
+            else {
+                continue;
+            };
+            if visibility_rank(property.set_visibility)
+                <= visibility_rank(parent_property.set_visibility)
+            {
+                continue;
+            }
+            return Err(Diagnostic::new(
+                format!(
+                    "Set access level of {}::${} must be {}(set) (as in class {}) or weaker",
+                    class.name,
+                    property.name,
+                    property_visibility_name(parent_property.set_visibility),
+                    parent.name
+                ),
+                Some(property.span),
             ));
         }
     }

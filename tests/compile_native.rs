@@ -3622,6 +3622,55 @@ class Book {
 }
 
 #[test]
+fn parser_lowers_asymmetric_constructor_promoted_properties() {
+    let program = parser::parse(
+        "<?php
+class Book {
+    public function __construct(
+        public private(set) string $title,
+        protected(set) int $year,
+    ) {}
+}
+",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes[0].properties.len(), 2);
+    assert_eq!(program.classes[0].properties[0].name, "title");
+    assert_eq!(
+        program.classes[0].properties[0].visibility,
+        PropertyVisibility::Public
+    );
+    assert_eq!(
+        program.classes[0].properties[0].set_visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(program.classes[0].properties[1].name, "year");
+    assert_eq!(
+        program.classes[0].properties[1].visibility,
+        PropertyVisibility::Public
+    );
+    assert_eq!(
+        program.classes[0].properties[1].set_visibility,
+        PropertyVisibility::Protected
+    );
+
+    let constructor = &program.classes[0].methods[0];
+    assert_eq!(constructor.body.len(), 2);
+    assert!(matches!(
+        &constructor.body[0],
+        Statement::Expression {
+            expression: Expr::Assign {
+                target: AssignmentTarget::Property { name, .. },
+                value,
+                ..
+            },
+            ..
+        } if name == "title" && matches!(value.as_ref(), Expr::Variable(variable, _) if variable == "title")
+    ));
+}
+
+#[test]
 fn parser_accepts_readonly_property_metadata() {
     let program = parser::parse(
         "<?php
@@ -3722,13 +3771,20 @@ fn parser_rejects_invalid_asymmetric_property_visibility_metadata() {
         parser::parse("<?php class Bad { protected public(set) string $name; }").unwrap_err();
     assert_eq!(
         error.message,
-        "set visibility must be the same as get visibility or more restrictive"
+        "Visibility of property Bad::$name must not be weaker than set visibility"
     );
 
     let error = parser::parse("<?php class Bad { public private(set) $name; }").unwrap_err();
     assert_eq!(
         error.message,
-        "asymmetric property visibility requires typed property"
+        "Property with asymmetric visibility Bad::$name must have type"
+    );
+
+    let error =
+        parser::parse("<?php class Bad { public(set) protected(set) string $name; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Multiple access type modifiers are not allowed"
     );
 }
 

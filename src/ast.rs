@@ -94,6 +94,15 @@ pub struct FunctionParameter {
     pub by_ref: bool,
     pub is_variadic: bool,
     pub default_value: Option<Expr>,
+    pub promoted_property: Option<PromotedProperty>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PromotedProperty {
+    pub visibility: PropertyVisibility,
+    pub set_visibility: PropertyVisibility,
+    pub is_readonly: bool,
     pub span: SourceSpan,
 }
 
