@@ -93,10 +93,13 @@ fn lexer_keeps_leading_zero_floats_decimal() {
 
 #[test]
 fn lexer_accepts_leading_dot_float_literals() {
-    let tokens = lexer::lex("<?php .5 .5e1 .5E-1").unwrap();
+    let tokens = lexer::lex("<?php .5 .5e1 .5E-1 ... .= .").unwrap();
     assert!(matches!(tokens[1].kind, TokenKind::Float(value) if value == 0.5));
     assert!(matches!(tokens[2].kind, TokenKind::Float(value) if value == 5.0));
     assert!(matches!(tokens[3].kind, TokenKind::Float(value) if value == 0.05));
+    assert!(matches!(tokens[4].kind, TokenKind::Ellipsis));
+    assert!(matches!(tokens[5].kind, TokenKind::DotEqual));
+    assert!(matches!(tokens[6].kind, TokenKind::Dot));
 }
 
 #[test]

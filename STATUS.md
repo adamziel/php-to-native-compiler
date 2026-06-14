@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T04:01Z.
-Measured: `ptn-ri9o` request/SAPI frontier after `ptn-yvgh`.
+Last refresh: 2026-06-14T04:13Z.
+Measured: `ptn-odac` broad array set frontier after `ptn-ri9o`.
 
 ## Operating Goal
 

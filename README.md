@@ -11,6 +11,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Rust crate and `phpc` compiler binary.
 - Boxed C runtime for PHP-like values.
 - Native tests cover parser, backend, runtime, and PHP behavior.
+- Numeric literals cover digit separators, integer radices, leading-zero
+  decimal floats, and leading-dot float forms.
 - Strings cover interpolation, legacy `${name}` deprecations, common/control
   escapes, hex/octal byte escapes, binary-prefixed string literals, and inline
   HTML output.

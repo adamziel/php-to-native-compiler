@@ -98,8 +98,9 @@ Post-RC architecture remains explicit rather than hidden:
 - String, integer, float, boolean, and null literals. Numeric literals accept
   PHP digit separators between digits; integer literals include decimal,
   legacy octal, explicit octal `0o`/`0O`, binary `0b`/`0B`, and hexadecimal
-  `0x`/`0X` forms. Binary-prefixed string literals `b'...'` and `b"..."`
-  are accepted as ordinary PHP strings.
+  `0x`/`0X` forms. Float literals include leading-dot decimal forms such as
+  `.5`, `.5e1`, and `.5E-1`. Binary-prefixed string literals `b'...'` and
+  `b"..."` are accepted as ordinary PHP strings.
 - Invalid legacy octal integer literals containing `8` or `9` are rejected with
   source-spanned PHP-style parse errors through `phpc`.
 - Double-quoted strings with direct `$name`, simple variable-root array offset

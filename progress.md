@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T04:01Z.
+Last refresh: 2026-06-14T04:13Z.
 Source: `PROGRESS.md`
-Measured: `ptn-ri9o` request/SAPI frontier after `ptn-yvgh`.
+Measured: `ptn-odac` broad array set frontier after `ptn-ri9o`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 718/718; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 

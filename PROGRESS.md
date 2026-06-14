@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T04:01Z.
-Measured: `ptn-ri9o` request/SAPI frontier after `ptn-yvgh`.
+Refresh: 2026-06-14T04:13Z.
+Measured: `ptn-odac` broad array set frontier after `ptn-ri9o`.
 
 ## Dashboard
 
@@ -40,19 +40,17 @@ Measured: `ptn-ri9o` request/SAPI frontier after `ptn-yvgh`.
 
 ## Remaining Exclusions
 
-- Bounded: 486 selected, 456 runnable, 30 excluded; 449 pass, 7 fail.
-- Broad 1k: 443/557 compact; class declarations 78; attributes 141.
-- `array_fill()` preflights impossible counts; fill/pad is 11/12 with one
-  resource-limit exclusion.
-- Array frontier: set/callback 86/106; request/SAPI 41 classified, raw
-  execution 1 pass, 3 fail, 37 CGI/SAPI skips.
+- Bounded: 486 selected, 456 runnable, 30 excluded; broad 1k is 443/557.
+- `array_fill()` preflights impossible counts; fill/pad is 11/12.
+- Array frontier: set/callback 86/106; request/SAPI raw run is 1 pass,
+  3 fail, 37 CGI/SAPI skips.
+- `ptn-odac`: `array_chunk*` 32/32; leading-dot rows 5/5; diff/intersect
+  remains 58/61 with nested-array warning gaps.
 - COW/reference: internal 17/72, foreach 31/103, reference-call 9/12.
 
 ## Verification
 
-`ptn-yvgh`: native `compile_array_fill` covers huge-count and allocation
-preflight paths.
-
-`ptn-ri9o`: focused classifier keeps 41 request/SAPI rows excluded at
-`run-20260614T035836Z-manifest.log`; raw run is 1 pass, 3 fail, 37 skipped at
-`run-20260614T035849Z-manifest.log`.
+`ptn-yvgh`: native `compile_array_fill` covers huge-count preflight.
+`ptn-ri9o`: request/SAPI classifier excludes 41; raw run is 1 pass, 3 fail,
+37 skipped. `ptn-odac`: `array_chunk*` 32/32, leading-dot 5/5, and
+diff/intersect 58/61.
