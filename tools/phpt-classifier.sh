@@ -1316,17 +1316,14 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+(static[[:space:]]+)?function[[:space:]]+[a-z_]/) {
-                if (ptn_path ~ /Zend\/tests\/access_modifiers\/access_modifiers_012\.phpt$/ ||
-                    ptn_path ~ /ext\/standard\/tests\/array\/array_map_object3\.phpt$/) {
-                    next
-                }
-                print "unsupported-method-visibility-metadata\trequires non-public method visibility dispatch and diagnostics, outside PTN modeled method visibility"
+            if (line ~ /(^|[[:space:]])((private|protected)[[:space:]]+static|static[[:space:]]+(private|protected))[[:space:]]+\$[a-z_]/) {
+                print "unsupported-property-visibility-metadata\trequires non-public static property visibility metadata, outside PTN modeled property visibility"
                 found = 1
                 exit
             }
-            if (line ~ /(^|[[:space:]])((private|protected)[[:space:]]+static|static[[:space:]]+(private|protected))[[:space:]]+\$[a-z_]/) {
-                print "unsupported-property-visibility-metadata\trequires non-public static property visibility metadata, outside PTN modeled property visibility"
+            if (line ~ /->[[:space:]]*\$/ ||
+                line ~ /::[[:space:]]*\$/) {
+                print "unsupported-dynamic-member-dispatch\trequires dynamic property/method/member-name dispatch, outside PTN modeled member access"
                 found = 1
                 exit
             }
@@ -1347,12 +1344,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /(^|[^[:alnum:]_$])array_column[[:space:]]*\(/) {
                 array_column_seen = 1
             }
-            if (line ~ /function[[:space:]]+&?[[:space:]]*__(call|callstatic|set|unset|debuginfo|serialize|unserialize|sleep|wakeup)[[:space:]]*\(/) {
-                if (ptn_path ~ /Zend\/tests\/(bug34260|bug34678)\.phpt$/ ||
-                    ptn_path ~ /Zend\/tests\/access_modifiers\/access_modifiers_012\.phpt$/ ||
-                    ptn_path ~ /ext\/standard\/tests\/array\/array_map_object3\.phpt$/) {
-                    next
-                }
+            if (line ~ /function[[:space:]]+&?[[:space:]]*__(callstatic|set|unset|debuginfo|serialize|unserialize|sleep|wakeup)[[:space:]]*\(/) {
                 print "unsupported-magic-method-metadata\trequires magic method dispatch/reflection metadata, outside PTN modeled object/class metadata"
                 found = 1
                 exit

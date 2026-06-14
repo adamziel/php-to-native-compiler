@@ -272,10 +272,12 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
-static int ptn_callable_is_valid(PtnValue callable, int syntax_only);
+static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
+static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
+static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
 
 static char *ptn_format_missing_class_callback_reason(const char *class_name) {
     int needed = snprintf(NULL, 0, "class \"%s\" not found", class_name);
@@ -487,7 +489,7 @@ static PtnValue ptn_internal_expect_callback_arg_impl(
     int accepts_null
 ) {
     PtnValue checked = ptn_value_clone_deref(callback);
-    if (ptn_callable_is_valid(checked, 0)) {
+    if (ptn_callable_is_valid(runtime, checked, 0)) {
         return checked;
     }
     char *message = ptn_invalid_callback_message(
@@ -13253,7 +13255,7 @@ static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(const char *name);
 static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
-static int ptn_callable_is_valid(PtnValue callable, int syntax_only);
+static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static const char *ptn_declared_class_parent_name(const char *name);
@@ -13613,7 +13615,7 @@ static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t a
     if (callable.type == PTN_CLOSURE) {
         return ptn_value_clone(callable);
     }
-    if (!ptn_callable_is_valid(callable, 0)) {
+    if (!ptn_callable_is_valid(runtime, callable, 0)) {
         char *message = ptn_invalid_callback_message(
             "Closure::fromCallable",
             1,
@@ -14050,7 +14052,6 @@ static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, 
 }
 
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)line;
     int syntax_only = argc >= 2 && ptn_is_truthy(args[1]);
     if (argc >= 3 && args[2].type == PTN_REFERENCE) {
@@ -14058,7 +14059,7 @@ static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const
         ptn_reference_assign(args[2].as.reference, callable_name);
         ptn_value_destroy(&callable_name);
     }
-    return ptn_bool(ptn_callable_is_valid(args[0], syntax_only));
+    return ptn_bool(ptn_callable_is_valid(runtime, args[0], syntax_only));
 }
 
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

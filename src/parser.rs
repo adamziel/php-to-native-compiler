@@ -2713,6 +2713,17 @@ impl Parser {
                         Some(span),
                     ));
                 }
+                if !matches!(
+                    self.peek().kind,
+                    TokenKind::Semicolon | TokenKind::CloseTag | TokenKind::Eof
+                ) {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "'{keyword}' operator with non-integer operand is no longer supported"
+                        ),
+                        Some(self.peek().span),
+                    ));
+                }
                 value as usize
             }
             _ => {

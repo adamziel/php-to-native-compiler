@@ -740,12 +740,6 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires ReflectionFunction closure binding metadata",
         ),
         (
-            "non-public method visibility",
-            "--TEST--\nvisibility\n--FILE--\n<?php\nclass Box { private function run() {} }\n--EXPECT--\n",
-            "unsupported-method-visibility-metadata\t",
-            "requires non-public method visibility dispatch",
-        ),
-        (
             "non-public static property visibility",
             "--TEST--\nproperty visibility\n--FILE--\n<?php\nclass Box { protected static $value = 1; }\n--EXPECT--\n",
             "unsupported-property-visibility-metadata\t",
@@ -812,6 +806,28 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_non_public_method_visibility_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nvisibility\n--FILE--\n<?php\nclass Box { private function run() {} protected static function stat() {} }\n--EXPECT--\n",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_dynamic_member_dispatch_rows() {
+    let classification = classify(
+        "--TEST--\ndynamic member\n--FILE--\n<?php\nclass Box { public function read($name) { return $this->$name; } }\n--EXPECT--\n",
+    );
+
+    assert!(classification.starts_with("unsupported-dynamic-member-dispatch\t"));
+    assert!(classification.contains("requires dynamic property/method/member-name dispatch"));
 }
 
 #[test]

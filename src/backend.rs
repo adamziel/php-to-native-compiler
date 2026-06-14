@@ -36,6 +36,7 @@ pub fn emit_c(module: &Module) -> String {
         .any(|class| class_magic_isset_method(class, &module.classes).is_some());
     emit_private_property_metadata_prototype(&mut out);
     emit_runtime(&mut out, &runtime_requirements);
+    emit_method_visibility_prototypes(&mut out);
     emit_type_hint_runtime_helpers(&mut out);
     emit_include_prototypes(&mut out, &module.includes);
     emit_include_once_state(&mut out, &module.includes);
@@ -1356,6 +1357,29 @@ fn emit_user_function_dispatch(
         out.push_str(&c_string(&function.name));
         out.push_str("\")) {\n");
         out.push_str("        *found = 1;\n");
+        if function.is_static {
+            if let Some((declaring_class, method_name, visibility)) =
+                static_method_visibility_for_function(index, classes)
+            {
+                out.push_str("        if (!ptn_declared_method_visible(");
+                out.push_str(c_property_visibility(visibility));
+                out.push_str(", \"");
+                out.push_str(&c_string(declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(method_name));
+                out.push_str("\", runtime->current_class_name)) {\n");
+                out.push_str("            return ptn_throw_method_visibility_error(runtime, \"");
+                out.push_str(&c_string(declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(method_name));
+                out.push_str("\", ");
+                out.push_str(c_property_visibility(visibility));
+                out.push_str(", line);\n");
+                out.push_str("        }\n");
+            }
+        }
         out.push_str("        return ");
         out.push_str(&user_function_c_name(index));
         if function.is_static {
@@ -1382,6 +1406,23 @@ fn emit_user_function_dispatch(
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
             out.push_str("        *found = 1;\n");
+            out.push_str("        if (!ptn_declared_method_visible(");
+            out.push_str(c_property_visibility(method.visibility));
+            out.push_str(", \"");
+            out.push_str(&c_string(method.declaring_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", runtime->current_class_name)) {\n");
+            out.push_str("            return ptn_throw_method_visibility_error(runtime, \"");
+            out.push_str(&c_string(method.declaring_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", ");
+            out.push_str(c_property_visibility(method.visibility));
+            out.push_str(", line);\n");
+            out.push_str("        }\n");
             out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
             out.push_str("        runtime->called_class_name_override = \"");
             out.push_str(&c_string(&class.name));
@@ -1421,6 +1462,13 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
         "static const char *ptn_declared_private_property_class(const char *class_name, const char *property_name);\n",
     );
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
+}
+
+fn emit_method_visibility_prototypes(out: &mut String) {
+    out.push_str("static PTN_UNUSED int ptn_declared_method_visible(int visibility, const char *declaring_class, const char *target_class_name, const char *method_name, const char *access_scope);\n");
+    out.push_str("static PTN_UNUSED PtnValue ptn_throw_method_visibility_error(PtnRuntime *runtime, const char *declaring_class, const char *method_name, int visibility, size_t line);\n");
+    out.push_str("static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);\n");
+    out.push_str("static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);\n");
 }
 
 fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
@@ -1722,6 +1770,199 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str("\nstatic PTN_UNUSED const char *ptn_method_visibility_name(int visibility) {\n");
+    out.push_str("    if (visibility == PTN_PROPERTY_PRIVATE) {\n");
+    out.push_str("        return \"private\";\n");
+    out.push_str("    }\n");
+    out.push_str("    if (visibility == PTN_PROPERTY_PROTECTED) {\n");
+    out.push_str("        return \"protected\";\n");
+    out.push_str("    }\n");
+    out.push_str("    return \"public\";\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_throw_method_visibility_error(PtnRuntime *runtime, const char *declaring_class, const char *method_name, int visibility, size_t line) {\n",
+    );
+    out.push_str("    const char *visibility_name = ptn_method_visibility_name(visibility);\n");
+    out.push_str("    const char *scope = runtime->current_class_name;\n");
+    out.push_str("    int needed = scope == NULL ?\n");
+    out.push_str("        snprintf(NULL, 0, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name) :\n");
+    out.push_str("        snprintf(NULL, 0, \"Call to %s method %s::%s() from scope %s\", visibility_name, declaring_class, method_name, scope);\n");
+    out.push_str("    if (needed < 0) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    char *message = malloc((size_t)needed + 1);\n");
+    out.push_str("    if (message == NULL) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    if (scope == NULL) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s method %s::%s() from scope %s\", visibility_name, declaring_class, method_name, scope);\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    ptn_throw_exception_at(runtime, \"Error\", message, runtime->source_path, line);\n",
+    );
+    out.push_str("    free(message);\n");
+    out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_direct_non_private_method_exists(const char *class_name, const char *method_name) {\n",
+    );
+    if classes.iter().all(|class| {
+        class
+            .methods
+            .iter()
+            .all(|method| method.visibility == PropertyVisibility::Private)
+    }) {
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)method_name;\n");
+    }
+    for class in classes {
+        let direct_non_private_methods = class
+            .methods
+            .iter()
+            .filter(|method| method.visibility != PropertyVisibility::Private)
+            .collect::<Vec<_>>();
+        if direct_non_private_methods.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for method in direct_non_private_methods {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_classes_share_non_private_ancestor_method(const char *left_class, const char *right_class, const char *method_name) {\n",
+    );
+    out.push_str("    if (left_class == NULL || right_class == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *left = left_class;\n");
+    out.push_str("    while (left != NULL) {\n");
+    out.push_str("        const char *right = right_class;\n");
+    out.push_str("        while (right != NULL) {\n");
+    out.push_str("            if (ptn_ascii_case_equal(left, right) && ptn_declared_class_direct_non_private_method_exists(left, method_name)) {\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("            right = ptn_declared_class_parent_name(right);\n");
+    out.push_str("        }\n");
+    out.push_str("        left = ptn_declared_class_parent_name(left);\n");
+    out.push_str("    }\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_method_visible(int visibility, const char *declaring_class, const char *target_class_name, const char *method_name, const char *access_scope) {\n",
+    );
+    out.push_str("    if (visibility == PTN_PROPERTY_PUBLIC) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (access_scope == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (visibility == PTN_PROPERTY_PRIVATE) {\n");
+    out.push_str("        return ptn_ascii_case_equal(access_scope, declaring_class);\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    return ptn_declared_class_is_same_or_descendant(access_scope, declaring_class) ||\n",
+    );
+    out.push_str("        ptn_declared_classes_share_non_private_ancestor_method(access_scope, target_class_name, method_name);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)method_name;\n");
+        out.push_str("    (void)access_scope;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for method in class_method_lookup_chain(class, classes) {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return ptn_declared_method_visible(");
+            out.push_str(c_property_visibility(method.visibility));
+            out.push_str(", \"");
+            out.push_str(&c_string(method.declaring_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", access_scope);\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    let has_static_methods = classes.iter().any(|class| {
+        class_method_lookup_chain(class, classes)
+            .into_iter()
+            .any(|method| method.is_static)
+    });
+    if !has_static_methods {
+        out.push_str("    (void)method_name;\n");
+        out.push_str("    (void)access_scope;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for method in class_method_lookup_chain(class, classes) {
+            if !method.is_static {
+                continue;
+            }
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return ptn_declared_method_visible(");
+            out.push_str(c_property_visibility(method.visibility));
+            out.push_str(", \"");
+            out.push_str(&c_string(method.declaring_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", access_scope);\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_has_call_magic(const char *class_name) {\n",
     );
@@ -1767,23 +2008,49 @@ fn class_by_name<'a>(classes: &'a [ClassDecl], name: &str) -> Option<&'a ClassDe
         .find(|class| class.name.eq_ignore_ascii_case(name))
 }
 
+fn static_method_visibility_for_function(
+    function_index: usize,
+    classes: &[ClassDecl],
+) -> Option<(&str, &str, PropertyVisibility)> {
+    classes.iter().find_map(|class| {
+        class
+            .methods
+            .iter()
+            .find(|method| method.function_index == function_index && method.is_static)
+            .map(|method| (class.name.as_str(), method.name.as_str(), method.visibility))
+    })
+}
+
+struct ClassMethodLookupEntry<'a> {
+    declaring_class: &'a str,
+    method: &'a crate::ir::MethodDecl,
+}
+
+impl std::ops::Deref for ClassMethodLookupEntry<'_> {
+    type Target = crate::ir::MethodDecl;
+
+    fn deref(&self) -> &Self::Target {
+        self.method
+    }
+}
+
 fn class_method_lookup_chain<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
-) -> Vec<&'a crate::ir::MethodDecl> {
+) -> Vec<ClassMethodLookupEntry<'a>> {
     fn collect<'a>(
         class: &'a ClassDecl,
         classes: &'a [ClassDecl],
         seen_classes: &mut HashSet<String>,
         seen_methods: &mut HashSet<String>,
-        methods: &mut Vec<&'a crate::ir::MethodDecl>,
+        methods: &mut Vec<ClassMethodLookupEntry<'a>>,
     ) {
         for method in &class.methods {
-            if method.visibility != PropertyVisibility::Public {
-                continue;
-            }
             if seen_methods.insert(method.name.to_ascii_lowercase()) {
-                methods.push(method);
+                methods.push(ClassMethodLookupEntry {
+                    declaring_class: class.name.as_str(),
+                    method,
+                });
             }
         }
 
@@ -1905,6 +2172,7 @@ fn class_constructor_method<'a>(
     class_method_lookup_chain(class, classes)
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
+        .map(|method| method.method)
 }
 
 fn class_magic_call_method<'a>(
@@ -1914,6 +2182,7 @@ fn class_magic_call_method<'a>(
     class_method_lookup_chain(class, classes)
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__call"))
+        .map(|method| method.method)
 }
 
 fn class_magic_invoke_method<'a>(
@@ -1923,6 +2192,7 @@ fn class_magic_invoke_method<'a>(
     class_method_lookup_chain(class, classes)
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__invoke"))
+        .map(|method| method.method)
 }
 
 fn class_magic_isset_method<'a>(
@@ -1932,6 +2202,7 @@ fn class_magic_isset_method<'a>(
     class_method_lookup_chain(class, classes)
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__isset"))
+        .map(|method| method.method)
 }
 
 fn class_magic_get_method<'a>(
@@ -1941,6 +2212,7 @@ fn class_magic_get_method<'a>(
     class_method_lookup_chain(class, classes)
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__get"))
+        .map(|method| method.method)
 }
 
 fn emit_magic_property_read_dispatch(out: &mut String, classes: &[ClassDecl]) {
@@ -2015,8 +2287,11 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("    return 1;\n");
     out.push_str("}\n");
 
-    out.push_str("\nstatic int ptn_callable_is_valid(PtnValue callable, int syntax_only) {\n");
+    out.push_str("\nstatic int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only) {\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    out.push_str(
+        "    const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;\n",
+    );
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
@@ -2030,7 +2305,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        if (separator != NULL) {\n");
     out.push_str("            *separator = '\\0';\n");
     out.push_str(
-        "            valid = ptn_declared_class_static_method_exists(name, separator + 2);\n",
+        "            valid = ptn_declared_class_static_method_is_callable(name, separator + 2, access_scope);\n",
     );
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
@@ -2055,7 +2330,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
-    out.push_str("        int valid = ptn_internal_class_method_exists(scope.as.object->class_name, method_name) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
+    out.push_str("        int valid = ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || (!ptn_declared_class_exists(scope.as.object->class_name) && ptn_internal_class_method_exists(scope.as.object->class_name, method_name)) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        return valid;\n");
     out.push_str("    }\n");
@@ -2096,7 +2371,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            ptn_abort_out_of_memory();\n");
     out.push_str("        }\n");
     out.push_str("        snprintf(function_name, (size_t)needed + 1, \"%s::%s\", class_name, method_name);\n");
-    out.push_str("        int valid = ptn_declared_class_static_method_exists(class_name, method_name) || ptn_find_internal_function(function_name) != NULL;\n");
+    out.push_str("        int valid = ptn_declared_class_static_method_is_callable(class_name, method_name, access_scope) || ptn_find_internal_function(function_name) != NULL;\n");
     out.push_str("        free(function_name);\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        free(class_name);\n");
@@ -2157,13 +2432,41 @@ fn emit_method_dispatch(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        let has_magic_call = class_magic_call_method(class, classes).is_some();
         for method in class_method_lookup_chain(class, classes) {
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
-            out.push_str("            return ");
-            out.push_str(&user_function_c_name(method.function_index));
-            out.push_str("(runtime, resolved, argc, args, line);\n");
+            out.push_str("            if (!ptn_declared_method_visible(");
+            out.push_str(c_property_visibility(method.visibility));
+            out.push_str(", \"");
+            out.push_str(&c_string(method.declaring_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", runtime->current_class_name)) {\n");
+            if has_magic_call {
+                out.push_str("            } else {\n");
+                out.push_str("                return ");
+                out.push_str(&user_function_c_name(method.function_index));
+                out.push_str("(runtime, resolved, argc, args, line);\n");
+                out.push_str("            }\n");
+            } else {
+                out.push_str(
+                    "                return ptn_throw_method_visibility_error(runtime, \"",
+                );
+                out.push_str(&c_string(method.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\", ");
+                out.push_str(c_property_visibility(method.visibility));
+                out.push_str(", line);\n");
+                out.push_str("            }\n");
+                out.push_str("            return ");
+                out.push_str(&user_function_c_name(method.function_index));
+                out.push_str("(runtime, resolved, argc, args, line);\n");
+            }
             out.push_str("        }\n");
         }
         if let Some(method) = class_magic_call_method(class, classes) {
@@ -2193,7 +2496,6 @@ fn emit_method_dispatch(
     );
     out.push_str("    PtnValue resolved_receiver = ptn_value_deref(receiver);\n");
     out.push_str("    const char *effective_called_class = called_class_name != NULL ? called_class_name : target_class_name;\n");
-    out.push_str("    (void)runtime;\n");
     out.push_str("    (void)receiver;\n");
     out.push_str("    (void)target_class_name;\n");
     out.push_str("    (void)method_name;\n");
@@ -2213,6 +2515,26 @@ fn emit_method_dispatch(
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
             if method.is_static {
+                out.push_str("            if (!ptn_declared_method_visible(");
+                out.push_str(c_property_visibility(method.visibility));
+                out.push_str(", \"");
+                out.push_str(&c_string(method.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\", runtime->current_class_name)) {\n");
+                out.push_str(
+                    "                *result_out = ptn_throw_method_visibility_error(runtime, \"",
+                );
+                out.push_str(&c_string(method.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\", ");
+                out.push_str(c_property_visibility(method.visibility));
+                out.push_str(", line);\n");
+                out.push_str("                return 1;\n");
+                out.push_str("            }\n");
                 out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
                 out.push_str(
                     "            runtime->called_class_name_override = effective_called_class;\n",
@@ -2225,6 +2547,26 @@ fn emit_method_dispatch(
             } else {
                 out.push_str("            if (resolved_receiver.type != PTN_OBJECT || !ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
                 out.push_str("                return 0;\n");
+                out.push_str("            }\n");
+                out.push_str("            if (!ptn_declared_method_visible(");
+                out.push_str(c_property_visibility(method.visibility));
+                out.push_str(", \"");
+                out.push_str(&c_string(method.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\", runtime->current_class_name)) {\n");
+                out.push_str(
+                    "                *result_out = ptn_throw_method_visibility_error(runtime, \"",
+                );
+                out.push_str(&c_string(method.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\", ");
+                out.push_str(c_property_visibility(method.visibility));
+                out.push_str(", line);\n");
+                out.push_str("                return 1;\n");
                 out.push_str("            }\n");
                 out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
                 out.push_str(
@@ -5305,6 +5647,14 @@ enum CalledClassOverride {
     CurrentCalledOr(String),
 }
 
+#[derive(Clone)]
+struct StaticMethodVisibilityCheck {
+    target_class_name: String,
+    declaring_class_name: String,
+    method_name: String,
+    visibility: PropertyVisibility,
+}
+
 struct ConcatOperand<'a> {
     value: &'a ValueExpr,
     line: usize,
@@ -5833,6 +6183,33 @@ impl ValueEmitter {
                     && (function.class_name.is_none() || function.is_static)
                     && function.name.eq_ignore_ascii_case(name)
             })
+    }
+
+    fn static_method_visibility_check(
+        &self,
+        resolved_name: &str,
+        function: &FunctionDecl,
+    ) -> Option<StaticMethodVisibilityCheck> {
+        if !function.is_static {
+            return None;
+        }
+        let (target_class_name, method_name) =
+            self.split_static_call_name(resolved_name).or_else(|| {
+                Some((
+                    function.class_name.as_deref()?,
+                    function.method_name.as_deref()?,
+                ))
+            })?;
+        let class = class_by_name(&self.classes, target_class_name)?;
+        let method = class_method_lookup_chain(class, &self.classes)
+            .into_iter()
+            .find(|method| method.is_static && method.name.eq_ignore_ascii_case(method_name))?;
+        Some(StaticMethodVisibilityCheck {
+            target_class_name: target_class_name.to_string(),
+            declaring_class_name: method.declaring_class.to_string(),
+            method_name: method.name.clone(),
+            visibility: method.visibility,
+        })
     }
 
     fn direct_user_function(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
@@ -10492,6 +10869,7 @@ impl ValueEmitter {
                     user_function_c_name(index),
                     function.parameters.clone(),
                     static_call_receiver_class_name(&resolved_name, function),
+                    self.static_method_visibility_check(&resolved_name, function),
                 )
             });
         if has_unpacked_arguments {
@@ -10511,7 +10889,7 @@ impl ValueEmitter {
                 line,
                 false,
             );
-            if let Some((c_name, _, receiver_class_name)) = &direct_user {
+            if let Some((c_name, _, receiver_class_name, visibility_check)) = &direct_user {
                 self.emit_direct_user_function_call(
                     out,
                     &result_temp,
@@ -10521,6 +10899,7 @@ impl ValueEmitter {
                     line,
                     called_class_override.as_ref(),
                     receiver_class_name.as_deref(),
+                    visibility_check.as_ref(),
                 );
             } else {
                 out.push_str("    PtnValue ");
@@ -10564,7 +10943,8 @@ impl ValueEmitter {
                     };
                 }
             }
-            if let Some((c_name, parameters, receiver_class_name)) = &direct_user {
+            if let Some((c_name, parameters, receiver_class_name, visibility_check)) = &direct_user
+            {
                 return self.emit_named_user_call(
                     out,
                     &result_temp,
@@ -10576,6 +10956,7 @@ impl ValueEmitter {
                     argument_names,
                     line,
                     called_class_override.as_ref(),
+                    visibility_check.as_ref(),
                 );
             }
             self.emit_fatal_value(
@@ -10586,7 +10967,7 @@ impl ValueEmitter {
             return result_temp;
         }
         if arguments.is_empty() {
-            if let Some((c_name, _, receiver_class_name)) = &direct_user {
+            if let Some((c_name, _, receiver_class_name, visibility_check)) = &direct_user {
                 self.emit_direct_user_function_call(
                     out,
                     &result_temp,
@@ -10596,6 +10977,7 @@ impl ValueEmitter {
                     line,
                     called_class_override.as_ref(),
                     receiver_class_name.as_deref(),
+                    visibility_check.as_ref(),
                 );
             } else if let Some((target_class_name, method_name)) =
                 self.relative_scoped_call_parts(name)
@@ -10626,7 +11008,7 @@ impl ValueEmitter {
         let mut temps = Vec::with_capacity(arguments.len());
         let mut unwrap_append_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
-            let by_ref_parameter = direct_user.as_ref().and_then(|(_, parameters, _)| {
+            let by_ref_parameter = direct_user.as_ref().and_then(|(_, parameters, _, _)| {
                 by_ref_parameter_for_argument(parameters, argument_index)
             });
             if let Some(parameter) = by_ref_parameter {
@@ -10681,7 +11063,7 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
-        if let Some((c_name, _, receiver_class_name)) = &direct_user {
+        if let Some((c_name, _, receiver_class_name, visibility_check)) = &direct_user {
             self.emit_direct_user_function_call(
                 out,
                 &result_temp,
@@ -10691,6 +11073,7 @@ impl ValueEmitter {
                 line,
                 called_class_override.as_ref(),
                 receiver_class_name.as_deref(),
+                visibility_check.as_ref(),
             );
         } else if let Some((target_class_name, method_name)) = self.relative_scoped_call_parts(name)
         {
@@ -10740,6 +11123,7 @@ impl ValueEmitter {
         line: usize,
         called_class_override: Option<&CalledClassOverride>,
         receiver_class_name: Option<&str>,
+        visibility_check: Option<&StaticMethodVisibilityCheck>,
     ) {
         let previous_override_temp = called_class_override.map(|override_| {
             let previous_override_temp = self.next_temp();
@@ -10752,9 +11136,44 @@ impl ValueEmitter {
             previous_override_temp
         });
 
-        out.push_str("    PtnValue ");
-        out.push_str(result_temp);
-        out.push_str(" = ");
+        if let Some(visibility_check) = visibility_check {
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(";\n");
+            out.push_str("    if (!ptn_declared_method_visible(");
+            out.push_str(c_property_visibility(visibility_check.visibility));
+            out.push_str(", \"");
+            out.push_str(&c_string(&visibility_check.declaring_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&visibility_check.target_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&visibility_check.method_name));
+            out.push_str("\", runtime.current_class_name)) {\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_throw_method_visibility_error(&runtime, \"");
+            out.push_str(&c_string(&visibility_check.declaring_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&visibility_check.method_name));
+            out.push_str("\", ");
+            out.push_str(c_property_visibility(visibility_check.visibility));
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            if let Some(previous_override_temp) = &previous_override_temp {
+                out.push_str("        runtime.called_class_name_override = ");
+                out.push_str(previous_override_temp);
+                out.push_str(";\n");
+            }
+            out.push_str("    } else {\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(" = ");
+        } else {
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(" = ");
+        }
         out.push_str(c_name);
         out.push_str("(&runtime, ");
         emit_static_call_receiver(out, receiver_class_name);
@@ -10765,6 +11184,10 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+
+        if visibility_check.is_some() {
+            out.push_str("    }\n");
+        }
 
         if let Some(previous_override_temp) = previous_override_temp {
             out.push_str("    runtime.called_class_name_override = ");
@@ -10827,6 +11250,7 @@ impl ValueEmitter {
         argument_names: &[Option<String>],
         line: usize,
         called_class_override: Option<&CalledClassOverride>,
+        visibility_check: Option<&StaticMethodVisibilityCheck>,
     ) -> String {
         let argument_slots = match bind_named_call_arguments(parameters, argument_names) {
             Ok(argument_slots) => argument_slots,
@@ -10898,6 +11322,7 @@ impl ValueEmitter {
             line,
             called_class_override,
             receiver_class_name,
+            visibility_check,
         );
         for temp in &unwrap_append_reference_temps {
             emit_unwrap_append_reference_call_argument(out, "    ", temp);

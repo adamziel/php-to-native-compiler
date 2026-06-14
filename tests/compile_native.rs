@@ -27666,6 +27666,127 @@ fn support_docs_name_var_dump_unsupported_edges() {
     assert!(support.contains("Remaining PHP float precision and formatting edge cases"));
 }
 
+#[test]
+fn parser_reports_break_compile_time_fatals() {
+    let cases = [
+        (
+            "<?php function f() { break 0; }",
+            "'break' operator accepts only positive integers",
+        ),
+        (
+            "<?php function f() { break $x; }",
+            "'break' operator with non-integer operand is no longer supported",
+        ),
+        (
+            "<?php function f() { break; }",
+            "'break' not in the 'loop' or 'switch' context",
+        ),
+        (
+            "<?php function f() { while (1) { break 2; } }",
+            "Cannot 'break' 2 levels",
+        ),
+    ];
+
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Fatal);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_method_visibility_dispatch_and_is_callable_respect_scope() {
+    let root = temp_dir("ptn-native-method-visibility-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("method-visibility.php");
+    let output = root.join("method-visibility-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Mom {
+    protected function prot() { echo "protected method\n"; }
+}
+class Child extends Mom {
+    public function callMom() { $this->prot(); }
+}
+
+class A {
+    static protected function ma() { return "A::ma()"; }
+    static private function mp() { return "A::mp()"; }
+}
+class B1 extends A {
+    static protected function ma() { return "B1::ma()"; }
+    static protected function mp() { return "B1::mp()"; }
+}
+class B2 extends A {
+    static public function test() {
+        echo A::ma(), "\n";
+        try { echo A::mp(), "\n"; } catch (Throwable $e) { echo $e->getMessage(), "\n"; }
+        echo B1::ma(), "\n";
+        try { echo B1::mp(), "\n"; } catch (Throwable $e) { echo $e->getMessage(), "\n"; }
+    }
+}
+
+class CallableBase {
+    private function priv() {}
+    protected function prot() {}
+    static private function statPriv() {}
+    static protected function statProt() {}
+    public function ownScope() {
+        var_dump(is_callable(array($this, 'priv')));
+        var_dump(is_callable(array($this, 'prot')));
+        var_dump(is_callable(array('CallableBase', 'statPriv')));
+        var_dump(is_callable(array('CallableBase', 'statProt')));
+    }
+}
+class CallableChild extends CallableBase {
+    public function childScope() {
+        var_dump(is_callable(array($this, 'priv')));
+        var_dump(is_callable(array($this, 'prot')));
+        var_dump(is_callable(array('CallableBase', 'statPriv')));
+        var_dump(is_callable(array('CallableBase', 'statProt')));
+    }
+}
+
+(new Child())->callMom();
+B2::test();
+$base = new CallableBase();
+$base->ownScope();
+var_dump(is_callable(array($base, 'priv')));
+var_dump(is_callable(array($base, 'prot')));
+$child = new CallableChild();
+$child->childScope();
+?>"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "protected method\n",
+            "A::ma()\n",
+            "Call to private method A::mp() from scope B2\n",
+            "B1::ma()\n",
+            "Call to protected method B1::mp() from scope B2\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
