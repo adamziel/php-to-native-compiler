@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T14:35Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; COW 69/103 passed.
+Refresh: 2026-06-14T16:40Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; COW 69/103 passed.
 
 ## Dashboard
 
@@ -59,9 +59,9 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Array-unpack|14|0|14|
 |Type-hint|14|0|14|
 |Function-state|11|0|11|
-|Dynamic-symbol|8|0|8|
+|Dynamic-symbol|8|3|5|
 |Generator-runtime|1|0|1|
-|Internal-call-bind|1|0|1|
+|Internal-call-bind|1|1|0|
 |Attribute-syntax|141|0|141|
 |Attribute-internal|8|0|8|
 |Attribute-meta|204|0|204|
@@ -75,3 +75,25 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Runtime-config|54|10|44|
 |COW-gate|26|26|0|
 |1k-baseline|1000|285|715|
+
+## 2026-06-14 ptn-j6gv Broad String/Runtime Row Pack
+
+Final manifest: `tools/phpt-ptn-j6gv-key-string-runtime-row-pack-manifest.txt`.
+
+Baseline `origin/master` (`abfb48341ef2`) selected 25 broad 1k rows: 21 runnable, 15 passed, 6 failed, 4 classifier-excluded.
+Current branch selected the same 25 rows: 25 runnable, 25 passed, 0 failed, 0 classifier-excluded.
+
+Newly passing broad rows:
+
+- `Zend/tests/arrow_functions/003.phpt`
+- `Zend/tests/bug38211.phpt`
+- `ext/standard/tests/array/array_column_scalar_index_strict_types.phpt`
+- `ext/standard/tests/array/array_combine.phpt`
+- `ext/standard/tests/array/array_diff_assoc_variation9.phpt`
+- `ext/standard/tests/array/array_filter_invalid_mode.phpt`
+- `ext/standard/tests/array/array_intersect_assoc_variation9.phpt`
+- `ext/standard/tests/array/array_intersect_variation9.phpt`
+- `ext/standard/tests/array/array_keys_variation_005.phpt`
+- `ext/standard/tests/array/array_search_variation4.phpt`
+
+Implemented behavior: strict-types `declare` propagation for internal scalar binding, directory resources for `opendir()`/`closedir()`, nested-array stringification warnings in array set operations, character endpoint handling in `range()`, read-only dynamic variable rows plus dynamic `unset()`, and named internal binding for `array_filter(..., mode:)`.

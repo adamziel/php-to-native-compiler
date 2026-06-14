@@ -80,6 +80,9 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    if module.strict_types {
+        out.push_str("    runtime.strict_types = 1;\n");
+    }
     if needs_method_dispatch {
         out.push_str("    runtime.method_dispatch = ptn_call_declared_method;\n");
         out.push_str("    runtime.declared_method_exists = ptn_declared_class_method_exists;\n");
@@ -2470,6 +2473,15 @@ fn emit_instruction(
             out.push_str(&c_string(name));
             out.push_str("\");\n");
         }
+        Instruction::UnsetDynamicVariable { name, line } => {
+            let name_temp = values.emit_dynamic_variable_name(out, name, *line);
+            out.push_str("    ptn_runtime_unset_variable(&runtime, ");
+            out.push_str(&name_temp);
+            out.push_str(");\n");
+            out.push_str("    free(");
+            out.push_str(&name_temp);
+            out.push_str(");\n");
+        }
         Instruction::BindGlobal { name } => {
             out.push_str("    ptn_runtime_bind_global_variable(&runtime, \"");
             out.push_str(&c_string(name));
@@ -3348,6 +3360,9 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
             }
         }
+        Instruction::UnsetDynamicVariable { name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
         Instruction::UnsetDynamicArrayDim {
             name, dimensions, ..
         } => {
@@ -3784,6 +3799,9 @@ fn collect_instruction_runtime_requirements(
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
         }
         Instruction::UnsetVariable { .. } | Instruction::BindGlobal { .. } => {}
+        Instruction::UnsetDynamicVariable { name, .. } => {
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
         Instruction::UnsetArrayDim { dimensions, .. } => {
             for dimension in dimensions {
                 collect_value_runtime_requirements(dimension, functions, requirements);
@@ -4261,6 +4279,99 @@ fn bind_named_call_arguments(
         slots.push(slot);
     }
     Ok(slots)
+}
+
+#[derive(Clone, Copy)]
+enum InternalParameterDefault {
+    Null,
+    Int(i64),
+}
+
+#[derive(Clone, Copy)]
+struct InternalParameterSpec {
+    name: &'static str,
+    default: Option<InternalParameterDefault>,
+}
+
+fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParameterSpec]> {
+    static ARRAY_FILTER_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "array",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "callback",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "mode",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+
+    if name.eq_ignore_ascii_case("array_filter") {
+        Some(&ARRAY_FILTER_PARAMETERS)
+    } else {
+        None
+    }
+}
+
+fn internal_parameter_default_expr(default: InternalParameterDefault) -> ValueExpr {
+    match default {
+        InternalParameterDefault::Null => ValueExpr::Null,
+        InternalParameterDefault::Int(value) => ValueExpr::Int(value),
+    }
+}
+
+fn bind_named_internal_call_arguments(
+    name: &str,
+    arguments: &[ValueExpr],
+    argument_names: &[Option<String>],
+) -> Option<std::result::Result<Vec<ValueExpr>, NamedArgumentBindingError>> {
+    let parameters = internal_named_call_parameters(name)?;
+    let mut slots = vec![None; parameters.len()];
+    for (argument_index, (argument, argument_name)) in
+        arguments.iter().zip(argument_names.iter()).enumerate()
+    {
+        let slot = if let Some(argument_name) = argument_name {
+            let Some(parameter_index) = parameters
+                .iter()
+                .position(|parameter| parameter.name == argument_name)
+            else {
+                return Some(Err(NamedArgumentBindingError::Unknown(
+                    argument_name.clone(),
+                )));
+            };
+            parameter_index
+        } else {
+            argument_index
+        };
+
+        if slot >= slots.len() {
+            return None;
+        }
+        if slots[slot].is_some() {
+            return Some(Err(NamedArgumentBindingError::Duplicate(
+                parameters[slot].name.to_string(),
+            )));
+        }
+        slots[slot] = Some(argument.clone());
+    }
+
+    let Some(last_slot) = slots.iter().rposition(Option::is_some) else {
+        return Some(Ok(Vec::new()));
+    };
+    let mut normalized = Vec::with_capacity(last_slot + 1);
+    for index in 0..=last_slot {
+        if let Some(argument) = &slots[index] {
+            normalized.push(argument.clone());
+        } else if let Some(default) = parameters[index].default {
+            normalized.push(internal_parameter_default_expr(default));
+        } else {
+            return None;
+        }
+    }
+    Some(Ok(normalized))
 }
 
 fn internal_call_may_invoke_callable(name: &str) -> bool {
@@ -9495,6 +9606,28 @@ impl ValueEmitter {
                 )
             });
         if has_named_arguments {
+            if direct_user.is_none() {
+                if let Some(binding) =
+                    bind_named_internal_call_arguments(name, arguments, argument_names)
+                {
+                    return match binding {
+                        Ok(normalized_arguments) => {
+                            let normalized_argument_names = vec![None; normalized_arguments.len()];
+                            self.emit_internal_call(
+                                out,
+                                name,
+                                &normalized_arguments,
+                                &normalized_argument_names,
+                                line,
+                            )
+                        }
+                        Err(error) => {
+                            self.emit_fatal_value(out, &result_temp, &error.message());
+                            result_temp
+                        }
+                    };
+                }
+            }
             if let Some((c_name, parameters, receiver_class_name)) = &direct_user {
                 return self.emit_named_user_call(
                     out,

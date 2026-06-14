@@ -26,6 +26,7 @@ pub struct Module {
     pub instructions: Vec<Instruction>,
     pub source_file: String,
     pub source_dir: String,
+    pub strict_types: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -162,6 +163,10 @@ pub enum Instruction {
     },
     UnsetVariable {
         name: String,
+    },
+    UnsetDynamicVariable {
+        name: ValueExpr,
+        line: usize,
     },
     BindGlobal {
         name: String,
@@ -641,6 +646,7 @@ pub fn lower_with_source_and_includes(
         instructions,
         source_file,
         source_dir,
+        strict_types: program.strict_types,
     }
 }
 
@@ -1390,6 +1396,10 @@ impl<'a> LoweringContext<'a> {
             AstUnsetTarget::Variable { name, .. } => {
                 Instruction::UnsetVariable { name: name.clone() }
             }
+            AstUnsetTarget::DynamicVariable { name, span } => Instruction::UnsetDynamicVariable {
+                name: self.lower_expr(name),
+                line: span.line,
+            },
             AstUnsetTarget::ArrayDim(target) => Instruction::UnsetArrayDim {
                 array: target.array.clone(),
                 dimensions: target

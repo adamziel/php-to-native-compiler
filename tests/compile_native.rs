@@ -43,9 +43,43 @@ fn parser_preserves_echo_expression_order() {
 }
 
 #[test]
+fn parser_records_strict_types_declare_directive() {
+    let program =
+        parser::parse("<?php declare(strict_types=1); function f() {} echo \"ok\";").unwrap();
+    assert!(program.strict_types);
+    assert_eq!(program.statements.len(), 1);
+
+    let program = parser::parse("<?php declare(strict_types=0); echo \"weak\";").unwrap();
+    assert!(!program.strict_types);
+}
+
+#[test]
 fn parser_accepts_direct_assignment_and_variable_reads() {
     let program = parser::parse("<?php $greeting = \"hi\"; echo $greeting;").unwrap();
     assert_eq!(program.statements.len(), 2);
+}
+
+#[test]
+fn compile_dynamic_variable_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-unset.php");
+    let output = root.join("dynamic-variable-unset-bin");
+    fs::write(
+        &input,
+        "<?php $target = 'value'; $value = 10; unset($$target); var_dump(isset($value));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -15021,6 +15055,44 @@ var_dump(function_exists(\"array_column\"), function_exists(\"ARRAY_COLUMN\"));"
 }
 
 #[test]
+fn compile_array_column_honors_strict_types_declare_to_native_binary() {
+    let root = temp_dir("ptn-native-array-column-strict-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-column-strict-types.php");
+    let output = root.join("array-column-strict-types-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+declare(strict_types=1);\n\
+$rows = [[0 => \"zero\", 1 => \"one\"]];\n\
+try {\n\
+    var_dump(array_column($rows, true));\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump(array_column($rows, 1.5));\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(array_column($rows, 1));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array_column(): Argument #2 ($column_key) must be of type string|int|null, true given\n\
+array_column(): Argument #2 ($column_key) must be of type string|int|null, float given\n\
+array(1) {\n  [0]=>\n  string(3) \"one\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_count_values_to_native_binary() {
     let root = temp_dir("ptn-native-array-count-values");
     fs::create_dir_all(&root).unwrap();
@@ -15645,6 +15717,7 @@ $filtered = array_filter($source);\n\
 $filtered[\"x\"][] = \"copy\";\n\
 var_dump($filtered, $source[\"x\"]);\n\
 try { array_filter($input, null, 999); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_filter($input, mode: 999); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(ARRAY_FILTER_USE_BOTH, ARRAY_FILTER_USE_KEY, function_exists('array_filter'), function_exists('ARRAY_FILTER'));",
     )
     .unwrap();
@@ -15655,7 +15728,7 @@ var_dump(ARRAY_FILTER_USE_BOTH, ARRAY_FILTER_USE_KEY, function_exists('array_fil
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(2) {\n  [1]=>\n  int(2)\n  [3]=>\n  int(0)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(2) {\n  [\"keep1\"]=>\n  int(1)\n  [\"keep0\"]=>\n  int(0)\n}\narray(1) {\n  [\"drop\"]=>\n  int(2)\n}\narray(1) {\n  [\"x\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray_filter(): Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH\nint(1)\nint(2)\nbool(true)\nbool(true)\n"
+        "array(2) {\n  [1]=>\n  int(2)\n  [3]=>\n  int(0)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [4]=>\n  int(-1)\n}\narray(2) {\n  [\"keep1\"]=>\n  int(1)\n  [\"keep0\"]=>\n  int(0)\n}\narray(1) {\n  [\"drop\"]=>\n  int(2)\n}\narray(1) {\n  [\"x\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray_filter(): Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH\narray_filter(): Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH\nint(1)\nint(2)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -15852,6 +15925,9 @@ print_r(range(-1, -5, -2));\n\
 print_r(range(3, 1, -1));\n\
 print_r(range(3, 1, 1));\n\
 print_r(range(3, 3, 9));\n\
+print_r(range('a', 'd'));\n\
+print_r(range('d', 'a', 2));\n\
+print_r(range('1', '3'));\n\
 try { range(1, 3, 0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { range(1, 3, 5); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(function_exists('range'), function_exists('RANGE'));",
@@ -15864,7 +15940,7 @@ var_dump(function_exists('range'), function_exists('RANGE'));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Array\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [0] => 1\n    [1] => 3\n    [2] => 5\n)\nArray\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [0] => -1\n    [1] => -3\n    [2] => -5\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n)\nrange(): Argument #3 ($step) must not exceed the specified range\nrange(): Argument #3 ($step) must not exceed the specified range\nbool(true)\nbool(true)\n"
+        "Array\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [0] => 1\n    [1] => 3\n    [2] => 5\n)\nArray\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [0] => -1\n    [1] => -3\n    [2] => -5\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n)\nArray\n(\n    [0] => a\n    [1] => b\n    [2] => c\n    [3] => d\n)\nArray\n(\n    [0] => d\n    [1] => b\n)\nArray\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nrange(): Argument #3 ($step) must not exceed the specified range\nrange(): Argument #3 ($step) must not exceed the specified range\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -17493,6 +17569,7 @@ $left = [[1], [2]];\n\
 $right = [[3], [4]];\n\
 var_dump(array_diff($left, $right));\n\
 var_dump(array_intersect_assoc($left, $right));\n\
+var_dump(array_intersect($left, $right));\n\
 var_dump(array_diff($left));\n\
 $binary = \"a\" . chr(0) . \"b\";\n\
 var_dump(array_flip([\"value\" => $binary]));",
@@ -17516,6 +17593,26 @@ var_dump(array_flip([\"value\" => $binary]));",
             "\nWarning: Array to string conversion in ptn on line 5\n",
             "\nWarning: Array to string conversion in ptn on line 5\n",
             "\nWarning: Array to string conversion in ptn on line 5\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(1)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(2)\n",
+            "  }\n",
+            "}\n",
+            "\nWarning: Array to string conversion in ptn on line 6\n",
+            "\nWarning: Array to string conversion in ptn on line 6\n",
+            "\nWarning: Array to string conversion in ptn on line 6\n",
+            "\nWarning: Array to string conversion in ptn on line 6\n",
+            "\nWarning: Array to string conversion in ptn on line 6\n",
+            "\nWarning: Array to string conversion in ptn on line 6\n",
+            "\nWarning: Array to string conversion in ptn on line 6\n",
+            "\nWarning: Array to string conversion in ptn on line 6\n",
             "array(2) {\n",
             "  [0]=>\n",
             "  array(1) {\n",
@@ -25789,6 +25886,48 @@ resource(5) of type (stream)\n\
 \n\
 Warning: Resource ID#5 used as offset, casting to integer (5) in ptn on line 5\n\
 bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+string(17) \"resource (closed)\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_directory_resources_to_native_binary() {
+    let root = temp_dir("ptn-native-directory-resources");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("directory-resources.php");
+    let output = root.join("directory-resources-bin");
+    let dir_path = root.to_string_lossy();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$dh = opendir(\"{}\");\n\
+var_dump(gettype($dh), is_resource($dh), function_exists(\"opendir\"), function_exists(\"closedir\"));\n\
+var_dump($dh);\n\
+var_dump(array_key_exists($dh, [5 => \"directory\"]));\n\
+closedir($dh);\n\
+var_dump(is_resource($dh), gettype($dh));",
+            dir_path
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"resource\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+resource(5) of type (stream)\n\
+\n\
+Warning: Resource ID#5 used as offset, casting to integer (5) in ptn on line 5\n\
 bool(true)\n\
 bool(false)\n\
 string(17) \"resource (closed)\"\n"

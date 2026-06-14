@@ -5,6 +5,7 @@ pub struct Program {
     pub classes: Vec<ClassDecl>,
     pub functions: Vec<FunctionDecl>,
     pub statements: Vec<Statement>,
+    pub strict_types: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -380,6 +381,10 @@ pub enum IncDecTarget {
 pub enum UnsetTarget {
     Variable {
         name: String,
+        span: SourceSpan,
+    },
+    DynamicVariable {
+        name: Box<Expr>,
         span: SourceSpan,
     },
     DynamicArrayDim {

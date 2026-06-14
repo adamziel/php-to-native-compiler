@@ -52,6 +52,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->by_ref_argument_function_name_override =
         caller_runtime->by_ref_argument_function_name_override;
     runtime->include_path = NULL;
+    runtime->strict_types = caller_runtime->strict_types;
     runtime->initial_zend_assertions = caller_runtime->initial_zend_assertions;
     runtime->zend_assertions = caller_runtime->zend_assertions;
     runtime->assert_exception = caller_runtime->assert_exception;

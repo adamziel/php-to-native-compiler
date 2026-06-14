@@ -49,6 +49,7 @@ pub fn parse(source: &str) -> Result<Program> {
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
         allow_append_array_read: false,
+        strict_types: false,
     }
     .parse_program()
 }
@@ -65,6 +66,7 @@ struct Parser {
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
     allow_append_array_read: bool,
+    strict_types: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,6 +197,7 @@ impl Parser {
             classes,
             functions,
             statements,
+            strict_types: self.strict_types,
         })
     }
 
@@ -213,7 +216,13 @@ impl Parser {
             {
                 break;
             }
-            if token_is_identifier_named(self.peek(), "namespace") {
+            if token_is_identifier_named(self.peek(), "declare") {
+                let statement = self.parse_declare_statement()?;
+                if !matches!(statement, Statement::Empty { .. }) {
+                    self.reject_code_outside_bracketed_namespace(scope)?;
+                    statements.push(statement);
+                }
+            } else if token_is_identifier_named(self.peek(), "namespace") {
                 if scope == TopLevelScope::NamespaceBlock {
                     return Err(Diagnostic::new(
                         "Namespace declarations cannot be nested",
@@ -1302,6 +1311,12 @@ impl Parser {
             TokenKind::Goto => self.parse_goto(),
             TokenKind::Const => self.parse_const(),
             TokenKind::Global => self.parse_global(),
+            TokenKind::Identifier(ref name)
+                if name.eq_ignore_ascii_case("declare")
+                    && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
+            {
+                self.parse_declare_statement()
+            }
             TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             TokenKind::Identifier(ref name) if is_unsupported_class_like_declaration(name) => {
@@ -1884,6 +1899,45 @@ impl Parser {
         let expression = self.parse_expr()?;
         self.expect_statement_terminator()?;
         Ok(Statement::Print { expression, span })
+    }
+
+    fn parse_declare_statement(&mut self) -> Result<Statement> {
+        let start_span = self.advance().span;
+        self.expect_left_paren()?;
+        if !matches!(self.peek().kind, TokenKind::RightParen) {
+            loop {
+                let name_token = self.advance().clone();
+                let TokenKind::Identifier(name) = name_token.kind else {
+                    return Err(syntax_error_unexpected(&name_token, Some("identifier")));
+                };
+                self.expect_equal()?;
+                let value = self.parse_declare_literal_value()?;
+                if name.eq_ignore_ascii_case("strict_types") {
+                    self.strict_types = value != 0;
+                }
+                if matches!(self.peek().kind, TokenKind::Comma) {
+                    self.advance();
+                    continue;
+                }
+                break;
+            }
+        }
+        self.expect_right_paren()?;
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            return self.parse_compound_block();
+        }
+        self.expect_statement_terminator()?;
+        Ok(Statement::Empty { span: start_span })
+    }
+
+    fn parse_declare_literal_value(&mut self) -> Result<i64> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Int(value) => Ok(value),
+            TokenKind::True => Ok(1),
+            TokenKind::False => Ok(0),
+            _ => Err(syntax_error_unexpected(&token, Some("literal"))),
+        }
     }
 
     fn parse_expression_statement(&mut self) -> Result<Statement> {
@@ -2500,6 +2554,7 @@ impl Parser {
         let target = self.parse_expr()?;
         match target {
             Expr::Variable(name, span) => Ok(UnsetTarget::Variable { name, span }),
+            Expr::DynamicVariable { name, span } => Ok(UnsetTarget::DynamicVariable { name, span }),
             Expr::ArrayAccess { .. } => unset_array_dim_target_from_expr(target),
             Expr::PropertyFetch {
                 receiver,
@@ -5902,6 +5957,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "rtrim"
             | "quotemeta"
             | "chunk_split"
+            | "closedir"
             | "strip_tags"
             | "crc32"
             | "md5"
@@ -5940,6 +5996,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "filesize"
             | "filetype"
             | "fopen"
+            | "opendir"
             | "fputs"
             | "fwrite"
             | "pathinfo"

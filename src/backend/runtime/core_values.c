@@ -389,6 +389,7 @@ struct PtnResource {
     int64_t id;
     const char *type_name;
     FILE *stream;
+    void *directory;
     char *stream_uri;
     char *stream_mode;
     int persistent;
@@ -485,6 +486,7 @@ struct PtnRuntime {
     PtnValue current_receiver;
     const char *by_ref_argument_function_name_override;
     char *include_path;
+    int strict_types;
     int initial_zend_assertions;
     int zend_assertions;
     int assert_exception;
@@ -935,8 +937,33 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->id = ptn_next_resource_id++;
     resource->type_name = "stream";
     resource->stream = stream;
+    resource->directory = NULL;
     resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
     resource->stream_mode = mode == NULL ? NULL : ptn_duplicate_string(mode);
+    resource->persistent = 0;
+    return resource;
+}
+
+static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const char *uri) {
+    PtnResource *resource = malloc(sizeof(PtnResource));
+    if (resource == NULL) {
+#if !defined(_WIN32)
+        if (directory != NULL) {
+            closedir((DIR *)directory);
+        }
+#endif
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_next_resource_id == INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    resource->refcount = 1;
+    resource->id = ptn_next_resource_id++;
+    resource->type_name = "stream";
+    resource->stream = NULL;
+    resource->directory = directory;
+    resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
+    resource->stream_mode = ptn_duplicate_string("r");
     resource->persistent = 0;
     return resource;
 }
@@ -955,14 +982,22 @@ static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
 }
 
 static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
-    if (resource == NULL || resource->stream == NULL) {
+    if (resource == NULL) {
         return;
     }
     if (resource->persistent) {
         return;
     }
-    fclose(resource->stream);
-    resource->stream = NULL;
+    if (resource->stream != NULL) {
+        fclose(resource->stream);
+        resource->stream = NULL;
+    }
+#if !defined(_WIN32)
+    if (resource->directory != NULL) {
+        closedir((DIR *)resource->directory);
+        resource->directory = NULL;
+    }
+#endif
 }
 
 static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
@@ -994,9 +1029,9 @@ static PTN_UNUSED PtnValue ptn_resource(PtnResource *resource) {
 }
 
 static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
-    static PtnResource stdin_resource = { SIZE_MAX, 1, "stream", NULL, NULL, NULL, 1 };
-    static PtnResource stdout_resource = { SIZE_MAX, 2, "stream", NULL, NULL, NULL, 1 };
-    static PtnResource stderr_resource = { SIZE_MAX, 3, "stream", NULL, NULL, NULL, 1 };
+    static PtnResource stdin_resource = { SIZE_MAX, 1, "stream", NULL, NULL, NULL, NULL, 1 };
+    static PtnResource stdout_resource = { SIZE_MAX, 2, "stream", NULL, NULL, NULL, NULL, 1 };
+    static PtnResource stderr_resource = { SIZE_MAX, 3, "stream", NULL, NULL, NULL, NULL, 1 };
     PtnResource *resource = &stdin_resource;
     if (id == 2) {
         resource = &stdout_resource;

@@ -982,7 +982,7 @@ ptn_phpt_first_unsupported_language_surface() {
             }
         }
         function ptn_has_named_modeled_array_internal_call(line) {
-            return line ~ /(^|[^[:alnum:]_$\\])array_(all|any|change_key_case|chunk|column|combine|count_values|diff|diff_assoc|diff_key|diff_uassoc|diff_ukey|fill|fill_keys|filter|find|find_key|first|flip|intersect|intersect_assoc|intersect_key|intersect_uassoc|intersect_ukey|is_list|key_exists|key_first|key_last|keys|last|map|merge|merge_recursive|pad|pop|product|push|reduce|replace|replace_recursive|reverse|search|shift|slice|splice|sum|udiff|udiff_assoc|udiff_uassoc|uintersect|uintersect_assoc|uintersect_uassoc|unique|unshift|values|walk|walk_recursive)[[:space:]]*\([^)]*[(,][[:space:]]*[a-z_][a-z0-9_]*[[:space:]]*:[^:]/
+            return line ~ /(^|[^[:alnum:]_$\\])array_(all|any|change_key_case|chunk|column|combine|count_values|diff|diff_assoc|diff_key|diff_uassoc|diff_ukey|fill|fill_keys|find|find_key|first|flip|intersect|intersect_assoc|intersect_key|intersect_uassoc|intersect_ukey|is_list|key_exists|key_first|key_last|keys|last|map|merge|merge_recursive|pad|pop|product|push|reduce|replace|replace_recursive|reverse|search|shift|slice|splice|sum|udiff|udiff_assoc|udiff_uassoc|uintersect|uintersect_assoc|uintersect_uassoc|unique|unshift|values|walk|walk_recursive)[[:space:]]*\([^)]*[(,][[:space:]]*[a-z_][a-z0-9_]*[[:space:]]*:[^:]/
         }
         function ptn_spread_context(line,    i, ch, triple, prefix, stack_depth, stack) {
             stack_depth = 0
@@ -1112,8 +1112,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /[$][$]|[$][{][[:space:]]*[$]/) {
-                print "unsupported-dynamic-symbol\trequires variable variables and runtime symbol-table lookup/mutation, outside PTN static variable model"
+            if (line ~ /[$][{][[:space:]]*[$]/ || line ~ /(^|[;{}])[[:space:]]*global[[:space:]][^;]*[$][$]/ || line ~ /[$][$][a-z_][a-z0-9_]*([[:space:]]*\[[^]]*\])*[[:space:]]*([+*\/%.&|^-]?=|[?][?]=)/) {
+                print "unsupported-dynamic-symbol\trequires variable-variable symbol-table mutation, outside PTN modeled dynamic reads"
                 found = 1
                 exit
             }

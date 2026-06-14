@@ -2996,6 +2996,9 @@ static char *ptn_array_column_integer_property_name(int64_t integer) {
 
 static const char *ptn_array_column_argument_type_name(PtnValue value) {
     value = ptn_value_deref(value);
+    if (value.type == PTN_BOOL) {
+        return value.as.boolean ? "true" : "false";
+    }
     if (value.type == PTN_OBJECT) {
         return value.as.object->class_name;
     }
@@ -3021,18 +3024,24 @@ static PtnArrayColumnKey ptn_array_column_key_from_arg(
             return key;
         case PTN_BOOL:
             integer = value.as.boolean ? 1 : 0;
-            key.array_key = ptn_array_int_key(integer);
-            key.property_name = ptn_array_column_integer_property_name(integer);
-            return key;
+            if (!runtime->strict_types) {
+                key.array_key = ptn_array_int_key(integer);
+                key.property_name = ptn_array_column_integer_property_name(integer);
+                return key;
+            }
+            break;
         case PTN_INT:
             key.array_key = ptn_array_int_key(value.as.integer);
             key.property_name = ptn_array_column_integer_property_name(value.as.integer);
             return key;
         case PTN_FLOAT:
-            integer = ptn_value_to_integer(value);
-            key.array_key = ptn_array_int_key(integer);
-            key.property_name = ptn_array_column_integer_property_name(integer);
-            return key;
+            if (!runtime->strict_types) {
+                integer = ptn_value_to_integer(value);
+                key.array_key = ptn_array_int_key(integer);
+                key.property_name = ptn_array_column_integer_property_name(integer);
+                return key;
+            }
+            break;
         case PTN_STRING:
             key.array_key = ptn_array_key_from_value(value);
             key.property_name = ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
@@ -3042,7 +3051,10 @@ static PtnArrayColumnKey ptn_array_column_key_from_arg(
         case PTN_OBJECT:
         case PTN_CLOSURE:
         case PTN_EXCEPTION:
-        case PTN_REFERENCE: {
+        case PTN_REFERENCE:
+            break;
+    }
+    {
             char message[192];
             int written = snprintf(
                 message,
@@ -3059,12 +3071,7 @@ static PtnArrayColumnKey ptn_array_column_key_from_arg(
             key.is_null = 1;
             key.array_key = ptn_array_int_key(0);
             return key;
-        }
     }
-
-    key.is_null = 1;
-    key.array_key = ptn_array_int_key(0);
-    return key;
 }
 
 static void ptn_array_column_key_free(PtnArrayColumnKey key) {
@@ -3396,7 +3403,23 @@ static PtnValue ptn_internal_array_is_list(PtnRuntime *runtime, size_t argc, con
     return ptn_bool(1);
 }
 
-static int ptn_array_value_strings_equal(PtnValue left, PtnValue right) {
+static int ptn_array_value_strings_equal(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int emit_array_warnings
+) {
+    if (emit_array_warnings) {
+        PtnValue left_deref = ptn_value_deref(left);
+        PtnValue right_deref = ptn_value_deref(right);
+        if (left_deref.type == PTN_ARRAY) {
+            ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+        }
+        if (right_deref.type == PTN_ARRAY) {
+            ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+        }
+    }
     PtnStringOperand left_string = ptn_value_to_string_operand(left);
     PtnStringOperand right_string = ptn_value_to_string_operand(right);
     int equal = left_string.len == right_string.len &&
@@ -3427,30 +3450,70 @@ static void ptn_array_emit_set_operation_string_conversion_warnings(
     }
 }
 
-static int ptn_array_contains_value(PtnArray *array, PtnValue value) {
+static int ptn_array_contains_value(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnValue value,
+    size_t line,
+    int emit_array_warnings,
+    int scan_all
+) {
+    int found = 0;
     for (size_t i = 0; i < array->len; i++) {
-        if (ptn_array_value_strings_equal(value, array->entries[i].value)) {
-            return 1;
+        if (ptn_array_value_strings_equal(
+                runtime,
+                value,
+                array->entries[i].value,
+                line,
+                emit_array_warnings
+            )) {
+            found = 1;
+            if (!scan_all) {
+                return 1;
+            }
         }
     }
-    return 0;
+    return found;
 }
 
-static int ptn_array_contains_assoc_value(PtnArray *array, PtnArrayKey key, PtnValue value) {
+static int ptn_array_contains_assoc_value(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnArrayKey key,
+    PtnValue value,
+    size_t line,
+    int emit_array_warnings
+) {
     PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
-    return entry != NULL && ptn_array_value_strings_equal(value, entry->value);
+    return entry != NULL && ptn_array_value_strings_equal(
+        runtime,
+        value,
+        entry->value,
+        line,
+        emit_array_warnings
+    );
 }
 
 static int ptn_array_entry_matches_all(
+    PtnRuntime *runtime,
     PtnArrayEntry *entry,
     size_t array_count,
     PtnArray **arrays,
-    int compare_keys
+    int compare_keys,
+    int emit_array_warnings,
+    size_t line
 ) {
     for (size_t i = 0; i < array_count; i++) {
         int found = compare_keys
-            ? ptn_array_contains_assoc_value(arrays[i], entry->key, entry->value)
-            : ptn_array_contains_value(arrays[i], entry->value);
+            ? ptn_array_contains_assoc_value(runtime, arrays[i], entry->key, entry->value, line, emit_array_warnings)
+            : ptn_array_contains_value(
+                runtime,
+                arrays[i],
+                entry->value,
+                line,
+                emit_array_warnings,
+                emit_array_warnings && i == 0
+            );
         if (!found) {
             return 0;
         }
@@ -3459,15 +3522,18 @@ static int ptn_array_entry_matches_all(
 }
 
 static int ptn_array_entry_matches_any(
+    PtnRuntime *runtime,
     PtnArrayEntry *entry,
     size_t array_count,
     PtnArray **arrays,
-    int compare_keys
+    int compare_keys,
+    int emit_array_warnings,
+    size_t line
 ) {
     for (size_t i = 0; i < array_count; i++) {
         int found = compare_keys
-            ? ptn_array_contains_assoc_value(arrays[i], entry->key, entry->value)
-            : ptn_array_contains_value(arrays[i], entry->value);
+            ? ptn_array_contains_assoc_value(runtime, arrays[i], entry->key, entry->value, line, emit_array_warnings)
+            : ptn_array_contains_value(runtime, arrays[i], entry->value, line, emit_array_warnings, 0);
         if (found) {
             return 1;
         }
@@ -3484,7 +3550,8 @@ static PtnValue ptn_array_intersect_or_diff(
     int keep_matches,
     size_t line
 ) {
-    if (array_count != 0) {
+    int emit_compare_array_warnings = keep_matches;
+    if (array_count != 0 && !compare_keys && !keep_matches) {
         ptn_array_emit_set_operation_string_conversion_warnings(runtime, source, line);
         for (size_t i = 0; i < array_count; i++) {
             ptn_array_emit_set_operation_string_conversion_warnings(runtime, arrays[i], line);
@@ -3495,8 +3562,24 @@ static PtnValue ptn_array_intersect_or_diff(
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayEntry *entry = &source->entries[i];
         int keep = keep_matches
-            ? ptn_array_entry_matches_all(entry, array_count, arrays, compare_keys)
-            : !ptn_array_entry_matches_any(entry, array_count, arrays, compare_keys);
+            ? ptn_array_entry_matches_all(
+                runtime,
+                entry,
+                array_count,
+                arrays,
+                compare_keys,
+                emit_compare_array_warnings,
+                line
+            )
+            : !ptn_array_entry_matches_any(
+                runtime,
+                entry,
+                array_count,
+                arrays,
+                compare_keys,
+                emit_compare_array_warnings,
+                line
+            );
         if (keep) {
             ptn_array_set_entry(
                 result.as.array,
@@ -3709,7 +3792,7 @@ static int ptn_array_custom_values_match(
         return 1;
     }
     if (value_mode == PTN_ARRAY_SET_VALUE_STRING) {
-        return ptn_array_value_strings_equal(left, right);
+        return ptn_array_value_strings_equal(runtime, left, right, line, 0);
     }
     return ptn_array_user_compare(runtime, value_callback, left, right, line) == 0;
 }
@@ -4514,9 +4597,14 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 
-static int ptn_array_unique_contains_string_value(PtnArray *array, PtnValue value) {
+static int ptn_array_unique_contains_string_value(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnValue value,
+    size_t line
+) {
     for (size_t i = 0; i < array->len; i++) {
-        if (ptn_array_value_strings_equal(value, array->entries[i].value)) {
+        if (ptn_array_value_strings_equal(runtime, value, array->entries[i].value, line, 0)) {
             return 1;
         }
     }
@@ -4540,7 +4628,7 @@ static PtnValue ptn_internal_array_unique(PtnRuntime *runtime, size_t argc, cons
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *entry = &array->entries[i];
-        if (ptn_array_unique_contains_string_value(result.as.array, entry->value)) {
+        if (ptn_array_unique_contains_string_value(runtime, result.as.array, entry->value, line)) {
             continue;
         }
         ptn_array_set_entry(
@@ -4885,15 +4973,24 @@ static PtnValue ptn_internal_array_splice(PtnRuntime *runtime, size_t argc, cons
     );
 }
 
-static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    int64_t start = ptn_value_to_integer(args[0]);
-    int64_t end = ptn_value_to_integer(args[1]);
-    int64_t step_value = argc >= 3 ? ptn_value_to_integer(args[2]) : 1;
-    uint64_t step = step_value < 0 ? (uint64_t)(-(step_value + 1)) + 1 : (uint64_t)step_value;
-    uint64_t distance = start <= end
-        ? (uint64_t)end - (uint64_t)start
-        : (uint64_t)start - (uint64_t)end;
+static int ptn_range_char_endpoint(PtnValue value, unsigned char *byte_out) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_STRING || value.as.string.len != 1) {
+        return 0;
+    }
+    unsigned char byte = value.as.string.data[0];
+    if (isdigit(byte)) {
+        return 0;
+    }
+    *byte_out = byte;
+    return 1;
+}
+
+static uint64_t ptn_range_abs_step(int64_t step_value) {
+    return step_value < 0 ? (uint64_t)(-(step_value + 1)) + 1 : (uint64_t)step_value;
+}
+
+static void ptn_range_validate_step(PtnRuntime *runtime, uint64_t step, uint64_t distance) {
     if (step == 0 || (distance != 0 && step > distance)) {
         ptn_throw_exception(
             runtime,
@@ -4901,6 +4998,53 @@ static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnVa
             "range(): Argument #3 ($step) must not exceed the specified range"
         );
     }
+}
+
+static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    int64_t step_value = argc >= 3 ? ptn_value_to_integer(args[2]) : 1;
+    uint64_t step = ptn_range_abs_step(step_value);
+
+    unsigned char start_char = 0;
+    unsigned char end_char = 0;
+    if (ptn_range_char_endpoint(args[0], &start_char) && ptn_range_char_endpoint(args[1], &end_char)) {
+        uint64_t distance = start_char <= end_char
+            ? (uint64_t)end_char - (uint64_t)start_char
+            : (uint64_t)start_char - (uint64_t)end_char;
+        ptn_range_validate_step(runtime, step, distance);
+        uint64_t count = distance == 0 ? 1 : distance / step + 1;
+        if (count > (uint64_t)INT64_MAX || count > (uint64_t)SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        int ascending = start_char <= end_char;
+        unsigned char current = start_char;
+        for (uint64_t i = 0; i < count; i++) {
+            char string[1] = { (char)current };
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_owned_string_len(ptn_duplicate_string_len(string, 1), 1)
+            );
+            if (i + 1 == count) {
+                break;
+            }
+            if (ascending) {
+                current = (unsigned char)(current + step);
+            } else {
+                current = (unsigned char)(current - step);
+            }
+        }
+        return result;
+    }
+
+    int64_t start = ptn_value_to_integer(args[0]);
+    int64_t end = ptn_value_to_integer(args[1]);
+    uint64_t distance = start <= end
+        ? (uint64_t)end - (uint64_t)start
+        : (uint64_t)start - (uint64_t)end;
+    ptn_range_validate_step(runtime, step, distance);
 
     uint64_t count = distance == 0 ? 1 : distance / step + 1;
     if (count > (uint64_t)INT64_MAX || count > (uint64_t)SIZE_MAX) {
@@ -8211,6 +8355,68 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     return resource;
 }
 
+static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "opendir", 1, "directory", args[0], line);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "opendir(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    ptn_emit_file_warning(runtime, "opendir", path, "directory streams are unsupported on this platform", line);
+    free(path);
+    return ptn_bool(0);
+#else
+    DIR *directory = opendir(path);
+    if (directory == NULL) {
+        ptn_emit_file_warning(runtime, "opendir", path, strerror(errno), line);
+        free(path);
+        return ptn_bool(0);
+    }
+
+    PtnValue resource = ptn_resource(ptn_resource_new_directory(directory, path));
+    free(path);
+    return resource;
+#endif
+}
+
+static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type == PTN_NULL) {
+        ptn_throw_exception(runtime, "TypeError", "No resource supplied");
+        return ptn_null();
+    }
+    if (value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "closedir(): Argument #1 ($dir_handle) must be of type resource or null, %s given",
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (value.as.resource->directory == NULL) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "closedir(): Argument #1 ($dir_handle) must be a valid Directory resource"
+        );
+        return ptn_null();
+    }
+    ptn_resource_close(value.as.resource);
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue value = ptn_value_deref(args[0]);
@@ -10051,7 +10257,10 @@ static PtnValue ptn_internal_is_resource(PtnRuntime *runtime, size_t argc, const
     (void)argc;
     (void)line;
     PtnValue value = ptn_value_deref(args[0]);
-    return ptn_bool(value.type == PTN_RESOURCE && value.as.resource->stream != NULL);
+    return ptn_bool(
+        value.type == PTN_RESOURCE &&
+        (value.as.resource->stream != NULL || value.as.resource->directory != NULL)
+    );
 }
 
 static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -12399,8 +12608,10 @@ static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, c
 static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
@@ -12489,6 +12700,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
         { "class_exists", 1, 2, ptn_internal_class_exists },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
+        { "closedir", 1, 1, ptn_internal_closedir },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 2, ptn_internal_count },
@@ -12597,6 +12809,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "nl2br", 1, 2, ptn_internal_nl2br },
         { "ob_get_contents", 0, 0, ptn_internal_ob_get_contents },
         { "octdec", 1, 1, ptn_internal_octdec },
+        { "opendir", 1, 2, ptn_internal_opendir },
         { "ord", 1, 1, ptn_internal_ord },
         { "pathinfo", 1, 2, ptn_internal_pathinfo },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },

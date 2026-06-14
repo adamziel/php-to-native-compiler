@@ -354,26 +354,20 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires foreach assignment diagnostics for `$this`",
         ),
         (
-            "variable-variable read",
-            "--TEST--\ndynamic read\n--FILE--\n<?php\n$name = 'value';\necho $$name;\n--EXPECT--\n",
+            "variable-variable write",
+            "--TEST--\ndynamic write\n--FILE--\n<?php\n$name = 'value';\n$$name = 1;\n--EXPECT--\n",
             "unsupported-dynamic-symbol\t",
-            "requires variable variables",
+            "requires variable-variable symbol-table mutation",
         ),
         (
             "braced variable-variable write",
             "--TEST--\ndynamic write\n--FILE--\n<?php\n$name = 'value';\n${$name} = 1;\n--EXPECT--\n",
             "unsupported-dynamic-symbol\t",
-            "requires variable variables",
-        ),
-        (
-            "variable-variable unset",
-            "--TEST--\ndynamic unset\n--FILE--\n<?php\n$name = 'value';\nunset($$name);\n--EXPECT--\n",
-            "unsupported-dynamic-symbol\t",
-            "requires variable variables",
+            "requires variable-variable symbol-table mutation",
         ),
         (
             "array internal named argument",
-            "--TEST--\nnamed internal\n--FILE--\n<?php\nvar_dump(array_filter([], mode: 1));\n--EXPECT--\n",
+            "--TEST--\nnamed internal\n--FILE--\n<?php\nvar_dump(array_map(callback: null, array: []));\n--EXPECT--\n",
             "unsupported-internal-call-binding\t",
             "requires named-argument binding for modeled array internal calls",
         ),
@@ -389,6 +383,21 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             classification.contains(reason),
             "{name}: {classification:?}"
         );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_dynamic_variable_reads_runnable() {
+    let cases = [
+        "--TEST--\ndynamic read\n--FILE--\n<?php\n$name = 'value';\necho $$name;\n--EXPECT--\n",
+        "--TEST--\ndynamic unset\n--FILE--\n<?php\n$name = 'value';\nunset($$name);\n--EXPECT--\n",
+    ];
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt).trim_end(),
+            "runnable\tselected for PTN semantic measurement"
+        );
+        assert_eq!(classify(phpt), classify_with_section_cache(phpt));
     }
 }
 

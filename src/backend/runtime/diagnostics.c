@@ -575,6 +575,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override = NULL;
     runtime->include_path = ptn_duplicate_string(".");
+    runtime->strict_types = 0;
     runtime->zend_assertions = 1;
     int64_t configured_zend_assertions = 0;
     if (ptn_parse_int64_env("PTN_ZEND_ASSERTIONS", &configured_zend_assertions)) {

@@ -1,0 +1,36 @@
+# Broad 1k ptn-j6gv string/runtime row pack.
+#
+# Covers string/key runtime conversion, nested array stringification warnings,
+# read-only dynamic variable lookup, dynamic variable unset, and array_filter()
+# named optional argument binding.
+#
+# bucket: dynamic-symbol-read-unset rows=2
+Zend/tests/arrow_functions/003.phpt
+Zend/tests/bug38211.phpt
+
+# bucket: key-string-runtime rows=22
+ext/standard/tests/array/array_column_numeric_string_key.phpt
+ext/standard/tests/array/array_column_scalar_index_strict_types.phpt
+ext/standard/tests/array/array_column_scalar_index_weak_types.phpt
+ext/standard/tests/array/array_combine.phpt
+ext/standard/tests/array/array_combine_variation3.phpt
+ext/standard/tests/array/array_count_values.phpt
+ext/standard/tests/array/array_count_values2.phpt
+ext/standard/tests/array/array_diff_assoc_variation9.phpt
+ext/standard/tests/array/array_diff_variation9.phpt
+ext/standard/tests/array/array_flip.phpt
+ext/standard/tests/array/array_flip_variation3.phpt
+ext/standard/tests/array/array_intersect_assoc_variation5.phpt
+ext/standard/tests/array/array_intersect_assoc_variation6.phpt
+ext/standard/tests/array/array_intersect_assoc_variation9.phpt
+ext/standard/tests/array/array_intersect_variation3.phpt
+ext/standard/tests/array/array_intersect_variation4.phpt
+ext/standard/tests/array/array_intersect_variation9.phpt
+ext/standard/tests/array/array_key_exists_variation3.phpt
+ext/standard/tests/array/array_keys_variation_005.phpt
+ext/standard/tests/array/array_pad_variation6.phpt
+ext/standard/tests/array/array_search_variation3.phpt
+ext/standard/tests/array/array_search_variation4.phpt
+
+# bucket: named-internal-binding rows=1
+ext/standard/tests/array/array_filter_invalid_mode.phpt
