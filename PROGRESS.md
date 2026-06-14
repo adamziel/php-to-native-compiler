@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T07:37Z.
-Measured: `ptn-98lj`.
+Refresh: 2026-06-14T07:58Z.
+Measured: `ptn-c284`; COW-foreach 103 selected, 69 passed.
 
 ## Dashboard
 
@@ -26,7 +26,7 @@ Measured: `ptn-98lj`.
 | COW-manifest | 54 | 54 | 0 |
 | Nested-foreach | 3 | 2 | 1 |
 | Array-COW | 72 | 17 | 55 |
-| COW-foreach | 103 | 31 | 72 |
+| COW-foreach | 103 | 69 | 34 |
 | Foreach-list | 4 | 4 | 0 |
 | Ref-call | 12 | 10 | 2 |
 | CUF-edges | 12 | 8 | 4 |

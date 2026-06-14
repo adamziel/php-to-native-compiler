@@ -21,6 +21,13 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_call_frame.parameter_count = 0;
     runtime->owned_call_frame.parameter_names = NULL;
     runtime->call_frame = NULL;
+    runtime->owned_trace_frame.function_name = NULL;
+    runtime->owned_trace_frame.file = NULL;
+    runtime->owned_trace_frame.line = 0;
+    runtime->owned_trace_frame.argc = 0;
+    runtime->owned_trace_frame.args = NULL;
+    runtime->owned_trace_frame.previous = NULL;
+    runtime->trace_frame = caller_runtime->trace_frame;
     runtime->lifecycle_root = caller_runtime->lifecycle_root == NULL
         ? caller_runtime
         : caller_runtime->lifecycle_root;
@@ -62,6 +69,37 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     runtime->owned_call_frame.parameter_count = parameter_count;
     runtime->owned_call_frame.parameter_names = parameter_names;
     runtime->call_frame = &runtime->owned_call_frame;
+    runtime->owned_trace_frame.function_name = runtime->current_function_name;
+    runtime->owned_trace_frame.file = NULL;
+    runtime->owned_trace_frame.line = 0;
+    runtime->owned_trace_frame.argc = argc;
+    runtime->owned_trace_frame.args = args;
+    runtime->owned_trace_frame.previous = runtime->trace_frame;
+    runtime->trace_frame = &runtime->owned_trace_frame;
+}
+
+static PTN_UNUSED void ptn_runtime_push_trace_frame(
+    PtnRuntime *runtime,
+    PtnTraceFrame *frame,
+    const char *function_name,
+    const char *file,
+    size_t line,
+    size_t argc,
+    const PtnValue *args
+) {
+    frame->function_name = function_name;
+    frame->file = file;
+    frame->line = line;
+    frame->argc = argc;
+    frame->args = args;
+    frame->previous = runtime->trace_frame;
+    runtime->trace_frame = frame;
+}
+
+static PTN_UNUSED void ptn_runtime_pop_trace_frame(PtnRuntime *runtime, PtnTraceFrame *frame) {
+    if (runtime->trace_frame == frame) {
+        runtime->trace_frame = frame->previous;
+    }
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
@@ -317,6 +355,97 @@ static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const cha
     ptn_symbols_unset(&runtime->symbols, name);
 }
 
+static PTN_UNUSED PtnValue ptn_trace_value_snapshot_depth(PtnValue value, size_t depth) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY || depth > 64) {
+        return ptn_value_clone(value);
+    }
+
+    PtnValue snapshot = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        ptn_array_set_entry(
+            snapshot.as.array,
+            ptn_array_key_clone(value.as.array->entries[i].key),
+            ptn_trace_value_snapshot_depth(value.as.array->entries[i].value, depth + 1)
+        );
+    }
+    snapshot.as.array->next_auto_key = value.as.array->next_auto_key;
+    snapshot.as.array->current_index = value.as.array->current_index <= snapshot.as.array->len
+        ? value.as.array->current_index
+        : snapshot.as.array->len;
+    return snapshot;
+}
+
+static PTN_UNUSED PtnValue ptn_trace_value_snapshot(PtnValue value) {
+    return ptn_trace_value_snapshot_depth(value, 0);
+}
+
+static PTN_UNUSED PtnValue ptn_trace_frame_args_array(PtnTraceFrame *frame) {
+    PtnValue args = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < frame->argc; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            args.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_trace_value_snapshot(frame->args[i])
+        );
+    }
+    return args;
+}
+
+static PTN_UNUSED PtnValue ptn_trace_frame_array(PtnTraceFrame *frame) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (frame->file != NULL && frame->line != 0) {
+        if (frame->line > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key("file"),
+            ptn_owned_string(ptn_duplicate_string(frame->file))
+        );
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key("line"),
+            ptn_int((int64_t)frame->line)
+        );
+    }
+    if (frame->function_name != NULL) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key("function"),
+            ptn_owned_string(ptn_duplicate_string(frame->function_name))
+        );
+    }
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("args"),
+        ptn_trace_frame_args_array(frame)
+    );
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
+    PtnValue trace = ptn_array_from_literal_entries(0, NULL);
+    size_t index = 0;
+    for (PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
+         frame != NULL;
+         frame = frame->previous) {
+        if (index > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            trace.as.array,
+            ptn_array_int_key((int64_t)index),
+            ptn_trace_frame_array(frame)
+        );
+        index++;
+    }
+    return trace;
+}
+
 static PTN_UNUSED PtnException *ptn_exception_new_owned(
     PtnRuntime *runtime,
     const char *class_name,
@@ -335,6 +464,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->message = message;
     exception->path = path;
     exception->line = line;
+    exception->trace = ptn_exception_capture_trace(runtime);
     return exception;
 }
 
@@ -1119,6 +1249,16 @@ static PTN_UNUSED PtnValue ptn_call_method(
             );
         }
         return ptn_owned_string(ptn_duplicate_string(receiver.as.exception->message));
+    }
+    if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "getTrace")) {
+        if (argc != 0) {
+            ptn_throw_exception(
+                runtime,
+                "ArgumentCountError",
+                "Too many arguments to exception method getTrace()"
+            );
+        }
+        return ptn_value_clone(receiver.as.exception->trace);
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (

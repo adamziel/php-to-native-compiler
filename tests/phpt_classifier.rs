@@ -663,6 +663,17 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
 }
 
 #[test]
+fn phpt_classifier_keeps_exception_get_trace_runnable() {
+    let classification = classify(
+        "--TEST--\ntrace\n--FILE--\n<?php\ntry { throw new Exception(); } catch (Exception $e) { var_dump($e->getTrace()); }\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_basic_assertions_runnable() {
     let classification = classify(
         "--TEST--\nassert\n--FILE--\n<?php\nvar_dump(assert(true));\ntry { assert(false, 'failed'); } catch (AssertionError $e) { echo $e->getMessage(); }\n--EXPECT--\n",

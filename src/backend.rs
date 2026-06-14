@@ -441,7 +441,7 @@ fn emit_user_functions(
         out.push_str("    PtnRuntime runtime;\n");
         out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
         out.push_str("    runtime.current_function_name = \"");
-        out.push_str(&c_string(&function.name));
+        out.push_str(&c_string(&function.display_name));
         out.push_str("\";\n");
         out.push_str("    runtime.current_class_name = ");
         out.push_str(&c_optional_string(function.class_name.as_deref()));
@@ -1872,7 +1872,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
-    out.push_str("        int valid = ptn_exception_name_equal(method_name, \"getMessage\");\n");
+    out.push_str("        int valid = ptn_exception_name_equal(method_name, \"getMessage\") || ptn_exception_name_equal(method_name, \"getTrace\");\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        return valid;\n");
     out.push_str("    }\n");
@@ -3011,11 +3011,15 @@ fn emit_try(
 ) {
     let frame_temp = values.next_temp();
     let caught_temp = values.next_temp();
+    let saved_trace_temp = values.next_temp();
     let end_label = values.next_label("ptn_try_end");
     out.push_str("    {\n");
     out.push_str("        PtnTryFrame ");
     out.push_str(&frame_temp);
     out.push_str(";\n");
+    out.push_str("        PtnTraceFrame *");
+    out.push_str(&saved_trace_temp);
+    out.push_str(" = runtime.trace_frame;\n");
     out.push_str("        ptn_try_frame_push(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
@@ -3039,6 +3043,9 @@ fn emit_try(
     out.push_str("            ptn_try_frame_pop(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
+    out.push_str("            runtime.trace_frame = ");
+    out.push_str(&saved_trace_temp);
+    out.push_str(";\n");
     out.push_str("            runtime.warn_by_ref_argument_mismatch = 0;\n");
     out.push_str("            runtime.throw_argument_count_errors = 0;\n");
     out.push_str("            int ");

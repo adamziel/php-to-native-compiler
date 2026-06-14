@@ -534,6 +534,13 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->owned_call_frame.parameter_count = 0;
     runtime->owned_call_frame.parameter_names = NULL;
     runtime->call_frame = NULL;
+    runtime->owned_trace_frame.function_name = NULL;
+    runtime->owned_trace_frame.file = NULL;
+    runtime->owned_trace_frame.line = 0;
+    runtime->owned_trace_frame.argc = 0;
+    runtime->owned_trace_frame.args = NULL;
+    runtime->owned_trace_frame.previous = NULL;
+    runtime->trace_frame = NULL;
     runtime->lifecycle_root = runtime;
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;

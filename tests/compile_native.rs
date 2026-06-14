@@ -19128,6 +19128,44 @@ var_dump(class_exists('Exception'));\n",
 }
 
 #[test]
+fn compile_exception_get_trace_for_array_walk_closure_throw_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-get-trace-array-walk");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-trace.php");
+    let output = root.join("array-walk-trace-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"one\" => 1, \"two\" => 2];\n\
+try {\n\
+    array_walk($items, function($value, $key) { if ($value === 2) { throw new Exception('stop'); } });\n\
+} catch (Exception $e) {\n\
+    $trace = $e->getTrace();\n\
+    echo count($trace), \"\\n\";\n\
+    echo $trace[0][\"function\"], \"\\n\";\n\
+    var_dump($trace[0][\"args\"]);\n\
+    echo $trace[1][\"function\"], \"\\n\";\n\
+    echo basename($trace[1][\"file\"]), \":\", $trace[1][\"line\"], \"\\n\";\n\
+    var_dump($trace[1][\"args\"][0]);\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "2\n{{closure:{}:4}}\narray(2) {{\n  [0]=>\n  int(2)\n  [1]=>\n  string(3) \"two\"\n}}\narray_walk\narray-walk-trace.php:4\narray(2) {{\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n}}\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_uncaught_string_offset_type_error_still_fatals() {
     let root = temp_dir("ptn-native-uncaught-string-offset-type-error");
     fs::create_dir_all(&root).unwrap();

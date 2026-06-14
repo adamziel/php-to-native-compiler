@@ -27,8 +27,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `$this` exclusion. `Closure::bindTo()` clones preserve captured variables,
   `Closure::fromCallable()` and first-class callable syntax wrap supported
   function, static-method, object-method, and closure callables with callable
-  dump/reflection metadata, and `Closure::__invoke` reference diagnostics use
-  Closure method names at callable boundaries.
+  dump/reflection metadata, `Closure::__invoke` reference diagnostics use
+  Closure method names at callable boundaries, and userland closure dumps
+  expose source name/file/line and parameter metadata.
 - Includes share caller file scope and return values; bounded dynamic
   include/require dispatch uses canonical once guards when candidate string
   paths are statically enumerable.
@@ -74,7 +75,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   and PHP 8 throw expressions propagate boxed built-in exception values
   through the shared `try`/`catch` runtime, including `Exception`, `Error`
   families, declared `Exception`/`Error` subclasses with message-property
-  throw bridging, `Throwable`, and `getMessage()`; bounded `highlight_file()`
+  throw bridging, `Throwable`, `getMessage()`, and `getTrace()` arrays for
+  userland and modeled internal callback frames; bounded `highlight_file()`
   shares file-return paths.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,
   `zend_version()`, PHP version/build/platform constants, `PHP_SAPI`,
@@ -161,9 +163,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   class/reflection-metadata blockers, readonly static property diagnostics,
   and currently unmodeled mutating array-internal helpers such as
   `array_multisort()`, `usort()`, `uasort()`, and `uksort()` plus
-  destructor-reentrant `array_splice()` cases, runtime diagnostics/backtrace
-  APIs, user error/exception handler state, `ErrorException` metadata, and
-  assertion runtime modes are mapped to blocker categories with source
+  destructor-reentrant `array_splice()` cases, remaining runtime diagnostics
+  and backtrace string APIs, user error/exception handler state,
+  `ErrorException` metadata, and assertion runtime modes are mapped to blocker
+  categories with source
   evidence; broad baseline runs also opt into `--SKIPIF--` precondition harness
   classification, with static modeling for sanitizer environment gates,
   `PHP_INT_SIZE` comparisons, and host locale availability while arbitrary

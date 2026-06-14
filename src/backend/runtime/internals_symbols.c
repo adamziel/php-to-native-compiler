@@ -8,6 +8,7 @@ static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
     }
     ptn_runtime_release_object_id(exception->lifecycle_runtime, exception->object_id);
     free(exception->message);
+    ptn_value_destroy(&exception->trace);
     free(exception);
 }
 

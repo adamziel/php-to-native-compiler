@@ -605,9 +605,99 @@ static const char *ptn_function_metadata_parameter_name(PtnFunctionMetadata meta
     return fallback;
 }
 
+typedef struct {
+    int found;
+    const char *file;
+    size_t file_len;
+    size_t line;
+} PtnClosureSourceLocation;
+
+static int ptn_parse_size_t_digits(const char *start, size_t len, size_t *result) {
+    if (len == 0) {
+        return 0;
+    }
+    size_t value = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)start[i];
+        if (c < '0' || c > '9') {
+            return 0;
+        }
+        size_t digit = (size_t)(c - '0');
+        if (value > (SIZE_MAX - digit) / 10) {
+            return 0;
+        }
+        value = value * 10 + digit;
+    }
+    *result = value;
+    return 1;
+}
+
+static PtnClosureSourceLocation ptn_closure_source_location(PtnClosure *closure) {
+    PtnClosureSourceLocation location;
+    location.found = 0;
+    location.file = NULL;
+    location.file_len = 0;
+    location.line = 0;
+    if (closure == NULL || closure->display_name == NULL) {
+        return location;
+    }
+    const char *prefix = "{closure:";
+    size_t prefix_len = strlen(prefix);
+    const char *name = closure->display_name;
+    size_t name_len = strlen(name);
+    if (
+        name_len <= prefix_len + 1 ||
+        strncmp(name, prefix, prefix_len) != 0 ||
+        name[name_len - 1] != '}'
+    ) {
+        return location;
+    }
+
+    const char *body_start = name + prefix_len;
+    const char *body_end = name + name_len - 1;
+    const char *line_start = body_end;
+    while (line_start > body_start && line_start[-1] != ':') {
+        line_start--;
+    }
+    if (line_start == body_start) {
+        return location;
+    }
+    const char *separator = line_start - 1;
+    size_t file_len = (size_t)(separator - body_start);
+    size_t line_len = (size_t)(body_end - line_start);
+    size_t line = 0;
+    if (file_len == 0 || !ptn_parse_size_t_digits(line_start, line_len, &line)) {
+        return location;
+    }
+
+    location.found = 1;
+    location.file = body_start;
+    location.file_len = file_len;
+    location.line = line;
+    return location;
+}
+
+static void ptn_var_dump_string_property(
+    size_t indent,
+    const char *name,
+    const char *value,
+    size_t value_len
+) {
+    ptn_var_dump_indent(indent + 1);
+    printf("[\"%s\"]=>\n", name);
+    ptn_var_dump_indent(indent + 1);
+    printf("string(%zu) \"", value_len);
+    fwrite(value, 1, value_len, stdout);
+    fputs("\"\n", stdout);
+}
+
 static size_t ptn_closure_dump_field_count(PtnClosure *closure) {
     PtnFunctionMetadata metadata = closure->metadata;
+    PtnClosureSourceLocation location = ptn_closure_source_location(closure);
     size_t count = 0;
+    if (location.found) {
+        count += 3;
+    }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         count++;
     }
@@ -642,8 +732,22 @@ static void ptn_var_dump_closure_parameters(PtnFunctionMetadata metadata, size_t
 
 static void ptn_var_dump_closure(PtnClosure *closure, size_t indent) {
     PtnFunctionMetadata metadata = closure->metadata;
+    PtnClosureSourceLocation location = ptn_closure_source_location(closure);
     size_t field_count = ptn_closure_dump_field_count(closure);
     printf("object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
+    if (location.found) {
+        ptn_var_dump_string_property(
+            indent,
+            "name",
+            closure->display_name,
+            strlen(closure->display_name)
+        );
+        ptn_var_dump_string_property(indent, "file", location.file, location.file_len);
+        ptn_var_dump_indent(indent + 1);
+        fputs("[\"line\"]=>\n", stdout);
+        ptn_var_dump_indent(indent + 1);
+        printf("int(%zu)\n", location.line);
+    }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         ptn_var_dump_indent(indent + 1);
         fputs("[\"function\"]=>\n", stdout);
@@ -2123,7 +2227,24 @@ static PTN_UNUSED PtnValue ptn_runtime_array_walk_variable(
     PtnValue userdata,
     size_t line
 ) {
-    return ptn_array_walk_checked(runtime, name, NULL, value, callback, has_userdata, userdata, line);
+    PtnValue trace_args[3] = {
+        value,
+        callback,
+        userdata
+    };
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        "array_walk",
+        runtime->source_path,
+        line,
+        has_userdata ? 3 : 2,
+        trace_args
+    );
+    PtnValue result = ptn_array_walk_checked(runtime, name, NULL, value, callback, has_userdata, userdata, line);
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    return result;
 }
 
 static void ptn_array_walk_recursive_array(
@@ -2226,7 +2347,24 @@ static PTN_UNUSED PtnValue ptn_runtime_array_walk_recursive_variable(
     PtnValue userdata,
     size_t line
 ) {
-    return ptn_array_walk_recursive_checked(runtime, name, NULL, value, callback, has_userdata, userdata, line);
+    PtnValue trace_args[3] = {
+        value,
+        callback,
+        userdata
+    };
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        "array_walk_recursive",
+        runtime->source_path,
+        line,
+        has_userdata ? 3 : 2,
+        trace_args
+    );
+    PtnValue result = ptn_array_walk_recursive_checked(runtime, name, NULL, value, callback, has_userdata, userdata, line);
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    return result;
 }
 
 static PtnValue ptn_internal_array_pop(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -12214,12 +12352,20 @@ static int ptn_closure_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "fromCallable");
 }
 
+static int ptn_exception_method_exists(const char *method_name) {
+    return ptn_exception_name_equal(method_name, "getMessage")
+        || ptn_exception_name_equal(method_name, "getTrace");
+}
+
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name) {
     if (ptn_internal_class_name_is_reflection_function(class_name)) {
         return ptn_reflection_function_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_closure_method_exists(method_name);
+    }
+    if (ptn_builtin_exception_class_name(class_name) != NULL) {
+        return ptn_exception_method_exists(method_name);
     }
     return ptn_declared_class_method_exists(class_name, method_name);
 }
@@ -12572,6 +12718,8 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
     char *class_name = NULL;
     if (target.type == PTN_OBJECT) {
         class_name = ptn_duplicate_string(target.as.object->class_name);
+    } else if (target.type == PTN_EXCEPTION) {
+        class_name = ptn_duplicate_string(target.as.exception->class_name);
     } else {
         class_name = ptn_value_to_string(target);
     }
@@ -12715,7 +12863,19 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
             );
             return ptn_null();
         }
-        return function->handler(runtime, argc, args, line);
+        PtnTraceFrame trace_frame;
+        ptn_runtime_push_trace_frame(
+            runtime,
+            &trace_frame,
+            function->name,
+            runtime->source_path,
+            line,
+            argc,
+            args
+        );
+        PtnValue result = function->handler(runtime, argc, args, line);
+        ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+        return result;
     }
 
     ptn_emit_undefined_function_error(&runtime->diagnostics, name);

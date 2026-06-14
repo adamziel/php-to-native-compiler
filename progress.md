@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T07:37Z.
+Last refresh: 2026-06-14T07:58Z.
 Source: `PROGRESS.md`
-Measured: `ptn-98lj`.
+Measured: `ptn-c284`; COW-foreach 103 selected, 69 passed.
 
 Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/281; Array-key/cb 38/75.
 
@@ -27,7 +27,7 @@ Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/st
 | COW-manifest | 54/54 |
 | Nested-foreach | 2/3 |
 | Array-COW | 17/72 |
-| COW-foreach | 31/103 |
+| COW-foreach | 69/103 |
 | Foreach-list | 4/4 |
 | Ref-call | 10/12 |
 | CUF-edges | 8/12 |

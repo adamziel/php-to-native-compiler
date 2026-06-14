@@ -155,6 +155,7 @@ typedef struct PtnObject PtnObject;
 typedef struct PtnReference PtnReference;
 typedef struct PtnRuntime PtnRuntime;
 typedef struct PtnResource PtnResource;
+typedef struct PtnTraceFrame PtnTraceFrame;
 typedef struct PtnTryFrame PtnTryFrame;
 
 typedef enum {
@@ -380,6 +381,7 @@ struct PtnException {
     char *message;
     const char *path;
     size_t line;
+    PtnValue trace;
 };
 
 struct PtnResource {
@@ -403,6 +405,15 @@ typedef struct {
     size_t parameter_count;
     const char *const *parameter_names;
 } PtnCallFrame;
+
+struct PtnTraceFrame {
+    const char *function_name;
+    const char *file;
+    size_t line;
+    size_t argc;
+    const PtnValue *args;
+    PtnTraceFrame *previous;
+};
 
 struct PtnTryFrame {
     jmp_buf jump;
@@ -451,6 +462,8 @@ struct PtnRuntime {
     PtnExceptionState *exceptions;
     PtnCallFrame owned_call_frame;
     PtnCallFrame *call_frame;
+    PtnTraceFrame owned_trace_frame;
+    PtnTraceFrame *trace_frame;
     PtnRuntime *lifecycle_root;
     PtnObject **live_objects;
     size_t live_objects_len;

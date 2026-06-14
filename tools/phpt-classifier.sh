@@ -1252,7 +1252,7 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
             raw = tolower($0)
             line = ptn_php_code_line($0)
             if (line ~ /(^|[^[:alnum:]_$])(debug_backtrace|debug_print_backtrace)[[:space:]]*\(/ ||
-                line ~ /->[[:space:]]*gettrace(asstring)?[[:space:]]*\(/) {
+                line ~ /->[[:space:]]*gettraceasstring[[:space:]]*\(/) {
                 print "unsupported-diagnostics-runtime\trequires debug_backtrace()/debug_print_backtrace() stack-frame snapshots, outside PTN modeled call-frame diagnostics"
                 found = 1
                 exit
