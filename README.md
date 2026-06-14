@@ -208,6 +208,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_ARRAY_CALLBACK_FRONTIER_PTN_J9KG_2026-06-14.md`: current
   broad 1k array callback/set-operation blocker map and committed focused
   manifest.
+- `docs/PHPT_BROAD_1K_ZEND_BUG_REGRESSION_FRONTIER_2026-06-14.md`: broad 1k
+  root-level Zend historical bug-regression blocker map and focused manifest.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and

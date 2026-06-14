@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T04:41Z.
-Measured: `ptn-j9kg` broad array callback blocker map after `ptn-hpxo`.
+Last refresh: 2026-06-14T04:46Z.
+Measured: `ptn-exlu` broad Zend bug blocker map after `ptn-j9kg`.
 
 ## Operating Goal
 
@@ -37,6 +37,7 @@ Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest
 | PHPT broad reference-call bucket | 10/12 |
 | PHPT broad Zend assignment/reference frontier | 23/32 |
 | PHPT broad class declaration frontier | 0/78 |
+| PHPT broad Zend bug regression frontier | 18/37 |
 | PHPT broad resource-limit classifier row | 0/1 |
 | PHPT broad magic/object conversion frontier | 20/69 |
 | PHPT broad magic-method metadata frontier | 0/69 |

@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T04:41Z.
-Measured: `ptn-j9kg` broad array callback blocker map after `ptn-hpxo`.
+Refresh: 2026-06-14T04:46Z.
+Measured: `ptn-exlu` broad Zend bug blocker map after `ptn-j9kg`.
 
 ## Dashboard
 
@@ -28,6 +28,7 @@ Measured: `ptn-j9kg` broad array callback blocker map after `ptn-hpxo`.
 | PHPT broad reference-call bucket | 12 | 10 | 2 |
 | PHPT broad Zend assignment/reference frontier | 32 | 23 | 9 |
 | PHPT broad class declaration frontier | 78 | 0 | 78 |
+| PHPT broad Zend bug regression frontier | 37 | 18 | 19 |
 | PHPT broad resource-limit classifier row | 1 | 0 | 1 |
 | PHPT broad magic/object conversion frontier | 69 | 20 | 49 |
 | PHPT broad magic-method metadata frontier | 69 | 0 | 69 |
@@ -40,16 +41,14 @@ Measured: `ptn-j9kg` broad array callback blocker map after `ptn-hpxo`.
 
 ## Remaining Exclusions
 
-- Bounded: 456/486 runnable; broad 1k classify-only 443/557.
-- Array: set/callback 86/106; callback validation 49/66; key/value 28/42;
+- Bounded 456/486 runnable; broad 1k classify-only 443/557.
+- Arrays: set/callback 86/106; validation 49/66; key/value 28/42;
   request/SAPI 1/41.
-- `ptn-j9kg`: callback residuals cover filter/map/reduce/comparator helpers.
-- `ptn-hpxo`: append by-ref target PHPT passes; reference-call is 10/12.
-- COW/reference: internal 17/72, foreach 31/103.
+- References/COW: reference-call 10/12, internal 17/72, foreach 31/103.
+- `ptn-exlu`: Zend bug 18/37; `bug35239.phpt` is a recursive dump blocker.
 
 ## Verification
 
-`ptn-ri9o`: request/SAPI excludes 41. `ptn-odac`: diff/intersect 58/61.
-`ptn-h8f7`: metadata excludes 70. `ptn-odca`: key/value 28/42.
 `ptn-hpxo`: append-reference native tests and target PHPT pass. `ptn-j9kg`:
-broad 1k classify-only 430 runnable/570 excluded; callback rows 49/66.
+broad 1k 430 runnable/570 excluded; callback rows 49/66. `ptn-exlu`:
+broad 1k 429/571; Zend bug split 18/36 plus `bug35239.phpt`.

@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T04:41Z.
+Last refresh: 2026-06-14T04:46Z.
 Source: `PROGRESS.md`
-Measured: `ptn-j9kg` broad array callback blocker map after `ptn-hpxo`.
+Measured: `ptn-exlu` broad Zend bug blocker map after `ptn-j9kg`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
@@ -29,6 +29,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT 
 | PHPT broad reference-call bucket | 10/12 |
 | PHPT broad Zend assignment/reference frontier | 23/32 |
 | PHPT broad class declaration frontier | 0/78 |
+| PHPT broad Zend bug regression frontier | 18/37 |
 | PHPT broad resource-limit classifier row | 0/1 |
 | PHPT broad magic/object conversion frontier | 20/69 |
 | PHPT broad magic-method metadata frontier | 0/69 |
