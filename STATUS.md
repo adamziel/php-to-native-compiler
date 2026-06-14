@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T06:40Z.
-Measured: `ptn-h47t`.
+Last refresh: 2026-06-14T06:42Z.
+Measured: `ptn-a0r0`.
 
 ## Operating Goal
 
@@ -25,9 +25,9 @@ Source unit tests 3/3; Native Rust 724/724; Bounded PHPT 479/486; Zend PHPT 119/
 | Array callback validation | 49/66 |
 | Array diff/intersect | 58/61 |
 | Diff/intersect comparator | 64/76 |
-| Array set-operation frontier | 64/119 |
+| Array setops | 64/119 |
 | Array fill/pad | 11/12 |
-| Array set/callback frontier | 86/106 |
+| Array set/callback | 86/106 |
 | Array callback slice | 28/38 |
 | Filesystem/path/process | 13/46 |
 | tests/basic+func+lang | 78/78 |
@@ -38,23 +38,24 @@ Source unit tests 3/3; Native Rust 724/724; Bounded PHPT 479/486; Zend PHPT 119/
 | Foreach list destructuring | 4/4 |
 | Reference-call bucket | 10/12 |
 | Zend assignment/reference | 23/32 |
-| Recursive dump frontier | 2/4 |
-| Class declaration frontier | 1/78 |
-| Zend bug regression | 18/37 |
+| Recursive dump | 2/4 |
+| Class declarations | 1/78 |
+| Zend bug rows | 18/37 |
 | Class-name scalar | 9/10 |
 | Dynamic type blockers | 0/44 |
-| Diagnostics/assertion frontier | 0/47 |
+| Diagnostics/assertion | 0/47 |
 | Non-array class metadata | 0/74 |
 | Resource-limit row | 0/1 |
 | Magic/object conversion | 20/69 |
 | Magic-method metadata | 0/69 |
-| Standard-array frontier | 0/297 |
+| Standard-array map | 0/297 |
 | Standard-array execution | 243/296 |
 | Array map/filter callback | 21/30 |
-| Request/SAPI input | 1/41 |
+| Request/SAPI | 1/41 |
+| Unsupported language | 0/288 |
 | Attribute blocker bucket | 0/141 |
-| Attribute metadata frontier | 0/204 |
-| Heredoc/nowdoc array frontier | 14/70 |
+| Attribute metadata | 0/204 |
+| Heredoc/nowdoc array | 14/70 |
 | Standard-array tdei slice | 61/71 |
 | Broad array_rand slice | 6/7 |
 | Zend op/control frontier | 15/26 |
