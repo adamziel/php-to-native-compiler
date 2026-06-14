@@ -10,10 +10,10 @@ The php-src corpus was `/home/claude/php-src-phpt` at revision
 
 ## Broad 1k Classifier
 
-Current implementation commit:
+Current evidence commit:
 
 ```text
-64aef5958e42 feat: support array first last helpers
+57a31eb54830 docs: record broad array helper slice
 ```
 
 Command:
@@ -25,24 +25,26 @@ tools/run-phpt-baseline.sh --tier 1000 --classify-only
 Artifacts:
 
 ```text
-.runtime/phpt-baseline/20260614T011614Z/phpt-baseline-1000.txt
-.runtime/phpt-progress/classification-20260614T011615Z.tsv
-.runtime/phpt-progress/runnable-20260614T011615Z.txt
+.runtime/phpt-baseline/20260614T012502Z/phpt-baseline-1000.txt
+.runtime/phpt-progress/classification-20260614T012502Z.tsv
+.runtime/phpt-progress/runnable-20260614T012502Z.txt
 ```
 
-The broad 1k classifier selected 1,000 rows, left 447 runnable, and excluded
-553 rows:
+The broad 1k classifier selected 1,000 rows, left 421 runnable, and excluded
+579 rows:
 
 | Classification | Rows |
 | --- | ---: |
-| `runnable` | 447 |
+| `runnable` | 421 |
 | `unsupported-language` | 351 |
 | `unsupported-class-metadata` | 84 |
 | `unsupported-request-input-ini` | 28 |
 | `unsupported-extension` | 20 |
 | `unsupported-assertion-ini` | 17 |
+| `unsupported-diagnostics-runtime` | 17 |
 | `unsupported-resource-limit-ini` | 15 |
 | `sapi-behavior` | 13 |
+| `unsupported-assertion-runtime` | 9 |
 | `unsupported-diagnostics-ini` | 5 |
 | `harness-cleanup` | 4 |
 | `process-boundary` | 3 |
@@ -62,8 +64,8 @@ manifest:
 
 ```sh
 rg '^ext/standard/tests/array/(array_(map|filter|reduce|all|any|find|find_key))' \
-  .runtime/phpt-progress/runnable-20260614T003943Z.txt \
-  > .runtime/ptn-ndkl/array-callback-predicate-before.txt
+  .runtime/phpt-progress/runnable-20260614T012502Z.txt \
+  > .runtime/ptn-ndkl/array-callback-predicate-final.txt
 ```
 
 Before evidence, collected before rebasing across the predicate/find helper
@@ -74,10 +76,10 @@ work:
 38 selected, 38 runnable, 20 passed, 18 failed
 ```
 
-Current evidence on `64aef5958e42`:
+Current evidence on `57a31eb54830`:
 
 ```text
-.runtime/phpt-progress/run-20260614T010711Z-manifest.log
+.runtime/phpt-progress/run-20260614T013002Z-manifest.log
 38 selected, 38 runnable, 24 passed, 14 failed
 ```
 
@@ -85,8 +87,8 @@ The separate helper slice includes the predicate/find rows plus the two
 `array_first()`/`array_last()` broad rows added here:
 
 ```text
-.runtime/ptn-ndkl/new-array-helpers-after.txt
-.runtime/phpt-progress/run-20260614T011430Z-manifest.log
+.runtime/ptn-ndkl/new-array-helpers-final.txt
+.runtime/phpt-progress/run-20260614T013536Z-manifest.log
 6 selected, 6 runnable, 6 passed, 0 failed
 ```
 
