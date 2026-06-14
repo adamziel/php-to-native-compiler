@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T01:16Z
-Measured: `ptn-x6x5` array callback validation after `ptn-oz24`.
+Refresh: 2026-06-14T01:45Z
+Measured: `ptn-gwlo` after `ptn-x6x5`.
 
 ## Dashboard
 
@@ -26,6 +26,7 @@ Measured: `ptn-x6x5` array callback validation after `ptn-oz24`.
 | PHPT COW foreach/reference frontier | 103 | 31 | 72 |
 | PHPT foreach list destructuring rows | 4 | 4 | 0 |
 | PHPT broad reference-call bucket | 12 | 9 | 3 |
+| PHPT broad Zend assignment/reference frontier | 32 | 22 | 10 |
 | PHPT generator/fiber COW boundary bucket | 12 | 0 | 12 |
 | PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
 | Post-merge COW gate | 26 | 26 | 0 |
@@ -37,29 +38,29 @@ Measured: `ptn-x6x5` array callback validation after `ptn-oz24`.
 
 ## Remaining Exclusions
 
-- Bounded rows are 485/485; classify-only is 459 runnable/26 excluded.
-- Array-internal COW is 72/17/17; foreach/reference is 103/51/31.
-- Reference-call bucket is 12 selected, 11 runnable, 1 excluded, 9 pass.
-- Broad 1k classify-only is 421 runnable/579 excluded.
-- Runtime buckets add 17 diagnostics rows and 9 assertion-runtime rows.
-- Attribute map records 141 broad 1k exclusions.
+- Bounded: 485/485; classify-only: 459 runnable/26 excluded.
+- COW/reference: array-internal 72/17/55, foreach/reference 103/31/72,
+  reference-call 12 selected, 11 runnable, 9 pass.
+- Zend frontier: 32 runnable, 22 pass; residuals cover append lvalues,
+  next-key overflow, object/member lvalues, compound TypeErrors, `$this`.
+- Broad 1k: 422 runnable/578 excluded; attributes 141; generator/fiber COW
+  boundary 12 selected/0 runnable/12 excluded.
 
 ## Verification
 
-`ptn-x6x5` validates callback operands before array-helper iteration. Focused
-native validation passes; array callback/set is 65 selected/runnable, 46
-passing, 19 mapped failures.
+`ptn-gwlo` maps a 32-row Zend assignment/reference/object-write frontier:
+`classification-20260614T011318Z.tsv`,
+`tools/phpt-zend-assignment-reference-frontier-manifest.txt`, and focused PHPT
+`run-20260614T012211Z-manifest.log` at 22/32.
 
-`ptn-oz24` records 141 broad 1k attribute exclusions.
+`ptn-x6x5` validates array-helper callbacks; native validation passes, and
+callback validation PHPT is 65 selected, 46 pass, 19 mapped failures.
 
-`ptn-lrlt` adds diagnostic/assertion buckets; broad 1k classify-only is
-421/579. `ptn-yl7i` adds class-name hints.
+`ptn-oz24`: 141 broad 1k attribute exclusions. `ptn-lrlt`: diagnostic and
+assertion buckets; broad 1k classify-only 421/579. `ptn-yl7i`: class-name
+hints.
 
-`ptn-kgqa` adds array predicate/find callbacks, focused PHPT 4/4.
-`ptn-550s.10` keeps foreach-list 4/4 and COW gate 26/26.
+`ptn-kgqa`: array predicate/find callbacks, PHPT 4/4. `ptn-550s.10`:
+foreach-list 4/4 and COW gate 26/26.
 
-`ptn-vwyp` classifies generator/fiber COW: 46 selected, 32 runnable, 14
-excluded. `ptn-2juv` records broad 1k: 1,000/447/553.
-
-Follow-ups: properties, traits, attributes, traces, nullable,
-generators/Fibers, includes, callbacks, `Traversable`, INI.
+`ptn-vwyp`: generator/fiber COW 46/32/14. `ptn-2juv`: broad 1k 1,000/447/553.

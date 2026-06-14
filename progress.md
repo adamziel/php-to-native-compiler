@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T01:16Z
+Last refresh: 2026-06-14T01:45Z
 Source: `PROGRESS.md`
-Measured: `ptn-x6x5` array callback validation after `ptn-oz24`.
+Measured: `ptn-gwlo` after `ptn-x6x5`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 713/713; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
@@ -27,6 +27,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 713/713; Nativ
 | PHPT COW foreach/reference frontier | 31/103 |
 | PHPT foreach list destructuring rows | 4/4 |
 | PHPT broad reference-call bucket | 9/12 |
+| PHPT broad Zend assignment/reference frontier | 22/32 |
 | PHPT generator/fiber COW boundary bucket | 0/12 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | Post-merge COW gate | 26/26 |

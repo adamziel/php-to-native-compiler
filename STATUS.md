@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T01:16Z
-Measured: `ptn-x6x5` array callback validation after `ptn-oz24`.
+Last refresh: 2026-06-14T01:45Z
+Measured: `ptn-gwlo` after `ptn-x6x5`.
 
 ## Operating Goal
 
@@ -35,6 +35,7 @@ Source unit tests 3/3; Native/compiler Rust suite 713/713; Native smoke matrix 6
 | PHPT COW foreach/reference frontier | 31/103 |
 | PHPT foreach list destructuring rows | 4/4 |
 | PHPT broad reference-call bucket | 9/12 |
+| PHPT broad Zend assignment/reference frontier | 22/32 |
 | PHPT generator/fiber COW boundary bucket | 0/12 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | Post-merge COW gate | 26/26 |

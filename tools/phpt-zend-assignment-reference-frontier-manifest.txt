@@ -1,0 +1,40 @@
+# Broad 1k Zend assignment/reference/object-write frontier rows.
+#
+# Source: `.runtime/phpt-progress/runnable-20260614T011318Z.txt` from:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only --out-dir .runtime/ptn-gwlo-baseline-post-lrlt
+#
+# Focused evidence:
+#   .runtime/phpt-progress/run-20260614T012211Z-manifest.log
+#
+Zend/tests/add_optional_by_ref_arg.phpt
+Zend/tests/array_add_indirect.phpt
+Zend/tests/array_addition_not_commutative.phpt
+Zend/tests/array_append_COW.phpt
+Zend/tests/array_append_by_reference.phpt
+Zend/tests/array_append_reading_error.phpt
+Zend/tests/array_hash_zero.phpt
+Zend/tests/array_literal_next_element_error.phpt
+Zend/tests/array_merge_recursive_next_key_overflow.phpt
+Zend/tests/array_self_add_globals.phpt
+Zend/tests/array_splice_empty_ht_iter_removal.phpt
+Zend/tests/array_unshift_COW.phpt
+Zend/tests/array_with_refs_identical.phpt
+Zend/tests/assign_array_object_property.phpt
+Zend/tests/assign_by_val_function_by_ref_return_value.phpt
+Zend/tests/assign_dim_obj_null_return.phpt
+Zend/tests/assign_dim_op_same_var.phpt
+Zend/tests/assign_dim_op_undef.phpt
+Zend/tests/assign_dim_ref_free.phpt
+Zend/tests/assign_obj_op_cache_slot.phpt
+Zend/tests/assign_obj_ref_byval_function.phpt
+Zend/tests/assign_obj_ref_return.phpt
+Zend/tests/assign_op_type_error.phpt
+Zend/tests/assign_property_null_object.phpt
+Zend/tests/assign_ref_error_var_handling.phpt
+Zend/tests/assign_ref_func_leak.phpt
+Zend/tests/assign_to_obj_001.phpt
+Zend/tests/assign_to_obj_002.phpt
+Zend/tests/assign_to_var_001.phpt
+Zend/tests/assign_to_var_002.phpt
+Zend/tests/assign_to_var_003.phpt
+Zend/tests/assign_to_var_004.phpt
