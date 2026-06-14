@@ -96,6 +96,74 @@ fn phpt_classifier_file_section_helpers_survive_pipefail() {
 }
 
 #[test]
+fn run_bounded_phpt_classify_only_reads_manifest_file_to_completion() {
+    let root = temp_dir("ptn-run-bounded-phpt-classify");
+    let corpus = root.join("php-src");
+    let tests_dir = corpus.join("tests/basic");
+    fs::create_dir_all(&tests_dir).expect("create fake PHPT corpus");
+    fs::write(corpus.join("run-tests.php"), "<?php\n").expect("write run-tests.php");
+    fs::write(
+        tests_dir.join("array_null_offset_deprecation.phpt"),
+        "--TEST--\nnull offset\n--FILE--\n<?php\n$arr = ['' => 'value'];\necho $arr[null];\n?>\n--EXPECT--\nvalue\n",
+    )
+    .expect("write first PHPT");
+    fs::write(
+        tests_dir.join("after.phpt"),
+        "--TEST--\nafter\n--FILE--\n<?php echo 'after'; ?>\n--EXPECT--\nafter\n",
+    )
+    .expect("write second PHPT");
+
+    let manifest = root.join("manifest.txt");
+    fs::write(
+        &manifest,
+        "# bucket: core rows=2\n\
+tests/basic/array_null_offset_deprecation.phpt\n\
+tests/basic/after.phpt",
+    )
+    .expect("write manifest without trailing newline");
+
+    let progress = root.join("progress");
+    let output = Command::new("timeout")
+        .arg("10s")
+        .arg("tools/run-bounded-phpt.sh")
+        .arg("--classify-only")
+        .arg(&manifest)
+        .env("PHP_SRC_PHPT", &corpus)
+        .env("PHPT_PROGRESS_DIR", &progress)
+        .env("PTN_PHPT_AUTO_FETCH", "0")
+        .output()
+        .expect("run bounded classifier");
+    assert!(
+        output.status.success(),
+        "bounded classifier failed: status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let classification_path = fs::read_dir(&progress)
+        .expect("read progress dir")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("classification-") && name.ends_with(".tsv"))
+        })
+        .expect("classification output");
+    let classification = fs::read_to_string(classification_path).expect("read classification");
+    assert!(
+        classification.contains("tests/basic/array_null_offset_deprecation.phpt\trunnable\t"),
+        "{classification}"
+    );
+    assert!(
+        classification.contains("tests/basic/after.phpt\trunnable\t"),
+        "{classification}"
+    );
+    assert_eq!(classification.lines().count(), 2, "{classification}");
+}
+
+#[test]
 fn phpt_classifier_skipif_harness_is_opt_in() {
     let skipif = "--TEST--\nskipif\n--SKIPIF--\n<?php echo getenv('PTN_SKIP') ? 'skip' : ''; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
 

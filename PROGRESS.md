@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T11:45Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; COW 69/103 passed.
+Refresh: 2026-06-14T11:48Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; COW 69/103 passed.
 
 ## Dashboard
 

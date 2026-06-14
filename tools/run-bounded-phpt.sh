@@ -201,7 +201,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         category="runnable"
         reason="classification disabled by PTN_PHPT_CLASSIFY=0"
     else
-        classification=$(ptn_phpt_classify_row "$row" "$test_path" "$php_src")
+        classification=$(ptn_phpt_classify_row "$row" "$test_path" "$php_src" </dev/null)
         category=${classification%%$'\t'*}
         reason=${classification#*$'\t'}
     fi
@@ -221,7 +221,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     printf '%s\n' "$test_path" >> "${bucket_abs_manifest[$current_bucket]}"
     bucket_count[$current_bucket]=$((bucket_count[$current_bucket] + 1))
     runnable_rows=$((runnable_rows + 1))
-done < <(sed -e '$a\' "$manifest")
+done < "$manifest"
 
 if [[ "$selected_rows" -eq 0 ]]; then
     echo "manifest contains no selected rows after comments/blank lines: $manifest" >&2

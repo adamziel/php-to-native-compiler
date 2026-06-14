@@ -433,6 +433,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_CLUSTER_SLICE_PTN_P2I7_2026-06-14.md`: refreshed broad
   1k blocker map with exact classifier buckets, zero unmatched broad-runnable
   rows, and current 25+ row excluded-frontier boundaries.
+- `docs/PHPT_BROAD_1K_CLASSIFY_HARNESS_STDIN_PTN_H0QA_2026-06-14.md`: broad
+  1k classify-only harness fix evidence and current 1000-row blocker map with
+  424 runnable and 576 classified rows.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
