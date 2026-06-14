@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-13T23:50Z
-Measured: `ptn-vwyp` generator/fiber COW frontier classification after `ptn-feps`.
+Last refresh: 2026-06-14T00:23Z
+Measured: `ptn-2juv` broad 1k frontier map after `ptn-vwyp`.
 
 ## Operating Goal
 

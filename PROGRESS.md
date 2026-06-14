@@ -1,10 +1,10 @@
 # PTN Progress
 
-Refresh: 2026-06-13T23:50Z
-Measured: `ptn-vwyp` generator/fiber COW frontier classification after `ptn-feps`.
+Refresh: 2026-06-14T00:23Z
+Measured: `ptn-2juv` broad 1k frontier map after `ptn-vwyp`.
 
 Slices cover callable/object, filesystem/string, property, COW, by-ref
-diagnostics, and generator/Fiber blockers.
+diagnostics, broad PHPT blockers, and generator/Fiber blockers.
 
 ## Dashboard
 
@@ -43,26 +43,24 @@ diagnostics, and generator/Fiber blockers.
 - Broad reference-call bucket is 12 selected, 11 runnable, 1 excluded, 8
   passing; residuals cover append args, class-name checks, and
   `SensitiveParameterValue`.
-- Static SKIPIF current 1k classify-only is 447 runnable and 553 excluded;
-  worker 5k is 2,070 runnable.
+- Static SKIPIF 1k classify-only is 447 runnable and 553 excluded.
 - Generator/fiber COW boundary bucket is 12 selected, 0 runnable, 12 excluded.
 
 ## Verification
 
-`ptn-vwyp` classifies the broad COW generator/fiber bucket before it enters pass
+`ptn-vwyp` classifies broad COW generator/fiber rows before they enter pass
 counts: COW classify-only selected 46 rows, kept 32 runnable, and excluded 14;
 classifier tests passed 18/18.
 
-`ptn-begn` centralizes by-reference call arguments; residual PHPTs are
-`ptn-hpxo`, `ptn-yl7i`, and `ptn-6x02`. `ptn-5sca` adds property refs,
-constructor by-reference args, Exception/Error `message` throws, and classifier
-narrowing. `ptn-awta` models static `--SKIPIF--` preconditions.
+`ptn-2juv` refreshes broad 1k evidence: 1,000 selected rows, 447 runnable, and
+553 classified. Runnable buckets are 276 `ext/standard`, 155 `Zend`, and 16
+`tests/basic`. Largest array frontier groups are diff/intersect helpers at 68
+rows and `array_chunk()` at 32 rows; the pre-rebase full run stalled in the Zend
+bucket at `Zend/tests/ErrorException_getSeverity.phpt`.
 
-`ptn-feps` adds `array_walk()` warning-and-continue semantics for by-reference
-userdata mismatches plus root-scoped object handle reuse. Focused
-`array_walk_closure.phpt` reaches the remaining exception trace section.
+Recent reference work covers by-reference calls, property refs,
+preconditions, and `array_walk()` userdata handling.
 
 Follow-ups remain typed properties, traits, magic methods, attributes,
-broader `Exception` APIs, static-property refs, trace APIs, nullable types,
-generator/Fiber execution, dynamic includes, unsupported internals,
-`Traversable`, INI modes, and classifier batching.
+Exception trace APIs, nullable types, generator/Fiber execution, dynamic
+includes, unsupported internals, `Traversable`, and INI modes.

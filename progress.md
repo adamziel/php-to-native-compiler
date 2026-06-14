@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-13T23:50Z
+Last refresh: 2026-06-14T00:23Z
 Source: `PROGRESS.md`
-Measured: `ptn-vwyp` generator/fiber COW frontier classification after `ptn-feps`.
+Measured: `ptn-2juv` broad 1k frontier map after `ptn-vwyp`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 704/704; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
