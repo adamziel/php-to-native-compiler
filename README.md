@@ -155,7 +155,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   evidence; broad baseline runs also opt into `--SKIPIF--` precondition harness
   classification, with static modeling for sanitizer environment gates,
   `PHP_INT_SIZE` comparisons, and host locale availability while arbitrary
-  harness PHP remains excluded.
+  harness PHP remains excluded; plain heredoc/nowdoc literals are classified as
+  supported.
   `PTN_PHPT_CLASSIFY=0` gives raw php-src `run-tests.php` pass-through.
 - Broad PHPT baseline telemetry can generate 1k/5k/10k manifests from
   `Zend/tests`, `ext/standard/tests`, and core `tests`, recording the php-src
@@ -184,6 +185,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   frontier.
 - `docs/PHPT_BROAD_1K_CLASS_DECLARATION_FRONTIER_2026-06-14.md`: broad 1k
   interface, trait, implementation-check, and anonymous-class blocker map.
+- `docs/PHPT_BROAD_1K_PLAIN_HEREDOC_CLASSIFIER_2026-06-14.md`: broad 1k
+  plain heredoc/nowdoc classifier refinement and focused PHPT evidence.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
