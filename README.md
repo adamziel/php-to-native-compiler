@@ -463,6 +463,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_CLUSTER_SLICE_PTN_666N_2026-06-14.md`: refreshed broad
   1k cluster blocker map with 424 runnable rows fully covered by committed
   focused manifests and 576 classified rows split by semantic owner.
+- `docs/PHPT_BROAD_1K_KPI_REFRESH_PTN_QSMV13_2026-06-14.md`: broad 1k
+  run-tests KPI refresh on `abfb48341ef2`, recording 366/440 runnable passes,
+  dashboard delta 285 -> 366, and next 20-50 row red-to-green packs.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
