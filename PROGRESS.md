@@ -1,7 +1,7 @@
 # PTN Progress
 
 Refresh: 2026-06-14T04:01Z.
-Measured: `ptn-yvgh` after `ptn-f62z`.
+Measured: `ptn-ri9o` request/SAPI frontier after `ptn-yvgh`.
 
 ## Dashboard
 
@@ -32,6 +32,7 @@ Measured: `ptn-yvgh` after `ptn-f62z`.
 | PHPT broad magic/object conversion frontier | 69 | 20 | 49 |
 | PHPT broad magic-method metadata frontier | 69 | 0 | 69 |
 | PHPT broad standard-array frontier | 297 | 0 | 297 |
+| PHPT broad request/SAPI input frontier | 41 | 1 | 40 |
 | PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
 | PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | Post-merge COW gate | 26 | 26 | 0 |
@@ -40,19 +41,18 @@ Measured: `ptn-yvgh` after `ptn-f62z`.
 ## Remaining Exclusions
 
 - Bounded: 486 selected, 456 runnable, 30 excluded; 449 pass, 7 fail.
-- Broad 1k classify-only: 443/557; class declarations 78; attributes 141.
-- `array_fill()` now preflights impossible counts before entry allocation; the
-  huge PHPT row remains classified as resource-limited.
-- Fill/pad: 12 selected, 11 runnable/pass, 1 resource-limit exclusion.
-- Set/callback frontier: 106 selected/runnable, 86 pass, 20 failures split
-  across validation, value conversion, filter/map/reduce, and comparators.
+- Broad 1k: 443/557 compact; class declarations 78; attributes 141.
+- `array_fill()` preflights impossible counts; fill/pad is 11/12 with one
+  resource-limit exclusion.
+- Array frontier: set/callback 86/106; request/SAPI 41 classified, raw
+  execution 1 pass, 3 fail, 37 CGI/SAPI skips.
 - COW/reference: internal 17/72, foreach 31/103, reference-call 9/12.
 
 ## Verification
 
-`ptn-yvgh`: native `compile_array_fill` coverage passes huge-count `ValueError`
-and fatal allocation-preflight paths; rebased fill/pad PHPT is 11/12 with one
-resource-limit exclusion.
+`ptn-yvgh`: native `compile_array_fill` covers huge-count and allocation
+preflight paths.
 
-`ptn-f62z`: magic-method metadata manifest selected 69 rows, all excluded.
-`ptn-c8z6`: diff/intersect focused PHPT is 64/76.
+`ptn-ri9o`: focused classifier keeps 41 request/SAPI rows excluded at
+`run-20260614T035836Z-manifest.log`; raw run is 1 pass, 3 fail, 37 skipped at
+`run-20260614T035849Z-manifest.log`.

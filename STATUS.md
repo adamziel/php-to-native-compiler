@@ -1,7 +1,7 @@
 # PTN Status
 
 Last refresh: 2026-06-14T04:01Z.
-Measured: `ptn-yvgh` after `ptn-f62z`.
+Measured: `ptn-ri9o` request/SAPI frontier after `ptn-yvgh`.
 
 ## Operating Goal
 
@@ -41,6 +41,7 @@ Source unit tests 3/3; Native/compiler Rust suite 718/718; PHPT bounded manifest
 | PHPT broad magic/object conversion frontier | 20/69 |
 | PHPT broad magic-method metadata frontier | 0/69 |
 | PHPT broad standard-array frontier | 0/297 |
+| PHPT broad request/SAPI input frontier | 1/41 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | Post-merge COW gate | 26/26 |

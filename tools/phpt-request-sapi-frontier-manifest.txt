@@ -1,0 +1,50 @@
+# Broad 1k request/SAPI input frontier rows.
+#
+# Source: `.runtime/phpt-progress/classification-20260614T034053Z.tsv` from:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only --out-dir .runtime/ptn-ri9o-baseline
+#
+# Selection:
+#   unsupported-request-input-ini
+#   sapi-behavior rows requiring unsupported PHPT section --POST--
+#
+tests/basic/002.phpt
+tests/basic/003.phpt
+tests/basic/004.phpt
+tests/basic/005.phpt
+tests/basic/011.phpt
+tests/basic/011_empty_query.phpt
+tests/basic/011_register_argc_argv_disabled.phpt
+tests/basic/011_windows.phpt
+tests/basic/012.phpt
+tests/basic/012_register_argc_argv_disabled.phpt
+tests/basic/013.phpt
+tests/basic/014.phpt
+tests/basic/015.phpt
+tests/basic/016.phpt
+tests/basic/017.phpt
+tests/basic/018.phpt
+tests/basic/019.phpt
+tests/basic/020.phpt
+tests/basic/021.phpt
+tests/basic/022.phpt
+tests/basic/023.phpt
+tests/basic/025.phpt
+tests/basic/028.phpt
+tests/basic/030.phpt
+tests/basic/031.phpt
+tests/basic/032.phpt
+tests/basic/bug29971.phpt
+tests/basic/bug53180.phpt
+tests/basic/bug55500.phpt
+tests/basic/bug61000.phpt
+tests/basic/bug78236.phpt
+tests/basic/bug78929.phpt
+tests/basic/bug79699.phpt
+tests/basic/enable_post_data_reading_01.phpt
+tests/basic/enable_post_data_reading_02.phpt
+tests/basic/enable_post_data_reading_03.phpt
+tests/basic/enable_post_data_reading_04.phpt
+tests/basic/enable_post_data_reading_05.phpt
+tests/basic/enable_post_data_reading_06.phpt
+tests/basic/enable_post_data_reading_07.phpt
+tests/basic/gh15905.phpt

@@ -2,7 +2,7 @@
 
 Last refresh: 2026-06-14T04:01Z.
 Source: `PROGRESS.md`
-Measured: `ptn-yvgh` after `ptn-f62z`.
+Measured: `ptn-ri9o` request/SAPI frontier after `ptn-yvgh`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 718/718; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
@@ -33,6 +33,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 718/718; PHPT 
 | PHPT broad magic/object conversion frontier | 20/69 |
 | PHPT broad magic-method metadata frontier | 0/69 |
 | PHPT broad standard-array frontier | 0/297 |
+| PHPT broad request/SAPI input frontier | 1/41 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | Post-merge COW gate | 26/26 |
