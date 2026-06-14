@@ -295,6 +295,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_RUNTIME_BOUNDARY_CURRENT_PTN_2QQ9_2026-06-14.md`:
   current post-split broad 1k runtime/configuration/diagnostics boundary map
   with a committed 144-row focused manifest.
+- `docs/PHPT_BROAD_1K_RUNTIME_CONFIG_BOUNDARY_PTN_3QJ5_2026-06-14.md`:
+  focused 103-row runtime configuration, request/SAPI, assertion,
+  process/harness, host-precondition, and resource-limit subset of the broader
+  runtime boundary map.
 - `docs/PHPT_BROAD_1K_ARRAY_OBJECT_METADATA_FRONTIER_2026-06-14.md`: broad
   1k standard-array object/magic/visibility metadata blocker map.
 - `docs/PHPT_BROAD_1K_ARRAY_KEY_VALUE_FRONTIER_2026-06-14.md`: broad 1k
