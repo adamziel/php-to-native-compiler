@@ -282,6 +282,7 @@ impl<'a> Lexer<'a> {
                 '\\' => self.push_fixed(TokenKind::Backslash, 1),
                 '.' if self.rest().starts_with("...") => self.push_fixed(TokenKind::Ellipsis, 3),
                 '.' if self.rest().starts_with(".=") => self.push_fixed(TokenKind::DotEqual, 2),
+                '.' if self.starts_leading_dot_float() => self.lex_leading_dot_float()?,
                 '.' => self.push_fixed(TokenKind::Dot, 1),
                 '(' => self.push_fixed(TokenKind::LeftParen, 1),
                 ')' => self.push_fixed(TokenKind::RightParen, 1),
@@ -1113,6 +1114,40 @@ impl<'a> Lexer<'a> {
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
         }
+        Ok(())
+    }
+
+    fn starts_leading_dot_float(&self) -> bool {
+        let mut chars = self.rest().chars();
+        matches!(chars.next(), Some('.')) && chars.next().is_some_and(|ch| ch.is_ascii_digit())
+    }
+
+    fn lex_leading_dot_float(&mut self) -> Result<()> {
+        let start = self.current_span(0);
+        let mut text = String::from("0");
+
+        text.push('.');
+        self.bump_char();
+        self.collect_digits(&mut text, |ch| ch.is_ascii_digit());
+
+        if self.starts_valid_exponent() {
+            let exponent = self.peek_char().expect("valid exponent has marker");
+            text.push(exponent);
+            self.bump_char();
+            if matches!(self.peek_char(), Some('+') | Some('-')) {
+                text.push(self.peek_char().expect("peeked sign"));
+                self.bump_char();
+            }
+            self.collect_digits(&mut text, |ch| ch.is_ascii_digit());
+        }
+
+        let value = text
+            .parse::<f64>()
+            .map_err(|_| Diagnostic::new("invalid float literal", Some(start)))?;
+        self.tokens.push(Token {
+            kind: TokenKind::Float(value),
+            span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+        });
         Ok(())
     }
 

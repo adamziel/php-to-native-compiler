@@ -92,6 +92,14 @@ fn lexer_keeps_leading_zero_floats_decimal() {
 }
 
 #[test]
+fn lexer_accepts_leading_dot_float_literals() {
+    let tokens = lexer::lex("<?php .5 .5e1 .5E-1").unwrap();
+    assert!(matches!(tokens[1].kind, TokenKind::Float(value) if value == 0.5));
+    assert!(matches!(tokens[2].kind, TokenKind::Float(value) if value == 5.0));
+    assert!(matches!(tokens[3].kind, TokenKind::Float(value) if value == 0.05));
+}
+
+#[test]
 fn lexer_preserves_unknown_string_escape_backslashes() {
     let tokens = lexer::lex("<?php \"\\+\" '\\t' \"\\$\" \"\\n\"").unwrap();
     assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "\\+"));
@@ -16666,6 +16674,56 @@ var_dump(function_exists(\"var_export\"), function_exists(\"array_diff\"), funct
     assert!(c_source.contains("ptn_internal_var_export"));
     assert!(c_source.contains("ptn_internal_array_diff"));
     assert!(c_source.contains("ptn_internal_array_intersect"));
+}
+
+#[test]
+fn compile_array_set_operation_type_errors_are_catchable_to_native_binary() {
+    let root = temp_dir("ptn-native-array-set-operation-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-set-operation-type-errors.php");
+    let output = root.join("array-set-operation-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function cmp_any($a, $b) { return 0; }\n\
+$source = [\"a\" => 42];\n\
+var_dump(array_diff($source));\n\
+var_dump(array_diff_ukey($source, \"cmp_any\"));\n\
+try { array_diff([], 3, []); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_intersect([], [], 3); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_diff_key([], 3); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_udiff([], 3, \"cmp_any\"); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_diff_uassoc([], [], \"cmp_any\", [1, 2, 3]); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_diff_ukey([], [], \"missing_callback\"); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"OK\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [\"a\"]=>\n",
+            "  int(42)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"a\"]=>\n",
+            "  int(42)\n",
+            "}\n",
+            "array_diff(): Argument #2 must be of type array, int given\n",
+            "array_intersect(): Argument #3 must be of type array, int given\n",
+            "array_diff_key(): Argument #2 must be of type array, int given\n",
+            "array_udiff(): Argument #2 must be of type array, int given\n",
+            "array_diff_uassoc(): Argument #4 must be a valid callback, array callback must have exactly two members\n",
+            "array_diff_ukey(): Argument #3 must be a valid callback, function \"missing_callback\" not found or invalid function name\n",
+            "OK\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
