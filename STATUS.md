@@ -1,7 +1,7 @@
 # PTN Status
 
 Last refresh: 2026-06-14T04:13Z.
-Measured: `ptn-odac` broad array set frontier after `ptn-ri9o`.
+Measured: `ptn-h8f7` array object/metadata frontier after `ptn-odac`.
 
 ## Operating Goal
 

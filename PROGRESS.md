@@ -1,7 +1,7 @@
 # PTN Progress
 
 Refresh: 2026-06-14T04:13Z.
-Measured: `ptn-odac` broad array set frontier after `ptn-ri9o`.
+Measured: `ptn-h8f7` array object/metadata frontier after `ptn-odac`.
 
 ## Dashboard
 
@@ -40,17 +40,13 @@ Measured: `ptn-odac` broad array set frontier after `ptn-ri9o`.
 
 ## Remaining Exclusions
 
-- Bounded: 486 selected, 456 runnable, 30 excluded; broad 1k is 443/557.
-- `array_fill()` preflights impossible counts; fill/pad is 11/12.
-- Array frontier: set/callback 86/106; request/SAPI raw run is 1 pass,
-  3 fail, 37 CGI/SAPI skips.
-- `ptn-odac`: `array_chunk*` 32/32; leading-dot rows 5/5; diff/intersect
-  remains 58/61 with nested-array warning gaps.
+- Bounded: 486 selected, 456 runnable, 30 excluded; broad 1k 443/557.
+- Array frontier: set/callback 86/106; request/SAPI raw 1 pass, 3 fail,
+  37 skips; `ptn-h8f7` maps 70 object/metadata blockers.
 - COW/reference: internal 17/72, foreach 31/103, reference-call 9/12.
 
 ## Verification
 
-`ptn-yvgh`: native `compile_array_fill` covers huge-count preflight.
-`ptn-ri9o`: request/SAPI classifier excludes 41; raw run is 1 pass, 3 fail,
-37 skipped. `ptn-odac`: `array_chunk*` 32/32, leading-dot 5/5, and
-diff/intersect 58/61.
+`ptn-yvgh`: huge-count preflight. `ptn-ri9o`: request/SAPI excludes 41.
+`ptn-odac`: `array_chunk*` 32/32, leading-dot 5/5, diff/intersect 58/61.
+`ptn-h8f7`: object/metadata manifest selects 70; classify-only excludes 70.
