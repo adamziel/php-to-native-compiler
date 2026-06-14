@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T12:13Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; COW 69/103 passed.
+Refresh: 2026-06-14T13:18Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; COW 69/103 passed.
 
 ## Dashboard
 
@@ -55,7 +55,8 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Interface-decl|23|0|23|
 |Interface-impl|15|0|15|
 |Trait-decl|25|0|25|
-|Call-unpack|34|0|34|
+|Call-unpack|20|0|20|
+|Array-unpack|14|0|14|
 |Type-hint|14|0|14|
 |Function-state|11|0|11|
 |Dynamic-symbol|8|0|8|

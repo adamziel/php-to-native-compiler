@@ -1,0 +1,32 @@
+# Broad 1k current call-site unpacking rows for ptn-ei36.
+#
+# Source: `.runtime/ptn-ei36-current-progress/classification-20260614T131921Z.tsv` from:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only \
+#     --out-dir .runtime/ptn-ei36-current-baseline
+#
+# Selection: rows classified as `unsupported-call-unpacking`.
+#
+# Focused evidence: 20 selected, 0 runnable, 20 excluded as
+# `unsupported-call-unpacking` in:
+#   .runtime/ptn-ei36-current-call/classification-20260614T131920Z.tsv
+#
+Zend/tests/arg_unpack/basic.phpt
+Zend/tests/arg_unpack/by_ref.phpt
+Zend/tests/arg_unpack/by_ref_separation.phpt
+Zend/tests/arg_unpack/dynamic.phpt
+Zend/tests/arg_unpack/internal.phpt
+Zend/tests/arg_unpack/invalid_type.phpt
+Zend/tests/arg_unpack/many_args.phpt
+Zend/tests/arg_unpack/method.phpt
+Zend/tests/arg_unpack/new.phpt
+Zend/tests/arg_unpack/non_integer_keys.phpt
+Zend/tests/arg_unpack/positional_arg_after_unpack_error.phpt
+Zend/tests/arg_unpack/string_keys.phpt
+Zend/tests/arg_unpack/traversable_with_by_ref_parameters.phpt
+Zend/tests/arrow_functions/008.phpt
+ext/standard/tests/array/GHSA-h96m-rvf9-jgm2.phpt
+ext/standard/tests/array/array_diff_max_elements.phpt
+ext/standard/tests/array/array_diff_uassoc_basic.phpt
+ext/standard/tests/array/array_find_types.phpt
+ext/standard/tests/array/array_intersect_uassoc_basic.phpt
+ext/standard/tests/array/array_push_empty.phpt

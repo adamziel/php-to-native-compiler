@@ -156,7 +156,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   native process boundary. Harness cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, broad unsupported language surfaces such as anonymous
-  classes, interfaces/traits, call-site/array unpacking,
+  classes, interfaces/traits, call-site unpacking,
+  array-literal/destructuring unpacking,
   generator/Fiber execution boundaries including by-reference yields/returns,
   nullable type hints, interpolating heredoc bodies,
   variable variables,
@@ -263,6 +264,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_CALL_UNPACKING_CATEGORY_PTN_WD68_2026-06-14.md`:
   current broad 1k `unsupported-call-unpacking` category map with a committed
   34-row focused manifest.
+- `docs/PHPT_BROAD_1K_UNPACKING_SPLIT_PTN_EI36_2026-06-14.md`:
+  current broad 1k unpacking classifier split, refining the older 34-row
+  aggregate into 20 call-site unpacking rows and 14 array/destructuring
+  unpacking rows with focused manifests.
 - `docs/PHPT_BROAD_1K_CALL_DYNAMIC_TYPE_CURRENT_PTN_NF1K_2026-06-14.md`:
   current broad 1k call-unpacking, function-state, dynamic-symbol, type-hint,
   generator, and internal-call binding blocker map with a 69-row focused

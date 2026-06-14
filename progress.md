@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T12:13Z.
+Last refresh: 2026-06-14T13:18Z.
 Source: `PROGRESS.md`
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; COW 69/103 passed.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; COW 69/103 passed.
 
 Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/281; Array-key/cb 38/75.
 
@@ -56,7 +56,8 @@ Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/st
 | Interface-decl | 0/23 |
 | Interface-impl | 0/15 |
 | Trait-decl | 0/25 |
-| Call-unpack | 0/34 |
+| Call-unpack | 0/20 |
+| Array-unpack | 0/14 |
 | Type-hint | 0/14 |
 | Function-state | 0/11 |
 | Dynamic-symbol | 0/8 |

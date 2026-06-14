@@ -1,0 +1,26 @@
+# Broad 1k current array/destructuring unpacking rows for ptn-ei36.
+#
+# Source: `.runtime/ptn-ei36-current-progress/classification-20260614T131921Z.tsv` from:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only \
+#     --out-dir .runtime/ptn-ei36-current-baseline
+#
+# Selection: rows classified as `unsupported-array-unpacking`.
+#
+# Focused evidence: 14 selected, 0 runnable, 14 excluded as
+# `unsupported-array-unpacking` in:
+#   .runtime/ptn-ei36-current-array/classification-20260614T131920Z.tsv
+#
+Zend/tests/array_unpack/already_occupied.phpt
+Zend/tests/array_unpack/basic.phpt
+Zend/tests/array_unpack/classes.phpt
+Zend/tests/array_unpack/gh19303.phpt
+Zend/tests/array_unpack/gh9769.phpt
+Zend/tests/array_unpack/in_destructuring.phpt
+Zend/tests/array_unpack/in_destructuring_2.phpt
+Zend/tests/array_unpack/non_integer_keys.phpt
+Zend/tests/array_unpack/ref1.phpt
+Zend/tests/array_unpack/string_keys.phpt
+Zend/tests/array_unpack/undef_var.phpt
+Zend/tests/array_unpack/unpack_invalid_type_compile_time.phpt
+Zend/tests/array_unpack/unpack_string_keys_compile_time.phpt
+Zend/tests/array_unpack_string_keys.phpt

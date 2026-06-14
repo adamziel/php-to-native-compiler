@@ -867,6 +867,33 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_has_named_modeled_array_internal_call(line) {
             return line ~ /(^|[^[:alnum:]_$\\])array_(all|any|change_key_case|chunk|column|combine|count_values|diff|diff_assoc|diff_key|diff_uassoc|diff_ukey|fill|fill_keys|filter|find|find_key|first|flip|intersect|intersect_assoc|intersect_key|intersect_uassoc|intersect_ukey|is_list|key_exists|key_first|key_last|keys|last|map|merge|merge_recursive|pad|pop|product|push|reduce|replace|replace_recursive|reverse|search|shift|slice|splice|sum|udiff|udiff_assoc|udiff_uassoc|uintersect|uintersect_assoc|uintersect_uassoc|unique|unshift|values|walk|walk_recursive)[[:space:]]*\([^)]*[(,][[:space:]]*[a-z_][a-z0-9_]*[[:space:]]*:[^:]/
         }
+        function ptn_spread_context(line,    i, ch, triple, prefix, stack_depth, stack) {
+            stack_depth = 0
+            for (i = 1; i <= length(line); i++) {
+                triple = substr(line, i, 3)
+                if (triple == "...") {
+                    if (stack_depth > 0 && (stack[stack_depth] == "[" || stack[stack_depth] == "array(" || stack[stack_depth] == "list(")) {
+                        return "array"
+                    }
+                    return "call"
+                }
+
+                ch = substr(line, i, 1)
+                if (ch == "(") {
+                    prefix = tolower(substr(line, 1, i - 1))
+                    if (prefix ~ /(^|[^[:alnum:]_$])(array|list)[[:space:]]*$/) {
+                        stack[++stack_depth] = "array("
+                    } else {
+                        stack[++stack_depth] = "("
+                    }
+                } else if (ch == "[") {
+                    stack[++stack_depth] = "["
+                } else if ((ch == ")" || ch == "]") && stack_depth > 0) {
+                    stack_depth--
+                }
+            }
+            return ""
+        }
         {
             if (ptn_heredoc_label != "") {
                 if (ptn_ends_heredoc($0, ptn_heredoc_label)) {
@@ -982,7 +1009,12 @@ ptn_phpt_first_unsupported_language_surface() {
                 declaration = line ~ /(^|[^[:alnum:]_$])(function|fn)[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*\.\.\./
                 first_class_callable = line ~ /\([[:space:]]*\.\.\.[[:space:]]*\)/
                 if (!declaration && !first_class_callable) {
-                    print "unsupported-call-unpacking\trequires call-site or array unpacking (`...`), outside PTN modeled call/array lowering"
+                    spread_context = ptn_spread_context(line)
+                    if (spread_context == "array") {
+                        print "unsupported-array-unpacking\trequires array literal/destructuring unpacking (`...`), outside PTN modeled array lowering"
+                    } else {
+                        print "unsupported-call-unpacking\trequires call-site argument unpacking (`...`), outside PTN modeled call lowering"
+                    }
                     found = 1
                     exit
                 }

@@ -274,7 +274,7 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "call-site unpack",
             "--TEST--\nunpack\n--FILE--\n<?php\nfunction f(...$args) {}\nf(...[1, 2]);\n--EXPECT--\n",
             "unsupported-call-unpacking\t",
-            "requires call-site or array unpacking",
+            "requires call-site argument unpacking",
         ),
         (
             "generator yield",
@@ -357,21 +357,31 @@ fn phpt_classifier_splits_unpacking_blockers() {
         (
             "call-site unpack",
             "--TEST--\ncall unpack\n--FILE--\n<?php\nfunction collect(...$args) { return $args; }\nvar_dump(collect(...[1, 2]));\n--EXPECT--\n",
+            "unsupported-call-unpacking\t",
+            "requires call-site argument unpacking",
         ),
         (
             "array literal unpack",
             "--TEST--\narray unpack\n--FILE--\n<?php\nvar_dump([0, ...[1, 2]]);\n--EXPECT--\n",
+            "unsupported-array-unpacking\t",
+            "requires array literal/destructuring unpacking",
+        ),
+        (
+            "long array literal unpack",
+            "--TEST--\narray unpack\n--FILE--\n<?php\nvar_dump(array(0, ...[1, 2]));\n--EXPECT--\n",
+            "unsupported-array-unpacking\t",
+            "requires array literal/destructuring unpacking",
         ),
     ];
 
-    for (name, phpt) in cases {
+    for (name, phpt, category, reason) in cases {
         let classification = classify(phpt);
         assert!(
-            classification.starts_with("unsupported-call-unpacking\t"),
+            classification.starts_with(category),
             "{name}: {classification:?}"
         );
         assert!(
-            classification.contains("requires call-site or array unpacking"),
+            classification.contains(reason),
             "{name}: {classification:?}"
         );
     }
