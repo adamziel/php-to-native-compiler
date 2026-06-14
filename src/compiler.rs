@@ -557,9 +557,9 @@ impl IncludeCollector {
             )
         })?;
         let program = parse(&source)?;
-        if !program.functions.is_empty() || !program.classes.is_empty() {
+        if !program.classes.is_empty() {
             return Err(Diagnostic::new(
-                "include files with function or class declarations are unsupported",
+                "include files with class declarations are unsupported",
                 Some(span),
             ));
         }

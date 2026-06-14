@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T13:59Z.
+Last refresh: 2026-06-14T14:18Z.
 Source: `PROGRESS.md`
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; COW 69/103 passed.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; COW 69/103 passed.
 
 Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/281; Array-key/cb 38/75.
 
@@ -14,7 +14,7 @@ Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/st
 | Zend | 119/119 |
 | ext/standard-PHPT | 274/281 |
 | Array-key/cb | 38/75 |
-| Array-cb-valid | 49/66 |
+| Array-cb-valid | 64/66 |
 | Array-diff | 59/61 |
 | Diff-cmp | 67/76 |
 | Array-setops | 67/119 |
@@ -50,7 +50,7 @@ Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/st
 | Object-string-meta | 0/61 |
 | Std-array-map | 0/297 |
 | Std-arrays | 253/296 |
-| Map/filter | 21/30 |
+| Map/filter | 25/30 |
 | Request/SAPI | 1/41 |
 | Anon-class | 0/15 |
 | Interface-decl | 0/23 |

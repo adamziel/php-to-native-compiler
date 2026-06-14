@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T13:59Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; COW 69/103 passed.
+Refresh: 2026-06-14T14:18Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; COW 69/103 passed.
 
 ## Dashboard
 
@@ -13,7 +13,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Zend|119|119|0|
 |ext/standard-PHPT|281|274|7|
 |Array-key/cb|75|38|37|
-|Array-cb-valid|66|49|17|
+|Array-cb-valid|66|64|2|
 |Array-diff|61|59|2|
 |Diff-cmp|76|67|9|
 |Array-setops|119|67|52|
@@ -49,7 +49,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Object-string-meta|61|0|61|
 |Std-array-map|297|0|297|
 |Std-arrays|296|253|43|
-|Map/filter|30|21|9|
+|Map/filter|30|25|5|
 |Request/SAPI|41|1|40|
 |Anon-class|15|0|15|
 |Interface-decl|23|0|23|

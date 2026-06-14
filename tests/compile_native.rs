@@ -14480,10 +14480,12 @@ fn compile_array_key_exists_to_native_binary() {
     fs::write(
         &input,
         "<?php\n\
-$items = [\"foo\" => \"bar\", \"\" => \"empty\", \"0\" => \"zero\", \"n\" => null];\n\
+$items = [\"foo\" => \"bar\", \"\" => \"empty\", \"0\" => \"zero\", \"n\" => null, 1 => \"one\"];\n\
 var_dump(array_key_exists(\"foo\", $items));\n\
 var_dump(array_key_exists(\"missing\", $items));\n\
 var_dump(array_key_exists(null, $items));\n\
+var_dump(array_key_exists(1.5, $items));\n\
+var_dump(array_key_exists(1.23456789E-10, $items));\n\
 var_dump(array_key_exists(\"\", $items));\n\
 var_dump(array_key_exists(\"0\", $items));\n\
 var_dump(array_key_exists(\"n\", $items));\n\
@@ -14498,9 +14500,13 @@ try { array_key_exists(\"public_var\", new KeyCheck); } catch (TypeError $e) { e
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let expected_stdout = format!(
+        "bool(true)\nbool(false)\n\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\n\nDeprecated: Implicit conversion from float 1.5 to int loses precision in {0} on line 6\nbool(true)\n\nDeprecated: Implicit conversion from float 1.23456789E-10 to int loses precision in {0} on line 7\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nCannot access offset of type array on array\narray_key_exists(): Argument #2 ($array) must be of type array, KeyCheck given\n",
+        input.display()
+    );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(false)\n\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nCannot access offset of type array on array\narray_key_exists(): Argument #2 ($array) must be of type array, KeyCheck given\n"
+        expected_stdout
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -14852,7 +14858,9 @@ var_dump(array_search(\"2\", $items, true));\n\
 var_dump(array_search(null, $items, true));\n\
 var_dump(array_search(\"missing\", $items));\n\
 var_dump(array_search(\"zero\", array(\"zero\", \"one\")));\n\
-var_dump(function_exists(\"array_search\"), function_exists(\"ARRAY_SEARCH\"));",
+var_dump(function_exists(\"array_search\"), function_exists(\"ARRAY_SEARCH\"));\n\
+class SearchBox {}\n\
+try { array_search(\"x\", new SearchBox); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }",
     )
     .unwrap();
 
@@ -14862,7 +14870,7 @@ var_dump(function_exists(\"array_search\"), function_exists(\"ARRAY_SEARCH\"));"
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(1) \"a\"\nbool(false)\nint(4)\nint(4)\nstring(2) \"03\"\nbool(false)\nint(0)\nbool(true)\nbool(true)\n"
+        "string(1) \"a\"\nbool(false)\nint(4)\nint(4)\nstring(2) \"03\"\nbool(false)\nint(0)\nbool(true)\nbool(true)\narray_search(): Argument #2 ($haystack) must be of type array, SearchBox given\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -15650,7 +15658,7 @@ var_dump(ARRAY_FILTER_USE_BOTH, ARRAY_FILTER_USE_KEY, function_exists('array_fil
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_filter"));
-    assert!(c_source.contains("ptn_call_callable(runtime, callback, callback_argc"));
+    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, callback_argc"));
 }
 
 #[test]
@@ -15669,8 +15677,13 @@ function report($callback) {
         echo $e->getMessage(), \"\\n\";
     }
 }
+class CallbackTarget {
+    public static function ok($value) { return $value; }
+}
 
 report(fn() => array_map(\"missing_map\", [1]));
+report(fn() => array_map([\"MissingCallbackTarget\", \"ok\"], [1]));
+report(fn() => array_map([\"CallbackTarget\", \"missing\"], [1]));
 report(fn() => array_filter([1], \"missing_filter\"));
 report(fn() => array_reduce([1], \"missing_reduce\"));
 report(fn() => array_diff_ukey([1], [2], \"missing_key\"));
@@ -15689,6 +15702,8 @@ echo \"done\\n\";
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "array_map(): Argument #1 ($callback) must be a valid callback or null, function \"missing_map\" not found or invalid function name\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, class \"MissingCallbackTarget\" not found\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, class CallbackTarget does not have a method \"missing\"\n",
             "array_filter(): Argument #2 ($callback) must be a valid callback or null, function \"missing_filter\" not found or invalid function name\n",
             "array_reduce(): Argument #2 ($callback) must be a valid callback, function \"missing_reduce\" not found or invalid function name\n",
             "array_diff_ukey(): Argument #3 must be a valid callback, function \"missing_key\" not found or invalid function name\n",
@@ -15702,6 +15717,87 @@ echo \"done\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_expect_nullable_callback_arg"));
     assert!(c_source.contains("ptn_internal_expect_callback_arg"));
+}
+
+#[test]
+fn compile_internal_callback_arity_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-callback-arity-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-callback-arity-errors.php");
+    let output = root.join("internal-callback-arity-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+function expects_two($value, $extra) { return $value; }
+function expects_three($carry, $value, $extra) { return $carry; }
+function compare_three($left, $right, $extra) { return 0; }
+function report($label, $callback) {
+    try {
+        $callback();
+    } catch (ArgumentCountError $e) {
+        echo $label, ': ', $e->getMessage(), \"\\n\";
+    }
+}
+
+report('map', fn() => array_map('expects_two', [1]));
+report('filter', fn() => array_filter(['a' => 1], 'expects_two', ARRAY_FILTER_USE_KEY));
+report('reduce', fn() => array_reduce([1], 'expects_three', 0));
+report('udiff', fn() => array_udiff([1], [2], 'compare_three'));
+report('pow', fn() => array_map('pow', [2]));
+report('call', fn() => call_user_func('expects_two', 1));
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "map: Too few arguments to function expects_two(), 1 passed and exactly 2 expected\n",
+            "filter: Too few arguments to function expects_two(), 1 passed and exactly 2 expected\n",
+            "reduce: Too few arguments to function expects_three(), 2 passed and exactly 3 expected\n",
+            "udiff: Too few arguments to function compare_three(), 2 passed and exactly 3 expected\n",
+            "pow: pow() expects exactly 2 arguments, 1 given\n",
+            "call: Too few arguments to function expects_two(), 1 passed and exactly 2 expected\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_call_callback"));
+}
+
+#[test]
+fn compile_array_map_null_key_callback_result_to_native_binary() {
+    let root = temp_dir("ptn-native-array-map-null-key-callback-result");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-map-null-key-callback-result.php");
+    let output = root.join("array-map-null-key-callback-result-bin");
+    fs::write(
+        &input,
+        "<?php
+function pair_result($key, $value) {
+    return [$key => $value];
+}
+var_dump(array_map('pair_result', [], ['a', 'b']));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 5\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 5\narray(2) {\n  [0]=>\n  array(1) {\n    [\"\"]=>\n    string(1) \"a\"\n  }\n  [1]=>\n  array(1) {\n    [\"\"]=>\n    string(1) \"b\"\n  }\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -19959,6 +20055,56 @@ fn compile_bounded_dynamic_include_paths_to_native_binary() {
     assert!(c_source.contains("ptn_include_resolve_path"));
     assert!(c_source.contains("ptn_include_file_0(&runtime)"));
     assert!(c_source.contains("ptn_include_file_1(&runtime)"));
+}
+
+#[test]
+fn compile_include_function_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-include-function-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let callbacks = root.join("callbacks.php");
+    let output = root.join("include-function-callback-bin");
+    fs::write(
+        &callbacks,
+        "<?php
+function compare_function($left, $right) {
+    if ($left == $right) {
+        return 0;
+    }
+    return $left < $right ? -1 : 1;
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+include 'callbacks.php';
+$callback = 'compare_function';
+echo $callback(1, 2), \"\\n\";
+var_dump(array_udiff_assoc(
+    ['one' => 'one', '02' => 'two', '3' => 'three', 'four', '0.5' => 5],
+    ['one' => 'one', '02' => 'two', '3' => 'three'],
+    ['four', '0.5' => 'five'],
+    $callback
+));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "-1\narray(2) {\n  [4]=>\n  string(4) \"four\"\n  [\"0.5\"]=>\n  int(5)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("compare_function"));
 }
 
 #[test]

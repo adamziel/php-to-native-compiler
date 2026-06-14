@@ -9104,7 +9104,7 @@ impl ValueEmitter {
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_array_from_literal_entries(");
+        out.push_str(" = ptn_array_from_literal_entries_at(&runtime, runtime.call_site_line, ");
         out.push_str(&elements.len().to_string());
         out.push_str(", ");
         out.push_str(&entries_temp);

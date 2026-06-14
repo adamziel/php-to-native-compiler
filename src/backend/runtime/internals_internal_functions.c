@@ -253,6 +253,14 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
     if (key_value.type == PTN_RESOURCE) {
         ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
     }
+    if (key_value.type == PTN_FLOAT && ptn_float_to_int_loses_precision(key_value.as.floating)) {
+        ptn_emit_float_to_int_precision_deprecation_at(
+            &runtime->diagnostics,
+            key_value.as.floating,
+            runtime->source_path == NULL ? "ptn" : runtime->source_path,
+            line
+        );
+    }
     PtnArrayKey key = ptn_array_key_from_value(key_value);
     int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
     ptn_array_key_free(key);
@@ -264,6 +272,83 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
 static int ptn_callable_is_valid(PtnValue callable, int syntax_only);
+static int ptn_declared_class_exists(const char *name);
+static int ptn_internal_class_exists_name(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
+
+static char *ptn_format_missing_class_callback_reason(const char *class_name) {
+    int needed = snprintf(NULL, 0, "class \"%s\" not found", class_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *reason = malloc((size_t)needed + 1);
+    if (reason == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(reason, (size_t)needed + 1, "class \"%s\" not found", class_name);
+    return reason;
+}
+
+static char *ptn_format_missing_method_callback_reason(const char *class_name, const char *method_name) {
+    int needed = snprintf(NULL, 0, "class %s does not have a method \"%s\"", class_name, method_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *reason = malloc((size_t)needed + 1);
+    if (reason == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(reason, (size_t)needed + 1, "class %s does not have a method \"%s\"", class_name, method_name);
+    return reason;
+}
+
+static char *ptn_invalid_array_callback_reason(PtnValue resolved) {
+    if (resolved.type != PTN_ARRAY || resolved.as.array->len != 2) {
+        return ptn_duplicate_string("array callback must have exactly two members");
+    }
+
+    PtnArrayKey scope_key = ptn_array_int_key(0);
+    PtnArrayKey method_key = ptn_array_int_key(1);
+    PtnArrayEntry *scope_entry = ptn_array_entry_for_key(resolved.as.array, scope_key);
+    PtnArrayEntry *method_entry = ptn_array_entry_for_key(resolved.as.array, method_key);
+    ptn_array_key_free(scope_key);
+    ptn_array_key_free(method_key);
+    if (scope_entry == NULL || method_entry == NULL) {
+        return ptn_duplicate_string("array callback must have exactly two members");
+    }
+
+    PtnValue scope = ptn_value_deref(scope_entry->value);
+    PtnValue method = ptn_value_deref(method_entry->value);
+    if (method.type != PTN_STRING) {
+        return NULL;
+    }
+
+    char *method_name = ptn_value_to_string(method);
+    char *reason = NULL;
+    if (scope.type == PTN_STRING) {
+        char *class_name = ptn_value_to_string(scope);
+        if (!ptn_declared_class_exists(class_name) && !ptn_internal_class_exists_name(class_name)) {
+            reason = ptn_format_missing_class_callback_reason(class_name);
+        } else if (!ptn_internal_class_method_exists(class_name, method_name)) {
+            reason = ptn_format_missing_method_callback_reason(class_name, method_name);
+        }
+        free(class_name);
+    } else if (scope.type == PTN_OBJECT) {
+        if (!ptn_internal_class_method_exists(scope.as.object->class_name, method_name)) {
+            reason = ptn_format_missing_method_callback_reason(scope.as.object->class_name, method_name);
+        }
+    } else if (scope.type == PTN_EXCEPTION) {
+        if (!ptn_internal_class_method_exists(scope.as.exception->class_name, method_name)) {
+            reason = ptn_format_missing_method_callback_reason(scope.as.exception->class_name, method_name);
+        }
+    } else if (scope.type == PTN_CLOSURE) {
+        if (!ptn_ascii_case_equal(method_name, "__invoke")) {
+            reason = ptn_format_missing_method_callback_reason("Closure", method_name);
+        }
+    }
+    free(method_name);
+    return reason;
+}
 
 static char *ptn_invalid_callback_message(
     const char *function_name,
@@ -298,7 +383,32 @@ static char *ptn_invalid_callback_message(
         free(name);
     } else if (resolved.type == PTN_ARRAY && resolved.as.array->len != 2) {
         reason = ptn_duplicate_string("array callback must have exactly two members");
+    } else if (resolved.type == PTN_ARRAY) {
+        reason = ptn_invalid_array_callback_reason(resolved);
     } else {
+        char *name = ptn_callable_output_name(callback);
+        int needed = snprintf(
+            NULL,
+            0,
+            "callback \"%s\" not found or invalid function name",
+            name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        reason = malloc((size_t)needed + 1);
+        if (reason == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            reason,
+            (size_t)needed + 1,
+            "callback \"%s\" not found or invalid function name",
+            name
+        );
+        free(name);
+    }
+    if (reason == NULL) {
         char *name = ptn_callable_output_name(callback);
         int needed = snprintf(
             NULL,
@@ -435,6 +545,23 @@ static PtnValue ptn_internal_expect_nullable_callback_arg(
         callback,
         1
     );
+}
+
+static PtnValue ptn_internal_call_callback(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    runtime->warn_by_ref_argument_mismatch = 1;
+    runtime->throw_argument_count_errors = 1;
+    PtnValue result = ptn_call_callable(runtime, callback, argc, args, line);
+    runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
+    runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    return result;
 }
 
 static void ptn_var_dump_indent(size_t indent) {
@@ -1553,6 +1680,9 @@ static PtnArray *ptn_internal_expect_array_arg(
         return value.as.array;
     }
 
+    const char *given = value.type == PTN_OBJECT
+        ? value.as.object->class_name
+        : ptn_offset_container_type_name(value);
     char message[192];
     int written = argument_name != NULL && argument_name[0] != '\0'
         ? snprintf(
@@ -1562,7 +1692,7 @@ static PtnArray *ptn_internal_expect_array_arg(
             function_name,
             position,
             argument_name,
-            ptn_offset_container_type_name(value)
+            given
         )
         : snprintf(
             message,
@@ -1570,7 +1700,7 @@ static PtnArray *ptn_internal_expect_array_arg(
             "%s(): Argument #%zu must be of type array, %s given",
             function_name,
             position,
-            ptn_offset_container_type_name(value)
+            given
         );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
@@ -2088,7 +2218,7 @@ static void ptn_array_walk_call_function(
         key,
         has_userdata ? ptn_value_clone_deref(userdata) : ptn_null()
     };
-    PtnValue callback_result = ptn_call_callable(
+    PtnValue callback_result = ptn_internal_call_callback(
         runtime,
         callback,
         has_userdata ? 3 : 2,
@@ -3446,7 +3576,7 @@ static int ptn_array_user_compare(
         ptn_value_clone_deref(left),
         ptn_value_clone_deref(right)
     };
-    PtnValue callback_result = ptn_call_callable(runtime, callback, 2, callback_args, line);
+    PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 2, callback_args, line);
     int64_t compared = ptn_value_to_integer(callback_result);
     ptn_value_destroy(&callback_args[0]);
     ptn_value_destroy(&callback_args[1]);
@@ -3842,7 +3972,7 @@ static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, cons
         };
         carry = ptn_null();
         ptn_value_debug_hide_ref(callback_args[0]);
-        PtnValue callback_result = ptn_call_callable(runtime, callback, 2, callback_args, line);
+        PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 2, callback_args, line);
         ptn_value_debug_unhide_ref(callback_args[0]);
         ptn_value_destroy(&callback_args[0]);
         ptn_value_destroy(&callback_args[1]);
@@ -3961,7 +4091,7 @@ static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const P
                 callback_args[arg_index] = ptn_array_map_argument_at(arrays[arg_index], i);
             }
 
-            PtnValue callback_result = ptn_call_callable(runtime, callback, array_count, callback_args, line);
+            PtnValue callback_result = ptn_internal_call_callback(runtime, callback, array_count, callback_args, line);
             for (size_t arg_index = 0; arg_index < array_count; arg_index++) {
                 ptn_value_destroy(&callback_args[arg_index]);
             }
@@ -4116,7 +4246,7 @@ static int ptn_array_callback_predicate_matches(
         ptn_value_clone_deref(entry->value),
         ptn_array_key_value(entry->key)
     };
-    PtnValue callback_result = ptn_call_callable(runtime, callback, 2, callback_args, line);
+    PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 2, callback_args, line);
     ptn_value_destroy(&callback_args[0]);
     ptn_value_destroy(&callback_args[1]);
     if (runtime->exceptions->active_exception != NULL) {
@@ -4274,7 +4404,7 @@ static PtnValue ptn_internal_array_filter(PtnRuntime *runtime, size_t argc, cons
                 callback_args[0] = ptn_value_clone_deref(entry->value);
             }
 
-            PtnValue callback_result = ptn_call_callable(runtime, callback, callback_argc, callback_args, line);
+            PtnValue callback_result = ptn_internal_call_callback(runtime, callback, callback_argc, callback_args, line);
             keep = ptn_is_truthy(callback_result);
             ptn_value_destroy(&callback_result);
             for (size_t arg_index = 0; arg_index < callback_argc; arg_index++) {
@@ -11890,7 +12020,7 @@ static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, con
 static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     runtime->warn_by_ref_argument_mismatch = 1;
-    PtnValue result = ptn_call_callable(
+    PtnValue result = ptn_internal_call_callback(
         runtime,
         args[0],
         argc - 1,
@@ -11917,7 +12047,7 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
 
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     runtime->warn_by_ref_argument_mismatch = 1;
-    PtnValue result = ptn_call_callable(runtime, args[0], arguments->len, expanded, line);
+    PtnValue result = ptn_internal_call_callback(runtime, args[0], arguments->len, expanded, line);
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     for (size_t i = 0; i < arguments->len; i++) {
         ptn_value_destroy(&expanded[i]);
@@ -12996,7 +13126,7 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
             ptn_throw_internal_argument_count_error(
                 runtime,
                 name,
-                "at least",
+                function->max_args == function->min_args ? "exactly" : "at least",
                 function->min_args,
                 argc
             );
@@ -13006,7 +13136,7 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
             ptn_throw_internal_argument_count_error(
                 runtime,
                 name,
-                "at most",
+                function->max_args == function->min_args ? "exactly" : "at most",
                 function->max_args,
                 argc
             );

@@ -5,8 +5,9 @@ use crate::ast::{
     ArrayElement as AstArrayElement, ArrayElementValue as AstArrayElementValue, AssignmentOp,
     AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
     CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
-    ClosureUseCapture as AstClosureUseCapture, Expr, FunctionParameter as AstFunctionParameter,
-    IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
+    ClosureUseCapture as AstClosureUseCapture, Expr, FunctionDecl as AstFunctionDecl,
+    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
+    IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
     IncludeKind as AstIncludeKind, ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget,
@@ -614,9 +615,13 @@ pub fn lower_with_source_and_includes(
         source_dir.clone(),
         include_resolutions,
     );
+    let include_function_ranges = context.declare_include_functions(&include_sources);
     for (index, function) in program.functions.iter().enumerate() {
         let body = context.lower_statements(&function.body);
         context.functions[index].body = body;
+    }
+    for (include, start_index) in include_sources.iter().zip(include_function_ranges.iter()) {
+        context.lower_include_functions(include, *start_index);
     }
     let classes = program
         .classes
@@ -693,25 +698,59 @@ impl<'a> LoweringContext<'a> {
             current_class_name: None,
         };
         for function in &program.functions {
-            let parameters = function
-                .parameters
-                .iter()
-                .map(|parameter| context.lower_parameter(parameter))
-                .collect();
-            context.functions.push(FunctionDecl {
-                name: function.name.clone(),
-                display_name: function.name.clone(),
-                class_name: None,
-                method_name: None,
-                is_static: false,
-                parameters,
-                return_type: function.return_type.clone().map(lower_type_hint),
-                return_by_ref: function.return_by_ref,
-                is_anonymous: false,
-                body: Vec::new(),
-            });
+            context.declare_function(function);
         }
         context
+    }
+
+    fn declare_include_functions(&mut self, include_sources: &[IncludeSource]) -> Vec<usize> {
+        let mut starts = Vec::with_capacity(include_sources.len());
+        for include in include_sources {
+            let previous_source_file =
+                std::mem::replace(&mut self.source_file, include.source_file.clone());
+            let previous_source_dir =
+                std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+            starts.push(self.functions.len());
+            for function in &include.program.functions {
+                self.declare_function(function);
+            }
+            self.source_file = previous_source_file;
+            self.source_dir = previous_source_dir;
+        }
+        starts
+    }
+
+    fn lower_include_functions(&mut self, include: &IncludeSource, start_index: usize) {
+        let previous_source_file =
+            std::mem::replace(&mut self.source_file, include.source_file.clone());
+        let previous_source_dir =
+            std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+        for (offset, function) in include.program.functions.iter().enumerate() {
+            let body = self.lower_statements(&function.body);
+            self.functions[start_index + offset].body = body;
+        }
+        self.source_file = previous_source_file;
+        self.source_dir = previous_source_dir;
+    }
+
+    fn declare_function(&mut self, function: &AstFunctionDecl) {
+        let parameters = function
+            .parameters
+            .iter()
+            .map(|parameter| self.lower_parameter(parameter))
+            .collect();
+        self.functions.push(FunctionDecl {
+            name: function.name.clone(),
+            display_name: function.name.clone(),
+            class_name: None,
+            method_name: None,
+            is_static: false,
+            parameters,
+            return_type: function.return_type.clone().map(lower_type_hint),
+            return_by_ref: function.return_by_ref,
+            is_anonymous: false,
+            body: Vec::new(),
+        });
     }
 
     fn lower_include_source(&mut self, include: &IncludeSource) -> IncludeFile {

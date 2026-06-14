@@ -346,7 +346,14 @@ static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
     return 1;
 }
 
-static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, const PtnArrayLiteralEntry *entries) {
+static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtime, size_t line);
+
+static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
+    PtnRuntime *runtime,
+    size_t line,
+    size_t entry_count,
+    const PtnArrayLiteralEntry *entries
+) {
     PtnArray *array = malloc(sizeof(PtnArray));
     if (array == NULL) {
         ptn_abort_out_of_memory();
@@ -371,12 +378,28 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
     ptn_array_index_init(array, entry_count);
 
     for (size_t i = 0; i < entry_count; i++) {
+        if (runtime != NULL && entries[i].has_key && ptn_value_deref(entries[i].key).type == PTN_NULL) {
+            ptn_emit_null_array_offset_deprecation(runtime, line);
+        }
         PtnArrayKey key = entries[i].has_key
             ? ptn_array_key_from_value(entries[i].key)
             : ptn_array_int_key(array->next_auto_key);
         ptn_array_set_entry(array, key, ptn_value_clone(entries[i].value));
     }
     return ptn_array(array);
+}
+
+static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, const PtnArrayLiteralEntry *entries) {
+    return ptn_array_from_literal_entries_impl(NULL, 0, entry_count, entries);
+}
+
+static PTN_UNUSED PtnValue ptn_array_from_literal_entries_at(
+    PtnRuntime *runtime,
+    size_t line,
+    size_t entry_count,
+    const PtnArrayLiteralEntry *entries
+) {
+    return ptn_array_from_literal_entries_impl(runtime, line, entry_count, entries);
 }
 
 static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObject *object) {
