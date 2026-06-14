@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T05:56Z.
-Measured: `ptn-ubqw`.
+Refresh: 2026-06-14T05:55Z.
+Measured: `ptn-lzef`.
 
 ## Dashboard
 
@@ -41,6 +41,7 @@ Measured: `ptn-ubqw`.
 | Array map/filter callback slice | 30 | 21 | 9 |
 | Request/SAPI input frontier | 41 | 1 | 40 |
 | Attribute blocker bucket | 141 | 0 | 141 |
+| Attribute metadata frontier | 204 | 0 | 204 |
 | Heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | Standard-array tdei slice | 71 | 61 | 10 |
 | Zend op/control frontier | 26 | 15 | 11 |
@@ -51,4 +52,4 @@ Measured: `ptn-ubqw`.
 ## Remaining
 
 - Broad 428/572; bounded 456/486; arrays: setops 64/119, tdei 61/71, standard 243/296.
-- COW/ref 10/12,17/72,31/103; classes 1/78; metadata 0/74; dynamic 0/44; op/control 15/26.
+- COW/ref 10/12,17/72,31/103; classes 1/78; metadata 0/74; attributes 0/204; op/control 15/26.

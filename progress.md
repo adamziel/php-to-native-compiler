@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T05:56Z.
+Last refresh: 2026-06-14T05:55Z.
 Source: `PROGRESS.md`
-Measured: `ptn-ubqw`.
+Measured: `ptn-lzef`.
 
 Compact signal: Source unit tests 3/3; Native Rust 721/721; Bounded PHPT 479/486; Zend PHPT 119/119; ext/standard PHPT 274/281; Array key/callback set rows 38/75.
 
@@ -42,6 +42,7 @@ Compact signal: Source unit tests 3/3; Native Rust 721/721; Bounded PHPT 479/486
 | Array map/filter callback slice | 21/30 |
 | Request/SAPI input frontier | 1/41 |
 | Attribute blocker bucket | 0/141 |
+| Attribute metadata frontier | 0/204 |
 | Heredoc/nowdoc array frontier | 14/70 |
 | Standard-array tdei slice | 61/71 |
 | Zend op/control frontier | 15/26 |

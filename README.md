@@ -187,6 +187,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   1k `array_diff*`/`array_intersect*` focused evidence and blocker map.
 - `docs/PHPT_BROAD_1K_ARRAY_CALLBACK_FRONTIER_2026-06-13.md`: current broad
   1k callback/set-operation array-helper blocker map.
+- `docs/PHPT_BROAD_1K_ATTRIBUTE_METADATA_FRONTIER_PTN_LZEF_2026-06-14.md`:
+  current broad 1k `Zend/tests/attributes/*` metadata blocker map and focused
+  manifest.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_CURRENT_FRONTIER_2026-06-14.md`:
   refreshed broad 1k standard-array runnable frontier, focused manifest, and
   current 53-row residual blocker map.
