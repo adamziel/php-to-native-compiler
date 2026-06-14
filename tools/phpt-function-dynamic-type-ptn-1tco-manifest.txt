@@ -1,0 +1,41 @@
+# Focused broad 1k parser/control-flow dynamic type blockers from ptn-1tco.
+#
+# Generated from the broad 1k baseline manifest by selecting rows with
+# function-local static variables, nullable return/parameter type hints,
+# never return types, or variable-variable syntax.
+Zend/tests/anon/015.phpt
+Zend/tests/anon/016.phpt
+Zend/tests/arrow_functions/003.phpt
+Zend/tests/arrow_functions/005.phpt
+Zend/tests/arrow_functions/006.phpt
+Zend/tests/arrow_functions/007.phpt
+Zend/tests/arrow_functions/gh7900.phpt
+Zend/tests/assert/expect_015.phpt
+Zend/tests/attributes/deprecated/class_constants/deprecated_constant_as_message_002.phpt
+Zend/tests/attributes/deprecated/class_constants/error_code_001.phpt
+Zend/tests/attributes/deprecated/constants/deprecated_constant_as_message_002.phpt
+Zend/tests/attributes/deprecated/constants/error_code.phpt
+Zend/tests/attributes/deprecated/functions/deprecated_handler_002.phpt
+Zend/tests/attributes/deprecated/functions/deprecated_handler_003.phpt
+Zend/tests/attributes/deprecated/functions/error_code_001.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_001.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_002.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_003.phpt
+Zend/tests/attributes/deprecated/traits/throwing_error_handler.phpt
+Zend/tests/attributes/nodiscard/error_code_001.phpt
+Zend/tests/attributes/nodiscard/throwing_error_handler_001.phpt
+Zend/tests/attributes/nodiscard/unsupported_never_function.phpt
+Zend/tests/autoload/bug78868.phpt
+Zend/tests/backtrace/bug76047.phpt
+Zend/tests/bind_static_exception.phpt
+Zend/tests/bug26802.phpt
+Zend/tests/bug28072.phpt
+Zend/tests/bug28442.phpt
+Zend/tests/bug32322.phpt
+Zend/tests/bug35163_2.phpt
+Zend/tests/bug35470.phpt
+Zend/tests/bug38211.phpt
+Zend/tests/bug38287.phpt
+ext/standard/tests/array/array_combine.phpt
+ext/standard/tests/array/array_filter_object.phpt
+ext/standard/tests/array/array_map_object1.phpt
