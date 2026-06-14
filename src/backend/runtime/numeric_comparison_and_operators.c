@@ -1,19 +1,3 @@
-    if (argc > 0) {
-        PtnArrayKey max_key = ptn_array_int_key(INT64_MAX);
-        int max_key_occupied = ptn_array_find_key(array, max_key) < array->len;
-        ptn_array_key_free(max_key);
-        if (max_key_occupied) {
-            ptn_throw_exception(runtime, "Error", "Cannot add element to the array as the next element is already occupied");
-            return (int64_t)array->len;
-        }
-    }
-    for (size_t i = 0; i < argc; i++) {
-        PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
-        ptn_array_set_entry(array, key, ptn_value_clone(values[i]));
-    }
-    return (int64_t)array->len;
-}
-
 static PTN_UNUSED PtnValue ptn_array_reindexing_internal_value(PtnValue value) {
     if (value.type == PTN_REFERENCE && value.as.reference->refcount == 1) {
         return ptn_value_deref(value);

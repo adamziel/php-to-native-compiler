@@ -1,0 +1,22 @@
+# COW/reference mutation row pack for ptn-tiqh.
+Zend/tests/array_multisort_exception.phpt
+ext/standard/tests/array/array_merge_recursive_variation7.phpt
+ext/standard/tests/array/array_next_error1.phpt
+ext/standard/tests/array/array_next_error2.phpt
+ext/standard/tests/array/array_push.phpt
+ext/standard/tests/array/array_push_error2.phpt
+ext/standard/tests/array/array_push_variation3.phpt
+ext/standard/tests/array/array_replace_merge_recursive_ref.phpt
+ext/standard/tests/array/array_shift_variation5.phpt
+ext/standard/tests/array/array_shift_variation8.phpt
+ext/standard/tests/array/sort/array_multisort_basic1.phpt
+ext/standard/tests/array/sort/array_multisort_basic2.phpt
+ext/standard/tests/array/sort/array_multisort_case.phpt
+ext/standard/tests/array/sort/array_multisort_error.phpt
+ext/standard/tests/array/sort/array_multisort_incase.phpt
+ext/standard/tests/array/sort/array_multisort_natural.phpt
+ext/standard/tests/array/sort/array_multisort_natural_case.phpt
+ext/standard/tests/array/sort/array_multisort_natural_incase.phpt
+ext/standard/tests/array/sort/array_multisort_variation4.phpt
+ext/standard/tests/array/sort/array_multisort_variation5.phpt
+ext/standard/tests/array/sort/array_multisort_variation6.phpt

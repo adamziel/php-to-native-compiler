@@ -16298,9 +16298,98 @@ echo \"source=\", $source, \" shifted=\", $shifted, \"\\n\";",
 }
 
 #[test]
-fn parser_accepts_array_cursor_mutation_argument_forms() {
+fn compile_array_push_path_and_overflow_to_native_binary() {
+    let root = temp_dir("ptn-native-array-push-path-overflow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-push-path-overflow.php");
+    let output = root.join("array-push-path-overflow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [[1], [2]];\n\
+$copy = $items;\n\
+var_dump(array_push($copy[0], \"x\"));\n\
+var_dump($items[0], $copy[0]);\n\
+$max = [PHP_INT_MAX => \"max\"];\n\
+try { var_dump(array_push($max, \"new\")); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($max);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(2)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  string(1) \"x\"\n",
+            "}\n",
+            "Cannot add element to the array as the next element is already occupied\n",
+            "array(1) {\n",
+            "  [9223372036854775807]=>\n",
+            "  string(3) \"max\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_push_path"));
+    assert!(c_source.contains("ptn_array_push_values"));
+}
+
+#[test]
+fn compile_array_by_ref_temporary_calls_to_native_binary() {
+    let root = temp_dir("ptn-native-array-by-ref-temporary-calls");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-by-ref-temporary-calls.php");
+    let output = root.join("array-by-ref-temporary-calls-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function values() { return [1, 2]; }\n\
+var_dump(next(values()));\n\
+$stack = [[[\"zero\", \"one\", \"two\"], \"un\", \"deux\"], \"eins\", \"zwei\"];\n\
+var_dump(array_shift(array_shift(array_shift($stack))));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nNotice: Only variables should be passed by reference in ptn on line 3\n",
+            "int(2)\n",
+            "\nNotice: Only variables should be passed by reference in ptn on line 5\n",
+            "\nNotice: Only variables should be passed by reference in ptn on line 5\n",
+            "string(4) \"zero\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_emit_only_variables_passed_by_reference_notice"));
+    assert!(c_source.contains("ptn_reference_value(ptn_reference_new_owned"));
+}
+
+#[test]
+fn parser_accepts_runtime_checked_array_cursor_mutation_calls() {
     parser::parse("<?php next([1, 2]);").unwrap();
     parser::parse("<?php var_dump(reset(array(1, 2)));").unwrap();
+    parser::parse("<?php $items = [1, 2]; var_dump(prev(current($items)));").unwrap();
     parser::parse("<?php $items = [1, 2]; next(($items));").unwrap();
     parser::parse("<?php $items = [[1], [2]]; end($items[0]);").unwrap();
     parser::parse("<?php function f() { return [1, 2]; } var_dump(next(f()));").unwrap();
@@ -16343,7 +16432,9 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
 
     parser::parse("<?php $items = [1, 2]; array_pop(($items));").unwrap();
     parser::parse("<?php $items = [1]; array_push(($items), 2);").unwrap();
+    parser::parse("<?php $items = [[1], [2]]; array_push($items[0], 0);").unwrap();
     parser::parse("<?php $items = [1]; array_unshift(($items), 0);").unwrap();
+    parser::parse("<?php $items = [[1], [2]]; var_dump(array_shift(current($items)));").unwrap();
     parser::parse("<?php $items = [\"b\" => 2, \"a\" => 1]; arsort(($items));").unwrap();
     parser::parse("<?php $items = [\"b\" => 2, \"a\" => 1]; asort(($items));").unwrap();
     parser::parse("<?php $items = [2 => \"b\", 1 => \"a\"]; krsort(($items));").unwrap();
@@ -16403,11 +16494,6 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
             "usort",
             "sort-family array mutation semantics are unsupported",
         ),
-        (
-            "<?php $items = [3, 2, 1]; array_multisort($items);",
-            "array_multisort",
-            "sort-family array mutation semantics are unsupported",
-        ),
     ] {
         let error = parser::parse(source).unwrap_err();
         assert!(
@@ -16446,6 +16532,123 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
         )));
         assert!(error.message.contains("sort flags are unsupported"));
     }
+
+    parser::parse("<?php $items = [3, 2, 1]; array_multisort($items);").unwrap();
+    parser::parse(
+        "<?php $left = [2, 1]; $right = [\"b\", \"a\"]; array_multisort($left, SORT_ASC, SORT_REGULAR, $right, SORT_DESC, SORT_STRING);",
+    )
+    .unwrap();
+}
+
+#[test]
+fn compile_array_multisort_to_native_binary() {
+    let root = temp_dir("ptn-native-array-multisort");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-multisort.php");
+    let output = root.join("array-multisort-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$ar1 = [\"row1\" => 2, \"row2\" => 1, \"row3\" => 1];\n\
+$ar2 = [\"row1\" => 2, \"row2\" => \"aa\", \"row3\" => \"1\"];\n\
+var_dump(array_multisort($ar1, SORT_ASC, SORT_REGULAR, $ar2, SORT_DESC, SORT_STRING));\n\
+var_dump($ar1, $ar2);\n\
+$labels = [\"Second\", \"First.1\", \"First.2\", \"First.3\", \"Twentieth\", \"Tenth\", \"Third\"];\n\
+$strings = [\"2 a\", \"1 bb 1\", \"1 bB 2\", \"1 BB 3\", \"20 c\", \"10 d\", \"3 e\"];\n\
+array_multisort($strings, SORT_STRING | SORT_FLAG_CASE, $labels);\n\
+var_dump($labels, $strings);\n\
+$copy = [3, 2, 1];\n\
+$alias = $copy;\n\
+array_multisort($copy);\n\
+var_dump($copy, $alias);\n\
+try { $a = [1]; array_multisort($a, SORT_ASC, SORT_ASC); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $a = [1, 2]; $b = [1]; array_multisort($a, $b); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"array_multisort\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "array(3) {\n",
+            "  [\"row2\"]=>\n",
+            "  int(1)\n",
+            "  [\"row3\"]=>\n",
+            "  int(1)\n",
+            "  [\"row1\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"row2\"]=>\n",
+            "  string(2) \"aa\"\n",
+            "  [\"row3\"]=>\n",
+            "  string(1) \"1\"\n",
+            "  [\"row1\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(7) {\n",
+            "  [0]=>\n",
+            "  string(7) \"First.1\"\n",
+            "  [1]=>\n",
+            "  string(7) \"First.2\"\n",
+            "  [2]=>\n",
+            "  string(7) \"First.3\"\n",
+            "  [3]=>\n",
+            "  string(5) \"Tenth\"\n",
+            "  [4]=>\n",
+            "  string(6) \"Second\"\n",
+            "  [5]=>\n",
+            "  string(9) \"Twentieth\"\n",
+            "  [6]=>\n",
+            "  string(5) \"Third\"\n",
+            "}\n",
+            "array(7) {\n",
+            "  [0]=>\n",
+            "  string(6) \"1 bb 1\"\n",
+            "  [1]=>\n",
+            "  string(6) \"1 bB 2\"\n",
+            "  [2]=>\n",
+            "  string(6) \"1 BB 3\"\n",
+            "  [3]=>\n",
+            "  string(4) \"10 d\"\n",
+            "  [4]=>\n",
+            "  string(3) \"2 a\"\n",
+            "  [5]=>\n",
+            "  string(4) \"20 c\"\n",
+            "  [6]=>\n",
+            "  string(3) \"3 e\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(3)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "array_multisort(): Argument #3 must be an array or a sort flag that has not already been specified\n",
+            "Array sizes are inconsistent\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime"));
+    assert!(c_source.contains("ptn_call_function(&runtime, \"array_multisort\""));
 }
 
 #[test]

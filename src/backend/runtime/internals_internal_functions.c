@@ -2696,29 +2696,401 @@ static PtnValue ptn_internal_rsort(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_bool(1);
 }
 
-static PtnValue ptn_internal_array_multisort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    for (size_t i = 0; i < argc; i++) {
-        PtnValue value = ptn_value_deref(args[i]);
-        if (value.type != PTN_ARRAY) {
-            char message[192];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "array_multisort(): Argument #%zu ($array) must be of type array, %s given",
-                i + 1,
-                ptn_offset_container_type_name(value)
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_emit_type_error(&runtime->diagnostics, message);
-            exit(255);
+typedef struct {
+    PtnArray *array;
+    int mutable;
+    int descending;
+    int order_seen;
+    int type_seen;
+    int sort_type;
+    int case_insensitive;
+} PtnArrayMultisortOperand;
+
+static void ptn_array_multisort_throw_type_error(PtnRuntime *runtime, size_t position, const char *suffix) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "array_multisort(): Argument #%zu %s",
+        position,
+        suffix
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static void ptn_array_multisort_throw_value_error(PtnRuntime *runtime, size_t position, const char *suffix) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "array_multisort(): Argument #%zu %s",
+        position,
+        suffix
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_array_multisort_compare_string_case(PtnValue left, PtnValue right) {
+    PtnStringOperand left_string = ptn_value_to_string_operand(left);
+    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+    const unsigned char *left_bytes = (const unsigned char *)left_string.data;
+    const unsigned char *right_bytes = (const unsigned char *)right_string.data;
+    size_t shared_len = left_string.len < right_string.len ? left_string.len : right_string.len;
+    int compared = 0;
+    for (size_t i = 0; i < shared_len; i++) {
+        unsigned char left_byte = left_bytes[i];
+        unsigned char right_byte = right_bytes[i];
+        if (left_byte >= (unsigned char)'A' && left_byte <= (unsigned char)'Z') {
+            left_byte = (unsigned char)(left_byte + ((unsigned char)'a' - (unsigned char)'A'));
         }
-        if (args[i].type == PTN_REFERENCE && args[i].as.reference->value.type == PTN_ARRAY) {
-            ptn_array_sort_values(args[i].as.reference->value.as.array);
+        if (right_byte >= (unsigned char)'A' && right_byte <= (unsigned char)'Z') {
+            right_byte = (unsigned char)(right_byte + ((unsigned char)'a' - (unsigned char)'A'));
+        }
+        if (left_byte < right_byte) {
+            compared = -1;
+            break;
+        }
+        if (left_byte > right_byte) {
+            compared = 1;
+            break;
         }
     }
+    if (compared == 0) {
+        if (left_string.len < right_string.len) {
+            compared = -1;
+        } else if (left_string.len > right_string.len) {
+            compared = 1;
+        }
+    }
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    return compared;
+}
+
+static int ptn_array_multisort_compare_string(PtnValue left, PtnValue right) {
+    PtnStringOperand left_string = ptn_value_to_string_operand(left);
+    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+    int compared = ptn_compare_string_bytes(
+        (const unsigned char *)left_string.data,
+        left_string.len,
+        (const unsigned char *)right_string.data,
+        right_string.len
+    );
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    if (compared == PTN_COMPARE_LESS) {
+        return -1;
+    }
+    if (compared == PTN_COMPARE_GREATER) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_array_multisort_compare_numeric(PtnValue left, PtnValue right) {
+    PtnNumber left_number = ptn_to_number(left);
+    PtnNumber right_number = ptn_to_number(right);
+    if (left_number.type == PTN_NUMBER_INT && right_number.type == PTN_NUMBER_INT) {
+        if (left_number.integer < right_number.integer) {
+            return -1;
+        }
+        if (left_number.integer > right_number.integer) {
+            return 1;
+        }
+        return 0;
+    }
+    if (left_number.floating < right_number.floating) {
+        return -1;
+    }
+    if (left_number.floating > right_number.floating) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_array_multisort_compare_operand(
+    const PtnArrayMultisortOperand *operand,
+    size_t left_index,
+    size_t right_index
+) {
+    PtnValue left = operand->array->entries[left_index].value;
+    PtnValue right = operand->array->entries[right_index].value;
+    int compared = 0;
+    switch (operand->sort_type) {
+        case PTN_SORT_NUMERIC:
+            compared = ptn_array_multisort_compare_numeric(left, right);
+            break;
+        case PTN_SORT_STRING:
+        case PTN_SORT_LOCALE_STRING:
+            compared = operand->case_insensitive
+                ? ptn_array_multisort_compare_string_case(left, right)
+                : ptn_array_multisort_compare_string(left, right);
+            break;
+        case PTN_SORT_NATURAL:
+            compared = operand->case_insensitive
+                ? ptn_array_value_compare_natural_case(left, right)
+                : ptn_array_value_compare_natural(left, right);
+            break;
+        case PTN_SORT_REGULAR:
+        default:
+            compared = ptn_array_value_compare_ascending(left, right);
+            break;
+    }
+    return operand->descending ? -compared : compared;
+}
+
+static int ptn_array_multisort_compare_indices(
+    const PtnArrayMultisortOperand *operands,
+    size_t operand_count,
+    size_t left_index,
+    size_t right_index
+) {
+    for (size_t i = 0; i < operand_count; i++) {
+        int compared = ptn_array_multisort_compare_operand(&operands[i], left_index, right_index);
+        if (compared != 0) {
+            return compared;
+        }
+    }
+    if (left_index < right_index) {
+        return -1;
+    }
+    if (left_index > right_index) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_array_multisort_apply_flag(
+    PtnRuntime *runtime,
+    PtnArrayMultisortOperand *operand,
+    size_t position,
+    int64_t flag
+) {
+    if (flag == PTN_SORT_ASC || flag == PTN_SORT_DESC) {
+        if (operand->order_seen) {
+            ptn_array_multisort_throw_type_error(
+                runtime,
+                position,
+                "must be an array or a sort flag that has not already been specified"
+            );
+            return 0;
+        }
+        operand->order_seen = 1;
+        operand->descending = flag == PTN_SORT_DESC;
+        return 1;
+    }
+
+    int sort_type = -1;
+    int case_insensitive = 0;
+    if (flag == PTN_SORT_REGULAR) {
+        sort_type = PTN_SORT_REGULAR;
+    } else if (flag == PTN_SORT_NUMERIC) {
+        sort_type = PTN_SORT_NUMERIC;
+    } else if (flag == PTN_SORT_STRING) {
+        sort_type = PTN_SORT_STRING;
+    } else if (flag == PTN_SORT_LOCALE_STRING) {
+        sort_type = PTN_SORT_LOCALE_STRING;
+    } else if (flag == PTN_SORT_NATURAL) {
+        sort_type = PTN_SORT_NATURAL;
+    } else if (flag == (PTN_SORT_STRING | PTN_SORT_FLAG_CASE)) {
+        sort_type = PTN_SORT_STRING;
+        case_insensitive = 1;
+    } else if (flag == (PTN_SORT_NATURAL | PTN_SORT_FLAG_CASE)) {
+        sort_type = PTN_SORT_NATURAL;
+        case_insensitive = 1;
+    }
+
+    if (sort_type < 0) {
+        ptn_array_multisort_throw_value_error(runtime, position, "must be a valid sort flag");
+        return 0;
+    }
+    if (operand->type_seen) {
+        ptn_array_multisort_throw_type_error(
+            runtime,
+            position,
+            "must be an array or a sort flag that has not already been specified"
+        );
+        return 0;
+    }
+    operand->type_seen = 1;
+    operand->sort_type = sort_type;
+    operand->case_insensitive = case_insensitive;
+    return 1;
+}
+
+static void ptn_array_multisort_apply_order(PtnArray *array, const size_t *order) {
+    if (array->len == 0) {
+        array->current_index = 0;
+        ptn_array_rebuild_index(array);
+        return;
+    }
+    PtnArrayEntry *entries = malloc(array->len * sizeof(PtnArrayEntry));
+    if (entries == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        entries[i] = array->entries[order[i]];
+    }
+    free(array->entries);
+    array->entries = entries;
+
+    int64_t next_int_key = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        if (array->entries[i].key.type != PTN_ARRAY_KEY_INT) {
+            continue;
+        }
+        if (next_int_key == INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        array->entries[i].key = ptn_array_int_key(next_int_key);
+        next_int_key++;
+    }
+    array->current_index = 0;
+    ptn_array_recompute_next_auto_key(array);
+    ptn_array_rebuild_index(array);
+}
+
+static int ptn_array_multisort_validate_string_operands(
+    PtnRuntime *runtime,
+    const PtnArrayMultisortOperand *operand,
+    size_t line
+) {
+    if (
+        operand->sort_type != PTN_SORT_STRING &&
+        operand->sort_type != PTN_SORT_LOCALE_STRING &&
+        operand->sort_type != PTN_SORT_NATURAL
+    ) {
+        return 1;
+    }
+    for (size_t i = 0; i < operand->array->len; i++) {
+        PtnValue value = ptn_value_deref(operand->array->entries[i].value);
+        const char *class_name = NULL;
+        if (value.type == PTN_OBJECT) {
+            class_name = value.as.object->class_name;
+        } else if (value.type == PTN_CLOSURE) {
+            class_name = "Closure";
+        } else if (value.type == PTN_EXCEPTION) {
+            class_name = value.as.exception->class_name;
+        }
+        if (class_name == NULL) {
+            continue;
+        }
+
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Object of class %s could not be converted to string",
+            class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+        return 0;
+    }
+    return 1;
+}
+
+static PtnValue ptn_internal_array_multisort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArrayMultisortOperand *operands = calloc(argc, sizeof(PtnArrayMultisortOperand));
+    if (operands == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t operand_count = 0;
+
+    for (size_t i = 0; i < argc; i++) {
+        PtnValue value = ptn_value_deref(args[i]);
+        if (value.type == PTN_ARRAY) {
+            PtnArray *array = value.as.array;
+            int mutable = 0;
+            if (args[i].type == PTN_REFERENCE && args[i].as.reference->value.type == PTN_ARRAY) {
+                array = ptn_array_detach_value(&args[i].as.reference->value);
+                mutable = 1;
+            }
+            operands[operand_count].array = array;
+            operands[operand_count].mutable = mutable;
+            operands[operand_count].descending = 0;
+            operands[operand_count].order_seen = 0;
+            operands[operand_count].type_seen = 0;
+            operands[operand_count].sort_type = PTN_SORT_REGULAR;
+            operands[operand_count].case_insensitive = 0;
+            operand_count++;
+            continue;
+        }
+
+        if (operand_count == 0) {
+            free(operands);
+            ptn_array_multisort_throw_type_error(
+                runtime,
+                i + 1,
+                "must be an array or a sort flag"
+            );
+            return ptn_null();
+        }
+        if (value.type != PTN_INT) {
+            free(operands);
+            ptn_array_multisort_throw_type_error(
+                runtime,
+                i + 1,
+                "must be an array or a sort flag"
+            );
+            return ptn_null();
+        }
+        if (!ptn_array_multisort_apply_flag(runtime, &operands[operand_count - 1], i + 1, value.as.integer)) {
+            free(operands);
+            return ptn_null();
+        }
+    }
+
+    size_t len = operands[0].array->len;
+    for (size_t i = 1; i < operand_count; i++) {
+        if (operands[i].array->len != len) {
+            free(operands);
+            ptn_throw_exception(runtime, "ValueError", "Array sizes are inconsistent");
+            return ptn_null();
+        }
+    }
+    for (size_t i = 0; i < operand_count; i++) {
+        if (!ptn_array_multisort_validate_string_operands(runtime, &operands[i], line)) {
+            free(operands);
+            return ptn_null();
+        }
+    }
+
+    size_t *order = malloc((len == 0 ? 1 : len) * sizeof(size_t));
+    if (order == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        order[i] = i;
+    }
+    for (size_t i = 1; i < len; i++) {
+        size_t moving = order[i];
+        size_t j = i;
+        while (
+            j > 0 &&
+            ptn_array_multisort_compare_indices(operands, operand_count, order[j - 1], moving) > 0
+        ) {
+            order[j] = order[j - 1];
+            j--;
+        }
+        order[j] = moving;
+    }
+
+    for (size_t i = 0; i < operand_count; i++) {
+        if (operands[i].mutable) {
+            ptn_array_multisort_apply_order(operands[i].array, order);
+        }
+    }
+    free(order);
+    free(operands);
     return ptn_bool(1);
 }
 
@@ -5196,9 +5568,23 @@ static void ptn_array_merge_recursive_into(
     size_t line
 );
 
-static void ptn_array_merge_recursive_append(PtnArray *target, PtnValue value) {
+static PtnValue ptn_array_merge_recursive_copy_value(PtnValue value, int preserve_reference) {
+    if (preserve_reference) {
+        PtnValue deref = ptn_value_deref(value);
+        if (
+            value.type == PTN_REFERENCE
+            && deref.type != PTN_ARRAY
+            && value.as.reference->refcount > 1
+        ) {
+            return ptn_value_clone(value);
+        }
+    }
+    return ptn_value_clone_deref(value);
+}
+
+static void ptn_array_merge_recursive_append(PtnArray *target, PtnValue value, int preserve_reference) {
     PtnArrayKey key = ptn_array_int_key(target->next_auto_key);
-    ptn_array_set_entry(target, key, ptn_array_replacement_value(value));
+    ptn_array_set_entry(target, key, ptn_array_merge_recursive_copy_value(value, preserve_reference));
 }
 
 static PtnValue *ptn_array_separate_recursive_entry_value(PtnArrayEntry *entry) {
@@ -5229,17 +5615,17 @@ static void ptn_array_merge_recursive_collision(
         if (incoming_value.type == PTN_ARRAY) {
             ptn_array_merge_recursive_into(runtime, target, incoming_value.as.array, seen, line);
         } else {
-            ptn_array_merge_recursive_append(target, incoming);
+            ptn_array_merge_recursive_append(target, incoming, 0);
         }
         return;
     }
 
     PtnValue merged = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_merge_recursive_append(merged.as.array, existing);
+    ptn_array_merge_recursive_append(merged.as.array, existing, 0);
     if (incoming_value.type == PTN_ARRAY) {
         ptn_array_merge_recursive_into(runtime, merged.as.array, incoming_value.as.array, seen, line);
     } else {
-        ptn_array_merge_recursive_append(merged.as.array, incoming);
+        ptn_array_merge_recursive_append(merged.as.array, incoming, 0);
     }
     ptn_value_destroy(entry_value);
     *entry_value = merged;
@@ -5254,13 +5640,13 @@ static void ptn_array_merge_recursive_entry(
     size_t line
 ) {
     if (key.type == PTN_ARRAY_KEY_INT) {
-        ptn_array_merge_recursive_append(target, value);
+        ptn_array_merge_recursive_append(target, value, 1);
         return;
     }
 
     PtnArrayEntry *entry = ptn_array_entry_for_key(target, key);
     if (entry == NULL) {
-        ptn_array_set_entry(target, ptn_array_key_clone(key), ptn_array_replacement_value(value));
+        ptn_array_set_entry(target, ptn_array_key_clone(key), ptn_array_merge_recursive_copy_value(value, 1));
         return;
     }
     ptn_array_merge_recursive_collision(runtime, entry, value, seen, line);

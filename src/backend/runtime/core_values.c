@@ -126,6 +126,8 @@ typedef struct {
 #define PTN_SORT_REGULAR 0
 #define PTN_SORT_NUMERIC 1
 #define PTN_SORT_STRING 2
+#define PTN_SORT_DESC 3
+#define PTN_SORT_ASC 4
 #define PTN_SORT_LOCALE_STRING 5
 #define PTN_SORT_NATURAL 6
 #define PTN_SORT_FLAG_CASE 8

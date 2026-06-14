@@ -248,7 +248,7 @@ static PTN_UNUSED void ptn_throw_exception_at(
     size_t line
 );
 
-static PTN_UNUSED PtnValue ptn_runtime_by_reference_argument_error(
+static PTN_UNUSED void ptn_throw_by_reference_argument_error(
     PtnRuntime *runtime,
     const char *function_name,
     size_t position,
@@ -268,6 +268,16 @@ static PTN_UNUSED PtnValue ptn_runtime_by_reference_argument_error(
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_by_reference_argument_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    size_t line
+) {
+    ptn_throw_by_reference_argument_error(runtime, function_name, position, parameter_name, line);
     return ptn_null();
 }
 
@@ -608,6 +618,74 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
     }
 }
 
+static void ptn_emit_uncaught_trace_arg(FILE *stream, PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            fputs("NULL", stream);
+            break;
+        case PTN_BOOL:
+            fputs(value.as.boolean ? "true" : "false", stream);
+            break;
+        case PTN_INT:
+            fprintf(stream, "%lld", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT: {
+            char formatted[128];
+            ptn_format_scalar_float(value.as.floating, formatted, sizeof(formatted));
+            fputs(formatted, stream);
+            break;
+        }
+        case PTN_STRING:
+            fputc('\'', stream);
+            fwrite(value.as.string.data, 1, value.as.string.len, stream);
+            fputc('\'', stream);
+            break;
+        case PTN_ARRAY:
+            fputs("Array", stream);
+            break;
+        case PTN_OBJECT:
+            fputs("Object", stream);
+            break;
+        case PTN_CLOSURE:
+            fputs("Object", stream);
+            break;
+        case PTN_EXCEPTION:
+            fputs("Object", stream);
+            break;
+        case PTN_RESOURCE:
+            fprintf(stream, "Resource id #%lld", (long long)value.as.resource->id);
+            break;
+        case PTN_REFERENCE:
+            fputs("NULL", stream);
+            break;
+    }
+}
+
+static int ptn_emit_uncaught_internal_trace(PtnRuntime *runtime) {
+    PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
+    if (
+        runtime == NULL ||
+        runtime->current_function_name != NULL ||
+        frame == NULL ||
+        frame->function_name == NULL ||
+        frame->file == NULL ||
+        frame->line == 0
+    ) {
+        return 0;
+    }
+
+    fprintf(stderr, "#0 %s(%zu): %s(", frame->file, frame->line, frame->function_name);
+    for (size_t i = 0; i < frame->argc; i++) {
+        if (i != 0) {
+            fputs(", ", stderr);
+        }
+        ptn_emit_uncaught_trace_arg(stderr, frame->args[i]);
+    }
+    fputs(")\n#1 {main}\n", stderr);
+    return 1;
+}
+
 static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
     fflush(stdout);
     if (!runtime->diagnostics.display_errors) {
@@ -630,7 +708,9 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
         exception->line
     );
     fputs("Stack trace:\n", stderr);
-    if (runtime->current_function_name != NULL && runtime->call_site_line != 0) {
+    if (ptn_emit_uncaught_internal_trace(runtime)) {
+        /* Trace emitted from the active internal call frame. */
+    } else if (runtime->current_function_name != NULL && runtime->call_site_line != 0) {
         fprintf(
             stderr,
             "#0 %s(%zu): %s()\n#1 {main}\n",

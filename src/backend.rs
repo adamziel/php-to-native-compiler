@@ -955,6 +955,12 @@ fn by_ref_parameter_for_argument(
 }
 
 fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&'static str> {
+    if name.eq_ignore_ascii_case("array_pop") && argument_index == 0 {
+        return Some("array");
+    }
+    if name.eq_ignore_ascii_case("array_shift") && argument_index == 0 {
+        return Some("array");
+    }
     if name.eq_ignore_ascii_case("array_splice") && argument_index == 0 {
         return Some("array");
     }
@@ -970,7 +976,22 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("is_callable") && argument_index == 2 {
         return Some("callable_name");
     }
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
+        "end" | "next" | "prev" | "reset"
+    ) && argument_index == 0
+    {
+        return Some("array");
+    }
     None
+}
+
+fn internal_by_ref_temporary_argument_allowed(name: &str, argument_index: usize) -> bool {
+    argument_index == 0
+        && matches!(
+            name.to_ascii_lowercase().as_str(),
+            "array_pop" | "array_shift" | "end" | "next" | "prev" | "reset"
+        )
 }
 
 fn emit_include_helpers(
@@ -5014,6 +5035,7 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
             | "array_unshift"
             | "array_walk"
             | "array_walk_recursive"
+            | "array_multisort"
             | "arsort"
             | "asort"
             | "end"
@@ -8256,6 +8278,7 @@ impl ValueEmitter {
                             &parameter.name,
                             line,
                             true,
+                            false,
                         );
                         if value_is_append_reference_target(argument) {
                             unwrap_append_reference_temps.push(temp.clone());
@@ -10102,6 +10125,7 @@ impl ValueEmitter {
                     &parameter.name,
                     line,
                     true,
+                    false,
                 );
                 if value_is_append_reference_target(argument) {
                     unwrap_append_reference_temps.push(temp.clone());
@@ -10110,6 +10134,8 @@ impl ValueEmitter {
             } else if let Some(parameter_name) =
                 internal_by_ref_parameter_name(name, argument_index)
             {
+                let allow_temporary =
+                    internal_by_ref_temporary_argument_allowed(name, argument_index);
                 let temp = self.emit_by_ref_call_argument(
                     out,
                     argument,
@@ -10117,7 +10143,8 @@ impl ValueEmitter {
                     argument_index,
                     parameter_name,
                     line,
-                    false,
+                    allow_temporary,
+                    true,
                 );
                 if value_is_append_reference_target(argument) {
                     unwrap_append_reference_temps.push(temp.clone());
@@ -10266,6 +10293,7 @@ impl ValueEmitter {
                     &parameter.name,
                     line,
                     true,
+                    false,
                 )
             } else {
                 self.emit_call_argument(out, name, argument_index, argument)
@@ -10476,6 +10504,56 @@ impl ValueEmitter {
             _ => None,
         };
 
+        if name.eq_ignore_ascii_case("array_multisort") {
+            let mut temps = Vec::with_capacity(arguments.len());
+            for argument in arguments {
+                if let ValueExpr::Load { name, .. } = argument {
+                    let temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&temp);
+                    out.push_str(" = ptn_runtime_reference_for_variable(&runtime, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\");\n");
+                    temps.push(temp);
+                } else {
+                    temps.push(self.emit_materialized_value(out, argument));
+                }
+            }
+
+            let args_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ");
+            for (index, temp) in temps.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str("ptn_value_share(");
+                out.push_str(temp);
+                out.push(')');
+            }
+            out.push_str(" };\n");
+
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_function(&runtime, \"array_multisort\", ");
+            out.push_str(&arguments.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+
+            for index in 0..temps.len() {
+                emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+            }
+            for temp in temps {
+                emit_value_cleanup(out, "    ", &temp);
+            }
+            return Some(result_temp);
+        }
+
         if (name.eq_ignore_ascii_case("array_walk")
             || name.eq_ignore_ascii_case("array_walk_recursive"))
             && (arguments.len() == 2 || arguments.len() == 3)
@@ -10670,75 +10748,66 @@ impl ValueEmitter {
             return None;
         };
 
-        if variable_name.is_none()
-            && name.eq_ignore_ascii_case("array_push")
-            && matches!(
-                reference_array_dim_target_from_value(first_argument),
-                Some(ReferenceTarget::ArrayDim(_))
-            )
-        {
-            let Some(ReferenceTarget::ArrayDim(target)) =
+        if variable_name.is_none() && name.eq_ignore_ascii_case("array_push") {
+            if let Some(ReferenceTarget::ArrayDim(target)) =
                 reference_array_dim_target_from_value(first_argument)
-            else {
-                return None;
-            };
-            let path = emit_array_path_segments(out, self, &target.dimensions);
-            let mut value_temps = Vec::with_capacity(arguments.len().saturating_sub(1));
-            for argument in &arguments[1..] {
-                value_temps.push(self.emit_materialized_value(out, argument));
-            }
-
-            let values_temp = if value_temps.is_empty() {
-                None
-            } else {
-                let values_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&values_temp);
-                out.push_str("[] = { ");
-                for (index, temp) in value_temps.iter().enumerate() {
-                    if index > 0 {
-                        out.push_str(", ");
+            {
+                let path = emit_array_path_segments(out, self, &target.dimensions);
+                let mut value_temps = Vec::with_capacity(arguments.len().saturating_sub(1));
+                for argument in &arguments[1..] {
+                    value_temps.push(self.emit_materialized_value(out, argument));
+                }
+                let values_temp = if value_temps.is_empty() {
+                    None
+                } else {
+                    let values_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&values_temp);
+                    out.push_str("[] = { ");
+                    for (index, temp) in value_temps.iter().enumerate() {
+                        if index > 0 {
+                            out.push_str(", ");
+                        }
+                        out.push_str("ptn_value_share(");
+                        out.push_str(temp);
+                        out.push(')');
                     }
-                    out.push_str("ptn_value_share(");
-                    out.push_str(temp);
-                    out.push(')');
+                    out.push_str(" };\n");
+                    Some(values_temp)
+                };
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_array_push_path(&runtime, \"");
+                out.push_str(&c_string(&target.array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&target.line.to_string());
+                out.push_str(", ");
+                out.push_str(&value_temps.len().to_string());
+                out.push_str(", ");
+                if let Some(values_temp) = &values_temp {
+                    out.push_str(values_temp);
+                } else {
+                    out.push_str("NULL");
                 }
-                out.push_str(" };\n");
-                Some(values_temp)
-            };
-
-            let result_temp = self.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_runtime_array_push_path(&runtime, \"");
-            out.push_str(&c_string(&target.array));
-            out.push_str("\", ");
-            out.push_str(&path.name);
-            out.push_str(", ");
-            out.push_str(&path.len.to_string());
-            out.push_str(", ");
-            out.push_str(&target.line.to_string());
-            out.push_str(", ");
-            out.push_str(&value_temps.len().to_string());
-            out.push_str(", ");
-            if let Some(values_temp) = &values_temp {
-                out.push_str(values_temp);
-            } else {
-                out.push_str("NULL");
-            }
-            out.push_str(");\n");
-            if let Some(values_temp) = &values_temp {
-                for index in 0..value_temps.len() {
-                    emit_value_cleanup(out, "    ", &format!("{values_temp}[{index}]"));
+                out.push_str(");\n");
+                if let Some(values_temp) = &values_temp {
+                    for index in 0..value_temps.len() {
+                        emit_value_cleanup(out, "    ", &format!("{values_temp}[{index}]"));
+                    }
                 }
+                for temp in value_temps {
+                    emit_value_cleanup(out, "    ", &temp);
+                }
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                return Some(result_temp);
             }
-            for temp in value_temps {
-                emit_value_cleanup(out, "    ", &temp);
-            }
-            for segment_temp in path.value_temps {
-                emit_value_cleanup(out, "    ", &segment_temp);
-            }
-            return Some(result_temp);
         }
 
         let variable_name = variable_name?;
@@ -10806,6 +10875,7 @@ impl ValueEmitter {
         parameter_name: &str,
         line: usize,
         allow_temporary: bool,
+        throw_on_failure: bool,
     ) -> String {
         match reference_target_from_value(argument) {
             Some(target) => self.emit_reference_target(out, &target),
@@ -10826,13 +10896,25 @@ impl ValueEmitter {
                 out.push_str("    PtnValue ");
                 out.push_str(&temp);
                 out.push_str(" = ptn_null();\n");
-                out.push_str("    ptn_abort_by_reference_argument_error(\"");
-                out.push_str(&c_string(function_name));
-                out.push_str("\", ");
-                out.push_str(&(argument_index + 1).to_string());
-                out.push_str(", \"");
-                out.push_str(&c_string(parameter_name));
-                out.push_str("\");\n");
+                if throw_on_failure {
+                    out.push_str("    ptn_throw_by_reference_argument_error(&runtime, \"");
+                    out.push_str(&c_string(function_name));
+                    out.push_str("\", ");
+                    out.push_str(&(argument_index + 1).to_string());
+                    out.push_str(", \"");
+                    out.push_str(&c_string(parameter_name));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                } else {
+                    out.push_str("    ptn_abort_by_reference_argument_error(\"");
+                    out.push_str(&c_string(function_name));
+                    out.push_str("\", ");
+                    out.push_str(&(argument_index + 1).to_string());
+                    out.push_str(", \"");
+                    out.push_str(&c_string(parameter_name));
+                    out.push_str("\");\n");
+                }
                 temp
             }
         }

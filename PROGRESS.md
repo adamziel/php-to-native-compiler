@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T16:45Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; COW 69/103 passed.
+Refresh: 2026-06-14T16:55Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; COW 69/103 passed.
 
 ## Dashboard
 
@@ -74,6 +74,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Binary-key|1|1|0|
 |Runtime-config|54|10|44|
 |COW-gate|26|26|0|
+|COW-reference-tiqh|21|21|0|
 |1k-baseline|1000|379|621|
 
 ## 2026-06-14 ptn-j6gv Broad String/Runtime Row Pack
@@ -117,3 +118,13 @@ Focused PHPT checks: raw interface/ArrayAccess pack is 6/38; classified
 class-contract bucket is 9/9. Rust checks passed: `cargo fmt --check`,
 targeted `compile_native` parser/runtime tests, and `cargo test --test
 phpt_classifier`.
+
+## 2026-06-14 ptn-tiqh COW/Reference Row Pack
+
+Final manifest: `tools/phpt-cow-reference-mutation-ptn-tiqh-manifest.txt`.
+
+The submitted branch reported the focused COW/reference mutation row pack as
+21 selected, 21 passed. Its broad 1k run was measured on an older base
+(`abfb48341ef2`) before `ptn-j6gv` and `ptn-qsmv.14` landed, so the current
+dashboard keeps the newer `ptn-qsmv.14` broad 1k baseline row rather than
+downgrading to that stale broad count.

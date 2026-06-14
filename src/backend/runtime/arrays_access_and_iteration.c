@@ -179,6 +179,18 @@ static PTN_UNUSED int ptn_class_name_is_stdclass(const char *class_name) {
     return *class_name == '\0' && *stdclass == '\0';
 }
 
+static PTN_UNUSED int ptn_class_name_is_datetime(const char *class_name) {
+    const char *datetime = "DateTime";
+    while (*class_name != '\0' && *datetime != '\0') {
+        if (tolower((unsigned char)*class_name) != tolower((unsigned char)*datetime)) {
+            return 0;
+        }
+        class_name++;
+        datetime++;
+    }
+    return *class_name == '\0' && *datetime == '\0';
+}
+
 static PTN_UNUSED PtnValue ptn_new_exception_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -215,6 +227,13 @@ static PTN_UNUSED PtnValue ptn_new_object(
     const char *exception_class_name = ptn_builtin_exception_class_name(class_name);
     if (exception_class_name != NULL) {
         return ptn_new_exception_object(runtime, exception_class_name, argc, args, line);
+    }
+    if (ptn_class_name_is_datetime(class_name)) {
+        if (argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "DateTime constructor expects at most 1 argument");
+            return ptn_null();
+        }
+        return ptn_object_new_shell(runtime, "DateTime");
     }
     if (!ptn_class_name_is_stdclass(class_name)) {
         char message[192];
@@ -3335,7 +3354,8 @@ static PTN_UNUSED PtnValue ptn_array_pop_value(PtnArray *array) {
     }
 
     size_t removed_index = array->len - 1;
-    PtnValue removed = array->entries[removed_index].value;
+    PtnValue removed = ptn_value_clone_deref(array->entries[removed_index].value);
+    ptn_value_destroy(&array->entries[removed_index].value);
     ptn_array_key_free(array->entries[removed_index].key);
     array->len--;
     array->current_index = 0;
@@ -3350,7 +3370,8 @@ static PTN_UNUSED PtnValue ptn_array_shift_value(PtnArray *array) {
         return ptn_null();
     }
 
-    PtnValue removed = array->entries[0].value;
+    PtnValue removed = ptn_value_clone_deref(array->entries[0].value);
+    ptn_value_destroy(&array->entries[0].value);
     ptn_array_key_free(array->entries[0].key);
     for (size_t i = 1; i < array->len; i++) {
         array->entries[i - 1] = array->entries[i];
@@ -3814,3 +3835,37 @@ static PTN_UNUSED void ptn_array_shuffle_values(PtnArray *array) {
 }
 
 static PTN_UNUSED int64_t ptn_array_push_values(PtnRuntime *runtime, PtnArray *array, size_t argc, const PtnValue *values) {
+    if (argc > SIZE_MAX - array->len) {
+        ptn_abort_out_of_memory();
+    }
+    if (array->len + argc > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+
+    for (size_t i = 0; i < argc; i++) {
+        if (array->next_auto_key >= INT64_MAX) {
+            goto unavailable;
+        }
+        for (size_t j = 0; j < array->len; j++) {
+            if (array->entries[j].key.type == PTN_ARRAY_KEY_INT &&
+                array->entries[j].key.as.integer == INT64_MAX) {
+                goto unavailable;
+            }
+        }
+        PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
+        ptn_array_set_entry(array, key, ptn_value_clone(values[i]));
+    }
+
+    array->current_index = 0;
+    ptn_array_recompute_next_auto_key(array);
+    ptn_array_rebuild_index(array);
+    return (int64_t)array->len;
+
+unavailable:
+    ptn_throw_exception(
+        runtime,
+        "Error",
+        "Cannot add element to the array as the next element is already occupied"
+    );
+    return (int64_t)array->len;
+}

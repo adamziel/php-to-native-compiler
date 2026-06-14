@@ -1049,11 +1049,6 @@ fn phpt_classifier_excludes_unsupported_mutating_array_internals() {
             "requires array_splice() destructor reentrancy detection",
         ),
         (
-            "array_multisort",
-            "--TEST--\nmultisort\n--FILE--\n<?php\n$left = [2, 1];\n$right = [\"b\", \"a\"];\narray_multisort($left, $right);\n--EXPECT--\n",
-            "requires array_multisort() multi-array by-reference sorting",
-        ),
-        (
             "user comparator sort",
             "--TEST--\nusort\n--FILE--\n<?php\n$items = [3, 1, 2];\nusort($items, \"strcmp\");\n--EXPECT--\n",
             "requires usort()/uasort()/uksort() user-comparator by-reference sort helpers",
@@ -1083,6 +1078,10 @@ fn phpt_classifier_keeps_modeled_mutating_array_helpers_runnable() {
         (
             "array_walk_recursive",
             "--TEST--\nrecursive walk\n--FILE--\n<?php\n$items = [1];\narray_walk_recursive($items, \"var_dump\");\n--EXPECT--\n",
+        ),
+        (
+            "array_multisort",
+            "--TEST--\nmultisort\n--FILE--\n<?php\n$left = [2, 1];\n$right = [\"b\", \"a\"];\narray_multisort($left, SORT_ASC, SORT_REGULAR, $right, SORT_DESC, SORT_STRING);\n--EXPECT--\n",
         ),
     ];
 

@@ -674,6 +674,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_SORT_STRING);
         return 1;
     }
+    if (strcmp(name, "SORT_DESC") == 0) {
+        *out = ptn_int(PTN_SORT_DESC);
+        return 1;
+    }
+    if (strcmp(name, "SORT_ASC") == 0) {
+        *out = ptn_int(PTN_SORT_ASC);
+        return 1;
+    }
     if (strcmp(name, "SORT_LOCALE_STRING") == 0) {
         *out = ptn_int(PTN_SORT_LOCALE_STRING);
         return 1;

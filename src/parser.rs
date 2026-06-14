@@ -6376,6 +6376,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_map"
             | "array_merge"
             | "array_merge_recursive"
+            | "array_multisort"
             | "array_pad"
             | "array_pop"
             | "array_product"
@@ -6455,6 +6456,8 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "SORT_REGULAR"
             | "SORT_NUMERIC"
             | "SORT_STRING"
+            | "SORT_DESC"
+            | "SORT_ASC"
             | "SORT_LOCALE_STRING"
             | "SORT_NATURAL"
             | "SORT_FLAG_CASE"
@@ -6541,15 +6544,41 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
 fn is_single_array_path_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "array_pop" | "array_shift"
+        "array_pop" | "array_push" | "array_shift"
     )
 }
 
 fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "usort" | "uasort" | "uksort" | "array_multisort"
+        "usort" | "uasort" | "uksort"
     )
+}
+
+fn is_array_multisort_argument(expr: &Expr) -> bool {
+    match expr {
+        Expr::Variable(_, _) => true,
+        Expr::Grouped { expr, .. } => is_array_multisort_argument(expr),
+        Expr::Int(_, _) => true,
+        Expr::Constant(name, _) => matches!(
+            name.as_str(),
+            "SORT_REGULAR"
+                | "SORT_NUMERIC"
+                | "SORT_STRING"
+                | "SORT_DESC"
+                | "SORT_ASC"
+                | "SORT_LOCALE_STRING"
+                | "SORT_NATURAL"
+                | "SORT_FLAG_CASE"
+        ),
+        Expr::Binary {
+            op: crate::ast::BinaryOp::BitwiseOr,
+            left,
+            right,
+            ..
+        } => is_array_multisort_argument(left) && is_array_multisort_argument(right),
+        _ => false,
+    }
 }
 
 fn is_regular_sort_flag_mutation_name(name: &str) -> bool {
@@ -6598,6 +6627,10 @@ fn is_function_call_argument(expr: &Expr) -> bool {
     }
 }
 
+fn is_by_ref_temporary_argument(expr: &Expr) -> bool {
+    is_function_call_argument(expr)
+}
+
 fn validate_mutating_array_internal_call(
     name: &str,
     arguments: &[Expr],
@@ -6630,6 +6663,15 @@ fn validate_mutating_array_internal_call(
                 "{normalized}() currently supports exactly one direct variable array argument; extra arguments are unsupported"
             ),
             Some(arguments.get(1).map_or(call_span, Expr::span)),
+        ));
+    }
+    if name.eq_ignore_ascii_case("array_multisort") {
+        if arguments.iter().all(is_array_multisort_argument) {
+            return Ok(());
+        }
+        return Err(Diagnostic::new(
+            "array_multisort() requires variable array arguments and scalar sort flags; non-variable array mutation targets are unsupported",
+            Some(arguments.first().map_or(call_span, Expr::span)),
         ));
     }
     if is_unsupported_sort_family_mutation_name(name) {
@@ -6672,8 +6714,8 @@ fn validate_mutating_array_internal_call(
         return Ok(());
     }
     if is_single_array_path_mutation_name(name)
-        && arguments.len() == 1
-        && is_variable_array_access_argument(&arguments[0])
+        && (is_variable_array_access_argument(&arguments[0])
+            || (arguments.len() == 1 && is_by_ref_temporary_argument(&arguments[0])))
     {
         return Ok(());
     }
