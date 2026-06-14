@@ -156,10 +156,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   native process boundary. Harness cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, and broad unsupported language surfaces such as anonymous
-  classes, interfaces/traits, PHP attributes, call-site/array unpacking,
+  classes, interfaces/traits, call-site/array unpacking,
   generator/Fiber execution boundaries including by-reference yields/returns,
   nullable type hints, interpolating heredoc bodies,
   variable variables,
+  plus a dedicated PHP attribute metadata bucket,
   class/reflection-metadata blockers, readonly static property diagnostics,
   and currently unmodeled mutating array-internal helpers such as
   `array_multisort()`, `usort()`, `uasort()`, and `uksort()` plus
@@ -198,6 +199,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_ATTRIBUTE_METADATA_FRONTIER_PTN_LZEF_2026-06-14.md`:
   current broad 1k `Zend/tests/attributes/*` metadata blocker map and focused
   manifest.
+- `docs/PHPT_BROAD_1K_ATTRIBUTE_CLASSIFIER_BUCKET_PTN_J8B8_2026-06-14.md`:
+  broad 1k classifier split moving 141 PHP attribute syntax rows into the
+  dedicated `unsupported-attribute-metadata` bucket and focused manifest.
 - `docs/PHPT_BROAD_1K_DIAGNOSTICS_ASSERTION_FRONTIER_PTN_CUEV_2026-06-14.md`:
   current broad 1k diagnostics/assertion runtime blocker map and focused
   manifest.

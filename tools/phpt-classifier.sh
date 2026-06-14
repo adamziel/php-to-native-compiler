@@ -882,7 +882,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 next
             }
             if (ptn_has_php_attribute_syntax($0)) {
-                print "unsupported-language\trequires PHP attribute syntax (`#[...]`) and reflection metadata, outside PTN parser/metadata model"
+                print "unsupported-attribute-metadata\trequires PHP attribute syntax (`#[...]`) and reflection metadata, outside PTN parser/metadata model"
                 found = 1
                 exit
             }
