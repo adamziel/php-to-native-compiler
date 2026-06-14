@@ -227,6 +227,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_ARRAY_CALLBACK_FRONTIER_PTN_J9KG_2026-06-14.md`: current
   broad 1k array callback/set-operation blocker map and committed focused
   manifest.
+- `docs/PHPT_BROAD_1K_PARSER_CONTROL_CLASSIFIER_2026-06-14.md`: broad 1k
+  parser/control classifier split that maps the old 288-row
+  `unsupported-language` bucket into precise blocker categories.
 - `docs/PHPT_BROAD_1K_ZEND_BUG_REGRESSION_FRONTIER_2026-06-14.md`: broad 1k
   root-level Zend historical bug-regression blocker map and focused manifest.
 - `docs/PHPT_BROAD_1K_FUNCTION_DYNAMIC_TYPE_BLOCKERS_2026-06-14.md`: broad

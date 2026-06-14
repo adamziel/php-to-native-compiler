@@ -148,89 +148,105 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
         (
             "anonymous class",
             "--TEST--\nanon\n--FILE--\n<?php\nvar_dump(new class {});\n--EXPECT--\n",
+            "unsupported-class-declaration\t",
             "requires anonymous class syntax",
         ),
         (
             "attribute syntax on class",
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nclass Bag {}\n--EXPECT--\n",
+            "unsupported-attribute-syntax\t",
             "requires PHP attribute syntax",
         ),
         (
             "interface implementation",
             "--TEST--\niface\n--FILE--\n<?php\nclass Bag implements ArrayAccess {}\n--EXPECT--\n",
+            "unsupported-class-declaration\t",
             "requires interface implementation checks",
         ),
         (
             "attribute syntax",
             "--TEST--\nattr\n--FILE--\n<?php\n#[Deprecated]\nfunction f() {}\n--EXPECT--\n",
+            "unsupported-attribute-syntax\t",
             "requires PHP attribute syntax",
         ),
         (
             "call-site unpack",
             "--TEST--\nunpack\n--FILE--\n<?php\nfunction f(...$args) {}\nf(...[1, 2]);\n--EXPECT--\n",
+            "unsupported-unpacking\t",
             "requires call-site or array unpacking",
         ),
         (
             "attribute syntax on function",
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n",
+            "unsupported-attribute-syntax\t",
             "requires PHP attribute syntax",
         ),
         (
             "generator yield",
             "--TEST--\nyield\n--FILE--\n<?php\n$fn = fn() => yield 123;\n--EXPECT--\n",
+            "unsupported-generator-runtime\t",
             "requires generator/yield lowering",
         ),
         (
             "nullable type hint",
             "--TEST--\nnullable\n--FILE--\n<?php\n$fn = fn(?int... $args): array => $args;\n--EXPECT--\n",
+            "unsupported-type-hint\t",
             "requires nullable type-hint metadata",
         ),
         (
             "never return type",
             "--TEST--\nnever\n--FILE--\n<?php\n$fn = fn(): never => 42;\n--EXPECT--\n",
+            "unsupported-type-hint\t",
             "requires `never` return type",
         ),
         (
             "static local variable",
             "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
+            "unsupported-function-state\t",
             "requires static local variables",
         ),
         (
             "foreach append read",
             "--TEST--\nappend read\n--FILE--\n<?php\nforeach ($items[] as $value) {}\n--EXPECTF--\n",
+            "unsupported-expression-diagnostics\t",
             "requires array-append read diagnostics",
         ),
         (
             "foreach assigns this",
             "--TEST--\nthis target\n--FILE--\n<?php\nforeach ($items as list($this)) {}\n--EXPECTF--\n",
+            "unsupported-expression-diagnostics\t",
             "requires foreach assignment diagnostics for `$this`",
         ),
         (
             "variable-variable read",
             "--TEST--\ndynamic read\n--FILE--\n<?php\n$name = 'value';\necho $$name;\n--EXPECT--\n",
+            "unsupported-dynamic-symbols\t",
             "requires variable variables",
         ),
         (
             "braced variable-variable write",
             "--TEST--\ndynamic write\n--FILE--\n<?php\n$name = 'value';\n${$name} = 1;\n--EXPECT--\n",
+            "unsupported-dynamic-symbols\t",
             "requires variable variables",
         ),
         (
             "variable-variable unset",
             "--TEST--\ndynamic unset\n--FILE--\n<?php\n$name = 'value';\nunset($$name);\n--EXPECT--\n",
+            "unsupported-dynamic-symbols\t",
             "requires variable variables",
         ),
         (
             "array internal named argument",
             "--TEST--\nnamed internal\n--FILE--\n<?php\nvar_dump(array_filter([], mode: 1));\n--EXPECT--\n",
+            "unsupported-internal-call-lowering\t",
             "requires named-argument binding for modeled array internal calls",
         ),
     ];
 
-    for (name, phpt, reason) in cases {
+    for (name, phpt, prefix, reason) in cases {
         let classification = classify(phpt);
         assert!(
-            classification.starts_with("unsupported-language\t"),
+            classification.starts_with(prefix),
             "{name}: {classification:?}"
         );
         assert!(
@@ -305,7 +321,7 @@ fn phpt_classifier_excludes_interpolating_heredoc_bodies() {
     );
 
     assert!(
-        classification.starts_with("unsupported-language\t")
+        classification.starts_with("unsupported-heredoc-interpolation\t")
             && classification.contains("requires heredoc interpolation"),
         "{classification:?}"
     );
@@ -317,39 +333,45 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
         (
             "fiber by-ref return",
             "--TEST--\nfiber\n--FILE--\n<?php\n$fiber = new Fiber(function &() {\n    Fiber::suspend();\n    return $var;\n});\n--EXPECT--\n",
+            "unsupported-fiber-runtime\t",
             "requires Fiber coroutine runtime and by-reference return/getReturn boundary",
         ),
         (
             "non-ref generator iterated by-ref",
             "--TEST--\ngenerator foreach by ref\n--FILE--\n<?php\nfunction gen() { yield; }\n$gen = gen();\nforeach ($gen as &$value) {}\n--EXPECTF--\n",
+            "unsupported-generator-runtime\t",
             "requires generator foreach by-reference iteration boundary",
         ),
         (
             "by-ref generator yielding expression",
             "--TEST--\nyield const by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield \"foo\";\n}\n--EXPECTF--\n",
+            "unsupported-generator-runtime\t",
             "requires by-reference generator yield boundary",
         ),
         (
             "by-ref generator yield from",
             "--TEST--\nyield from by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield from [];\n}\n--EXPECTF--\n",
+            "unsupported-generator-runtime\t",
             "requires generator yield-from delegation diagnostics",
         ),
         (
             "generator foreach cleanup",
             "--TEST--\ngenerator foreach cleanup\n--FILE--\n<?php\nfunction gen(array $array) {\n    foreach ($array as $value) {\n        yield $value;\n    }\n}\n--EXPECT--\n",
+            "unsupported-generator-runtime\t",
             "requires generator suspension cleanup for live foreach variables and premature close",
         ),
         (
             "by-ref function call yielded by ref",
             "--TEST--\nyield ref function call\n--FILE--\n<?php\nfunction &nop(&$var) { return $var; }\nfunction &gen(&$var) {\n    yield nop($var);\n}\n--EXPECT--\n",
+            "unsupported-generator-runtime\t",
             "requires by-reference generator yield boundary",
         ),
     ];
 
-    for (name, phpt, reason) in cases {
+    for (name, phpt, prefix, reason) in cases {
         let classification = classify(phpt);
         assert!(
-            classification.starts_with("unsupported-language\t"),
+            classification.starts_with(prefix),
             "{name}: {classification:?}"
         );
         assert!(

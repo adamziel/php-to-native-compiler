@@ -44,6 +44,7 @@ Measured: `ptn-cuev`.
 | Request/SAPI input | 41 | 1 | 40 |
 | Attribute blocker bucket | 141 | 0 | 141 |
 | Attribute metadata frontier | 204 | 0 | 204 |
+| Parser/control classifier split | 288 | 0 | 288 |
 | Heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | Standard-array tdei slice | 71 | 61 | 10 |
 | Broad array_rand slice | 7 | 6 | 1 |

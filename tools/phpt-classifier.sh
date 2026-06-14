@@ -875,14 +875,14 @@ ptn_phpt_first_unsupported_language_surface() {
                     next
                 }
                 if (!ptn_heredoc_nowdoc && $0 ~ /[$]([$A-Za-z_{])/) {
-                    print "unsupported-language\trequires heredoc interpolation inside `<<<` string bodies, outside PTN modeled string parser"
+                    print "unsupported-heredoc-interpolation\trequires heredoc interpolation inside `<<<` string bodies, outside PTN modeled string parser"
                     found = 1
                     exit
                 }
                 next
             }
             if (ptn_has_php_attribute_syntax($0)) {
-                print "unsupported-language\trequires PHP attribute syntax (`#[...]`) and reflection metadata, outside PTN parser/metadata model"
+                print "unsupported-attribute-syntax\trequires PHP attribute syntax (`#[...]`) and reflection metadata, outside PTN parser/metadata model"
                 found = 1
                 exit
             }
@@ -891,27 +891,27 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             line = ptn_php_code_line($0)
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/) {
-                print "unsupported-language\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
+                print "unsupported-fiber-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+class([^[:alnum:]_]|$)/) {
-                print "unsupported-language\trequires anonymous class syntax (`new class`), outside PTN modeled class metadata"
+                print "unsupported-class-declaration\trequires anonymous class syntax (`new class`), outside PTN modeled class metadata"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])interface[[:space:]]+[a-z_\\]/) {
-                print "unsupported-language\trequires interface declarations, outside PTN modeled class metadata"
+                print "unsupported-class-declaration\trequires interface declarations, outside PTN modeled class metadata"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])implements[[:space:]]+[a-z_\\]/) {
-                print "unsupported-language\trequires interface implementation checks, outside PTN modeled class metadata"
+                print "unsupported-class-declaration\trequires interface implementation checks, outside PTN modeled class metadata"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])trait[[:space:]]+[a-z_\\]/) {
-                print "unsupported-language\trequires trait declarations, outside PTN modeled class metadata"
+                print "unsupported-class-declaration\trequires trait declarations, outside PTN modeled class metadata"
                 found = 1
                 exit
             }
@@ -920,7 +920,7 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (ptn_deferred_generator_reason != "" &&
                 line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*&[[:space:]]*\$[a-z_]/) {
-                print "unsupported-language\trequires generator foreach by-reference iteration boundary and generator reference diagnostics, outside PTN generator runtime"
+                print "unsupported-generator-runtime\trequires generator foreach by-reference iteration boundary and generator reference diagnostics, outside PTN generator runtime"
                 found = 1
                 exit
             }
@@ -928,7 +928,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_generator_foreach_context = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])yield[[:space:]]+from([^[:alnum:]_]|$)/) {
-                print "unsupported-language\trequires generator yield-from delegation diagnostics, return-value propagation, and by-reference rejection, outside PTN generator runtime"
+                print "unsupported-generator-runtime\trequires generator yield-from delegation diagnostics, return-value propagation, and by-reference rejection, outside PTN generator runtime"
                 found = 1
                 exit
             }
@@ -944,44 +944,44 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (line ~ /(^|[,(])[[:space:]]*\?[[:space:]]*([a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:].&]*\$[a-z_]/ ||
                 line ~ /\)[[:space:]]*:[[:space:]]*\?[[:space:]]*([a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)([^[:alnum:]_]|$)/) {
-                print "unsupported-language\trequires nullable type-hint metadata and coercion (`?T`), outside PTN modeled type hints"
+                print "unsupported-type-hint\trequires nullable type-hint metadata and coercion (`?T`), outside PTN modeled type hints"
                 found = 1
                 exit
             }
             if (line ~ /\)[[:space:]]*:[[:space:]]*never([^[:alnum:]_]|$)/) {
-                print "unsupported-language\trequires `never` return type control-flow validation, outside PTN modeled type hints"
+                print "unsupported-type-hint\trequires `never` return type control-flow validation, outside PTN modeled type hints"
                 found = 1
                 exit
             }
             if (line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+\$[a-z_]/) {
-                print "unsupported-language\trequires static local variables, outside PTN function-local static storage model"
+                print "unsupported-function-state\trequires static local variables, outside PTN function-local static storage model"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*\$[a-z_][a-z0-9_]*[[:space:]]*\[[[:space:]]*\][^)]*as([^[:alnum:]_]|$)/) {
-                print "unsupported-language\trequires array-append read diagnostics (`[]` in read context), outside PTN expression diagnostics"
+                print "unsupported-expression-diagnostics\trequires array-append read diagnostics (`[]` in read context), outside PTN expression diagnostics"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*\$this([^[:alnum:]_]|$)/) {
-                print "unsupported-language\trequires foreach assignment diagnostics for `$this`, outside PTN special-variable assignment diagnostics"
+                print "unsupported-expression-diagnostics\trequires foreach assignment diagnostics for `$this`, outside PTN special-variable assignment diagnostics"
                 found = 1
                 exit
             }
             if (line ~ /[$][$]|[$][{][[:space:]]*[$]/) {
-                print "unsupported-language\trequires variable variables and runtime symbol-table lookup/mutation, outside PTN static variable model"
+                print "unsupported-dynamic-symbols\trequires variable variables and runtime symbol-table lookup/mutation, outside PTN static variable model"
                 found = 1
                 exit
             }
             if (ptn_has_named_modeled_array_internal_call(line)) {
-                print "unsupported-language\trequires named-argument binding for modeled array internal calls, outside PTN internal-call lowering"
+                print "unsupported-internal-call-lowering\trequires named-argument binding for modeled array internal calls, outside PTN internal-call lowering"
                 found = 1
                 exit
             }
             if ($0 ~ /\.\.\./) {
                 declaration = line ~ /(^|[^[:alnum:]_$])(function|fn)[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*\.\.\./
                 if (!declaration) {
-                    print "unsupported-language\trequires call-site or array unpacking (`...`), outside PTN modeled call/array lowering"
+                    print "unsupported-unpacking\trequires call-site or array unpacking (`...`), outside PTN modeled call/array lowering"
                     found = 1
                     exit
                 }
@@ -989,7 +989,7 @@ ptn_phpt_first_unsupported_language_surface() {
         }
         END {
             if (!found && ptn_deferred_generator_reason != "") {
-                print "unsupported-language\t" ptn_deferred_generator_reason
+                print "unsupported-generator-runtime\t" ptn_deferred_generator_reason
                 found = 1
             }
             exit found ? 0 : 1
