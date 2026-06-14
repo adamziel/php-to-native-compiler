@@ -265,6 +265,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_CLASS_DECLARATION_CLASSIFIER_PTN_ZXE0_2026-06-14.md`:
   reconciliation note for the older class-declaration classifier MR against
   the aggregate class-declaration bucket evidence.
+- `docs/PHPT_BROAD_1K_CLASS_DECLARATION_CLASSIFIER_PTN_LNXT_2026-06-14.md`:
+  reconciliation note for the stale class-declaration classifier split against
+  the current explicit trait/interface/implementation/anonymous-class buckets.
 - `docs/PHPT_BROAD_1K_CLASS_DECLARATION_SPLIT_PTN_GKVR_2026-06-14.md`:
   current broad 1k class-declaration classifier split for trait, interface,
   implementation-check, and anonymous-class blocker categories.
