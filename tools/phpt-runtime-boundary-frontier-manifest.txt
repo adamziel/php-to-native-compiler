@@ -1,0 +1,66 @@
+# Broad 1k native runtime boundary frontier rows for ptn-ypmu.
+#
+# Source: `.runtime/phpt-progress/classification-20260614T073049Z.tsv` from:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only --out-dir .runtime/ptn-ypmu-baseline-rebased
+#
+# Selection:
+#   unsupported-request-input-ini
+#   sapi-behavior
+#   process-boundary
+#   external-service
+#   environment-assumption
+#   unsupported-host-path-ini
+#   harness-cleanup
+#
+Zend/tests/autoload/bug63741.phpt
+Zend/tests/bug38779_1.phpt
+ext/standard/tests/array/array_count_values_variation.phpt
+tests/basic/002.phpt
+tests/basic/003.phpt
+tests/basic/004.phpt
+tests/basic/005.phpt
+tests/basic/011.phpt
+tests/basic/011_empty_query.phpt
+tests/basic/011_register_argc_argv_disabled.phpt
+tests/basic/011_windows.phpt
+tests/basic/012.phpt
+tests/basic/012_register_argc_argv_disabled.phpt
+tests/basic/013.phpt
+tests/basic/014.phpt
+tests/basic/015.phpt
+tests/basic/016.phpt
+tests/basic/017.phpt
+tests/basic/018.phpt
+tests/basic/019.phpt
+tests/basic/020.phpt
+tests/basic/021.phpt
+tests/basic/022.phpt
+tests/basic/023.phpt
+tests/basic/025.phpt
+tests/basic/028.phpt
+tests/basic/030.phpt
+tests/basic/031.phpt
+tests/basic/032.phpt
+tests/basic/GHSA-9pqp-7h25-4f32.phpt
+tests/basic/bug29971.phpt
+tests/basic/bug53180.phpt
+tests/basic/bug55500.phpt
+tests/basic/bug61000.phpt
+tests/basic/bug67198.phpt
+tests/basic/bug71273.phpt
+tests/basic/bug78236.phpt
+tests/basic/bug78929.phpt
+tests/basic/bug79699.phpt
+tests/basic/bug80384.phpt
+tests/basic/enable_post_data_reading_01.phpt
+tests/basic/enable_post_data_reading_02.phpt
+tests/basic/enable_post_data_reading_03.phpt
+tests/basic/enable_post_data_reading_04.phpt
+tests/basic/enable_post_data_reading_05.phpt
+tests/basic/enable_post_data_reading_06.phpt
+tests/basic/enable_post_data_reading_07.phpt
+tests/basic/gh15905.phpt
+tests/basic/gh16998.phpt
+tests/basic/gh20858.phpt
+tests/basic/gh7896.phpt
+tests/basic/req60524-win.phpt
