@@ -1,6 +1,6 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T01:55Z.
+Last refresh: 2026-06-14T02:10Z.
 Source: `PROGRESS.md`
 Measured: not recorded
 
@@ -27,7 +27,6 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 714/714; Nativ
 | PHPT foreach list destructuring rows | 4/4 |
 | PHPT broad reference-call bucket | 9/12 |
 | PHPT broad Zend assignment/reference frontier | 22/32 |
-| PHPT generator/fiber COW boundary bucket | 0/12 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |

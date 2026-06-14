@@ -361,6 +361,21 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "--TEST--\nreadonly indirect mutation\n--FILE--\n<?php\nclass Bag { public readonly array $value; }\n$bag = new Bag();\n$ref =& $bag->value;\n--EXPECT--\n",
             "requires indirect readonly property mutation diagnostics",
         ),
+        (
+            "internal attribute reflection metadata",
+            "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
+            "requires internal attribute/reflection metadata",
+        ),
+        (
+            "internal Deprecated attribute object",
+            "--TEST--\ndeprecated attribute\n--FILE--\n<?php\n$d = new \\Deprecated(\"message\");\n$d->message = \"updated\";\n--EXPECT--\n",
+            "requires internal attribute/reflection metadata",
+        ),
+        (
+            "complete arginfo registry reflection",
+            "--TEST--\narginfo sweep\n--FILE--\n<?php\nforeach (get_defined_functions()[\"internal\"] as $function) { var_dump($function); }\n--EXPECT--\n",
+            "requires complete internal arginfo/class registry reflection",
+        ),
     ];
 
     for (name, phpt, reason) in cases {
@@ -481,6 +496,12 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
             "--TEST--\nhandler\n--FILE--\n<?php\nset_error_handler('handler');\nrestore_error_handler();\n--EXPECT--\n",
             "unsupported-diagnostics-runtime\t",
             "user error/exception handler state",
+        ),
+        (
+            "exception trace metadata",
+            "--TEST--\ntrace\n--FILE--\n<?php\ntry { throw new Exception(); } catch (Exception $e) { echo $e->getTraceAsString(); }\n--EXPECT--\n",
+            "unsupported-diagnostics-runtime\t",
+            "stack-frame snapshots",
         ),
         (
             "error exception metadata",
@@ -627,7 +648,7 @@ fn phpt_classifier_keeps_modeled_mutating_array_helpers_runnable() {
 #[test]
 fn phpt_classifier_keeps_unsupported_internal_names_in_strings_and_comments_runnable() {
     let classification = classify(
-        "--TEST--\ninternal names text\n--FILE--\n<?php\n// array_splice($a, 0);\n# array_multisort($a)\n/* usort($a, \"cmp\"); array_walk_recursive($a, \"cb\"); */\necho \"array_splice array_multisort usort uasort uksort array_walk_recursive\";\n--EXPECT--\narray_splice array_multisort usort uasort uksort array_walk_recursive\n",
+        "--TEST--\ninternal names text\n--FILE--\n<?php\n// array_splice($a, 0); debug_backtrace(); get_defined_functions();\n# array_multisort($a)\n/* usort($a, \"cmp\"); array_walk_recursive($a, \"cb\"); ini_set(\"zend.assertions\", 0); */\necho \"array_splice array_multisort usort uasort uksort array_walk_recursive debug_backtrace get_defined_functions ini_set zend.assertions\";\n--EXPECT--\narray_splice array_multisort usort uasort uksort array_walk_recursive debug_backtrace get_defined_functions ini_set zend.assertions\n",
     );
 
     assert!(

@@ -1022,6 +1022,19 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
+            if (line ~ /->[[:space:]]*getattributes[[:space:]]*\(/ ||
+                line ~ /(^|[^[:alnum:]_$\\])attribute[[:space:]]*::/ ||
+                line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?(deprecated|nodiscard)([^[:alnum:]_]|$)/) {
+                print "unsupported-class-metadata\trequires internal attribute/reflection metadata such as Reflection*::getAttributes(), Attribute constants, Deprecated, or NoDiscard"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(get_defined_functions|get_declared_classes)[[:space:]]*\(/ ||
+                line ~ /->[[:space:]]*newinstancewithoutconstructor[[:space:]]*\(/) {
+                print "unsupported-class-metadata\trequires complete internal arginfo/class registry reflection, outside PTN modeled metadata"
+                found = 1
+                exit
+            }
             if (line ~ /function[[:space:]]+__construct[[:space:]]*\([^)]*(public|protected|private|readonly)[[:space:]]+/) {
                 print "unsupported-class-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
                 found = 1
@@ -1144,7 +1157,8 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
         {
             raw = tolower($0)
             line = ptn_php_code_line($0)
-            if (line ~ /(^|[^[:alnum:]_$])(debug_backtrace|debug_print_backtrace)[[:space:]]*\(/) {
+            if (line ~ /(^|[^[:alnum:]_$])(debug_backtrace|debug_print_backtrace)[[:space:]]*\(/ ||
+                line ~ /->[[:space:]]*gettrace(asstring)?[[:space:]]*\(/) {
                 print "unsupported-diagnostics-runtime\trequires debug_backtrace()/debug_print_backtrace() stack-frame snapshots, outside PTN modeled call-frame diagnostics"
                 found = 1
                 exit

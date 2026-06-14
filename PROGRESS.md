@@ -1,6 +1,6 @@
 # PTN Progress
 
-Refresh: 2026-06-14T01:55Z.
+Refresh: 2026-06-14T02:10Z.
 
 ## Dashboard
 
@@ -25,7 +25,6 @@ Refresh: 2026-06-14T01:55Z.
 | PHPT foreach list destructuring rows | 4 | 4 | 0 |
 | PHPT broad reference-call bucket | 12 | 9 | 3 |
 | PHPT broad Zend assignment/reference frontier | 32 | 22 | 10 |
-| PHPT generator/fiber COW boundary bucket | 12 | 0 | 12 |
 | PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT callback manifest | 5 | 5 | 0 |
@@ -39,19 +38,23 @@ Refresh: 2026-06-14T01:55Z.
 - Bounded: 485/485; classify-only: 459 runnable/26 excluded.
 - COW/reference: array-internal 72/17/55, foreach/reference 103/31/72,
   reference-call 12 selected, 11 runnable, 9 pass.
+- Broad 1k classify-only is 409 runnable/591 excluded after `ptn-1f0f`.
+- Diagnostics metadata: 18 diagnostics-runtime rows, 9 assertion-runtime rows,
+  and 11 internal attribute/arginfo registry rows.
 - Zend frontier: 32 runnable, 22 pass; residuals: append lvalues, next-key
   overflow, object/member lvalues, compound TypeErrors, `$this`.
 - `ptn-igxz`: broad 1,000 selected, 443 runnable, 557 excluded; diff/intersect
   leaves three nested-array warning rows.
-- Broad 1k: 422 runnable/578 excluded; attributes 141; generator/fiber COW
-  boundary 12 selected/0 runnable/12 excluded.
 
 ## Verification
 
+`ptn-1f0f` classifies internal attribute metadata, arginfo/class registry
+reflection, and exception trace APIs. Broad 1k classify-only is 409/591,
+12 beyond `ptn-lrlt`; focused classifier tests pass 22/22.
+
 `ptn-igxz` makes catchable set-operation TypeErrors, accepts one-source forms,
 prevalidates callbacks, lexes `.5` floats, and keeps registry order sorted.
-Evidence: native tests, inventory 3+714, PHPT
-diff/intersect 58/61.
+Evidence: native tests, inventory 3+714, PHPT diff/intersect 58/61.
 
 `ptn-gwlo` maps a 32-row Zend assignment/reference frontier:
 `tools/phpt-zend-assignment-reference-frontier-manifest.txt` and focused PHPT
