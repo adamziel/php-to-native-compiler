@@ -251,6 +251,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_CALL_UNPACKING_CATEGORY_PTN_WD68_2026-06-14.md`:
   current broad 1k `unsupported-call-unpacking` category map with a committed
   34-row focused manifest.
+- `docs/PHPT_BROAD_1K_CALL_DYNAMIC_TYPE_CURRENT_PTN_NF1K_2026-06-14.md`:
+  current broad 1k call-unpacking, function-state, dynamic-symbol, type-hint,
+  generator, and internal-call binding blocker map with a 69-row focused
+  manifest.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_FRONTIER_2026-06-14.md`: broad 1k
   standard-array runnable frontier blocker map with current family counts.
 - `docs/PHPT_BROAD_1K_ARRAY_KEY_COERCION_FRONTIER_2026-06-14.md`: broad 1k

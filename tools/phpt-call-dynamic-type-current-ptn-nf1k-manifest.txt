@@ -1,0 +1,83 @@
+# Broad 1k current call/dynamic/type language frontier rows.
+#
+# Issue: ptn-nf1k
+# Source: .runtime/ptn-nf1k-1k-progress/classification-20260614T113800Z.tsv
+# Generated from:
+#   PHPT_PROGRESS_DIR=.runtime/ptn-nf1k-1k-progress tools/run-phpt-baseline.sh --tier 1000 --classify-only --out-dir .runtime/ptn-nf1k-1k
+#
+# Selected categories:
+#   unsupported-call-unpacking
+#   unsupported-dynamic-symbol
+#   unsupported-function-state
+#   unsupported-generator-runtime
+#   unsupported-internal-call-binding
+#   unsupported-type-hint
+Zend/tests/anon/015.phpt
+Zend/tests/anon/016.phpt
+Zend/tests/arg_unpack/basic.phpt
+Zend/tests/arg_unpack/by_ref.phpt
+Zend/tests/arg_unpack/by_ref_separation.phpt
+Zend/tests/arg_unpack/dynamic.phpt
+Zend/tests/arg_unpack/internal.phpt
+Zend/tests/arg_unpack/invalid_type.phpt
+Zend/tests/arg_unpack/many_args.phpt
+Zend/tests/arg_unpack/method.phpt
+Zend/tests/arg_unpack/new.phpt
+Zend/tests/arg_unpack/non_integer_keys.phpt
+Zend/tests/arg_unpack/positional_arg_after_unpack_error.phpt
+Zend/tests/arg_unpack/string_keys.phpt
+Zend/tests/arg_unpack/traversable_with_by_ref_parameters.phpt
+Zend/tests/array_unpack/already_occupied.phpt
+Zend/tests/array_unpack/basic.phpt
+Zend/tests/array_unpack/classes.phpt
+Zend/tests/array_unpack/gh19303.phpt
+Zend/tests/array_unpack/gh9769.phpt
+Zend/tests/array_unpack/in_destructuring.phpt
+Zend/tests/array_unpack/in_destructuring_2.phpt
+Zend/tests/array_unpack/non_integer_keys.phpt
+Zend/tests/array_unpack/ref1.phpt
+Zend/tests/array_unpack/string_keys.phpt
+Zend/tests/array_unpack/undef_var.phpt
+Zend/tests/array_unpack/unpack_invalid_type_compile_time.phpt
+Zend/tests/array_unpack/unpack_string_keys_compile_time.phpt
+Zend/tests/array_unpack_string_keys.phpt
+Zend/tests/arrow_functions/003.phpt
+Zend/tests/arrow_functions/005.phpt
+Zend/tests/arrow_functions/006.phpt
+Zend/tests/arrow_functions/007.phpt
+Zend/tests/arrow_functions/008.phpt
+Zend/tests/assert/bug70241.phpt
+Zend/tests/assert/expect_015.phpt
+Zend/tests/attributes/deprecated/class_constants/deprecated_constant_as_message_002.phpt
+Zend/tests/attributes/deprecated/class_constants/error_code_001.phpt
+Zend/tests/attributes/deprecated/constants/deprecated_constant_as_message_002.phpt
+Zend/tests/attributes/deprecated/constants/error_code.phpt
+Zend/tests/attributes/deprecated/functions/deprecated_handler_002.phpt
+Zend/tests/attributes/deprecated/functions/error_code_001.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_001.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_002.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_003.phpt
+Zend/tests/attributes/deprecated/traits/throwing_error_handler.phpt
+Zend/tests/attributes/nodiscard/error_code_001.phpt
+Zend/tests/attributes/nodiscard/throwing_error_handler_001.phpt
+Zend/tests/autoload/bug78868.phpt
+Zend/tests/backtrace/bug76047.phpt
+Zend/tests/bind_static_exception.phpt
+Zend/tests/bug26802.phpt
+Zend/tests/bug28072.phpt
+Zend/tests/bug28442.phpt
+Zend/tests/bug32322.phpt
+Zend/tests/bug35163_2.phpt
+Zend/tests/bug35470.phpt
+Zend/tests/bug38211.phpt
+Zend/tests/bug38287.phpt
+ext/standard/tests/array/GHSA-h96m-rvf9-jgm2.phpt
+ext/standard/tests/array/array_combine.phpt
+ext/standard/tests/array/array_diff_max_elements.phpt
+ext/standard/tests/array/array_diff_uassoc_basic.phpt
+ext/standard/tests/array/array_filter_invalid_mode.phpt
+ext/standard/tests/array/array_filter_object.phpt
+ext/standard/tests/array/array_find_types.phpt
+ext/standard/tests/array/array_intersect_uassoc_basic.phpt
+ext/standard/tests/array/array_map_object1.phpt
+ext/standard/tests/array/array_push_empty.phpt
