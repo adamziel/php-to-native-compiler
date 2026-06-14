@@ -212,6 +212,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_ATTRIBUTE_METADATA_SPLIT_PTN_30JI_2026-06-14.md`:
   current broad 1k attribute metadata bucket refinement, splitting the 149
   excluded rows into 141 attribute-syntax rows and 8 internal-reflection rows.
+- `docs/PHPT_BROAD_1K_ATTRIBUTE_SYNTAX_CURRENT_PTN_LX5W_2026-06-14.md`:
+  current broad 1k `unsupported-attribute-syntax-metadata` category map with a
+  committed 141-row focused manifest.
 - `docs/PHPT_BROAD_1K_DIAGNOSTICS_ASSERTION_FRONTIER_PTN_CUEV_2026-06-14.md`:
   current broad 1k diagnostics/assertion runtime blocker map and focused
   manifest.
