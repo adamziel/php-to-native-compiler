@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T04:13Z.
-Measured: `ptn-hpxo` append-form by-reference call arguments after `ptn-odca`.
+Last refresh: 2026-06-14T04:41Z.
+Measured: `ptn-j9kg` broad array callback blocker map after `ptn-hpxo`.
 
 ## Operating Goal
 
@@ -22,7 +22,7 @@ Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest
 | PHPT Zend rows | 119/119 |
 | PHPT ext/standard rows | 274/281 |
 | PHPT focused array key/callback set rows | 38/75 |
-| PHPT focused array callback validation rows | 46/65 |
+| PHPT focused array callback validation rows | 49/66 |
 | PHPT focused array diff/intersect rows | 58/61 |
 | PHPT broad diff/intersect comparator rows | 64/76 |
 | PHPT array fill/pad rows | 11/12 |

@@ -1,0 +1,72 @@
+# Focused PHPT array callback/set-operation frontier.
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Derived from broad 1k runnable rows in ptn-j9kg:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only --out-dir .runtime/ptn-j9kg-baseline-before
+#   awk '/^ext\/standard\/tests\/array\/array_(map|filter|reduce|diff_u|intersect_u|udiff|uintersect)/ {print}' \
+#     .runtime/phpt-progress/runnable-20260614T032211Z.txt
+ext/standard/tests/array/array_diff_uassoc_error.phpt
+ext/standard/tests/array/array_diff_uassoc_variation11.phpt
+ext/standard/tests/array/array_diff_uassoc_variation13.phpt
+ext/standard/tests/array/array_diff_uassoc_variation5.phpt
+ext/standard/tests/array/array_diff_uassoc_variation6.phpt
+ext/standard/tests/array/array_diff_uassoc_variation7.phpt
+ext/standard/tests/array/array_diff_uassoc_variation8.phpt
+ext/standard/tests/array/array_diff_uassoc_variation9.phpt
+ext/standard/tests/array/array_diff_ukey_basic.phpt
+ext/standard/tests/array/array_diff_ukey_variation10.phpt
+ext/standard/tests/array/array_diff_ukey_variation5.phpt
+ext/standard/tests/array/array_diff_ukey_variation6.phpt
+ext/standard/tests/array/array_diff_ukey_variation8.phpt
+ext/standard/tests/array/array_filter.phpt
+ext/standard/tests/array/array_filter_basic.phpt
+ext/standard/tests/array/array_filter_invalid_mode.phpt
+ext/standard/tests/array/array_filter_variation10.phpt
+ext/standard/tests/array/array_filter_variation3.phpt
+ext/standard/tests/array/array_filter_variation4.phpt
+ext/standard/tests/array/array_filter_variation5.phpt
+ext/standard/tests/array/array_filter_variation6.phpt
+ext/standard/tests/array/array_filter_variation7.phpt
+ext/standard/tests/array/array_filter_variation8.phpt
+ext/standard/tests/array/array_filter_variation9.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation10.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation5.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation6.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation7.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation8.phpt
+ext/standard/tests/array/array_intersect_ukey_basic.phpt
+ext/standard/tests/array/array_intersect_ukey_variation5.phpt
+ext/standard/tests/array/array_intersect_ukey_variation6.phpt
+ext/standard/tests/array/array_intersect_ukey_variation7.phpt
+ext/standard/tests/array/array_intersect_ukey_variation8.phpt
+ext/standard/tests/array/array_intersect_ukey_variation9.phpt
+ext/standard/tests/array/array_map_001.phpt
+ext/standard/tests/array/array_map_basic.phpt
+ext/standard/tests/array/array_map_error.phpt
+ext/standard/tests/array/array_map_object2.phpt
+ext/standard/tests/array/array_map_variation1.phpt
+ext/standard/tests/array/array_map_variation10.phpt
+ext/standard/tests/array/array_map_variation11.phpt
+ext/standard/tests/array/array_map_variation12.phpt
+ext/standard/tests/array/array_map_variation13.phpt
+ext/standard/tests/array/array_map_variation14.phpt
+ext/standard/tests/array/array_map_variation15.phpt
+ext/standard/tests/array/array_map_variation16.phpt
+ext/standard/tests/array/array_map_variation19.phpt
+ext/standard/tests/array/array_map_variation2.phpt
+ext/standard/tests/array/array_map_variation3.phpt
+ext/standard/tests/array/array_map_variation6.phpt
+ext/standard/tests/array/array_map_variation7.phpt
+ext/standard/tests/array/array_map_variation8.phpt
+ext/standard/tests/array/array_map_variation9.phpt
+ext/standard/tests/array/array_reduce.phpt
+ext/standard/tests/array/array_reduce_accumulator_refcount.phpt
+ext/standard/tests/array/array_reduce_return_by_ref.phpt
+ext/standard/tests/array/array_reduce_variation1.phpt
+ext/standard/tests/array/array_reduce_variation3.phpt
+ext/standard/tests/array/array_udiff_assoc_variation.phpt
+ext/standard/tests/array/array_udiff_assoc_variation5.phpt
+ext/standard/tests/array/array_udiff_uassoc_variation6.phpt
+ext/standard/tests/array/array_udiff_variation5.phpt
+ext/standard/tests/array/array_uintersect_assoc_basic2.phpt
+ext/standard/tests/array/array_uintersect_assoc_variation5.phpt
+ext/standard/tests/array/array_uintersect_uassoc_variation6.phpt

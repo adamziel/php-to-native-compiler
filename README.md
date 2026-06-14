@@ -205,6 +205,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   1k standard-array object/magic/visibility metadata blocker map.
 - `docs/PHPT_BROAD_1K_ARRAY_KEY_VALUE_FRONTIER_2026-06-14.md`: broad 1k
   standard-array key/value helper blocker map and focused manifest.
+- `docs/PHPT_BROAD_1K_ARRAY_CALLBACK_FRONTIER_PTN_J9KG_2026-06-14.md`: current
+  broad 1k array callback/set-operation blocker map and committed focused
+  manifest.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
@@ -223,6 +226,7 @@ tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-filesystem-path-process-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-string-scalar-alias-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-foreach-nested-ref-manifest.txt
+tools/run-bounded-phpt.sh tools/phpt-array-callback-validation-manifest.txt
 tools/run-phpt-baseline.sh --generate-only
 tools/run-phpt-baseline.sh --tier 1000 --classify-only
 tools/run-phpt-baseline.sh --tier 1000

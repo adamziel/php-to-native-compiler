@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T04:13Z.
+Last refresh: 2026-06-14T04:41Z.
 Source: `PROGRESS.md`
-Measured: `ptn-hpxo` append-form by-reference call arguments after `ptn-odca`.
+Measured: `ptn-j9kg` broad array callback blocker map after `ptn-hpxo`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
@@ -14,7 +14,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT 
 | PHPT Zend rows | 119/119 |
 | PHPT ext/standard rows | 274/281 |
 | PHPT focused array key/callback set rows | 38/75 |
-| PHPT focused array callback validation rows | 46/65 |
+| PHPT focused array callback validation rows | 49/66 |
 | PHPT focused array diff/intersect rows | 58/61 |
 | PHPT broad diff/intersect comparator rows | 64/76 |
 | PHPT array fill/pad rows | 11/12 |

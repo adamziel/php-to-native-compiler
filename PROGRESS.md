@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T04:13Z.
-Measured: `ptn-hpxo` append-form by-reference call arguments after `ptn-odca`.
+Refresh: 2026-06-14T04:41Z.
+Measured: `ptn-j9kg` broad array callback blocker map after `ptn-hpxo`.
 
 ## Dashboard
 
@@ -13,7 +13,7 @@ Measured: `ptn-hpxo` append-form by-reference call arguments after `ptn-odca`.
 | PHPT Zend rows | 119 | 119 | 0 |
 | PHPT ext/standard rows | 281 | 274 | 7 |
 | PHPT focused array key/callback set rows | 75 | 38 | 37 |
-| PHPT focused array callback validation rows | 65 | 46 | 19 |
+| PHPT focused array callback validation rows | 66 | 49 | 17 |
 | PHPT focused array diff/intersect rows | 61 | 58 | 3 |
 | PHPT broad diff/intersect comparator rows | 76 | 64 | 12 |
 | PHPT array fill/pad rows | 12 | 11 | 1 |
@@ -40,16 +40,16 @@ Measured: `ptn-hpxo` append-form by-reference call arguments after `ptn-odca`.
 
 ## Remaining Exclusions
 
-- Bounded: 486 selected, 456 runnable, 30 excluded; broad 1k 443/557.
-- Array frontier: set/callback 86/106; request/SAPI 1 pass, 3 fail,
-  37 skips; key/value 28/42.
-- `ptn-hpxo`: append by-ref call args lower through array-path reference
-  slots; reference-call is 10/12.
-- COW/reference: internal 17/72, foreach 31/103, reference-call 9/12.
+- Bounded: 456/486 runnable; broad 1k classify-only 443/557.
+- Array: set/callback 86/106; callback validation 49/66; key/value 28/42;
+  request/SAPI 1/41.
+- `ptn-j9kg`: callback residuals cover filter/map/reduce/comparator helpers.
+- `ptn-hpxo`: append by-ref target PHPT passes; reference-call is 10/12.
+- COW/reference: internal 17/72, foreach 31/103.
 
 ## Verification
 
 `ptn-ri9o`: request/SAPI excludes 41. `ptn-odac`: diff/intersect 58/61.
-`ptn-h8f7`: object/metadata excludes 70. `ptn-odca`: key/value 28 pass,
-9 fail, 5 classified. `ptn-hpxo`: append-reference native tests and target
-PHPT pass.
+`ptn-h8f7`: metadata excludes 70. `ptn-odca`: key/value 28/42.
+`ptn-hpxo`: append-reference native tests and target PHPT pass. `ptn-j9kg`:
+broad 1k classify-only 430 runnable/570 excluded; callback rows 49/66.
