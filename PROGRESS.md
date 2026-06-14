@@ -1,25 +1,25 @@
 # PTN Progress
 
-Refresh: 2026-06-14T07:08Z.
-Measured: `ptn-6ped`.
+Refresh: 2026-06-14T07:17Z.
+Measured: `ptn-s7ug`.
 
 ## Dashboard
 
-| Format / source | Ported | Passing | Needs work |
+| Source | Ported | Passing | Gap |
 | --- | ---: | ---: | ---: |
 | Units | 3 | 3 | 0 |
 | Native | 729 | 729 | 0 |
 | Bounded | 486 | 479 | 7 |
 | Zend | 119 | 119 | 0 |
 | ext/standard PHPT | 281 | 274 | 7 |
-| Array key/cb | 75 | 38 | 37 |
-| Array cb validation | 66 | 49 | 17 |
-| Array diff | 61 | 58 | 3 |
-| Diff comparator | 76 | 64 | 12 |
-| Array setops | 119 | 64 | 55 |
+| Array-key/cb | 75 | 38 | 37 |
+| Array-cb validation | 66 | 49 | 17 |
+| Array-diff | 61 | 58 | 3 |
+| Diff-comparator | 76 | 64 | 12 |
+| Array-setops | 119 | 64 | 55 |
 | Array fill/pad | 12 | 11 | 1 |
-| Array set/cb | 106 | 86 | 20 |
-| Array cb slice | 38 | 28 | 10 |
+| Array-set/cb | 106 | 86 | 20 |
+| Array-cb-slice | 38 | 28 | 10 |
 | Filesystem/process | 46 | 13 | 33 |
 | basic+func+lang | 78 | 78 | 0 |
 | COW manifest | 54 | 54 | 0 |
@@ -37,6 +37,7 @@ Measured: `ptn-6ped`.
 | Dynamic type | 44 | 0 | 44 |
 | Diagnostics/assertion | 47 | 0 | 47 |
 | Non-array metadata | 74 | 0 | 74 |
+| Core/basic operator | 34 | 18 | 16 |
 | Resource-limit | 1 | 0 | 1 |
 | Magic/object | 69 | 20 | 49 |
 | Magic methods | 69 | 0 | 69 |

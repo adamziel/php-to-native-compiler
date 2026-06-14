@@ -1,10 +1,10 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T07:08Z.
+Last refresh: 2026-06-14T07:17Z.
 Source: `PROGRESS.md`
-Measured: `ptn-6ped`.
+Measured: `ptn-s7ug`.
 
-Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard PHPT 274/281; Array key/cb 38/75.
+Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard PHPT 274/281; Array-key/cb 38/75.
 
 | Format / source | Passing |
 | --- | ---: |
@@ -13,14 +13,14 @@ Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/st
 | Bounded | 479/486 |
 | Zend | 119/119 |
 | ext/standard PHPT | 274/281 |
-| Array key/cb | 38/75 |
-| Array cb validation | 49/66 |
-| Array diff | 58/61 |
-| Diff comparator | 64/76 |
-| Array setops | 64/119 |
+| Array-key/cb | 38/75 |
+| Array-cb validation | 49/66 |
+| Array-diff | 58/61 |
+| Diff-comparator | 64/76 |
+| Array-setops | 64/119 |
 | Array fill/pad | 11/12 |
-| Array set/cb | 86/106 |
-| Array cb slice | 28/38 |
+| Array-set/cb | 86/106 |
+| Array-cb-slice | 28/38 |
 | Filesystem/process | 13/46 |
 | basic+func+lang | 78/78 |
 | COW manifest | 54/54 |
@@ -38,6 +38,7 @@ Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/st
 | Dynamic type | 0/44 |
 | Diagnostics/assertion | 0/47 |
 | Non-array metadata | 0/74 |
+| Core/basic operator | 18/34 |
 | Resource-limit | 0/1 |
 | Magic/object | 20/69 |
 | Magic methods | 0/69 |

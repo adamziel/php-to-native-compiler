@@ -237,6 +237,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_FUNCTION_DYNAMIC_TYPE_BLOCKERS_2026-06-14.md`: broad
   1k function-local static, nullable/never type, and variable-variable blocker
   map.
+- `docs/PHPT_BROAD_1K_CORE_BASIC_OPERATOR_FRONTIER_2026-06-14.md`: broad 1k
+  core/basic operator-control-flow blocker map and focused manifest.
 - `docs/PHPT_BROAD_1K_ARRAY_SETOPS_FRONTIER_2026-06-14.md`: broad 1k
   array diff/intersect set-operation blocker map and focused PHPT evidence.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_TDEI_2026-06-14.md`: broad 1k

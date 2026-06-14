@@ -1,0 +1,39 @@
+# Broad 1k core/basic operator-control-flow frontier rows.
+# Source: `.runtime/phpt-progress/classification-20260614T054047Z.tsv` from:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only --out-dir .runtime/ptn-s7ug-baseline
+# Selection:
+#   runnable rows matching Zend add/and/ast/binary/break_error families plus tests/basic.
+Zend/tests/add_001.phpt
+Zend/tests/add_002.phpt
+Zend/tests/add_003.phpt
+Zend/tests/add_004.phpt
+Zend/tests/add_005.phpt
+Zend/tests/add_006.phpt
+Zend/tests/add_007.phpt
+Zend/tests/add_optional_by_ref_arg.phpt
+Zend/tests/and_001.phpt
+Zend/tests/ast/ast_serialize_backtick_literal.phpt
+Zend/tests/ast/ast_serialize_floats.phpt
+Zend/tests/ast/gh21072.phpt
+Zend/tests/ast/zend-pow-assign.phpt
+Zend/tests/binary.phpt
+Zend/tests/break_error_001.phpt
+Zend/tests/break_error_002.phpt
+Zend/tests/break_error_003.phpt
+Zend/tests/break_error_004.phpt
+tests/basic/001.phpt
+tests/basic/006.phpt
+tests/basic/007.phpt
+tests/basic/008.phpt
+tests/basic/009.phpt
+tests/basic/010.phpt
+tests/basic/array_key_exists_null_deprecation.phpt
+tests/basic/array_null_offset_deprecation.phpt
+tests/basic/bug45986.phpt
+tests/basic/bug54514.phpt
+tests/basic/build_date.phpt
+tests/basic/encoding.phpt
+tests/basic/header_register_callback.phpt
+tests/basic/header_register_callback_after_output.phpt
+tests/basic/ini_parse_quantity_basic.phpt
+tests/basic/ini_parse_quantity_warnings.phpt
