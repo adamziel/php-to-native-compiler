@@ -1,7 +1,7 @@
 # PTN Progress
 
 Refresh: 2026-06-14T04:13Z.
-Measured: `ptn-h8f7` array object/metadata frontier after `ptn-odac`.
+Measured: `ptn-odca` array key/value frontier after `ptn-h8f7`.
 
 ## Dashboard
 
@@ -43,6 +43,8 @@ Measured: `ptn-h8f7` array object/metadata frontier after `ptn-odac`.
 - Bounded: 486 selected, 456 runnable, 30 excluded; broad 1k 443/557.
 - Array frontier: set/callback 86/106; request/SAPI raw 1 pass, 3 fail,
   37 skips; `ptn-h8f7` maps 70 object/metadata blockers.
+- `ptn-odca`: key/value frontier selects 42 rows; 37 runnable, 28 pass,
+  9 fail, 5 classified.
 - COW/reference: internal 17/72, foreach 31/103, reference-call 9/12.
 
 ## Verification
@@ -50,3 +52,4 @@ Measured: `ptn-h8f7` array object/metadata frontier after `ptn-odac`.
 `ptn-yvgh`: huge-count preflight. `ptn-ri9o`: request/SAPI excludes 41.
 `ptn-odac`: `array_chunk*` 32/32, leading-dot 5/5, diff/intersect 58/61.
 `ptn-h8f7`: object/metadata manifest selects 70; classify-only excludes 70.
+`ptn-odca`: key/value manifest selects 42; 28 pass, 9 fail, 5 classified.

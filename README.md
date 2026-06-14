@@ -203,6 +203,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   request/SAPI input boundary blocker map and raw focused evidence.
 - `docs/PHPT_BROAD_1K_ARRAY_OBJECT_METADATA_FRONTIER_2026-06-14.md`: broad
   1k standard-array object/magic/visibility metadata blocker map.
+- `docs/PHPT_BROAD_1K_ARRAY_KEY_VALUE_FRONTIER_2026-06-14.md`: broad 1k
+  standard-array key/value helper blocker map and focused manifest.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and

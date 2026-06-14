@@ -1,7 +1,7 @@
 # PTN Status
 
 Last refresh: 2026-06-14T04:13Z.
-Measured: `ptn-h8f7` array object/metadata frontier after `ptn-odac`.
+Measured: `ptn-odca` array key/value frontier after `ptn-h8f7`.
 
 ## Operating Goal
 

@@ -1,0 +1,54 @@
+# Focused broad PHPT key/value helper frontier for ptn-odca.
+#
+# Source: generated broad 1k manifest
+#   .runtime/ptn-odca-baseline-before/20260614T025528Z/phpt-baseline-1000.txt
+# Command used to derive this manifest:
+#   awk '$0 !~ /^#/ && NF && $0 ~ /^ext\/standard\/tests\/array\/(array_(key_exists|key_first|key_last|keys|search|flip|count_values|combine)|in_array)/ {print}' \
+#     .runtime/ptn-odca-baseline-before/20260614T025528Z/phpt-baseline-1000.txt
+#
+# Verification:
+#   tools/run-bounded-phpt.sh tools/phpt-array-key-value-frontier-manifest.txt
+# Result at .runtime/phpt-progress/run-20260614T031706Z-manifest.log:
+#   42 selected, 37 runnable, 5 classified, 28 passed, 9 failed
+ext/standard/tests/array/array_combine.phpt
+ext/standard/tests/array/array_combine_basic.phpt
+ext/standard/tests/array/array_combine_error2.phpt
+ext/standard/tests/array/array_combine_variation3.phpt
+ext/standard/tests/array/array_combine_variation4.phpt
+ext/standard/tests/array/array_combine_variation5.phpt
+ext/standard/tests/array/array_combine_variation6.phpt
+ext/standard/tests/array/array_count_values.phpt
+ext/standard/tests/array/array_count_values2.phpt
+ext/standard/tests/array/array_count_values_variation.phpt
+ext/standard/tests/array/array_flip.phpt
+ext/standard/tests/array/array_flip_basic.phpt
+ext/standard/tests/array/array_flip_variation2.phpt
+ext/standard/tests/array/array_flip_variation3.phpt
+ext/standard/tests/array/array_flip_variation4.phpt
+ext/standard/tests/array/array_flip_variation5.phpt
+ext/standard/tests/array/array_key_exists.phpt
+ext/standard/tests/array/array_key_exists_basic.phpt
+ext/standard/tests/array/array_key_exists_variation1.phpt
+ext/standard/tests/array/array_key_exists_variation3.phpt
+ext/standard/tests/array/array_key_exists_variation4.phpt
+ext/standard/tests/array/array_key_exists_variation5.phpt
+ext/standard/tests/array/array_key_exists_variation6.phpt
+ext/standard/tests/array/array_key_exists_variation7.phpt
+ext/standard/tests/array/array_key_exists_variation8.phpt
+ext/standard/tests/array/array_key_first.phpt
+ext/standard/tests/array/array_key_first_variation.phpt
+ext/standard/tests/array/array_key_last.phpt
+ext/standard/tests/array/array_key_last_variation.phpt
+ext/standard/tests/array/array_keys_basic.phpt
+ext/standard/tests/array/array_keys_on_GLOBALS.phpt
+ext/standard/tests/array/array_keys_variation_001.phpt
+ext/standard/tests/array/array_keys_variation_002.phpt
+ext/standard/tests/array/array_keys_variation_003.phpt
+ext/standard/tests/array/array_keys_variation_004.phpt
+ext/standard/tests/array/array_keys_variation_005.phpt
+ext/standard/tests/array/array_search.phpt
+ext/standard/tests/array/array_search1.phpt
+ext/standard/tests/array/array_search_variation1.phpt
+ext/standard/tests/array/array_search_variation2.phpt
+ext/standard/tests/array/array_search_variation3.phpt
+ext/standard/tests/array/array_search_variation4.phpt
