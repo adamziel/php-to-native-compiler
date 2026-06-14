@@ -182,6 +182,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_HEREDOC_NOWDOC_FRONTIER_2026-06-14.md`: plain
   heredoc/nowdoc broad 1k classifier movement and focused array-helper
   frontier.
+- `docs/PHPT_BROAD_1K_CLASS_DECLARATION_FRONTIER_2026-06-14.md`: broad 1k
+  interface, trait, implementation-check, and anonymous-class blocker map.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and

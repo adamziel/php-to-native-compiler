@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T02:36Z.
-Measured: `ptn-ndkl` array helpers.
+Refresh: 2026-06-14T02:50Z.
+Measured: `ptn-zzr2` class declaration frontier.
 
 ## Dashboard
 
@@ -26,6 +26,7 @@ Measured: `ptn-ndkl` array helpers.
 | PHPT foreach list destructuring rows | 4 | 4 | 0 |
 | PHPT broad reference-call bucket | 12 | 9 | 3 |
 | PHPT broad Zend assignment/reference frontier | 32 | 22 | 10 |
+| PHPT broad class declaration frontier | 78 | 0 | 78 |
 | PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
 | PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | Post-merge COW gate | 26 | 26 | 0 |
@@ -39,23 +40,22 @@ Measured: `ptn-ndkl` array helpers.
 
 - Bounded: 485/485; classifier 459 runnable/26 excluded.
 - Broad 1k classify-only is 443 runnable/557 excluded after `ptn-4fd3`.
+- Class declarations: 78 trait/interface/anonymous-class rows classified.
 - Heredoc/nowdoc: 70 rows moved; 21 runnable, 49 metadata blockers.
-- `ptn-ndkl`: callback helper frontier is 24/38; 14 residual rows are mapped.
+- `ptn-ndkl`: callback helper frontier is 29/39; 10 residual rows mapped.
 - `ptn-1f0f` keeps metadata/runtime buckets explicit.
 - Zend assignment/reference is 22/32; array diff/intersect is 58/61.
-- COW/reference frontiers: array-internal 17/72, foreach/reference 31/103,
+- COW/reference: array-internal 17/72, foreach/reference 31/103,
   reference-call 9/12.
 
 ## Verification
 
-`ptn-ndkl` adds generic `array_first()`/`array_last()` internals over ordered
-array entries. Native target coverage includes `compile_array_first_and_last`;
-helper PHPT is 6/6.
+`ptn-zzr2` maps broad class declaration blockers. The committed manifest
+selects 78 rows; all stay classified and documented.
+
+`ptn-ndkl` adds `array_first()`/`array_last()` over ordered array entries.
+Native target coverage passed; helper PHPT is 6/6.
 
 `ptn-4fd3` keeps plain heredoc/nowdoc rows runnable while classifying
-interpolating bodies. Broad classify-only is 443/557; frontier is 70 selected,
+interpolation. Broad classify-only is 443/557; frontier is 70 selected,
 21 runnable, 14 pass, 7 fail, 49 excluded.
-
-`ptn-igxz` makes array set-operation TypeErrors catchable, accepts one-source
-forms, prevalidates callbacks, lexes `.5` floats, and sorts registry order.
-Native target tests pass; diff/intersect PHPT is 58/61.

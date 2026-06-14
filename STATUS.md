@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T02:36Z.
-Measured: `ptn-ndkl` array helpers.
+Last refresh: 2026-06-14T02:50Z.
+Measured: `ptn-zzr2` class declaration frontier.
 
 ## Operating Goal
 
@@ -35,6 +35,7 @@ Source unit tests 3/3; Native/compiler Rust suite 716/716; Native smoke matrix 6
 | PHPT foreach list destructuring rows | 4/4 |
 | PHPT broad reference-call bucket | 9/12 |
 | PHPT broad Zend assignment/reference frontier | 22/32 |
+| PHPT broad class declaration frontier | 0/78 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | Post-merge COW gate | 26/26 |
