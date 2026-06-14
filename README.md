@@ -203,6 +203,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_ATTRIBUTE_CLASSIFIER_BUCKET_PTN_J8B8_2026-06-14.md`:
   broad 1k classifier split moving 141 PHP attribute syntax rows into the
   dedicated `unsupported-attribute-metadata` bucket and focused manifest.
+- `docs/PHPT_BROAD_1K_ATTRIBUTE_CLASSIFIER_PTN_61F9_2026-06-14.md`:
+  parallel broad 1k attribute syntax/reflection classifier split evidence with
+  a focused 149-row manifest.
 - `docs/PHPT_BROAD_1K_ATTRIBUTE_CLASSIFIER_PTN_B35N_2026-06-14.md`:
   current broad 1k explicit `unsupported-attribute-metadata` classifier split
   for 149 PHP attribute syntax/reflection metadata rows.
