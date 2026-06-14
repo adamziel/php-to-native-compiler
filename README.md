@@ -249,6 +249,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   binary-safe array-key movement.
 - `docs/PHPT_BROAD_1K_RECURSIVE_DUMP_FRONTIER_2026-06-14.md`: broad 1k
   recursive dump blocker map and `bug35239` fix evidence.
+- `docs/PHPT_FILESYSTEM_PATH_PROCESS_FRONTIER_2026-06-14.md`: focused
+  filesystem/path/process evidence showing runnable path metadata rows green
+  and residual process-boundary/cleanup blocker counts.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
