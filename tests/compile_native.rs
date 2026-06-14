@@ -14118,7 +14118,10 @@ fn compile_append_call_argument_by_value_diagnostic_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Fatal error: Cannot use [] for reading\n"
+        format!(
+            "Fatal error: Cannot use [] for reading in {} on line 2\n",
+            input.display()
+        )
     );
 }
 
@@ -14187,6 +14190,46 @@ var_dump(count($arr));",
             "Cannot add element to the array as the next element is already occupied\n",
             "int(1)\n",
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_literal_and_recursive_merge_append_overflow_to_native_binary() {
+    let root = temp_dir("ptn-native-array-literal-recursive-merge-append-overflow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-literal-recursive-merge-append-overflow.php");
+    let output = root.join("array-literal-recursive-merge-append-overflow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    $array = [PHP_INT_MAX => 42, \"overflow\"];\n\
+    var_dump($array);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    $array = [PHP_INT_MAX - 1 => \"near\", \"max\"];\n\
+    var_dump(array_key_last($array));\n\
+} catch (Error $e) {\n\
+    echo \"unexpected:\", $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    array_merge_recursive([\"\" => [PHP_INT_MAX => null]], [\"\" => [null]]);\n\
+} catch (Throwable $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot add element to the array as the next element is already occupied\nint(9223372036854775807)\nCannot add element to the array as the next element is already occupied\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

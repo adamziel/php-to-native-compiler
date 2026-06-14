@@ -109,6 +109,47 @@ static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
     return "unknown";
 }
 
+static PTN_UNUSED int ptn_array_key_from_value_checked(
+    PtnRuntime *runtime,
+    PtnValue value,
+    int quiet,
+    PtnArrayKey *key
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION: {
+            if (quiet) {
+                return 0;
+            }
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot access offset of type %s on array",
+                ptn_offset_container_type_name(value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_RESOURCE:
+        case PTN_STRING:
+        case PTN_REFERENCE:
+            *key = ptn_array_key_from_value(value);
+            return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED void ptn_emit_array_runtime_diagnostic_at_path(
     const char *kind,
     const char *message,
@@ -1113,15 +1154,13 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_for_reference_write(
 }
 
 static PTN_UNUSED int ptn_array_append_key_available(PtnRuntime *runtime, PtnArray *array) {
-    if (array->next_auto_key < INT64_MAX) {
-        for (size_t i = 0; i < array->len; i++) {
-            if (array->entries[i].key.type == PTN_ARRAY_KEY_INT &&
-                array->entries[i].key.as.integer == INT64_MAX) {
-                goto unavailable;
-            }
+    for (size_t i = 0; i < array->len; i++) {
+        if (array->entries[i].key.type == PTN_ARRAY_KEY_INT &&
+            array->entries[i].key.as.integer == INT64_MAX) {
+            goto unavailable;
         }
-        return 1;
     }
+    return 1;
 unavailable:
     ptn_throw_exception(
         runtime,
@@ -1129,6 +1168,30 @@ unavailable:
         "Cannot add element to the array as the next element is already occupied"
     );
     return 0;
+}
+
+static PTN_UNUSED PtnValue ptn_array_from_literal_entries_checked(
+    PtnRuntime *runtime,
+    size_t entry_count,
+    const PtnArrayLiteralEntry *entries
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < entry_count; i++) {
+        PtnArrayKey key;
+        if (entries[i].has_key) {
+            if (!ptn_array_key_from_value_checked(runtime, entries[i].key, 0, &key)) {
+                ptn_value_destroy(&result);
+                return ptn_null();
+            }
+        } else if (!ptn_array_append_key_available(runtime, result.as.array)) {
+            ptn_value_destroy(&result);
+            return ptn_null();
+        } else {
+            key = ptn_array_int_key(result.as.array->next_auto_key);
+        }
+        ptn_array_set_entry(result.as.array, key, ptn_value_clone(entries[i].value));
+    }
+    return result;
 }
 
 static PTN_UNUSED PtnArrayEntry *ptn_array_reference_entry(PtnArray *array, const PtnValue *key_value) {
@@ -1935,7 +1998,10 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
         ptn_emit_null_array_offset_deprecation(runtime, line);
     }
 
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayKey key;
+    if (!ptn_array_key_from_value_checked(runtime, key_value, quiet, &key)) {
+        return ptn_lookup_missing();
+    }
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     if (entry == NULL) {
         if (!quiet) {
@@ -1983,7 +2049,10 @@ static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
         return ptn_null();
     }
 
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayKey key;
+    if (!ptn_array_key_from_value_checked(runtime, key_value, 0, &key)) {
+        return ptn_null();
+    }
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     if (entry == NULL) {
         ptn_emit_undefined_array_key_warning(runtime, key, line);
@@ -2012,7 +2081,10 @@ static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container,
         ptn_emit_null_array_offset_deprecation(runtime, line);
     }
 
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayKey key;
+    if (!ptn_array_key_from_value_checked(runtime, key_value, 1, &key)) {
+        return 0;
+    }
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     int result = entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL;
     ptn_array_key_free(key);
@@ -2039,7 +2111,10 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
         ptn_emit_null_array_offset_deprecation(runtime, line);
     }
 
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayKey key;
+    if (!ptn_array_key_from_value_checked(runtime, key_value, 1, &key)) {
+        return 1;
+    }
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     int result = entry == NULL || !ptn_is_truthy(ptn_value_deref(entry->value));
     ptn_array_key_free(key);
@@ -2058,7 +2133,10 @@ static PTN_UNUSED void ptn_emit_assign_op_missing_array_key(PtnRuntime *runtime,
     if (key_value.type == PTN_NULL) {
         ptn_emit_null_array_offset_deprecation(runtime, line);
     }
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayKey key;
+    if (!ptn_array_key_from_value_checked(runtime, key_value, 0, &key)) {
+        return;
+    }
     ptn_emit_undefined_array_key_warning(runtime, key, line);
     ptn_array_key_free(key);
 }
