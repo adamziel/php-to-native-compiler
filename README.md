@@ -173,6 +173,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `PROGRESS.md`: compact test/porting dashboard.
 - `docs/PHPT_BROAD_1K_ARRAY_FRONTIER_2026-06-13.md`: current broad 1k
   runnable array-frontier blocker map.
+- `docs/PHPT_BROAD_1K_ARRAY_CALLBACK_FRONTIER_2026-06-13.md`: current broad
+  1k callback/set-operation array-helper blocker map.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
