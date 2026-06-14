@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T02:22Z.
+Last refresh: 2026-06-14T02:36Z.
 Source: `PROGRESS.md`
-Measured: `ptn-4fd3` heredoc classifier frontier.
+Measured: `ptn-ndkl` array helpers.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 715/715; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 716/716; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 715/715 |
+| Native/compiler Rust suite | 716/716 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -33,7 +33,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 715/715; Nativ
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |
 | PHPT formatted string rows | 25/75 |
-| PHPT focused array predicate/find rows | 4/4 |
+| PHPT focused array predicate/find/first/last rows | 6/6 |
 | PHPT broad 1k baseline | 265/1000 |
 
 Canonical dashboard: `PROGRESS.md`. Regenerate with
