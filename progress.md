@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T06:26Z.
+Last refresh: 2026-06-14T06:35Z.
 Source: `PROGRESS.md`
-Measured: `ptn-y75s`.
+Measured: `ptn-cuev`.
 
 Compact signal: Source unit tests 3/3; Native Rust 723/723; Bounded PHPT 479/486; Zend PHPT 119/119; ext/standard PHPT 274/281; Array key/callback 38/75.
 
@@ -34,6 +34,7 @@ Compact signal: Source unit tests 3/3; Native Rust 723/723; Bounded PHPT 479/486
 | Class declaration frontier | 1/78 |
 | Zend bug regression | 18/37 |
 | Dynamic type blockers | 0/44 |
+| Diagnostics/assertion frontier | 0/47 |
 | Non-array class metadata | 0/74 |
 | Resource-limit row | 0/1 |
 | Magic/object conversion | 20/69 |

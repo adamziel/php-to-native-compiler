@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T06:26Z.
-Measured: `ptn-y75s`.
+Refresh: 2026-06-14T06:35Z.
+Measured: `ptn-cuev`.
 
 ## Dashboard
 
@@ -33,6 +33,7 @@ Measured: `ptn-y75s`.
 | Class declaration frontier | 78 | 1 | 77 |
 | Zend bug regression | 37 | 18 | 19 |
 | Dynamic type blockers | 44 | 0 | 44 |
+| Diagnostics/assertion frontier | 47 | 0 | 47 |
 | Non-array class metadata | 74 | 0 | 74 |
 | Resource-limit row | 1 | 0 | 1 |
 | Magic/object conversion | 69 | 20 | 49 |

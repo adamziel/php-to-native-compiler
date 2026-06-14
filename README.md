@@ -191,6 +191,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_ATTRIBUTE_METADATA_FRONTIER_PTN_LZEF_2026-06-14.md`:
   current broad 1k `Zend/tests/attributes/*` metadata blocker map and focused
   manifest.
+- `docs/PHPT_BROAD_1K_DIAGNOSTICS_ASSERTION_FRONTIER_PTN_CUEV_2026-06-14.md`:
+  current broad 1k diagnostics/assertion runtime blocker map and focused
+  manifest.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_CURRENT_FRONTIER_2026-06-14.md`:
   refreshed broad 1k standard-array runnable frontier, focused manifest, and
   current 53-row residual blocker map.

@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T06:26Z.
-Measured: `ptn-y75s`.
+Last refresh: 2026-06-14T06:35Z.
+Measured: `ptn-cuev`.
 
 ## Operating Goal
 
@@ -42,6 +42,7 @@ Source unit tests 3/3; Native Rust 723/723; Bounded PHPT 479/486; Zend PHPT 119/
 | Class declaration frontier | 1/78 |
 | Zend bug regression | 18/37 |
 | Dynamic type blockers | 0/44 |
+| Diagnostics/assertion frontier | 0/47 |
 | Non-array class metadata | 0/74 |
 | Resource-limit row | 0/1 |
 | Magic/object conversion | 20/69 |
