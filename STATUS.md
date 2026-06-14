@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T00:52Z
-Measured: `ptn-yl7i` callable class-name type checks after `ptn-kgqa`.
+Last refresh: 2026-06-14T01:00Z
+Measured: `ptn-lrlt` runtime diagnostics classifier after `ptn-yl7i`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 708/708; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 712/712; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 708/708 |
+| Native/compiler Rust suite | 712/712 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |

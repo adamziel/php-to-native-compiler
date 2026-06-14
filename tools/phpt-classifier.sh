@@ -6,9 +6,9 @@
 # does not currently model: extension availability, unsupported ini/runtime
 # modes, SAPI/request sections, external service harnesses, process-boundary
 # rows, broad harness cleanup/setup sections, opt-in harness preconditions,
-# noisy upstream rows, broad unsupported language surfaces, and upstream XFAILs.
-# Generic PHP semantic gaps inside the modeled surface remain runnable and
-# should surface as PTN failures.
+# noisy upstream rows, broad unsupported language surfaces, source-level
+# runtime diagnostic APIs, and upstream XFAILs. Generic PHP semantic gaps
+# inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard,Reflection"
 PTN_PHPT_SUPPORTED_INI_DEFAULT="date.timezone,display_errors,error_reporting,extension_dir,include_path,pcre.backtrack_limit,precision,zend.assertions"
@@ -1088,6 +1088,113 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
     '
 }
 
+ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
+    local path=$1
+
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+        function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
+            quote = ""
+            escaped = 0
+            out = ""
+            for (i = 1; i <= length(raw); i++) {
+                ch = substr(raw, i, 1)
+                next_ch = substr(raw, i + 1, 1)
+                if (ptn_block_comment) {
+                    if (ch == "*" && next_ch == "/") {
+                        ptn_block_comment = 0
+                        out = out "  "
+                        i++
+                    } else {
+                        out = out " "
+                    }
+                    continue
+                }
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    out = out " "
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    out = out " "
+                    continue
+                }
+                if (ch == "/" && next_ch == "/") {
+                    break
+                }
+                if (ch == "#") {
+                    break
+                }
+                if (ch == "/" && next_ch == "*") {
+                    ptn_block_comment = 1
+                    out = out "  "
+                    i++
+                    continue
+                }
+                out = out ch
+            }
+            return tolower(out)
+        }
+        {
+            raw = tolower($0)
+            line = ptn_php_code_line($0)
+            if (line ~ /(^|[^[:alnum:]_$])(debug_backtrace|debug_print_backtrace)[[:space:]]*\(/) {
+                print "unsupported-diagnostics-runtime\trequires debug_backtrace()/debug_print_backtrace() stack-frame snapshots, outside PTN modeled call-frame diagnostics"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(set_error_handler|restore_error_handler|set_exception_handler|restore_exception_handler)[[:space:]]*\(/) {
+                print "unsupported-diagnostics-runtime\trequires user error/exception handler state and fallback dispatch, outside PTN modeled diagnostic channel"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+errorexception[[:space:]]*\(/ ||
+                line ~ /->[[:space:]]*getseverity[[:space:]]*\(/) {
+                print "unsupported-diagnostics-runtime\trequires ErrorException severity and trace metadata, outside PTN modeled built-in exception values"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])assert_options[[:space:]]*\(/) {
+                print "unsupported-assertion-runtime\trequires assert_options() mode/callback state, outside PTN modeled catchable AssertionError subset"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])ini_set[[:space:]]*\(/ && raw ~ /zend[.]assertions/) {
+                print "unsupported-assertion-runtime\trequires runtime zend.assertions mode switching, outside PTN modeled assertion state"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])namespace[[:space:]]+[a-z_\\][a-z0-9_\\]*[[:space:]]*;/) {
+                namespace_seen = 1
+            }
+            if (line ~ /(^|[^[:alnum:]_$])assert[[:space:]]*\(/) {
+                if (namespace_seen) {
+                    print "unsupported-assertion-runtime\trequires namespace-aware assertion function resolution and diagnostic rendering, outside PTN modeled assertion state"
+                    found = 1
+                    exit
+                }
+                if (line ~ /[?][?]=/) {
+                    print "unsupported-assertion-runtime\trequires assertion expression lvalue mode interaction, outside PTN modeled assertion lowering"
+                    found = 1
+                    exit
+                }
+                if (line ~ /assert[[:space:]]*\([[:space:]]*0[[:space:]]*&&.*function[[:space:]]*\(/) {
+                    print "unsupported-assertion-runtime\trequires assertion AST pretty-printing for closure expressions, outside PTN modeled assertion diagnostics"
+                    found = 1
+                    exit
+                }
+            }
+        }
+        END { exit found ? 0 : 1 }
+    '
+}
+
 ptn_phpt_first_unsupported_internal_surface() {
     local path=$1
 
@@ -1280,6 +1387,11 @@ ptn_phpt_classify_row() {
     fi
 
     if value=$(ptn_phpt_first_unsupported_class_metadata_surface "$path"); then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    if value=$(ptn_phpt_first_unsupported_runtime_diagnostics_surface "$path"); then
         printf '%s\n' "$value"
         return 0
     fi

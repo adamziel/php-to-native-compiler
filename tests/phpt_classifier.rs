@@ -468,6 +468,96 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
 }
 
 #[test]
+fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
+    let cases = [
+        (
+            "backtrace",
+            "--TEST--\nbacktrace\n--FILE--\n<?php\nprint_r(debug_backtrace(0, 1));\ndebug_print_backtrace();\n--EXPECT--\n",
+            "unsupported-diagnostics-runtime\t",
+            "stack-frame snapshots",
+        ),
+        (
+            "user error handler",
+            "--TEST--\nhandler\n--FILE--\n<?php\nset_error_handler('handler');\nrestore_error_handler();\n--EXPECT--\n",
+            "unsupported-diagnostics-runtime\t",
+            "user error/exception handler state",
+        ),
+        (
+            "error exception metadata",
+            "--TEST--\nerror exception\n--FILE--\n<?php\ntry { throw new ErrorException(); } catch (ErrorException $e) { var_dump($e->getSeverity()); }\n--EXPECT--\n",
+            "unsupported-diagnostics-runtime\t",
+            "ErrorException severity",
+        ),
+        (
+            "assert options",
+            "--TEST--\nassert options\n--FILE--\n<?php\nassert_options(ASSERT_BAIL, 1);\nassert(false);\n--EXPECT--\n",
+            "unsupported-assertion-runtime\t",
+            "assert_options() mode/callback state",
+        ),
+        (
+            "runtime zend assertions",
+            "--TEST--\nassert ini\n--FILE--\n<?php\nini_set('zend.assertions', 0);\nvar_dump(assert(false));\n--EXPECT--\n",
+            "unsupported-assertion-runtime\t",
+            "runtime zend.assertions mode switching",
+        ),
+        (
+            "namespace assert",
+            "--TEST--\nnamespace assert\n--FILE--\n<?php\nnamespace Foo;\nvar_dump(assert(false));\n--EXPECT--\n",
+            "unsupported-assertion-runtime\t",
+            "namespace-aware assertion function resolution",
+        ),
+        (
+            "assert null coalesce assignment",
+            "--TEST--\nassert lvalue\n--FILE--\n<?php\nassert($items['key'] ??= 1);\n--EXPECT--\n",
+            "unsupported-assertion-runtime\t",
+            "assertion expression lvalue mode interaction",
+        ),
+        (
+            "assert closure pretty print",
+            "--TEST--\nassert closure\n--FILE--\n<?php\nassert(0 && ($fn = function () { return 1; }));\n--EXPECT--\n",
+            "unsupported-assertion-runtime\t",
+            "assertion AST pretty-printing for closure expressions",
+        ),
+    ];
+
+    for (name, phpt, category, reason) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with(category),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_basic_assertions_runnable() {
+    let classification = classify(
+        "--TEST--\nassert\n--FILE--\n<?php\nvar_dump(assert(true));\ntry { assert(false, 'failed'); } catch (AssertionError $e) { echo $e->getMessage(); }\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_basic_assertion_closure_invocation_runnable() {
+    let classification = classify(
+        "--TEST--\nassert closure invocation\n--FILE--\n<?php\nassert((function () { return true; })());\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_variadic_parameter_rows_runnable() {
     let classification = classify(
         "--TEST--\nvariadic\n--FILE--\n<?php\nfunction f(...$args) { var_dump($args); }\nf(1, 2);\n--EXPECT--\n",
@@ -562,6 +652,18 @@ fn phpt_classifier_keeps_attribute_text_in_strings_runnable() {
 fn phpt_classifier_keeps_unsupported_syntax_words_in_strings_and_comments_runnable() {
     let classification = classify(
         "--TEST--\nsyntax text\n--FILE--\n<?php\n// throw new Exception();\n# fn($x) => $x\n/* public private(set) int $value; static $value; array_walk_recursive($a, 'f'); */\necho \"readonly class fn throw private(set) static $value array_walk_recursive($a, 'f') <<<HEREDOC\";\n--EXPECT--\nreadonly class fn throw private(set) static $value array_walk_recursive($a, 'f') <<<HEREDOC\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_runtime_diagnostics_words_in_strings_and_comments_runnable() {
+    let classification = classify(
+        "--TEST--\ndiagnostic text\n--FILE--\n<?php\n// debug_backtrace(); set_error_handler('x'); assert_options(ASSERT_BAIL, 1);\n# ini_set('zend.assertions', 0); new ErrorException();\n/* debug_print_backtrace(); restore_error_handler(); */\necho \"debug_backtrace set_error_handler assert_options zend.assertions ErrorException getSeverity\";\n--EXPECT--\ndebug_backtrace set_error_handler assert_options zend.assertions ErrorException getSeverity\n",
     );
 
     assert!(

@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T00:52Z
+Last refresh: 2026-06-14T01:00Z
 Source: `PROGRESS.md`
-Measured: `ptn-yl7i` callable class-name type checks after `ptn-kgqa`.
+Measured: `ptn-lrlt` runtime diagnostics classifier after `ptn-yl7i`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 708/708; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 712/712; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 708/708 |
+| Native/compiler Rust suite | 712/712 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
