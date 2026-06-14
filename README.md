@@ -258,6 +258,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_CLASS_DECLARATION_CATEGORY_PTN_BO7Q_2026-06-14.md`:
   current broad 1k `unsupported-class-declaration` category map, with the
   committed 78-row focused manifest verified against the post-split classifier.
+- `docs/PHPT_BROAD_1K_CLASS_DECLARATION_CLASSIFIER_PTN_ZXE0_2026-06-14.md`:
+  reconciliation note for the older class-declaration classifier MR against
+  the current `unsupported-class-declaration` bucket evidence.
 - `docs/PHPT_BROAD_1K_PLAIN_HEREDOC_CLASSIFIER_2026-06-14.md`: broad 1k
   plain heredoc/nowdoc classifier refinement and focused PHPT evidence.
 - `docs/PHPT_BROAD_1K_MAGIC_METADATA_BLOCKERS_2026-06-14.md`: current broad

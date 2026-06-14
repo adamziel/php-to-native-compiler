@@ -191,6 +191,18 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires interface implementation checks",
         ),
         (
+            "interface declaration",
+            "--TEST--\ninterface\n--FILE--\n<?php\ninterface Contract {}\n--EXPECT--\n",
+            "unsupported-class-declaration\t",
+            "requires interface declarations",
+        ),
+        (
+            "trait declaration",
+            "--TEST--\ntrait\n--FILE--\n<?php\ntrait SharedBehavior {}\n--EXPECT--\n",
+            "unsupported-class-declaration\t",
+            "requires trait declarations",
+        ),
+        (
             "call-site unpack",
             "--TEST--\nunpack\n--FILE--\n<?php\nfunction f(...$args) {}\nf(...[1, 2]);\n--EXPECT--\n",
             "unsupported-call-unpacking\t",
