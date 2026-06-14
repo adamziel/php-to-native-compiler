@@ -11207,7 +11207,7 @@ fn compile_internal_function_registry_lookup_edges_to_native_binary() {
     let output = root.join("internal-registry-lookup-edges-bin");
     fs::write(
         &input,
-        "<?php var_dump(function_exists(\"ABS\"), function_exists(\"array_key_exists\"), function_exists(\"SUBSTR\"), function_exists(\"VAR_DUMP\"), function_exists(\"missing_internal\")); echo abs(-5), \" \", strlen(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \"\\n\";",
+        "<?php var_dump(function_exists(\"ABS\"), function_exists(\"array_filter\"), function_exists(\"array_key_exists\"), function_exists(\"SUBSTR\"), function_exists(\"VAR_DUMP\"), function_exists(\"missing_internal\")); echo abs(-5), \" \", strlen(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \"\\n\";",
     )
     .unwrap();
 
@@ -11217,7 +11217,7 @@ fn compile_internal_function_registry_lookup_edges_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n5 3 cde\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n5 3 cde\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

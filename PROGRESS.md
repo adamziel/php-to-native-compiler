@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T04:58Z.
-Measured: `ptn-tdei` standard array.
+Refresh: 2026-06-14T05:05Z.
+Measured: `ptn-d6n9`.
 
 ## Dashboard
 
@@ -19,6 +19,7 @@ Measured: `ptn-tdei` standard array.
 | PHPT broad array set-operation frontier | 119 | 64 | 55 |
 | PHPT array fill/pad rows | 12 | 11 | 1 |
 | PHPT array set/callback frontier | 106 | 86 | 20 |
+| PHPT broad array callback slice | 38 | 28 | 10 |
 | PHPT focused filesystem/path/process rows | 46 | 13 | 33 |
 | PHPT tests/basic+func+lang | 78 | 78 | 0 |
 | PHPT COW manifest | 54 | 54 | 0 |
@@ -43,13 +44,12 @@ Measured: `ptn-tdei` standard array.
 
 ## Remaining Exclusions
 
-- Bounded 456/486; broad 1k 443/557.
-- Arrays: setops 64/119; tdei 61/71; callbacks 49/66; key/value 28/42.
-- References/COW: reference-call 10/12, internal 17/72, foreach 31/103.
-- Zend bug 18/37; `bug35239.phpt` blocks on recursive dump.
+- Broad 1k 443/557; bounded 456/486.
+- Arrays: setops 64/119; tdei 61/71; callbacks 49/66; registry 28/38.
+- References/COW: call 10/12, internal 17/72, foreach 31/103.
 
 ## Verification
 
-`ptn-tdei`: broad 1k 430/570; standard-array 296/87; `array_chunk()` 32/32;
-callback helpers 29/39. `ptn-oiin`: setops 119 selected, 76 runnable, 64
-pass, 12 fail, 43 excluded.
+`ptn-tdei`: standard-array 296/87, chunk 32/32, callbacks 29/39.
+`ptn-oiin`: setops 64/76 runnable, 43 excluded. `ptn-d6n9`: array_filter
+registry lookup covered; callback slice 28/38.

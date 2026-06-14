@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T04:58Z.
+Last refresh: 2026-06-14T05:05Z.
 Source: `PROGRESS.md`
-Measured: `ptn-tdei` standard array.
+Measured: `ptn-d6n9`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
@@ -20,6 +20,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT 
 | PHPT broad array set-operation frontier | 64/119 |
 | PHPT array fill/pad rows | 11/12 |
 | PHPT array set/callback frontier | 86/106 |
+| PHPT broad array callback slice | 28/38 |
 | PHPT focused filesystem/path/process rows | 13/46 |
 | PHPT tests/basic+func+lang | 78/78 |
 | PHPT COW manifest | 54/54 |

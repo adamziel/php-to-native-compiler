@@ -217,6 +217,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   set-operation blocker splits.
 - `docs/PHPT_BROAD_1K_ASYMMETRIC_VISIBILITY_FRONTIER_2026-06-14.md`: broad
   1k asymmetric property visibility frontier map.
+- `docs/PHPT_BROAD_1K_CALLBACK_REGISTRY_SLICE_2026-06-14.md`: broad 1k
+  callback registry fix evidence and remaining callback blocker map.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
