@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T03:35Z.
-Measured: `ptn-3a8d`.
+Last refresh: 2026-06-14T03:42Z.
+Measured: `ptn-51ey` standard-array frontier map after `ptn-3a8d`.
 
 ## Operating Goal
 
@@ -38,6 +38,7 @@ Source unit tests 3/3; Native/compiler Rust suite 718/718; Native smoke matrix 6
 | PHPT broad class declaration frontier | 0/78 |
 | PHPT broad resource-limit classifier row | 0/1 |
 | PHPT broad magic/object conversion frontier | 20/69 |
+| PHPT broad standard-array frontier | 0/297 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | Post-merge COW gate | 26/26 |
