@@ -206,9 +206,19 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires foreach assignment diagnostics for `$this`",
         ),
         (
-            "plain variable-variable unset",
+            "variable-variable read",
+            "--TEST--\ndynamic read\n--FILE--\n<?php\n$name = 'value';\necho $$name;\n--EXPECT--\n",
+            "requires variable variables",
+        ),
+        (
+            "braced variable-variable write",
+            "--TEST--\ndynamic write\n--FILE--\n<?php\n$name = 'value';\n${$name} = 1;\n--EXPECT--\n",
+            "requires variable variables",
+        ),
+        (
+            "variable-variable unset",
             "--TEST--\ndynamic unset\n--FILE--\n<?php\n$name = 'value';\nunset($$name);\n--EXPECT--\n",
-            "requires plain variable-variable unset",
+            "requires variable variables",
         ),
         (
             "array internal named argument",

@@ -150,7 +150,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
   generator/Fiber execution boundaries including by-reference yields/returns,
   nullable type hints, interpolating heredoc bodies,
-  plain variable-variable unsets,
+  variable variables,
   class/reflection-metadata blockers, readonly static property diagnostics,
   and currently unmodeled mutating array-internal helpers such as
   `array_multisort()`, `usort()`, `uasort()`, and `uksort()` plus
@@ -218,6 +218,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   manifest.
 - `docs/PHPT_BROAD_1K_ZEND_BUG_REGRESSION_FRONTIER_2026-06-14.md`: broad 1k
   root-level Zend historical bug-regression blocker map and focused manifest.
+- `docs/PHPT_BROAD_1K_FUNCTION_DYNAMIC_TYPE_BLOCKERS_2026-06-14.md`: broad
+  1k function-local static, nullable/never type, and variable-variable blocker
+  map.
 - `docs/PHPT_BROAD_1K_ARRAY_SETOPS_FRONTIER_2026-06-14.md`: broad 1k
   array diff/intersect set-operation blocker map and focused PHPT evidence.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_TDEI_2026-06-14.md`: broad 1k

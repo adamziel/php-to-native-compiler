@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-14T05:30Z.
-Measured: `ptn-bkcv`.
+Refresh: 2026-06-14T05:42Z.
+Measured: `ptn-ingc`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native Rust suite | 721 | 721 | 0 |
+| Native Rust | 721 | 721 | 0 |
 | PHPT bounded manifest | 486 | 479 | 7 |
 | PHPT Zend rows | 119 | 119 | 0 |
 | PHPT ext/standard rows | 281 | 274 | 7 |
@@ -31,13 +31,14 @@ Measured: `ptn-bkcv`.
 | PHPT broad Zend assignment/reference frontier | 32 | 23 | 9 |
 | PHPT broad class declaration frontier | 78 | 1 | 77 |
 | PHPT broad Zend bug regression frontier | 37 | 18 | 19 |
-| PHPT broad resource-limit classifier row | 1 | 0 | 1 |
-| PHPT broad magic/object conversion frontier | 69 | 20 | 49 |
-| PHPT broad magic-method metadata frontier | 69 | 0 | 69 |
+| Function/dynamic type blockers | 44 | 0 | 44 |
+| Resource-limit classifier row | 1 | 0 | 1 |
+| Magic/object conversion frontier | 69 | 20 | 49 |
+| Magic-method metadata frontier | 69 | 0 | 69 |
 | PHPT broad standard-array frontier | 297 | 0 | 297 |
-| PHPT broad standard-array execution | 296 | 243 | 53 |
-| PHPT broad array map/filter callback slice | 30 | 21 | 9 |
-| PHPT broad request/SAPI input frontier | 41 | 1 | 40 |
+| Standard-array execution | 296 | 243 | 53 |
+| Array map/filter callback slice | 30 | 21 | 9 |
+| Request/SAPI input frontier | 41 | 1 | 40 |
 | PHPT attribute blocker bucket | 141 | 0 | 141 |
 | PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | PHPT broad standard-array tdei slice | 71 | 61 | 10 |

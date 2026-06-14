@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T05:30Z.
+Last refresh: 2026-06-14T05:42Z.
 Source: `PROGRESS.md`
-Measured: `ptn-bkcv`.
+Measured: `ptn-ingc`.
 
-Compact signal: Source unit tests 3/3; Native Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
+Compact signal: Source unit tests 3/3; Native Rust 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native Rust suite | 721/721 |
+| Native Rust | 721/721 |
 | PHPT bounded manifest | 479/486 |
 | PHPT Zend rows | 119/119 |
 | PHPT ext/standard rows | 274/281 |
@@ -32,13 +32,14 @@ Compact signal: Source unit tests 3/3; Native Rust suite 721/721; PHPT bounded m
 | PHPT broad Zend assignment/reference frontier | 23/32 |
 | PHPT broad class declaration frontier | 1/78 |
 | PHPT broad Zend bug regression frontier | 18/37 |
-| PHPT broad resource-limit classifier row | 0/1 |
-| PHPT broad magic/object conversion frontier | 20/69 |
-| PHPT broad magic-method metadata frontier | 0/69 |
+| Function/dynamic type blockers | 0/44 |
+| Resource-limit classifier row | 0/1 |
+| Magic/object conversion frontier | 20/69 |
+| Magic-method metadata frontier | 0/69 |
 | PHPT broad standard-array frontier | 0/297 |
-| PHPT broad standard-array execution | 243/296 |
-| PHPT broad array map/filter callback slice | 21/30 |
-| PHPT broad request/SAPI input frontier | 1/41 |
+| Standard-array execution | 243/296 |
+| Array map/filter callback slice | 21/30 |
+| Request/SAPI input frontier | 1/41 |
 | PHPT attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | PHPT broad standard-array tdei slice | 61/71 |

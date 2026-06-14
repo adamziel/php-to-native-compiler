@@ -968,8 +968,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])unset[[:space:]]*\([[:space:]]*[$][$]/) {
-                print "unsupported-language\trequires plain variable-variable unset, outside PTN modeled dynamic-root array unset/write support"
+            if (line ~ /[$][$]|[$][{][[:space:]]*[$]/) {
+                print "unsupported-language\trequires variable variables and runtime symbol-table lookup/mutation, outside PTN static variable model"
                 found = 1
                 exit
             }
