@@ -1651,6 +1651,22 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     assert_eq!(error.message, "Cannot redeclare function array_combine()");
 
     let error =
+        parser::parse("<?php function array_all($array, $callback) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_all()");
+
+    let error =
+        parser::parse("<?php function ARRAY_ANY($array, $callback) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_any()");
+
+    let error =
+        parser::parse("<?php function array_find($array, $callback) { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_find()");
+
+    let error = parser::parse("<?php function ARRAY_FIND_KEY($array, $callback) { return null; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_find_key()");
+
+    let error =
         parser::parse("<?php function ARRAY_FILTER($array, $callback = null) { return []; }")
             .unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function array_filter()");
@@ -14871,6 +14887,59 @@ var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'))
         "array(0) {\n}\narray(2) {\n  [\"foo\"]=>\n  NULL\n  [\"bar\"]=>\n  NULL\n}\narray(7) {\n  [5]=>\n  int(123)\n  [\"foo\"]=>\n  int(123)\n  [10]=>\n  int(123)\n  [\"1.23\"]=>\n  int(123)\n  [\"\"]=>\n  int(123)\n  [1]=>\n  int(123)\n  [\"02\"]=>\n  int(123)\n}\narray(2) {\n  [\"x\"]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [\"y\"]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_predicate_find_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-array-predicate-find");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-predicate-find.php");
+    let output = root.join("array-predicate-find-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function even($value) { return $value % 2 === 0; }\n\
+class BiggerThanThree { public static function test($value) { return $value > 3; } }\n\
+$items = array(\"a\" => 1, \"b\" => 2, \"c\" => 3, \"d\" => 4);\n\
+var_dump(array_all($items, fn($value) => $value > 0));\n\
+var_dump(array_all($items, fn($value, $key) => $key !== \"c\"));\n\
+var_dump(array_any($items, fn($value) => $value > 3));\n\
+var_dump(array_any($items, fn($value, $key) => $key === \"c\"));\n\
+var_dump(array_find($items, \"even\"));\n\
+var_dump(array_find_key($items, \"even\"));\n\
+var_dump(array_find($items, array(\"BiggerThanThree\", \"test\")));\n\
+var_dump(array_find_key($items, \"BiggerThanThree::test\"));\n\
+var_dump(array_find(array(), fn() => true));\n\
+var_dump(array_any(array(), fn() => true));\n\
+var_dump(array_all(array(), fn() => false));\n\
+try {\n\
+    var_dump(array_any($items, function($value) {\n\
+        if ($value === 2) { throw new Exception(\"stop\"); }\n\
+        return false;\n\
+    }));\n\
+} catch (Exception $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(function_exists(\"array_all\"), function_exists(\"ARRAY_ANY\"), function_exists(\"array_find\"), function_exists(\"ARRAY_FIND_KEY\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(false)\nbool(true)\nbool(true)\nint(2)\nstring(1) \"b\"\nint(4)\nstring(1) \"d\"\nNULL\nbool(false)\nbool(true)\nstop\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_all"));
+    assert!(c_source.contains("ptn_internal_array_any"));
+    assert!(c_source.contains("ptn_internal_array_find"));
+    assert!(c_source.contains("ptn_internal_array_find_key"));
+    assert!(c_source.contains("ptn_array_callback_predicate_matches"));
 }
 
 #[test]

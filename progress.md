@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T00:32Z
+Last refresh: 2026-06-14T00:42Z
 Source: `PROGRESS.md`
-Measured: `ptn-550s.10` foreach list diagnostics after `ptn-2juv`.
+Measured: `ptn-kgqa` array predicate/find helpers after `ptn-550s.10`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 705/705; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 706/706; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 705/705 |
+| Native/compiler Rust suite | 706/706 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -31,6 +31,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 705/705; Nativ
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |
 | PHPT formatted string rows | 25/75 |
+| PHPT focused array predicate/find rows | 4/4 |
 | PHPT broad 1k baseline | 265/1000 |
 
 Canonical dashboard: `PROGRESS.md`. Regenerate with

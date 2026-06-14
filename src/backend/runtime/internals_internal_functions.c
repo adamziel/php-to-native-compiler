@@ -3609,6 +3609,140 @@ static PtnValue ptn_internal_array_fill_keys(PtnRuntime *runtime, size_t argc, c
     return result;
 }
 
+static int ptn_array_callback_predicate_matches(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    PtnArrayEntry *entry,
+    size_t line,
+    int *matched_out
+) {
+    PtnValue callback_args[2] = {
+        ptn_value_clone_deref(entry->value),
+        ptn_array_key_value(entry->key)
+    };
+    PtnValue callback_result = ptn_call_callable(runtime, callback, 2, callback_args, line);
+    ptn_value_destroy(&callback_args[0]);
+    ptn_value_destroy(&callback_args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback_result);
+        *matched_out = 0;
+        return 0;
+    }
+    *matched_out = ptn_is_truthy(callback_result);
+    ptn_value_destroy(&callback_result);
+    return 1;
+}
+
+static PtnValue ptn_array_predicate_callback_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue callback
+) {
+    return ptn_internal_expect_callback_arg(runtime, function_name, 2, "callback", callback);
+}
+
+static PtnValue ptn_internal_array_all(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_all", 1, "array", args[0]);
+    PtnValue callback = ptn_array_predicate_callback_arg(runtime, "array_all", args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+
+    for (size_t i = 0; i < array->len; i++) {
+        int matched = 0;
+        if (!ptn_array_callback_predicate_matches(runtime, callback, &array->entries[i], line, &matched)) {
+            ptn_value_destroy(&callback);
+            return ptn_null();
+        }
+        if (!matched) {
+            ptn_value_destroy(&callback);
+            return ptn_bool(0);
+        }
+    }
+
+    ptn_value_destroy(&callback);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_array_any(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_any", 1, "array", args[0]);
+    PtnValue callback = ptn_array_predicate_callback_arg(runtime, "array_any", args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+
+    for (size_t i = 0; i < array->len; i++) {
+        int matched = 0;
+        if (!ptn_array_callback_predicate_matches(runtime, callback, &array->entries[i], line, &matched)) {
+            ptn_value_destroy(&callback);
+            return ptn_null();
+        }
+        if (matched) {
+            ptn_value_destroy(&callback);
+            return ptn_bool(1);
+        }
+    }
+
+    ptn_value_destroy(&callback);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_array_find(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_find", 1, "array", args[0]);
+    PtnValue callback = ptn_array_predicate_callback_arg(runtime, "array_find", args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+
+    for (size_t i = 0; i < array->len; i++) {
+        int matched = 0;
+        if (!ptn_array_callback_predicate_matches(runtime, callback, &array->entries[i], line, &matched)) {
+            ptn_value_destroy(&callback);
+            return ptn_null();
+        }
+        if (matched) {
+            PtnValue found = ptn_value_clone_deref(array->entries[i].value);
+            ptn_value_destroy(&callback);
+            return found;
+        }
+    }
+
+    ptn_value_destroy(&callback);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_array_find_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_find_key", 1, "array", args[0]);
+    PtnValue callback = ptn_array_predicate_callback_arg(runtime, "array_find_key", args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+
+    for (size_t i = 0; i < array->len; i++) {
+        int matched = 0;
+        if (!ptn_array_callback_predicate_matches(runtime, callback, &array->entries[i], line, &matched)) {
+            ptn_value_destroy(&callback);
+            return ptn_null();
+        }
+        if (matched) {
+            PtnValue found = ptn_array_key_value(array->entries[i].key);
+            ptn_value_destroy(&callback);
+            return found;
+        }
+    }
+
+    ptn_value_destroy(&callback);
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_array_filter(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_filter", 1, "array", args[0]);
     PtnValue callback = argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_null();
@@ -11313,6 +11447,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "abs", 1, 1, ptn_internal_abs },
         { "addcslashes", 2, 2, ptn_internal_addcslashes },
         { "addslashes", 1, 1, ptn_internal_addslashes },
+        { "array_all", 2, 2, ptn_internal_array_all },
+        { "array_any", 2, 2, ptn_internal_array_any },
         { "array_change_key_case", 1, 2, ptn_internal_array_change_key_case },
         { "array_chunk", 2, 3, ptn_internal_array_chunk },
         { "array_column", 2, 3, ptn_internal_array_column },
@@ -11325,6 +11461,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_diff_ukey", 3, PTN_VARIADIC_ARGS, ptn_internal_array_diff_ukey },
         { "array_fill", 3, 3, ptn_internal_array_fill },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
+        { "array_find", 2, 2, ptn_internal_array_find },
+        { "array_find_key", 2, 2, ptn_internal_array_find_key },
         { "array_filter", 1, 3, ptn_internal_array_filter },
         { "array_flip", 1, 1, ptn_internal_array_flip },
         { "array_intersect", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect },
