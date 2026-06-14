@@ -299,6 +299,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_EXTENSION_ENVIRONMENT_FRONTIER_2026-06-14.md`: broad
   1k unavailable-extension, process-boundary, host-precondition, external
   service, and PHPT environment setup blocker map.
+- `docs/PHPT_BROAD_1K_CURRENT_RESIDUAL_PTN_JD95_2026-06-14.md`: current broad
+  1k residual coverage map reconciling runnable rows against committed focused
+  manifests and isolating `ErrorException::getSeverity()` as the one current
+  residual runner-runnable diagnostics row.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
