@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T10:44Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; COW 69/103 passed.
+Refresh: 2026-06-14T11:45Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; COW 69/103 passed.
 
 ## Dashboard
 
@@ -60,7 +60,8 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; COW 69/
 |Dynamic-symbol|8|0|8|
 |Generator-runtime|1|0|1|
 |Internal-call-bind|1|0|1|
-|Attribute-blockers|149|0|149|
+|Attribute-syntax|141|0|141|
+|Attribute-internal|8|0|8|
 |Attribute-meta|204|0|204|
 |Heredoc-array|70|14|56|
 |Std-array-tdei|71|61|10|

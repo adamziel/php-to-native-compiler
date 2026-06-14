@@ -882,7 +882,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 next
             }
             if (ptn_has_php_attribute_syntax($0)) {
-                print "unsupported-attribute-metadata\trequires PHP attribute syntax (`#[...]`) and reflection metadata, outside PTN parser/metadata model"
+                print "unsupported-attribute-syntax-metadata\trequires PHP attribute syntax (`#[...]`) plus declaration/reflection metadata, outside PTN parser/metadata model"
                 found = 1
                 exit
             }
@@ -1121,7 +1121,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /->[[:space:]]*getattributes[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])attribute[[:space:]]*::/ ||
                 line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?(deprecated|nodiscard)([^[:alnum:]_]|$)/) {
-                print "unsupported-attribute-metadata\trequires internal attribute/reflection metadata such as Reflection*::getAttributes(), Attribute constants, Deprecated, or NoDiscard"
+                print "unsupported-internal-attribute-metadata\trequires internal attribute/reflection metadata such as Reflection*::getAttributes(), Attribute constants, Deprecated, or NoDiscard"
                 found = 1
                 exit
             }

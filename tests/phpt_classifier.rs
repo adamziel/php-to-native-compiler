@@ -315,29 +315,33 @@ fn phpt_classifier_splits_attribute_metadata_blockers() {
         (
             "attribute syntax on class",
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nclass Bag {}\n--EXPECT--\n",
+            "unsupported-attribute-syntax-metadata\t",
             "requires PHP attribute syntax",
         ),
         (
             "attribute syntax on function",
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n",
+            "unsupported-attribute-syntax-metadata\t",
             "requires PHP attribute syntax",
         ),
         (
             "internal attribute reflection metadata",
             "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
+            "unsupported-internal-attribute-metadata\t",
             "requires internal attribute/reflection metadata",
         ),
         (
             "internal Deprecated attribute object",
             "--TEST--\ndeprecated attribute\n--FILE--\n<?php\n$d = new \\Deprecated(\"message\");\n$d->message = \"updated\";\n--EXPECT--\n",
+            "unsupported-internal-attribute-metadata\t",
             "requires internal attribute/reflection metadata",
         ),
     ];
 
-    for (name, phpt, reason) in cases {
+    for (name, phpt, category, reason) in cases {
         let classification = classify(phpt);
         assert!(
-            classification.starts_with("unsupported-attribute-metadata\t"),
+            classification.starts_with(category),
             "{name}: {classification:?}"
         );
         assert!(
@@ -606,13 +610,13 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "internal attribute reflection metadata",
             "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
-            "unsupported-attribute-metadata\t",
+            "unsupported-internal-attribute-metadata\t",
             "requires internal attribute/reflection metadata",
         ),
         (
             "internal Deprecated attribute object",
             "--TEST--\ndeprecated attribute\n--FILE--\n<?php\n$d = new \\Deprecated(\"message\");\n$d->message = \"updated\";\n--EXPECT--\n",
-            "unsupported-attribute-metadata\t",
+            "unsupported-internal-attribute-metadata\t",
             "requires internal attribute/reflection metadata",
         ),
         (
