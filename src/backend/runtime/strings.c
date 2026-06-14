@@ -397,6 +397,29 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
     if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
         return object_string;
     }
+    PtnValue resolved = ptn_value_deref(value);
+    const char *class_name = NULL;
+    if (resolved.type == PTN_OBJECT) {
+        class_name = resolved.as.object->class_name;
+    } else if (resolved.type == PTN_CLOSURE) {
+        class_name = "Closure";
+    } else if (resolved.type == PTN_EXCEPTION) {
+        class_name = resolved.as.exception->class_name;
+    }
+    if (class_name != NULL && runtime != NULL) {
+        int needed = snprintf(NULL, 0, "Object of class %s could not be converted to string", class_name);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, (size_t)needed + 1, "Object of class %s could not be converted to string", class_name);
+        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+        free(message);
+        return ptn_string_operand_borrowed("");
+    }
     return ptn_value_to_string_operand(value);
 }
 

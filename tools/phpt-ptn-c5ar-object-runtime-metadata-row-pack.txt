@@ -1,0 +1,27 @@
+# Broad 1k object/class metadata runtime diagnostics row pack for ptn-c5ar.
+#
+# Source: tools/phpt-class-object-metadata-granular-ptn-gt7b-manifest.txt
+# refined to rows exercising object string conversion, callback metadata
+# validation, variadic array TypeErrors, and stale __call/class-method callback
+# classifier boundaries.
+#
+Zend/tests/abstract-static.phpt
+Zend/tests/abstract_method_optional_params.phpt
+Zend/tests/access_modifiers/access_modifiers_001.phpt
+Zend/tests/access_modifiers/access_modifiers_002.phpt
+Zend/tests/access_modifiers/access_modifiers_003.phpt
+Zend/tests/access_modifiers/access_modifiers_004.phpt
+Zend/tests/access_modifiers/access_modifiers_005.phpt
+Zend/tests/access_modifiers/access_modifiers_007.phpt
+Zend/tests/access_modifiers/access_modifiers_012.phpt
+Zend/tests/access_modifiers/access_modifiers_013.phpt
+Zend/tests/bug34260.phpt
+Zend/tests/bug34678.phpt
+Zend/tests/bug37811.phpt
+ext/standard/tests/array/array_fill_keys_variation1.phpt
+ext/standard/tests/array/array_map_object3.phpt
+ext/standard/tests/array/array_map_variation17.phpt
+ext/standard/tests/array/array_merge_recursive_variation1.phpt
+ext/standard/tests/array/array_merge_recursive_variation2.phpt
+ext/standard/tests/array/array_merge_variation1.phpt
+ext/standard/tests/array/array_merge_variation2.phpt

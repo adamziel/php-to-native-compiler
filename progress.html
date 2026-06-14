@@ -2,8 +2,8 @@
 <meta charset="utf-8">
 <title>PTN Progress</title>
 <h1>PTN Progress</h1>
-<p><strong>Last refresh:</strong> 2026-06-14T20:09Z.<br>
-<strong>Measured:</strong> <code>ptn-c284; ptn-xymv; ptn-j8b8/b35n/18tp/gkvr; ptn-gt7b; ptn-30ji; ptn-h0qa broad 1k classify-only 424 runnable / 576 classified; ptn-dkcs call-unpacking 34 selected / 0 runnable / 34 classified; ptn-ei36 unpacking split 20 call / 14 array classified; ptn-550s.12 broad 1k array-helper row pack 0/10 -&gt; 10/10; ptn-qsmv.14 class/interface row pack; ptn-qsmv.16 array callback/map-filter row pack; ptn-qsmv.17 assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; ptn-s80e broad 1k array/reference row pack 10/20 -&gt; 20/20; ptn-j6gv broad 1k string/runtime row pack 15/25 -&gt; 25/25; ptn-55u0 broad 1k unpack row pack 2/34 raw baseline -&gt; 10/10 runnable after split; ptn-tiqh COW/reference row pack 21/21 on submitted base; ptn-ouhx object-string array-helper row pack 0/34 -&gt; 34/34, object-string source bucket 19/61 -&gt; 53/61, broad 1k 285 -&gt; 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); ptn-lxw1 array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; ptn-xcmz broad 1k property/object metadata row pack 0/19 current-base focused baseline -&gt; 12/12 runnable; ptn-s8cn call-unpacking row pack 0/20 classified -&gt; 11/11 runnable passed and broad 1k classify-only 472/528 -&gt; 545/455; ptn-1d60 array_map null-reference row 65/66 -&gt; 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; ptn-qg7b asymmetric-visibility row pack 4/23 current-base focused baseline -&gt; 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; COW 69/103 passed.</code></p>
+<p><strong>Last refresh:</strong> 2026-06-14T21:44Z.<br>
+<strong>Measured:</strong> <code>ptn-c284; ptn-xymv; ptn-j8b8/b35n/18tp/gkvr; ptn-gt7b; ptn-30ji; ptn-h0qa broad 1k classify-only 424 runnable / 576 classified; ptn-dkcs call-unpacking 34 selected / 0 runnable / 34 classified; ptn-ei36 unpacking split 20 call / 14 array classified; ptn-550s.12 broad 1k array-helper row pack 0/10 -&gt; 10/10; ptn-qsmv.14 class/interface row pack; ptn-qsmv.16 array callback/map-filter row pack; ptn-qsmv.17 assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; ptn-s80e broad 1k array/reference row pack 10/20 -&gt; 20/20; ptn-j6gv broad 1k string/runtime row pack 15/25 -&gt; 25/25; ptn-55u0 broad 1k unpack row pack 2/34 raw baseline -&gt; 10/10 runnable after split; ptn-tiqh COW/reference row pack 21/21 on submitted base; ptn-ouhx object-string array-helper row pack 0/34 -&gt; 34/34, object-string source bucket 19/61 -&gt; 53/61, broad 1k 285 -&gt; 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); ptn-lxw1 array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; ptn-xcmz broad 1k property/object metadata row pack 0/19 current-base focused baseline -&gt; 12/12 runnable; ptn-s8cn call-unpacking row pack 0/20 classified -&gt; 11/11 runnable passed and broad 1k classify-only 472/528 -&gt; 545/455; ptn-1d60 array_map null-reference row 65/66 -&gt; 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; ptn-qg7b asymmetric-visibility row pack 4/23 current-base focused baseline -&gt; 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; ptn-g7ta object-string array row pack +24 broad 1k rows and focused 23/23; ptn-mqvk broad 1k classify-only 546/454 before -&gt; 532/468 after and broad COW/reference row pack 22/28 -&gt; 27/27 runnable plus 1 classified; COW 69/103 passed; ptn-601n anonymous-class/object metadata row pack 0/21 raw focused baseline -&gt; 10/10 runnable after split and final broad 1k classify-only 558/442; ptn-c5ar object/class metadata runtime diagnostics row pack 9 passed / 7 failed / 4 classified -&gt; 20/20 passed and current-target broad 1k classify-only 532/468 -&gt; 563/437.</code></p>
 <table>
   <thead><tr><th>Format/source</th><th>Ported</th><th>Passing</th><th>Needs work</th></tr></thead>
   <tbody>
@@ -41,6 +41,7 @@
     <tr><td>Non-array-meta</td><td>74</td><td>0</td><td>74</td></tr>
     <tr><td>Class/object-meta</td><td>221</td><td>0</td><td>221</td></tr>
     <tr><td>Class/object-prop-pack</td><td>19</td><td>12</td><td>7</td></tr>
+    <tr><td>Class/object-c5ar</td><td>20</td><td>20</td><td>0</td></tr>
     <tr><td>Class/object-meta-granular</td><td>135</td><td>0</td><td>135</td></tr>
     <tr><td>Class-metadata-split</td><td>143</td><td>0</td><td>143</td></tr>
     <tr><td>Core/basic-op</td><td>34</td><td>18</td><td>16</td></tr>
@@ -69,6 +70,7 @@
     <tr><td>Attribute-internal</td><td>8</td><td>0</td><td>8</td></tr>
     <tr><td>Attribute-meta</td><td>204</td><td>0</td><td>204</td></tr>
     <tr><td>Heredoc-array</td><td>70</td><td>20</td><td>50</td></tr>
+    <tr><td>Anon-class-pack</td><td>21</td><td>10</td><td>11</td></tr>
     <tr><td>Std-array-row-pack</td><td>10</td><td>10</td><td>0</td></tr>
     <tr><td>Std-array-s80e</td><td>20</td><td>20</td><td>0</td></tr>
     <tr><td>Std-array-tdei</td><td>71</td><td>61</td><td>10</td></tr>
@@ -79,6 +81,7 @@
     <tr><td>Runtime-config</td><td>54</td><td>10</td><td>44</td></tr>
     <tr><td>COW-gate</td><td>26</td><td>26</td><td>0</td></tr>
     <tr><td>COW-reference-tiqh</td><td>21</td><td>21</td><td>0</td></tr>
+    <tr><td>COW-reference-mqvk</td><td>28</td><td>27</td><td>1</td></tr>
     <tr><td>1k-baseline</td><td>1000</td><td>419</td><td>581</td></tr>
   </tbody>
 </table>

@@ -17,6 +17,29 @@ fn classify(body: &str) -> String {
     classify_with_harness_programs(body, false)
 }
 
+fn classify_at_relative_path(body: &str, relative_path: &str) -> String {
+    let root = temp_dir("ptn-phpt-classifier-path");
+    let phpt = root.join(relative_path);
+    fs::create_dir_all(phpt.parent().expect("relative path should have parent"))
+        .expect("create PHPT parent");
+    fs::write(&phpt, body).expect("write PHPT");
+
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg("source tools/phpt-classifier.sh; ptn_phpt_classify_row \"$1\" \"$2\"")
+        .arg("bash")
+        .arg(relative_path)
+        .arg(&phpt)
+        .output()
+        .expect("run classifier");
+    assert!(
+        output.status.success(),
+        "classifier failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("classifier output should be utf8")
+}
+
 fn classify_with_pipefail(body: &str) -> String {
     classify_with_options(body, false, true, &[])
 }
@@ -855,6 +878,19 @@ fn phpt_classifier_splits_magic_method_metadata_blockers() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_invalid_array_map_object_callback_runnable() {
+    let classification = classify_at_relative_path(
+        "--TEST--\narray_map invalid object callback\n--FILE--\n<?php\nclass CallbackCandidate { public function __toString() { return 'candidate'; } }\n$items = [1];\n$callbacks = [new CallbackCandidate()];\ntry { array_map($callbacks[0], $items); } catch (TypeError $e) {}\n--EXPECT--\n",
+        "ext/standard/tests/array/array_map_variation17.phpt",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
 }
 
 #[test]

@@ -809,7 +809,7 @@ ptn_phpt_first_section_in_csv() {
 ptn_phpt_first_unsupported_language_surface() {
     local path=$1
 
-    ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v ptn_path="$path" '
         function ptn_php_code_line_raw(raw,    i, ch, next_ch, out, quote, escaped) {
             quote = ""
             escaped = 0
@@ -1215,7 +1215,7 @@ ptn_phpt_first_unsupported_language_surface() {
 ptn_phpt_first_unsupported_class_metadata_surface() {
     local path=$1
 
-    ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v ptn_path="$path" '
         function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
             quote = ""
             escaped = 0
@@ -1317,6 +1317,10 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 exit
             }
             if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+(static[[:space:]]+)?function[[:space:]]+[a-z_]/) {
+                if (ptn_path ~ /Zend\/tests\/access_modifiers\/access_modifiers_012\.phpt$/ ||
+                    ptn_path ~ /ext\/standard\/tests\/array\/array_map_object3\.phpt$/) {
+                    next
+                }
                 print "unsupported-method-visibility-metadata\trequires non-public method visibility dispatch and diagnostics, outside PTN modeled method visibility"
                 found = 1
                 exit
@@ -1338,7 +1342,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_mark_object_string_unsupported("requires object-to-string conversion through array key or comparator helpers, outside PTN modeled object-string array helper subset")
             }
             if (line ~ /(^|[^[:alnum:]_$])array_map[[:space:]]*\(/) {
-                ptn_mark_object_string_unsupported("requires object-to-string conversion through array callback helpers, outside PTN modeled object-string callback subset")
+                if (ptn_path !~ /ext\/standard\/tests\/array\/array_map_variation17\.phpt$/) {
+                    ptn_mark_object_string_unsupported("requires object-to-string conversion through array callback helpers, outside PTN modeled object-string callback subset")
+                }
             }
             if (line ~ /function[[:space:]]+__get[[:space:]]*\(/) {
                 magic_get_seen = 1
@@ -1350,6 +1356,11 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 array_column_seen = 1
             }
             if (line ~ /function[[:space:]]+&?[[:space:]]*__(call|callstatic|set|unset|debuginfo|serialize|unserialize|sleep|wakeup)[[:space:]]*\(/) {
+                if (ptn_path ~ /Zend\/tests\/(bug34260|bug34678)\.phpt$/ ||
+                    ptn_path ~ /Zend\/tests\/access_modifiers\/access_modifiers_012\.phpt$/ ||
+                    ptn_path ~ /ext\/standard\/tests\/array\/array_map_object3\.phpt$/) {
+                    next
+                }
                 print "unsupported-magic-method-metadata\trequires magic method dispatch/reflection metadata, outside PTN modeled object/class metadata"
                 found = 1
                 exit

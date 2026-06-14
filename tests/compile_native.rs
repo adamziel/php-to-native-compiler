@@ -4817,6 +4817,7 @@ class StringCapable {
         return \"Hello, world\";
     }
 }
+class Plain {}
 
 $value = new StringCapable();
 var_dump(strlen($value));
@@ -4825,6 +4826,11 @@ echo $value, \"\\n\";
 echo \"prefix:$value\\n\";
 try {
     var_dump((string) new stdClass());
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump((string) new Plain());
 } catch (Error $e) {
     echo $e->getMessage(), \"\\n\";
 }
@@ -4838,7 +4844,7 @@ try {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(12)\nint(12)\nHello, world\nprefix:Hello, world\nObject of class stdClass could not be converted to string\n"
+        "int(12)\nint(12)\nHello, world\nprefix:Hello, world\nObject of class stdClass could not be converted to string\nObject of class Plain could not be converted to string\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -16263,6 +16269,9 @@ class CallbackTarget {
 report(fn() => array_map(\"missing_map\", [1]));
 report(fn() => array_map([\"MissingCallbackTarget\", \"ok\"], [1]));
 report(fn() => array_map([\"CallbackTarget\", \"missing\"], [1]));
+report(fn() => array_map(123, [1]));
+report(fn() => array_map([1, 2], [1]));
+report(fn() => array_map(new CallbackTarget(), [1]));
 report(fn() => array_filter([1], \"missing_filter\"));
 report(fn() => array_reduce([1], \"missing_reduce\"));
 report(fn() => array_diff_ukey([1], [2], \"missing_key\"));
@@ -16283,6 +16292,9 @@ echo \"done\\n\";
             "array_map(): Argument #1 ($callback) must be a valid callback or null, function \"missing_map\" not found or invalid function name\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, class \"MissingCallbackTarget\" not found\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, class CallbackTarget does not have a method \"missing\"\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, first array member is not a valid class name or object\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",
             "array_filter(): Argument #2 ($callback) must be a valid callback or null, function \"missing_filter\" not found or invalid function name\n",
             "array_reduce(): Argument #2 ($callback) must be a valid callback, function \"missing_reduce\" not found or invalid function name\n",
             "array_diff_ukey(): Argument #3 must be a valid callback, function \"missing_key\" not found or invalid function name\n",
@@ -18892,7 +18904,9 @@ $assoc_right = [\"k\" => \"right\", \"both\" => [\"y\" => 2]];\n\
 $assoc = array_merge_recursive($assoc_left, $assoc_right);\n\
 $assoc[\"both\"][\"x\"] = 9;\n\
 var_dump($assoc);\n\
-var_dump($assoc_left[\"both\"][\"x\"], $assoc_right[\"both\"][\"y\"], function_exists(\"array_merge_recursive\"));",
+var_dump($assoc_left[\"both\"][\"x\"], $assoc_right[\"both\"][\"y\"], function_exists(\"array_merge_recursive\"));\n\
+try { array_merge_recursive(1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_merge_recursive([], 1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }",
     )
     .unwrap();
 
@@ -18943,7 +18957,9 @@ var_dump($assoc_left[\"both\"][\"x\"], $assoc_right[\"both\"][\"y\"], function_e
             "}\n",
             "int(1)\n",
             "int(2)\n",
-            "bool(true)\n"
+            "bool(true)\n",
+            "array_merge_recursive(): Argument #1 must be of type array, int given\n",
+            "array_merge_recursive(): Argument #2 must be of type array, int given\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

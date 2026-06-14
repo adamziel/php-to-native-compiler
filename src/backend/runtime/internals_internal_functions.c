@@ -5639,7 +5639,7 @@ static void ptn_array_merge_into(PtnArray *target, PtnArray *source) {
 static PtnValue ptn_internal_array_merge(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge", i + 1, "arrays", args[i]);
+        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge", i + 1, NULL, args[i]);
         ptn_array_merge_into(result.as.array, array);
     }
     (void)line;
@@ -5772,7 +5772,7 @@ static PtnValue ptn_internal_array_merge_recursive(PtnRuntime *runtime, size_t a
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     PtnCountSeenArrays seen = {0};
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge_recursive", i + 1, "array", args[i]);
+        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge_recursive", i + 1, NULL, args[i]);
         ptn_array_merge_recursive_into(runtime, result.as.array, array, &seen, line);
     }
     free(seen.items);

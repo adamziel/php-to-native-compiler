@@ -693,7 +693,21 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
     if (!runtime->diagnostics.display_errors) {
         return;
     }
-    if (exception->path == NULL || exception->line == 0) {
+    const char *display_path = exception->path;
+    size_t display_line = exception->line;
+    PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
+    if (
+        (display_path == NULL || display_line == 0) &&
+        runtime != NULL &&
+        runtime->current_function_name == NULL &&
+        frame != NULL &&
+        frame->file != NULL &&
+        frame->line != 0
+    ) {
+        display_path = frame->file;
+        display_line = frame->line;
+    }
+    if (display_path == NULL || display_line == 0) {
         fputs("Fatal error: ", stderr);
         fputs(exception->message, stderr);
         fputc('\n', stderr);
@@ -706,8 +720,8 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
         "Fatal error: Uncaught %s: %s in %s:%zu\n",
         exception->class_name,
         exception->message,
-        exception->path,
-        exception->line
+        display_path,
+        display_line
     );
     fputs("Stack trace:\n", stderr);
     if (ptn_emit_uncaught_internal_trace(runtime)) {
@@ -723,7 +737,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
     } else {
         fputs("#0 {main}\n", stderr);
     }
-    fprintf(stderr, "  thrown in %s on line %zu\n", exception->path, exception->line);
+    fprintf(stderr, "  thrown in %s on line %zu\n", display_path, display_line);
 }
 
 static PTN_UNUSED void ptn_throw_exception_at(
