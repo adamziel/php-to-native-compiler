@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T01:00Z
+Last refresh: 2026-06-14T01:12Z
 Source: `PROGRESS.md`
-Measured: `ptn-lrlt` runtime diagnostics classifier after `ptn-yl7i`.
+Measured: `ptn-oz24` attribute blocker map after `ptn-lrlt`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 712/712; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
@@ -27,6 +27,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 712/712; Nativ
 | PHPT foreach list destructuring rows | 4/4 |
 | PHPT broad reference-call bucket | 9/12 |
 | PHPT generator/fiber COW boundary bucket | 0/12 |
+| PHPT broad 1k attribute blocker bucket | 0/141 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |

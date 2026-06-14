@@ -1,9 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T01:00Z
-Measured: `ptn-lrlt` runtime diagnostics classifier after `ptn-yl7i`.
-
-Slices cover callable/object, COW, PHPT blockers, arrays, and diagnostics.
+Refresh: 2026-06-14T01:12Z
+Measured: `ptn-oz24` attribute blocker map after `ptn-lrlt`.
 
 ## Dashboard
 
@@ -28,6 +26,7 @@ Slices cover callable/object, COW, PHPT blockers, arrays, and diagnostics.
 | PHPT foreach list destructuring rows | 4 | 4 | 0 |
 | PHPT broad reference-call bucket | 12 | 9 | 3 |
 | PHPT generator/fiber COW boundary bucket | 12 | 0 | 12 |
+| PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT callback manifest | 5 | 5 | 0 |
 | PHPT include manifest | 2 | 2 | 0 |
@@ -40,26 +39,24 @@ Slices cover callable/object, COW, PHPT blockers, arrays, and diagnostics.
 - Bounded rows are 485/485; classify-only is 459 runnable/26 excluded.
 - Array-internal COW is 72/17/17; foreach/reference is 103/51/31.
 - Reference-call bucket is 12 selected, 11 runnable, 1 excluded, 9 pass.
-- Broad 1k classify-only is now 421 runnable/579 excluded.
+- Broad 1k classify-only is 421 runnable/579 excluded.
 - Runtime buckets add 17 diagnostics rows and 9 assertion-runtime rows.
-- Generator/fiber COW bucket is 12 selected/0 runnable/12 excluded.
+- Attribute map records 141 broad 1k exclusions.
 
 ## Verification
 
-`ptn-lrlt` adds buckets for unsupported diagnostic APIs and assertion modes
-while keeping `assert()` and diagnostic names in strings/comments
-runnable. Broad 1k classify-only is 421 runnable/579 excluded.
+`ptn-oz24` records the PHP attribute blocker map: 141 excluded rows across
+root, deprecated, override, delayed validation, constants, nodiscard, and
+`Attribute/` buckets.
 
-`ptn-yl7i` adds class-name hints and generated checks; target
-`call_user_func_by_ref` passes in the reference bucket.
+`ptn-lrlt` adds diagnostic/assertion runtime buckets; broad 1k classify-only is
+421 runnable/579 excluded. `ptn-yl7i` adds class-name hints.
 
-`ptn-kgqa` adds array predicate/find callback scanning. Focused PHPT is 4/4.
+`ptn-kgqa` adds array predicate/find callback scanning, focused PHPT 4/4.
 `ptn-550s.10` keeps foreach-list PHPT 4/4 and COW gate 26/26.
 
 `ptn-vwyp` classifies COW generator/fiber rows: 46 selected, 32 runnable, 14
-excluded. `ptn-2juv` records broad 1k: 1,000 selected, 447 runnable, 553
-classified.
+excluded. `ptn-2juv` records broad 1k: 1,000 selected, 447 runnable, 553.
 
-Follow-ups remain typed properties, traits, magic methods, attributes,
-Exception traces, nullable types, generators/Fibers, includes, callback
-arrays, `Traversable`, and INI modes.
+Follow-ups remain typed properties, traits, attributes, traces, nullable types,
+generators/Fibers, includes, callback arrays, `Traversable`, and INI modes.
