@@ -3,14 +3,16 @@
 Issue: `ptn-rdce`
 
 This slice refreshes broad 1k PHPT evidence on `origin/master` and maps the
-remaining rows blocked by execution environment availability rather than PHP
-compiler semantics: unavailable PHP extensions, child-process execution,
-external php-src service harnesses, host preconditions, and PHPT `--ENV--`
-setup.
+remaining rows blocked by execution environment availability or adjacent runtime
+boundaries rather than local PHP compiler semantics: unavailable PHP extensions,
+child-process execution, external php-src service harnesses, host
+preconditions, PHPT `--ENV--` setup, unsupported internal helper semantics, and
+resource-limit diagnostics.
 
 This is a blocker map, not a support claim. Reopening these rows requires
-generic extension modules, native process boundaries, or harness/runtime
-environment support. They should not become row-local expected-output patches.
+generic extension modules, native process boundaries, harness/runtime
+environment support, or shared internal/resource-limit runtime layers. They
+should not become row-local expected-output patches.
 
 ## Broad 1k Evidence
 
@@ -62,21 +64,21 @@ Committed manifest:
 Selection from the broad classification:
 
 ```sh
-awk -F'\t' '$2 ~ /^(unsupported-extension|process-boundary|external-service|environment-assumption|skipif-precondition)$/ {print $1}' \
+awk -F'\t' '$2 ~ /^(unsupported-extension|process-boundary|external-service|environment-assumption|skipif-precondition|unsupported-internal|unsupported-resource-limit)$/ {print $1}' \
   .runtime/phpt-progress/classification-20260614T070759Z.tsv
 ```
 
 Focused classify-only result:
 
 ```text
-.runtime/phpt-progress/classification-20260614T071641Z.tsv
-.runtime/phpt-progress/runnable-20260614T071641Z.txt
-.runtime/phpt-progress/summary-20260614T071641Z.txt
+.runtime/phpt-progress/classification-20260614T073609Z.tsv
+.runtime/phpt-progress/runnable-20260614T073609Z.txt
+.runtime/phpt-progress/summary-20260614T073609Z.txt
 ```
 
 | Selected | Runnable | Excluded |
 | ---: | ---: | ---: |
-| 27 | 0 | 27 |
+| 29 | 0 | 29 |
 
 Classifier split:
 
@@ -87,6 +89,8 @@ Classifier split:
 | `skipif-precondition` | 2 |
 | `external-service` | 1 |
 | `environment-assumption` | 1 |
+| `unsupported-internal` | 1 |
+| `unsupported-resource-limit` | 1 |
 
 ## Extension Split
 
@@ -139,7 +143,7 @@ boundary, not ad hoc stubs.
 
 ## Runtime/Harness Environment Split
 
-The remaining 7 rows are outside PHP extension availability:
+The remaining 9 rows are outside PHP extension availability:
 
 | Surface | Rows | Row(s) |
 | --- | ---: | --- |
@@ -147,11 +151,16 @@ The remaining 7 rows are outside PHP extension availability:
 | Static host preconditions | 2 | `Zend/tests/binary-32bit.phpt`, `tests/basic/consistent_float_string_casts.phpt` |
 | External php-src service harness | 1 | `tests/basic/bug67198.phpt` |
 | PHPT `--ENV--` setup | 1 | `tests/basic/gh7896.phpt` |
+| Unsupported internal helper semantics | 1 | `Zend/tests/array_multisort_exception.phpt` |
+| Resource-limit diagnostics | 1 | `ext/standard/tests/array/array_fill_error2.phpt` |
 
 The child-process rows need the same native process boundary as the
 filesystem/path/process `proc_*` frontier. The precondition rows are host gates
 for 32-bit-only behavior and unavailable locale candidates. The service and
-environment rows require harness support rather than compiler changes.
+environment rows require harness support rather than compiler changes. The
+`array_multisort()` row needs a shared multi-array by-reference sort layer, and
+the huge `array_fill()` row needs bounded memory/resource-limit diagnostics
+before either should be treated as a runnable compatibility row.
 
 ## Implementation Boundary
 
@@ -165,8 +174,10 @@ Future work should split this map along reusable architecture boundaries:
    rows.
 4. PHPT harness modeling for external services, `--ENV--`, and static host
    preconditions.
+5. Shared internal-helper and resource-limit runtime layers for
+   `array_multisort()` and allocation-heavy array constructors.
 
-Until those layers exist, these 27 rows should remain classified so broad PHPT
+Until those layers exist, these 29 rows should remain classified so broad PHPT
 telemetry measures PTN's modeled PHP runtime rather than host availability.
 
 ## Verification

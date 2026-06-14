@@ -2,8 +2,10 @@
 #
 # Rows here are excluded because they require unavailable PHP extensions,
 # child-process execution, php-src external service harnesses, static host
-# preconditions, or PHPT environment setup outside the measured program.
+# preconditions, PHPT environment setup, unsupported internal helper semantics,
+# or resource-limit diagnostics outside the measured program.
 Zend/tests/GHSA-wm6j-2649-pv75.phpt
+Zend/tests/array_multisort_exception.phpt
 Zend/tests/attributes/016_custom_attribute_validation.phpt
 Zend/tests/attributes/constants/ast_export.phpt
 Zend/tests/attributes/constants/repeatable-internal.phpt
@@ -18,6 +20,7 @@ Zend/tests/bug34199.phpt
 Zend/tests/bug34617.phpt
 ext/standard/tests/array/array_product_objects_operation_no_cast.phpt
 ext/standard/tests/array/array_product_variation6.phpt
+ext/standard/tests/array/array_fill_error2.phpt
 ext/standard/tests/array/array_sum_objects_operation_no_cast.phpt
 ext/standard/tests/array/array_sum_objects_operation_no_cast_FFI.phpt
 ext/standard/tests/array/array_sum_variation9.phpt
