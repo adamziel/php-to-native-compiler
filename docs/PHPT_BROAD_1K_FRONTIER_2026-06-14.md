@@ -67,7 +67,7 @@ runnable families are:
 | Family | Rows | Current blocker shape |
 | --- | ---: | --- |
 | Diff/intersect helpers | 68 | Multiple shared gaps: PHP string comparison/stringification, callback validation, catchable argument diagnostics, and binary literal/string parity. Prior focused evidence showed 47/62 passing and 15 failing, so one small generic change is unlikely to clear 25 rows alone. |
-| `array_chunk()` | 32 | The runtime helper already exists. Rows are ordinary chunk/key/reference cases; a focused run is needed after the Zend run blocker is split out, but there is no obvious missing helper boundary. |
+| `array_chunk()` | 32 | Focused native run now passes 32/32 from the broad 1k manifest; this is covered evidence, not the next implementation target. |
 | Other array helpers | 24 | Mixed new and edge helpers including `array_all`, `array_any`, `array_column`, `array_find`, and legacy numeric rows. |
 | Sum/product | 19 | Numeric aggregation, overflow, reference, and warning parity. |
 | `array_map()` | 19 | Callback invocation and callback diagnostic parity. |
@@ -82,11 +82,51 @@ runnable families are:
 | `array_search()` | 6 | Shared loose/strict comparison edge cases. |
 | `array_fill()` / `array_fill_keys()` | 7 | Size guards, key conversion, and warning parity. |
 
-The only single named family above the 25-row target is `array_chunk()`, but the
-implementation already has a generic helper. The higher-yield 68-row
-diff/intersect group crosses several runtime boundaries and is not credible as
-a one-step implementation slice without first narrowing comparison,
-diagnostic, callback, and binary-string work.
+The only single named family above the 25-row target is `array_chunk()`, and a
+focused recheck on `ptn-kj3c` confirms the generic helper is already green. The
+higher-yield 68-row diff/intersect group crosses several runtime boundaries and
+is not credible as a one-step implementation slice without first narrowing
+comparison, diagnostic, callback, and binary-string work.
+
+## Focused `array_chunk()` Recheck
+
+This follow-up uses the current broad 1k source shape from:
+
+```text
+.runtime/phpt-baseline/20260614T071321Z/phpt-baseline-1000.txt
+```
+
+The corpus revision is still:
+
+```text
+8c63ec400ce8e07c57a8d9499317b96a8beafb8b
+```
+
+Committed focused manifest:
+
+```text
+tools/phpt-array-chunk-broad-1k-manifest.txt
+```
+
+Run:
+
+```sh
+tools/run-bounded-phpt.sh tools/phpt-array-chunk-broad-1k-manifest.txt
+```
+
+Result artifact:
+
+```text
+.runtime/phpt-progress/summary-20260614T071814Z.txt
+```
+
+| Selected | Runnable | Excluded | Passed | Failed | Skipped | Warned |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 32 | 0 | 32 | 0 | 0 | 0 |
+
+The selected rows cover default and preserved-key chunking, nested arrays,
+references, sparse/mixed keys, invalid size diagnostics, and the broad
+variation rows. No code change is needed for this family on the current branch.
 
 ## Runnable Zend Frontier
 
@@ -128,12 +168,10 @@ makes a broad before/after pass-count run unreliable until either:
 
 ## Recommended Next Split
 
-1. Add a focused standard-array broad manifest from
-   `.runtime/phpt-progress/runnable-20260613T235955Z.txt`, then run only
-   `ext/standard/tests/array` rows to get pass/fail evidence without the Zend
-   blocker.
-2. For implementation, split diff/intersect into narrower generic primitives:
+1. For implementation, split diff/intersect into narrower generic primitives:
    value stringification/comparison, catchable argument diagnostics, and
    callback validation. Do not attempt the full 68-row group as one patch.
-3. Separately fix or classify `Zend/tests/ErrorException_getSeverity.phpt` so
-   the full broad 1k runner can reach all buckets again.
+2. Keep `array_chunk()` in regression evidence, but do not use it as the next
+   broad implementation target unless this 32-row focused manifest regresses.
+3. Use focused manifests for broad array helper work so Zend diagnostics or
+   wrapper-level issues cannot hide standard-bucket pass/fail evidence.
