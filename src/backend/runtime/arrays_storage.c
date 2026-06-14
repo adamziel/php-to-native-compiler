@@ -248,9 +248,8 @@ static PTN_UNUSED size_t ptn_array_index_slot_for_key(PtnArray *array, PtnArrayK
 
 static PTN_UNUSED void ptn_array_update_next_auto_key(PtnArray *array, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT &&
-        key.as.integer >= array->next_auto_key &&
-        key.as.integer < INT64_MAX) {
-        array->next_auto_key = key.as.integer + 1;
+        key.as.integer >= array->next_auto_key) {
+        array->next_auto_key = key.as.integer < INT64_MAX ? key.as.integer + 1 : INT64_MAX;
     }
 }
 

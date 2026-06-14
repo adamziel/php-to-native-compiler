@@ -684,6 +684,7 @@ pub enum CastKind {
     Binary,
     Bool,
     Boolean,
+    Array,
     Object,
 }
 

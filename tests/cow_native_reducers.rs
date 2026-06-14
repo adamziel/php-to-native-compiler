@@ -23,12 +23,6 @@ struct CowDiagnosticReducerCase {
 fn recursive_reference_diagnostic_reducers_fail_before_codegen() {
     let cases = [
         CowDiagnosticReducerCase {
-            name: "recursive_array_append_self",
-            oracle: "PHP oracle: array append by reference to itself creates recursion",
-            source: "<?php\n$array = [];\n$array[] =& $array;",
-            expected_diagnostic: "recursive array references are unsupported",
-        },
-        CowDiagnosticReducerCase {
             name: "recursive_array_element_literal_self",
             oracle:
                 "PHP oracle: assigning a literal that references the target array creates recursion",
@@ -294,7 +288,7 @@ function make_array() { return [\"v\" => 1]; }\n\
 $value =& make_array();\n\
 $value[\"v\"] = 2;\n\
 echo $value[\"v\"], \"\\n\";",
-            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 3\n2\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 3\n2\n",
         },
         CowReducerCase {
             name: "by_ref_assignment_from_function_result_keeps_result_alive",
@@ -303,7 +297,7 @@ echo $value[\"v\"], \"\\n\";",
 function make_array() { return [0]; }\n\
 $x = $y =& make_array();\n\
 var_dump($x, $y);",
-            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 3\narray(1) {\n  [0]=>\n  int(0)\n}\narray(1) {\n  [0]=>\n  int(0)\n}\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 3\narray(1) {\n  [0]=>\n  int(0)\n}\narray(1) {\n  [0]=>\n  int(0)\n}\n",
         },
         CowReducerCase {
             name: "array_slot_by_ref_assignment_from_call_result_assigns_value",
@@ -314,7 +308,7 @@ $items = [[\"v\" => 0]];\n\
 $items[0] =& make_array();\n\
 $items[0][\"v\"] = 2;\n\
 echo $items[0][\"v\"], \"\\n\";",
-            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 4\n2\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 4\n2\n",
         },
         CowReducerCase {
             name: "array_slot_by_ref_assignment_from_null_call_result",
@@ -324,7 +318,7 @@ function returnsVal() {}\n\
 $items = [\"slot\" => \"before\"];\n\
 var_dump($items[\"slot\"] =& returnsVal());\n\
 var_dump($items[\"slot\"]);",
-            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
         },
         CowReducerCase {
             name: "recursive_array_literal_slot_replaced_by_call_result",
@@ -334,7 +328,7 @@ function returnsVal() {}\n\
 $array = [&$array];\n\
 var_dump($array[0] =& returnsVal());\n\
 var_dump($array);",
-            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
         },
         CowReducerCase {
             name: "keyed_recursive_array_literal_slot_replaced_by_call_result",
@@ -344,7 +338,7 @@ function returnsVal() {}\n\
 $array = [\"self\" => &$array];\n\
 var_dump($array[\"self\"] =& returnsVal());\n\
 var_dump($array);",
-            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
         },
         CowReducerCase {
             name: "nested_recursive_array_literal_value_write_replaces_self",
@@ -365,7 +359,7 @@ $alias = $base;\n\
 $slot =& make_copy($base);\n\
 $slot[\"v\"] = 9;\n\
 echo $base[\"v\"], \":\", $alias[\"v\"], \":\", $slot[\"v\"], \"\\n\";",
-            expected_stdout: "Notice: Only variables should be assigned by reference in ptn on line 5\n1:1:9\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 5\n1:1:9\n",
         },
         CowReducerCase {
             name: "cursor_mutation_shared_alias",

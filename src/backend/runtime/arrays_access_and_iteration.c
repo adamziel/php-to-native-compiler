@@ -333,6 +333,34 @@ static PTN_UNUSED PtnValue ptn_cast_object(PtnRuntime *runtime, PtnValue value) 
     return object_value;
 }
 
+static PTN_UNUSED PtnValue ptn_cast_array(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        return ptn_value_clone(value);
+    }
+
+    PtnValue array_value = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *array = array_value.as.array;
+    if (value.type == PTN_NULL) {
+        return array_value;
+    }
+
+    if (value.type == PTN_OBJECT) {
+        for (size_t i = 0; i < value.as.object->properties->len; i++) {
+            PtnArrayEntry *entry = &value.as.object->properties->entries[i];
+            ptn_array_set_entry(
+                array,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone(entry->value)
+            );
+        }
+        return array_value;
+    }
+
+    ptn_array_set_entry(array, ptn_array_int_key(0), ptn_value_clone(value));
+    return array_value;
+}
+
 static PTN_UNUSED void ptn_emit_non_object_property_read_warning(
     PtnRuntime *runtime,
     const char *property,
@@ -2979,7 +3007,9 @@ static PTN_UNUSED PtnValue ptn_array_shift_value(PtnArray *array) {
     array->current_index = 0;
     ptn_array_recompute_next_auto_key(array);
     ptn_array_rebuild_index(array);
-    return removed;
+    PtnValue result = ptn_value_clone_deref(removed);
+    ptn_value_destroy(&removed);
+    return result;
 }
 
 static PTN_UNUSED int64_t ptn_array_unshift_values(PtnArray *array, size_t argc, const PtnValue *values) {
@@ -3420,4 +3450,4 @@ static PTN_UNUSED void ptn_array_shuffle_values(PtnArray *array) {
     ptn_array_rebuild_index(array);
 }
 
-static PTN_UNUSED int64_t ptn_array_push_values(PtnArray *array, size_t argc, const PtnValue *values) {
+static PTN_UNUSED int64_t ptn_array_push_values(PtnRuntime *runtime, PtnArray *array, size_t argc, const PtnValue *values) {

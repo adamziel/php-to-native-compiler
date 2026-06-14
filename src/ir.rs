@@ -561,6 +561,7 @@ pub enum CastKind {
     Binary,
     Bool,
     Boolean,
+    Array,
     Object,
 }
 
@@ -2265,6 +2266,7 @@ fn assertion_cast_kind_text(kind: AstCastKind) -> &'static str {
         AstCastKind::Binary => "binary",
         AstCastKind::Bool => "bool",
         AstCastKind::Boolean => "boolean",
+        AstCastKind::Array => "array",
         AstCastKind::Object => "object",
     }
 }
@@ -2341,6 +2343,7 @@ fn lower_cast_kind(kind: AstCastKind) -> CastKind {
         AstCastKind::Binary => CastKind::Binary,
         AstCastKind::Bool => CastKind::Bool,
         AstCastKind::Boolean => CastKind::Boolean,
+        AstCastKind::Array => CastKind::Array,
         AstCastKind::Object => CastKind::Object,
     }
 }

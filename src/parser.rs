@@ -1745,12 +1745,6 @@ impl Parser {
             {
                 self.advance();
                 let source = self.parse_reference_source()?;
-                if reference_source_is_variable(&source, &target.array) {
-                    return Err(Diagnostic::new(
-                        "recursive array references are unsupported",
-                        Some(target.span),
-                    ));
-                }
                 self.expect_statement_terminator()?;
                 return Ok(Statement::ArrayAssignRef {
                     target,
@@ -3741,6 +3735,9 @@ impl Parser {
             TokenKind::BinaryType => Some(CastKind::Binary),
             TokenKind::BoolType => Some(CastKind::Bool),
             TokenKind::BooleanType => Some(CastKind::Boolean),
+            TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("array") => {
+                Some(CastKind::Array)
+            }
             TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("object") => {
                 Some(CastKind::Object)
             }
@@ -6283,8 +6280,12 @@ fn is_variable_array_access_argument(expr: &Expr) -> bool {
     }
 }
 
-fn is_array_cursor_mutation_argument(expr: &Expr) -> bool {
-    is_direct_variable_argument(expr) || is_variable_array_access_argument(expr)
+fn is_function_call_argument(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call { .. } | Expr::DynamicCall { .. } | Expr::MethodCall { .. } => true,
+        Expr::Grouped { expr, .. } => is_function_call_argument(expr),
+        _ => false,
+    }
 }
 
 fn validate_mutating_array_internal_call(
@@ -6350,16 +6351,7 @@ fn validate_mutating_array_internal_call(
         return Ok(());
     }
     if is_array_cursor_mutation_name(name) && arguments.len() == 1 {
-        if is_array_cursor_mutation_argument(&arguments[0]) {
-            return Ok(());
-        }
-        return Err(Diagnostic::new(
-            format!(
-                "{}() requires a direct variable array argument; temporary array cursor mutation is unsupported",
-                name.to_ascii_lowercase()
-            ),
-            Some(arguments.first().map_or(call_span, Expr::span)),
-        ));
+        return Ok(());
     }
 
     if !is_array_by_ref_mutation_name(name) {
@@ -6373,6 +6365,15 @@ fn validate_mutating_array_internal_call(
         && arguments.len() == 1
         && is_variable_array_access_argument(&arguments[0])
     {
+        return Ok(());
+    }
+    if name.eq_ignore_ascii_case("array_shift")
+        && arguments.len() == 1
+        && is_function_call_argument(&arguments[0])
+    {
+        return Ok(());
+    }
+    if name.eq_ignore_ascii_case("array_push") && is_variable_array_access_argument(&arguments[0]) {
         return Ok(());
     }
     Err(Diagnostic::new(

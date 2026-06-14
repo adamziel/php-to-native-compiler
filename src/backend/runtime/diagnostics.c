@@ -459,6 +459,7 @@ static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice(PtnD
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
         return;
     }
+    fputc('\n', stdout);
     fputs("Notice: Only variables should be assigned by reference in ptn on line ", stdout);
     fprintf(stdout, "%zu", line);
     fputc('\n', stdout);

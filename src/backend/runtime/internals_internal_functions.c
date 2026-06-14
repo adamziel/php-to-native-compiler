@@ -1852,7 +1852,29 @@ static PTN_UNUSED PtnValue ptn_runtime_array_push_variable(
         name,
         value
     );
-    return ptn_int(ptn_array_push_values(array, value_count, values));
+    return ptn_int(ptn_array_push_values(runtime, array, value_count, values));
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_push_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line,
+    size_t value_count,
+    const PtnValue *values
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "array_push",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    return ptn_int(ptn_array_push_values(runtime, array, value_count, values));
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_shift_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
@@ -1885,6 +1907,16 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shift_path(
         line
     );
     return ptn_array_shift_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_shift_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
+    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    PtnValue temporary = ptn_value_clone_deref(value);
+    (void)ptn_internal_expect_array_arg(runtime, "array_shift", 1, "array", temporary);
+    PtnArray *array = ptn_array_detach_value(&temporary);
+    PtnValue result = ptn_array_shift_value(array);
+    ptn_value_destroy(&temporary);
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_ksort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
@@ -2054,6 +2086,16 @@ static PTN_UNUSED PtnValue ptn_runtime_array_next_path(
     return ptn_array_next_value(array);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_next_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
+    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    PtnValue temporary = ptn_value_clone_deref(value);
+    (void)ptn_internal_expect_array_arg(runtime, "next", 1, "array", temporary);
+    PtnArray *array = ptn_array_detach_value(&temporary);
+    PtnValue result = ptn_array_next_value(array);
+    ptn_value_destroy(&temporary);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_end_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -2084,6 +2126,16 @@ static PTN_UNUSED PtnValue ptn_runtime_array_end_path(
         line
     );
     return ptn_array_end_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_end_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
+    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    PtnValue temporary = ptn_value_clone_deref(value);
+    (void)ptn_internal_expect_array_arg(runtime, "end", 1, "array", temporary);
+    PtnArray *array = ptn_array_detach_value(&temporary);
+    PtnValue result = ptn_array_end_value(array);
+    ptn_value_destroy(&temporary);
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_prev_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
@@ -2118,6 +2170,16 @@ static PTN_UNUSED PtnValue ptn_runtime_array_prev_path(
     return ptn_array_prev_value(array);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_prev_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
+    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    PtnValue temporary = ptn_value_clone_deref(value);
+    (void)ptn_internal_expect_array_arg(runtime, "prev", 1, "array", temporary);
+    PtnArray *array = ptn_array_detach_value(&temporary);
+    PtnValue result = ptn_array_prev_value(array);
+    ptn_value_destroy(&temporary);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_reset_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -2128,6 +2190,16 @@ static PTN_UNUSED PtnValue ptn_runtime_array_reset_variable(PtnRuntime *runtime,
         value
     );
     return ptn_array_reset_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_reset_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
+    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    PtnValue temporary = ptn_value_clone_deref(value);
+    (void)ptn_internal_expect_array_arg(runtime, "reset", 1, "array", temporary);
+    PtnArray *array = ptn_array_detach_value(&temporary);
+    PtnValue result = ptn_array_reset_value(array);
+    ptn_value_destroy(&temporary);
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_reset_path(
@@ -2509,7 +2581,7 @@ static PtnValue ptn_internal_array_pop(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_array_push(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_push", 1, "array", args[0]);
-    return ptn_int(ptn_array_push_values(array, argc - 1, args + 1));
+    return ptn_int(ptn_array_push_values(runtime, array, argc - 1, args + 1));
 }
 
 static PtnValue ptn_internal_array_shift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -4972,17 +5044,36 @@ static PtnValue ptn_internal_array_merge(PtnRuntime *runtime, size_t argc, const
     return result;
 }
 
-static void ptn_array_merge_recursive_into(PtnArray *target, PtnArray *source);
+static void ptn_array_merge_recursive_into(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnArray *source,
+    PtnCountSeenArrays *seen,
+    size_t line
+);
 
 static void ptn_array_merge_recursive_append(PtnArray *target, PtnValue value) {
     PtnArrayKey key = ptn_array_int_key(target->next_auto_key);
-    ptn_array_set_entry(target, key, ptn_value_clone_deref(value));
+    ptn_array_set_entry(target, key, ptn_array_replacement_value(value));
 }
 
-static void ptn_array_merge_recursive_collision(PtnArrayEntry *entry, PtnValue incoming) {
-    PtnValue *entry_value = entry->value.type == PTN_REFERENCE
-        ? &entry->value.as.reference->value
-        : &entry->value;
+static PtnValue *ptn_array_separate_recursive_entry_value(PtnArrayEntry *entry) {
+    if (entry->value.type == PTN_REFERENCE) {
+        PtnValue separated = ptn_value_clone_deref(entry->value);
+        ptn_value_destroy(&entry->value);
+        entry->value = separated;
+    }
+    return &entry->value;
+}
+
+static void ptn_array_merge_recursive_collision(
+    PtnRuntime *runtime,
+    PtnArrayEntry *entry,
+    PtnValue incoming,
+    PtnCountSeenArrays *seen,
+    size_t line
+) {
+    PtnValue *entry_value = ptn_array_separate_recursive_entry_value(entry);
     PtnValue existing = ptn_value_deref(*entry_value);
     PtnValue incoming_value = ptn_value_deref(incoming);
 
@@ -4992,7 +5083,7 @@ static void ptn_array_merge_recursive_collision(PtnArrayEntry *entry, PtnValue i
             return;
         }
         if (incoming_value.type == PTN_ARRAY) {
-            ptn_array_merge_recursive_into(target, incoming_value.as.array);
+            ptn_array_merge_recursive_into(runtime, target, incoming_value.as.array, seen, line);
         } else {
             ptn_array_merge_recursive_append(target, incoming);
         }
@@ -5002,7 +5093,7 @@ static void ptn_array_merge_recursive_collision(PtnArrayEntry *entry, PtnValue i
     PtnValue merged = ptn_array_from_literal_entries(0, NULL);
     ptn_array_merge_recursive_append(merged.as.array, existing);
     if (incoming_value.type == PTN_ARRAY) {
-        ptn_array_merge_recursive_into(merged.as.array, incoming_value.as.array);
+        ptn_array_merge_recursive_into(runtime, merged.as.array, incoming_value.as.array, seen, line);
     } else {
         ptn_array_merge_recursive_append(merged.as.array, incoming);
     }
@@ -5010,7 +5101,14 @@ static void ptn_array_merge_recursive_collision(PtnArrayEntry *entry, PtnValue i
     *entry_value = merged;
 }
 
-static void ptn_array_merge_recursive_entry(PtnArray *target, PtnArrayKey key, PtnValue value) {
+static void ptn_array_merge_recursive_entry(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnArrayKey key,
+    PtnValue value,
+    PtnCountSeenArrays *seen,
+    size_t line
+) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         ptn_array_merge_recursive_append(target, value);
         return;
@@ -5018,25 +5116,45 @@ static void ptn_array_merge_recursive_entry(PtnArray *target, PtnArrayKey key, P
 
     PtnArrayEntry *entry = ptn_array_entry_for_key(target, key);
     if (entry == NULL) {
-        ptn_array_set_entry(target, ptn_array_key_clone(key), ptn_value_clone_deref(value));
+        ptn_array_set_entry(target, ptn_array_key_clone(key), ptn_array_replacement_value(value));
         return;
     }
-    ptn_array_merge_recursive_collision(entry, value);
+    ptn_array_merge_recursive_collision(runtime, entry, value, seen, line);
 }
 
-static void ptn_array_merge_recursive_into(PtnArray *target, PtnArray *source) {
-    for (size_t i = 0; i < source->len; i++) {
-        ptn_array_merge_recursive_entry(target, source->entries[i].key, source->entries[i].value);
+static void ptn_array_merge_recursive_into(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnArray *source,
+    PtnCountSeenArrays *seen,
+    size_t line
+) {
+    if (ptn_count_seen_arrays_contains(seen, source)) {
+        ptn_throw_exception_at(runtime, "Error", "Recursion detected", runtime->source_path, line);
+        return;
     }
+    ptn_count_seen_arrays_push(seen, source);
+    for (size_t i = 0; i < source->len; i++) {
+        ptn_array_merge_recursive_entry(
+            runtime,
+            target,
+            source->entries[i].key,
+            source->entries[i].value,
+            seen,
+            line
+        );
+    }
+    seen->len--;
 }
 
 static PtnValue ptn_internal_array_merge_recursive(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnCountSeenArrays seen = {0};
     for (size_t i = 0; i < argc; i++) {
         PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge_recursive", i + 1, "array", args[i]);
-        ptn_array_merge_recursive_into(result.as.array, array);
+        ptn_array_merge_recursive_into(runtime, result.as.array, array, &seen, line);
     }
-    (void)line;
+    free(seen.items);
     return result;
 }
 
@@ -5068,18 +5186,29 @@ static PtnValue ptn_internal_array_replace(PtnRuntime *runtime, size_t argc, con
     return result;
 }
 
-static void ptn_array_replace_recursive_into(PtnArray *target, PtnArray *source);
+static void ptn_array_replace_recursive_into(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnArray *source,
+    PtnCountSeenArrays *seen,
+    size_t line
+);
 
-static void ptn_array_replace_recursive_entry(PtnArray *target, PtnArrayKey key, PtnValue value) {
+static void ptn_array_replace_recursive_entry(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnArrayKey key,
+    PtnValue value,
+    PtnCountSeenArrays *seen,
+    size_t line
+) {
     PtnArrayEntry *entry = ptn_array_entry_for_key(target, key);
     if (entry == NULL) {
         ptn_array_set_entry(target, ptn_array_key_clone(key), ptn_array_replacement_value(value));
         return;
     }
 
-    PtnValue *entry_value = entry->value.type == PTN_REFERENCE
-        ? &entry->value.as.reference->value
-        : &entry->value;
+    PtnValue *entry_value = ptn_array_separate_recursive_entry_value(entry);
     PtnValue existing = ptn_value_deref(*entry_value);
     PtnValue incoming = ptn_value_deref(value);
     if (existing.type == PTN_ARRAY && incoming.type == PTN_ARRAY) {
@@ -5088,7 +5217,7 @@ static void ptn_array_replace_recursive_entry(PtnArray *target, PtnArrayKey key,
         entry->value = separated;
         PtnArray *target_child = ptn_array_detach_value(&entry->value);
         if (target_child != NULL) {
-            ptn_array_replace_recursive_into(target_child, incoming.as.array);
+            ptn_array_replace_recursive_into(runtime, target_child, incoming.as.array, seen, line);
         }
         return;
     }
@@ -5097,19 +5226,39 @@ static void ptn_array_replace_recursive_entry(PtnArray *target, PtnArrayKey key,
     *entry_value = ptn_array_replacement_value(value);
 }
 
-static void ptn_array_replace_recursive_into(PtnArray *target, PtnArray *source) {
-    for (size_t i = 0; i < source->len; i++) {
-        ptn_array_replace_recursive_entry(target, source->entries[i].key, source->entries[i].value);
+static void ptn_array_replace_recursive_into(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnArray *source,
+    PtnCountSeenArrays *seen,
+    size_t line
+) {
+    if (ptn_count_seen_arrays_contains(seen, source)) {
+        ptn_throw_exception_at(runtime, "Error", "Recursion detected", runtime->source_path, line);
+        return;
     }
+    ptn_count_seen_arrays_push(seen, source);
+    for (size_t i = 0; i < source->len; i++) {
+        ptn_array_replace_recursive_entry(
+            runtime,
+            target,
+            source->entries[i].key,
+            source->entries[i].value,
+            seen,
+            line
+        );
+    }
+    seen->len--;
 }
 
 static PtnValue ptn_internal_array_replace_recursive(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnCountSeenArrays seen = {0};
     for (size_t i = 0; i < argc; i++) {
         PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_replace_recursive", i + 1, "array", args[i]);
-        ptn_array_replace_recursive_into(result.as.array, array);
+        ptn_array_replace_recursive_into(runtime, result.as.array, array, &seen, line);
     }
-    (void)line;
+    free(seen.items);
     return result;
 }
 

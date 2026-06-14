@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T14:18Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; COW 69/103 passed.
+Last refresh: 2026-06-14T14:35Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; COW 69/103 passed.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/281; Array-key/cb 38/75.
+Units 3/3; Native 730/730; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/281; Array-key/cb 38/75.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Units | 3/3 |
-| Native | 729/729 |
+| Native | 730/730 |
 | Bounded | 479/486 |
 | Zend | 119/119 |
 | ext/standard-PHPT | 274/281 |
@@ -57,7 +57,7 @@ Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/
 | Magic-methods | 0/8 |
 | Object-string-meta | 0/61 |
 | Std-array-map | 0/297 |
-| Std-arrays | 253/296 |
+| Std-arrays | 263/296 |
 | Map/filter | 25/30 |
 | Request/SAPI | 1/41 |
 | Anon-class | 0/15 |
@@ -76,13 +76,14 @@ Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/
 | Attribute-meta | 0/204 |
 | Heredoc-array | 20/70 |
 | Std-array-row-pack | 10/10 |
+| Std-array-s80e | 20/20 |
 | Std-array-tdei | 61/71 |
 | array_rand | 6/7 |
 | Zend-op/control | 15/26 |
 | Binary-key | 1/1 |
 | Runtime-config | 10/54 |
 | COW-gate | 26/26 |
-| 1k-baseline | 275/1000 |
+| 1k-baseline | 285/1000 |
 
 ## Rules
 

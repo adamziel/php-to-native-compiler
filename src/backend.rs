@@ -4446,6 +4446,20 @@ fn by_ref_temporary_argument_allowed(value: &ValueExpr) -> bool {
     )
 }
 
+fn cursor_temporary_helper_name(name: &str) -> Option<&'static str> {
+    if name.eq_ignore_ascii_case("next") {
+        Some("ptn_runtime_array_next_temporary")
+    } else if name.eq_ignore_ascii_case("end") {
+        Some("ptn_runtime_array_end_temporary")
+    } else if name.eq_ignore_ascii_case("prev") {
+        Some("ptn_runtime_array_prev_temporary")
+    } else if name.eq_ignore_ascii_case("reset") {
+        Some("ptn_runtime_array_reset_temporary")
+    } else {
+        None
+    }
+}
+
 fn value_is_append_reference_target(value: &ValueExpr) -> bool {
     matches!(
         reference_target_from_value(value),
@@ -6619,6 +6633,7 @@ impl ValueEmitter {
                     | CastKind::Float
                     | CastKind::String
                     | CastKind::Bool
+                    | CastKind::Array
                     | CastKind::Object => match kind {
                         CastKind::String => {
                             out.push_str("ptn_cast_string_with_runtime(&runtime, ");
@@ -6632,12 +6647,18 @@ impl ValueEmitter {
                             out.push_str(&expr_temp);
                             out.push_str(");\n");
                         }
+                        CastKind::Array => {
+                            out.push_str("ptn_cast_array(");
+                            out.push_str(&expr_temp);
+                            out.push_str(");\n");
+                        }
                         CastKind::Int | CastKind::Float | CastKind::Bool => {
                             out.push_str(match kind {
                                 CastKind::Int => "ptn_cast_int",
                                 CastKind::Float => "ptn_cast_float",
                                 CastKind::Bool => "ptn_cast_bool",
                                 CastKind::String
+                                | CastKind::Array
                                 | CastKind::Object
                                 | CastKind::Integer
                                 | CastKind::Double
@@ -6669,6 +6690,7 @@ impl ValueEmitter {
                             | CastKind::Float
                             | CastKind::String
                             | CastKind::Bool
+                            | CastKind::Array
                             | CastKind::Object => {
                                 unreachable!("canonical casts are handled separately")
                             }
@@ -10053,10 +10075,44 @@ impl ValueEmitter {
                 return Some(result_temp);
             }
 
+            if by_ref_temporary_argument_allowed(first_argument) {
+                let temporary_helper = if name.eq_ignore_ascii_case("array_shift") {
+                    Some("ptn_runtime_array_shift_temporary")
+                } else {
+                    cursor_temporary_helper_name(name)
+                };
+                if let Some(temporary_helper) = temporary_helper {
+                    let value_temp = self.emit_materialized_value(out, first_argument);
+                    let result_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ");
+                    out.push_str(temporary_helper);
+                    out.push_str("(&runtime, ");
+                    out.push_str(&value_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "    ", &value_temp);
+                    return Some(result_temp);
+                }
+            }
+
+            if cursor_temporary_helper_name(name).is_some() {
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_by_reference_argument_error(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", 1, \"array\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                return Some(result_temp);
+            }
+
             return None;
         }
 
-        let variable_name = variable_name?;
         let helper = if name.eq_ignore_ascii_case("array_push") {
             Some("ptn_runtime_array_push_variable")
         } else if name.eq_ignore_ascii_case("array_unshift") {
@@ -10068,6 +10124,78 @@ impl ValueEmitter {
             return None;
         };
 
+        if variable_name.is_none()
+            && name.eq_ignore_ascii_case("array_push")
+            && matches!(
+                reference_array_dim_target_from_value(first_argument),
+                Some(ReferenceTarget::ArrayDim(_))
+            )
+        {
+            let Some(ReferenceTarget::ArrayDim(target)) =
+                reference_array_dim_target_from_value(first_argument)
+            else {
+                return None;
+            };
+            let path = emit_array_path_segments(out, self, &target.dimensions);
+            let mut value_temps = Vec::with_capacity(arguments.len().saturating_sub(1));
+            for argument in &arguments[1..] {
+                value_temps.push(self.emit_materialized_value(out, argument));
+            }
+
+            let values_temp = if value_temps.is_empty() {
+                None
+            } else {
+                let values_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&values_temp);
+                out.push_str("[] = { ");
+                for (index, temp) in value_temps.iter().enumerate() {
+                    if index > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str("ptn_value_share(");
+                    out.push_str(temp);
+                    out.push(')');
+                }
+                out.push_str(" };\n");
+                Some(values_temp)
+            };
+
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_array_push_path(&runtime, \"");
+            out.push_str(&c_string(&target.array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(", ");
+            out.push_str(&value_temps.len().to_string());
+            out.push_str(", ");
+            if let Some(values_temp) = &values_temp {
+                out.push_str(values_temp);
+            } else {
+                out.push_str("NULL");
+            }
+            out.push_str(");\n");
+            if let Some(values_temp) = &values_temp {
+                for index in 0..value_temps.len() {
+                    emit_value_cleanup(out, "    ", &format!("{values_temp}[{index}]"));
+                }
+            }
+            for temp in value_temps {
+                emit_value_cleanup(out, "    ", &temp);
+            }
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+            return Some(result_temp);
+        }
+
+        let variable_name = variable_name?;
         let array_temp = self.emit_materialized_value(out, &arguments[0]);
         let mut value_temps = Vec::with_capacity(arguments.len().saturating_sub(1));
         for argument in &arguments[1..] {

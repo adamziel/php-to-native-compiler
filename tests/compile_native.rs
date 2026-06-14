@@ -1794,9 +1794,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
 
 #[test]
 fn parser_accepts_parenthesized_unary_and_cast_expressions() {
-    let program =
-        parser::parse("<?php echo +(2 + 3), -(2 + 3), !(\"0\"), (int)\"42\", (string)true;")
-            .unwrap();
+    let program = parser::parse(
+        "<?php echo +(2 + 3), -(2 + 3), !(\"0\"), (int)\"42\", (string)true, (array)\"x\";",
+    )
+    .unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
         panic!("expected echo statement");
     };
@@ -1857,6 +1858,13 @@ fn parser_accepts_parenthesized_unary_and_cast_expressions() {
         &expressions[4],
         Expr::Cast {
             kind: CastKind::String,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &expressions[5],
+        Expr::Cast {
+            kind: CastKind::Array,
             ..
         }
     ));
@@ -2474,12 +2482,7 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "recursive by-reference returns are unsupported"
     );
 
-    let recursive_array = parser::parse("<?php $array = []; $array[] =& $array;").unwrap_err();
-    assert_eq!(
-        recursive_array.message,
-        "recursive array references are unsupported"
-    );
-
+    parser::parse("<?php $array = []; $array[] =& $array;").unwrap();
     parser::parse("<?php $array = [1]; $array[] =& $array[0];").unwrap();
     parser::parse("<?php $array = [1, 2]; $array[0] =& $array[1];").unwrap();
 
@@ -14192,7 +14195,7 @@ echo $alias, \"\\n\";\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Notice: Only variables should be assigned by reference in ptn on line 3\n1\n"
+        "\nNotice: Only variables should be assigned by reference in ptn on line 3\n1\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -15511,10 +15514,10 @@ fn compile_plain_heredoc_values_to_native_binary() {
         &input,
         r#"<?php
 $heredoc = <<<HERE_DOC
-Hello
+Hello\n\t\x41\101
 HERE_DOC;
 $nowdoc = <<<'NOW_DOC'
-$literal
+$literal\n\t
 NOW_DOC;
 var_dump(strlen($heredoc), $heredoc, $nowdoc);
 var_dump(array_fill(0, 2, $heredoc));
@@ -15528,7 +15531,7 @@ var_dump(array_fill(0, 2, $heredoc));
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(5)\nstring(5) \"Hello\"\nstring(8) \"$literal\"\narray(2) {\n  [0]=>\n  string(5) \"Hello\"\n  [1]=>\n  string(5) \"Hello\"\n}\n"
+        "int(9)\nstring(9) \"Hello\n\tAA\"\nstring(12) \"$literal\\n\\t\"\narray(2) {\n  [0]=>\n  string(9) \"Hello\n\tAA\"\n  [1]=>\n  string(9) \"Hello\n\tAA\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -16033,13 +16036,17 @@ $items = [[1, 2, 3], [\"a\", \"b\"]];\n\
 var_dump(next($items[0]));\n\
 var_dump(array_shift($items[0]));\n\
 var_dump(current($items[0]));\n\
+var_dump(array_push($items[0], 4, 5));\n\
 var_dump(array_pop($items[1]));\n\
 var_dump($items);\n\
 $source = [[10, 20]];\n\
 $copy = $source;\n\
 var_dump(array_shift($copy[0]));\n\
 var_dump($source[0]);\n\
-var_dump($copy[0]);",
+var_dump($copy[0]);\n\
+$max = [PHP_INT_MAX => \"top\"];\n\
+try { var_dump(array_push($max, \"new\")); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($max);",
     )
     .unwrap();
 
@@ -16049,7 +16056,7 @@ var_dump($copy[0]);",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(2)\nint(1)\nint(2)\nstring(1) \"b\"\narray(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    int(2)\n    [1]=>\n    int(3)\n  }\n  [1]=>\n  array(1) {\n    [0]=>\n    string(1) \"a\"\n  }\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(1) {\n  [0]=>\n  int(20)\n}\n"
+        "int(2)\nint(1)\nint(2)\nint(4)\nstring(1) \"b\"\narray(2) {\n  [0]=>\n  array(4) {\n    [0]=>\n    int(2)\n    [1]=>\n    int(3)\n    [2]=>\n    int(4)\n    [3]=>\n    int(5)\n  }\n  [1]=>\n  array(1) {\n    [0]=>\n    string(1) \"a\"\n  }\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(1) {\n  [0]=>\n  int(20)\n}\nCannot add element to the array as the next element is already occupied\narray(1) {\n  [9223372036854775807]=>\n  string(3) \"top\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -16057,33 +16064,77 @@ var_dump($copy[0]);",
     assert!(c_source.contains("ptn_runtime_array_next_path"));
     assert!(c_source.contains("ptn_runtime_array_shift_path"));
     assert!(c_source.contains("ptn_runtime_array_pop_path"));
+    assert!(c_source.contains("ptn_runtime_array_push_path"));
 }
 
 #[test]
-fn parser_rejects_temporary_array_cursor_mutation_calls() {
-    for (source, function) in [
-        ("<?php next([1, 2]);", "next"),
-        ("<?php var_dump(reset(array(1, 2)));", "reset"),
-        (
-            "<?php $items = [1, 2]; var_dump(prev(current($items)));",
-            "prev",
-        ),
-    ] {
-        let error = parser::parse(source).unwrap_err();
-        assert!(
-            error.message.contains(&format!(
-                "{function}() requires a direct variable array argument"
-            )),
-            "unexpected diagnostic for {function}: {}",
-            error.message
-        );
-        assert!(error
-            .message
-            .contains("temporary array cursor mutation is unsupported"));
-    }
+fn compile_array_mutator_call_temporaries_to_native_binary() {
+    let root = temp_dir("ptn-native-array-mutator-call-temporaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-mutator-call-temporaries.php");
+    let output = root.join("array-mutator-call-temporaries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function pair() { return [1, 2]; }\n\
+var_dump(next(pair()));\n\
+$stack = [[[\"zero\"]]];\n\
+var_dump(array_shift(array_shift(array_shift($stack))));\n\
+$items = [[10, 20]];\n\
+var_dump(array_shift(current($items)));\n\
+var_dump($items[0]);\n\
+$source = 1;\n\
+$array = [&$source];\n\
+$shifted =& array_shift($array);\n\
+$shifted = 2;\n\
+echo \"source=\", $source, \" shifted=\", $shifted, \"\\n\";",
+    )
+    .unwrap();
 
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\n",
+            "Notice: Only variables should be passed by reference in ptn on line 3\n",
+            "int(2)\n",
+            "\n",
+            "Notice: Only variables should be passed by reference in ptn on line 5\n",
+            "\n",
+            "Notice: Only variables should be passed by reference in ptn on line 5\n",
+            "string(4) \"zero\"\n",
+            "\n",
+            "Notice: Only variables should be passed by reference in ptn on line 7\n",
+            "int(10)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(10)\n",
+            "  [1]=>\n",
+            "  int(20)\n",
+            "}\n",
+            "\n",
+            "Notice: Only variables should be assigned by reference in ptn on line 11\n",
+            "source=1 shifted=2\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_next_temporary"));
+    assert!(c_source.contains("ptn_runtime_array_shift_temporary"));
+}
+
+#[test]
+fn parser_accepts_array_cursor_mutation_argument_forms() {
+    parser::parse("<?php next([1, 2]);").unwrap();
+    parser::parse("<?php var_dump(reset(array(1, 2)));").unwrap();
     parser::parse("<?php $items = [1, 2]; next(($items));").unwrap();
     parser::parse("<?php $items = [[1], [2]]; end($items[0]);").unwrap();
+    parser::parse("<?php function f() { return [1, 2]; } var_dump(next(f()));").unwrap();
+    parser::parse("<?php $items = [[1, 2]]; var_dump(prev(current($items)));").unwrap();
 }
 
 #[test]
@@ -16102,10 +16153,6 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php shuffle([1, 2, 3]);", "shuffle"),
         ("<?php sort([3, 2, 1]);", "sort"),
         ("<?php rsort([3, 2, 1]);", "rsort"),
-        (
-            "<?php $items = [[1], [2]]; var_dump(array_shift(current($items)));",
-            "array_shift",
-        ),
         (
             "<?php $items = [[1], [2]]; array_unshift($items[0], 0);",
             "array_unshift",
@@ -16137,6 +16184,12 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
     parser::parse("<?php $items = [3, 2, 1]; sort(($items));").unwrap();
     parser::parse("<?php $items = [[1], [2]]; array_pop($items[0]);").unwrap();
     parser::parse("<?php $items = [[1], [2]]; array_shift($items[0]);").unwrap();
+    parser::parse("<?php $items = [[1], [2]]; array_push($items[0], 3);").unwrap();
+    parser::parse("<?php $items = [[1], [2]]; var_dump(array_shift(current($items)));").unwrap();
+    parser::parse(
+        "<?php $stack = [[[1]]]; var_dump(array_shift(array_shift(array_shift($stack))));",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -18170,6 +18223,12 @@ $two = [42];\n\
 $left = [\"k\" => &$one];\n\
 $replacement = [\"k\" => &$two];\n\
 array_replace_recursive($left, $replacement);\n\
+var_dump(current($one), current($two));\n\
+$one = [1];\n\
+$two = [42];\n\
+$arr1 = [\"k\" => &$one];\n\
+$arr2 = [\"k\" => &$two];\n\
+array_merge_recursive($arr1, $arr2);\n\
 var_dump(current($one), current($two));",
     )
     .unwrap();
@@ -18210,6 +18269,8 @@ var_dump(current($one), current($two));",
             "  [\"r\"]=>\n",
             "  &int(4)\n",
             "}\n",
+            "int(1)\n",
+            "int(42)\n",
             "int(1)\n",
             "int(42)\n",
         )
@@ -24503,7 +24564,7 @@ fn compile_unary_parenthesized_and_cast_expressions_to_native_binary() {
     let output = root.join("unary-casts-bin");
     fs::write(
         &input,
-        "<?php echo -(2 + 3), \"\\n\"; echo !(\"0\"), \" \", !(\"x\"), \"\\n\"; echo (int)\"42\" + (float)\"0.5\", \" \", (string)true . (bool)\"0\", \"\\n\";",
+        "<?php echo -(2 + 3), \"\\n\"; echo !(\"0\"), \" \", !(\"x\"), \"\\n\"; echo (int)\"42\" + (float)\"0.5\", \" \", (string)true . (bool)\"0\", \"\\n\"; var_dump((array)\"type1\", (array)10, (array)12.34, (array)null);",
     )
     .unwrap();
 
@@ -24513,7 +24574,7 @@ fn compile_unary_parenthesized_and_cast_expressions_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "-5\n1 \n42.5 1\n"
+        "-5\n1 \n42.5 1\narray(1) {\n  [0]=>\n  string(5) \"type1\"\n}\narray(1) {\n  [0]=>\n  int(10)\n}\narray(1) {\n  [0]=>\n  float(12.34)\n}\narray(0) {\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

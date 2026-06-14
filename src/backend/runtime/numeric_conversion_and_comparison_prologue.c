@@ -239,6 +239,37 @@ static PTN_UNUSED void ptn_abort_by_reference_argument_error(
     exit(255);
 }
 
+static PTN_UNUSED void ptn_throw_exception_at(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *message,
+    const char *path,
+    size_t line
+);
+
+static PTN_UNUSED PtnValue ptn_runtime_by_reference_argument_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) could not be passed by reference",
+        function_name,
+        position,
+        parameter_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+    return ptn_null();
+}
+
 static PTN_UNUSED const char *ptn_by_reference_argument_function_name(
     PtnRuntime *runtime,
     const char *fallback
