@@ -86,6 +86,101 @@ ptn_phpt_trim() {
     printf '%s' "$value"
 }
 
+declare -gA PTN_PHPT_SECTION_CACHE_KEY_BY_PATH=()
+declare -gA PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH=()
+
+ptn_phpt_build_section_cache() {
+    local manifest=$1
+    local php_src=$2
+    local cache_dir=$3
+    local index_file="$cache_dir/index.tsv"
+
+    mkdir -p "$cache_dir"
+    : > "$index_file"
+
+    LC_ALL=C awk -v php_src="$php_src" -v cache_dir="$cache_dir" -v index_file="$index_file" '
+        function trim(value) {
+            sub(/^[[:space:]]+/, "", value)
+            sub(/[[:space:]]+$/, "", value)
+            return value
+        }
+        function section_name(header, value) {
+            value = header
+            sub(/^--/, "", value)
+            sub(/--[[:space:]]*$/, "", value)
+            return value
+        }
+        function append_section_name(section) {
+            if (sections_csv == "") {
+                sections_csv = section
+            } else {
+                sections_csv = sections_csv "," section
+            }
+        }
+        function scan_phpt(path,    status, line, section) {
+            sections_csv = ""
+            while ((status = getline line < path) > 0) {
+                if (line ~ /^--[A-Z0-9_]+--[[:space:]]*$/) {
+                    section = section_name(line)
+                    append_section_name(section)
+                }
+            }
+            if (status < 0) {
+                printf "could not read PHPT row for section cache: %s\n", path > "/dev/stderr"
+                exit 1
+            }
+            close(path)
+        }
+        {
+            raw = trim($0)
+            if (raw == "" || raw ~ /^#/) {
+                next
+            }
+            row = raw
+            sub(/#.*/, "", row)
+            row = trim(row)
+            if (row == "") {
+                next
+            }
+            path = row
+            if (substr(row, 1, 1) != "/") {
+                path = php_src "/" row
+            }
+            key++
+            scan_phpt(path)
+            printf "%s\t%s\t%s\t%s\n", row, path, key, sections_csv >> index_file
+        }
+    ' "$manifest"
+}
+
+ptn_phpt_load_section_cache_index() {
+    local index=$1
+    local row
+    local path
+    local key
+    local sections
+
+    PTN_PHPT_SECTION_CACHE_KEY_BY_PATH=()
+    PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH=()
+
+    while IFS=$'\t' read -r row path key sections; do
+        [[ -n "$path" && -n "$key" ]] || continue
+        PTN_PHPT_SECTION_CACHE_KEY_BY_PATH[$path]=$key
+        PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH[$path]=${sections:-}
+    done < "$index"
+}
+
+ptn_phpt_section_cache_key() {
+    local path=$1
+
+    [[ -n "${PTN_PHPT_SECTION_CACHE_DIR:-}" ]] || return 1
+    if [[ -v "PTN_PHPT_SECTION_CACHE_KEY_BY_PATH[$path]" ]]; then
+        printf '%s\n' "${PTN_PHPT_SECTION_CACHE_KEY_BY_PATH[$path]}"
+        return 0
+    fi
+    return 1
+}
+
 ptn_phpt_csv_contains_ci() {
     local needle
     needle=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
@@ -124,6 +219,13 @@ ptn_phpt_section() {
 ptn_phpt_has_section() {
     local path=$1
     local target=$2
+    local sections
+
+    if [[ -n "${PTN_PHPT_SECTION_CACHE_DIR:-}" && -v "PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH[$path]" ]]; then
+        sections=${PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH[$path]}
+        ptn_phpt_csv_contains_ci "$target" "$sections"
+        return $?
+    fi
 
     awk -v target="$target" '
         /^--[A-Z0-9_]+--[[:space:]]*$/ {
@@ -141,6 +243,20 @@ ptn_phpt_has_section() {
 
 ptn_phpt_sections() {
     local path=$1
+    local sections
+    local section
+    local old_ifs
+
+    if [[ -n "${PTN_PHPT_SECTION_CACHE_DIR:-}" && -v "PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH[$path]" ]]; then
+        sections=${PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH[$path]}
+        old_ifs=$IFS
+        IFS=,
+        for section in $sections; do
+            printf '%s\n' "$section"
+        done
+        IFS=$old_ifs
+        return 0
+    fi
 
     awk '
         /^--[A-Z0-9_]+--[[:space:]]*$/ {
@@ -156,6 +272,11 @@ ptn_phpt_sections_csv() {
     local path=$1
     local -a sections=()
     local section
+
+    if [[ -n "${PTN_PHPT_SECTION_CACHE_DIR:-}" && -v "PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH[$path]" ]]; then
+        printf '%s\n' "${PTN_PHPT_SECTION_CACHE_SECTIONS_BY_PATH[$path]}"
+        return 0
+    fi
 
     while IFS= read -r section; do
         sections+=("$section")

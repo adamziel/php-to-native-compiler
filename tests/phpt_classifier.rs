@@ -21,6 +21,37 @@ fn classify_with_pipefail(body: &str) -> String {
     classify_with_options(body, false, true, &[])
 }
 
+fn classify_with_section_cache(body: &str) -> String {
+    let root = temp_dir("ptn-phpt-classifier-cache");
+    let phpt = root.join("case.phpt");
+    let manifest = root.join("manifest.txt");
+    let cache = root.join("section-cache");
+    fs::write(&phpt, body).expect("write PHPT");
+    fs::write(&manifest, format!("{}\n", phpt.display())).expect("write manifest");
+
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(
+            "source tools/phpt-classifier.sh; \
+             export PTN_PHPT_SECTION_CACHE_DIR=\"$3\"; \
+             ptn_phpt_build_section_cache \"$2\" /unused \"$3\"; \
+             ptn_phpt_load_section_cache_index \"$3/index.tsv\"; \
+             ptn_phpt_classify_row \"$1\" \"$1\"",
+        )
+        .arg("bash")
+        .arg(&phpt)
+        .arg(&manifest)
+        .arg(&cache)
+        .output()
+        .expect("run cached classifier");
+    assert!(
+        output.status.success(),
+        "cached classifier failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("classifier output should be utf8")
+}
+
 fn classify_with_harness_programs(body: &str, enabled: bool) -> String {
     classify_with_harness_programs_and_env(body, enabled, &[])
 }
@@ -241,6 +272,16 @@ fn phpt_classifier_cleanup_harness_is_default_blocker() {
         classification.starts_with("harness-cleanup\t"),
         "{classification:?}"
     );
+}
+
+#[test]
+fn phpt_classifier_section_cache_preserves_row_classification() {
+    let cleanup = "--TEST--\ncleanup\n--FILE--\n<?php echo 1; ?>\n--CLEAN--\n<?php unlink(__DIR__ . '/case.tmp'); ?>\n--EXPECT--\n1\n";
+    assert_eq!(classify(cleanup), classify_with_section_cache(cleanup));
+
+    let attribute =
+        "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n";
+    assert_eq!(classify(attribute), classify_with_section_cache(attribute));
 }
 
 #[test]

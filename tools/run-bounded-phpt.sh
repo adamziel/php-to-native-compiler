@@ -170,6 +170,11 @@ selected_rows=0
 runnable_rows=0
 excluded_rows=0
 classify=${PTN_PHPT_CLASSIFY:-1}
+if [[ "$classify" != "0" ]]; then
+    export PTN_PHPT_SECTION_CACHE_DIR="$out_dir/section-cache-$timestamp"
+    ptn_phpt_build_section_cache "$manifest" "$php_src" "$PTN_PHPT_SECTION_CACHE_DIR"
+    ptn_phpt_load_section_cache_index "$PTN_PHPT_SECTION_CACHE_DIR/index.tsv"
+fi
 while IFS= read -r line || [[ -n "$line" ]]; do
     trimmed=$(trim "$line")
     if [[ "$trimmed" =~ ^#[[:space:]]*bucket:[[:space:]]*([^[:space:]]+)[[:space:]]+rows=([0-9]+)([[:space:]]|$) ]]; then
