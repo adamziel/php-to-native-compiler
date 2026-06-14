@@ -210,8 +210,12 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   current broad 1k diagnostics/assertion runtime blocker map and focused
   manifest.
 - `docs/PHPT_BROAD_1K_UNSUPPORTED_LANGUAGE_FRONTIER_PTN_A0R0_2026-06-14.md`:
-  current broad 1k unsupported-language bucket split, with 288 rows mapped by
+  earlier broad 1k unsupported-language bucket split, with 288 rows mapped by
   generic parser/runtime surface.
+- `docs/PHPT_BROAD_1K_LANGUAGE_CLASSIFIER_SPLIT_PTN_18TP_2026-06-14.md`:
+  current broad 1k language-surface classifier split, moving the remaining
+  147-row aggregate into semantic categories while attribute metadata remains
+  separate.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_CURRENT_FRONTIER_2026-06-14.md`:
   refreshed broad 1k standard-array runnable frontier, focused manifest, and
   current 53-row residual blocker map.

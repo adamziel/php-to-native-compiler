@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T09:02Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n`; COW-foreach 69/103 passed.
+Last refresh: 2026-06-14T09:40Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp`; COW 69/103 passed.
 
 ## Operating Goal
 
@@ -57,7 +57,13 @@ Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/
 | Std-arrays | 243/296 |
 | Map/filter | 21/30 |
 | Request/SAPI | 1/41 |
-| Unsupported-lang | 0/147 |
+| Class-decl | 0/78 |
+| Call-unpack | 0/34 |
+| Type-hint | 0/14 |
+| Function-state | 0/11 |
+| Dynamic-symbol | 0/8 |
+| Generator-runtime | 0/1 |
+| Internal-call-bind | 0/1 |
 | Attribute-blockers | 0/149 |
 | Attribute-meta | 0/204 |
 | Heredoc-array | 14/70 |
