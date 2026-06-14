@@ -229,6 +229,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_LANGUAGE_CLASSIFIER_SPLIT_PTN_SU8H_2026-06-14.md`:
   reconciliation note for the older language-split MR against the current
   post-`ptn-18tp` bucket names.
+- `docs/PHPT_BROAD_1K_LANGUAGE_DECLARATION_CALL_CURRENT_PTN_C9V6_2026-06-14.md`:
+  current broad 1k 147-row language declaration/call/dynamic blocker union
+  manifest after the class-declaration and attribute-metadata splits.
 - `docs/PHPT_BROAD_1K_POST_LANGUAGE_SPLIT_PTN_H5QY_2026-06-14.md`:
   transitional broad 1k post-language-split evidence, recorded before later
   class-metadata classifier refinements, with 424 runnable rows and 147
