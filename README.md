@@ -271,6 +271,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   manifest.
 - `docs/PHPT_BROAD_1K_ZEND_BUG_REGRESSION_FRONTIER_2026-06-14.md`: broad 1k
   root-level Zend historical bug-regression blocker map and focused manifest.
+- `docs/PHPT_BROAD_1K_ZEND_ROOT_CURRENT_PTN_XGK8_2026-06-14.md`: current
+  broad 1k root-level Zend execution map with focused manifest and residual
+  array/lvalue, object, control, and dispatch blocker buckets.
 - `docs/PHPT_BROAD_1K_FUNCTION_DYNAMIC_TYPE_BLOCKERS_2026-06-14.md`: broad
   1k function-local static, nullable/never type, and variable-variable blocker
   map.
