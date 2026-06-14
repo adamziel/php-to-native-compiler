@@ -277,6 +277,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_TRAIT_DECLARATION_CATEGORY_PTN_YXV2_2026-06-14.md`:
   current broad 1k `unsupported-trait-declaration` category map with a
   committed 25-row focused manifest.
+- `docs/PHPT_BROAD_1K_INTERFACE_CATEGORY_PTN_L0H9_2026-06-14.md`:
+  current broad 1k interface declaration/implementation blocker map with a
+  committed 38-row focused manifest.
 - `docs/PHPT_BROAD_1K_PLAIN_HEREDOC_CLASSIFIER_2026-06-14.md`: broad 1k
   plain heredoc/nowdoc classifier refinement and focused PHPT evidence.
 - `docs/PHPT_BROAD_1K_MAGIC_METADATA_BLOCKERS_2026-06-14.md`: current broad

@@ -1,0 +1,42 @@
+# Broad 1k interface declaration/implementation frontier rows for ptn-l0h9.
+# Source: .runtime/phpt-progress/excluded-20260614T113053Z/
+# Buckets: unsupported-interface-declaration (23), unsupported-interface-implementation (15).
+# PTN: c3d51e67440c; php-src PHPT corpus: 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+Zend/tests/ArrayAccess/ArrayAccess_indirect_append.phpt
+Zend/tests/ArrayAccess/bug30346.phpt
+Zend/tests/ArrayAccess/bug33710.phpt
+Zend/tests/ArrayAccess/bug39297.phpt
+Zend/tests/ArrayAccess/bug41209.phpt
+Zend/tests/ArrayAccess/bug68896.phpt
+Zend/tests/ArrayAccess/bug69955.phpt
+Zend/tests/ArrayAccess/bug71731.phpt
+Zend/tests/anon/002.phpt
+Zend/tests/anon/anon_class_name.phpt
+Zend/tests/anon/bug77652.phpt
+Zend/tests/arg_unpack/traversable_throwing_exception.phpt
+Zend/tests/attributes/delayed_target_validation/with_ReturnTypeWillChange.phpt
+Zend/tests/attributes/override/001.phpt
+Zend/tests/attributes/override/002.phpt
+Zend/tests/attributes/override/004.phpt
+Zend/tests/attributes/override/005.phpt
+Zend/tests/attributes/override/006.phpt
+Zend/tests/attributes/override/015.phpt
+Zend/tests/attributes/override/018.phpt
+Zend/tests/attributes/override/019.phpt
+Zend/tests/attributes/override/020.phpt
+Zend/tests/attributes/override/gh12189.phpt
+Zend/tests/attributes/override/properties_01.phpt
+Zend/tests/attributes/override/properties_03.phpt
+Zend/tests/attributes/override/properties_04.phpt
+Zend/tests/attributes/override/properties_05.phpt
+Zend/tests/attributes/override/properties_14.phpt
+Zend/tests/attributes/override/properties_15.phpt
+Zend/tests/attributes/override/properties_16.phpt
+Zend/tests/attributes/override/properties_19.phpt
+Zend/tests/autoload/bug49908.phpt
+Zend/tests/bug26229.phpt
+Zend/tests/bug30922.phpt
+Zend/tests/bug32427.phpt
+Zend/tests/bug32674.phpt
+Zend/tests/bug32993.phpt
+ext/standard/tests/array/array_fill_object.phpt
