@@ -1,0 +1,35 @@
+# ptn-z096 broad COW/reference user-comparator sort row pack.
+#
+# These rows come from the broad ext/standard array-internal COW frontier and
+# exercise usort()/uasort()/uksort() by-reference array mutation, callback
+# comparison dispatch, stable equal-element ordering, key preservation or
+# reindexing, and COW separation. Object-comparison and typed-property rows
+# remain in the broader array-internal frontier until those generic semantics
+# are modeled.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+#
+# Run:
+#   tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-z096-user-comparator-sort-row-pack-manifest.txt
+
+# bucket: user-comparator-sort rows=20
+ext/standard/tests/array/sort/uasort_basic1.phpt
+ext/standard/tests/array/sort/uasort_basic2.phpt
+ext/standard/tests/array/sort/uasort_variation10.phpt
+ext/standard/tests/array/sort/uasort_variation11.phpt
+ext/standard/tests/array/sort/uasort_variation3.phpt
+ext/standard/tests/array/sort/uasort_variation4.phpt
+ext/standard/tests/array/sort/uasort_variation5.phpt
+ext/standard/tests/array/sort/uasort_variation6.phpt
+ext/standard/tests/array/sort/uasort_variation7.phpt
+ext/standard/tests/array/sort/uasort_variation8.phpt
+ext/standard/tests/array/sort/uksort_basic.phpt
+ext/standard/tests/array/sort/usort_basic.phpt
+ext/standard/tests/array/sort/usort_stability.phpt
+ext/standard/tests/array/sort/usort_variation10.phpt
+ext/standard/tests/array/sort/usort_variation3.phpt
+ext/standard/tests/array/sort/usort_variation4.phpt
+ext/standard/tests/array/sort/usort_variation5.phpt
+ext/standard/tests/array/sort/usort_variation7.phpt
+ext/standard/tests/array/sort/usort_variation8.phpt
+ext/standard/tests/array/sort/usort_variation9.phpt

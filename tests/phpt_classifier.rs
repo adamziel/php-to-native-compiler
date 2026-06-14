@@ -1135,11 +1135,6 @@ fn phpt_classifier_excludes_unsupported_mutating_array_internals() {
             "--TEST--\nsplice destructor\n--FILE--\n<?php\nclass C { function __destruct() { global $items; $items[] = 0; } }\n$items = [1, new C, 2];\narray_splice($items, 1, 1);\n--EXPECT--\n",
             "requires array_splice() destructor reentrancy detection",
         ),
-        (
-            "user comparator sort",
-            "--TEST--\nusort\n--FILE--\n<?php\n$items = [3, 1, 2];\nusort($items, \"strcmp\");\n--EXPECT--\n",
-            "requires usort()/uasort()/uksort() user-comparator by-reference sort helpers",
-        ),
     ];
 
     for (name, phpt, reason) in cases {
@@ -1169,6 +1164,10 @@ fn phpt_classifier_keeps_modeled_mutating_array_helpers_runnable() {
         (
             "array_multisort",
             "--TEST--\nmultisort\n--FILE--\n<?php\n$left = [2, 1];\n$right = [\"b\", \"a\"];\narray_multisort($left, SORT_ASC, SORT_REGULAR, $right, SORT_DESC, SORT_STRING);\n--EXPECT--\n",
+        ),
+        (
+            "user comparator sort",
+            "--TEST--\nusort\n--FILE--\n<?php\nfunction cmp($a, $b) { return $a <=> $b; }\n$items = [3, 1, 2];\nusort($items, \"cmp\");\n--EXPECT--\n",
         ),
     ];
 

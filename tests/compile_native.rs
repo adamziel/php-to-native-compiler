@@ -17048,6 +17048,9 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
         "<?php $items = [3, 2, 1]; rsort($items, SORT_REGULAR);",
         "<?php $items = [3, 2, 1]; sort($items, 0);",
         "<?php $items = [3, 2, 1]; sort($items, (SORT_REGULAR));",
+        "<?php $items = [3, 2, 1]; usort($items, \"cmp\");",
+        "<?php $items = [3, 2, 1]; uasort($items, \"cmp\");",
+        "<?php $items = [3, 2, 1]; uksort($items, \"cmp\");",
     ] {
         parser::parse(source).unwrap();
     }
@@ -17074,9 +17077,9 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
             "extra arguments are unsupported",
         ),
         (
-            "<?php $items = [3, 2, 1]; usort($items, \"cmp\");",
+            "<?php usort([3, 2, 1], \"cmp\");",
             "usort",
-            "sort-family array mutation semantics are unsupported",
+            "non-variable array mutation targets are unsupported",
         ),
     ] {
         let error = parser::parse(source).unwrap_err();
@@ -17761,6 +17764,78 @@ var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));",
     assert!(c_source.contains("ptn_runtime_array_ksort_variable"));
     assert!(c_source.contains("ptn_runtime_array_krsort_variable"));
     assert!(c_source.contains("ptn_runtime_array_rsort_variable"));
+}
+
+#[test]
+fn compile_user_comparator_sort_mutators_to_native_binary() {
+    let root = temp_dir("ptn-native-user-comparator-sort-mutators");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-comparator-sort-mutators.php");
+    let output = root.join("user-comparator-sort-mutators-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function by_value($a, $b) {\n\
+    if ($a == $b) { return 0; }\n\
+    return $a < $b ? -1 : 1;\n\
+}\n\
+function by_key_desc($a, $b) {\n\
+    if ($a == $b) { return 0; }\n\
+    return $a < $b ? 1 : -1;\n\
+}\n\
+$source = [3 => \"c\", 1 => \"a\", 2 => \"b\"];\n\
+$copy = $source;\n\
+var_dump(usort($copy, \"by_value\"));\n\
+foreach ($copy as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+foreach ($source as $key => $value) { echo \"src:\", $key, \"=\", $value, \"\\n\"; }\n\
+$assoc = [\"b\" => 2, \"a\" => 1, \"c\" => 1];\n\
+$alias = $assoc;\n\
+var_dump(uasort($assoc, \"by_value\"));\n\
+foreach ($assoc as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+foreach ($alias as $key => $value) { echo \"alias:\", $key, \"=\", $value, \"\\n\"; }\n\
+$keys = [\"b\" => 1, \"a\" => 2, \"c\" => 3];\n\
+var_dump(uksort($keys, \"by_key_desc\"));\n\
+foreach ($keys as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+var_dump(function_exists(\"usort\"), function_exists(\"uasort\"), function_exists(\"uksort\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "0=a\n",
+            "1=b\n",
+            "2=c\n",
+            "src:3=c\n",
+            "src:1=a\n",
+            "src:2=b\n",
+            "bool(true)\n",
+            "a=1\n",
+            "c=1\n",
+            "b=2\n",
+            "alias:b=2\n",
+            "alias:a=1\n",
+            "alias:c=1\n",
+            "bool(true)\n",
+            "c=3\n",
+            "b=1\n",
+            "a=2\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_usort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_uasort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_uksort_variable"));
 }
 
 #[test]

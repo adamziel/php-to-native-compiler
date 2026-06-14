@@ -553,6 +553,101 @@ static PtnValue ptn_internal_call_callback(
     return result;
 }
 
+static int ptn_array_user_compare(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    PtnValue callback_args[2] = {
+        ptn_value_clone_deref(left),
+        ptn_value_clone_deref(right)
+    };
+    PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 2, callback_args, line);
+    int64_t compared = ptn_value_to_integer(callback_result);
+    ptn_value_destroy(&callback_args[0]);
+    ptn_value_destroy(&callback_args[1]);
+    ptn_value_destroy(&callback_result);
+    if (compared < 0) {
+        return -1;
+    }
+    if (compared > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static void ptn_array_user_sort_values(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnValue callback,
+    size_t line,
+    int renumber_keys
+) {
+    for (size_t i = 1; i < array->len; i++) {
+        PtnArrayEntry moving = array->entries[i];
+        size_t j = i;
+        while (
+            j > 0 &&
+            ptn_array_user_compare(runtime, callback, array->entries[j - 1].value, moving.value, line) > 0
+        ) {
+            array->entries[j] = array->entries[j - 1];
+            j--;
+        }
+        array->entries[j] = moving;
+    }
+    if (renumber_keys) {
+        for (size_t i = 0; i < array->len; i++) {
+            if (i > (size_t)INT64_MAX) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_array_key_free(array->entries[i].key);
+            array->entries[i].key = ptn_array_int_key((int64_t)i);
+        }
+        ptn_array_recompute_next_auto_key(array);
+    }
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
+static int ptn_array_user_compare_keys(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    PtnArrayKey left,
+    PtnArrayKey right,
+    size_t line
+) {
+    PtnValue left_value = ptn_array_key_value(left);
+    PtnValue right_value = ptn_array_key_value(right);
+    int compared = ptn_array_user_compare(runtime, callback, left_value, right_value, line);
+    ptn_value_destroy(&left_value);
+    ptn_value_destroy(&right_value);
+    return compared;
+}
+
+static void ptn_array_user_sort_keys(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnValue callback,
+    size_t line
+) {
+    for (size_t i = 1; i < array->len; i++) {
+        PtnArrayEntry moving = array->entries[i];
+        size_t j = i;
+        while (
+            j > 0 &&
+            ptn_array_user_compare_keys(runtime, callback, array->entries[j - 1].key, moving.key, line) > 0
+        ) {
+            array->entries[j] = array->entries[j - 1];
+            j--;
+        }
+        array->entries[j] = moving;
+    }
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
 static void ptn_var_dump_indent(size_t indent) {
     for (size_t i = 0; i < indent; i++) {
         fputs("  ", stdout);
@@ -2145,6 +2240,60 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shuffle_variable(PtnRuntime *runtim
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_usort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue callback,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(runtime, "usort", 1, "array", name, value);
+    PtnValue checked_callback = ptn_internal_expect_callback_arg(runtime, "usort", 2, "callback", callback);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&checked_callback);
+        return ptn_null();
+    }
+    ptn_array_user_sort_values(runtime, array, checked_callback, line, 1);
+    ptn_value_destroy(&checked_callback);
+    return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_uasort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue callback,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(runtime, "uasort", 1, "array", name, value);
+    PtnValue checked_callback = ptn_internal_expect_callback_arg(runtime, "uasort", 2, "callback", callback);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&checked_callback);
+        return ptn_null();
+    }
+    ptn_array_user_sort_values(runtime, array, checked_callback, line, 0);
+    ptn_value_destroy(&checked_callback);
+    return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_uksort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue callback,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(runtime, "uksort", 1, "array", name, value);
+    PtnValue checked_callback = ptn_internal_expect_callback_arg(runtime, "uksort", 2, "callback", callback);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&checked_callback);
+        return ptn_null();
+    }
+    ptn_array_user_sort_keys(runtime, array, checked_callback, line);
+    ptn_value_destroy(&checked_callback);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_unshift_variable(
     PtnRuntime *runtime,
     const char *name,
@@ -2824,6 +2973,45 @@ static PtnValue ptn_internal_rsort(PtnRuntime *runtime, size_t argc, const PtnVa
     }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "rsort", 1, "array", args[0]);
     ptn_array_rsort_values(array);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_usort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "usort", 1, "array", args[0]);
+    PtnValue callback = ptn_internal_expect_callback_arg(runtime, "usort", 2, "callback", args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+    ptn_array_user_sort_values(runtime, array, callback, line, 1);
+    ptn_value_destroy(&callback);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_uasort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "uasort", 1, "array", args[0]);
+    PtnValue callback = ptn_internal_expect_callback_arg(runtime, "uasort", 2, "callback", args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+    ptn_array_user_sort_values(runtime, array, callback, line, 0);
+    ptn_value_destroy(&callback);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_uksort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "uksort", 1, "array", args[0]);
+    PtnValue callback = ptn_internal_expect_callback_arg(runtime, "uksort", 2, "callback", args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+    ptn_array_user_sort_keys(runtime, array, callback, line);
+    ptn_value_destroy(&callback);
     return ptn_bool(1);
 }
 
@@ -4265,31 +4453,6 @@ static PtnValue ptn_internal_array_intersect_key(PtnRuntime *runtime, size_t arg
     PtnValue result = ptn_array_key_intersect_or_diff(source, argc - 1, arrays, 1);
     free(arrays);
     return result;
-}
-
-static int ptn_array_user_compare(
-    PtnRuntime *runtime,
-    PtnValue callback,
-    PtnValue left,
-    PtnValue right,
-    size_t line
-) {
-    PtnValue callback_args[2] = {
-        ptn_value_clone_deref(left),
-        ptn_value_clone_deref(right)
-    };
-    PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 2, callback_args, line);
-    int64_t compared = ptn_value_to_integer(callback_result);
-    ptn_value_destroy(&callback_args[0]);
-    ptn_value_destroy(&callback_args[1]);
-    ptn_value_destroy(&callback_result);
-    if (compared < 0) {
-        return -1;
-    }
-    if (compared > 0) {
-        return 1;
-    }
-    return 0;
 }
 
 typedef enum {
@@ -13549,8 +13712,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "substr_count", 2, 4, ptn_internal_substr_count },
         { "touch", 1, 3, ptn_internal_touch },
         { "trim", 1, 2, ptn_internal_trim },
+        { "uasort", 2, 2, ptn_internal_uasort },
         { "ucfirst", 1, 1, ptn_internal_ucfirst },
+        { "uksort", 2, 2, ptn_internal_uksort },
         { "unlink", 1, 1, ptn_internal_unlink },
+        { "usort", 2, 2, ptn_internal_usort },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "var_export", 1, 2, ptn_internal_var_export },
         { "vfprintf", 3, 3, ptn_internal_vfprintf },
