@@ -226,6 +226,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_LANGUAGE_CLASSIFIER_SPLIT_PTN_SU8H_2026-06-14.md`:
   reconciliation note for the older language-split MR against the current
   post-`ptn-18tp` bucket names.
+- `docs/PHPT_BROAD_1K_POST_LANGUAGE_SPLIT_PTN_H5QY_2026-06-14.md`:
+  transitional broad 1k post-language-split evidence, recorded before later
+  class-metadata classifier refinements, with 424 runnable rows and 147
+  language/runtime blockers replayed across seven semantic categories.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_CURRENT_FRONTIER_2026-06-14.md`:
   refreshed broad 1k standard-array runnable frontier, focused manifest, and
   current 53-row residual blocker map.
