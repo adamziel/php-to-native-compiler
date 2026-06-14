@@ -291,6 +291,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   plain heredoc/nowdoc classifier refinement and focused PHPT evidence.
 - `docs/PHPT_BROAD_1K_MAGIC_METADATA_BLOCKERS_2026-06-14.md`: current broad
   1k magic method metadata blocker map.
+- `docs/PHPT_BROAD_1K_OBJECT_STRING_CONVERSION_CLASSIFIER_PTN_I0P3_2026-06-14.md`:
+  current broad 1k classifier split moving 61 `__toString()` object
+  conversion rows into `unsupported-object-string-conversion-metadata`.
 - `docs/PHPT_BROAD_1K_MAGIC_OBJECT_CONVERSION_FRONTIER_2026-06-14.md`: broad
   1k magic-method/object-conversion blocker map and raw focused evidence.
 - `docs/PHPT_BROAD_1K_MAGIC_METHOD_METADATA_CURRENT_PTN_7FYM_2026-06-14.md`:

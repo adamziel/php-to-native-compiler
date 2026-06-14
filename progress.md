@@ -46,7 +46,8 @@ Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/st
 | Runtime-INI | 0/73 |
 | Resource-limit | 0/1 |
 | Magic/object | 20/69 |
-| Magic-methods | 0/69 |
+| Magic-methods | 0/8 |
+| Object-string-meta | 0/61 |
 | Std-array-map | 0/297 |
 | Std-arrays | 243/296 |
 | Map/filter | 21/30 |

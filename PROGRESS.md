@@ -45,7 +45,8 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Runtime-INI|73|0|73|
 |Resource-limit|1|0|1|
 |Magic/object|69|20|49|
-|Magic-methods|69|0|69|
+|Magic-methods|8|0|8|
+|Object-string-meta|61|0|61|
 |Std-array-map|297|0|297|
 |Std-arrays|296|243|53|
 |Map/filter|30|21|9|
