@@ -4817,7 +4817,7 @@ class StringCapable {
         return \"Hello, world\";
     }
 }
-class Plain {}
+class PlainObject {}
 
 $value = new StringCapable();
 var_dump(strlen($value));
@@ -4830,7 +4830,7 @@ try {
     echo $e->getMessage(), \"\\n\";
 }
 try {
-    var_dump((string) new Plain());
+    var_dump((string) new PlainObject());
 } catch (Error $e) {
     echo $e->getMessage(), \"\\n\";
 }
@@ -4844,7 +4844,14 @@ try {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(12)\nint(12)\nHello, world\nprefix:Hello, world\nObject of class stdClass could not be converted to string\nObject of class Plain could not be converted to string\n"
+        concat!(
+            "int(12)\n",
+            "int(12)\n",
+            "Hello, world\n",
+            "prefix:Hello, world\n",
+            "Object of class stdClass could not be converted to string\n",
+            "Object of class PlainObject could not be converted to string\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -15537,6 +15544,10 @@ $rows2 = [[\"key\" => \"x\", \"value\" => $nested], [\"key\" => \"y\", \"value\"
 $result = array_column($rows2, \"value\", \"key\");\n\
 $result[\"x\"][] = \"copy\";\n\
 var_dump($result[\"x\"], $nested);\n\
+$object_row = new stdClass;\n\
+$object_row->{0} = \"zero\";\n\
+$object_row->{1} = \"one\";\n\
+var_dump(array_column([$object_row], 0, 1));\n\
 class MagicColumn {\n\
     private $prop;\n\
     public function __construct($value) { $this->prop = $value; }\n\
@@ -15558,7 +15569,7 @@ var_dump(function_exists(\"array_column\"), function_exists(\"ARRAY_COLUMN\"));"
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"c\"\n}\narray(3) {\n  [2]=>\n  string(1) \"a\"\n  [\"02\"]=>\n  string(1) \"b\"\n  [3]=>\n  string(1) \"c\"\n}\narray(4) {\n  [2]=>\n  array(2) {\n    [42]=>\n    string(1) \"a\"\n    [\"id\"]=>\n    string(1) \"2\"\n  }\n  [\"02\"]=>\n  array(2) {\n    [42]=>\n    string(1) \"b\"\n    [\"id\"]=>\n    string(2) \"02\"\n  }\n  [3]=>\n  array(2) {\n    [42]=>\n    string(1) \"c\"\n    [\"id\"]=>\n    int(3)\n  }\n  [\"skip\"]=>\n  array(2) {\n    [\"x\"]=>\n    string(7) \"missing\"\n    [\"id\"]=>\n    string(4) \"skip\"\n  }\n}\narray(2) {\n  [0]=>\n  string(4) \"seed\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray(1) {\n  [0]=>\n  string(13) \"__get(foobar)\"\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
+        "array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"c\"\n}\narray(3) {\n  [2]=>\n  string(1) \"a\"\n  [\"02\"]=>\n  string(1) \"b\"\n  [3]=>\n  string(1) \"c\"\n}\narray(4) {\n  [2]=>\n  array(2) {\n    [42]=>\n    string(1) \"a\"\n    [\"id\"]=>\n    string(1) \"2\"\n  }\n  [\"02\"]=>\n  array(2) {\n    [42]=>\n    string(1) \"b\"\n    [\"id\"]=>\n    string(2) \"02\"\n  }\n  [3]=>\n  array(2) {\n    [42]=>\n    string(1) \"c\"\n    [\"id\"]=>\n    int(3)\n  }\n  [\"skip\"]=>\n  array(2) {\n    [\"x\"]=>\n    string(7) \"missing\"\n    [\"id\"]=>\n    string(4) \"skip\"\n  }\n}\narray(2) {\n  [0]=>\n  string(4) \"seed\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray(1) {\n  [\"one\"]=>\n  string(4) \"zero\"\n}\narray(1) {\n  [0]=>\n  string(13) \"__get(foobar)\"\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -18174,7 +18185,9 @@ $left = [10 => \"ten\", \"keep\" => \"left\", 11 => \"eleven\"];\n\
 $right = [\"keep\" => \"right\", 0 => \"zero\", \"new\" => \"new\"];\n\
 $merged = array_merge($left, $right);\n\
 $merged[\"keep\"] = \"changed\";\n\
-var_dump($merged, $left, $right, function_exists(\"array_merge\"), function_exists(\"ARRAY_MERGE\"));",
+var_dump($merged, $left, $right, function_exists(\"array_merge\"), function_exists(\"ARRAY_MERGE\"));\n\
+try { array_merge(0, []); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_merge([], 0); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }",
     )
     .unwrap();
 
@@ -18216,7 +18229,9 @@ var_dump($merged, $left, $right, function_exists(\"array_merge\"), function_exis
             "  string(3) \"new\"\n",
             "}\n",
             "bool(true)\n",
-            "bool(true)\n"
+            "bool(true)\n",
+            "array_merge(): Argument #1 must be of type array, int given\n",
+            "array_merge(): Argument #2 must be of type array, int given\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -22762,6 +22777,18 @@ $cycle = [];
 $cycle[] =& $cycle;
 var_dump(array_map(null, $cycle));
 var_dump(array_map(null, $cycle, $cycle));
+$value = \"v1\";
+$refs = [\"k1\" => &$value];
+$refs[] =& $refs[\"k1\"];
+$single = array_map(null, $refs);
+$single[\"k1\"] = \"single\";
+var_dump($value, $refs[0]);
+$value = \"v1\";
+$refs = [\"k1\" => &$value];
+$refs[] =& $refs[\"k1\"];
+$paired = array_map(null, $refs, $refs);
+$paired[0][0] = \"paired\";
+var_dump($value, $paired);
 ",
     )
     .unwrap();
@@ -22863,6 +22890,25 @@ var_dump(array_map(null, $cycle, $cycle));
             "      [0]=>\n",
             "      *RECURSION*\n",
             "    }\n",
+            "  }\n",
+            "}\n",
+            "string(6) \"single\"\n",
+            "string(6) \"single\"\n",
+            "string(6) \"paired\"\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    &string(6) \"paired\"\n",
+            "    [1]=>\n",
+            "    &string(6) \"paired\"\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    &string(6) \"paired\"\n",
+            "    [1]=>\n",
+            "    &string(6) \"paired\"\n",
             "  }\n",
             "}\n",
         )

@@ -3317,20 +3317,38 @@ impl Parser {
                     let start_span = expr.span();
                     self.advance();
                     let member = self.advance().clone();
-                    let TokenKind::Identifier(name) = member.kind else {
-                        return Err(Diagnostic::new("expected member name", Some(member.span)));
+                    let (name, member_span) = match member.kind {
+                        TokenKind::Identifier(name) => (name, member.span),
+                        TokenKind::LeftBrace => {
+                            let literal = self.advance().clone();
+                            let name = match literal.kind {
+                                TokenKind::String(value) => value,
+                                TokenKind::Int(value) => value.to_string(),
+                                _ => {
+                                    return Err(Diagnostic::new(
+                                        "expected literal member name",
+                                        Some(literal.span),
+                                    ));
+                                }
+                            };
+                            let right_span = self.expect_right_brace()?;
+                            (name, combine_spans(member.span, right_span))
+                        }
+                        _ => {
+                            return Err(Diagnostic::new("expected member name", Some(member.span)));
+                        }
                     };
                     if !matches!(self.peek().kind, TokenKind::LeftParen) {
                         expr = Expr::PropertyFetch {
                             receiver: Box::new(expr),
                             name,
-                            span: combine_spans(start_span, member.span),
+                            span: combine_spans(start_span, member_span),
                         };
                         continue;
                     }
                     if self.peek_is_first_class_callable_arguments() {
                         let right_span = self.parse_first_class_callable_arguments()?;
-                        let callable_span = combine_spans(start_span, member.span);
+                        let callable_span = combine_spans(start_span, member_span);
                         let callable = Expr::Array {
                             elements: vec![
                                 ArrayElement {
@@ -3341,7 +3359,7 @@ impl Parser {
                                     key: None,
                                     value: ArrayElementValue::Value(Expr::String(
                                         name,
-                                        member.span,
+                                        member_span,
                                     )),
                                 },
                             ],
