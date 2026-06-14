@@ -315,6 +315,10 @@ pub enum ValueExpr {
         index: Box<ValueExpr>,
         line: usize,
     },
+    ArrayAppendAccess {
+        array: Box<ValueExpr>,
+        line: usize,
+    },
     Isset {
         targets: Vec<ValueExpr>,
     },
@@ -1559,17 +1563,17 @@ impl<'a> LoweringContext<'a> {
             Expr::List(_) => {
                 unreachable!("list destructuring syntax must lower through assignment targets")
             }
-            Expr::ArrayAccess { array, index, span } => {
-                ValueExpr::ArrayAccess {
+            Expr::ArrayAccess { array, index, span } => match index {
+                Some(index) => ValueExpr::ArrayAccess {
                     array: Box::new(self.lower_expr(array)),
-                    index: Box::new(
-                        self.lower_expr(index.as_ref().expect(
-                            "parser rejects append array reads outside assignment targets",
-                        )),
-                    ),
+                    index: Box::new(self.lower_expr(index)),
                     line: span.line,
-                }
-            }
+                },
+                None => ValueExpr::ArrayAppendAccess {
+                    array: Box::new(self.lower_expr(array)),
+                    line: span.line,
+                },
+            },
             Expr::Isset { targets, .. } => ValueExpr::Isset {
                 targets: targets
                     .iter()

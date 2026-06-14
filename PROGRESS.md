@@ -1,14 +1,14 @@
 # PTN Progress
 
 Refresh: 2026-06-14T04:13Z.
-Measured: `ptn-odca` array key/value frontier after `ptn-h8f7`.
+Measured: `ptn-hpxo` append-form by-reference call arguments after `ptn-odca`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 718 | 718 | 0 |
+| Native/compiler Rust suite | 721 | 721 | 0 |
 | PHPT bounded manifest | 486 | 479 | 7 |
 | PHPT Zend rows | 119 | 119 | 0 |
 | PHPT ext/standard rows | 281 | 274 | 7 |
@@ -25,8 +25,8 @@ Measured: `ptn-odca` array key/value frontier after `ptn-h8f7`.
 | PHPT array-internal COW frontier | 72 | 17 | 55 |
 | PHPT COW foreach/reference frontier | 103 | 31 | 72 |
 | PHPT foreach list destructuring rows | 4 | 4 | 0 |
-| PHPT broad reference-call bucket | 12 | 9 | 3 |
-| PHPT broad Zend assignment/reference frontier | 32 | 22 | 10 |
+| PHPT broad reference-call bucket | 12 | 10 | 2 |
+| PHPT broad Zend assignment/reference frontier | 32 | 23 | 9 |
 | PHPT broad class declaration frontier | 78 | 0 | 78 |
 | PHPT broad resource-limit classifier row | 1 | 0 | 1 |
 | PHPT broad magic/object conversion frontier | 69 | 20 | 49 |
@@ -41,15 +41,15 @@ Measured: `ptn-odca` array key/value frontier after `ptn-h8f7`.
 ## Remaining Exclusions
 
 - Bounded: 486 selected, 456 runnable, 30 excluded; broad 1k 443/557.
-- Array frontier: set/callback 86/106; request/SAPI raw 1 pass, 3 fail,
-  37 skips; `ptn-h8f7` maps 70 object/metadata blockers.
-- `ptn-odca`: key/value frontier selects 42 rows; 37 runnable, 28 pass,
-  9 fail, 5 classified.
+- Array frontier: set/callback 86/106; request/SAPI 1 pass, 3 fail,
+  37 skips; key/value 28/42.
+- `ptn-hpxo`: append by-ref call args lower through array-path reference
+  slots; reference-call is 10/12.
 - COW/reference: internal 17/72, foreach 31/103, reference-call 9/12.
 
 ## Verification
 
-`ptn-yvgh`: huge-count preflight. `ptn-ri9o`: request/SAPI excludes 41.
-`ptn-odac`: `array_chunk*` 32/32, leading-dot 5/5, diff/intersect 58/61.
-`ptn-h8f7`: object/metadata manifest selects 70; classify-only excludes 70.
-`ptn-odca`: key/value manifest selects 42; 28 pass, 9 fail, 5 classified.
+`ptn-ri9o`: request/SAPI excludes 41. `ptn-odac`: diff/intersect 58/61.
+`ptn-h8f7`: object/metadata excludes 70. `ptn-odca`: key/value 28 pass,
+9 fail, 5 classified. `ptn-hpxo`: append-reference native tests and target
+PHPT pass.

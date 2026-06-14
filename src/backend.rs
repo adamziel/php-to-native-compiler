@@ -3328,6 +3328,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
             collect_value_legacy_dollar_brace_deprecations(array, deprecations);
             collect_value_legacy_dollar_brace_deprecations(index, deprecations);
         }
+        ValueExpr::ArrayAppendAccess { array, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(array, deprecations);
+        }
         ValueExpr::Isset { targets } => {
             for target in targets {
                 collect_value_legacy_dollar_brace_deprecations(target, deprecations);
@@ -3767,6 +3770,9 @@ fn collect_value_runtime_requirements(
             collect_value_runtime_requirements(array, functions, requirements);
             collect_value_runtime_requirements(index, functions, requirements);
         }
+        ValueExpr::ArrayAppendAccess { array, .. } => {
+            collect_value_runtime_requirements(array, functions, requirements);
+        }
         ValueExpr::Isset { targets } => {
             for target in targets {
                 collect_value_runtime_requirements(target, functions, requirements);
@@ -4108,13 +4114,22 @@ fn emit_only_variables_passed_by_reference_notice(out: &mut String, indent: &str
     out.push_str(");\n");
 }
 
+fn emit_unwrap_append_reference_call_argument(out: &mut String, indent: &str, temp: &str) {
+    out.push_str(indent);
+    out.push_str("ptn_runtime_unwrap_reference_slots_if_unaliased(&runtime, ");
+    out.push_str(temp);
+    out.push_str(", 3);\n");
+}
+
 fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
     match value {
         ValueExpr::Load { name, line } => Some(ReferenceTarget::Variable {
             name: name.clone(),
             line: *line,
         }),
-        ValueExpr::ArrayAccess { .. } => reference_array_dim_target_from_value(value),
+        ValueExpr::ArrayAccess { .. } | ValueExpr::ArrayAppendAccess { .. } => {
+            reference_array_dim_target_from_value(value)
+        }
         ValueExpr::PropertyFetch {
             receiver,
             name,
@@ -4137,6 +4152,14 @@ fn by_ref_temporary_argument_allowed(value: &ValueExpr) -> bool {
     )
 }
 
+fn value_is_append_reference_target(value: &ValueExpr) -> bool {
+    matches!(
+        reference_target_from_value(value),
+        Some(ReferenceTarget::ArrayDim(target))
+            if target.dimensions.iter().any(Option::is_none)
+    )
+}
+
 fn reference_array_dim_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
     let mut dimensions = Vec::new();
     let mut current = value;
@@ -4152,6 +4175,16 @@ fn reference_array_dim_target_from_value(value: &ValueExpr) -> Option<ReferenceT
                     line = Some(*access_line);
                 }
                 dimensions.push(Some((**index).clone()));
+                current = array.as_ref();
+            }
+            ValueExpr::ArrayAppendAccess {
+                array,
+                line: access_line,
+            } => {
+                if line.is_none() {
+                    line = Some(*access_line);
+                }
+                dimensions.push(None);
                 current = array.as_ref();
             }
             ValueExpr::Load {
@@ -4701,6 +4734,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         ValueExpr::ArrayAccess { array, index, .. } => {
             value_mentions_variable(array, name) || value_mentions_variable(index, name)
         }
+        ValueExpr::ArrayAppendAccess { array, .. } => value_mentions_variable(array, name),
         ValueExpr::Isset { targets } => targets
             .iter()
             .any(|target| value_mentions_variable(target, name)),
@@ -6259,6 +6293,15 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &index_temp);
                 result_temp
             }
+            ValueExpr::ArrayAppendAccess { .. } => {
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    ptn_emit_type_error(&runtime.diagnostics, \"Cannot use [] for reading\");\n");
+                out.push_str("    exit(255);\n");
+                result_temp
+            }
             ValueExpr::NewObject {
                 class_name,
                 arguments,
@@ -7101,11 +7144,12 @@ impl ValueEmitter {
                     out.push_str(");\n");
                 } else {
                     let mut constructor_argument_temps = Vec::with_capacity(arguments.len());
+                    let mut unwrap_append_reference_temps = Vec::new();
                     for (argument_index, argument) in arguments.iter().enumerate() {
                         let by_ref_parameter =
                             by_ref_parameter_for_argument(&constructor_parameters, argument_index);
                         if let Some(parameter) = by_ref_parameter {
-                            constructor_argument_temps.push(self.emit_by_ref_call_argument(
+                            let temp = self.emit_by_ref_call_argument(
                                 out,
                                 argument,
                                 "__construct",
@@ -7113,7 +7157,11 @@ impl ValueEmitter {
                                 &parameter.name,
                                 line,
                                 true,
-                            ));
+                            );
+                            if value_is_append_reference_target(argument) {
+                                unwrap_append_reference_temps.push(temp.clone());
+                            }
+                            constructor_argument_temps.push(temp);
                         } else {
                             constructor_argument_temps.push(self.emit_call_argument(
                                 out,
@@ -7147,6 +7195,9 @@ impl ValueEmitter {
                     out.push_str(", ");
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
+                    for temp in &unwrap_append_reference_temps {
+                        emit_unwrap_append_reference_call_argument(out, "    ", temp);
+                    }
                     for index in 0..constructor_argument_temps.len() {
                         emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
                     }
@@ -8583,6 +8634,7 @@ impl ValueEmitter {
                 | ValueExpr::Array(_)
                 | ValueExpr::Closure { .. }
                 | ValueExpr::ArrayAccess { .. }
+                | ValueExpr::ArrayAppendAccess { .. }
                 | ValueExpr::LegacyDollarBraceStringVariable { .. }
                 | ValueExpr::DynamicVariable { .. }
                 | ValueExpr::Isset { .. }
@@ -8826,12 +8878,13 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
+        let mut unwrap_append_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
             let by_ref_parameter = direct_user.as_ref().and_then(|(_, parameters)| {
                 by_ref_parameter_for_argument(parameters, argument_index)
             });
             if let Some(parameter) = by_ref_parameter {
-                temps.push(self.emit_by_ref_call_argument(
+                let temp = self.emit_by_ref_call_argument(
                     out,
                     argument,
                     name,
@@ -8839,11 +8892,15 @@ impl ValueEmitter {
                     &parameter.name,
                     line,
                     true,
-                ));
+                );
+                if value_is_append_reference_target(argument) {
+                    unwrap_append_reference_temps.push(temp.clone());
+                }
+                temps.push(temp);
             } else if let Some(parameter_name) =
                 internal_by_ref_parameter_name(name, argument_index)
             {
-                temps.push(self.emit_by_ref_call_argument(
+                let temp = self.emit_by_ref_call_argument(
                     out,
                     argument,
                     name,
@@ -8851,7 +8908,11 @@ impl ValueEmitter {
                     parameter_name,
                     line,
                     false,
-                ));
+                );
+                if value_is_append_reference_target(argument) {
+                    unwrap_append_reference_temps.push(temp.clone());
+                }
+                temps.push(temp);
             } else {
                 temps.push(self.emit_call_argument(out, name, argument_index, argument));
             }
@@ -8887,6 +8948,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        for temp in &unwrap_append_reference_temps {
+            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -8924,6 +8988,7 @@ impl ValueEmitter {
             .max(arguments.len());
         let mut slot_temps = vec![None; frame_len];
         let mut temps = Vec::with_capacity(arguments.len());
+        let mut unwrap_append_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
             let slot_index = argument_slots[argument_index];
             let by_ref_parameter = parameters
@@ -8942,6 +9007,9 @@ impl ValueEmitter {
             } else {
                 self.emit_call_argument(out, name, argument_index, argument)
             };
+            if by_ref_parameter.is_some() && value_is_append_reference_target(argument) {
+                unwrap_append_reference_temps.push(temp.clone());
+            }
             slot_temps[slot_index] = Some(temp.clone());
             temps.push(temp);
         }
@@ -8974,6 +9042,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        for temp in &unwrap_append_reference_temps {
+            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        }
         for index in 0..slot_temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -9025,8 +9096,13 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
+        let mut unwrap_append_reference_temps = Vec::new();
         for argument in arguments {
-            temps.push(self.emit_dynamic_call_argument(out, argument));
+            let temp = self.emit_dynamic_call_argument(out, argument);
+            if value_is_append_reference_target(argument) {
+                unwrap_append_reference_temps.push(temp.clone());
+            }
+            temps.push(temp);
         }
 
         let args_temp = self.next_temp();
@@ -9053,6 +9129,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        for temp in &unwrap_append_reference_temps {
+            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -9367,8 +9446,13 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
+        let mut unwrap_append_reference_temps = Vec::new();
         for argument in arguments {
-            temps.push(self.emit_dynamic_call_argument(out, argument));
+            let temp = self.emit_dynamic_call_argument(out, argument);
+            if value_is_append_reference_target(argument) {
+                unwrap_append_reference_temps.push(temp.clone());
+            }
+            temps.push(temp);
         }
         let args_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -9396,6 +9480,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        for temp in &unwrap_append_reference_temps {
+            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }

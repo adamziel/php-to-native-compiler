@@ -48,6 +48,7 @@ pub fn parse(source: &str) -> Result<Program> {
         class_aliases: HashMap::new(),
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
+        allow_append_array_read: false,
     }
     .parse_program()
 }
@@ -63,6 +64,7 @@ struct Parser {
     class_aliases: HashMap<String, String>,
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
+    allow_append_array_read: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2584,7 +2586,9 @@ impl Parser {
 
     fn parse_assignment_expr_from_left(&mut self, left: Expr) -> Result<Expr> {
         if !self.peek_is_expression_assignment_op() {
-            reject_append_array_read(&left)?;
+            if !self.allow_append_array_read {
+                reject_append_array_read(&left)?;
+            }
             return Ok(left);
         }
 
@@ -3524,14 +3528,22 @@ impl Parser {
                 let name = name.clone();
                 let name_span = self.advance().span;
                 self.expect_colon()?;
-                let value = self.parse_expr()?;
+                let value = self.parse_call_argument_expr()?;
                 return Ok((Some(name), value, name_span));
             }
         }
 
-        let value = self.parse_expr()?;
+        let value = self.parse_call_argument_expr()?;
         let span = value.span();
         Ok((None, value, span))
+    }
+
+    fn parse_call_argument_expr(&mut self) -> Result<Expr> {
+        let previous = self.allow_append_array_read;
+        self.allow_append_array_read = true;
+        let value = self.parse_expr();
+        self.allow_append_array_read = previous;
+        value
     }
 
     fn try_parse_cast_prefix(&mut self) -> Result<Option<(CastKind, SourceSpan)>> {
@@ -6898,34 +6910,12 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         }
         Expr::Assign { value, .. } => reject_append_array_read(value)?,
         Expr::AssignRef { source, .. } => reject_append_array_read(source)?,
-        Expr::Call { arguments, .. } => {
-            for argument in arguments {
-                reject_append_array_read(argument)?;
-            }
-        }
-        Expr::DynamicCall {
-            callee, arguments, ..
-        } => {
+        Expr::Call { .. } => {}
+        Expr::DynamicCall { callee, .. } => {
             reject_append_array_read(callee)?;
-            for argument in arguments {
-                reject_append_array_read(argument)?;
-            }
         }
-        Expr::MethodCall {
-            receiver,
-            arguments,
-            ..
-        } => {
-            reject_append_array_read(receiver)?;
-            for argument in arguments {
-                reject_append_array_read(argument)?;
-            }
-        }
-        Expr::NewObject { arguments, .. } => {
-            for argument in arguments {
-                reject_append_array_read(argument)?;
-            }
-        }
+        Expr::MethodCall { receiver, .. } => reject_append_array_read(receiver)?,
+        Expr::NewObject { .. } => {}
         Expr::PropertyFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }

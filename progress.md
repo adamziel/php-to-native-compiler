@@ -2,14 +2,14 @@
 
 Last refresh: 2026-06-14T04:13Z.
 Source: `PROGRESS.md`
-Measured: `ptn-odca` array key/value frontier after `ptn-h8f7`.
+Measured: `ptn-hpxo` append-form by-reference call arguments after `ptn-odca`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 718/718; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 718/718 |
+| Native/compiler Rust suite | 721/721 |
 | PHPT bounded manifest | 479/486 |
 | PHPT Zend rows | 119/119 |
 | PHPT ext/standard rows | 274/281 |
@@ -26,8 +26,8 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 718/718; PHPT 
 | PHPT array-internal COW frontier | 17/72 |
 | PHPT COW foreach/reference frontier | 31/103 |
 | PHPT foreach list destructuring rows | 4/4 |
-| PHPT broad reference-call bucket | 9/12 |
-| PHPT broad Zend assignment/reference frontier | 22/32 |
+| PHPT broad reference-call bucket | 10/12 |
+| PHPT broad Zend assignment/reference frontier | 23/32 |
 | PHPT broad class declaration frontier | 0/78 |
 | PHPT broad resource-limit classifier row | 0/1 |
 | PHPT broad magic/object conversion frontier | 20/69 |

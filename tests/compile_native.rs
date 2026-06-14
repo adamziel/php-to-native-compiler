@@ -2401,6 +2401,38 @@ echo $items[\"count\"] += 2;\n\
                     op: AssignmentOp::ConcatAssign,
                     ..
                 } if target.array == "items" && target.dimensions == vec![None]
+        )
+    ));
+}
+
+#[test]
+fn parser_accepts_append_array_call_arguments() {
+    let program = parser::parse(
+        "<?php\n\
+function takes_ref(&$value) {}\n\
+takes_ref($items[]);\n\
+takes_ref(($items[0][]));\n",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Call { arguments, .. } = &program.statements[0] else {
+        panic!("expected first call statement");
+    };
+    assert!(matches!(
+        &arguments[0],
+        Expr::ArrayAccess { index: None, .. }
+    ));
+
+    let Statement::Call { arguments, .. } = &program.statements[1] else {
+        panic!("expected grouped nested append call statement");
+    };
+    assert!(matches!(
+        &arguments[0],
+        Expr::Grouped { expr, .. }
+            if matches!(
+                expr.as_ref(),
+                Expr::ArrayAccess { index: None, .. }
             )
     ));
 }
@@ -13750,6 +13782,77 @@ var_dump($m);",
 }
 
 #[test]
+fn compile_append_call_arguments_by_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-append-call-arguments-by-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("append-call-arguments-by-reference.php");
+    let output = root.join("append-call-arguments-by-reference-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function fill(&$value) { if ($value === null) { $value = \"new\"; } else { $value .= \"-mut\"; } }\n\
+$arr = [];\n\
+fill($arr[]);\n\
+fill(($arr[]));\n\
+$nested = [[]];\n\
+fill($nested[0][]);\n\
+$chain = [];\n\
+fill($chain[][0]);\n\
+$copy = $arr;\n\
+fill($arr[]);\n\
+var_dump($arr, $copy, $nested, $chain);\n\
+$dyn = 'fill';\n\
+$dyn($arr[]);\n\
+var_dump($arr[3]);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(3) \"new\"\n",
+            "  [1]=>\n",
+            "  string(3) \"new\"\n",
+            "  [2]=>\n",
+            "  string(3) \"new\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(3) \"new\"\n",
+            "  [1]=>\n",
+            "  string(3) \"new\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    string(3) \"new\"\n",
+            "  }\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    string(3) \"new\"\n",
+            "  }\n",
+            "}\n",
+            "string(3) \"new\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_reference_for_array_path(&runtime"));
+    assert!(c_source.contains("{ 1, ptn_null() }"));
+}
+
+#[test]
 fn compile_by_reference_default_parameter_to_native_binary() {
     let root = temp_dir("ptn-native-by-reference-default-parameter");
     fs::create_dir_all(&root).unwrap();
@@ -13866,6 +13969,29 @@ function ref(&$x) {\n\
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_append_call_argument_by_value_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-append-call-argument-by-value-diagnostic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("append-call-argument-by-value-diagnostic.php");
+    let output = root.join("append-call-argument-by-value-diagnostic-bin");
+    fs::write(
+        &input,
+        "<?php function takes_value($value) { var_dump($value); } takes_value($items[]);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Fatal error: Cannot use [] for reading\n"
+    );
 }
 
 #[test]

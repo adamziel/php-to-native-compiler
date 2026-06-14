@@ -92,6 +92,56 @@ static PTN_UNUSED PtnValue ptn_symbols_reference_for_variable(PtnSymbolTable *sy
     return ptn_value_clone(symbol->value);
 }
 
+static void ptn_value_unwrap_reference_slots(PtnValue *slot, PtnReference *reference, size_t depth) {
+    if (slot == NULL || reference == NULL || depth > 1024) {
+        return;
+    }
+    if (slot->type == PTN_REFERENCE && slot->as.reference == reference) {
+        PtnValue old = *slot;
+        *slot = ptn_value_clone_deref(old);
+        ptn_value_destroy(&old);
+        return;
+    }
+
+    PtnValue value = ptn_value_deref(*slot);
+    if (value.type == PTN_ARRAY && value.as.array != NULL) {
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            ptn_value_unwrap_reference_slots(&value.as.array->entries[i].value, reference, depth + 1);
+        }
+    } else if (value.type == PTN_OBJECT && value.as.object != NULL && value.as.object->properties != NULL) {
+        for (size_t i = 0; i < value.as.object->properties->len; i++) {
+            ptn_value_unwrap_reference_slots(&value.as.object->properties->entries[i].value, reference, depth + 1);
+        }
+    }
+}
+
+static void ptn_symbols_unwrap_reference_slots(PtnSymbolTable *symbols, PtnReference *reference) {
+    if (symbols == NULL || reference == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < symbols->len; i++) {
+        ptn_value_unwrap_reference_slots(&symbols->items[i].value, reference, 0);
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_unwrap_reference_slots_if_unaliased(
+    PtnRuntime *runtime,
+    PtnValue reference_value,
+    size_t expected_refcount
+) {
+    if (runtime == NULL || reference_value.type != PTN_REFERENCE) {
+        return;
+    }
+    PtnReference *reference = reference_value.as.reference;
+    if (reference == NULL || reference->refcount != expected_refcount) {
+        return;
+    }
+    ptn_symbols_unwrap_reference_slots(&runtime->symbols, reference);
+    if (runtime->global_symbols != NULL && runtime->global_symbols != &runtime->symbols) {
+        ptn_symbols_unwrap_reference_slots(runtime->global_symbols, reference);
+    }
+}
+
 static PTN_UNUSED void ptn_symbols_bind_reference(PtnSymbolTable *symbols, const char *name, PtnValue reference) {
     PtnSymbol *symbol = ptn_symbols_slot_for_write(symbols, name);
     ptn_value_destroy(&symbol->value);
