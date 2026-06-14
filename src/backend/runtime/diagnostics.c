@@ -548,6 +548,11 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->declared_class_is_readonly = NULL;
     runtime->source_path = NULL;
     runtime->current_function_name = NULL;
+    runtime->current_class_name = NULL;
+    runtime->current_called_class_name = NULL;
+    runtime->called_class_name_override = NULL;
+    runtime->has_current_receiver = 0;
+    runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override = NULL;
     runtime->include_path = ptn_duplicate_string(".");
     runtime->call_site_line = 0;

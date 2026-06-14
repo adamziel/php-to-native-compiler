@@ -443,6 +443,12 @@ fn emit_user_functions(
         out.push_str("    runtime.current_function_name = \"");
         out.push_str(&c_string(&function.name));
         out.push_str("\";\n");
+        out.push_str("    runtime.current_class_name = ");
+        out.push_str(&c_optional_string(function.class_name.as_deref()));
+        out.push_str(";\n");
+        out.push_str("    runtime.current_called_class_name = caller_runtime->called_class_name_override != NULL ? caller_runtime->called_class_name_override : ");
+        out.push_str(&c_optional_string(function.class_name.as_deref()));
+        out.push_str(";\n");
         out.push_str("    runtime.call_site_line = line;\n");
         if call_frame_parameter_count == 0 {
             out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, 0, NULL);\n");
@@ -467,6 +473,8 @@ fn emit_user_functions(
             out.push_str(", ptn_parameter_names);\n");
         }
         if function.class_name.is_some() && !function.is_static {
+            out.push_str("    runtime.has_current_receiver = 1;\n");
+            out.push_str("    runtime.current_receiver = receiver;\n");
             out.push_str("    ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");
         }
         if function.is_anonymous {
@@ -1285,11 +1293,19 @@ fn emit_user_function_dispatch(
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
             out.push_str("        *found = 1;\n");
-            out.push_str("        return ");
+            out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
+            out.push_str("        runtime->called_class_name_override = \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("        PtnValue ptn_static_result = ");
             out.push_str(&user_function_c_name(method.function_index));
             out.push_str("(runtime, ptn_string(\"");
             out.push_str(&c_string(&class.name));
             out.push_str("\"), argc, args, line);\n");
+            out.push_str(
+                "        runtime->called_class_name_override = ptn_previous_called_class;\n",
+            );
+            out.push_str("        return ptn_static_result;\n");
             out.push_str("    }\n");
         }
     }
@@ -1938,6 +1954,62 @@ fn emit_method_dispatch(
     }
     out.push_str("    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
     out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_call_declared_method_in_scope(PtnRuntime *runtime, PtnValue receiver, const char *target_class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out) {\n",
+    );
+    out.push_str("    PtnValue resolved_receiver = ptn_value_deref(receiver);\n");
+    out.push_str("    const char *effective_called_class = called_class_name != NULL ? called_class_name : target_class_name;\n");
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)receiver;\n");
+    out.push_str("    (void)target_class_name;\n");
+    out.push_str("    (void)method_name;\n");
+    out.push_str("    (void)called_class_name;\n");
+    out.push_str("    (void)argc;\n");
+    out.push_str("    (void)args;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    (void)result_out;\n");
+    out.push_str("    (void)resolved_receiver;\n");
+    out.push_str("    (void)effective_called_class;\n");
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(target_class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for method in class_method_lookup_chain(class, classes) {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            if method.is_static {
+                out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
+                out.push_str(
+                    "            runtime->called_class_name_override = effective_called_class;\n",
+                );
+                out.push_str("            *result_out = ");
+                out.push_str(&user_function_c_name(method.function_index));
+                out.push_str("(runtime, ptn_null(), argc, args, line);\n");
+                out.push_str("            runtime->called_class_name_override = ptn_previous_called_class;\n");
+                out.push_str("            return 1;\n");
+            } else {
+                out.push_str("            if (resolved_receiver.type != PTN_OBJECT || !ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
+                out.push_str("                return 0;\n");
+                out.push_str("            }\n");
+                out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
+                out.push_str(
+                    "            runtime->called_class_name_override = effective_called_class;\n",
+                );
+                out.push_str("            *result_out = ");
+                out.push_str(&user_function_c_name(method.function_index));
+                out.push_str("(runtime, resolved_receiver, argc, args, line);\n");
+                out.push_str("            runtime->called_class_name_override = ptn_previous_called_class;\n");
+                out.push_str("            return 1;\n");
+            }
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
 }
 
 fn emit_dynamic_function_dispatch(out: &mut String) {
@@ -1997,8 +2069,23 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic void ptn_dynamic_call_warn_first_reference_argument_mismatch(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    if (!runtime->warn_by_ref_argument_mismatch || argc == 0 || args == NULL || !ptn_dynamic_call_mutates_first_array_argument(name)) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (args[0].type == PTN_REFERENCE) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    ptn_emit_by_reference_argument_warning(runtime, name, 1, \"array\", line);\n",
+    );
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_dynamic_function_name(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
+    out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, name, argc, args, line);\n");
     out.push_str("    ptn_dynamic_call_detach_first_reference_argument(name, argc, args);\n");
     out.push_str("    return ptn_call_function(runtime, name, argc, args, line);\n");
     out.push_str("}\n");
@@ -2009,6 +2096,49 @@ fn emit_callable_dispatch(
     functions: &[FunctionDecl],
     needs_method_dispatch: bool,
 ) {
+    if needs_method_dispatch {
+        out.push_str(
+            "\nstatic PTN_UNUSED char *ptn_callable_resolve_class_scope(PtnRuntime *runtime, const char *scope_name, const char *relative_class_name) {\n",
+        );
+        out.push_str("    if (ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\")) {\n");
+        out.push_str("        const char *resolved = relative_class_name;\n");
+        out.push_str("        if (resolved == NULL && runtime != NULL) {\n");
+        out.push_str("            resolved = runtime->current_called_class_name != NULL ? runtime->current_called_class_name : runtime->current_class_name;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        return ptn_duplicate_string(resolved != NULL ? resolved : scope_name);\n",
+        );
+        out.push_str("    }\n");
+        out.push_str("    if (ptn_ascii_case_equal(scope_name, \"parent\")) {\n");
+        out.push_str("        const char *base = relative_class_name;\n");
+        out.push_str("        if (base == NULL && runtime != NULL) {\n");
+        out.push_str("            base = runtime->current_class_name;\n");
+        out.push_str("        }\n");
+        out.push_str("        const char *parent = base == NULL ? NULL : ptn_declared_class_parent_name(base);\n");
+        out.push_str(
+            "        return ptn_duplicate_string(parent != NULL ? parent : scope_name);\n",
+        );
+        out.push_str("    }\n");
+        out.push_str("    return ptn_duplicate_string(scope_name);\n");
+        out.push_str("}\n");
+
+        out.push_str(
+            "\nstatic PTN_UNUSED void ptn_emit_scoped_callable_deprecation(PtnRuntime *runtime, const char *scope_name, const char *method_name, size_t line) {\n",
+        );
+        out.push_str("    int needed = snprintf(NULL, 0, \"Callables of the form [\\\"%s\\\", \\\"%s\\\"] are deprecated\", scope_name, method_name);\n");
+        out.push_str("    if (needed < 0) {\n");
+        out.push_str("        ptn_abort_out_of_memory();\n");
+        out.push_str("    }\n");
+        out.push_str("    char *message = malloc((size_t)needed + 1);\n");
+        out.push_str("    if (message == NULL) {\n");
+        out.push_str("        ptn_abort_out_of_memory();\n");
+        out.push_str("    }\n");
+        out.push_str("    snprintf(message, (size_t)needed + 1, \"Callables of the form [\\\"%s\\\", \\\"%s\\\"] are deprecated\", scope_name, method_name);\n");
+        out.push_str("    ptn_emit_deprecation(&runtime->diagnostics, message, line);\n");
+        out.push_str("    free(message);\n");
+        out.push_str("}\n");
+    }
+
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
     );
@@ -2040,9 +2170,79 @@ fn emit_callable_dispatch(
         out.push_str("            }\n");
         out.push_str("            if ((receiver.type == PTN_OBJECT || receiver.type == PTN_EXCEPTION) && method.type == PTN_STRING) {\n");
         out.push_str("                char *method_name = ptn_value_to_string(method);\n");
-        out.push_str("                PtnValue result = ptn_call_declared_method(runtime, receiver, method_name, argc, args, line);\n");
+        out.push_str("                char *target_class_name = NULL;\n");
+        out.push_str("                char *target_method_name = NULL;\n");
+        out.push_str("                char *separator = strstr(method_name, \"::\");\n");
+        out.push_str("                if (separator != NULL) {\n");
+        out.push_str("                    const char *callable_scope_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name;\n");
+        out.push_str("                    ptn_emit_scoped_callable_deprecation(runtime, callable_scope_name, method_name, line);\n");
+        out.push_str("                    *separator = '\\0';\n");
+        out.push_str("                    const char *relative_class_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name;\n");
+        out.push_str("                    target_class_name = ptn_callable_resolve_class_scope(runtime, method_name, relative_class_name);\n");
+        out.push_str(
+            "                    target_method_name = ptn_duplicate_string(separator + 2);\n",
+        );
+        out.push_str("                }\n");
+        out.push_str("                PtnValue result;\n");
+        out.push_str("                if (target_class_name != NULL && ptn_call_declared_method_in_scope(runtime, receiver, target_class_name, target_method_name, receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name, argc, args, line, &result)) {\n");
+        out.push_str("                    free(target_method_name);\n");
+        out.push_str("                    free(target_class_name);\n");
+        out.push_str("                    free(method_name);\n");
+        out.push_str("                    return result;\n");
+        out.push_str("                }\n");
+        out.push_str("                result = ptn_call_declared_method(runtime, receiver, separator == NULL ? method_name : target_method_name, argc, args, line);\n");
+        out.push_str("                free(target_method_name);\n");
+        out.push_str("                free(target_class_name);\n");
         out.push_str("                free(method_name);\n");
         out.push_str("                return result;\n");
+        out.push_str("            }\n");
+        out.push_str(
+            "            if (receiver.type == PTN_STRING && method.type == PTN_STRING) {\n",
+        );
+        out.push_str("                char *scope_name = ptn_value_to_string(receiver);\n");
+        out.push_str("                char *method_name = ptn_value_to_string(method);\n");
+        out.push_str("                char *target_class_name = NULL;\n");
+        out.push_str("                char *target_method_name = NULL;\n");
+        out.push_str("                char *separator = strstr(method_name, \"::\");\n");
+        out.push_str("                if (separator != NULL) {\n");
+        out.push_str("                    ptn_emit_scoped_callable_deprecation(runtime, scope_name, method_name, line);\n");
+        out.push_str("                    *separator = '\\0';\n");
+        out.push_str("                    target_class_name = ptn_callable_resolve_class_scope(runtime, method_name, scope_name);\n");
+        out.push_str(
+            "                    target_method_name = ptn_duplicate_string(separator + 2);\n",
+        );
+        out.push_str("                } else {\n");
+        out.push_str("                    if (ptn_ascii_case_equal(scope_name, \"parent\")) {\n");
+        out.push_str("                        ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"parent\\\" in callables is deprecated\", line);\n");
+        out.push_str("                    }\n");
+        out.push_str("                    target_class_name = ptn_callable_resolve_class_scope(runtime, scope_name, NULL);\n");
+        out.push_str(
+            "                    target_method_name = ptn_duplicate_string(method_name);\n",
+        );
+        out.push_str("                }\n");
+        out.push_str("                PtnValue scoped_receiver = ptn_null();\n");
+        out.push_str("                const char *called_class_name = target_class_name;\n");
+        out.push_str("                if (runtime->has_current_receiver) {\n");
+        out.push_str("                    PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n");
+        out.push_str("                    if (current_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(current_receiver.as.object->class_name, target_class_name)) {\n");
+        out.push_str("                        scoped_receiver = current_receiver;\n");
+        out.push_str(
+            "                        called_class_name = current_receiver.as.object->class_name;\n",
+        );
+        out.push_str("                    }\n");
+        out.push_str("                }\n");
+        out.push_str("                PtnValue result;\n");
+        out.push_str("                if (ptn_call_declared_method_in_scope(runtime, scoped_receiver, target_class_name, target_method_name, called_class_name, argc, args, line, &result)) {\n");
+        out.push_str("                    free(target_method_name);\n");
+        out.push_str("                    free(target_class_name);\n");
+        out.push_str("                    free(method_name);\n");
+        out.push_str("                    free(scope_name);\n");
+        out.push_str("                    return result;\n");
+        out.push_str("                }\n");
+        out.push_str("                free(target_method_name);\n");
+        out.push_str("                free(target_class_name);\n");
+        out.push_str("                free(method_name);\n");
+        out.push_str("                free(scope_name);\n");
         out.push_str("            }\n");
         out.push_str("        }\n");
         out.push_str("    }\n");
@@ -4620,6 +4820,11 @@ struct ValueEmitter {
     includes: Vec<IncludeFile>,
 }
 
+enum CalledClassOverride {
+    Literal(String),
+    CurrentCalledOr(String),
+}
+
 struct ConcatOperand<'a> {
     value: &'a ValueExpr,
     line: usize,
@@ -4948,6 +5153,13 @@ impl ValueEmitter {
             .map(|class| class.name.as_str())
     }
 
+    fn declared_parent_class_name(&self, class_name: &str) -> Option<String> {
+        self.classes
+            .iter()
+            .find(|class| class.name.eq_ignore_ascii_case(class_name))
+            .and_then(|class| class.parent_name.clone())
+    }
+
     fn static_property_class_name(&self, class_name: &str) -> String {
         if class_name.eq_ignore_ascii_case("self") {
             if let Some(current_class_name) = &self.current_class_name {
@@ -5011,7 +5223,69 @@ impl ValueEmitter {
         None
     }
 
-    fn direct_user_function(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
+    fn static_call_target_class_name(&self, class_name: &str) -> String {
+        if class_name.eq_ignore_ascii_case("parent") {
+            if let Some(current_class_name) = &self.current_class_name {
+                if let Some(parent_name) = self.declared_parent_class_name(current_class_name) {
+                    return parent_name;
+                }
+            }
+        }
+        if class_name.eq_ignore_ascii_case("self") || class_name.eq_ignore_ascii_case("static") {
+            if let Some(current_class_name) = &self.current_class_name {
+                return current_class_name.clone();
+            }
+        }
+        self.declared_class_name(class_name)
+            .unwrap_or(class_name)
+            .to_string()
+    }
+
+    fn split_static_call_name<'a>(&self, name: &'a str) -> Option<(&'a str, &'a str)> {
+        name.split_once("::")
+            .filter(|(class_name, method_name)| !class_name.is_empty() && !method_name.is_empty())
+    }
+
+    fn resolved_function_call_name(&self, name: &str) -> String {
+        if let Some((class_name, method_name)) = self.split_static_call_name(name) {
+            let target_class_name = self.static_call_target_class_name(class_name);
+            return format!("{target_class_name}::{method_name}");
+        }
+        name.to_string()
+    }
+
+    fn called_class_override_for_function_call(&self, name: &str) -> Option<CalledClassOverride> {
+        let (class_name, _) = self.split_static_call_name(name)?;
+        let target_class_name = self.static_call_target_class_name(class_name);
+        if class_name.eq_ignore_ascii_case("parent")
+            || class_name.eq_ignore_ascii_case("self")
+            || class_name.eq_ignore_ascii_case("static")
+        {
+            let fallback = self
+                .current_class_name
+                .clone()
+                .unwrap_or_else(|| target_class_name.clone());
+            return Some(CalledClassOverride::CurrentCalledOr(fallback));
+        }
+        Some(CalledClassOverride::Literal(target_class_name))
+    }
+
+    fn emit_called_class_override_expr(out: &mut String, override_: &CalledClassOverride) {
+        match override_ {
+            CalledClassOverride::Literal(class_name) => {
+                out.push('"');
+                out.push_str(&c_string(class_name));
+                out.push('"');
+            }
+            CalledClassOverride::CurrentCalledOr(class_name) => {
+                out.push_str("(runtime.current_called_class_name != NULL ? runtime.current_called_class_name : \"");
+                out.push_str(&c_string(class_name));
+                out.push_str("\")");
+            }
+        }
+    }
+
+    fn direct_user_function_by_resolved_name(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
         self.user_functions
             .iter()
             .enumerate()
@@ -5020,6 +5294,11 @@ impl ValueEmitter {
                     && (function.class_name.is_none() || function.is_static)
                     && function.name.eq_ignore_ascii_case(name)
             })
+    }
+
+    fn direct_user_function(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
+        let resolved_name = self.resolved_function_call_name(name);
+        self.direct_user_function_by_resolved_name(&resolved_name)
     }
 
     fn source_is_declared_by_ref_call(&self, source: &ValueExpr) -> bool {
@@ -9114,13 +9393,17 @@ impl ValueEmitter {
         }
 
         let result_temp = self.next_temp();
-        let direct_user = self.direct_user_function(name).map(|(index, function)| {
-            (
-                user_function_c_name(index),
-                function.parameters.clone(),
-                static_call_receiver_class_name(name, function),
-            )
-        });
+        let resolved_name = self.resolved_function_call_name(name);
+        let called_class_override = self.called_class_override_for_function_call(name);
+        let direct_user = self
+            .direct_user_function_by_resolved_name(&resolved_name)
+            .map(|(index, function)| {
+                (
+                    user_function_c_name(index),
+                    function.parameters.clone(),
+                    static_call_receiver_class_name(&resolved_name, function),
+                )
+            });
         if has_named_arguments {
             if let Some((c_name, parameters, receiver_class_name)) = &direct_user {
                 return self.emit_named_user_call(
@@ -9133,6 +9416,7 @@ impl ValueEmitter {
                     arguments,
                     argument_names,
                     line,
+                    called_class_override.as_ref(),
                 );
             }
             self.emit_fatal_value(
@@ -9143,21 +9427,27 @@ impl ValueEmitter {
             return result_temp;
         }
         if arguments.is_empty() {
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ");
             if let Some((c_name, _, receiver_class_name)) = &direct_user {
-                out.push_str(&c_name);
-                out.push_str("(&runtime, ");
-                emit_static_call_receiver(out, receiver_class_name.as_deref());
-                out.push_str(", 0, NULL, ");
+                self.emit_direct_user_function_call(
+                    out,
+                    &result_temp,
+                    c_name,
+                    "0",
+                    "NULL",
+                    line,
+                    called_class_override.as_ref(),
+                    receiver_class_name.as_deref(),
+                );
             } else {
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
                 out.push_str("ptn_call_function(&runtime, \"");
-                out.push_str(&c_string(name));
+                out.push_str(&c_string(&resolved_name));
                 out.push_str("\", 0, NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
             }
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
             return result_temp;
         }
 
@@ -9215,25 +9505,31 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
-        out.push_str("    PtnValue ");
-        out.push_str(&result_temp);
-        out.push_str(" = ");
         if let Some((c_name, _, receiver_class_name)) = &direct_user {
-            out.push_str(&c_name);
-            out.push_str("(&runtime, ");
-            emit_static_call_receiver(out, receiver_class_name.as_deref());
-            out.push_str(", ");
+            self.emit_direct_user_function_call(
+                out,
+                &result_temp,
+                c_name,
+                &arguments.len().to_string(),
+                &args_temp,
+                line,
+                called_class_override.as_ref(),
+                receiver_class_name.as_deref(),
+            );
         } else {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
             out.push_str("ptn_call_function(&runtime, \"");
-            out.push_str(&c_string(name));
+            out.push_str(&c_string(&resolved_name));
             out.push_str("\", ");
+            out.push_str(&arguments.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
         }
-        out.push_str(&arguments.len().to_string());
-        out.push_str(", ");
-        out.push_str(&args_temp);
-        out.push_str(", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
         for temp in &unwrap_append_reference_temps {
             emit_unwrap_append_reference_call_argument(out, "    ", temp);
         }
@@ -9244,6 +9540,49 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &temp);
         }
         result_temp
+    }
+
+    fn emit_direct_user_function_call(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        c_name: &str,
+        argc_expr: &str,
+        args_expr: &str,
+        line: usize,
+        called_class_override: Option<&CalledClassOverride>,
+        receiver_class_name: Option<&str>,
+    ) {
+        let previous_override_temp = called_class_override.map(|override_| {
+            let previous_override_temp = self.next_temp();
+            out.push_str("    const char *");
+            out.push_str(&previous_override_temp);
+            out.push_str(" = runtime.called_class_name_override;\n");
+            out.push_str("    runtime.called_class_name_override = ");
+            Self::emit_called_class_override_expr(out, override_);
+            out.push_str(";\n");
+            previous_override_temp
+        });
+
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ");
+        out.push_str(c_name);
+        out.push_str("(&runtime, ");
+        emit_static_call_receiver(out, receiver_class_name);
+        out.push_str(", ");
+        out.push_str(argc_expr);
+        out.push_str(", ");
+        out.push_str(args_expr);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        if let Some(previous_override_temp) = previous_override_temp {
+            out.push_str("    runtime.called_class_name_override = ");
+            out.push_str(&previous_override_temp);
+            out.push_str(";\n");
+        }
     }
 
     fn emit_named_user_call(
@@ -9257,6 +9596,7 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
         line: usize,
+        called_class_override: Option<&CalledClassOverride>,
     ) -> String {
         let argument_slots = match bind_named_call_arguments(parameters, argument_names) {
             Ok(argument_slots) => argument_slots,
@@ -9318,19 +9658,16 @@ impl ValueEmitter {
             }
         }
         out.push_str(" };\n");
-        out.push_str("    PtnValue ");
-        out.push_str(result_temp);
-        out.push_str(" = ");
-        out.push_str(c_name);
-        out.push_str("(&runtime, ");
-        emit_static_call_receiver(out, receiver_class_name);
-        out.push_str(", ");
-        out.push_str(&arguments.len().to_string());
-        out.push_str(", ");
-        out.push_str(&args_temp);
-        out.push_str(", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
+        self.emit_direct_user_function_call(
+            out,
+            result_temp,
+            c_name,
+            &arguments.len().to_string(),
+            &args_temp,
+            line,
+            called_class_override,
+            receiver_class_name,
+        );
         for temp in &unwrap_append_reference_temps {
             emit_unwrap_append_reference_call_argument(out, "    ", temp);
         }

@@ -11727,6 +11727,7 @@ static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, cons
 static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -11865,6 +11866,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
         { "function_exists", 1, 1, ptn_internal_function_exists },
         { "fwrite", 2, 3, ptn_internal_fwrite },
+        { "get_called_class", 0, 0, ptn_internal_get_called_class },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 1, 1, ptn_internal_get_class },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
@@ -12340,6 +12342,17 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     int exists = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;
     free(name);
     return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    if (runtime->current_called_class_name == NULL) {
+        ptn_throw_exception(runtime, "Error", "get_called_class() must be called from a class");
+        return ptn_null();
+    }
+    return ptn_owned_string(ptn_duplicate_string(runtime->current_called_class_name));
 }
 
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

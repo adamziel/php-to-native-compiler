@@ -37,6 +37,11 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->declared_class_is_readonly = caller_runtime->declared_class_is_readonly;
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
+    runtime->current_class_name = NULL;
+    runtime->current_called_class_name = NULL;
+    runtime->called_class_name_override = NULL;
+    runtime->has_current_receiver = 0;
+    runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override =
         caller_runtime->by_ref_argument_function_name_override;
     runtime->include_path = NULL;

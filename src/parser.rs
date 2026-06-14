@@ -5945,6 +5945,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "extension_loaded"
             | "function_exists"
             | "getcwd"
+            | "get_called_class"
             | "get_class"
             | "get_parent_class"
             | "stat"

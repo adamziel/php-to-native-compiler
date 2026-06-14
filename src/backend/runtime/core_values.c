@@ -464,6 +464,11 @@ struct PtnRuntime {
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
     const char *source_path;
     const char *current_function_name;
+    const char *current_class_name;
+    const char *current_called_class_name;
+    const char *called_class_name_override;
+    int has_current_receiver;
+    PtnValue current_receiver;
     const char *by_ref_argument_function_name_override;
     char *include_path;
     size_t call_site_line;

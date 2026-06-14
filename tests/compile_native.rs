@@ -15071,6 +15071,150 @@ test(): Argument #1 ($ref) must be of type Type, int given, called in {} on line
 }
 
 #[test]
+fn compile_call_user_func_scoped_class_callables_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-scoped-class-callables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-scoped-class-callables.php");
+    let output = root.join("call-user-func-scoped-class-callables-bin");
+    fs::write(
+        &input,
+        "<?php
+error_reporting(8191);
+class TestA {
+    public function doSomething($i) {
+        echo __METHOD__ . \"($i)\\n\";
+        return --$i;
+    }
+    public function doSomethingThis($i) {
+        echo __METHOD__ . \"($i)\\n\";
+        return --$i;
+    }
+    public function doSomethingParent($i) {
+        echo __METHOD__ . \"($i)\\n\";
+        return --$i;
+    }
+    public function doSomethingParentThis($i) {
+        echo __METHOD__ . \"($i)\\n\";
+        return --$i;
+    }
+}
+class TestB extends TestA {
+    public function doSomething($i) {
+        echo __METHOD__ . \"($i)\\n\";
+        return call_user_func_array([\"TestA\", \"doSomething\"], [$i + 1]);
+    }
+    public function doSomethingThis($i) {
+        echo __METHOD__ . \"($i)\\n\";
+        return call_user_func_array([$this, \"TestA::doSomethingThis\"], [$i + 1]);
+    }
+    public function doSomethingParent($i) {
+        echo __METHOD__ . \"($i)\\n\";
+        return call_user_func_array([\"parent\", \"doSomethingParent\"], [$i + 1]);
+    }
+    public function doSomethingParentThis($i) {
+        echo __METHOD__ . \"($i)\\n\";
+        return call_user_func_array([$this, \"parent::doSomethingParentThis\"], [$i + 1]);
+    }
+}
+$x = new TestB();
+var_dump($x->doSomething(1));
+var_dump($x->doSomethingThis(1));
+var_dump($x->doSomethingParent(1));
+var_dump($x->doSomethingParentThis(1));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "TestB::doSomething(1)\n",
+            "TestA::doSomething(2)\n",
+            "int(1)\n",
+            "TestB::doSomethingThis(1)\n",
+            "TestA::doSomethingThis(2)\n",
+            "int(1)\n",
+            "TestB::doSomethingParent(1)\n",
+            "TestA::doSomethingParent(2)\n",
+            "int(1)\n",
+            "TestB::doSomethingParentThis(1)\n",
+            "TestA::doSomethingParentThis(2)\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_declared_method_in_scope"));
+    assert!(c_source.contains("ptn_callable_resolve_class_scope"));
+}
+
+#[test]
+fn compile_get_called_class_through_call_user_func_to_native_binary() {
+    let root = temp_dir("ptn-native-get-called-class-call-user-func");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-called-class-call-user-func.php");
+    let output = root.join("get-called-class-call-user-func-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public static function who() {
+        var_dump(get_called_class());
+    }
+}
+class B extends A {
+    public static function who() {
+        parent::who();
+    }
+}
+class C {
+    public static function test() {
+        B::who();
+        call_user_func([A::class, \"who\"]);
+        call_user_func([B::class, \"parent::who\"]);
+    }
+}
+B::who();
+call_user_func([A::class, \"who\"]);
+call_user_func([B::class, \"parent::who\"]);
+C::test();
+var_dump(function_exists(\"get_called_class\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"B\"\n",
+            "string(1) \"A\"\n",
+            "\nDeprecated: Callables of the form [\"B\", \"parent::who\"] are deprecated in ptn on line 21\n",
+            "string(1) \"A\"\n",
+            "string(1) \"B\"\n",
+            "string(1) \"A\"\n",
+            "\nDeprecated: Callables of the form [\"B\", \"parent::who\"] are deprecated in ptn on line 16\n",
+            "string(1) \"A\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_called_class"));
+    assert!(c_source.contains("current_called_class_name"));
+    assert!(c_source.contains("ptn_emit_scoped_callable_deprecation"));
+}
+
+#[test]
 fn compile_error_reporting_filters_internal_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-error-reporting-internal-warnings");
     fs::create_dir_all(&root).unwrap();
@@ -16470,11 +16614,17 @@ var_dump($sortItems, $asortItems, $arsortItems, $rsortItems, $ksortItems, $krsor
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
+            "\nWarning: sort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 4\n",
             "sort() flags are unsupported; default regular value sorting is supported\n",
+            "\nWarning: asort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 10\n",
             "asort() flags are unsupported; default regular value sorting is supported\n",
+            "\nWarning: arsort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 16\n",
             "arsort() flags are unsupported; default regular value sorting is supported\n",
+            "\nWarning: rsort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 22\n",
             "rsort() flags are unsupported; default regular value sorting is supported\n",
+            "\nWarning: ksort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 28\n",
             "ksort() flags are unsupported; default regular value sorting is supported\n",
+            "\nWarning: krsort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 34\n",
             "krsort() flags are unsupported; default regular value sorting is supported\n",
             "array(3) {\n",
             "  [0]=>\n",

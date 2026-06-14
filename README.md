@@ -61,12 +61,13 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   loose ordering helper, `flush()` flushes native stdout, `call_user_func_array()`
   expands ordered arrays through callable dispatch, `call_user_func()` and
   `call_user_func_array()` downgrade fixed-parameter callback by-reference
-  mismatches to warnings, invoke user callbacks against by-value locals, and
-  continue into userland type checks; callback dispatch observes `global`
-  bindings for user functions reached through direct calls, and
-  public `__invoke` objects can be called directly or through callback
-  dispatch; `is_callable()` writes callable-name output for supported callable
-  shapes.
+  mismatches to warnings, invoke user callbacks and strict by-reference array
+  mutating internals against by-value locals, continue into userland type
+  checks, and resolve scoped class/parent method callable forms with PHP-style
+  deprecation diagnostics; callback dispatch observes `global` bindings for
+  user functions reached through direct calls, and public `__invoke` objects
+  can be called directly or through callback dispatch; `is_callable()` writes
+  callable-name output for supported callable shapes.
 - `assert()` throws catchable `AssertionError`; userland `throw` statements
   and PHP 8 throw expressions propagate boxed built-in exception values
   through the shared `try`/`catch` runtime, including `Exception`, `Error`
@@ -77,11 +78,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `zend_version()`, PHP version/build/platform constants, `PHP_SAPI`,
   `get_loaded_extensions()`, stable PHP locale constants, bounded
   `setlocale()`/`localeconv()` helpers, `spl_object_id()`/
-  `spl_object_hash()`, `get_parent_class()`, Closure internal class metadata,
-  Closure-backed `ReflectionFunction` count/name metadata, bounded
-  class/interface/trait/property/method existence checks, abstract/final
-  class metadata, interface constants, and duplicate/non-interface
-  implementation diagnostics.
+  `spl_object_hash()`, `get_parent_class()`, `get_called_class()`, Closure
+  internal class metadata, Closure-backed `ReflectionFunction` count/name
+  metadata, bounded class/interface/trait/property/method existence checks,
+  abstract/final class metadata, interface constants, and
+  duplicate/non-interface implementation diagnostics.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable, variable-root array/append, property, and static-property
