@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T03:50Z.
-Measured: `ptn-c8z6` after `ptn-51ey`.
+Last refresh: 2026-06-14T03:56Z.
+Measured: `ptn-f62z` after `ptn-c8z6`.
 
 ## Operating Goal
 
@@ -10,7 +10,7 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 718/718; Native smoke matrix 6/6; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281.
+Source unit tests 3/3; Native/compiler Rust suite 718/718; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
 ## Active Buckets
 
@@ -18,7 +18,6 @@ Source unit tests 3/3; Native/compiler Rust suite 718/718; Native smoke matrix 6
 | --- | ---: |
 | Source unit tests | 3/3 |
 | Native/compiler Rust suite | 718/718 |
-| Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 479/486 |
 | PHPT Zend rows | 119/119 |
 | PHPT ext/standard rows | 274/281 |
@@ -39,11 +38,11 @@ Source unit tests 3/3; Native/compiler Rust suite 718/718; Native smoke matrix 6
 | PHPT broad class declaration frontier | 0/78 |
 | PHPT broad resource-limit classifier row | 0/1 |
 | PHPT broad magic/object conversion frontier | 20/69 |
+| PHPT broad magic-method metadata frontier | 0/69 |
 | PHPT broad standard-array frontier | 0/297 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | Post-merge COW gate | 26/26 |
-| PHPT formatted string rows | 25/75 |
 | PHPT broad 1k baseline | 265/1000 |
 
 ## Rules

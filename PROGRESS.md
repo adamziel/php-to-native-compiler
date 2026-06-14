@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T03:50Z.
-Measured: `ptn-c8z6` after `ptn-51ey`.
+Refresh: 2026-06-14T03:56Z.
+Measured: `ptn-f62z` after `ptn-c8z6`.
 
 ## Dashboard
 
@@ -9,7 +9,6 @@ Measured: `ptn-c8z6` after `ptn-51ey`.
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
 | Native/compiler Rust suite | 718 | 718 | 0 |
-| Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 486 | 479 | 7 |
 | PHPT Zend rows | 119 | 119 | 0 |
 | PHPT ext/standard rows | 281 | 274 | 7 |
@@ -30,30 +29,32 @@ Measured: `ptn-c8z6` after `ptn-51ey`.
 | PHPT broad class declaration frontier | 78 | 0 | 78 |
 | PHPT broad resource-limit classifier row | 1 | 0 | 1 |
 | PHPT broad magic/object conversion frontier | 69 | 20 | 49 |
+| PHPT broad magic-method metadata frontier | 69 | 0 | 69 |
 | PHPT broad standard-array frontier | 297 | 0 | 297 |
 | PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
 | PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | Post-merge COW gate | 26 | 26 | 0 |
-| PHPT formatted string rows | 75 | 25 | 50 |
 | PHPT broad 1k baseline | 1000 | 265 | 735 |
 
 ## Remaining Exclusions
 
 - Bounded: 486 selected, 456 runnable, 30 excluded; 449 pass, 7 fail.
 - Broad 1k classify-only: 443/557; class declarations 78; attributes 141.
+- Magic-method metadata: 69 selected, 0 runnable, 69 excluded; 60 are
+  `ext/standard/tests/array` rows.
 - Standard-array frontier: 297 runnable; largest families are set/diff/
   intersect 76, covered `array_chunk()` 32, key helpers 21.
-- Diff/intersect: 76 selected, 64 pass, 12 fail; residuals are five
-  string/nested-array warnings and seven user-comparator rows.
-- Heredoc/nowdoc: 21 runnable, 49 metadata blockers; magic metadata 69.
+- Diff/intersect: 76 selected, 64 pass, 12 fail; residuals are string/
+  nested-array warnings and user-comparator rows.
 - COW/reference: internal 17/72, foreach 31/103, reference-call 9/12.
 
 ## Verification
+
+`ptn-f62z`: `tools/phpt-magic-method-metadata-frontier-manifest.txt`
+classify-only selected 69 rows, 0 runnable, 69 excluded.
 
 `ptn-c8z6`: diff/intersect PHPT `run-20260614T024433Z-manifest.log` records
 76 selected, 64 pass, 12 fail.
 
 `ptn-51ey`: broad 1k selected 1000 rows, kept 430 runnable, excluded 570;
 standard-array classify-only selected 297 rows, all runnable.
-
-`ptn-3a8d`: 69-row magic/object conversion frontier stays classified.
