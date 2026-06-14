@@ -1,19 +1,20 @@
 # PTN Progress
 
-Refresh: 2026-06-14T01:12Z
-Measured: `ptn-oz24` attribute blocker map after `ptn-lrlt`.
+Refresh: 2026-06-14T01:16Z
+Measured: `ptn-x6x5` array callback validation after `ptn-oz24`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 712 | 712 | 0 |
+| Native/compiler Rust suite | 713 | 713 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
 | PHPT ext/standard rows | 280 | 280 | 0 |
 | PHPT focused array key/callback set rows | 75 | 38 | 37 |
+| PHPT focused array callback validation rows | 65 | 46 | 19 |
 | PHPT focused stream rows | 2 | 2 | 0 |
 | PHPT focused cwd rows | 2 | 2 | 0 |
 | PHPT focused filesystem/path/process rows | 46 | 13 | 33 |
@@ -45,18 +46,20 @@ Measured: `ptn-oz24` attribute blocker map after `ptn-lrlt`.
 
 ## Verification
 
-`ptn-oz24` records the PHP attribute blocker map: 141 excluded rows across
-root, deprecated, override, delayed validation, constants, nodiscard, and
-`Attribute/` buckets.
+`ptn-x6x5` validates callback operands before array-helper iteration. Focused
+native validation passes; array callback/set is 65 selected/runnable, 46
+passing, 19 mapped failures.
 
-`ptn-lrlt` adds diagnostic/assertion runtime buckets; broad 1k classify-only is
-421 runnable/579 excluded. `ptn-yl7i` adds class-name hints.
+`ptn-oz24` records 141 broad 1k attribute exclusions.
 
-`ptn-kgqa` adds array predicate/find callback scanning, focused PHPT 4/4.
-`ptn-550s.10` keeps foreach-list PHPT 4/4 and COW gate 26/26.
+`ptn-lrlt` adds diagnostic/assertion buckets; broad 1k classify-only is
+421/579. `ptn-yl7i` adds class-name hints.
 
-`ptn-vwyp` classifies COW generator/fiber rows: 46 selected, 32 runnable, 14
-excluded. `ptn-2juv` records broad 1k: 1,000 selected, 447 runnable, 553.
+`ptn-kgqa` adds array predicate/find callbacks, focused PHPT 4/4.
+`ptn-550s.10` keeps foreach-list 4/4 and COW gate 26/26.
 
-Follow-ups remain typed properties, traits, attributes, traces, nullable types,
-generators/Fibers, includes, callback arrays, `Traversable`, and INI modes.
+`ptn-vwyp` classifies generator/fiber COW: 46 selected, 32 runnable, 14
+excluded. `ptn-2juv` records broad 1k: 1,000/447/553.
+
+Follow-ups: properties, traits, attributes, traces, nullable,
+generators/Fibers, includes, callbacks, `Traversable`, INI.

@@ -15047,6 +15047,57 @@ var_dump(ARRAY_FILTER_USE_BOTH, ARRAY_FILTER_USE_KEY, function_exists('array_fil
 }
 
 #[test]
+fn compile_array_callback_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-array-callback-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-callback-validation.php");
+    let output = root.join("array-callback-validation-bin");
+    fs::write(
+        &input,
+        "<?php
+function report($callback) {
+    try {
+        $callback();
+    } catch (TypeError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+report(fn() => array_map(\"missing_map\", [1]));
+report(fn() => array_filter([1], \"missing_filter\"));
+report(fn() => array_reduce([1], \"missing_reduce\"));
+report(fn() => array_diff_ukey([1], [2], \"missing_key\"));
+report(fn() => array_udiff_uassoc([1], [2], \"missing_value\", \"strcmp\"));
+report(fn() => array_uintersect_uassoc([1], [2], \"strcmp\", \"missing_key2\"));
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, function \"missing_map\" not found or invalid function name\n",
+            "array_filter(): Argument #2 ($callback) must be a valid callback or null, function \"missing_filter\" not found or invalid function name\n",
+            "array_reduce(): Argument #2 ($callback) must be a valid callback, function \"missing_reduce\" not found or invalid function name\n",
+            "array_diff_ukey(): Argument #3 must be a valid callback, function \"missing_key\" not found or invalid function name\n",
+            "array_udiff_uassoc(): Argument #3 must be a valid callback, function \"missing_value\" not found or invalid function name\n",
+            "array_uintersect_uassoc(): Argument #4 must be a valid callback, function \"missing_key2\" not found or invalid function name\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_expect_nullable_callback_arg"));
+    assert!(c_source.contains("ptn_internal_expect_callback_arg"));
+}
+
+#[test]
 fn compile_array_combine_to_native_binary() {
     let root = temp_dir("ptn-native-array-combine");
     fs::create_dir_all(&root).unwrap();

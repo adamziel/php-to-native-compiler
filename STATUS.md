@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T01:12Z
-Measured: `ptn-oz24` attribute blocker map after `ptn-lrlt`.
+Last refresh: 2026-06-14T01:16Z
+Measured: `ptn-x6x5` array callback validation after `ptn-oz24`.
 
 ## Operating Goal
 
@@ -10,19 +10,20 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 712/712; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 713/713; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 712/712 |
+| Native/compiler Rust suite | 713/713 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
 | PHPT ext/standard rows | 280/280 |
 | PHPT focused array key/callback set rows | 38/75 |
+| PHPT focused array callback validation rows | 46/65 |
 | PHPT focused stream rows | 2/2 |
 | PHPT focused cwd rows | 2/2 |
 | PHPT focused filesystem/path/process rows | 13/46 |

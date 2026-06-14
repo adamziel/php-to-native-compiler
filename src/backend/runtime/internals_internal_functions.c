@@ -269,7 +269,8 @@ static char *ptn_invalid_callback_message(
     const char *function_name,
     size_t position,
     const char *parameter_name,
-    PtnValue callback
+    PtnValue callback,
+    int accepts_null
 ) {
     PtnValue resolved = ptn_value_deref(callback);
     char *reason = NULL;
@@ -319,15 +320,32 @@ static char *ptn_invalid_callback_message(
         free(name);
     }
 
-    int needed = snprintf(
-        NULL,
-        0,
-        "%s(): Argument #%zu ($%s) must be a valid callback, %s",
-        function_name,
-        position,
-        parameter_name,
-        reason
-    );
+    const char *callback_requirement = accepts_null
+        ? "must be a valid callback or null"
+        : "must be a valid callback";
+    const char *format = parameter_name == NULL
+        ? "%s(): Argument #%zu %s, %s"
+        : "%s(): Argument #%zu ($%s) %s, %s";
+    int needed = parameter_name == NULL
+        ? snprintf(
+            NULL,
+            0,
+            format,
+            function_name,
+            position,
+            callback_requirement,
+            reason
+        )
+        : snprintf(
+            NULL,
+            0,
+            format,
+            function_name,
+            position,
+            parameter_name,
+            callback_requirement,
+            reason
+        );
     if (needed < 0) {
         ptn_abort_out_of_memory();
     }
@@ -335,25 +353,39 @@ static char *ptn_invalid_callback_message(
     if (message == NULL) {
         ptn_abort_out_of_memory();
     }
-    snprintf(
-        message,
-        (size_t)needed + 1,
-        "%s(): Argument #%zu ($%s) must be a valid callback, %s",
-        function_name,
-        position,
-        parameter_name,
-        reason
-    );
+    if (parameter_name == NULL) {
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            format,
+            function_name,
+            position,
+            callback_requirement,
+            reason
+        );
+    } else {
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            format,
+            function_name,
+            position,
+            parameter_name,
+            callback_requirement,
+            reason
+        );
+    }
     free(reason);
     return message;
 }
 
-static PtnValue ptn_internal_expect_callback_arg(
+static PtnValue ptn_internal_expect_callback_arg_impl(
     PtnRuntime *runtime,
     const char *function_name,
     size_t position,
     const char *parameter_name,
-    PtnValue callback
+    PtnValue callback,
+    int accepts_null
 ) {
     PtnValue checked = ptn_value_clone_deref(callback);
     if (ptn_callable_is_valid(checked, 0)) {
@@ -363,11 +395,46 @@ static PtnValue ptn_internal_expect_callback_arg(
         function_name,
         position,
         parameter_name,
-        checked
+        checked,
+        accepts_null
     );
     ptn_value_destroy(&checked);
     ptn_throw_exception_owned_message(runtime, "TypeError", message);
     return ptn_null();
+}
+
+static PtnValue ptn_internal_expect_callback_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue callback
+) {
+    return ptn_internal_expect_callback_arg_impl(
+        runtime,
+        function_name,
+        position,
+        parameter_name,
+        callback,
+        0
+    );
+}
+
+static PtnValue ptn_internal_expect_nullable_callback_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue callback
+) {
+    return ptn_internal_expect_callback_arg_impl(
+        runtime,
+        function_name,
+        position,
+        parameter_name,
+        callback,
+        1
+    );
 }
 
 static void ptn_var_dump_indent(size_t indent) {
@@ -3129,9 +3196,9 @@ static PtnValue ptn_array_custom_set_operation(
 
 static PtnValue ptn_internal_array_udiff(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 2;
+    PtnValue value_callback = ptn_internal_expect_callback_arg(runtime, "array_udiff", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_udiff", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff", array_count, args);
-    PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3151,9 +3218,9 @@ static PtnValue ptn_internal_array_udiff(PtnRuntime *runtime, size_t argc, const
 
 static PtnValue ptn_internal_array_udiff_assoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 2;
+    PtnValue value_callback = ptn_internal_expect_callback_arg(runtime, "array_udiff_assoc", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_udiff_assoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff_assoc", array_count, args);
-    PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3173,10 +3240,10 @@ static PtnValue ptn_internal_array_udiff_assoc(PtnRuntime *runtime, size_t argc,
 
 static PtnValue ptn_internal_array_udiff_uassoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 3;
+    PtnValue value_callback = ptn_internal_expect_callback_arg(runtime, "array_udiff_uassoc", argc - 1, NULL, args[argc - 2]);
+    PtnValue key_callback = ptn_internal_expect_callback_arg(runtime, "array_udiff_uassoc", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_udiff_uassoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff_uassoc", array_count, args);
-    PtnValue value_callback = ptn_value_clone_deref(args[argc - 2]);
-    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3197,9 +3264,9 @@ static PtnValue ptn_internal_array_udiff_uassoc(PtnRuntime *runtime, size_t argc
 
 static PtnValue ptn_internal_array_diff_uassoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 2;
+    PtnValue key_callback = ptn_internal_expect_callback_arg(runtime, "array_diff_uassoc", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_diff_uassoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_diff_uassoc", array_count, args);
-    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3219,9 +3286,9 @@ static PtnValue ptn_internal_array_diff_uassoc(PtnRuntime *runtime, size_t argc,
 
 static PtnValue ptn_internal_array_diff_ukey(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 2;
+    PtnValue key_callback = ptn_internal_expect_callback_arg(runtime, "array_diff_ukey", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_diff_ukey", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_diff_ukey", array_count, args);
-    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3241,9 +3308,9 @@ static PtnValue ptn_internal_array_diff_ukey(PtnRuntime *runtime, size_t argc, c
 
 static PtnValue ptn_internal_array_intersect_uassoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 2;
+    PtnValue key_callback = ptn_internal_expect_callback_arg(runtime, "array_intersect_uassoc", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect_uassoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_intersect_uassoc", array_count, args);
-    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3263,9 +3330,9 @@ static PtnValue ptn_internal_array_intersect_uassoc(PtnRuntime *runtime, size_t 
 
 static PtnValue ptn_internal_array_intersect_ukey(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 2;
+    PtnValue key_callback = ptn_internal_expect_callback_arg(runtime, "array_intersect_ukey", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect_ukey", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_intersect_ukey", array_count, args);
-    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3285,9 +3352,9 @@ static PtnValue ptn_internal_array_intersect_ukey(PtnRuntime *runtime, size_t ar
 
 static PtnValue ptn_internal_array_uintersect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 2;
+    PtnValue value_callback = ptn_internal_expect_callback_arg(runtime, "array_uintersect", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_uintersect", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_uintersect", array_count, args);
-    PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3307,9 +3374,9 @@ static PtnValue ptn_internal_array_uintersect(PtnRuntime *runtime, size_t argc, 
 
 static PtnValue ptn_internal_array_uintersect_assoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 2;
+    PtnValue value_callback = ptn_internal_expect_callback_arg(runtime, "array_uintersect_assoc", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_uintersect_assoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_uintersect_assoc", array_count, args);
-    PtnValue value_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3329,10 +3396,10 @@ static PtnValue ptn_internal_array_uintersect_assoc(PtnRuntime *runtime, size_t 
 
 static PtnValue ptn_internal_array_uintersect_uassoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 3;
+    PtnValue value_callback = ptn_internal_expect_callback_arg(runtime, "array_uintersect_uassoc", argc - 1, NULL, args[argc - 2]);
+    PtnValue key_callback = ptn_internal_expect_callback_arg(runtime, "array_uintersect_uassoc", argc, NULL, args[argc - 1]);
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_uintersect_uassoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_uintersect_uassoc", array_count, args);
-    PtnValue value_callback = ptn_value_clone_deref(args[argc - 2]);
-    PtnValue key_callback = ptn_value_clone_deref(args[argc - 1]);
     PtnValue result = ptn_array_custom_set_operation(
         runtime,
         source,
@@ -3353,7 +3420,7 @@ static PtnValue ptn_internal_array_uintersect_uassoc(PtnRuntime *runtime, size_t
 
 static PtnValue ptn_internal_array_reduce(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_reduce", 1, "array", args[0]);
-    PtnValue callback = ptn_value_clone_deref(args[1]);
+    PtnValue callback = ptn_internal_expect_callback_arg(runtime, "array_reduce", 2, "callback", args[1]);
     PtnValue carry = argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_null();
 
     for (size_t i = 0; i < array->len; i++) {
@@ -3462,11 +3529,13 @@ static PtnValue ptn_array_map_null_callback_row(PtnArray **arrays, size_t array_
 }
 
 static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int has_callback = ptn_value_deref(args[0]).type != PTN_NULL;
+    PtnValue callback = has_callback
+        ? ptn_internal_expect_nullable_callback_arg(runtime, "array_map", 1, "callback", args[0])
+        : ptn_null();
     size_t max_len = 0;
     PtnArray **arrays = ptn_array_map_arrays(runtime, argc, args, &max_len);
     size_t array_count = argc - 1;
-    int has_callback = ptn_value_deref(args[0]).type != PTN_NULL;
-    PtnValue callback = has_callback ? ptn_value_clone_deref(args[0]) : ptn_null();
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
 
     for (size_t i = 0; i < max_len; i++) {
@@ -3747,6 +3816,10 @@ static PtnValue ptn_internal_array_filter(PtnRuntime *runtime, size_t argc, cons
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_filter", 1, "array", args[0]);
     PtnValue callback = argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_null();
     int has_callback = callback.type != PTN_NULL;
+    if (has_callback) {
+        ptn_value_destroy(&callback);
+        callback = ptn_internal_expect_nullable_callback_arg(runtime, "array_filter", 2, "callback", args[1]);
+    }
     int64_t mode = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
     if (mode != 0 && mode != PTN_ARRAY_FILTER_USE_BOTH && mode != PTN_ARRAY_FILTER_USE_KEY) {
         ptn_value_destroy(&callback);
@@ -11461,9 +11534,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_diff_ukey", 3, PTN_VARIADIC_ARGS, ptn_internal_array_diff_ukey },
         { "array_fill", 3, 3, ptn_internal_array_fill },
         { "array_fill_keys", 2, 2, ptn_internal_array_fill_keys },
+        { "array_filter", 1, 3, ptn_internal_array_filter },
         { "array_find", 2, 2, ptn_internal_array_find },
         { "array_find_key", 2, 2, ptn_internal_array_find_key },
-        { "array_filter", 1, 3, ptn_internal_array_filter },
         { "array_flip", 1, 1, ptn_internal_array_flip },
         { "array_intersect", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect },
         { "array_intersect_assoc", 2, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_assoc },
@@ -11763,7 +11836,8 @@ static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t a
             "Closure::fromCallable",
             1,
             "callback",
-            callable
+            callable,
+            0
         );
         ptn_throw_exception_owned_message(runtime, "TypeError", message);
         return ptn_null();
