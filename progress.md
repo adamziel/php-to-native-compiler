@@ -40,6 +40,7 @@ Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/st
 | Diagnostics | 0/47 |
 | Non-array-meta | 0/74 |
 | Class/object-meta | 0/221 |
+| Class-metadata-split | 0/143 |
 | Core/basic-op | 18/34 |
 | Runtime-INI | 0/73 |
 | Resource-limit | 0/1 |

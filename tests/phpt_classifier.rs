@@ -496,59 +496,99 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "abstract method contracts",
             "--TEST--\nabstract\n--FILE--\n<?php\nabstract class Base { abstract protected function run(); }\n--EXPECT--\n",
+            "unsupported-class-contract-metadata\t",
             "requires abstract class/method contract metadata",
+        ),
+        (
+            "magic method dispatch",
+            "--TEST--\nmagic\n--FILE--\n<?php\nclass Bag { public function __get($name) { return 1; } }\n--EXPECT--\n",
+            "unsupported-magic-method-metadata\t",
+            "requires unsupported magic method dispatch/reflection metadata",
         ),
         (
             "autoload",
             "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register(function ($class) {});\n--EXPECT--\n",
+            "unsupported-autoload-metadata\t",
             "requires runtime class autoload symbol-table mutation",
         ),
         (
             "reflection closure binding",
             "--TEST--\nreflection\n--FILE--\n<?php\n$r = new ReflectionFunction(fn() => 1);\nvar_dump($r->getClosureThis());\n--EXPECT--\n",
+            "unsupported-reflection-metadata\t",
             "requires ReflectionFunction closure binding metadata",
         ),
         (
             "non-public method visibility",
             "--TEST--\nvisibility\n--FILE--\n<?php\nclass Box { private function run() {} }\n--EXPECT--\n",
+            "unsupported-method-visibility-metadata\t",
             "requires non-public method visibility dispatch",
         ),
         (
             "non-public property visibility",
             "--TEST--\nproperty visibility\n--FILE--\n<?php\nclass Box { protected $value = 1; }\n--EXPECT--\n",
+            "unsupported-property-visibility-metadata\t",
             "requires non-public property visibility metadata",
         ),
         (
             "object vars export",
             "--TEST--\nobject vars\n--FILE--\n<?php\n$object = new stdClass;\nvar_dump(get_object_vars($object));\n--EXPECT--\n",
+            "unsupported-object-property-metadata\t",
             "requires get_object_vars() object property-table export",
         ),
         (
             "readonly static property",
             "--TEST--\nreadonly static\n--FILE--\n<?php\nclass Bag { public static readonly int $value; }\n--EXPECT--\n",
+            "unsupported-readonly-property-metadata\t",
             "requires readonly static property diagnostics",
         ),
         (
             "readonly constructor promotion",
             "--TEST--\nreadonly promotion\n--FILE--\n<?php\nreadonly class Bag {\n    public function __construct(\n        public int $value\n    ) {}\n}\n--EXPECT--\n",
+            "unsupported-property-promotion-metadata\t",
             "requires constructor property promotion metadata",
         ),
         (
             "readonly indirect property mutation",
             "--TEST--\nreadonly indirect mutation\n--FILE--\n<?php\nclass Bag { public readonly array $value; }\n$bag = new Bag();\n$ref =& $bag->value;\n--EXPECT--\n",
+            "unsupported-readonly-property-metadata\t",
             "requires indirect readonly property mutation diagnostics",
+        ),
+        (
+            "typed property metadata",
+            "--TEST--\ntyped property\n--FILE--\n<?php\nclass Bag { public int $value; }\n--EXPECT--\n",
+            "unsupported-typed-property-metadata\t",
+            "requires typed property metadata",
+        ),
+        (
+            "typed class constant metadata",
+            "--TEST--\ntyped class constant\n--FILE--\n<?php\nclass Bag { const string NAME = 'bag'; }\n--EXPECT--\n",
+            "unsupported-class-constant-metadata\t",
+            "requires typed class constant metadata",
+        ),
+        (
+            "internal attribute reflection metadata",
+            "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
+            "unsupported-attribute-metadata\t",
+            "requires internal attribute/reflection metadata",
+        ),
+        (
+            "internal Deprecated attribute object",
+            "--TEST--\ndeprecated attribute\n--FILE--\n<?php\n$d = new \\Deprecated(\"message\");\n$d->message = \"updated\";\n--EXPECT--\n",
+            "unsupported-attribute-metadata\t",
+            "requires internal attribute/reflection metadata",
         ),
         (
             "complete arginfo registry reflection",
             "--TEST--\narginfo sweep\n--FILE--\n<?php\nforeach (get_defined_functions()[\"internal\"] as $function) { var_dump($function); }\n--EXPECT--\n",
+            "unsupported-internal-reflection-metadata\t",
             "requires complete internal arginfo/class registry reflection",
         ),
     ];
 
-    for (name, phpt, reason) in cases {
+    for (name, phpt, category, reason) in cases {
         let classification = classify(phpt);
         assert!(
-            classification.starts_with("unsupported-class-metadata\t"),
+            classification.starts_with(category),
             "{name}: {classification:?}"
         );
         assert!(

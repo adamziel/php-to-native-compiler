@@ -39,6 +39,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp`; COW 69/103 passed.
 |Diagnostics|47|0|47|
 |Non-array-meta|74|0|74|
 |Class/object-meta|221|0|221|
+|Class-metadata-split|143|0|143|
 |Core/basic-op|34|18|16|
 |Runtime-INI|73|0|73|
 |Resource-limit|1|0|1|

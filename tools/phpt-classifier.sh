@@ -1061,60 +1061,60 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 readonly_property_seen = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])enum[[:space:]]+[a-z_\\]/) {
-                print "unsupported-class-metadata\trequires enum declarations and case metadata, outside PTN modeled class metadata"
+                print "unsupported-enum-metadata\trequires enum declarations and case metadata, outside PTN modeled class metadata"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])abstract[[:space:]]+(class|function|static|public|protected|private|[a-z_\\])/) {
-                print "unsupported-class-metadata\trequires abstract class/method contract metadata, outside PTN modeled class dispatch"
+                print "unsupported-class-contract-metadata\trequires abstract class/method contract metadata, outside PTN modeled class dispatch"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])final[[:space:]]+(class|function|static|public|protected|private|[a-z_\\])/) {
-                print "unsupported-class-metadata\trequires final class/method override metadata, outside PTN modeled class dispatch"
+                print "unsupported-class-contract-metadata\trequires final class/method override metadata, outside PTN modeled class dispatch"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+static([^[:alnum:]_]|$)/ ||
                 line ~ /(^|[^[:alnum:]_$])static[[:space:]]+readonly([^[:alnum:]_]|$)/ ||
                 line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+class[^{;]*\{[^}]*static[[:space:]][^;}]*\$/) {
-                print "unsupported-class-metadata\trequires readonly static property diagnostics, outside PTN runnable readonly property subset"
+                print "unsupported-readonly-property-metadata\trequires readonly static property diagnostics, outside PTN runnable readonly property subset"
                 found = 1
                 exit
             }
             if (readonly_class_context &&
                 line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)?[[:space:]]*\$[a-z_]/) {
-                print "unsupported-class-metadata\trequires readonly static property diagnostics, outside PTN runnable readonly property subset"
+                print "unsupported-readonly-property-metadata\trequires readonly static property diagnostics, outside PTN runnable readonly property subset"
                 found = 1
                 exit
             }
             if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+(static[[:space:]]+)?function[[:space:]]+[a-z_]/) {
-                print "unsupported-class-metadata\trequires non-public method visibility dispatch and diagnostics, outside PTN modeled method visibility"
+                print "unsupported-method-visibility-metadata\trequires non-public method visibility dispatch and diagnostics, outside PTN modeled method visibility"
                 found = 1
                 exit
             }
             if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+(static[[:space:]]+)?\$[a-z_]/) {
-                print "unsupported-class-metadata\trequires non-public property visibility metadata, outside PTN modeled property visibility"
+                print "unsupported-property-visibility-metadata\trequires non-public property visibility metadata, outside PTN modeled property visibility"
                 found = 1
                 exit
             }
             if (line ~ /function[[:space:]]+__(call|callstatic|get|set|isset|unset|debuginfo|serialize|unserialize|sleep|wakeup|tostring)[[:space:]]*\(/) {
-                print "unsupported-class-metadata\trequires unsupported magic method dispatch/reflection metadata"
+                print "unsupported-magic-method-metadata\trequires unsupported magic method dispatch/reflection metadata"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])(spl_autoload_[a-z0-9_]*|__autoload)[[:space:]]*\(/) {
-                print "unsupported-class-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
+                print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
                 found = 1
                 exit
             }
             if (line ~ /->[[:space:]]*getclosurethis[[:space:]]*\(/) {
-                print "unsupported-class-metadata\trequires ReflectionFunction closure binding metadata (`getClosureThis()`), outside PTN modeled reflection metadata"
+                print "unsupported-reflection-metadata\trequires ReflectionFunction closure binding metadata (`getClosureThis()`), outside PTN modeled reflection metadata"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])get_object_vars[[:space:]]*\(/) {
-                print "unsupported-class-metadata\trequires get_object_vars() object property-table export and property array-dimension lvalues, outside PTN modeled object/property metadata"
+                print "unsupported-object-property-metadata\trequires get_object_vars() object property-table export and property array-dimension lvalues, outside PTN modeled object/property metadata"
                 found = 1
                 exit
             }
@@ -1127,18 +1127,18 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])(get_defined_functions|get_declared_classes)[[:space:]]*\(/ ||
                 line ~ /->[[:space:]]*newinstancewithoutconstructor[[:space:]]*\(/) {
-                print "unsupported-class-metadata\trequires complete internal arginfo/class registry reflection, outside PTN modeled metadata"
+                print "unsupported-internal-reflection-metadata\trequires complete internal arginfo/class registry reflection, outside PTN modeled metadata"
                 found = 1
                 exit
             }
             if (line ~ /function[[:space:]]+__construct[[:space:]]*\([^)]*(public|protected|private|readonly)[[:space:]]+/) {
-                print "unsupported-class-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
+                print "unsupported-property-promotion-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
                 found = 1
                 exit
             }
             if (line ~ /(^|[,([:space:]])(public|protected|private|readonly)[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ &&
                 line !~ /;/) {
-                print "unsupported-class-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
+                print "unsupported-property-promotion-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
                 found = 1
                 exit
             }
@@ -1146,7 +1146,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 (line ~ /=[[:space:]]*&[[:space:]]*\$[a-z_][a-z0-9_]*->[a-z_][a-z0-9_]*/ ||
                     line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*&/)) ||
                 line ~ /->[a-z_][a-z0-9_]*[[:space:]]*(\[|\+\+|--)/) {
-                print "unsupported-class-metadata\trequires indirect readonly property mutation diagnostics, outside PTN modeled readonly property subset"
+                print "unsupported-readonly-property-metadata\trequires indirect readonly property mutation diagnostics, outside PTN modeled readonly property subset"
                 found = 1
                 exit
             }
@@ -1154,22 +1154,22 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 line !~ /(^|[[:space:]])(public|protected|private)[[:space:]]+readonly[[:space:]]+/ &&
                 line !~ /(^|[[:space:]])readonly[[:space:]]+(public|protected|private)[[:space:]]+/ &&
                 line ~ /(^|[[:space:]])(public|protected|private|var|static|readonly)[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
-                print "unsupported-class-metadata\trequires typed property metadata, outside PTN modeled property declarations"
+                print "unsupported-typed-property-metadata\trequires typed property metadata, outside PTN modeled property declarations"
                 found = 1
                 exit
             }
             if (line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
-                print "unsupported-class-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
+                print "unsupported-typed-property-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
                 found = 1
                 exit
             }
             if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+const[[:space:]]+/) {
-                print "unsupported-class-metadata\trequires non-public class constant metadata, outside PTN modeled class constants"
+                print "unsupported-class-constant-metadata\trequires non-public class constant metadata, outside PTN modeled class constants"
                 found = 1
                 exit
             }
             if (line ~ /(^|[[:space:]])const[[:space:]]+[a-z_\\][a-z0-9_\\|?]*[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]*=/) {
-                print "unsupported-class-metadata\trequires typed class constant metadata, outside PTN modeled class constants"
+                print "unsupported-class-constant-metadata\trequires typed class constant metadata, outside PTN modeled class constants"
                 found = 1
                 exit
             }
