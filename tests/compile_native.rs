@@ -4282,7 +4282,8 @@ fn parser_accepts_simple_array_and_legacy_dollar_brace_interpolation() {
 
 #[test]
 fn parser_accepts_braced_property_interpolation() {
-    let program = parser::parse("<?php echo \"name={$object->name}\\n\";").unwrap();
+    let program =
+        parser::parse("<?php echo \"name={$object->name} direct=$object->name\\n\";").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
         panic!("expected echo statement");
     };
@@ -4293,6 +4294,11 @@ fn parser_accepts_braced_property_interpolation() {
         parts,
         &vec![
             StringPart::Literal("name=".to_string()),
+            StringPart::PropertyFetch {
+                variable: "object".to_string(),
+                property: "name".to_string(),
+            },
+            StringPart::Literal(" direct=".to_string()),
             StringPart::PropertyFetch {
                 variable: "object".to_string(),
                 property: "name".to_string(),
@@ -15299,6 +15305,17 @@ $rows2 = [[\"key\" => \"x\", \"value\" => $nested], [\"key\" => \"y\", \"value\"
 $result = array_column($rows2, \"value\", \"key\");\n\
 $result[\"x\"][] = \"copy\";\n\
 var_dump($result[\"x\"], $nested);\n\
+class MagicColumn {\n\
+    private $prop;\n\
+    public function __construct($value) { $this->prop = $value; }\n\
+    public function __isset($name) { return $name === \"prop\"; }\n\
+    public function __get($name) { return \"__get(\" . $this->prop . \")\"; }\n\
+}\n\
+class GetOnlyColumn {\n\
+    public function __get($name) { return \"unused\"; }\n\
+}\n\
+var_dump(array_column([new MagicColumn(\"foobar\")], \"prop\"));\n\
+var_dump(array_column([new GetOnlyColumn()], \"prop\"));\n\
 var_dump(function_exists(\"array_column\"), function_exists(\"ARRAY_COLUMN\"));",
     )
     .unwrap();
@@ -15309,7 +15326,7 @@ var_dump(function_exists(\"array_column\"), function_exists(\"ARRAY_COLUMN\"));"
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"c\"\n}\narray(3) {\n  [2]=>\n  string(1) \"a\"\n  [\"02\"]=>\n  string(1) \"b\"\n  [3]=>\n  string(1) \"c\"\n}\narray(4) {\n  [2]=>\n  array(2) {\n    [42]=>\n    string(1) \"a\"\n    [\"id\"]=>\n    string(1) \"2\"\n  }\n  [\"02\"]=>\n  array(2) {\n    [42]=>\n    string(1) \"b\"\n    [\"id\"]=>\n    string(2) \"02\"\n  }\n  [3]=>\n  array(2) {\n    [42]=>\n    string(1) \"c\"\n    [\"id\"]=>\n    int(3)\n  }\n  [\"skip\"]=>\n  array(2) {\n    [\"x\"]=>\n    string(7) \"missing\"\n    [\"id\"]=>\n    string(4) \"skip\"\n  }\n}\narray(2) {\n  [0]=>\n  string(4) \"seed\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\nbool(true)\nbool(true)\n"
+        "array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"c\"\n}\narray(3) {\n  [2]=>\n  string(1) \"a\"\n  [\"02\"]=>\n  string(1) \"b\"\n  [3]=>\n  string(1) \"c\"\n}\narray(4) {\n  [2]=>\n  array(2) {\n    [42]=>\n    string(1) \"a\"\n    [\"id\"]=>\n    string(1) \"2\"\n  }\n  [\"02\"]=>\n  array(2) {\n    [42]=>\n    string(1) \"b\"\n    [\"id\"]=>\n    string(2) \"02\"\n  }\n  [3]=>\n  array(2) {\n    [42]=>\n    string(1) \"c\"\n    [\"id\"]=>\n    int(3)\n  }\n  [\"skip\"]=>\n  array(2) {\n    [\"x\"]=>\n    string(7) \"missing\"\n    [\"id\"]=>\n    string(4) \"skip\"\n  }\n}\narray(2) {\n  [0]=>\n  string(4) \"seed\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray(1) {\n  [0]=>\n  string(13) \"__get(foobar)\"\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -26058,6 +26075,92 @@ echo var_export($object, true), \"\\n\";
     assert!(c_source.contains("ptn_object_declare_property(&runtime"));
     assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
     assert!(c_source.contains("PTN_PROPERTY_PROTECTED"));
+}
+
+#[test]
+fn compile_get_object_vars_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-get-object-vars-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-object-vars-visibility.php");
+    let output = root.join("get-object-vars-visibility-bin");
+    fs::write(
+        &input,
+        "<?php
+class Base {
+    public $Foo = 1;
+    protected $Bar = 2;
+    private $Baz = 3;
+
+    public function __construct() {
+        echo __METHOD__, \"\\n\";
+        var_dump(get_object_vars($this));
+    }
+}
+
+class Child extends Base {
+    private $Baz = 4;
+
+    public function __construct() {
+        parent::__construct();
+        echo __METHOD__, \"\\n\";
+        var_dump(get_object_vars($this));
+    }
+}
+
+var_dump(get_object_vars(new Base()));
+var_dump(get_object_vars(new Child()));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Base::__construct\n",
+            "array(3) {\n",
+            "  [\"Foo\"]=>\n",
+            "  int(1)\n",
+            "  [\"Bar\"]=>\n",
+            "  int(2)\n",
+            "  [\"Baz\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"Foo\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "Base::__construct\n",
+            "array(3) {\n",
+            "  [\"Foo\"]=>\n",
+            "  int(1)\n",
+            "  [\"Bar\"]=>\n",
+            "  int(2)\n",
+            "  [\"Baz\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "Child::__construct\n",
+            "array(3) {\n",
+            "  [\"Foo\"]=>\n",
+            "  int(1)\n",
+            "  [\"Bar\"]=>\n",
+            "  int(2)\n",
+            "  [\"Baz\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"Foo\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_object_vars"));
 }
 
 #[test]

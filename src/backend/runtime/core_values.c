@@ -446,6 +446,13 @@ typedef int (*PtnClassScopeAllowsHandler)(
     const char *declaring_class
 );
 typedef int (*PtnDeclaredClassReadonlyHandler)(const char *class_name);
+typedef int (*PtnMagicPropertyReadHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+);
 
 struct PtnRuntime {
     PtnSymbolTable symbols;
@@ -479,6 +486,7 @@ struct PtnRuntime {
     PtnDeclaredMethodExistsHandler declared_method_exists;
     PtnClassScopeAllowsHandler class_scope_allows;
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
+    PtnMagicPropertyReadHandler magic_property_read;
     const char *source_path;
     const char *current_function_name;
     const char *current_class_name;

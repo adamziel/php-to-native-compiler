@@ -680,7 +680,7 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "magic method dispatch",
             "--TEST--\nmagic\n--FILE--\n<?php\nclass Bag { public function __get($name) { return 1; } }\n--EXPECT--\n",
             "unsupported-magic-method-metadata\t",
-            "requires magic method dispatch/reflection metadata",
+            "requires general __get()/__isset() magic property dispatch",
         ),
         (
             "autoload",
@@ -701,16 +701,10 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires non-public method visibility dispatch",
         ),
         (
-            "non-public property visibility",
-            "--TEST--\nproperty visibility\n--FILE--\n<?php\nclass Box { protected $value = 1; }\n--EXPECT--\n",
+            "non-public static property visibility",
+            "--TEST--\nproperty visibility\n--FILE--\n<?php\nclass Box { protected static $value = 1; }\n--EXPECT--\n",
             "unsupported-property-visibility-metadata\t",
-            "requires non-public property visibility metadata",
-        ),
-        (
-            "object vars export",
-            "--TEST--\nobject vars\n--FILE--\n<?php\n$object = new stdClass;\nvar_dump(get_object_vars($object));\n--EXPECT--\n",
-            "unsupported-object-property-metadata\t",
-            "requires get_object_vars() object property-table export",
+            "requires non-public static property visibility metadata",
         ),
         (
             "readonly static property",
@@ -776,6 +770,30 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
 }
 
 #[test]
+fn phpt_classifier_keeps_modeled_instance_property_metadata_runnable() {
+    let classification = classify(
+        "--TEST--\nprivate property\n--FILE--\n<?php\nclass Box { private $value = 1; public function value() { return $this->value; } }\necho (new Box())->value();\n--EXPECT--\n1\n",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_get_object_vars_runnable() {
+    let classification = classify(
+        "--TEST--\nobject vars\n--FILE--\n<?php\n$object = new stdClass;\nvar_dump(get_object_vars($object));\n--EXPECT--\n",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
 fn phpt_classifier_splits_magic_method_metadata_blockers() {
     let classification = classify(
         "--TEST--\nmagic tostring\n--FILE--\n<?php\nclass Box { public function __toString() { return 'box'; } }\n--EXPECT--\n",
@@ -789,24 +807,38 @@ fn phpt_classifier_splits_magic_method_metadata_blockers() {
         (
             "property magic hook",
             "--TEST--\nmagic get\n--FILE--\n<?php\nclass Box { public function __get($name) { return 1; } }\n--EXPECT--\n",
+            "requires general __get()/__isset() magic property dispatch",
         ),
         (
             "debug info hook",
             "--TEST--\nmagic debug\n--FILE--\n<?php\nclass Box { public function __debugInfo() { return []; } }\n--EXPECT--\n",
+            "requires magic method dispatch/reflection metadata",
         ),
     ];
 
-    for (name, phpt) in cases {
+    for (name, phpt, reason) in cases {
         let classification = classify(phpt);
         assert!(
             classification.starts_with("unsupported-magic-method-metadata\t"),
             "{name}: {classification:?}"
         );
         assert!(
-            classification.contains("requires magic method dispatch/reflection metadata"),
+            classification.contains(reason),
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_array_column_magic_property_path_runnable() {
+    let classification = classify(
+        "--TEST--\narray column magic property\n--FILE--\n<?php\nclass Test { private $prop; public function __isset($name) { return true; } public function __get($name) { return 'value'; } }\nvar_dump(array_column([new Test()], 'prop'));\n--EXPECT--\n",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
 }
 
 #[test]

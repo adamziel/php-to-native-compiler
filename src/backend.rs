@@ -30,6 +30,10 @@ pub fn emit_c(module: &Module) -> String {
         || runtime_requirements.dynamic_function_dispatch;
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
     let needs_method_dispatch = runtime_requirements.method_dispatch || has_declared_methods;
+    let needs_magic_property_read = module
+        .classes
+        .iter()
+        .any(|class| class_magic_isset_method(class, &module.classes).is_some());
     emit_private_property_metadata_prototype(&mut out);
     emit_runtime(&mut out, &runtime_requirements);
     emit_type_hint_runtime_helpers(&mut out);
@@ -73,6 +77,9 @@ pub fn emit_c(module: &Module) -> String {
             runtime_requirements.closure_invoke_method_dispatch,
         );
     }
+    if needs_magic_property_read {
+        emit_magic_property_read_dispatch(&mut out, &module.classes);
+    }
     if needs_callable_dispatch {
         emit_dynamic_function_dispatch(&mut out);
         emit_callable_dispatch(&mut out, &module.functions, needs_method_dispatch);
@@ -86,6 +93,9 @@ pub fn emit_c(module: &Module) -> String {
     if needs_method_dispatch {
         out.push_str("    runtime.method_dispatch = ptn_call_declared_method;\n");
         out.push_str("    runtime.declared_method_exists = ptn_declared_class_method_exists;\n");
+    }
+    if needs_magic_property_read {
+        out.push_str("    runtime.magic_property_read = ptn_declared_magic_property_read;\n");
     }
     out.push_str("    runtime.class_scope_allows = ptn_declared_class_scope_allows;\n");
     out.push_str("    runtime.declared_class_is_readonly = ptn_declared_class_is_readonly;\n");
@@ -386,6 +396,9 @@ fn emit_user_function_prototypes(
     if needs_method_dispatch {
         out.push_str(
             "static PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line);\n",
+        );
+        out.push_str(
+            "static PTN_UNUSED int ptn_call_declared_method_in_scope(PtnRuntime *runtime, PtnValue receiver, const char *target_class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out);\n",
         );
     }
     for (index, _) in functions.iter().enumerate() {
@@ -1910,6 +1923,72 @@ fn class_magic_invoke_method<'a>(
     class_method_lookup_chain(class, classes)
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__invoke"))
+}
+
+fn class_magic_isset_method<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<&'a crate::ir::MethodDecl> {
+    class_method_lookup_chain(class, classes)
+        .into_iter()
+        .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__isset"))
+}
+
+fn class_magic_get_method<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<&'a crate::ir::MethodDecl> {
+    class_method_lookup_chain(class, classes)
+        .into_iter()
+        .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__get"))
+}
+
+fn emit_magic_property_read_dispatch(out: &mut String, classes: &[ClassDecl]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_magic_property_read(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t line, PtnValue *value_out) {\n",
+    );
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    for class in classes {
+        let Some(isset_method) = class_magic_isset_method(class, classes) else {
+            continue;
+        };
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        PtnValue ptn_isset_args[1];\n");
+        out.push_str("        ptn_isset_args[0] = ptn_string(property);\n");
+        out.push_str("        PtnValue ptn_isset_result = ");
+        out.push_str(&user_function_c_name(isset_method.function_index));
+        out.push_str("(runtime, resolved, 1, ptn_isset_args, line);\n");
+        out.push_str(
+            "        int ptn_isset_truthy = ptn_is_truthy(ptn_value_deref(ptn_isset_result));\n",
+        );
+        out.push_str("        ptn_value_destroy(&ptn_isset_result);\n");
+        out.push_str("        ptn_value_destroy(&ptn_isset_args[0]);\n");
+        out.push_str("        if (!ptn_isset_truthy) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        if let Some(get_method) = class_magic_get_method(class, classes) {
+            out.push_str("        PtnValue ptn_get_args[1];\n");
+            out.push_str("        ptn_get_args[0] = ptn_string(property);\n");
+            out.push_str("        *value_out = ");
+            out.push_str(&user_function_c_name(get_method.function_index));
+            out.push_str("(runtime, resolved, 1, ptn_get_args, line);\n");
+            out.push_str("        ptn_value_destroy(&ptn_get_args[0]);\n");
+        } else {
+            out.push_str(
+                "        *value_out = ptn_object_read_property(runtime, resolved, property, NULL, line);\n",
+            );
+        }
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
 }
 
 fn emit_callable_validation_helpers(out: &mut String) {
@@ -5700,6 +5779,20 @@ impl ValueEmitter {
             return Some(CalledClassOverride::CurrentCalledOr(fallback));
         }
         Some(CalledClassOverride::Literal(target_class_name))
+    }
+
+    fn relative_scoped_call_parts(&self, name: &str) -> Option<(String, String)> {
+        let (class_name, method_name) = self.split_static_call_name(name)?;
+        if !(class_name.eq_ignore_ascii_case("parent")
+            || class_name.eq_ignore_ascii_case("self")
+            || class_name.eq_ignore_ascii_case("static"))
+        {
+            return None;
+        }
+        Some((
+            self.static_call_target_class_name(class_name),
+            method_name.to_string(),
+        ))
     }
 
     fn emit_called_class_override_expr(out: &mut String, override_: &CalledClassOverride) {
@@ -10203,6 +10296,19 @@ impl ValueEmitter {
                     called_class_override.as_ref(),
                     receiver_class_name.as_deref(),
                 );
+            } else if let Some((target_class_name, method_name)) =
+                self.relative_scoped_call_parts(name)
+            {
+                self.emit_relative_scoped_method_call_or_function_fallback(
+                    out,
+                    &result_temp,
+                    &target_class_name,
+                    &method_name,
+                    &resolved_name,
+                    "0",
+                    "NULL",
+                    line,
+                );
             } else {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
@@ -10285,6 +10391,18 @@ impl ValueEmitter {
                 called_class_override.as_ref(),
                 receiver_class_name.as_deref(),
             );
+        } else if let Some((target_class_name, method_name)) = self.relative_scoped_call_parts(name)
+        {
+            self.emit_relative_scoped_method_call_or_function_fallback(
+                out,
+                &result_temp,
+                &target_class_name,
+                &method_name,
+                &resolved_name,
+                &arguments.len().to_string(),
+                &args_temp,
+                line,
+            );
         } else {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -10352,6 +10470,48 @@ impl ValueEmitter {
             out.push_str(&previous_override_temp);
             out.push_str(";\n");
         }
+    }
+
+    fn emit_relative_scoped_method_call_or_function_fallback(
+        &self,
+        out: &mut String,
+        result_temp: &str,
+        target_class_name: &str,
+        method_name: &str,
+        resolved_name: &str,
+        argc: &str,
+        args: &str,
+        line: usize,
+    ) {
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (runtime.has_current_receiver && ptn_call_declared_method_in_scope(&runtime, runtime.current_receiver, \"");
+        out.push_str(&c_string(target_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(method_name));
+        out.push_str("\", runtime.current_called_class_name, ");
+        out.push_str(argc);
+        out.push_str(", ");
+        out.push_str(args);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", &");
+        out.push_str(result_temp);
+        out.push_str(")) {\n");
+        out.push_str("    } else {\n");
+        out.push_str("        ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_call_function(&runtime, \"");
+        out.push_str(&c_string(resolved_name));
+        out.push_str("\", ");
+        out.push_str(argc);
+        out.push_str(", ");
+        out.push_str(args);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
     }
 
     fn emit_named_user_call(

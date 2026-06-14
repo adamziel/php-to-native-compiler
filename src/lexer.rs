@@ -785,6 +785,17 @@ impl<'a> Lexer<'a> {
                                 break;
                             }
                         }
+                        if self.rest().starts_with("->") {
+                            self.bump_char();
+                            self.bump_char();
+                            let property = self.read_interpolation_variable_name(start)?;
+                            parts.push(StringPart::PropertyFetch {
+                                variable: name,
+                                property,
+                            });
+                            has_variable = true;
+                            continue;
+                        }
                         let indices = self.lex_unbraced_interpolation_indices()?;
                         if indices.is_empty() {
                             parts.push(StringPart::Variable(name));

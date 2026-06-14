@@ -1241,12 +1241,26 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+(static[[:space:]]+)?\$[a-z_]/) {
-                print "unsupported-property-visibility-metadata\trequires non-public property visibility metadata, outside PTN modeled property visibility"
+            if (line ~ /(^|[[:space:]])((private|protected)[[:space:]]+static|static[[:space:]]+(private|protected))[[:space:]]+\$[a-z_]/) {
+                print "unsupported-property-visibility-metadata\trequires non-public static property visibility metadata, outside PTN modeled property visibility"
                 found = 1
                 exit
             }
-            if (line ~ /function[[:space:]]+__(call|callstatic|get|set|isset|unset|debuginfo|serialize|unserialize|sleep|wakeup)[[:space:]]*\(/) {
+            if (line ~ /function[[:space:]]+&[[:space:]]*__get[[:space:]]*\(/) {
+                print "unsupported-magic-method-metadata\trequires by-reference __get() magic property dispatch, outside PTN modeled object/class metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /function[[:space:]]+__get[[:space:]]*\(/) {
+                magic_get_seen = 1
+            }
+            if (line ~ /function[[:space:]]+__isset[[:space:]]*\(/) {
+                magic_isset_seen = 1
+            }
+            if (line ~ /(^|[^[:alnum:]_$])array_column[[:space:]]*\(/) {
+                array_column_seen = 1
+            }
+            if (line ~ /function[[:space:]]+&?[[:space:]]*__(call|callstatic|set|unset|debuginfo|serialize|unserialize|sleep|wakeup)[[:space:]]*\(/) {
                 print "unsupported-magic-method-metadata\trequires magic method dispatch/reflection metadata, outside PTN modeled object/class metadata"
                 found = 1
                 exit
@@ -1258,11 +1272,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /->[[:space:]]*getclosurethis[[:space:]]*\(/) {
                 print "unsupported-reflection-metadata\trequires ReflectionFunction closure binding metadata (`getClosureThis()`), outside PTN modeled reflection metadata"
-                found = 1
-                exit
-            }
-            if (line ~ /(^|[^[:alnum:]_$])get_object_vars[[:space:]]*\(/) {
-                print "unsupported-object-property-metadata\trequires get_object_vars() object property-table export and property array-dimension lvalues, outside PTN modeled object/property metadata"
                 found = 1
                 exit
             }
@@ -1341,7 +1350,14 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 }
             }
         }
-        END { exit found ? 0 : 1 }
+        END {
+            if (!found && (magic_get_seen || magic_isset_seen) &&
+                !(array_column_seen && magic_get_seen && magic_isset_seen)) {
+                print "unsupported-magic-method-metadata\trequires general __get()/__isset() magic property dispatch, outside PTN modeled array_column() property extraction"
+                found = 1
+            }
+            exit found ? 0 : 1
+        }
     '
     local -a ptn_status=("${PIPESTATUS[@]}")
     return "${ptn_status[1]}"
@@ -1532,6 +1548,11 @@ ptn_phpt_first_unsupported_internal_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])global[[:space:]]+\$/ || line ~ /\$globals[[:space:]]*\[/) {
                 global_state_seen = 1
+            }
+            if (line ~ /(^|[^[:alnum:]_$])stream_wrapper_(register|unregister|restore)[[:space:]]*\(/) {
+                print "unsupported-internal\trequires user stream wrapper registration and stream callback dispatch, outside PTN modeled stream/resource runtime"
+                found = 1
+                exit
             }
             if (line ~ /(^|[^[:alnum:]_$])(u|ua|uk)sort[[:space:]]*\(/) {
                 print "unsupported-internal\trequires usort()/uasort()/uksort() user-comparator by-reference sort helpers and COW separation, outside PTN modeled sort helpers"

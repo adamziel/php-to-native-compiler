@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T18:27Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; COW 69/103 passed.
+Refresh: 2026-06-14T18:47Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; COW 69/103 passed.
 
 ## Dashboard
 
@@ -39,6 +39,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Diagnostics|47|0|47|
 |Non-array-meta|74|0|74|
 |Class/object-meta|221|0|221|
+|Class/object-prop-pack|19|12|7|
 |Class/object-meta-granular|135|0|135|
 |Class-metadata-split|143|0|143|
 |Core/basic-op|34|18|16|
@@ -103,6 +104,52 @@ Earlier broad 1k measurement on the pre-rebase base `abfb48341ef2` was
 unchanged before/after this work: 440 runnable rows, 366 passed, 74 failed.
 The dashboard keeps the newer `ptn-ouhx` broad 1k baseline instead of that
 older broad count.
+
+## 2026-06-14 ptn-xcmz Broad Property/Object Metadata Row Pack
+
+Final manifest: `tools/phpt-ptn-xcmz-property-object-metadata-row-pack.txt`.
+
+Current-base baseline `origin/master` (`df6e3157a19e`) selected the 19 broad
+1k rows: 1 runnable, 0 passed, 1 failed, 18 classified
+`unsupported-property-visibility-metadata`.
+
+Current branch selected the same 19 rows: 12 runnable, 12 passed, 0 failed,
+7 classified (`unsupported-magic-method-metadata` 2,
+`unsupported-method-visibility-metadata` 2,
+`unsupported-property-visibility-metadata` 2, `unsupported-internal` 1).
+Focused command:
+`PHPT_PROGRESS_DIR=.runtime/ptn-xcmz-row-pack-final tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-xcmz-property-object-metadata-row-pack.txt`.
+
+Newly passing broad rows:
+
+- `Zend/tests/bug26010.phpt`
+- `Zend/tests/bug27798.phpt`
+- `Zend/tests/bug35509.phpt`
+- `ext/standard/tests/array/007.phpt`
+- `ext/standard/tests/array/array_column_property_visibility.phpt`
+- `ext/standard/tests/array/array_intersect_1.phpt`
+- `ext/standard/tests/array/array_udiff_assoc_basic.phpt`
+- `ext/standard/tests/array/array_udiff_basic.phpt`
+- `ext/standard/tests/array/array_udiff_uassoc_basic.phpt`
+- `ext/standard/tests/array/array_uintersect_assoc_basic.phpt`
+- `ext/standard/tests/array/array_uintersect_basic.phpt`
+- `ext/standard/tests/array/array_uintersect_uassoc_basic.phpt`
+
+Implemented behavior: public/non-public instance property metadata remains
+runnable while non-public static property metadata stays classified;
+`array_column()` object property extraction now uses modeled `__isset()` plus
+`__get()` for inaccessible properties; plain `get_object_vars()` exports
+properties visible in the current class scope; direct `parent::method()` calls
+inside instance methods dispatch through the existing scoped method helper.
+Unbraced `$object->property` interpolation in double-quoted strings now parses
+as a property fetch.
+
+The rebased full broad 1k rerun was attempted with
+`tools/run-phpt-baseline.sh --tier 1000 --out-dir .runtime/ptn-xcmz-broad-final`
+at `20260614T183916Z`, but `run-bounded-phpt.sh` blocked in classifier
+`pipe_read` after 400 rows and before PHPT execution. The dashboard
+`1k-baseline` row remains the last completed broad measurement (`ptn-ouhx`,
+419 passing).
 
 ## 2026-06-14 ptn-55u0 Broad Array-Unpack Row Pack
 

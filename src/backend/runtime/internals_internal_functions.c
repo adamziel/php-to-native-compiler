@@ -3511,7 +3511,13 @@ static void ptn_array_column_key_free(PtnArrayColumnKey key) {
     free(key.property_name);
 }
 
-static int ptn_array_column_lookup(PtnValue row, PtnArrayColumnKey key, PtnValue *value_out) {
+static int ptn_array_column_lookup(
+    PtnRuntime *runtime,
+    PtnValue row,
+    PtnArrayColumnKey key,
+    size_t line,
+    PtnValue *value_out
+) {
     row = ptn_value_deref(row);
     if (key.is_null) {
         *value_out = ptn_value_clone_deref(row);
@@ -3528,23 +3534,36 @@ static int ptn_array_column_lookup(PtnValue row, PtnArrayColumnKey key, PtnValue
     }
 
     if (row.type == PTN_OBJECT) {
-        PtnArrayKey property_key = ptn_array_string_key(key.property_name);
-        PtnArrayEntry *entry = ptn_array_entry_for_key(row.as.object->properties, property_key);
-        ptn_array_key_free(property_key);
-        if (entry == NULL) {
-            return 0;
+        PtnLookupResult lookup =
+            ptn_object_property_lookup_quiet(runtime, row, key.property_name, NULL, line);
+        if (lookup.exists) {
+            *value_out = lookup.value;
+            return 1;
         }
-        *value_out = ptn_value_clone_deref(entry->value);
-        return 1;
+        if (
+            runtime != NULL &&
+            runtime->magic_property_read != NULL &&
+            runtime->magic_property_read(runtime, row, key.property_name, line, value_out)
+        ) {
+            return 1;
+        }
+        return 0;
     }
 
     return 0;
 }
 
-static void ptn_array_column_add_value(PtnValue *result, PtnValue row, PtnArrayColumnKey index_key, PtnValue value) {
+static void ptn_array_column_add_value(
+    PtnRuntime *runtime,
+    PtnValue *result,
+    PtnValue row,
+    PtnArrayColumnKey index_key,
+    size_t line,
+    PtnValue value
+) {
     if (!index_key.is_null) {
         PtnValue index_value;
-        if (ptn_array_column_lookup(row, index_key, &index_value)) {
+        if (ptn_array_column_lookup(runtime, row, index_key, line, &index_value)) {
             PtnArrayKey result_key = ptn_array_key_from_value(index_value);
             ptn_value_destroy(&index_value);
             ptn_array_set_entry(result->as.array, result_key, value);
@@ -3566,10 +3585,10 @@ static PtnValue ptn_internal_array_column(PtnRuntime *runtime, size_t argc, cons
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < array->len; i++) {
         PtnValue value;
-        if (!ptn_array_column_lookup(array->entries[i].value, column_key, &value)) {
+        if (!ptn_array_column_lookup(runtime, array->entries[i].value, column_key, line, &value)) {
             continue;
         }
-        ptn_array_column_add_value(&result, array->entries[i].value, index_key, value);
+        ptn_array_column_add_value(runtime, &result, array->entries[i].value, index_key, line, value);
     }
 
     ptn_array_column_key_free(column_key);
@@ -13048,6 +13067,7 @@ static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const Ptn
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -13193,6 +13213,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_class", 0, 1, ptn_internal_get_class },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
+        { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
         { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
         { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getenv", 0, 2, ptn_internal_getenv },
@@ -13729,6 +13750,47 @@ static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const P
     }
     ptn_throw_exception(runtime, "TypeError", message);
     return ptn_null();
+}
+
+static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue target = ptn_value_deref(args[0]);
+    if (target.type != PTN_OBJECT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "get_object_vars(): Argument #1 ($object) must be of type object, %s given",
+            ptn_offset_container_type_name(target)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnObject *object = target.as.object;
+    const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (!ptn_object_property_visible_for_foreach(runtime, object, entry->key, access_scope)) {
+            continue;
+        }
+        PtnArrayKey result_key = ptn_array_key_clone(entry->key);
+        if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+            const PtnObjectPropertyMetadata *metadata =
+                ptn_object_property_metadata(object, entry->key.as.string);
+            if (metadata != NULL) {
+                ptn_array_key_free(result_key);
+                result_key = ptn_array_string_key(metadata->display_name);
+            }
+        }
+        ptn_array_set_entry(result.as.array, result_key, ptn_value_clone_deref(entry->value));
+    }
+    return result;
 }
 
 static void ptn_throw_get_parent_class_type_error(PtnRuntime *runtime, PtnValue value) {

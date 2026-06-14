@@ -1,0 +1,20 @@
+# bucket: manifest rows=19
+Zend/tests/__debugInfo_reference.phpt
+Zend/tests/access_modifiers/access_modifiers_011.phpt
+Zend/tests/assign_ref_to_overloaded_prop.phpt
+Zend/tests/bug21888.phpt
+Zend/tests/bug26010.phpt
+Zend/tests/bug27798.phpt
+Zend/tests/bug33257.phpt
+Zend/tests/bug35393.phpt
+Zend/tests/bug35509.phpt
+Zend/tests/bug38779.phpt
+ext/standard/tests/array/007.phpt
+ext/standard/tests/array/array_column_property_visibility.phpt
+ext/standard/tests/array/array_intersect_1.phpt
+ext/standard/tests/array/array_udiff_assoc_basic.phpt
+ext/standard/tests/array/array_udiff_basic.phpt
+ext/standard/tests/array/array_udiff_uassoc_basic.phpt
+ext/standard/tests/array/array_uintersect_assoc_basic.phpt
+ext/standard/tests/array/array_uintersect_basic.phpt
+ext/standard/tests/array/array_uintersect_uassoc_basic.phpt
