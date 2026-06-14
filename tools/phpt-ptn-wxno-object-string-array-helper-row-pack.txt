@@ -1,0 +1,30 @@
+# Broad 1k object-string array helper row pack for ptn-wxno.
+#
+# Source: .runtime/ptn-wxno-broad-before-progress/excluded-20260614T220518Z/unsupported-object-string-conversion-metadata.txt
+# Selection: broad 1k rows classified as unsupported-object-string-conversion-metadata
+# on the current base; the same rows pass with PTN_PHPT_CLASSIFY=0.
+ext/standard/tests/array/array_diff_key_variation1.phpt
+ext/standard/tests/array/array_diff_key_variation2.phpt
+ext/standard/tests/array/array_diff_uassoc_variation1.phpt
+ext/standard/tests/array/array_diff_uassoc_variation2.phpt
+ext/standard/tests/array/array_diff_ukey_variation1.phpt
+ext/standard/tests/array/array_diff_ukey_variation2.phpt
+ext/standard/tests/array/array_intersect_key_variation1.phpt
+ext/standard/tests/array/array_intersect_key_variation2.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation1.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation2.phpt
+ext/standard/tests/array/array_intersect_ukey_variation1.phpt
+ext/standard/tests/array/array_intersect_ukey_variation2.phpt
+ext/standard/tests/array/array_map_variation4.phpt
+ext/standard/tests/array/array_map_variation5.phpt
+ext/standard/tests/array/array_udiff_assoc_variation1.phpt
+ext/standard/tests/array/array_udiff_assoc_variation2.phpt
+ext/standard/tests/array/array_udiff_uassoc_variation1.phpt
+ext/standard/tests/array/array_udiff_uassoc_variation2.phpt
+ext/standard/tests/array/array_udiff_variation1.phpt
+ext/standard/tests/array/array_udiff_variation2.phpt
+ext/standard/tests/array/array_uintersect_assoc_variation1.phpt
+ext/standard/tests/array/array_uintersect_assoc_variation2.phpt
+ext/standard/tests/array/array_uintersect_uassoc_variation1.phpt
+ext/standard/tests/array/array_uintersect_uassoc_variation2.phpt
+ext/standard/tests/array/array_uintersect_variation1.phpt

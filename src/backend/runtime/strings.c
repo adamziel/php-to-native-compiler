@@ -362,6 +362,46 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
     return ptn_string_operand_owned_len(ptn_duplicate_string_len(buffer, (size_t)written), (size_t)written);
 }
 
+static PTN_UNUSED int ptn_tostring_return_value_is_allowed(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_STRING) {
+        return 1;
+    }
+    if (runtime != NULL && runtime->strict_types) {
+        return 0;
+    }
+    return value.type == PTN_BOOL || value.type == PTN_INT || value.type == PTN_FLOAT;
+}
+
+static PTN_UNUSED const char *ptn_tostring_return_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            return "null";
+        case PTN_BOOL:
+            return "bool";
+        case PTN_INT:
+            return "int";
+        case PTN_FLOAT:
+            return "float";
+        case PTN_STRING:
+            return "string";
+        case PTN_RESOURCE:
+            return "resource";
+        case PTN_ARRAY:
+            return "array";
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_REFERENCE:
+            return "reference";
+    }
+    return "unknown";
+}
+
 static PTN_UNUSED int ptn_try_object_to_string_operand(
     PtnRuntime *runtime,
     PtnValue value,
@@ -380,6 +420,40 @@ static PTN_UNUSED int ptn_try_object_to_string_operand(
     }
 
     PtnValue result = runtime->method_dispatch(runtime, value, "__toString", 0, NULL, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        *out = ptn_string_operand_borrowed("");
+        return 1;
+    }
+    if (!ptn_tostring_return_value_is_allowed(runtime, result)) {
+        const char *return_type = ptn_tostring_return_type_name(result);
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s::__toString(): Return value must be of type string, %s returned",
+            value.as.object->class_name,
+            return_type
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s::__toString(): Return value must be of type string, %s returned",
+            value.as.object->class_name,
+            return_type
+        );
+        ptn_value_destroy(&result);
+        ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+        free(message);
+        *out = ptn_string_operand_borrowed("");
+        return 1;
+    }
     PtnStringOperand result_string = ptn_value_to_string_operand(result);
     char *copy = ptn_duplicate_string_len(result_string.data, result_string.len);
     *out = ptn_string_operand_owned_len(copy, result_string.len);

@@ -839,21 +839,26 @@ fn phpt_classifier_keeps_get_object_vars_runnable() {
 }
 
 #[test]
-fn phpt_classifier_splits_magic_method_metadata_blockers() {
+fn phpt_classifier_keeps_object_string_array_helpers_runnable() {
     let classification = classify(
         "--TEST--\nmagic tostring\n--FILE--\n<?php\nclass Box { public function __toString() { return 'box'; } }\narray_udiff([new Box()], [new Box()], fn($a, $b) => 0);\n--EXPECT--\n",
     );
-    assert!(
-        classification.starts_with("unsupported-object-string-conversion-metadata\t"),
-        "{classification:?}"
-    );
-    assert!(
-        classification.contains(
-            "requires object-to-string conversion through array key or comparator helpers"
-        ),
-        "{classification:?}"
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
     );
 
+    let classification = classify(
+        "--TEST--\nmagic tostring array_map\n--FILE--\n<?php\nclass Box { public function __toString() { return 'box'; } }\narray_map(fn($value) => (string) $value, [new Box()]);\n--EXPECT--\n",
+    );
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
+fn phpt_classifier_splits_magic_method_metadata_blockers() {
     let cases = [
         (
             "property magic hook",

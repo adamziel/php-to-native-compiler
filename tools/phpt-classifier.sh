@@ -1338,14 +1338,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /function[[:space:]]+__tostring[[:space:]]*\(/) {
                 object_string_seen = 1
             }
-            if (line ~ /(^|[^[:alnum:]_$])(array_diff_key|array_diff_uassoc|array_diff_ukey|array_intersect_key|array_intersect_uassoc|array_intersect_ukey|array_udiff|array_udiff_assoc|array_udiff_uassoc|array_uintersect|array_uintersect_assoc|array_uintersect_uassoc)[[:space:]]*\(/) {
-                ptn_mark_object_string_unsupported("requires object-to-string conversion through array key or comparator helpers, outside PTN modeled object-string array helper subset")
-            }
-            if (line ~ /(^|[^[:alnum:]_$])array_map[[:space:]]*\(/) {
-                if (ptn_path !~ /ext\/standard\/tests\/array\/array_map_variation17\.phpt$/) {
-                    ptn_mark_object_string_unsupported("requires object-to-string conversion through array callback helpers, outside PTN modeled object-string callback subset")
-                }
-            }
             if (line ~ /function[[:space:]]+__get[[:space:]]*\(/) {
                 magic_get_seen = 1
             }

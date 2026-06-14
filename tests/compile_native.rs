@@ -4909,6 +4909,32 @@ class StringCapable {
     }
 }
 class PlainObject {}
+class ReturnsInt {
+    public function __toString() {
+        return 123;
+    }
+}
+class ReturnsFalse {
+    public function __toString() {
+        return false;
+    }
+}
+class ReturnsArray {
+    public function __toString() {
+        return [];
+    }
+}
+class ReturnsNull {
+    public function __toString() {
+        return null;
+    }
+}
+class ReturnedObject {}
+class ReturnsObject {
+    public function __toString() {
+        return new ReturnedObject();
+    }
+}
 
 $value = new StringCapable();
 var_dump(strlen($value));
@@ -4924,6 +4950,15 @@ try {
     var_dump((string) new PlainObject());
 } catch (Error $e) {
     echo $e->getMessage(), \"\\n\";
+}
+echo (string) new ReturnsInt(), \"\\n\";
+echo \"[\", (string) new ReturnsFalse(), \"]\\n\";
+foreach ([new ReturnsArray(), new ReturnsNull(), new ReturnsObject()] as $bad) {
+    try {
+        echo (string) $bad;
+    } catch (TypeError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
 }
 ",
     )
@@ -4942,6 +4977,11 @@ try {
             "prefix:Hello, world\n",
             "Object of class stdClass could not be converted to string\n",
             "Object of class PlainObject could not be converted to string\n",
+            "123\n",
+            "[]\n",
+            "ReturnsArray::__toString(): Return value must be of type string, array returned\n",
+            "ReturnsNull::__toString(): Return value must be of type string, null returned\n",
+            "ReturnsObject::__toString(): Return value must be of type string, ReturnedObject returned\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -4949,6 +4989,41 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("runtime.method_dispatch = ptn_call_declared_method;"));
     assert!(c_source.contains("ptn_value_to_string_operand_with_runtime"));
+}
+
+#[test]
+fn compile_strict_object_to_string_return_type_to_native_binary() {
+    let root = temp_dir("ptn-native-strict-object-to-string-return-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strict-object-to-string-return-type.php");
+    let output = root.join("strict-object-to-string-return-type-bin");
+    fs::write(
+        &input,
+        "<?php
+declare(strict_types=1);
+class ReturnsInt {
+    public function __toString() {
+        return 123;
+    }
+}
+try {
+    echo (string) new ReturnsInt();
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ReturnsInt::__toString(): Return value must be of type string, int returned\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
