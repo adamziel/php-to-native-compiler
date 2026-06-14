@@ -306,6 +306,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_CLASS_METADATA_SPLIT_PTN_0FMH_2026-06-14.md`: broad
   1k class/object metadata classifier split, focused 143-row manifest, and
   current magic-method/visibility/property metadata blocker counts.
+- `docs/PHPT_BROAD_1K_CLASS_OBJECT_ATTRIBUTE_CURRENT_PTN_FT4R_2026-06-14.md`:
+  current broad 1k combined class/object/attribute metadata blocker map with a
+  committed 284-row focused manifest.
 - `docs/PHPT_BROAD_1K_REQUEST_SAPI_FRONTIER_2026-06-14.md`: broad 1k
   request/SAPI input boundary blocker map and raw focused evidence.
 - `docs/PHPT_BROAD_1K_RUNTIME_INI_FRONTIER_2026-06-14.md`: broad 1k
