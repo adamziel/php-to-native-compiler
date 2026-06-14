@@ -3501,23 +3501,27 @@ class Box {
 }
 
 #[test]
-fn parser_rejects_unsupported_non_public_methods() {
-    let cases = [
-        (
-            "<?php class Box { private function secret() {} }",
-            "non-public class methods are unsupported",
-        ),
-        (
-            "<?php class Box { protected function guarded() {} }",
-            "non-public class methods are unsupported",
-        ),
-    ];
+fn parser_accepts_non_public_method_visibility_metadata() {
+    let program = parser::parse(
+        "<?php
+class Box {
+    private function secret() {}
+    protected static function guarded() {}
+}
+",
+    )
+    .unwrap();
 
-    for (source, message) in cases {
-        let error = parser::parse(source).unwrap_err();
-        assert_eq!(error.message, message);
-        assert_eq!(error.kind, DiagnosticKind::Fatal);
-    }
+    assert_eq!(program.classes[0].methods.len(), 2);
+    assert_eq!(
+        program.classes[0].methods[0].visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(
+        program.classes[0].methods[1].visibility,
+        PropertyVisibility::Protected
+    );
+    assert!(program.classes[0].methods[1].is_static);
 }
 
 #[test]
@@ -27225,6 +27229,109 @@ echo \"done\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source
         .contains("The magic method MagicVisibility::__unset() must have public visibility"));
+}
+
+#[test]
+fn compile_non_public_method_visibility_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-non-public-method-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-public-method-visibility.php");
+    let output = root.join("non-public-method-visibility-bin");
+    fs::write(
+        &input,
+        "<?php
+class Base {
+    private function priv() { echo \"base-private\\n\"; }
+    protected function prot() { echo \"base-protected\\n\"; }
+    private static function statPriv() { echo \"base-static-private\\n\"; }
+    protected static function statProt() { echo \"base-static-protected\\n\"; }
+
+    public function inside() {
+        $this->priv();
+        $this->prot();
+        self::statPriv();
+        self::statProt();
+        var_dump(is_callable([$this, 'priv']));
+        var_dump(is_callable([self::class, 'statPriv']));
+    }
+}
+
+class Child extends Base {
+    public function insideChild() {
+        $this->prot();
+        self::statProt();
+        var_dump(is_callable([$this, 'prot']));
+        var_dump(is_callable([Base::class, 'statProt']));
+        try { $this->priv(); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }
+        try { Base::statPriv(); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }
+    }
+}
+
+class Peer extends Base {
+    protected static function statProt() { echo \"peer-static-protected\\n\"; }
+}
+
+class Sibling extends Base {
+    public static function probePeer() {
+        var_dump(is_callable('Peer::statProt'));
+        Peer::statProt();
+    }
+}
+
+class Magic {
+    private function hidden() { echo \"hidden\\n\"; }
+    public function __call($name, $args) { echo \"magic:$name\\n\"; }
+}
+
+$child = new Child();
+$child->inside();
+$child->insideChild();
+Sibling::probePeer();
+var_dump(method_exists($child, 'priv'));
+var_dump(is_callable([$child, 'priv']));
+var_dump(is_callable([Base::class, 'statProt']));
+try { $child->prot(); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }
+try { Base::statPriv(side_effect()); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }
+(new Magic())->hidden();
+function side_effect() { echo \"side-effect\\n\"; return 1; }
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "base-private\n",
+            "base-protected\n",
+            "base-static-private\n",
+            "base-static-protected\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "base-protected\n",
+            "base-static-protected\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "Call to private method Base::priv() from scope Child\n",
+            "Call to private method Base::statPriv() from scope Child\n",
+            "bool(true)\n",
+            "peer-static-protected\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "Call to protected method Base::prot() from global scope\n",
+            "Call to private method Base::statPriv() from global scope\n",
+            "magic:hidden\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_method_visibility_allows"));
+    assert!(c_source.contains("ptn_throw_declared_method_visibility_error"));
 }
 
 #[test]

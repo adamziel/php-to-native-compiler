@@ -704,6 +704,7 @@ fn phpt_classifier_keeps_supported_class_contract_rows_runnable() {
         "--TEST--\nduplicate property visibility\n--FILE--\n<?php\nclass Base { public public final public final $value; }\n--EXPECTF--\n",
         "--TEST--\nfinal abstract method\n--FILE--\n<?php\nclass Base { final abstract function run(); }\n--EXPECTF--\n",
         "--TEST--\nfinal abstract class\n--FILE--\n<?php\nfinal abstract class Base { private function hidden() {} }\n--EXPECTF--\n",
+        "--TEST--\nnon-public method\n--FILE--\n<?php\nclass Box { private function hidden() {} protected static function guarded() {} }\n--EXPECT--\n",
     ] {
         assert_eq!(
             classify(source),

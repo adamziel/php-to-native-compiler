@@ -774,6 +774,22 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
     exit(255);
 }
 
+static PTN_UNUSED void ptn_throw_exception_owned_message_at(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message,
+    const char *path,
+    size_t line
+) {
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = ptn_exception_new_owned(runtime, class_name, message, path, line);
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+}
+
 static PTN_UNUSED int ptn_object_is_declared_throwable(PtnRuntime *runtime, PtnObject *object) {
     return runtime->class_scope_allows != NULL &&
         (runtime->class_scope_allows(object->class_name, "Exception") ||
