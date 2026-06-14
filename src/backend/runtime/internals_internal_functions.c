@@ -35,6 +35,7 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             break;
         case PTN_ARRAY:
+            ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
             fputs("Array", stdout);
             break;
         case PTN_OBJECT: {
@@ -1250,6 +1251,117 @@ static PtnValue ptn_internal_print_r(PtnRuntime *runtime, size_t argc, const Ptn
     fwrite(buffer.data, 1, buffer.len, stdout);
     free(buffer.data);
     return ptn_bool(1);
+}
+
+static void ptn_serialize_append_value(PtnStringBuffer *buffer, PtnValue value, PtnDumpSeenArrays *seen);
+
+static void ptn_serialize_append_string(PtnStringBuffer *buffer, const char *data, size_t len) {
+    ptn_string_buffer_append_format(buffer, "s:%zu:\"", len);
+    ptn_string_buffer_append_len(buffer, data, len);
+    ptn_string_buffer_append(buffer, "\";");
+}
+
+static void ptn_serialize_append_key(PtnStringBuffer *buffer, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        ptn_string_buffer_append_format(buffer, "i:%lld;", (long long)key.as.integer);
+    } else {
+        ptn_serialize_append_string(buffer, key.as.string, key.string_len);
+    }
+}
+
+static void ptn_serialize_append_array(PtnStringBuffer *buffer, PtnArray *array, PtnDumpSeenArrays *seen) {
+    if (ptn_dump_seen_arrays_contains(seen, array)) {
+        ptn_string_buffer_append(buffer, "N;");
+        return;
+    }
+
+    ptn_string_buffer_append_format(buffer, "a:%zu:{", array->len);
+    ptn_dump_seen_arrays_push(seen, array);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        ptn_serialize_append_key(buffer, entry->key);
+        ptn_serialize_append_value(buffer, entry->value, seen);
+    }
+    ptn_dump_seen_arrays_pop(seen);
+    ptn_string_buffer_append_char(buffer, '}');
+}
+
+static void ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *object, PtnDumpSeenArrays *seen) {
+    if (ptn_dump_seen_objects_contains(seen, object)) {
+        ptn_string_buffer_append(buffer, "N;");
+        return;
+    }
+
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":%zu:{",
+        strlen(object->class_name),
+        object->class_name,
+        object->properties->len
+    );
+    ptn_dump_seen_objects_push(seen, object);
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        ptn_serialize_append_key(buffer, entry->key);
+        ptn_serialize_append_value(buffer, entry->value, seen);
+    }
+    ptn_dump_seen_objects_pop(seen);
+    ptn_string_buffer_append_char(buffer, '}');
+}
+
+static void ptn_serialize_append_value(PtnStringBuffer *buffer, PtnValue value, PtnDumpSeenArrays *seen) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_string_buffer_append(buffer, "N;");
+            break;
+        case PTN_BOOL:
+            ptn_string_buffer_append_format(buffer, "b:%d;", value.as.boolean ? 1 : 0);
+            break;
+        case PTN_INT:
+            ptn_string_buffer_append_format(buffer, "i:%lld;", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT: {
+            char formatted[64];
+            ptn_format_var_dump_float(value.as.floating, formatted, sizeof(formatted));
+            ptn_string_buffer_append_format(buffer, "d:%s;", formatted);
+            break;
+        }
+        case PTN_STRING:
+            ptn_serialize_append_string(
+                buffer,
+                (const char *)value.as.string.data,
+                value.as.string.len
+            );
+            break;
+        case PTN_RESOURCE:
+            ptn_string_buffer_append(buffer, "i:0;");
+            break;
+        case PTN_ARRAY:
+            ptn_serialize_append_array(buffer, value.as.array, seen);
+            break;
+        case PTN_OBJECT:
+            ptn_serialize_append_object(buffer, value.as.object, seen);
+            break;
+        case PTN_EXCEPTION:
+        case PTN_CLOSURE:
+        case PTN_REFERENCE:
+            ptn_string_buffer_append(buffer, "N;");
+            break;
+    }
+}
+
+static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringBuffer buffer;
+    PtnDumpSeenArrays seen;
+    ptn_string_buffer_init(&buffer);
+    ptn_dump_seen_arrays_init(&seen);
+    ptn_serialize_append_value(&buffer, args[0], &seen);
+    ptn_dump_seen_arrays_free(&seen);
+    return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
 static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value, size_t indent);
@@ -6087,7 +6199,7 @@ static PtnValue ptn_internal_implode_named(
 
         PtnValue entry_value = ptn_value_deref(array->entries[i].value);
         if (entry_value.type == PTN_ARRAY) {
-            ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+            ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
         }
         PtnStringOperand part = ptn_value_to_string_operand_with_runtime(runtime, entry_value, line);
         ptn_string_buffer_append_len(&buffer, part.data, part.len);
@@ -6114,6 +6226,7 @@ typedef struct {
     int space_sign;
     int zero_pad;
     int alternate;
+    char pad_char;
     int has_width;
     int width;
     int has_precision;
@@ -6254,8 +6367,9 @@ static void ptn_sprintf_append_string(PtnStringBuffer *buffer, PtnStringOperand 
     }
     size_t width = spec->has_width && spec->width > 0 ? (size_t)spec->width : 0;
     size_t padding = width > len ? width - len : 0;
+    char pad = spec->pad_char != '\0' ? spec->pad_char : (spec->zero_pad ? '0' : ' ');
     if (!spec->left_adjust) {
-        ptn_sprintf_append_repeated(buffer, ' ', padding);
+        ptn_sprintf_append_repeated(buffer, pad, padding);
     }
     ptn_string_buffer_append_len(buffer, string.data, len);
     if (spec->left_adjust) {
@@ -6266,7 +6380,7 @@ static void ptn_sprintf_append_string(PtnStringBuffer *buffer, PtnStringOperand 
 static void ptn_sprintf_append_char(PtnStringBuffer *buffer, int64_t value, const PtnSprintfSpec *spec) {
     size_t width = spec->has_width && spec->width > 0 ? (size_t)spec->width : 0;
     size_t padding = width > 1 ? width - 1 : 0;
-    char pad = spec->zero_pad && !spec->left_adjust ? '0' : ' ';
+    char pad = spec->pad_char != '\0' ? spec->pad_char : (spec->zero_pad && !spec->left_adjust ? '0' : ' ');
     if (!spec->left_adjust) {
         ptn_sprintf_append_repeated(buffer, pad, padding);
     }
@@ -6340,6 +6454,22 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
 
         i++;
         PtnSprintfSpec spec = {0};
+        size_t selected_arg_index = 0;
+        int has_positional_arg = 0;
+        size_t positional_scan = i;
+        if (positional_scan < format.len && isdigit((unsigned char)format.data[positional_scan])) {
+            int position = ptn_sprintf_parse_decimal(format.data, format.len, &positional_scan);
+            if (positional_scan < format.len && format.data[positional_scan] == '$') {
+                if (position <= 0) {
+                    ptn_string_operand_free(format);
+                    free(output.data);
+                    ptn_throw_exception(runtime, "ValueError", "Argument number specifier must be greater than zero");
+                }
+                selected_arg_index = (size_t)position;
+                has_positional_arg = 1;
+                i = positional_scan + 1;
+            }
+        }
         while (i < format.len) {
             switch (format.data[i]) {
                 case '-':
@@ -6361,6 +6491,15 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                 case '#':
                     spec.alternate = 1;
                     i++;
+                    continue;
+                case '\'':
+                    if (i + 1 >= format.len) {
+                        ptn_string_operand_free(format);
+                        free(output.data);
+                        ptn_throw_exception(runtime, "ValueError", "Missing padding character");
+                    }
+                    spec.pad_char = format.data[i + 1];
+                    i += 2;
                     continue;
                 default:
                     break;
@@ -6387,19 +6526,22 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
         }
 
         char conversion = format.data[i];
-        if (arg_index >= argc) {
+        if (!has_positional_arg) {
+            selected_arg_index = arg_index++;
+        }
+        if (selected_arg_index >= argc) {
             ptn_string_operand_free(format);
             free(output.data);
-            ptn_emit_argument_count_error(&runtime->diagnostics, function_name, arg_index + 1, argc);
+            ptn_emit_argument_count_error(&runtime->diagnostics, function_name, selected_arg_index + 1, argc);
             exit(255);
         }
-        PtnValue arg = args[arg_index++];
+        PtnValue arg = args[selected_arg_index];
 
         switch (conversion) {
             case 's': {
                 PtnValue value = ptn_value_deref(arg);
                 if (value.type == PTN_ARRAY) {
-                    ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+                    ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
                 }
                 PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
                 ptn_sprintf_append_string(&output, string, &spec);
@@ -7788,6 +7930,20 @@ static PtnStringOperand ptn_internal_expect_str_replace_arg(
     size_t line
 ) {
     value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "str_replace(): Passing null to parameter #%zu ($%s) of type array|string is deprecated",
+            position,
+            argument_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    }
     if (
         value.type == PTN_RESOURCE ||
         value.type == PTN_CLOSURE ||
@@ -7837,7 +7993,7 @@ static void ptn_str_replace_string_list_free(PtnStrReplaceStringList *list) {
 static PtnStringOperand ptn_str_replace_entry_to_string(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
-        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+        ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
     }
     return ptn_value_to_string_operand_with_runtime(runtime, value, line);
 }
@@ -12691,6 +12847,21 @@ static PtnValue ptn_internal_floatval(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_cast_float(args[0]);
 }
 
+static PtnValue ptn_internal_strval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type == PTN_ARRAY) {
+        ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    PtnValue result = ptn_owned_string_len(
+        ptn_duplicate_string_len(string.data, string.len),
+        string.len
+    );
+    ptn_string_operand_free(string);
+    return result;
+}
+
 static PtnValue ptn_internal_intval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)line;
@@ -13329,6 +13500,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
+        { "serialize", 1, 1, ptn_internal_serialize },
         { "set_include_path", 1, 1, ptn_internal_set_include_path },
         { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
@@ -13372,6 +13544,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strtolower", 1, 1, ptn_internal_strtolower },
         { "strtoupper", 1, 1, ptn_internal_strtoupper },
         { "strtr", 2, 3, ptn_internal_strtr },
+        { "strval", 1, 1, ptn_internal_strval },
         { "substr", 2, 3, ptn_internal_substr },
         { "substr_count", 2, 4, ptn_internal_substr_count },
         { "touch", 1, 3, ptn_internal_touch },
