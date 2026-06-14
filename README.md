@@ -387,6 +387,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_FILESYSTEM_PATH_PROCESS_FRONTIER_2026-06-14.md`: focused
   filesystem/path/process evidence showing runnable path metadata rows green
   and residual process-boundary/cleanup blocker counts.
+- `docs/PHPT_FILESYSTEM_PATH_PROCESS_FRONTIER_PTN_WC6B_2026-06-14.md`:
+  current `ptn-wc6b` filesystem/path/process blocker refresh with 13 runnable
+  rows green and the 25-row native child-process boundary isolated.
 - `docs/PHPT_BROAD_1K_RUNTIME_CONFIG_FRONTIER_2026-06-14.md`: broad 1k
   non-request INI/runtime-configuration blocker map and focused manifest.
 - `docs/PHPT_BROAD_1K_ASSERTION_RUNTIME_FRONTIER_2026-06-14.md`: broad 1k
