@@ -210,8 +210,12 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   current broad 1k diagnostics/assertion runtime blocker map and focused
   manifest.
 - `docs/PHPT_BROAD_1K_UNSUPPORTED_LANGUAGE_FRONTIER_PTN_A0R0_2026-06-14.md`:
-  earlier broad 1k unsupported-language bucket split, with 288 rows mapped by
-  generic parser/runtime surface.
+  earlier broad 1k unsupported-language bucket split before the explicit
+  attribute-metadata split, with 288 rows mapped by generic parser/runtime
+  surface.
+- `docs/PHPT_BROAD_1K_UNSUPPORTED_LANGUAGE_RESIDUAL_PTN_ROTK_2026-06-14.md`:
+  pre-`ptn-18tp` broad 1k post-attribute-split unsupported-language residual
+  manifest and blocker map, with 147 rows classified out.
 - `docs/PHPT_BROAD_1K_LANGUAGE_CLASSIFIER_SPLIT_PTN_18TP_2026-06-14.md`:
   current broad 1k language-surface classifier split, moving the remaining
   147-row aggregate into semantic categories while attribute metadata remains
@@ -248,7 +252,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   1k magic method metadata blocker map.
 - `docs/PHPT_BROAD_1K_MAGIC_OBJECT_CONVERSION_FRONTIER_2026-06-14.md`: broad
   1k magic-method/object-conversion blocker map and raw focused evidence.
-- `docs/PHPT_BROAD_1K_UNSUPPORTED_LANGUAGE_FRONTIER_2026-06-14.md`: current
+- `docs/PHPT_BROAD_1K_UNSUPPORTED_LANGUAGE_FRONTIER_2026-06-14.md`: earlier
   broad 1k unsupported-language blocker map and focused classifier evidence.
 - `docs/PHPT_BROAD_1K_NONARRAY_CLASS_METADATA_FRONTIER_2026-06-14.md`: broad
   1k non-array class/object metadata blocker map and focused manifest.
