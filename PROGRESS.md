@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T03:42Z.
-Measured: `ptn-51ey` standard-array frontier map after `ptn-3a8d`.
+Refresh: 2026-06-14T03:50Z.
+Measured: `ptn-c8z6` after `ptn-51ey`.
 
 ## Dashboard
 
@@ -16,6 +16,7 @@ Measured: `ptn-51ey` standard-array frontier map after `ptn-3a8d`.
 | PHPT focused array key/callback set rows | 75 | 38 | 37 |
 | PHPT focused array callback validation rows | 65 | 46 | 19 |
 | PHPT focused array diff/intersect rows | 61 | 58 | 3 |
+| PHPT broad diff/intersect comparator rows | 76 | 64 | 12 |
 | PHPT focused filesystem/path/process rows | 46 | 13 | 33 |
 | PHPT tests/basic+func+lang | 78 | 78 | 0 |
 | PHPT other rows | 8 | 8 | 0 |
@@ -34,23 +35,25 @@ Measured: `ptn-51ey` standard-array frontier map after `ptn-3a8d`.
 | PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT formatted string rows | 75 | 25 | 50 |
-| PHPT focused array predicate/find/first/last rows | 6 | 6 | 0 |
 | PHPT broad 1k baseline | 1000 | 265 | 735 |
 
 ## Remaining Exclusions
 
 - Bounded: 486 selected, 456 runnable, 30 excluded; 449 pass, 7 fail.
 - Broad 1k classify-only: 443/557; class declarations 78; attributes 141.
-- Standard-array frontier: 297 runnable rows; largest families are set/diff/
+- Standard-array frontier: 297 runnable; largest families are set/diff/
   intersect 76, covered `array_chunk()` 32, key helpers 21.
+- Diff/intersect: 76 selected, 64 pass, 12 fail; residuals are five
+  string/nested-array warnings and seven user-comparator rows.
 - Heredoc/nowdoc: 21 runnable, 49 metadata blockers; magic metadata 69.
-- Magic/object raw frontier: 69 rows, 20 pass, 49 fail without classification.
 - COW/reference: internal 17/72, foreach 31/103, reference-call 9/12.
 
 ## Verification
 
-`ptn-51ey`: broad 1k selected 1000 rows, kept 430 runnable, and excluded 570;
-focused standard-array classify-only selected 297 rows, all runnable.
+`ptn-c8z6`: diff/intersect PHPT `run-20260614T024433Z-manifest.log` records
+76 selected, 64 pass, 12 fail.
 
-`ptn-3a8d`: 69-row magic/object conversion frontier; classified run keeps all
-excluded. `ptn-knrm`: 69 magic metadata rows stay classified.
+`ptn-51ey`: broad 1k selected 1000 rows, kept 430 runnable, excluded 570;
+standard-array classify-only selected 297 rows, all runnable.
+
+`ptn-3a8d`: 69-row magic/object conversion frontier stays classified.

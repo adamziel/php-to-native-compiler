@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T03:42Z.
-Measured: `ptn-51ey` standard-array frontier map after `ptn-3a8d`.
+Last refresh: 2026-06-14T03:50Z.
+Measured: `ptn-c8z6` after `ptn-51ey`.
 
 ## Operating Goal
 
@@ -25,6 +25,7 @@ Source unit tests 3/3; Native/compiler Rust suite 718/718; Native smoke matrix 6
 | PHPT focused array key/callback set rows | 38/75 |
 | PHPT focused array callback validation rows | 46/65 |
 | PHPT focused array diff/intersect rows | 58/61 |
+| PHPT broad diff/intersect comparator rows | 64/76 |
 | PHPT focused filesystem/path/process rows | 13/46 |
 | PHPT tests/basic+func+lang | 78/78 |
 | PHPT other rows | 8/8 |
@@ -43,7 +44,6 @@ Source unit tests 3/3; Native/compiler Rust suite 718/718; Native smoke matrix 6
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | Post-merge COW gate | 26/26 |
 | PHPT formatted string rows | 25/75 |
-| PHPT focused array predicate/find/first/last rows | 6/6 |
 | PHPT broad 1k baseline | 265/1000 |
 
 ## Rules
