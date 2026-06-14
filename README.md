@@ -78,7 +78,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `zend_version()`, PHP version/build/platform constants, `PHP_SAPI`,
   `get_loaded_extensions()`, stable PHP locale constants, bounded
   `setlocale()`/`localeconv()` helpers, `spl_object_id()`/
-  `spl_object_hash()`, `get_parent_class()`, `get_called_class()`, Closure
+  `spl_object_hash()`, `get_class()`/`get_parent_class()` explicit operands
+  plus legacy no-argument lexical class scope, `get_called_class()`, Closure
   internal class metadata, Closure-backed `ReflectionFunction` count/name
   metadata, bounded class/interface/trait/property/method existence checks,
   abstract/final class metadata, interface constants, and

@@ -639,6 +639,7 @@ struct LoweringContext<'a> {
     source_file: String,
     source_dir: String,
     include_resolutions: &'a IncludeResolutionMap,
+    current_class_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -685,6 +686,7 @@ impl<'a> LoweringContext<'a> {
             source_file,
             source_dir,
             include_resolutions,
+            current_class_name: None,
         };
         for function in &program.functions {
             let parameters = function
@@ -734,7 +736,7 @@ impl<'a> LoweringContext<'a> {
         self.functions.push(FunctionDecl {
             name: "{closure}".to_string(),
             display_name: format!("{{closure:{}:{}}}", self.source_file, function.span.line),
-            class_name: None,
+            class_name: self.current_class_name.clone(),
             method_name: None,
             is_static: false,
             parameters,
@@ -810,7 +812,10 @@ impl<'a> LoweringContext<'a> {
                     is_anonymous: false,
                     body: Vec::new(),
                 });
+                let previous_class_name =
+                    std::mem::replace(&mut self.current_class_name, Some(class.name.clone()));
                 let body = self.lower_statements(&method.body);
+                self.current_class_name = previous_class_name;
                 self.functions[function_index].body = body;
                 MethodDecl {
                     name: method.name.clone(),

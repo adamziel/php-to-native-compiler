@@ -9280,6 +9280,99 @@ var_dump(function_exists(\"get_class\"));
 }
 
 #[test]
+fn compile_get_class_legacy_scope_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-get-class-legacy-scope-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-class-legacy-scope-edges.php");
+    let output = root.join("get-class-legacy-scope-edges-bin");
+    fs::write(
+        &input,
+        "<?php
+class Ancestor {
+}
+class Base extends Ancestor {
+    public function legacy() {
+        var_dump(get_class());
+        var_dump(get_parent_class());
+        $name = \"get_class\";
+        var_dump($name());
+        var_dump(call_user_func(\"get_parent_class\"));
+    }
+}
+class Child extends Base {
+    public static function staticScope() {
+        var_dump(get_class());
+        var_dump(get_parent_class());
+    }
+    public function closureScope() {
+        $fn = function () {
+            var_dump(get_class());
+            var_dump(get_parent_class());
+        };
+        $fn();
+    }
+}
+(new Child())->legacy();
+Child::staticScope();
+(new Child())->closureScope();
+try {
+    var_dump(get_class());
+} catch (Error $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+var_dump(get_parent_class());
+try {
+    get_parent_class(\"missing\");
+} catch (TypeError $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+try {
+    get_class(new stdClass, 1);
+} catch (ArgumentCountError $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nDeprecated: Calling get_class() without arguments is deprecated in ptn on line 6\n",
+            "string(4) \"Base\"\n",
+            "\nDeprecated: Calling get_parent_class() without arguments is deprecated in ptn on line 7\n",
+            "string(8) \"Ancestor\"\n",
+            "\nDeprecated: Calling get_class() without arguments is deprecated in ptn on line 9\n",
+            "string(4) \"Base\"\n",
+            "\nDeprecated: Calling get_parent_class() without arguments is deprecated in ptn on line 10\n",
+            "string(8) \"Ancestor\"\n",
+            "\nDeprecated: Calling get_class() without arguments is deprecated in ptn on line 15\n",
+            "string(5) \"Child\"\n",
+            "\nDeprecated: Calling get_parent_class() without arguments is deprecated in ptn on line 16\n",
+            "string(4) \"Base\"\n",
+            "\nDeprecated: Calling get_class() without arguments is deprecated in ptn on line 20\n",
+            "string(5) \"Child\"\n",
+            "\nDeprecated: Calling get_parent_class() without arguments is deprecated in ptn on line 21\n",
+            "string(4) \"Base\"\n",
+            "Error: get_class() without arguments must be called from within a class\n",
+            "bool(false)\n",
+            "TypeError: get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, string given\n",
+            "ArgumentCountError: get_class() expects at most 1 argument, 2 given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.current_class_name"));
+    assert!(c_source.contains("ptn_internal_get_class"));
+    assert!(c_source.contains("ptn_internal_get_parent_class"));
+}
+
+#[test]
 fn compile_spl_object_identity_intrinsics_to_native_binary() {
     let root = temp_dir("ptn-native-spl-object-identity-intrinsics");
     fs::create_dir_all(&root).unwrap();

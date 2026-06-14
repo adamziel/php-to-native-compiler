@@ -1143,7 +1143,10 @@ Post-RC architecture remains explicit rather than hidden:
   property names are exposed through bounded `property_exists()` metadata.
   Object class names are exposed through bounded `get_class($object)` for
   current object, closure, and exception values; non-object operands throw a
-  modeled `TypeError`. Current object, closure, and exception values receive
+  modeled `TypeError`. Legacy no-argument `get_class()`/`get_parent_class()`
+  calls resolve through lexical class scope, including dynamic calls and
+  `call_user_func()`, with PHP-shaped deprecations and top-level diagnostics.
+  Current object, closure, and exception values receive
   stable runtime object identities exposed through `spl_object_id()` and
   PHP-shaped `spl_object_hash()` strings; non-object operands throw modeled
   `TypeError`s. Declared and inherited public instance methods can be called

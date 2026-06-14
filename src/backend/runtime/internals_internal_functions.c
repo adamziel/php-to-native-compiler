@@ -11868,10 +11868,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "fwrite", 2, 3, ptn_internal_fwrite },
         { "get_called_class", 0, 0, ptn_internal_get_called_class },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
-        { "get_class", 1, 1, ptn_internal_get_class },
+        { "get_class", 0, 1, ptn_internal_get_class },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
-        { "get_parent_class", 1, 1, ptn_internal_get_parent_class },
+        { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
         { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getenv", 0, 2, ptn_internal_getenv },
         { "getmypid", 0, 0, ptn_internal_getmypid },
@@ -12356,8 +12356,23 @@ static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, 
 }
 
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)line;
+    if (argc == 0) {
+        if (runtime->current_class_name == NULL) {
+            ptn_throw_exception(
+                runtime,
+                "Error",
+                "get_class() without arguments must be called from within a class"
+            );
+            return ptn_null();
+        }
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Calling get_class() without arguments is deprecated",
+            line
+        );
+        return ptn_owned_string(ptn_duplicate_string(runtime->current_class_name));
+    }
+
     PtnValue value = ptn_value_deref(args[0]);
     switch (value.type) {
         case PTN_OBJECT:
@@ -12398,8 +12413,22 @@ static void ptn_throw_get_parent_class_type_error(PtnRuntime *runtime, PtnValue 
 }
 
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)line;
+    if (argc == 0) {
+        if (runtime->current_class_name == NULL) {
+            return ptn_bool(0);
+        }
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Calling get_parent_class() without arguments is deprecated",
+            line
+        );
+        const char *scope_parent_name = ptn_declared_class_parent_name(runtime->current_class_name);
+        if (scope_parent_name == NULL) {
+            return ptn_bool(0);
+        }
+        return ptn_owned_string(ptn_duplicate_string(scope_parent_name));
+    }
+
     PtnValue target = ptn_value_deref(args[0]);
     char *class_name = NULL;
     if (target.type == PTN_OBJECT) {

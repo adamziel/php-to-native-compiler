@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T07:03Z.
-Measured: `ptn-9isx`.
+Last refresh: 2026-06-14T07:08Z.
+Measured: `ptn-6ped`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Units 3/3; Native 728/728; Bounded 479/486; Zend 119/119; ext/standard PHPT 274/281; Array key/cb 38/75.
+Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard PHPT 274/281; Array key/cb 38/75.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Units | 3/3 |
-| Native | 728/728 |
+| Native | 729/729 |
 | Bounded | 479/486 |
 | Zend | 119/119 |
 | ext/standard PHPT | 274/281 |

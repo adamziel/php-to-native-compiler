@@ -472,7 +472,7 @@ fn emit_user_functions(
             out.push_str(&call_frame_parameter_count.to_string());
             out.push_str(", ptn_parameter_names);\n");
         }
-        if function.class_name.is_some() && !function.is_static {
+        if function.method_name.is_some() && !function.is_static {
             out.push_str("    runtime.has_current_receiver = 1;\n");
             out.push_str("    runtime.current_receiver = receiver;\n");
             out.push_str("    ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");

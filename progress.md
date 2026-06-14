@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T07:03Z.
+Last refresh: 2026-06-14T07:08Z.
 Source: `PROGRESS.md`
-Measured: `ptn-9isx`.
+Measured: `ptn-6ped`.
 
-Compact signal: Units 3/3; Native 728/728; Bounded 479/486; Zend 119/119; ext/standard PHPT 274/281; Array key/cb 38/75.
+Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard PHPT 274/281; Array key/cb 38/75.
 
 | Format / source | Passing |
 | --- | ---: |
 | Units | 3/3 |
-| Native | 728/728 |
+| Native | 729/729 |
 | Bounded | 479/486 |
 | Zend | 119/119 |
 | ext/standard PHPT | 274/281 |

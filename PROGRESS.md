@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-14T07:03Z.
-Measured: `ptn-9isx`.
+Refresh: 2026-06-14T07:08Z.
+Measured: `ptn-6ped`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Units | 3 | 3 | 0 |
-| Native | 728 | 728 | 0 |
+| Native | 729 | 729 | 0 |
 | Bounded | 486 | 479 | 7 |
 | Zend | 119 | 119 | 0 |
 | ext/standard PHPT | 281 | 274 | 7 |
