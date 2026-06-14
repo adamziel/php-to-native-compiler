@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T13:30Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; COW 69/103 passed.
+Refresh: 2026-06-14T13:59Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; COW 69/103 passed.
 
 ## Dashboard
 
@@ -71,6 +71,6 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |array_rand|7|6|1|
 |Zend-op/control|26|15|11|
 |Binary-key|1|1|0|
-|Runtime-config|54|0|54|
+|Runtime-config|54|10|44|
 |COW-gate|26|26|0|
-|1k-baseline|1000|265|735|
+|1k-baseline|1000|275|725|

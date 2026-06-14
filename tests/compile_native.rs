@@ -11397,6 +11397,55 @@ try {
 }
 
 #[test]
+fn compile_assertion_runtime_ini_state_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-runtime-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-runtime-ini.php");
+    let output = root.join("assert-runtime-ini-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(ini_get(\"zend.assertions\"), ini_get(\"assert.exception\")); ini_set(\"zend.assertions\", 0); var_dump(ini_get(\"zend.assertions\"), assert(false)); ini_set(\"zend.assertions\", 1); try { assert(false); } catch (AssertionError $e) { echo $e->getMessage(), \"\\n\"; } ini_set(\"assert.exception\", 0); var_dump(ini_get(\"assert.exception\")); var_dump(assert(false, \"warned\")); ini_restore(\"assert.exception\"); ini_restore(\"zend.assertions\"); var_dump(ini_get(\"assert.exception\"), ini_get(\"zend.assertions\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"1\"\nstring(1) \"1\"\nstring(1) \"0\"\nbool(true)\nassert(false)\nstring(1) \"0\"\nWarning: assert(): warned failed in ptn on line 1\nbool(false)\nstring(1) \"1\"\nstring(1) \"1\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_zend_assertions_compile_time_disabled_mode_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-disabled-runtime-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-disabled-runtime-ini.php");
+    let output = root.join("assert-disabled-runtime-ini-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(ini_get(\"zend.assertions\")); ini_set(\"zend.assertions\", 0); var_dump(assert(false)); ini_set(\"zend.assertions\", 1); var_dump(assert(false));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_ZEND_ASSERTIONS", "-1")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(2) \"-1\"\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in ptn on line 1\nbool(true)\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in ptn on line 1\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_int_constants_to_native_binary() {
     let root = temp_dir("ptn-native-php-int-constants");
     fs::create_dir_all(&root).unwrap();
@@ -19575,7 +19624,7 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
     let input = root.join("bounded-runner-ini.php");
     fs::write(
         &input,
-        "<?php var_dump(ini_get('display_errors'), ini_get('zend.assertions')); echo $undefined; echo \"done\\n\";",
+        "<?php var_dump(ini_get('display_errors'), ini_get('zend.assertions'), ini_get('assert.exception')); echo $undefined; echo \"done\\n\";",
     )
     .unwrap();
 
@@ -19584,6 +19633,8 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
         .arg("display_errors=false")
         .arg("-d")
         .arg("zend.assertions=1")
+        .arg("-d")
+        .arg("assert.exception=0")
         .arg("-f")
         .arg(&input)
         .output()
@@ -19591,7 +19642,7 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(0) \"\"\nstring(1) \"1\"\ndone\n"
+        "string(0) \"\"\nstring(1) \"1\"\nstring(1) \"0\"\ndone\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

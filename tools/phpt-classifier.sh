@@ -11,7 +11,7 @@
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard,Reflection"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="date.timezone,display_errors,error_reporting,extension_dir,include_path,pcre.backtrack_limit,precision,zend.assertions"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="assert.exception,date.timezone,display_errors,error_reporting,extension_dir,include_path,pcre.backtrack_limit,precision,zend.assertions"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CAPTURE_STDIO,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,GET,HEADERS,PHPDBG,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT="ENV"
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT="CLEAN"
@@ -582,10 +582,6 @@ ptn_phpt_unsupported_ini_blocker() {
     key=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
 
     case "$key" in
-        assert.exception)
-            printf 'unsupported-assertion-ini\trequires configurable assert.exception assertion mode; PTN currently models catchable AssertionError but not assertion INI/runtime mode switching\n'
-            return 0
-            ;;
         memory_limit)
             printf 'unsupported-resource-limit-ini\trequires PHP memory_limit parsing/enforcement; PTN has no Zend memory manager/resource limit boundary\n'
             return 0
@@ -1311,11 +1307,6 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])assert_options[[:space:]]*\(/) {
                 print "unsupported-assertion-runtime\trequires assert_options() mode/callback state, outside PTN modeled catchable AssertionError subset"
-                found = 1
-                exit
-            }
-            if (line ~ /(^|[^[:alnum:]_$])ini_set[[:space:]]*\(/ && raw ~ /zend[.]assertions/) {
-                print "unsupported-assertion-runtime\trequires runtime zend.assertions mode switching, outside PTN modeled assertion state"
                 found = 1
                 exit
             }

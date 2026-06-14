@@ -73,8 +73,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   user functions reached through direct calls, and public `__invoke` objects
   can be called directly or through callback dispatch; `is_callable()` writes
   callable-name output for supported callable shapes.
-- `assert()` throws catchable `AssertionError`; userland `throw` statements
-  and PHP 8 throw expressions propagate boxed built-in exception values
+- `assert()` observes modeled `zend.assertions`/`assert.exception` runtime INI
+  state and throws catchable `AssertionError` when exception mode is enabled;
+  userland `throw` statements and PHP 8 throw expressions propagate boxed
+  built-in exception values
   through the shared `try`/`catch` runtime, including `Exception`, `Error`
   families, declared `Exception`/`Error` subclasses with message-property
   throw bridging, `Throwable`, `getMessage()`, and `getTrace()` arrays for
@@ -145,15 +147,16 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   path predicates.
 - Environment and include-path helpers cover `getenv()` snapshots/lookups,
   `putenv()` set/unset plus embedded-NUL/invalid-assignment diagnostics, and
-  bounded `get_include_path()`/`set_include_path()`/`ini_restore()` state.
+  bounded `get_include_path()`/`set_include_path()`/`ini_set()`/
+  `ini_restore()` state for include-path and assertion configuration.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 - PHPT runners preclassify broad rows before execution and write selected,
   runnable, classification, excluded, and per-category manifests under
   `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
   `pcre`, `Reflection`, and `standard` extension surface plus accepted runner ini keys
-  (`date.timezone`, `display_errors`, `error_reporting`, `extension_dir`,
-  `include_path`, `pcre.backtrack_limit`, `precision`, and
+  (`assert.exception`, `date.timezone`, `display_errors`, `error_reporting`,
+  `extension_dir`, `include_path`, `pcre.backtrack_limit`, `precision`, and
   `zend.assertions`); child-process control rows are classified until PTN has a
   native process boundary. Harness cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
@@ -170,8 +173,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `array_multisort()`, `usort()`, `uasort()`, and `uksort()` plus
   destructor-reentrant `array_splice()` cases, remaining runtime diagnostics
   and backtrace string APIs, user error/exception handler state,
-  `ErrorException` metadata, and assertion runtime modes are mapped to blocker
-  categories with source
+  `ErrorException` metadata, assertion option callbacks/bail modes, and
+  assertion AST pretty-printing are mapped to blocker categories with source
   evidence; broad baseline runs also opt into `--SKIPIF--` precondition harness
   classification, with static modeling for sanitizer environment gates,
   `PHP_INT_SIZE` comparisons, and host locale availability while arbitrary

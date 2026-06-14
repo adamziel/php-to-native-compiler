@@ -789,12 +789,6 @@ fn phpt_classifier_excludes_unsupported_foreach_internal_surfaces() {
 fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     let cases = [
         (
-            "assertion mode",
-            "assert.exception=1",
-            "unsupported-assertion-ini\t",
-            "configurable assert.exception assertion mode",
-        ),
-        (
             "request input",
             "enable_post_data_reading=0",
             "unsupported-request-input-ini\t",
@@ -887,12 +881,6 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
             "assert_options() mode/callback state",
         ),
         (
-            "runtime zend assertions",
-            "--TEST--\nassert ini\n--FILE--\n<?php\nini_set('zend.assertions', 0);\nvar_dump(assert(false));\n--EXPECT--\n",
-            "unsupported-assertion-runtime\t",
-            "runtime zend.assertions mode switching",
-        ),
-        (
             "namespace assert",
             "--TEST--\nnamespace assert\n--FILE--\n<?php\nnamespace Foo;\nvar_dump(assert(false));\n--EXPECT--\n",
             "unsupported-assertion-runtime\t",
@@ -940,6 +928,18 @@ fn phpt_classifier_keeps_exception_get_trace_runnable() {
 fn phpt_classifier_keeps_basic_assertions_runnable() {
     let classification = classify(
         "--TEST--\nassert\n--FILE--\n<?php\nvar_dump(assert(true));\ntry { assert(false, 'failed'); } catch (AssertionError $e) { echo $e->getMessage(); }\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_assertion_ini_mode_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nassert ini\n--INI--\nzend.assertions=1\nassert.exception=1\n--FILE--\n<?php\nini_set('zend.assertions', 0);\nvar_dump(assert(false));\nini_set('zend.assertions', 1);\ntry { assert(false); } catch (AssertionError $e) { echo $e->getMessage(); }\n--EXPECT--\n",
     );
 
     assert!(

@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T13:30Z.
+Last refresh: 2026-06-14T13:59Z.
 Source: `PROGRESS.md`
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; COW 69/103 passed.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; COW 69/103 passed.
 
 Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/281; Array-key/cb 38/75.
 
@@ -72,9 +72,9 @@ Compact signal: Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/st
 | array_rand | 6/7 |
 | Zend-op/control | 15/26 |
 | Binary-key | 1/1 |
-| Runtime-config | 0/54 |
+| Runtime-config | 10/54 |
 | COW-gate | 26/26 |
-| 1k-baseline | 265/1000 |
+| 1k-baseline | 275/1000 |
 
 Canonical dashboard: `PROGRESS.md`. Regenerate with
 `tools/update-progress-mirrors.sh` after changing canonical progress.

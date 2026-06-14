@@ -10896,6 +10896,57 @@ static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const cha
     return 1;
 }
 
+static PtnRuntime *ptn_runtime_config_root(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root == NULL ? runtime : root;
+}
+
+static PtnValue ptn_ini_int_string(int value) {
+    char buffer[32];
+    int written = snprintf(buffer, sizeof(buffer), "%d", value);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_owned_string(ptn_duplicate_string(buffer));
+}
+
+static int ptn_runtime_current_zend_assertions(PtnRuntime *runtime) {
+    return ptn_runtime_config_root(runtime)->zend_assertions;
+}
+
+static int ptn_runtime_assert_exception(PtnRuntime *runtime) {
+    return ptn_runtime_config_root(runtime)->assert_exception;
+}
+
+static void ptn_runtime_set_assert_exception(PtnRuntime *runtime, int enabled) {
+    ptn_runtime_config_root(runtime)->assert_exception = enabled ? 1 : 0;
+}
+
+static int ptn_runtime_set_zend_assertions(PtnRuntime *runtime, int64_t requested, size_t line) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (requested < 0) {
+        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+            fputc('\n', stdout);
+        }
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "zend.assertions may be completely enabled or disabled only in php.ini",
+            line
+        );
+        return 0;
+    }
+    if (root->initial_zend_assertions < 0) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "zend.assertions may be completely enabled or disabled only in php.ini",
+            line
+        );
+        return 0;
+    }
+    root->zend_assertions = requested == 0 ? 0 : 1;
+    return 1;
+}
+
 static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
     return ptn_string_operand_ascii_case_equal(extension, "Core") ||
         ptn_string_operand_ascii_case_equal(extension, "date") ||
@@ -10904,9 +10955,13 @@ static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
         ptn_string_operand_ascii_case_equal(extension, "standard");
 }
 
-static int ptn_ini_value(PtnStringOperand option, PtnValue *out) {
+static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue *out) {
     if (ptn_string_operand_ascii_case_equal(option, "date.timezone")) {
         *out = ptn_string("UTC");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
+        *out = ptn_ini_int_string(ptn_runtime_assert_exception(runtime));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "display_errors")) {
@@ -10931,8 +10986,7 @@ static int ptn_ini_value(PtnStringOperand option, PtnValue *out) {
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
-        const char *configured = getenv("PTN_ZEND_ASSERTIONS");
-        *out = ptn_string(configured == NULL ? "1" : configured);
+        *out = ptn_ini_int_string(ptn_runtime_current_zend_assertions(runtime));
         return 1;
     }
     return 0;
@@ -11048,13 +11102,58 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        root->zend_assertions = root->initial_zend_assertions;
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
+        ptn_runtime_set_assert_exception(runtime, 1);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     PtnValue value;
-    int known = ptn_ini_value(option, &value);
+    int known = ptn_ini_value(runtime, option, &value);
     if (known) {
         ptn_value_destroy(&value);
     }
     ptn_string_operand_free(option);
     return known ? ptn_null() : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand option = ptn_internal_expect_string_arg(runtime, "ini_set", 1, "option", args[0], line);
+    if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_include_path(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_include_path(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_current_zend_assertions(runtime));
+        ptn_runtime_set_zend_assertions(runtime, ptn_value_to_integer(args[1]), line);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_exception(runtime));
+        ptn_runtime_set_assert_exception(runtime, ptn_is_truthy(args[1]));
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    PtnValue known_value;
+    int known = ptn_ini_value(runtime, option, &known_value);
+    if (known) {
+        ptn_value_destroy(&known_value);
+    }
+    ptn_string_operand_free(option);
+    return ptn_bool(0);
 }
 
 static PtnValue ptn_internal_getenv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -11238,7 +11337,7 @@ static PtnValue ptn_internal_ini_get(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(option);
         return value;
     }
-    int found = ptn_ini_value(option, &value);
+    int found = ptn_ini_value(runtime, option, &value);
     ptn_string_operand_free(option);
     return found ? value : ptn_bool(0);
 }
@@ -11257,7 +11356,7 @@ static PtnValue ptn_internal_get_cfg_var(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return value;
     }
-    int found = ptn_ini_value(option, &value);
+    int found = ptn_ini_value(runtime, option, &value);
     ptn_string_operand_free(option);
     return found ? value : ptn_bool(0);
 }
@@ -11904,13 +12003,31 @@ static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, c
 }
 
 static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
+    if (ptn_runtime_current_zend_assertions(runtime) <= 0) {
+        return ptn_bool(1);
+    }
     if (ptn_is_truthy(args[0])) {
         return ptn_bool(1);
     }
 
     char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
-    ptn_throw_exception_owned_message(runtime, "AssertionError", message);
+    if (ptn_runtime_assert_exception(runtime)) {
+        ptn_throw_exception_owned_message(runtime, "AssertionError", message);
+    } else {
+        size_t message_len = strlen(message);
+        const char *prefix = "assert(): ";
+        const char *suffix = " failed";
+        size_t warning_len = strlen(prefix) + message_len + strlen(suffix);
+        char *warning = malloc(warning_len + 1);
+        if (warning == NULL) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(warning, warning_len + 1, "%s%s%s", prefix, message, suffix);
+        ptn_emit_warning(&runtime->diagnostics, warning, line);
+        free(warning);
+        free(message);
+    }
     return ptn_bool(0);
 }
 
@@ -12152,6 +12269,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "in_array", 2, 3, ptn_internal_in_array },
         { "ini_get", 1, 1, ptn_internal_ini_get },
         { "ini_restore", 1, 1, ptn_internal_ini_restore },
+        { "ini_set", 2, 2, ptn_internal_ini_set },
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
         { "is_array", 1, 1, ptn_internal_is_array },

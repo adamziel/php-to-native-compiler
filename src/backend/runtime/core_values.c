@@ -485,6 +485,9 @@ struct PtnRuntime {
     PtnValue current_receiver;
     const char *by_ref_argument_function_name_override;
     char *include_path;
+    int initial_zend_assertions;
+    int zend_assertions;
+    int assert_exception;
     size_t call_site_line;
     int warn_by_ref_argument_mismatch;
     int throw_argument_count_errors;

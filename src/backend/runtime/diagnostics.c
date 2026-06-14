@@ -574,6 +574,23 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override = NULL;
     runtime->include_path = ptn_duplicate_string(".");
+    runtime->zend_assertions = 1;
+    int64_t configured_zend_assertions = 0;
+    if (ptn_parse_int64_env("PTN_ZEND_ASSERTIONS", &configured_zend_assertions)) {
+        if (configured_zend_assertions < 0) {
+            runtime->zend_assertions = -1;
+        } else if (configured_zend_assertions == 0) {
+            runtime->zend_assertions = 0;
+        } else {
+            runtime->zend_assertions = 1;
+        }
+    }
+    runtime->initial_zend_assertions = runtime->zend_assertions;
+    runtime->assert_exception = 1;
+    int configured_assert_exception = 1;
+    if (ptn_parse_bool_env("PTN_ASSERT_EXCEPTION", &configured_assert_exception)) {
+        runtime->assert_exception = configured_assert_exception;
+    }
     runtime->call_site_line = 0;
     runtime->warn_by_ref_argument_mismatch = 0;
     runtime->throw_argument_count_errors = 0;
