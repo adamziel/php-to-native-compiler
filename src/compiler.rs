@@ -326,6 +326,9 @@ impl IncludeCollector {
             Expr::PropertyFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
+            Expr::DynamicClassNameFetch { receiver, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)
+            }
             Expr::Array { elements, .. } => {
                 for element in elements {
                     if let Some(key) = &element.key {

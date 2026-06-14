@@ -1,19 +1,19 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T03:02Z.
+Last refresh: 2026-06-14T03:22Z.
 Source: `PROGRESS.md`
-Measured: `ptn-7xxw` resource-limit classifier.
+Measured: `ptn-99q3` class-name fetch bounded run.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 718/718; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 718/718; Native smoke matrix 6/6; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
 | Native/compiler Rust suite | 718/718 |
 | Native smoke matrix | 6/6 |
-| PHPT bounded manifest | 485/485 |
+| PHPT bounded manifest | 479/486 |
 | PHPT Zend rows | 119/119 |
-| PHPT ext/standard rows | 280/280 |
+| PHPT ext/standard rows | 274/281 |
 | PHPT focused array key/callback set rows | 38/75 |
 | PHPT focused array callback validation rows | 46/65 |
 | PHPT focused array diff/intersect rows | 58/61 |

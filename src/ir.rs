@@ -378,6 +378,10 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    DynamicClassNameFetch {
+        receiver: Box<ValueExpr>,
+        line: usize,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<ValueExpr>,
@@ -1678,6 +1682,10 @@ impl<'a> LoweringContext<'a> {
                 name: name.clone(),
                 line: span.line,
             },
+            Expr::DynamicClassNameFetch { receiver, span } => ValueExpr::DynamicClassNameFetch {
+                receiver: Box::new(self.lower_expr(receiver)),
+                line: span.line,
+            },
             Expr::Unary { op, expr, span } => ValueExpr::Unary {
                 op: lower_unary_op(*op),
                 expr: Box::new(self.lower_expr(expr)),
@@ -1887,6 +1895,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::ClassConstantFetch {
             class_name, name, ..
         } => format!("{class_name}::{name}"),
+        Expr::DynamicClassNameFetch { receiver, .. } => {
+            format!("{}::class", assertion_expr_text(receiver))
+        }
         Expr::Array { elements, .. } => format!(
             "[{}]",
             elements

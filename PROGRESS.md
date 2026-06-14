@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T03:02Z.
-Measured: `ptn-7xxw` resource-limit classifier.
+Refresh: 2026-06-14T03:22Z.
+Measured: `ptn-99q3` class-name fetch bounded run.
 
 ## Dashboard
 
@@ -10,9 +10,9 @@ Measured: `ptn-7xxw` resource-limit classifier.
 | Source unit tests | 3 | 3 | 0 |
 | Native/compiler Rust suite | 718 | 718 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
-| PHPT bounded manifest | 485 | 485 | 0 |
+| PHPT bounded manifest | 486 | 479 | 7 |
 | PHPT Zend rows | 119 | 119 | 0 |
-| PHPT ext/standard rows | 280 | 280 | 0 |
+| PHPT ext/standard rows | 281 | 274 | 7 |
 | PHPT focused array key/callback set rows | 75 | 38 | 37 |
 | PHPT focused array callback validation rows | 65 | 46 | 19 |
 | PHPT focused array diff/intersect rows | 61 | 58 | 3 |
@@ -39,21 +39,23 @@ Measured: `ptn-7xxw` resource-limit classifier.
 
 ## Remaining Exclusions
 
-- Bounded: 485/485; classifier 459 runnable/26 excluded.
-- Broad 1k classify-only is 443 runnable/557 excluded after `ptn-4fd3`.
-- `ptn-7xxw` classifies huge `array_fill()` allocation as resource-limited.
+- Bounded: 486 selected, 456 runnable, 30 excluded, 449 pass, 7
+  `array_filter` failures (`ptn-ueir`).
+- Broad 1k classify-only: 443 runnable/557 excluded.
 - Class declarations: 78 trait/interface/anonymous-class rows classified.
-- Heredoc/nowdoc: 70 rows moved; 21 runnable, 49 metadata blockers.
-- `ptn-ndkl`: callback helper frontier is 29/39; 10 residual rows mapped.
-- Zend assignment/reference is 22/32; array diff/intersect is 58/61.
+- Heredoc/nowdoc: 70 moved; 21 runnable, 49 metadata blockers.
+- `ptn-ndkl` helper frontier is 29/39; 10 residual rows mapped.
+- Zend assignment/reference 22/32; array diff/intersect 58/61.
 - COW/reference: array-internal 17/72, foreach/reference 31/103,
   reference-call 9/12.
 
 ## Verification
 
-`ptn-7xxw` guards huge `array_fill()` rows; `ptn-v1mu` records 34 unpacking
-blockers and confirms the adjacent broad `array_chunk()` probe is 32/32.
+`ptn-7xxw` guards huge `array_fill()`; `ptn-v1mu` maps 34 unpacking blockers
+and confirms adjacent broad `array_chunk()` is 32/32.
 
-`ptn-zzr2` maps class declaration blockers; 78 selected rows stay classified.
-`ptn-ndkl` adds `array_first()`/`array_last()`; helper PHPT is 6/6.
-`ptn-4fd3` keeps plain heredoc/nowdoc runnable; frontier is 14/70.
+`ptn-99q3` adds object/expression `::class`; `php_uname_error.phpt` passed in
+the bounded run, with seven unrelated `array_filter` failures.
+
+`ptn-zzr2` maps 78 class blockers; `ptn-ndkl` helper PHPT is 6/6; `ptn-4fd3`
+keeps plain heredoc/nowdoc runnable at 14/70.

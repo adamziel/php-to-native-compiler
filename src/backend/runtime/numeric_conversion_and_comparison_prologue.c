@@ -858,6 +858,66 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
     return ptn_runtime_undefined_class_constant(runtime, class_name, constant);
 }
 
+static PTN_UNUSED const char *ptn_dynamic_class_name_fetch_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            return "null";
+        case PTN_BOOL:
+            return "bool";
+        case PTN_INT:
+            return "int";
+        case PTN_FLOAT:
+            return "float";
+        case PTN_STRING:
+            return "string";
+        case PTN_RESOURCE:
+            return "resource";
+        case PTN_ARRAY:
+            return "array";
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+            return "object";
+        case PTN_REFERENCE:
+            return "reference";
+    }
+    return "unknown";
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_class_name(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    const char *class_name = NULL;
+    if (receiver.type == PTN_OBJECT) {
+        class_name = receiver.as.object->class_name;
+    } else if (receiver.type == PTN_EXCEPTION) {
+        class_name = receiver.as.exception->class_name;
+    } else if (receiver.type == PTN_CLOSURE) {
+        class_name = "Closure";
+    }
+    if (class_name != NULL) {
+        return ptn_owned_string(ptn_duplicate_string(class_name));
+    }
+
+    const char *type_name = ptn_dynamic_class_name_fetch_type_name(receiver);
+    int needed = snprintf(NULL, 0, "Cannot use \"::class\" on value of type %s", type_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Cannot use \"::class\" on value of type %s", type_name);
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
     PtnRuntime *runtime,
     const char *class_name,

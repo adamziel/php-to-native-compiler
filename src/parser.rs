@@ -2961,7 +2961,20 @@ impl Parser {
                     };
                 }
                 TokenKind::DoubleColon => {
+                    let start_span = expr.span();
                     let scope_span = self.advance().span;
+                    let member = self.advance().clone();
+                    if let TokenKind::Identifier(member_name) = member.kind {
+                        if member_name.eq_ignore_ascii_case("class")
+                            && !matches!(self.peek().kind, TokenKind::LeftParen)
+                        {
+                            expr = Expr::DynamicClassNameFetch {
+                                receiver: Box::new(expr),
+                                span: combine_spans(start_span, member.span),
+                            };
+                            continue;
+                        }
+                    }
                     return Err(Diagnostic::new(
                         CLASS_CONSTANT_FETCH_UNSUPPORTED,
                         Some(scope_span),
@@ -4484,6 +4497,9 @@ fn collect_arrow_captures_from_expr(
                 collect_arrow_captures_from_string_part(part, exclusions, seen, captures);
             }
         }
+        Expr::DynamicClassNameFetch { receiver, .. } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+        }
         Expr::String(_, _)
         | Expr::Int(_, _)
         | Expr::Float(_, _)
@@ -5068,6 +5084,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::PropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }
+        | Expr::DynamicClassNameFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. }
@@ -5438,6 +5455,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             }
         }
         Expr::PropertyFetch { receiver, .. } => {
+            validate_anonymous_functions_in_expr(receiver, functions)?;
+        }
+        Expr::DynamicClassNameFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
         }
         Expr::Clone { expr, .. } => {
@@ -6570,6 +6590,10 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             "class constant fetch is not a writable target",
             Some(span),
         )),
+        Expr::DynamicClassNameFetch { span, .. } => Err(Diagnostic::new(
+            "class name fetch is not a writable target",
+            Some(span),
+        )),
         Expr::Array { elements, span } => Ok(AssignmentTarget::List(
             list_assignment_target_from_array_elements(elements, span)?,
         )),
@@ -6905,6 +6929,9 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::PropertyFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
+        Expr::DynamicClassNameFetch { receiver, .. } => {
+            reject_append_array_read(receiver)?;
+        }
         Expr::Clone { expr, .. } => reject_append_array_read(expr)?,
         Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
@@ -7090,6 +7117,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::PropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }
+        | Expr::DynamicClassNameFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,

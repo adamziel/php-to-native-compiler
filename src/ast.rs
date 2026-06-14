@@ -529,6 +529,10 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    DynamicClassNameFetch {
+        receiver: Box<Expr>,
+        span: SourceSpan,
+    },
     Array {
         elements: Vec<ArrayElement>,
         span: SourceSpan,
@@ -696,7 +700,8 @@ impl Expr {
             | Expr::Clone { span, .. }
             | Expr::PropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }
-            | Expr::ClassConstantFetch { span, .. } => *span,
+            | Expr::ClassConstantFetch { span, .. }
+            | Expr::DynamicClassNameFetch { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::List(list) => list.span,
             Expr::ArrayAccess { span, .. } => *span,

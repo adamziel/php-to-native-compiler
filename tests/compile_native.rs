@@ -2943,6 +2943,35 @@ echo \\Sample::Label;",
 }
 
 #[test]
+fn parser_accepts_dynamic_class_name_fetch_syntax() {
+    let program =
+        parser::parse("<?php $e = new Exception; echo $e::class; echo (new stdClass)::CLASS;")
+            .unwrap();
+
+    assert!(matches!(
+        &program.statements[1],
+        Statement::Echo { expressions, .. }
+            if matches!(
+                &expressions[0],
+                Expr::DynamicClassNameFetch { receiver, .. }
+                    if matches!(receiver.as_ref(), Expr::Variable(name, _) if name == "e")
+            )
+    ));
+    assert!(matches!(
+        &program.statements[2],
+        Statement::Echo { expressions, .. }
+            if matches!(
+                &expressions[0],
+                Expr::DynamicClassNameFetch { receiver, .. }
+                    if matches!(receiver.as_ref(), Expr::Grouped { expr, .. } if matches!(
+                        expr.as_ref(),
+                        Expr::NewObject { class_name, .. } if class_name == "stdClass"
+                    ))
+            )
+    ));
+}
+
+#[test]
 fn parser_accepts_in_array_class_constant_reducer_syntax() {
     let source = "<?php
 $haystack = [Sample::A];
@@ -2968,6 +2997,11 @@ fn parser_rejects_unsupported_class_constant_boundaries() {
         (
             "dynamic name",
             "<?php $name = 'A'; echo Sample::{$name};",
+            "class constant fetches are unsupported; class constants and enum cases require class metadata",
+        ),
+        (
+            "dynamic constant",
+            "<?php $object = new stdClass; echo $object::CONST;",
             "class constant fetches are unsupported; class constants and enum cases require class metadata",
         ),
     ];
@@ -22251,6 +22285,70 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_define_class_constant(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_class_constant(&runtime"));
+}
+
+#[test]
+fn compile_class_name_fetches_to_native_binary() {
+    let root = temp_dir("ptn-native-class-name-fetches");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-name-fetches.php");
+    let output = root.join("class-name-fetches-bin");
+    fs::write(
+        &input,
+        "<?php
+class Worker {}
+
+$worker = new Worker();
+$std = new stdClass();
+$callback = function () { return null; };
+
+try {
+    throw new ValueError('bad');
+} catch (Throwable $e) {
+    echo $e::class, ':', $e->getMessage(), \"\\n\";
+}
+
+$name = $worker::class;
+unset($worker);
+echo $name, \"\\n\";
+echo $std::CLASS, \"\\n\";
+echo $callback::class, \"\\n\";
+echo Worker::class, \"\\n\";
+echo worker::class, \"\\n\";
+echo \\stdClass::class, \"\\n\";
+
+$className = 'Worker';
+try {
+    echo $className::class, \"\\n\";
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ValueError:bad\n",
+            "Worker\n",
+            "stdClass\n",
+            "Closure\n",
+            "Worker\n",
+            "worker\n",
+            "stdClass\n",
+            "Cannot use \"::class\" on value of type string\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_fetch_dynamic_class_name(&runtime"));
+    assert!(c_source.contains("ptn_string(\"Worker\")"));
 }
 
 #[test]

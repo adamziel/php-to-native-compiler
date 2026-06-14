@@ -253,6 +253,7 @@ ext/standard/tests/general_functions/call_user_func_array_variation_001.phpt
 ext/standard/tests/general_functions/call_user_func_return.phpt
 ext/standard/tests/general_functions/getmypid_basic.phpt
 ext/standard/tests/general_functions/php_uname_basic.phpt
+ext/standard/tests/general_functions/php_uname_error.phpt
 ext/standard/tests/general_functions/print_r_arrays.phpt
 ext/standard/tests/general_functions/print_r_bools.phpt
 ext/standard/tests/general_functions/print_r_ints.phpt
