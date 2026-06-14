@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T18:58Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; COW 69/103 passed.
+Refresh: 2026-06-14T19:47Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; COW 69/103 passed.
 
 ## Dashboard
 
@@ -13,7 +13,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Zend|119|119|0|
 |ext/standard-PHPT|281|274|7|
 |Array-key/cb|75|38|37|
-|Array-cb-valid|66|64|2|
+|Array-cb-valid|66|66|0|
 |Array-diff|61|59|2|
 |Diff-cmp|76|67|9|
 |Array-setops|119|67|52|
@@ -79,6 +79,30 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |COW-gate|26|26|0|
 |COW-reference-tiqh|21|21|0|
 |1k-baseline|1000|419|581|
+
+## 2026-06-14 ptn-1d60 Array Map Null References
+
+Focused manifest: `tools/phpt-array-callback-validation-manifest.txt`.
+
+Pre-fix focused artifact `20260614T185146Z` selected 66 runnable rows, with
+65 passed and the single failure `ext/standard/tests/array/array_map_variation2.phpt`.
+
+Current rebased branch artifact `20260614T192727Z` selected the same 66 rows:
+66 runnable, 66 passed, 0 failed. The single-row confirmation artifact
+`20260614T192643Z` also passed `array_map_variation2.phpt`.
+
+Current broad 1k classify-only artifact `20260614T193952Z` selected 1,000
+rows: 558 runnable and 442 classified. The runnable split was 172 Zend, 370
+`ext/standard`, and 16 core rows. All 370 current `ext/standard` runnable rows
+were `ext/standard/tests/array/*`; there were 0 current broad-1k
+`ext/standard/tests/strings/*` rows.
+
+Implemented behavior: `array_map(null, ...)` now preserves array element
+references in the null-callback path instead of dereferencing through the normal
+callback argument helper. For the single-array null-callback case, recursive
+self-references to the source array are re-rooted to the result array so
+`var_dump()` reports `*RECURSION*`; multi-array null-callback zips still retain
+references to the original input arrays.
 
 ## 2026-06-14 ptn-lxw1 Array COW/Reference Row Pack
 

@@ -4653,9 +4653,30 @@ static PtnValue ptn_array_map_argument_at(PtnArray *array, size_t index) {
     return ptn_value_clone_deref(array->entries[index].value);
 }
 
+static PtnValue ptn_array_map_null_argument_at(PtnArray *array, size_t index) {
+    if (index >= array->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone(array->entries[index].value);
+}
+
+static PtnValue ptn_array_map_single_null_argument_at(PtnArray *source, PtnArray *result, size_t index) {
+    if (index >= source->len) {
+        return ptn_null();
+    }
+
+    PtnValue value = source->entries[index].value;
+    PtnValue deref = ptn_value_deref(value);
+    if (deref.type == PTN_ARRAY && deref.as.array == source) {
+        return ptn_value_borrow(ptn_array(result));
+    }
+
+    return ptn_value_clone(value);
+}
+
 static PtnValue ptn_array_map_null_callback_row(PtnArray **arrays, size_t array_count, size_t index) {
     if (array_count == 1) {
-        return ptn_array_map_argument_at(arrays[0], index);
+        return ptn_array_map_null_argument_at(arrays[0], index);
     }
 
     PtnValue row = ptn_array_from_literal_entries(0, NULL);
@@ -4666,7 +4687,7 @@ static PtnValue ptn_array_map_null_callback_row(PtnArray **arrays, size_t array_
         ptn_array_set_entry(
             row.as.array,
             ptn_array_int_key((int64_t)i),
-            ptn_array_map_argument_at(arrays[i], index)
+            ptn_array_map_null_argument_at(arrays[i], index)
         );
     }
     return row;
@@ -4701,7 +4722,9 @@ static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const P
             mapped = ptn_value_clone_deref(callback_result);
             ptn_value_destroy(&callback_result);
         } else {
-            mapped = ptn_array_map_null_callback_row(arrays, array_count, i);
+            mapped = array_count == 1
+                ? ptn_array_map_single_null_argument_at(arrays[0], result.as.array, i)
+                : ptn_array_map_null_callback_row(arrays, array_count, i);
         }
 
         ptn_array_set_entry(

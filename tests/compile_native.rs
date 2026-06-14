@@ -22505,6 +22505,14 @@ var_dump(array_map($callback, [\"a\" => 1, \"b\" => 2]));
 var_dump(array_map(\"pair_values\", [1, 2, 3], [10]));
 var_dump(array_map(null, [\"x\" => \"left\", \"y\" => \"right\"]));
 var_dump(array_map(null, [\"x\" => 1, \"y\" => 2], [10]));
+$refs = [\"k\" => \"v\"];
+$refs[] =& $refs[\"k\"];
+var_dump(array_map(null, $refs));
+var_dump(array_map(null, $refs, $refs));
+$cycle = [];
+$cycle[] =& $cycle;
+var_dump(array_map(null, $cycle));
+var_dump(array_map(null, $cycle, $cycle));
 ",
     )
     .unwrap();
@@ -22567,13 +22575,54 @@ var_dump(array_map(null, [\"x\" => 1, \"y\" => 2], [10]));
             "    NULL\n",
             "  }\n",
             "}\n",
+            "array(2) {\n",
+            "  [\"k\"]=>\n",
+            "  &string(1) \"v\"\n",
+            "  [0]=>\n",
+            "  &string(1) \"v\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    &string(1) \"v\"\n",
+            "    [1]=>\n",
+            "    &string(1) \"v\"\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    &string(1) \"v\"\n",
+            "    [1]=>\n",
+            "    &string(1) \"v\"\n",
+            "  }\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  *RECURSION*\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    &array(1) {\n",
+            "      [0]=>\n",
+            "      *RECURSION*\n",
+            "    }\n",
+            "    [1]=>\n",
+            "    &array(1) {\n",
+            "      [0]=>\n",
+            "      *RECURSION*\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_map"));
-    assert!(c_source.contains("ptn_call_callable(runtime, callback, array_count"));
+    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, array_count"));
     assert!(c_source.contains("ptn_array_map_result_key"));
 }
 
