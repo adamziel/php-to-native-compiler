@@ -317,6 +317,9 @@ impl IncludeCollector {
                 self.collect_expr(class_name, source_file, source_dir)?;
                 self.collect_exprs(arguments, source_file, source_dir)
             }
+            Expr::FirstClassCallable { callable, .. } => {
+                self.collect_expr(callable, source_file, source_dir)
+            }
             Expr::DynamicCall {
                 callee, arguments, ..
             } => {

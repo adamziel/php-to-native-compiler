@@ -240,6 +240,7 @@ typedef struct {
     size_t parameter_count;
     size_t required_parameter_count;
     int is_variadic;
+    const char *const *parameter_names;
 } PtnFunctionMetadata;
 
 struct PtnClosure {
@@ -537,6 +538,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
     metadata.parameter_count = 0;
     metadata.required_parameter_count = 0;
     metadata.is_variadic = 0;
+    metadata.parameter_names = NULL;
     return metadata;
 }
 
@@ -545,7 +547,8 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     int is_internal,
     size_t parameter_count,
     size_t required_parameter_count,
-    int is_variadic
+    int is_variadic,
+    const char *const *parameter_names
 ) {
     PtnFunctionMetadata metadata;
     metadata.found = 1;
@@ -554,6 +557,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.parameter_count = parameter_count;
     metadata.required_parameter_count = required_parameter_count;
     metadata.is_variadic = is_variadic;
+    metadata.parameter_names = parameter_names;
     return metadata;
 }
 

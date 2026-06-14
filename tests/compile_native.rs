@@ -22123,6 +22123,118 @@ var_dump($sameReflection->getNumberOfParameters());
 }
 
 #[test]
+fn compile_first_class_callable_syntax_and_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-first-class-callable-syntax");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("first-class-callable-syntax.php");
+    let output = root.join("first-class-callable-syntax-bin");
+    fs::write(
+        &input,
+        "<?php
+function fcc_add($value, $extra = 1) {
+    return $value + $extra;
+}
+
+class FccWorker {
+    public static function twice($value) {
+        return $value * 2;
+    }
+
+    public static function selfTwice() {
+        return self::twice(...);
+    }
+
+    public function plus($value) {
+        return $value + 3;
+    }
+}
+
+class FccConst {
+    public const Twice = self::twice(...);
+
+    public static function twice($value) {
+        return $value * 2;
+    }
+}
+
+function fcc_default($fn = strlen(...)) {
+    var_dump($fn(\"hello\"));
+}
+
+const FCC_LEN = strlen(...);
+
+$worker = new FccWorker();
+$named = fcc_add(...);
+$internal = strlen(...);
+$static = FccWorker::twice(...);
+$method = $worker->plus(...);
+$same = function ($value) { return $value - 1; };
+$sameResult = $same(...);
+$name = \"fcc_add\";
+$dynamic = $name(...);
+
+var_dump($named(4));
+var_dump($internal(\"abcd\"));
+var_dump($static(4));
+var_dump($method(4));
+var_dump($sameResult === $same);
+var_dump($sameResult(4));
+var_dump($dynamic(6, 7));
+
+$self = FccWorker::selfTwice();
+var_dump($self(5));
+var_dump((FCC_LEN)(\"abc\"));
+var_dump((FccConst::Twice)(9));
+fcc_default();
+fcc_default(strrev(...));
+
+$namedReflection = new ReflectionFunction($named);
+var_dump($namedReflection->getName());
+var_dump($namedReflection->getNumberOfParameters());
+var_dump($namedReflection->getNumberOfRequiredParameters());
+
+$staticReflection = new ReflectionFunction($static);
+var_dump($staticReflection->getName());
+var_dump($staticReflection->getNumberOfParameters());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(5)\n",
+            "int(4)\n",
+            "int(8)\n",
+            "int(7)\n",
+            "bool(true)\n",
+            "int(3)\n",
+            "int(13)\n",
+            "int(10)\n",
+            "int(3)\n",
+            "int(18)\n",
+            "int(5)\n",
+            "string(5) \"olleh\"\n",
+            "string(7) \"fcc_add\"\n",
+            "int(2)\n",
+            "int(1)\n",
+            "string(16) \"FccWorker::twice\"\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_closure_from_callable"));
+    assert!(c_source.contains("ptn_closure_wrap_callable"));
+    assert!(c_source.contains("FccConst::twice"));
+}
+
+#[test]
 fn compile_closure_invoke_reference_warning_to_native_binary() {
     let root = temp_dir("ptn-native-closure-invoke-reference-warning");
     fs::create_dir_all(&root).unwrap();

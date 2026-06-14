@@ -980,7 +980,8 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if ($0 ~ /\.\.\./) {
                 declaration = line ~ /(^|[^[:alnum:]_$])(function|fn)[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*\.\.\./
-                if (!declaration) {
+                first_class_callable = line ~ /\([[:space:]]*\.\.\.[[:space:]]*\)/
+                if (!declaration && !first_class_callable) {
                     print "unsupported-language\trequires call-site or array unpacking (`...`), outside PTN modeled call/array lowering"
                     found = 1
                     exit

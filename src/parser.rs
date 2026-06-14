@@ -1129,7 +1129,7 @@ impl Parser {
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
-            if !is_supported_global_const_expr(&value) {
+            if !is_supported_property_default_expr(&value) {
                 return Err(Diagnostic::new(
                     "property default value must be a supported constant expression",
                     Some(value.span()),
@@ -1170,7 +1170,7 @@ impl Parser {
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
-            if !is_supported_global_const_expr(&value) {
+            if !is_supported_property_default_expr(&value) {
                 return Err(Diagnostic::new(
                     "static property default value must be a supported constant expression",
                     Some(value.span()),
@@ -2952,6 +2952,31 @@ impl Parser {
                         };
                         continue;
                     }
+                    if self.peek_is_first_class_callable_arguments() {
+                        let right_span = self.parse_first_class_callable_arguments()?;
+                        let callable_span = combine_spans(start_span, member.span);
+                        let callable = Expr::Array {
+                            elements: vec![
+                                ArrayElement {
+                                    key: None,
+                                    value: ArrayElementValue::Value(expr),
+                                },
+                                ArrayElement {
+                                    key: None,
+                                    value: ArrayElementValue::Value(Expr::String(
+                                        name,
+                                        member.span,
+                                    )),
+                                },
+                            ],
+                            span: callable_span,
+                        };
+                        expr = Expr::FirstClassCallable {
+                            callable: Box::new(callable),
+                            span: combine_spans(start_span, right_span),
+                        };
+                        continue;
+                    }
                     let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
                     expr = Expr::MethodCall {
                         receiver: Box::new(expr),
@@ -2963,6 +2988,14 @@ impl Parser {
                 }
                 TokenKind::LeftParen => {
                     let start_span = expr.span();
+                    if self.peek_is_first_class_callable_arguments() {
+                        let right_span = self.parse_first_class_callable_arguments()?;
+                        expr = Expr::FirstClassCallable {
+                            callable: Box::new(expr),
+                            span: combine_spans(start_span, right_span),
+                        };
+                        continue;
+                    }
                     let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
                     expr = Expr::DynamicCall {
                         callee: Box::new(expr),
@@ -3056,6 +3089,14 @@ impl Parser {
                     let class_name = self.resolve_class_name(&parsed_name);
                     self.parse_static_member_expr(class_name, parsed_name.span)
                 } else if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    if self.peek_is_first_class_callable_arguments() {
+                        let right_span = self.parse_first_class_callable_arguments()?;
+                        let resolved_name = self.resolve_function_name(&parsed_name);
+                        return Ok(Expr::FirstClassCallable {
+                            callable: Box::new(Expr::String(resolved_name, parsed_name.span)),
+                            span: combine_spans(parsed_name.span, right_span),
+                        });
+                    }
                     match (unqualified, lowercase.as_str()) {
                         (true, "array") => self.parse_long_array_literal(parsed_name.span),
                         (true, "list") => self.parse_long_list_expr(parsed_name.span),
@@ -3123,6 +3164,14 @@ impl Parser {
                     );
                 }
                 if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    if self.peek_is_first_class_callable_arguments() {
+                        let right_span = self.parse_first_class_callable_arguments()?;
+                        let resolved_name = self.resolve_function_name(&parsed_name);
+                        return Ok(Expr::FirstClassCallable {
+                            callable: Box::new(Expr::String(resolved_name, parsed_name.span)),
+                            span: combine_spans(parsed_name.span, right_span),
+                        });
+                    }
                     let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
                     let resolved_name = self.resolve_function_name(&parsed_name);
                     validate_mutating_array_internal_call(
@@ -3244,6 +3293,16 @@ impl Parser {
                 class_name,
                 name: member_name,
                 span: combine_spans(class_span, member.span),
+            });
+        }
+        if self.peek_is_first_class_callable_arguments() {
+            let right_span = self.parse_first_class_callable_arguments()?;
+            return Ok(Expr::FirstClassCallable {
+                callable: Box::new(Expr::String(
+                    format!("{}::{}", class_name, member_name),
+                    combine_spans(class_span, member.span),
+                )),
+                span: combine_spans(class_span, right_span),
             });
         }
         let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
@@ -3551,6 +3610,21 @@ impl Parser {
         }
         let right_span = self.expect_right_paren()?;
         Ok((arguments, argument_names, right_span))
+    }
+
+    fn peek_is_first_class_callable_arguments(&self) -> bool {
+        matches!(self.peek().kind, TokenKind::LeftParen)
+            && matches!(self.peek_next().kind, TokenKind::Ellipsis)
+            && matches!(self.peek_n(2).kind, TokenKind::RightParen)
+    }
+
+    fn parse_first_class_callable_arguments(&mut self) -> Result<SourceSpan> {
+        self.expect_left_paren()?;
+        let token = self.advance().clone();
+        if !matches!(token.kind, TokenKind::Ellipsis) {
+            return Err(Diagnostic::new("expected ...", Some(token.span)));
+        }
+        self.expect_right_paren()
     }
 
     fn parse_call_argument(&mut self) -> Result<(Option<String>, Expr, SourceSpan)> {
@@ -4451,6 +4525,9 @@ fn collect_arrow_captures_from_expr(
                 collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
             }
         }
+        Expr::FirstClassCallable { callable, .. } => {
+            collect_arrow_captures_from_expr(callable, exclusions, seen, captures);
+        }
         Expr::DynamicCall {
             callee, arguments, ..
         } => {
@@ -5116,6 +5193,9 @@ fn expr_array_literal_reference_to_variable(
         | Expr::Include { path: value, .. }
         | Expr::Throw { value, .. }
         | Expr::Clone { expr: value, .. }
+        | Expr::FirstClassCallable {
+            callable: value, ..
+        }
         | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
@@ -5520,6 +5600,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             for argument in arguments {
                 validate_anonymous_functions_in_expr(argument, functions)?;
             }
+        }
+        Expr::FirstClassCallable { callable, .. } => {
+            validate_anonymous_functions_in_expr(callable, functions)?;
         }
         Expr::PropertyFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
@@ -6967,6 +7050,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::Assign { value, .. } => reject_append_array_read(value)?,
         Expr::AssignRef { source, .. } => reject_append_array_read(source)?,
         Expr::Call { .. } => {}
+        Expr::FirstClassCallable { callable, .. } => reject_append_array_read(callable)?,
         Expr::DynamicCall { callee, .. } => {
             reject_append_array_read(callee)?;
         }
@@ -7154,6 +7238,9 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
             is_supported_global_const_expr(expr)
         }
+        Expr::FirstClassCallable { callable, .. } => {
+            is_supported_first_class_callable_const_target(callable)
+        }
         Expr::Binary { left, right, .. } => {
             is_supported_global_const_expr(left) && is_supported_global_const_expr(right)
         }
@@ -7184,6 +7271,22 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
     }
 }
 
+fn is_supported_property_default_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::FirstClassCallable { .. } => false,
+        Expr::Grouped { expr, .. } => is_supported_property_default_expr(expr),
+        _ => is_supported_global_const_expr(expr),
+    }
+}
+
+fn is_supported_first_class_callable_const_target(callable: &Expr) -> bool {
+    matches!(callable, Expr::String(_, _))
+        || matches!(
+            callable,
+            Expr::Grouped { expr, .. } if is_supported_first_class_callable_const_target(expr)
+        )
+}
+
 fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
     match expr {
         Expr::String(_, _)
@@ -7206,6 +7309,9 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         }),
         Expr::Unary { expr, .. } | Expr::Grouped { expr, .. } => {
             is_supported_parameter_default_expr(expr)
+        }
+        Expr::FirstClassCallable { callable, .. } => {
+            is_supported_first_class_callable_const_target(callable)
         }
         Expr::Cast { .. } => false,
         Expr::Binary { left, right, .. } => {
@@ -7317,6 +7423,9 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
                 validate_class_scoped_constant_expr(if_true, parent_name)?;
             }
             validate_class_scoped_constant_expr(if_false, parent_name)
+        }
+        Expr::FirstClassCallable { callable, .. } => {
+            validate_class_scoped_constant_expr(callable, parent_name)
         }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)

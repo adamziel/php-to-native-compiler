@@ -56,8 +56,11 @@ Post-RC architecture remains explicit rather than hidden:
   string, closure, `["Class", "staticMethod"]`, `[$object, "method"]`, and
   invokable-object subset, including `__call`-capable objects, syntax-only
   checks, and callable-name output for supported callable shapes. First-class
-  callable syntax, non-public visibility, `__callStatic`,
-  and arbitrary dynamic instance method metadata remain post-RC.
+  callable syntax lowers supported function, static-method, object-method, and
+  closure shapes through the shared closure wrapper, including callable
+  dump/reflection metadata for the current function-parameter model.
+  Non-public visibility, `__callStatic`, and arbitrary dynamic instance method
+  metadata remain post-RC.
 - Object destructuring and object `Traversable` remain unsupported; current
   destructuring support is array/list lvalues.
 - Property lvalues remain post-RC outside public property `??=`, modeled

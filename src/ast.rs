@@ -491,6 +491,10 @@ pub enum Expr {
         argument_names: Vec<Option<String>>,
         span: SourceSpan,
     },
+    FirstClassCallable {
+        callable: Box<Expr>,
+        span: SourceSpan,
+    },
     DynamicCall {
         callee: Box<Expr>,
         arguments: Vec<Expr>,
@@ -700,6 +704,7 @@ impl Expr {
             Expr::IncDec { span, .. } => *span,
             Expr::Assign { span, .. } | Expr::AssignRef { span, .. } => *span,
             Expr::Call { span, .. }
+            | Expr::FirstClassCallable { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::NewObject { span, .. }

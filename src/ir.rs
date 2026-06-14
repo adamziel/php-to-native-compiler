@@ -344,6 +344,10 @@ pub enum ValueExpr {
         argument_names: Vec<Option<String>>,
         line: usize,
     },
+    FirstClassCallable {
+        callable: Box<ValueExpr>,
+        line: usize,
+    },
     DynamicCall {
         callee: Box<ValueExpr>,
         arguments: Vec<ValueExpr>,
@@ -1622,6 +1626,10 @@ impl<'a> LoweringContext<'a> {
                     line: span.line,
                 }
             }
+            Expr::FirstClassCallable { callable, span } => ValueExpr::FirstClassCallable {
+                callable: Box::new(self.lower_expr(callable)),
+                line: span.line,
+            },
             Expr::DynamicCall {
                 callee,
                 arguments,
@@ -1888,6 +1896,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::Call {
             name, arguments, ..
         } => format!("{}({})", name, assertion_argument_list_text(arguments)),
+        Expr::FirstClassCallable { callable, .. } => {
+            format!("{}(...)", assertion_expr_text(callable))
+        }
         Expr::DynamicCall {
             callee, arguments, ..
         } => format!(

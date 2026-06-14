@@ -25,8 +25,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   captures, nested capture propagation, by-reference returns, typed parameters,
   variadics, validated `use` lists with trailing commas, and `static fn`
   `$this` exclusion. `Closure::bindTo()` clones preserve captured variables,
-  `Closure::fromCallable()` wraps supported callables, and `Closure::__invoke`
-  reference diagnostics use Closure method names at callable boundaries.
+  `Closure::fromCallable()` and first-class callable syntax wrap supported
+  function, static-method, object-method, and closure callables with callable
+  dump/reflection metadata, and `Closure::__invoke` reference diagnostics use
+  Closure method names at callable boundaries.
 - Includes share caller file scope and return values; bounded dynamic
   include/require dispatch uses canonical once guards when candidate string
   paths are statically enumerable.
@@ -290,6 +292,7 @@ tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-filesystem-path-process-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-string-scalar-alias-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-foreach-nested-ref-manifest.txt
+tools/run-phpt-manifest.sh tools/phpt-first-class-callable-manifest.txt
 tools/run-bounded-phpt.sh tools/phpt-array-callback-validation-manifest.txt
 tools/run-phpt-baseline.sh --generate-only
 tools/run-phpt-baseline.sh --tier 1000 --classify-only

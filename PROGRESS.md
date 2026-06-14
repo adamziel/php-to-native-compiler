@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T07:28Z.
-Measured: `ptn-jn15`.
+Refresh: 2026-06-14T07:37Z.
+Measured: `ptn-98lj`.
 
 ## Dashboard
 
@@ -21,6 +21,7 @@ Measured: `ptn-jn15`.
 | Array-set/cb | 106 | 86 | 20 |
 | Array-cb-slice | 38 | 28 | 10 |
 | FS/process | 46 | 13 | 33 |
+| First-class-callable | 12 | 10 | 2 |
 | basic+func+lang | 78 | 78 | 0 |
 | COW-manifest | 54 | 54 | 0 |
 | Nested-foreach | 3 | 2 | 1 |

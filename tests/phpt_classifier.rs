@@ -277,6 +277,28 @@ fn phpt_classifier_does_not_treat_static_member_syntax_as_named_internal_argumen
 }
 
 #[test]
+fn phpt_classifier_allows_first_class_callable_syntax() {
+    let cases = [
+        (
+            "function callable",
+            "--TEST--\nfcc function\n--FILE--\n<?php\n$fn = strlen(...);\necho $fn('abc');\n--EXPECT--\n3\n",
+        ),
+        (
+            "static method callable",
+            "--TEST--\nfcc static\n--FILE--\n<?php\nclass FccStatic { public static function run($v) { return $v; } }\n$fn = FccStatic::run(...);\necho $fn('ok');\n--EXPECT--\nok\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_plain_heredoc_and_nowdoc_runnable() {
     let cases = [
         (

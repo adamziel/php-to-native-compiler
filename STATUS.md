@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T07:28Z.
-Measured: `ptn-jn15`.
+Last refresh: 2026-06-14T07:37Z.
+Measured: `ptn-98lj`.
 
 ## Operating Goal
 
@@ -30,6 +30,7 @@ Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/
 | Array-set/cb | 86/106 |
 | Array-cb-slice | 28/38 |
 | FS/process | 13/46 |
+| First-class-callable | 10/12 |
 | basic+func+lang | 78/78 |
 | COW-manifest | 54/54 |
 | Nested-foreach | 2/3 |

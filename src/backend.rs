@@ -737,6 +737,31 @@ fn function_call_frame_parameter_count(function: &FunctionDecl) -> usize {
         .unwrap_or(function.parameters.len())
 }
 
+fn emit_function_metadata_parameter_names(
+    out: &mut String,
+    indent: &str,
+    name: &str,
+    parameters: &[FunctionParameter],
+) -> String {
+    if parameters.is_empty() {
+        return "NULL".to_string();
+    }
+    out.push_str(indent);
+    out.push_str("static const char *const ");
+    out.push_str(name);
+    out.push_str("[] = { ");
+    for (index, parameter) in parameters.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push('"');
+        out.push_str(&c_string(&parameter.name));
+        out.push('"');
+    }
+    out.push_str(" };\n");
+    name.to_string()
+}
+
 fn emit_variadic_parameter_binding(
     out: &mut String,
     function: &FunctionDecl,
@@ -1186,7 +1211,7 @@ fn emit_user_function_dispatch(
     {
         out.push_str("    (void)name;\n");
     }
-    for function in functions {
+    for (function_index, function) in functions.iter().enumerate() {
         if function.is_anonymous || function.class_name.is_some() {
             continue;
         }
@@ -1202,6 +1227,12 @@ fn emit_user_function_dispatch(
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&function.name));
         out.push_str("\")) {\n");
+        let parameter_names = emit_function_metadata_parameter_names(
+            out,
+            "        ",
+            &format!("ptn_function_{function_index}_parameter_names"),
+            &function.parameters,
+        );
         out.push_str("        return ptn_function_metadata_found(\"");
         out.push_str(&c_string(&function.name));
         out.push_str("\", 0, ");
@@ -1210,6 +1241,8 @@ fn emit_user_function_dispatch(
         out.push_str(&required_parameter_count.to_string());
         out.push_str(", ");
         out.push_str(if is_variadic { "1" } else { "0" });
+        out.push_str(", ");
+        out.push_str(&parameter_names);
         out.push_str(");\n");
         out.push_str("    }\n");
     }
@@ -1230,6 +1263,12 @@ fn emit_user_function_dispatch(
             out.push_str("::");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
+            let parameter_names = emit_function_metadata_parameter_names(
+                out,
+                "        ",
+                &format!("ptn_function_{}_parameter_names", method.function_index),
+                &function.parameters,
+            );
             out.push_str("        return ptn_function_metadata_found(\"");
             out.push_str(&c_string(&class.name));
             out.push_str("::");
@@ -1240,6 +1279,8 @@ fn emit_user_function_dispatch(
             out.push_str(&required_parameter_count.to_string());
             out.push_str(", ");
             out.push_str(if is_variadic { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(&parameter_names);
             out.push_str(");\n");
             out.push_str("    }\n");
         }
@@ -3580,6 +3621,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
             }
         }
+        ValueExpr::FirstClassCallable { callable, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(callable, deprecations);
+        }
         ValueExpr::Clone { expr, .. } => {
             collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
         }
@@ -4030,6 +4074,10 @@ fn collect_value_runtime_requirements(
                 functions,
                 requirements,
             );
+        }
+        ValueExpr::FirstClassCallable { callable, .. } => {
+            collect_value_runtime_requirements(callable, functions, requirements);
+            requirements.internal_function_dispatch = true;
         }
         ValueExpr::DynamicCall {
             callee, arguments, ..
@@ -5001,6 +5049,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .iter()
                     .any(|argument| value_mentions_variable(argument, name))
         }
+        ValueExpr::FirstClassCallable { callable, .. } => value_mentions_variable(callable, name),
         ValueExpr::Clone { expr, .. } => value_mentions_variable(expr, name),
         ValueExpr::DynamicCall {
             callee, arguments, ..
@@ -6805,6 +6854,9 @@ impl ValueEmitter {
                 argument_names,
                 line,
             } => self.emit_internal_call(out, name, arguments, argument_names, *line),
+            ValueExpr::FirstClassCallable { callable, line } => {
+                self.emit_first_class_callable(out, callable, *line)
+            }
             ValueExpr::DynamicCall {
                 callee,
                 arguments,
@@ -7369,6 +7421,12 @@ impl ValueEmitter {
             .parameters
             .iter()
             .any(|parameter| parameter.is_variadic);
+        let parameter_names = emit_function_metadata_parameter_names(
+            out,
+            "    ",
+            &format!("ptn_closure_{function_index}_parameter_names"),
+            &function.parameters,
+        );
         out.push_str("    PtnValue ");
         out.push_str(&closure_temp);
         out.push_str(" = ptn_closure(&runtime, ");
@@ -7381,6 +7439,8 @@ impl ValueEmitter {
         out.push_str(&required_parameter_count.to_string());
         out.push_str(", ");
         out.push_str(if is_variadic { "1" } else { "0" });
+        out.push_str(", ");
+        out.push_str(&parameter_names);
         out.push_str("));\n");
 
         for capture in captures {
@@ -9184,6 +9244,7 @@ impl ValueEmitter {
                 | ValueExpr::AssignRef { .. }
                 | ValueExpr::IncDec { .. }
                 | ValueExpr::InternalCall { .. }
+                | ValueExpr::FirstClassCallable { .. }
                 | ValueExpr::DynamicCall { .. }
                 | ValueExpr::Unary { .. }
                 | ValueExpr::Cast { .. }
@@ -9766,6 +9827,65 @@ impl ValueEmitter {
         }
         emit_value_cleanup(out, "    ", &callee_temp);
         result_temp
+    }
+
+    fn emit_first_class_callable(
+        &mut self,
+        out: &mut String,
+        callable: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let callable_temp = self.emit_materialized_first_class_callable_target(out, callable);
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ptn_value_share(");
+        out.push_str(&callable_temp);
+        out.push_str(") };\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_internal_closure_from_callable(&runtime, 1, ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        emit_value_cleanup(out, "    ", &format!("{args_temp}[0]"));
+        emit_value_cleanup(out, "    ", &callable_temp);
+        result_temp
+    }
+
+    fn emit_materialized_first_class_callable_target(
+        &mut self,
+        out: &mut String,
+        callable: &ValueExpr,
+    ) -> String {
+        match callable {
+            ValueExpr::String(name) => {
+                let target_name = self.first_class_callable_static_name(name);
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_string(\"");
+                out.push_str(&c_string(&target_name));
+                out.push_str("\");\n");
+                temp
+            }
+            _ => self.emit_materialized_value(out, callable),
+        }
+    }
+
+    fn first_class_callable_static_name(&self, name: &str) -> String {
+        let Some((class_name, method_name)) = name.split_once("::") else {
+            return name.to_string();
+        };
+        format!(
+            "{}::{}",
+            self.static_property_class_name(class_name),
+            method_name
+        )
     }
 
     fn emit_variable_array_mutator_call(

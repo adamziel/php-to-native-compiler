@@ -557,6 +557,108 @@ static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key)
     );
 }
 
+static const char *ptn_internal_function_parameter_name(const char *name, size_t index) {
+    if (name == NULL) {
+        return NULL;
+    }
+    if (index == 0) {
+        if (ptn_ascii_case_equal(name, "strlen") ||
+            ptn_ascii_case_equal(name, "strrev") ||
+            ptn_ascii_case_equal(name, "strtolower") ||
+            ptn_ascii_case_equal(name, "strtoupper")) {
+            return "string";
+        }
+        if (ptn_ascii_case_equal(name, "sprintf") ||
+            ptn_ascii_case_equal(name, "printf") ||
+            ptn_ascii_case_equal(name, "vprintf") ||
+            ptn_ascii_case_equal(name, "vsprintf")) {
+            return "format";
+        }
+    }
+    if (index == 1) {
+        if (ptn_ascii_case_equal(name, "sprintf") ||
+            ptn_ascii_case_equal(name, "printf")) {
+            return "values";
+        }
+        if (ptn_ascii_case_equal(name, "vprintf") ||
+            ptn_ascii_case_equal(name, "vsprintf")) {
+            return "values";
+        }
+    }
+    return NULL;
+}
+
+static const char *ptn_function_metadata_parameter_name(PtnFunctionMetadata metadata, size_t index, char *fallback, size_t fallback_len) {
+    if (metadata.parameter_names != NULL && index < metadata.parameter_count && metadata.parameter_names[index] != NULL) {
+        return metadata.parameter_names[index];
+    }
+    if (metadata.is_internal) {
+        const char *name = ptn_internal_function_parameter_name(metadata.name, index);
+        if (name != NULL) {
+            return name;
+        }
+    }
+    int written = snprintf(fallback, fallback_len, "param%zu", index + 1);
+    if (written < 0 || (size_t)written >= fallback_len) {
+        ptn_abort_out_of_memory();
+    }
+    return fallback;
+}
+
+static size_t ptn_closure_dump_field_count(PtnClosure *closure) {
+    PtnFunctionMetadata metadata = closure->metadata;
+    size_t count = 0;
+    if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
+        count++;
+    }
+    if (metadata.found && metadata.parameter_count > 0) {
+        count++;
+    }
+    return count;
+}
+
+static void ptn_var_dump_closure_parameters(PtnFunctionMetadata metadata, size_t indent) {
+    ptn_var_dump_indent(indent);
+    printf("array(%zu) {\n", metadata.parameter_count);
+    for (size_t i = 0; i < metadata.parameter_count; i++) {
+        char fallback[32];
+        const char *parameter_name = ptn_function_metadata_parameter_name(
+            metadata,
+            i,
+            fallback,
+            sizeof(fallback)
+        );
+        const char *requiredness = i < metadata.required_parameter_count
+            ? "<required>"
+            : "<optional>";
+        ptn_var_dump_indent(indent + 1);
+        printf("[\"$%s\"]=>\n", parameter_name);
+        ptn_var_dump_indent(indent + 1);
+        printf("string(10) \"%s\"\n", requiredness);
+    }
+    ptn_var_dump_indent(indent);
+    fputs("}\n", stdout);
+}
+
+static void ptn_var_dump_closure(PtnClosure *closure, size_t indent) {
+    PtnFunctionMetadata metadata = closure->metadata;
+    size_t field_count = ptn_closure_dump_field_count(closure);
+    printf("object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
+    if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
+        ptn_var_dump_indent(indent + 1);
+        fputs("[\"function\"]=>\n", stdout);
+        ptn_var_dump_indent(indent + 1);
+        printf("string(%zu) \"%s\"\n", strlen(metadata.name), metadata.name);
+    }
+    if (metadata.found && metadata.parameter_count > 0) {
+        ptn_var_dump_indent(indent + 1);
+        fputs("[\"parameter\"]=>\n", stdout);
+        ptn_var_dump_closure_parameters(metadata, indent + 1);
+    }
+    ptn_var_dump_indent(indent);
+    fputs("}\n", stdout);
+}
+
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen) {
     int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
     if (value.type == PTN_REFERENCE) {
@@ -633,9 +735,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             break;
         }
         case PTN_CLOSURE:
-            printf("object(Closure)#%zu (0) {\n", value.as.closure->object_id);
-            ptn_var_dump_indent(indent);
-            fputs("}\n", stdout);
+            ptn_var_dump_closure(value.as.closure, indent);
             break;
         case PTN_EXCEPTION:
             printf("object(%s)#%zu (1) {\n", value.as.exception->class_name, value.as.exception->object_id);
@@ -763,9 +863,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             fputs("\"\n", stdout);
             break;
         case PTN_CLOSURE:
-            printf("object(Closure)#%zu (0) {\n", value.as.closure->object_id);
-            ptn_var_dump_indent(indent);
-            fputs("}\n", stdout);
+            ptn_var_dump_closure(value.as.closure, indent);
             break;
         case PTN_EXCEPTION:
             printf("object(%s)#%zu (1) {\n", value.as.exception->class_name, value.as.exception->object_id);
@@ -12047,7 +12145,8 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         1,
         parameter_count,
         function->min_args,
-        is_variadic
+        is_variadic,
+        NULL
     );
 }
 

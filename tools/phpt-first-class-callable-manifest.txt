@@ -1,0 +1,13 @@
+# Focused first-class callable PHPT evidence.
+Zend/tests/first_class_callable/constexpr/basic.phpt
+Zend/tests/first_class_callable/constexpr/case_insensitive.phpt
+Zend/tests/first_class_callable/constexpr/default_args.phpt
+Zend/tests/first_class_callable/constexpr/static_call.phpt
+Zend/tests/first_class_callable/constexpr/static_call_self.phpt
+Zend/tests/first_class_callable/constexpr/userland.phpt
+Zend/tests/first_class_callable/first_class_callable_001.phpt
+Zend/tests/first_class_callable/first_class_callable_002.phpt
+Zend/tests/first_class_callable/first_class_callable_003.phpt
+Zend/tests/first_class_callable/first_class_callable_004.phpt
+Zend/tests/first_class_callable/first_class_callable_005.phpt
+Zend/tests/first_class_callable/first_class_callable_006.phpt
