@@ -294,18 +294,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires anonymous class syntax",
         ),
         (
-            "interface implementation",
-            "--TEST--\niface\n--FILE--\n<?php\nclass Bag implements ArrayAccess {}\n--EXPECT--\n",
-            "unsupported-interface-implementation\t",
-            "requires interface implementation checks",
-        ),
-        (
-            "interface declaration",
-            "--TEST--\ninterface\n--FILE--\n<?php\ninterface Contract {}\n--EXPECT--\n",
-            "unsupported-interface-declaration\t",
-            "requires interface declarations",
-        ),
-        (
             "trait declaration",
             "--TEST--\ntrait\n--FILE--\n<?php\ntrait SharedBehavior {}\n--EXPECT--\n",
             "unsupported-trait-declaration\t",
@@ -399,6 +387,17 @@ fn phpt_classifier_keeps_dynamic_variable_reads_runnable() {
         );
         assert_eq!(classify(phpt), classify_with_section_cache(phpt));
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_supported_interface_rows_runnable() {
+    let classification = classify(
+        "--TEST--\ninterface\n--FILE--\n<?php\ninterface Contract { public function run(): mixed; }\nclass Bag implements Contract { public function run(): mixed { return 1; } }\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
 }
 
 #[test]
@@ -661,13 +660,32 @@ fn phpt_classifier_keeps_supported_arrow_functions_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_supported_class_contract_rows_runnable() {
+    for source in [
+        "--TEST--\nabstract\n--FILE--\n<?php\nabstract class Base { abstract public function run(); }\n--EXPECT--\n",
+        "--TEST--\nfinal class\n--FILE--\n<?php\nfinal class Base {}\n--EXPECT--\n",
+        "--TEST--\nduplicate final\n--FILE--\n<?php\nfinal final class Base {}\n--EXPECTF--\n",
+        "--TEST--\nduplicate abstract\n--FILE--\n<?php\nclass Base { abstract abstract function run(); }\n--EXPECTF--\n",
+        "--TEST--\nduplicate visibility\n--FILE--\n<?php\nclass Base { public public function run() {} }\n--EXPECTF--\n",
+        "--TEST--\nduplicate property visibility\n--FILE--\n<?php\nclass Base { public public final public final $value; }\n--EXPECTF--\n",
+        "--TEST--\nfinal abstract method\n--FILE--\n<?php\nclass Base { final abstract function run(); }\n--EXPECTF--\n",
+        "--TEST--\nfinal abstract class\n--FILE--\n<?php\nfinal abstract class Base { private function hidden() {} }\n--EXPECTF--\n",
+    ] {
+        assert_eq!(
+            classify(source),
+            "runnable\tselected for PTN semantic measurement\n"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
     let cases = [
         (
-            "abstract method contracts",
-            "--TEST--\nabstract\n--FILE--\n<?php\nabstract class Base { abstract protected function run(); }\n--EXPECT--\n",
+            "final method contracts",
+            "--TEST--\nfinal\n--FILE--\n<?php\nclass Base { final public function run() {} }\n--EXPECT--\n",
             "unsupported-class-contract-metadata\t",
-            "requires abstract class/method contract metadata",
+            "requires final class/method override metadata",
         ),
         (
             "magic method dispatch",

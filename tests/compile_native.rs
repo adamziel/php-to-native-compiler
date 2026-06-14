@@ -2416,6 +2416,77 @@ fn parser_accepts_variable_root_array_assignment_and_unset() {
 }
 
 #[test]
+fn parser_accepts_property_root_array_assignment_expressions() {
+    let program =
+        parser::parse("<?php $this->children[$name] = $value; $this->counts[$name] += 2;").unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected assignment expression statement");
+    };
+    let Expr::Assign { target, op, .. } = expression else {
+        panic!("expected property array assignment expression");
+    };
+    let AssignmentTarget::PropertyArrayDim {
+        receiver,
+        name,
+        dimensions,
+        ..
+    } = target
+    else {
+        panic!("expected property array assignment target");
+    };
+    assert_eq!(name, "children");
+    assert!(matches!(receiver.as_ref(), Expr::Variable(name, _) if name == "this"));
+    assert_eq!(dimensions.len(), 1);
+    assert!(matches!(dimensions[0].as_ref(), Some(Expr::Variable(name, _)) if name == "name"));
+    assert_eq!(*op, AssignmentOp::Assign);
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected compound assignment expression statement");
+    };
+    let Expr::Assign { target, op, .. } = expression else {
+        panic!("expected property array compound assignment expression");
+    };
+    assert!(matches!(
+        target,
+        AssignmentTarget::PropertyArrayDim { name, .. } if name == "counts"
+    ));
+    assert_eq!(*op, AssignmentOp::AddAssign);
+}
+
+#[test]
+fn parser_models_final_class_and_modifier_diagnostics() {
+    let program = parser::parse("<?php final class Base {}").unwrap();
+    assert!(program.classes[0].is_final);
+
+    let err = parser::parse("<?php final class Base {} class Child extends Base {}").unwrap_err();
+    assert!(err
+        .message
+        .contains("Class Child cannot extend final class Base"));
+
+    let err = parser::parse("<?php final final class Bad {}").unwrap_err();
+    assert!(err
+        .message
+        .contains("Multiple final modifiers are not allowed"));
+
+    let err = parser::parse("<?php final abstract class Bad {}").unwrap_err();
+    assert!(err
+        .message
+        .contains("Cannot use the final modifier on an abstract class"));
+
+    let err = parser::parse("<?php class Bad { abstract abstract function run() {} }").unwrap_err();
+    assert!(err
+        .message
+        .contains("Multiple abstract modifiers are not allowed"));
+
+    let err = parser::parse("<?php class Bad { public public function run() {} }").unwrap_err();
+    assert!(err
+        .message
+        .contains("Multiple access type modifiers are not allowed"));
+}
+
+#[test]
 fn parser_accepts_array_offset_compound_assignment_expressions() {
     let program = parser::parse(
         "<?php\n\
@@ -3745,11 +3816,6 @@ fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
             "enum declarations are unsupported",
         ),
         (
-            "interface",
-            "<?php\ninterface Sample {}",
-            "interface declarations are unsupported",
-        ),
-        (
             "trait",
             "<?php\ntrait Sample {}",
             "trait declarations are unsupported",
@@ -3762,6 +3828,34 @@ fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
         assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
         assert_eq!(error.span.unwrap().line, 2, "{name}");
     }
+}
+
+#[test]
+fn parser_accepts_interface_declarations_and_implements_metadata() {
+    let program = parser::parse(
+        "<?php
+interface Contract {
+    public function run(): mixed;
+}
+abstract class Base {
+    abstract protected function hidden();
+}
+class Worker extends Base implements Contract {
+    public function run(): mixed { return 1; }
+    protected function hidden() {}
+}",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes.len(), 3);
+    assert!(program.classes[0].is_interface);
+    assert_eq!(program.classes[0].methods.len(), 1);
+    assert!(program.classes[0].methods[0].is_abstract);
+    assert!(program.classes[1].is_abstract);
+    assert!(program.classes[1].methods[0].is_abstract);
+    assert_eq!(program.classes[2].interfaces, vec!["Contract"]);
+    assert!(!program.classes[2].is_abstract);
+    assert_eq!(program.classes[2].methods.len(), 2);
 }
 
 #[test]
@@ -23823,6 +23917,108 @@ Box::bumpStatic();
     assert!(c_source.contains("ptn_add(&runtime"));
     assert!(c_source.contains("ptn_multiply(&runtime"));
     assert!(c_source.contains("ptn_concat(&runtime"));
+}
+
+#[test]
+fn compile_property_array_dimension_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-property-array-dimension-assignments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-array-dimension-assignments.php");
+    let output = root.join("property-array-dimension-assignments-bin");
+    fs::write(
+        &input,
+        "<?php
+class Bag {
+    private $items = [];
+
+    public function put($key, $value) {
+        $this->items[$key] = $value;
+    }
+
+    public function add($key, $value) {
+        return $this->items[$key] += $value;
+    }
+
+    public function append($value) {
+        $this->items[] = $value;
+    }
+
+    public function drop($key) {
+        unset($this->items[$key]);
+    }
+
+    public function all() {
+        return $this->items;
+    }
+}
+
+class OffsetBox implements ArrayAccess {
+    public $value = 100;
+
+    public function offsetGet($offset) {
+        var_dump($offset);
+        return $this->value;
+    }
+
+    public function offsetSet($offset, $value) {
+        var_dump($offset);
+        $this->value = $value;
+    }
+
+    public function offsetExists($offset) {
+        return true;
+    }
+
+    public function offsetUnset($offset) {
+    }
+}
+
+$bag = new Bag();
+$bag->put(\"a\", 2);
+var_dump($bag->add(\"a\", 3));
+$bag->append(9);
+var_dump($bag->all());
+$bag->drop(\"a\");
+var_dump($bag->all());
+
+$box = new OffsetBox();
+var_dump($box[] += 5);
+var_dump($box->value);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(5)\n",
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  int(5)\n",
+            "  [0]=>\n",
+            "  int(9)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(9)\n",
+            "}\n",
+            "NULL\n",
+            "NULL\n",
+            "int(105)\n",
+            "int(105)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_set(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_set_from_assign_op(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_read_for_assign_op(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_unset(&runtime"));
 }
 
 #[test]

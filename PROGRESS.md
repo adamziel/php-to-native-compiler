@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T16:40Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; COW 69/103 passed.
+Refresh: 2026-06-14T16:45Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; COW 69/103 passed.
 
 ## Dashboard
 
@@ -74,7 +74,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Binary-key|1|1|0|
 |Runtime-config|54|10|44|
 |COW-gate|26|26|0|
-|1k-baseline|1000|285|715|
+|1k-baseline|1000|379|621|
 
 ## 2026-06-14 ptn-j6gv Broad String/Runtime Row Pack
 
@@ -97,3 +97,23 @@ Newly passing broad rows:
 - `ext/standard/tests/array/array_search_variation4.phpt`
 
 Implemented behavior: strict-types `declare` propagation for internal scalar binding, directory resources for `opendir()`/`closedir()`, nested-array stringification warnings in array set operations, character endpoint handling in `range()`, read-only dynamic variable rows plus dynamic `unset()`, and named internal binding for `array_filter(..., mode:)`.
+
+## 2026-06-14 ptn-qsmv.14
+
+Broad 1k class/interface row pack on corpus revision
+`8c63ec400ce8e07c57a8d9499317b96a8beafb8b` is recorded in
+`docs/PHPT_BROAD_1K_CLASS_INTERFACE_ROW_PACK_PTN_QSMV14_2026-06-14.md`.
+
+Final broad run after rebasing on `origin/master`: 1,000 selected, 459 runnable,
+541 excluded, 379 passed, 80 failed. The class/interface declaration slice
+contributes 13 newly green broad rows: ArrayAccess interface rows
+`bug30346`/`bug69955`, abstract method/class rows, access modifier diagnostics
+`access_modifiers_001` through `006`, `007`, `013`, and interface diagnostic
+`bug32427`. The final rebased pass-set comparison against pre-work commit
+`e6d9a2a86d8a` shows 61 newly passing rows total; 39 were old runtime failures
+and 22 were old classifier exclusions.
+
+Focused PHPT checks: raw interface/ArrayAccess pack is 6/38; classified
+class-contract bucket is 9/9. Rust checks passed: `cargo fmt --check`,
+targeted `compile_native` parser/runtime tests, and `cargo test --test
+phpt_classifier`.

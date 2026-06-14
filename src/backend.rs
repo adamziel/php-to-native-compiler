@@ -265,6 +265,9 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
         "\nstatic int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
     );
     out.push_str(
+        "static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);\n",
+    );
+    out.push_str(
         "\nstatic PTN_UNUSED const char *ptn_user_type_hint_given_name(PtnValue value) {\n",
     );
     out.push_str("    value = ptn_value_deref(value);\n");
@@ -293,7 +296,8 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     );
     out.push_str("    value = ptn_value_deref(value);\n");
     out.push_str("    if (value.type == PTN_OBJECT) {\n");
-    out.push_str("        return ptn_declared_class_is_same_or_descendant(value.as.object->class_name, expected_class_name);\n");
+    out.push_str("        return ptn_declared_class_is_same_or_descendant(value.as.object->class_name, expected_class_name) ||\n");
+    out.push_str("            ptn_declared_class_implements_interface(value.as.object->class_name, expected_class_name);\n");
     out.push_str("    }\n");
     out.push_str("    if (value.type == PTN_EXCEPTION) {\n");
     out.push_str("        return ptn_exception_type_matches_name(value.as.exception->class_name, expected_class_name);\n");
@@ -1168,7 +1172,7 @@ fn emit_return_type_boundary(
             out.push_str("        exit(255);\n");
             out.push_str("    }\n");
         }
-        TypeHint::Void => {}
+        TypeHint::Mixed | TypeHint::Void => {}
     }
 }
 
@@ -1178,7 +1182,14 @@ fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static
         Some(TypeHint::Float) => Some("ptn_cast_float"),
         Some(TypeHint::String) => Some("ptn_cast_string"),
         Some(TypeHint::Bool) => Some("ptn_cast_bool"),
-        Some(TypeHint::Null | TypeHint::Array | TypeHint::Void | TypeHint::Class(_)) | None => None,
+        Some(
+            TypeHint::Null
+            | TypeHint::Array
+            | TypeHint::Mixed
+            | TypeHint::Void
+            | TypeHint::Class(_),
+        )
+        | None => None,
     }
 }
 
@@ -1422,6 +1433,39 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     for class in classes {
+        if class.is_interface {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_interface_exists(const char *name) {\n");
+    for builtin in [
+        "ArrayAccess",
+        "Iterator",
+        "IteratorAggregate",
+        "Traversable",
+        "Stringable",
+        "Throwable",
+        "DateTimeInterface",
+        "Serializable",
+    ] {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(builtin);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    for class in classes {
+        if !class.is_interface {
+            continue;
+        }
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
@@ -1479,6 +1523,51 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    const char *current = class_name;\n");
     out.push_str("    while (current != NULL) {\n");
     out.push_str("        if (ptn_ascii_case_equal(current, ancestor_name)) {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        current = ptn_declared_class_parent_name(current);\n");
+    out.push_str("    }\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_implements_interface_direct(const char *class_name, const char *interface_name) {\n",
+    );
+    if classes.iter().all(|class| class.interfaces.is_empty()) {
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)interface_name;\n");
+    }
+    for class in classes {
+        if class.interfaces.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for interface in &class.interfaces {
+            out.push_str("        if (ptn_ascii_case_equal(interface_name, \"");
+            out.push_str(&c_string(interface));
+            out.push_str("\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name) {\n",
+    );
+    out.push_str("    if (class_name == NULL || interface_name == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *current = class_name;\n");
+    out.push_str("    while (current != NULL) {\n");
+    out.push_str(
+        "        if (ptn_declared_class_implements_interface_direct(current, interface_name)) {\n",
+    );
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        current = ptn_declared_class_parent_name(current);\n");
@@ -2529,6 +2618,56 @@ fn emit_instruction(
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
         }
+        Instruction::UnsetPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            line,
+        } => {
+            let receiver_temp = values.emit_materialized_value(out, receiver);
+            let path = emit_array_unset_path_segments(out, values, dimensions);
+            let current_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&current_temp);
+            out.push_str(" = ptn_object_read_property(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_value_array_path_unset(&runtime, &");
+            out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            let assigned_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&assigned_temp);
+            out.push_str(" = ptn_object_write_property(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+            out.push_str(", ");
+            out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &assigned_temp);
+            emit_value_cleanup(out, "    ", &current_temp);
+            emit_value_cleanup(out, "    ", &receiver_temp);
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+        }
         Instruction::UnsetProperty {
             receiver,
             name,
@@ -3371,6 +3510,16 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
             }
         }
+        Instruction::UnsetPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            for dimension in dimensions {
+                collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+            }
+        }
         Instruction::UnsetProperty { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
@@ -3533,6 +3682,18 @@ fn collect_assignment_target_legacy_dollar_brace_deprecations(
             }
         }
         AssignmentTarget::ArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+        }
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
@@ -3815,6 +3976,16 @@ fn collect_instruction_runtime_requirements(
                 collect_value_runtime_requirements(dimension, functions, requirements);
             }
         }
+        Instruction::UnsetPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            for dimension in dimensions {
+                collect_value_runtime_requirements(dimension, functions, requirements);
+            }
+        }
         Instruction::UnsetProperty { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
@@ -3943,6 +4114,18 @@ fn collect_assignment_target_runtime_requirements(
             }
         }
         AssignmentTarget::ArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
+            }
+        }
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -5020,7 +5203,8 @@ impl AssignmentTargetLine for AssignmentTarget {
             AssignmentTarget::Variable { line, .. }
             | AssignmentTarget::DynamicVariable { line, .. }
             | AssignmentTarget::DynamicArrayDim { line, .. }
-            | AssignmentTarget::ArrayDim { line, .. } => *line,
+            | AssignmentTarget::ArrayDim { line, .. }
+            | AssignmentTarget::PropertyArrayDim { line, .. } => *line,
             AssignmentTarget::Property { line, .. }
             | AssignmentTarget::StaticProperty { line, .. } => *line,
             AssignmentTarget::List(target) => target.line,
@@ -5047,6 +5231,7 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
             | AssignmentTarget::DynamicVariable { .. }
             | AssignmentTarget::DynamicArrayDim { .. }
             | AssignmentTarget::ArrayDim { .. }
+            | AssignmentTarget::PropertyArrayDim { .. }
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::StaticProperty { .. } => false,
         },
@@ -5082,6 +5267,17 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
                     .any(|dimension| value_mentions_variable(dimension, name))
         }
         AssignmentTarget::ArrayDim { array, .. } => array == name,
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_mentions_variable(receiver, name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
         AssignmentTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
         AssignmentTarget::StaticProperty { .. } => false,
         AssignmentTarget::List(target) => list_assignment_references_variable(target, name),
@@ -5566,6 +5762,11 @@ impl ValueEmitter {
                     return self
                         .emit_offset_coalesce_assignment(out, array, dimensions, *line, value);
                 }
+                AssignmentTarget::PropertyArrayDim { .. } => {
+                    unreachable!(
+                        "parser rejects null coalescing assignment for property array offsets"
+                    );
+                }
                 AssignmentTarget::List(_) => {
                     unreachable!("parser rejects null coalescing assignment for list targets");
                 }
@@ -5750,6 +5951,37 @@ impl ValueEmitter {
             return result_temp;
         }
 
+        if let AssignmentTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            line,
+        } = target
+        {
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                return self.emit_property_array_dim_compound_assignment(
+                    out,
+                    receiver,
+                    name,
+                    dimensions,
+                    *line,
+                    compound_op,
+                    value,
+                );
+            }
+            let value_temp = self.emit_materialized_value(out, value);
+            let result_temp = self.emit_property_array_dim_assignment_from_temp(
+                out,
+                receiver,
+                name,
+                dimensions,
+                *line,
+                &value_temp,
+            );
+            emit_value_cleanup(out, "    ", &value_temp);
+            return result_temp;
+        }
+
         if let AssignmentTarget::DynamicVariable { name, line } = target {
             let name_temp = self.emit_dynamic_variable_name(out, name, *line);
             let value_temp = self.emit_materialized_value(out, value);
@@ -5921,6 +6153,159 @@ impl ValueEmitter {
 
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        result_temp
+    }
+
+    fn emit_property_array_dim_assignment_from_temp(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        value_temp: &str,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let path = emit_array_path_segments(out, self, dimensions);
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let snapshot_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&snapshot_temp);
+        out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+        out.push_str(value_temp);
+        out.push_str(");\n");
+        out.push_str("    ptn_value_array_path_set(&runtime, &");
+        out.push_str(&current_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&snapshot_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_object_write_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&current_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone(");
+        out.push_str(&snapshot_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &snapshot_temp);
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        result_temp
+    }
+
+    fn emit_property_array_dim_compound_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        op: BinaryOp,
+        value: &ValueExpr,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let path = emit_array_path_segments(out, self, dimensions);
+        let value_temp = self.emit_materialized_value(out, value);
+
+        let current_value_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_value_temp);
+        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let current_element_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_element_temp);
+        out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
+        out.push_str(&current_value_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp =
+            self.emit_compound_binary_value(out, &current_element_temp, &value_temp, line, op);
+        out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
+        out.push_str(&current_value_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&result_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_object_write_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&current_value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &current_element_temp);
+        emit_value_cleanup(out, "    ", &current_value_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        emit_value_cleanup(out, "    ", &receiver_temp);
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
@@ -6227,6 +6612,9 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
+            AssignmentTarget::PropertyArrayDim { .. } => {
+                unreachable!("parser rejects by-reference assignment to property array targets");
+            }
             AssignmentTarget::Property {
                 receiver,
                 name,
@@ -6368,6 +6756,14 @@ impl ValueEmitter {
                 }
                 result_temp
             }
+            AssignmentTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                line,
+            } => self.emit_property_array_dim_assignment_from_temp(
+                out, receiver, name, dimensions, *line, value_temp,
+            ),
             AssignmentTarget::Property {
                 receiver,
                 name,
@@ -7762,6 +8158,23 @@ impl ValueEmitter {
         line: usize,
         declare_result: bool,
     ) {
+        if declared_class.is_interface || declared_class.is_abstract {
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate ");
+            out.push_str(if declared_class.is_interface {
+                "interface "
+            } else {
+                "abstract class "
+            });
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str("\");\n");
+            return;
+        }
         out.push_str("    ");
         if declare_result {
             out.push_str("PtnValue ");

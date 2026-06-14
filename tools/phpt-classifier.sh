@@ -1044,16 +1044,6 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])interface[[:space:]]+[a-z_\\]/) {
-                print "unsupported-interface-declaration\trequires interface declarations, constants, method contracts, and interface metadata tables"
-                found = 1
-                exit
-            }
-            if (line ~ /(^|[^[:alnum:]_$])implements[[:space:]]+[a-z_\\]/) {
-                print "unsupported-interface-implementation\trequires interface implementation checks, method compatibility validation, and runtime interface metadata"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[^[:alnum:]_$])trait[[:space:]]+[a-z_\\]/) {
                 print "unsupported-trait-declaration\trequires trait declarations, composition, aliases, precedence, and conflict diagnostics"
                 found = 1
@@ -1204,6 +1194,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         }
         {
             line = ptn_php_code_line($0)
+            if (implemented_modifier_diagnostic_seen) {
+                next
+            }
             readonly_class_context = readonly_class_depth > 0 || readonly_class_pending || line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+class[[:space:]]+[a-z_\\]/
             if (line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*readonly[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ ||
                 line ~ /(^|[[:space:]])readonly[[:space:]]+(public|protected|private|var)?[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
@@ -1214,12 +1207,20 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])abstract[[:space:]]+(class|function|static|public|protected|private|[a-z_\\])/) {
-                print "unsupported-class-contract-metadata\trequires abstract class/method contract metadata, outside PTN modeled class dispatch"
-                found = 1
-                exit
+            implemented_modifier_diagnostic = line ~ /(^|[^[:alnum:]_$])abstract[[:space:]]+abstract([^[:alnum:]_$]|$)/ ||
+                line ~ /(^|[^[:alnum:]_$])final[[:space:]]+final([^[:alnum:]_$]|$)/ ||
+                line ~ /(^|[^[:alnum:]_$])final[[:space:]]+abstract[[:space:]]+(class|function)([^[:alnum:]_$]|$)/ ||
+                line ~ /(^|[^[:alnum:]_$])abstract[[:space:]]+final[[:space:]]+(class|function)([^[:alnum:]_$]|$)/ ||
+                line ~ /(^|[^[:alnum:]_$])public[[:space:]][^;{}]*public([^[:alnum:]_$]|$)/ ||
+                line ~ /(^|[^[:alnum:]_$])protected[[:space:]][^;{}]*protected([^[:alnum:]_$]|$)/ ||
+                line ~ /(^|[^[:alnum:]_$])private[[:space:]][^;{}]*private([^[:alnum:]_$]|$)/ ||
+                line ~ /(^|[^[:alnum:]_$])static[[:space:]][^;{}]*static([^[:alnum:]_$]|$)/
+            if (implemented_modifier_diagnostic) {
+                implemented_modifier_diagnostic_seen = 1
+                next
             }
-            if (line ~ /(^|[^[:alnum:]_$])final[[:space:]]+(class|function|static|public|protected|private|[a-z_\\])/) {
+            if (!implemented_modifier_diagnostic &&
+                line ~ /(^|[^[:alnum:]_$])final[[:space:]]+(function|static|public|protected|private|abstract)([^[:alnum:]_$]|$)/) {
                 print "unsupported-class-contract-metadata\trequires final class/method override metadata, outside PTN modeled class dispatch"
                 found = 1
                 exit

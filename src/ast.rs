@@ -12,6 +12,10 @@ pub struct Program {
 pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
+    pub interfaces: Vec<String>,
+    pub is_abstract: bool,
+    pub is_final: bool,
+    pub is_interface: bool,
     pub is_readonly: bool,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
@@ -68,6 +72,7 @@ pub struct MethodDecl {
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
     pub is_static: bool,
+    pub is_abstract: bool,
     pub body: Vec<Statement>,
     pub span: SourceSpan,
 }
@@ -118,6 +123,7 @@ pub enum TypeHint {
     Float,
     String,
     Bool,
+    Mixed,
     Void,
     Class(String),
 }
@@ -304,6 +310,12 @@ pub enum AssignmentTarget {
         span: SourceSpan,
     },
     ArrayDim(ArrayDimTarget),
+    PropertyArrayDim {
+        receiver: Box<Expr>,
+        name: String,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,
@@ -389,6 +401,12 @@ pub enum UnsetTarget {
     },
     DynamicArrayDim {
         name: Box<Expr>,
+        dimensions: Vec<Expr>,
+        span: SourceSpan,
+    },
+    PropertyArrayDim {
+        receiver: Box<Expr>,
+        name: String,
         dimensions: Vec<Expr>,
         span: SourceSpan,
     },

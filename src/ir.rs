@@ -51,6 +51,10 @@ pub type IncludeResolutionMap = HashMap<(String, usize, usize), Vec<usize>>;
 pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
+    pub interfaces: Vec<String>,
+    pub is_abstract: bool,
+    pub is_final: bool,
+    pub is_interface: bool,
     pub is_readonly: bool,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
@@ -96,6 +100,7 @@ pub struct MethodDecl {
     pub function_index: usize,
     pub visibility: PropertyVisibility,
     pub is_static: bool,
+    pub is_abstract: bool,
     pub line: usize,
 }
 
@@ -130,6 +135,7 @@ pub enum TypeHint {
     Float,
     String,
     Bool,
+    Mixed,
     Void,
     Class(String),
 }
@@ -178,6 +184,12 @@ pub enum Instruction {
     },
     UnsetDynamicArrayDim {
         name: ValueExpr,
+        dimensions: Vec<ValueExpr>,
+        line: usize,
+    },
+    UnsetPropertyArrayDim {
+        receiver: ValueExpr,
+        name: String,
         dimensions: Vec<ValueExpr>,
         line: usize,
     },
@@ -470,6 +482,12 @@ pub enum AssignmentTarget {
     },
     ArrayDim {
         array: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
+    PropertyArrayDim {
+        receiver: Box<ValueExpr>,
+        name: String,
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
@@ -872,6 +890,7 @@ impl<'a> LoweringContext<'a> {
                     function_index,
                     visibility: lower_property_visibility(method.visibility),
                     is_static: method.is_static,
+                    is_abstract: method.is_abstract,
                     line: method.span.line,
                 }
             })
@@ -879,6 +898,10 @@ impl<'a> LoweringContext<'a> {
         ClassDecl {
             name: class.name.clone(),
             parent_name: class.parent_name.clone(),
+            interfaces: class.interfaces.clone(),
+            is_abstract: class.is_abstract,
+            is_final: class.is_final,
+            is_interface: class.is_interface,
             is_readonly: class.is_readonly,
             properties,
             static_properties,
@@ -1206,6 +1229,7 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::Float => TypeHint::Float,
         AstTypeHint::String => TypeHint::String,
         AstTypeHint::Bool => TypeHint::Bool,
+        AstTypeHint::Mixed => TypeHint::Mixed,
         AstTypeHint::Void => TypeHint::Void,
         AstTypeHint::Class(name) => TypeHint::Class(name),
     }
@@ -1252,6 +1276,24 @@ impl<'a> LoweringContext<'a> {
                     })
                     .collect(),
                 line: target.span.line,
+            },
+            AstAssignmentTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                span,
+            } => AssignmentTarget::PropertyArrayDim {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
             },
             AstAssignmentTarget::Property {
                 receiver,
@@ -1427,6 +1469,20 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 line: span.line,
             },
+            AstUnsetTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                span,
+            } => Instruction::UnsetPropertyArrayDim {
+                receiver: self.lower_expr(receiver),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| self.lower_expr(dimension))
+                    .collect(),
+                line: span.line,
+            },
             AstUnsetTarget::Property {
                 receiver,
                 name,
@@ -1544,9 +1600,9 @@ impl<'a> LoweringContext<'a> {
                     AssignmentOp::Assign,
                     self.lower_assignment_value(&name, op, value, line),
                 ),
-                AssignmentTarget::ArrayDim { .. } | AssignmentTarget::DynamicArrayDim { .. } => {
-                    (op, self.lower_expr(value))
-                }
+                AssignmentTarget::ArrayDim { .. }
+                | AssignmentTarget::DynamicArrayDim { .. }
+                | AssignmentTarget::PropertyArrayDim { .. } => (op, self.lower_expr(value)),
                 AssignmentTarget::Property { .. } | AssignmentTarget::StaticProperty { .. } => {
                     (op, self.lower_expr(value))
                 }
@@ -2142,6 +2198,24 @@ fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
             text
         }
         AstAssignmentTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
+        AstAssignmentTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            let mut text = format!("{}->{name}", assertion_expr_text(receiver));
+            for dimension in dimensions {
+                let index = dimension
+                    .as_ref()
+                    .map(assertion_expr_text)
+                    .unwrap_or_default();
+                text.push('[');
+                text.push_str(&index);
+                text.push(']');
+            }
+            text
+        }
         AstAssignmentTarget::Property { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }

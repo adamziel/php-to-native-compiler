@@ -148,6 +148,16 @@ impl IncludeCollector {
                                 self.collect_expr(dimension, source_file, source_dir)?;
                             }
                         }
+                        UnsetTarget::PropertyArrayDim {
+                            receiver,
+                            dimensions,
+                            ..
+                        } => {
+                            self.collect_expr(receiver, source_file, source_dir)?;
+                            for dimension in dimensions {
+                                self.collect_expr(dimension, source_file, source_dir)?;
+                            }
+                        }
                         UnsetTarget::Property { receiver, .. } => {
                             self.collect_expr(receiver, source_file, source_dir)?;
                         }
@@ -436,6 +446,19 @@ impl IncludeCollector {
         match target {
             AssignmentTarget::ArrayDim(target) => {
                 self.collect_array_dim_target(target, source_file, source_dir)
+            }
+            AssignmentTarget::PropertyArrayDim {
+                receiver,
+                dimensions,
+                ..
+            } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
             }
             AssignmentTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)

@@ -112,7 +112,12 @@ struct ForeachVariable {
 #[derive(Clone, Copy)]
 struct ClassModifiers {
     is_static: bool,
+    is_abstract: bool,
+    is_final: bool,
     is_readonly: bool,
+    static_span: Option<SourceSpan>,
+    abstract_span: Option<SourceSpan>,
+    final_span: Option<SourceSpan>,
     readonly_span: Option<SourceSpan>,
     visibility: PropertyVisibility,
     visibility_span: Option<SourceSpan>,
@@ -124,6 +129,11 @@ impl Default for ClassModifiers {
     fn default() -> Self {
         Self {
             is_static: false,
+            is_abstract: false,
+            is_final: false,
+            static_span: None,
+            abstract_span: None,
+            final_span: None,
             is_readonly: false,
             readonly_span: None,
             visibility: PropertyVisibility::Public,
@@ -162,6 +172,9 @@ impl Parser {
         )?;
         validate_class_names(&classes)?;
         validate_parent_class_names(&classes)?;
+        validate_interface_references(&classes)?;
+        validate_abstract_methods(&classes)?;
+        validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
         validate_class_scoped_constant_exprs(&classes)?;
         for class in &classes {
@@ -746,6 +759,49 @@ impl Parser {
     }
 
     fn parse_class_decl(&mut self) -> Result<ClassDecl> {
+        let mut is_abstract = false;
+        let mut abstract_span = None;
+        let mut is_final = false;
+        let mut final_span = None;
+        loop {
+            if token_is_identifier_named(self.peek(), "abstract")
+                && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "final")
+                    || token_is_identifier_named(self.peek_next(), "readonly"))
+            {
+                if is_abstract {
+                    return Err(Diagnostic::new(
+                        "Multiple abstract modifiers are not allowed",
+                        Some(self.peek().span),
+                    ));
+                }
+                is_abstract = true;
+                abstract_span = Some(self.advance().span);
+                continue;
+            }
+            if token_is_identifier_named(self.peek(), "final")
+                && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "abstract")
+                    || token_is_identifier_named(self.peek_next(), "final"))
+            {
+                if is_final {
+                    return Err(Diagnostic::new(
+                        "Multiple final modifiers are not allowed",
+                        Some(self.peek().span),
+                    ));
+                }
+                is_final = true;
+                final_span = Some(self.advance().span);
+                continue;
+            }
+            break;
+        }
+        if is_abstract && is_final {
+            return Err(Diagnostic::new(
+                "Cannot use the final modifier on an abstract class",
+                final_span.or(abstract_span),
+            ));
+        }
         let readonly_span = if token_is_identifier_named(self.peek(), "readonly")
             && token_is_identifier_named(self.peek_next(), "class")
         {
@@ -757,13 +813,26 @@ impl Parser {
         let TokenKind::Identifier(keyword) = &class_token.kind else {
             return Err(Diagnostic::new("expected class", Some(class_token.span)));
         };
-        if !keyword.eq_ignore_ascii_case("class") {
+        let is_interface = keyword.eq_ignore_ascii_case("interface");
+        if !keyword.eq_ignore_ascii_case("class") && !is_interface {
             return Err(Diagnostic::new("expected class", Some(class_token.span)));
+        }
+        if is_interface && (is_abstract || readonly_span.is_some()) {
+            return Err(Diagnostic::new(
+                "interface declarations cannot be abstract or readonly",
+                abstract_span.or(readonly_span).or(Some(class_token.span)),
+            ));
+        }
+        if is_final && is_interface {
+            return Err(Diagnostic::new(
+                "interface declarations cannot be final",
+                final_span.or(Some(class_token.span)),
+            ));
         }
         let is_readonly = readonly_span.is_some();
 
         let (class_name, _) = self.parse_declaration_name("expected class name")?;
-        let parent_name = if token_is_identifier_named(self.peek(), "extends") {
+        let parent_name = if !is_interface && token_is_identifier_named(self.peek(), "extends") {
             self.advance();
             Some(
                 self.parse_resolved_class_name("expected parent class name")?
@@ -772,11 +841,22 @@ impl Parser {
         } else {
             None
         };
-        if token_is_identifier_named(self.peek(), "implements") {
-            return Err(Diagnostic::new(
-                "interfaces are unsupported",
-                Some(self.peek().span),
-            ));
+        let mut interfaces = Vec::new();
+        if is_interface && token_is_identifier_named(self.peek(), "extends") {
+            self.advance();
+            interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            }
+        }
+        if !is_interface && token_is_identifier_named(self.peek(), "implements") {
+            self.advance();
+            interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            }
         }
 
         self.expect_left_brace()?;
@@ -785,7 +865,7 @@ impl Parser {
         let mut constants = Vec::new();
         let mut methods = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
-            match self.parse_class_member(is_readonly, &class_name)? {
+            match self.parse_class_member(is_readonly, is_interface, &class_name)? {
                 ParsedClassMember::Method(method) => methods.push(method),
                 ParsedClassMember::Properties(parsed_properties) => {
                     properties.extend(parsed_properties);
@@ -802,22 +882,39 @@ impl Parser {
         Ok(ClassDecl {
             name: class_name,
             parent_name,
+            interfaces,
+            is_abstract: is_abstract || is_interface,
+            is_final,
+            is_interface,
             is_readonly,
             properties,
             static_properties,
             constants,
             methods,
-            span: readonly_span.unwrap_or(class_token.span),
+            span: abstract_span.or(readonly_span).unwrap_or(class_token.span),
         })
     }
 
     fn parse_class_member(
         &mut self,
         class_is_readonly: bool,
+        class_is_interface: bool,
         class_name: &str,
     ) -> Result<ParsedClassMember> {
-        let modifiers = self.parse_class_modifiers()?;
+        let mut modifiers = self.parse_class_modifiers()?;
+        if modifiers.is_abstract && modifiers.is_final {
+            return Err(Diagnostic::new(
+                "Cannot use the final modifier on an abstract method",
+                modifiers.final_span.or(modifiers.abstract_span),
+            ));
+        }
         if matches!(self.peek().kind, TokenKind::Const) {
+            if modifiers.is_abstract {
+                return Err(Diagnostic::new(
+                    "Cannot use the abstract modifier on a class constant",
+                    modifiers.abstract_span,
+                ));
+            }
             if modifiers.is_static {
                 return Err(Diagnostic::new(
                     "static class constants are unsupported",
@@ -830,8 +927,20 @@ impl Parser {
                     modifiers.visibility_span,
                 ));
             }
+            if class_is_interface && modifiers.visibility != PropertyVisibility::Public {
+                return Err(Diagnostic::new(
+                    format!("Access type for interface constant {class_name} must be public"),
+                    modifiers.visibility_span,
+                ));
+            }
             return Ok(ParsedClassMember::Constants(
                 self.parse_class_constant_declarations(modifiers.visibility)?,
+            ));
+        }
+        if class_is_interface && matches!(self.peek().kind, TokenKind::Variable(_)) {
+            return Err(Diagnostic::new(
+                "interfaces may not include properties",
+                Some(self.peek().span),
             ));
         }
         let member_is_readonly = class_is_readonly || modifiers.is_readonly;
@@ -896,12 +1005,16 @@ impl Parser {
                 Some(self.peek().span),
             ));
         }
+        if class_is_interface {
+            modifiers.is_abstract = true;
+        }
         let method = self.parse_method_decl(modifiers)?;
-        if method.visibility != PropertyVisibility::Public
-            && !magic_method_requires_public_visibility(&method.name)
-        {
+        if class_is_interface && method.visibility != PropertyVisibility::Public {
             return Err(Diagnostic::new(
-                "non-public class methods are unsupported",
+                format!(
+                    "Access type for interface method {class_name}::{}() must be public",
+                    method.name
+                ),
                 modifiers.visibility_span,
             ));
         }
@@ -923,12 +1036,25 @@ impl Parser {
                         )?;
                         continue;
                     }
+                    if modifiers.visibility_span.is_some() {
+                        return Err(Diagnostic::new(
+                            "Multiple access type modifiers are not allowed",
+                            Some(self.peek().span),
+                        ));
+                    }
                     modifiers.visibility = PropertyVisibility::Public;
                     modifiers.visibility_span = Some(self.peek().span);
                     self.advance();
                 }
                 "static" => {
+                    if modifiers.is_static {
+                        return Err(Diagnostic::new(
+                            "Multiple static modifiers are not allowed",
+                            Some(self.peek().span),
+                        ));
+                    }
                     modifiers.is_static = true;
+                    modifiers.static_span = Some(self.peek().span);
                     self.advance();
                 }
                 "private" => {
@@ -938,6 +1064,12 @@ impl Parser {
                             PropertyVisibility::Private,
                         )?;
                         continue;
+                    }
+                    if modifiers.visibility_span.is_some() {
+                        return Err(Diagnostic::new(
+                            "Multiple access type modifiers are not allowed",
+                            Some(self.peek().span),
+                        ));
                     }
                     modifiers.visibility = PropertyVisibility::Private;
                     modifiers.visibility_span = Some(self.peek().span);
@@ -951,17 +1083,36 @@ impl Parser {
                         )?;
                         continue;
                     }
+                    if modifiers.visibility_span.is_some() {
+                        return Err(Diagnostic::new(
+                            "Multiple access type modifiers are not allowed",
+                            Some(self.peek().span),
+                        ));
+                    }
                     modifiers.visibility = PropertyVisibility::Protected;
                     modifiers.visibility_span = Some(self.peek().span);
                     self.advance();
                 }
                 "abstract" => {
-                    return Err(Diagnostic::new(
-                        "abstract class methods are unsupported",
-                        Some(self.peek().span),
-                    ));
+                    if modifiers.is_abstract {
+                        return Err(Diagnostic::new(
+                            "Multiple abstract modifiers are not allowed",
+                            Some(self.peek().span),
+                        ));
+                    }
+                    modifiers.is_abstract = true;
+                    modifiers.abstract_span = Some(self.peek().span);
+                    self.advance();
                 }
                 "final" => {
+                    if modifiers.is_final {
+                        return Err(Diagnostic::new(
+                            "Multiple final modifiers are not allowed",
+                            Some(self.peek().span),
+                        ));
+                    }
+                    modifiers.is_final = true;
+                    modifiers.final_span = Some(self.peek().span);
                     self.advance();
                 }
                 "readonly" => {
@@ -1276,10 +1427,15 @@ impl Parser {
         } else {
             None
         };
-        self.function_depth += 1;
-        let body = self.parse_block();
-        self.function_depth -= 1;
-        let body = body?;
+        let body = if modifiers.is_abstract {
+            self.expect_semicolon()?;
+            Vec::new()
+        } else {
+            self.function_depth += 1;
+            let body = self.parse_block();
+            self.function_depth -= 1;
+            body?
+        };
         Ok(MethodDecl {
             name,
             visibility: modifiers.visibility,
@@ -1287,6 +1443,7 @@ impl Parser {
             return_type,
             return_by_ref,
             is_static: modifiers.is_static,
+            is_abstract: modifiers.is_abstract,
             body,
             span,
         })
@@ -1570,6 +1727,10 @@ impl Parser {
                 self.advance();
                 Ok(TypeHint::Bool)
             }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("mixed") => {
+                self.advance();
+                Ok(TypeHint::Mixed)
+            }
             TokenKind::Backslash => {
                 let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
                 Ok(TypeHint::Class(class_name))
@@ -1615,6 +1776,10 @@ impl Parser {
                 self.advance();
                 Ok(TypeHint::Bool)
             }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("mixed") => {
+                self.advance();
+                Ok(TypeHint::Mixed)
+            }
             TokenKind::Backslash => {
                 let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
                 Ok(TypeHint::Class(class_name))
@@ -1643,7 +1808,9 @@ impl Parser {
             | TokenKind::BoolType
             | TokenKind::BooleanType => true,
             TokenKind::Identifier(name) => {
-                name.eq_ignore_ascii_case("array") || !is_unsupported_builtin_type_hint_name(name)
+                name.eq_ignore_ascii_case("array")
+                    || name.eq_ignore_ascii_case("mixed")
+                    || !is_unsupported_builtin_type_hint_name(name)
             }
             _ => false,
         }
@@ -3923,8 +4090,17 @@ impl Parser {
 
     fn peek_starts_class_decl(&self) -> bool {
         token_is_identifier_named(self.peek(), "class")
+            || token_is_identifier_named(self.peek(), "interface")
             || (token_is_identifier_named(self.peek(), "readonly")
                 && token_is_identifier_named(self.peek_next(), "class"))
+            || (token_is_identifier_named(self.peek(), "abstract")
+                && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "final")
+                    || token_is_identifier_named(self.peek_next(), "readonly")))
+            || (token_is_identifier_named(self.peek(), "final")
+                && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "abstract")
+                    || token_is_identifier_named(self.peek_next(), "final")))
     }
 
     fn peek_starts_function_decl(&self) -> bool {
@@ -4354,15 +4530,7 @@ fn is_auto_global_name(name: &str) -> bool {
 fn is_unsupported_builtin_type_hint_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "callable"
-            | "false"
-            | "iterable"
-            | "mixed"
-            | "never"
-            | "object"
-            | "static"
-            | "true"
-            | "void"
+        "callable" | "false" | "iterable" | "never" | "object" | "static" | "true" | "void"
     )
 }
 
@@ -4729,6 +4897,18 @@ fn collect_arrow_captures_from_assignment_target(
             }
             collect_arrow_captures_from_array_dim_target(target, exclusions, seen, captures);
         }
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
+        }
         AssignmentTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
@@ -4919,10 +5099,7 @@ fn escape_token_text(value: &str) -> String {
 }
 
 fn is_unsupported_class_like_declaration(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "class" | "enum" | "interface" | "trait"
-    )
+    matches!(name.to_ascii_lowercase().as_str(), "enum" | "trait")
 }
 
 fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
@@ -4941,22 +5118,17 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
     )
 }
 
-fn magic_method_requires_public_visibility(name: &str) -> bool {
+fn is_modeled_builtin_interface_name(name: &str) -> bool {
     matches!(
-        name.to_ascii_lowercase().as_str(),
-        "__call"
-            | "__callstatic"
-            | "__get"
-            | "__set"
-            | "__isset"
-            | "__unset"
-            | "__sleep"
-            | "__wakeup"
-            | "__serialize"
-            | "__unserialize"
-            | "__tostring"
-            | "__set_state"
-            | "__debuginfo"
+        name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+        "arrayaccess"
+            | "iterator"
+            | "iteratoraggregate"
+            | "traversable"
+            | "stringable"
+            | "throwable"
+            | "datetimeinterface"
+            | "serializable"
     )
 }
 
@@ -5022,9 +5194,13 @@ fn validate_class_names(classes: &[ClassDecl]) -> Result<()> {
 fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
     let names = classes
         .iter()
+        .filter(|class| !class.is_interface)
         .map(|class| class.name.to_ascii_lowercase())
         .collect::<HashSet<_>>();
     for class in classes {
+        if class.is_interface {
+            continue;
+        }
         let Some(parent_name) = &class.parent_name else {
             continue;
         };
@@ -5043,8 +5219,84 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
     Ok(())
 }
 
+fn validate_interface_references(classes: &[ClassDecl]) -> Result<()> {
+    let interface_names = classes
+        .iter()
+        .filter(|class| class.is_interface)
+        .map(|class| class.name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    for class in classes {
+        for interface_name in &class.interfaces {
+            if class.is_interface && class.name.eq_ignore_ascii_case(interface_name) {
+                return Err(Diagnostic::new(
+                    format!("Interface \"{interface_name}\" not found"),
+                    Some(class.span),
+                ));
+            }
+            if interface_names.contains(&interface_name.to_ascii_lowercase())
+                || is_modeled_builtin_interface_name(interface_name)
+            {
+                continue;
+            }
+            return Err(Diagnostic::new(
+                format!("Interface \"{interface_name}\" not found"),
+                Some(class.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        if class.is_abstract {
+            continue;
+        }
+        if let Some(method) = class.methods.iter().find(|method| method.is_abstract) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Class {} declares abstract method {}() and must therefore be declared abstract",
+                    class.name, method.name
+                ),
+                Some(class.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_final_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        if class.is_interface {
+            continue;
+        }
+        let Some(parent_name) = &class.parent_name else {
+            continue;
+        };
+        let Some(parent) = classes
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(parent_name))
+        else {
+            continue;
+        };
+        if parent.is_final {
+            return Err(Diagnostic::new(
+                format!(
+                    "Class {} cannot extend final class {parent_name}",
+                    class.name
+                ),
+                Some(class.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_readonly_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
     for class in classes {
+        if class.is_interface {
+            continue;
+        }
         let Some(parent_name) = &class.parent_name else {
             continue;
         };
@@ -5169,6 +5421,7 @@ fn validate_recursive_reference_assignment_value(
         AssignmentTarget::DynamicVariable { .. } => return Ok(()),
         AssignmentTarget::DynamicArrayDim { .. } => return Ok(()),
         AssignmentTarget::ArrayDim(target) => &target.array,
+        AssignmentTarget::PropertyArrayDim { .. } => return Ok(()),
         AssignmentTarget::Property { .. } => return Ok(()),
         AssignmentTarget::StaticProperty { .. } => return Ok(()),
         AssignmentTarget::List(_) => return Ok(()),
@@ -6645,6 +6898,22 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
                     span: combine_spans(variable_span, span),
                 });
             }
+            Expr::PropertyFetch {
+                receiver,
+                name,
+                span: property_span,
+            } => {
+                dimensions.reverse();
+                return Ok(UnsetTarget::PropertyArrayDim {
+                    receiver,
+                    name,
+                    dimensions,
+                    span: combine_spans(property_span, span),
+                });
+            }
+            Expr::Grouped { expr, .. } => {
+                current = *expr;
+            }
             _ => {
                 return Err(Diagnostic::new(
                     "unsupported unset target",
@@ -6677,6 +6946,10 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
             dimensions,
             span,
         }),
+        AssignmentTarget::PropertyArrayDim { span, .. } => Err(Diagnostic::new(
+            "increment/decrement expression target must be a variable, array offset, or property",
+            Some(span),
+        )),
         AssignmentTarget::Property {
             receiver,
             name,
@@ -6869,6 +7142,22 @@ fn assignment_array_dim_target_from_expr(expr: Expr) -> Result<AssignmentTarget>
                     span: combine_spans(variable_span, span),
                 });
             }
+            Expr::PropertyFetch {
+                receiver,
+                name,
+                span: property_span,
+            } => {
+                dimensions.reverse();
+                return Ok(AssignmentTarget::PropertyArrayDim {
+                    receiver,
+                    name,
+                    dimensions,
+                    span: combine_spans(property_span, span),
+                });
+            }
+            Expr::Grouped { expr, .. } => {
+                current = *expr;
+            }
             _ => {
                 return Err(Diagnostic::new(
                     "unsupported assignment target",
@@ -6884,6 +7173,7 @@ fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
         AssignmentTarget::Variable { span, .. }
         | AssignmentTarget::DynamicVariable { span, .. }
         | AssignmentTarget::DynamicArrayDim { span, .. }
+        | AssignmentTarget::PropertyArrayDim { span, .. }
         | AssignmentTarget::Property { span, .. }
         | AssignmentTarget::StaticProperty { span, .. } => *span,
         AssignmentTarget::ArrayDim(target) => target.span,
@@ -6952,6 +7242,10 @@ fn validate_coalesce_assignment_target(
             }
             Ok(())
         }
+        AssignmentTarget::PropertyArrayDim { .. } => Err(Diagnostic::new(
+            "null coalescing assignment currently supports variables, array/string offsets, and properties",
+            Some(span),
+        )),
         AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
@@ -6974,7 +7268,9 @@ fn validate_expression_assignment_target(
 
     match target {
         AssignmentTarget::Variable { .. } => Ok(()),
-        AssignmentTarget::ArrayDim(_) | AssignmentTarget::DynamicArrayDim { .. } => Ok(()),
+        AssignmentTarget::ArrayDim(_)
+        | AssignmentTarget::DynamicArrayDim { .. }
+        | AssignmentTarget::PropertyArrayDim { .. } => Ok(()),
         AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
         AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::List(_) => Err(
@@ -7019,6 +7315,12 @@ fn validate_reference_assignment_target_source(
                     Some(target.span),
                 ));
             }
+        }
+        AssignmentTarget::PropertyArrayDim { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
         }
         AssignmentTarget::Property { .. } => {}
         AssignmentTarget::StaticProperty { .. } => {
