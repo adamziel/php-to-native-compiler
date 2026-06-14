@@ -22592,6 +22592,76 @@ try {
 }
 
 #[test]
+fn compile_class_name_scalar_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-class-name-scalar-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-name-scalar-metadata.php");
+    let output = root.join("class-name-scalar-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace Foo\\Bar {
+    class One {
+        const A = self::class;
+        const B = Two::class;
+    }
+
+    class Two extends One {
+        public static function run() {
+            var_dump(self::class);
+            var_dump(static::class);
+            var_dump(parent::class);
+        }
+    }
+
+    class Three extends Two {
+        public static function check($one = self::class, $two = Baz::class, $three = One::A, $four = self::B) {
+            var_dump($one, $two, $three, $four);
+        }
+    }
+}
+
+namespace {
+    use Foo\\Bar\\One;
+    $class = One::class;
+    $x = new $class;
+    var_dump($x);
+    Foo\\Bar\\Three::run();
+    Foo\\Bar\\Three::check();
+    echo strlen(date('Ymd')), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(Foo\\Bar\\One)#1 (0) {\n",
+            "}\n",
+            "string(11) \"Foo\\Bar\\Two\"\n",
+            "string(13) \"Foo\\Bar\\Three\"\n",
+            "string(11) \"Foo\\Bar\\One\"\n",
+            "string(13) \"Foo\\Bar\\Three\"\n",
+            "string(11) \"Foo\\Bar\\Baz\"\n",
+            "string(11) \"Foo\\Bar\\One\"\n",
+            "string(11) \"Foo\\Bar\\Two\"\n",
+            "8\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_class_constant(&runtime"));
+    assert!(c_source.contains("ptn_value_to_string(ptn_value_deref("));
+    assert!(c_source.contains("ptn_internal_date"));
+}
+
+#[test]
 fn compile_static_property_reads_and_writes_to_native_binary() {
     let root = temp_dir("ptn-native-static-property-access");
     fs::create_dir_all(&root).unwrap();

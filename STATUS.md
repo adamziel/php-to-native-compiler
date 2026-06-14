@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T06:35Z.
-Measured: `ptn-cuev`.
+Last refresh: 2026-06-14T06:40Z.
+Measured: `ptn-h47t`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native Rust 723/723; Bounded PHPT 479/486; Zend PHPT 119/119; ext/standard PHPT 274/281; Array key/callback 38/75.
+Source unit tests 3/3; Native Rust 724/724; Bounded PHPT 479/486; Zend PHPT 119/119; ext/standard PHPT 274/281; Array key/callback 38/75.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native Rust | 723/723 |
+| Native Rust | 724/724 |
 | Bounded PHPT | 479/486 |
 | Zend PHPT | 119/119 |
 | ext/standard PHPT | 274/281 |
@@ -41,6 +41,7 @@ Source unit tests 3/3; Native Rust 723/723; Bounded PHPT 479/486; Zend PHPT 119/
 | Recursive dump frontier | 2/4 |
 | Class declaration frontier | 1/78 |
 | Zend bug regression | 18/37 |
+| Class-name scalar | 9/10 |
 | Dynamic type blockers | 0/44 |
 | Diagnostics/assertion frontier | 0/47 |
 | Non-array class metadata | 0/74 |

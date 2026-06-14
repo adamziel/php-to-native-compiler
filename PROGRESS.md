@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-14T06:35Z.
-Measured: `ptn-cuev`.
+Refresh: 2026-06-14T06:40Z.
+Measured: `ptn-h47t`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native Rust | 723 | 723 | 0 |
+| Native Rust | 724 | 724 | 0 |
 | Bounded PHPT | 486 | 479 | 7 |
 | Zend PHPT | 119 | 119 | 0 |
 | ext/standard PHPT | 281 | 274 | 7 |
@@ -32,6 +32,7 @@ Measured: `ptn-cuev`.
 | Recursive dump frontier | 4 | 2 | 2 |
 | Class declaration frontier | 78 | 1 | 77 |
 | Zend bug regression | 37 | 18 | 19 |
+| Class-name scalar | 10 | 9 | 1 |
 | Dynamic type blockers | 44 | 0 | 44 |
 | Diagnostics/assertion frontier | 47 | 0 | 47 |
 | Non-array class metadata | 74 | 0 | 74 |

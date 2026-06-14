@@ -510,6 +510,12 @@ pub enum Expr {
         argument_names: Vec<Option<String>>,
         span: SourceSpan,
     },
+    DynamicNewObject {
+        class_name: Box<Expr>,
+        arguments: Vec<Expr>,
+        argument_names: Vec<Option<String>>,
+        span: SourceSpan,
+    },
     Clone {
         expr: Box<Expr>,
         span: SourceSpan,
@@ -697,6 +703,7 @@ impl Expr {
             | Expr::DynamicCall { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::NewObject { span, .. }
+            | Expr::DynamicNewObject { span, .. }
             | Expr::Clone { span, .. }
             | Expr::PropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }

@@ -11647,6 +11647,71 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    char *format = ptn_value_to_string(args[0]);
+    time_t timestamp = argc >= 2 ? (time_t)ptn_value_to_integer(args[1]) : time(NULL);
+    struct tm *parts = localtime(&timestamp);
+    if (parts == NULL) {
+        free(format);
+        return ptn_bool(0);
+    }
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    for (size_t i = 0; format[i] != '\0'; i++) {
+        char ch = format[i];
+        if (ch == '\\' && format[i + 1] != '\0') {
+            i++;
+            ptn_string_buffer_append_char(&buffer, format[i]);
+            continue;
+        }
+        switch (ch) {
+            case 'Y':
+                ptn_string_buffer_append_format(&buffer, "%04d", parts->tm_year + 1900);
+                break;
+            case 'y':
+                ptn_string_buffer_append_format(&buffer, "%02d", (parts->tm_year + 1900) % 100);
+                break;
+            case 'm':
+                ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_mon + 1);
+                break;
+            case 'n':
+                ptn_string_buffer_append_format(&buffer, "%d", parts->tm_mon + 1);
+                break;
+            case 'd':
+                ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_mday);
+                break;
+            case 'j':
+                ptn_string_buffer_append_format(&buffer, "%d", parts->tm_mday);
+                break;
+            case 'H':
+                ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_hour);
+                break;
+            case 'h': {
+                int hour = parts->tm_hour % 12;
+                if (hour == 0) {
+                    hour = 12;
+                }
+                ptn_string_buffer_append_format(&buffer, "%02d", hour);
+                break;
+            }
+            case 'i':
+                ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_min);
+                break;
+            case 's':
+                ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_sec);
+                break;
+            default:
+                ptn_string_buffer_append_char(&buffer, ch);
+                break;
+        }
+    }
+    free(format);
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -11659,6 +11724,7 @@ static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
 static const char *ptn_property_exists_target_type_name(PtnValue value);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -11764,6 +11830,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "count", 1, 2, ptn_internal_count },
         { "crc32", 1, 1, ptn_internal_crc32 },
         { "current", 1, 1, ptn_internal_current },
+        { "date", 1, 2, ptn_internal_date },
         { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
         { "define", 2, 3, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },

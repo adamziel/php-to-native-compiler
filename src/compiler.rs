@@ -309,6 +309,14 @@ impl IncludeCollector {
             Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => {
                 self.collect_exprs(arguments, source_file, source_dir)
             }
+            Expr::DynamicNewObject {
+                class_name,
+                arguments,
+                ..
+            } => {
+                self.collect_expr(class_name, source_file, source_dir)?;
+                self.collect_exprs(arguments, source_file, source_dir)
+            }
             Expr::DynamicCall {
                 callee, arguments, ..
             } => {

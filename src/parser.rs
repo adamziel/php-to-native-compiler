@@ -161,6 +161,7 @@ impl Parser {
         validate_class_names(&classes)?;
         validate_parent_class_names(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
+        validate_class_scoped_constant_exprs(&classes)?;
         for class in &classes {
             validate_method_names(class)?;
             validate_class_constant_names(class)?;
@@ -666,6 +667,12 @@ impl Parser {
     }
 
     fn resolve_class_name(&self, parsed: &ParsedName) -> String {
+        if parsed.resolution == NameResolution::Unqualified {
+            let lowered = parsed.name.to_ascii_lowercase();
+            if matches!(lowered.as_str(), "self" | "static" | "parent") {
+                return lowered;
+            }
+        }
         match parsed.resolution {
             NameResolution::FullyQualified => parsed.name.clone(),
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
@@ -2972,6 +2979,12 @@ impl Parser {
                         if member_name.eq_ignore_ascii_case("class")
                             && !matches!(self.peek().kind, TokenKind::LeftParen)
                         {
+                            if dynamic_class_name_fetch_has_illegal_literal_receiver(&expr) {
+                                return Err(Diagnostic::new(
+                                    "Illegal class name",
+                                    Some(start_span),
+                                ));
+                            }
                             expr = Expr::DynamicClassNameFetch {
                                 receiver: Box::new(expr),
                                 span: combine_spans(start_span, member.span),
@@ -3243,6 +3256,27 @@ impl Parser {
     }
 
     fn parse_new_object_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        if matches!(
+            self.peek().kind,
+            TokenKind::Variable(_) | TokenKind::Dollar | TokenKind::LeftParen
+        ) {
+            let class_name = self.parse_primary_expr()?;
+            let mut span = combine_spans(start_span, class_name.span());
+            let (arguments, argument_names) = if matches!(self.peek().kind, TokenKind::LeftParen) {
+                let (arguments, argument_names, right_span) = self.parse_call_arguments()?;
+                span = combine_spans(start_span, right_span);
+                (arguments, argument_names)
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            return Ok(Expr::DynamicNewObject {
+                class_name: Box::new(class_name),
+                arguments,
+                argument_names,
+                span,
+            });
+        }
+
         let (class_name, class_span) = self.parse_new_object_class_name()?;
         let mut span = combine_spans(start_span, class_span);
         let (arguments, argument_names) = if matches!(self.peek().kind, TokenKind::LeftParen) {
@@ -4407,6 +4441,16 @@ fn collect_arrow_captures_from_expr(
                 collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
             }
         }
+        Expr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
+            collect_arrow_captures_from_expr(class_name, exclusions, seen, captures);
+            for argument in arguments {
+                collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
+            }
+        }
         Expr::DynamicCall {
             callee, arguments, ..
         } => {
@@ -5093,6 +5137,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::NewObject { .. }
+        | Expr::DynamicNewObject { .. }
         | Expr::PropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }
@@ -5464,6 +5509,16 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             }
             if let Expr::MethodCall { receiver, .. } = expr {
                 validate_anonymous_functions_in_expr(receiver, functions)?;
+            }
+        }
+        Expr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
+            validate_anonymous_functions_in_expr(class_name, functions)?;
+            for argument in arguments {
+                validate_anonymous_functions_in_expr(argument, functions)?;
             }
         }
         Expr::PropertyFetch { receiver, .. } => {
@@ -6916,6 +6971,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         }
         Expr::MethodCall { receiver, .. } => reject_append_array_read(receiver)?,
         Expr::NewObject { .. } => {}
+        Expr::DynamicNewObject { class_name, .. } => reject_append_array_read(class_name)?,
         Expr::PropertyFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
@@ -7062,6 +7118,18 @@ fn lower_string_interpolation_index(
     }
 }
 
+fn dynamic_class_name_fetch_has_illegal_literal_receiver(expr: &Expr) -> bool {
+    match expr {
+        Expr::Grouped { expr, .. } => dynamic_class_name_fetch_has_illegal_literal_receiver(expr),
+        Expr::String(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_) => true,
+        _ => false,
+    }
+}
+
 fn is_supported_global_const_expr(expr: &Expr) -> bool {
     match expr {
         Expr::String(_, _)
@@ -7070,7 +7138,8 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Bool(_, _)
         | Expr::Null(_)
         | Expr::Constant(_, _)
-        | Expr::MagicConstant(_, _) => true,
+        | Expr::MagicConstant(_, _)
+        | Expr::ClassConstantFetch { .. } => true,
         Expr::Array { elements, .. } => elements.iter().all(|element| {
             element
                 .key
@@ -7103,10 +7172,10 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::NewObject { .. }
+        | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
         | Expr::PropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
-        | Expr::ClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
@@ -7120,7 +7189,10 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
-        | Expr::Null(_) => true,
+        | Expr::Null(_)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _)
+        | Expr::ClassConstantFetch { .. } => true,
         Expr::Array { elements, .. } => elements.iter().all(|element| {
             element
                 .key
@@ -7134,7 +7206,148 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         Expr::Unary { expr, .. } | Expr::Grouped { expr, .. } => {
             is_supported_parameter_default_expr(expr)
         }
-        _ => false,
+        Expr::Cast { .. } => false,
+        Expr::Binary { left, right, .. } => {
+            is_supported_parameter_default_expr(left) && is_supported_parameter_default_expr(right)
+        }
+        Expr::Ternary { .. }
+        | Expr::InterpolatedString(_, _)
+        | Expr::Variable(_, _)
+        | Expr::DynamicVariable { .. }
+        | Expr::IncDec { .. }
+        | Expr::Assign { .. }
+        | Expr::AssignRef { .. }
+        | Expr::List(_)
+        | Expr::Print { .. }
+        | Expr::Include { .. }
+        | Expr::Throw { .. }
+        | Expr::AnonymousFunction(_)
+        | Expr::Call { .. }
+        | Expr::DynamicCall { .. }
+        | Expr::MethodCall { .. }
+        | Expr::NewObject { .. }
+        | Expr::DynamicNewObject { .. }
+        | Expr::Clone { .. }
+        | Expr::PropertyFetch { .. }
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicClassNameFetch { .. }
+        | Expr::ArrayAccess { .. }
+        | Expr::Isset { .. }
+        | Expr::Empty { .. } => false,
+    }
+}
+
+fn validate_class_scoped_constant_exprs(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        for constant in &class.constants {
+            validate_class_scoped_constant_expr(&constant.value, class.parent_name.as_deref())?;
+        }
+        for property in &class.properties {
+            if let Some(value) = &property.value {
+                validate_class_scoped_constant_expr(value, class.parent_name.as_deref())?;
+            }
+        }
+        for property in &class.static_properties {
+            if let Some(value) = &property.value {
+                validate_class_scoped_constant_expr(value, class.parent_name.as_deref())?;
+            }
+        }
+        for method in &class.methods {
+            for parameter in &method.parameters {
+                if let Some(default_value) = &parameter.default_value {
+                    validate_class_scoped_constant_expr(
+                        default_value,
+                        class.parent_name.as_deref(),
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -> Result<()> {
+    match expr {
+        Expr::ClassConstantFetch {
+            class_name: fetch_class_name,
+            name,
+            span,
+        } if name.eq_ignore_ascii_case("class") => {
+            if fetch_class_name.eq_ignore_ascii_case("static") {
+                return Err(Diagnostic::new(
+                    "static::class cannot be used for compile-time class name resolution",
+                    Some(*span),
+                ));
+            }
+            if fetch_class_name.eq_ignore_ascii_case("parent") && parent_name.is_none() {
+                return Err(Diagnostic::new(
+                    "Cannot use \"parent\" when current class scope has no parent",
+                    Some(*span),
+                ));
+            }
+            Ok(())
+        }
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    validate_class_scoped_constant_expr(key, parent_name)?;
+                }
+                if let ArrayElementValue::Value(value) = &element.value {
+                    validate_class_scoped_constant_expr(value, parent_name)?;
+                }
+            }
+            Ok(())
+        }
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
+            validate_class_scoped_constant_expr(expr, parent_name)
+        }
+        Expr::Binary { left, right, .. } => {
+            validate_class_scoped_constant_expr(left, parent_name)?;
+            validate_class_scoped_constant_expr(right, parent_name)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            validate_class_scoped_constant_expr(condition, parent_name)?;
+            if let Some(if_true) = if_true {
+                validate_class_scoped_constant_expr(if_true, parent_name)?;
+            }
+            validate_class_scoped_constant_expr(if_false, parent_name)
+        }
+        Expr::String(_, _)
+        | Expr::InterpolatedString(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::DynamicVariable { .. }
+        | Expr::AnonymousFunction(_)
+        | Expr::IncDec { .. }
+        | Expr::Assign { .. }
+        | Expr::AssignRef { .. }
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _)
+        | Expr::Call { .. }
+        | Expr::DynamicCall { .. }
+        | Expr::MethodCall { .. }
+        | Expr::NewObject { .. }
+        | Expr::DynamicNewObject { .. }
+        | Expr::Clone { .. }
+        | Expr::PropertyFetch { .. }
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. }
+        | Expr::DynamicClassNameFetch { .. }
+        | Expr::List(_)
+        | Expr::ArrayAccess { .. }
+        | Expr::Isset { .. }
+        | Expr::Empty { .. }
+        | Expr::Print { .. }
+        | Expr::Include { .. }
+        | Expr::Throw { .. } => Ok(()),
     }
 }
 

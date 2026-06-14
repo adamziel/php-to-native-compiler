@@ -984,6 +984,7 @@ fn emit_static_property_initializers(
     classes: &[ClassDecl],
 ) {
     for class in classes {
+        let previous_class_name = values.current_class_name.replace(class.name.clone());
         for property in &class.static_properties {
             let value_temp = match &property.value {
                 Some(value) => values.emit_materialized_value(out, value),
@@ -1008,6 +1009,7 @@ fn emit_static_property_initializers(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &value_temp);
         }
+        values.current_class_name = previous_class_name;
     }
 }
 
@@ -1017,6 +1019,7 @@ fn emit_class_constant_initializers(
     classes: &[ClassDecl],
 ) {
     for class in classes {
+        let previous_class_name = values.current_class_name.replace(class.name.clone());
         for constant in &class.constants {
             let value_temp = values.emit_materialized_value(out, &constant.value);
             out.push_str("    ptn_runtime_define_class_constant(&runtime, \"");
@@ -1028,6 +1031,7 @@ fn emit_class_constant_initializers(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &value_temp);
         }
+        values.current_class_name = previous_class_name;
     }
 }
 
@@ -1257,7 +1261,17 @@ fn emit_user_function_dispatch(
         out.push_str("        *found = 1;\n");
         out.push_str("        return ");
         out.push_str(&user_function_c_name(index));
-        out.push_str("(runtime, ptn_null(), argc, args, line);\n");
+        if function.is_static {
+            let called_class_name = function
+                .class_name
+                .as_deref()
+                .unwrap_or(function.name.as_str());
+            out.push_str("(runtime, ptn_string(\"");
+            out.push_str(&c_string(called_class_name));
+            out.push_str("\"), argc, args, line);\n");
+        } else {
+            out.push_str("(runtime, ptn_null(), argc, args, line);\n");
+        }
         out.push_str("    }\n");
     }
     for class in classes {
@@ -1273,7 +1287,9 @@ fn emit_user_function_dispatch(
             out.push_str("        *found = 1;\n");
             out.push_str("        return ");
             out.push_str(&user_function_c_name(method.function_index));
-            out.push_str("(runtime, ptn_null(), argc, args, line);\n");
+            out.push_str("(runtime, ptn_string(\"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\"), argc, args, line);\n");
             out.push_str("    }\n");
         }
     }
@@ -1299,6 +1315,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str(
         "static const char *ptn_declared_private_property_class(const char *class_name, const char *property_name);\n",
     );
+    out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
 }
 
 fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
@@ -3353,6 +3370,16 @@ fn collect_value_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
             }
         }
+        ValueExpr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(class_name, deprecations);
+            for argument in arguments {
+                collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
+            }
+        }
         ValueExpr::Clone { expr, .. } => {
             collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
         }
@@ -3844,6 +3871,18 @@ fn collect_value_runtime_requirements(
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
             }
+        }
+        ValueExpr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
+            collect_value_runtime_requirements(class_name, functions, requirements);
+            for argument in arguments {
+                collect_value_runtime_requirements(argument, functions, requirements);
+            }
+            requirements.internal_function_dispatch = true;
+            requirements.method_dispatch = true;
         }
         ValueExpr::Clone { expr, .. } => {
             collect_value_runtime_requirements(expr, functions, requirements);
@@ -4747,6 +4786,16 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                 .iter()
                 .any(|argument| value_mentions_variable(argument, name))
         }
+        ValueExpr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
+            value_mentions_variable(class_name, name)
+                || arguments
+                    .iter()
+                    .any(|argument| value_mentions_variable(argument, name))
+        }
         ValueExpr::Clone { expr, .. } => value_mentions_variable(expr, name),
         ValueExpr::DynamicCall {
             callee, arguments, ..
@@ -4797,6 +4846,26 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::Closure { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => false,
+    }
+}
+
+fn static_call_receiver_class_name(call_name: &str, function: &FunctionDecl) -> Option<String> {
+    if !function.is_static {
+        return None;
+    }
+    call_name
+        .split_once("::")
+        .map(|(class_name, _)| class_name.to_string())
+        .or_else(|| function.class_name.clone())
+}
+
+fn emit_static_call_receiver(out: &mut String, receiver_class_name: Option<&str>) {
+    if let Some(receiver_class_name) = receiver_class_name {
+        out.push_str("ptn_string(\"");
+        out.push_str(&c_string(receiver_class_name));
+        out.push_str("\")");
+    } else {
+        out.push_str("ptn_null()");
     }
 }
 
@@ -4913,6 +4982,33 @@ impl ValueEmitter {
             }
         }
         class_name.to_string()
+    }
+
+    fn class_name_fetch_error_message(&self, class_name: &str) -> Option<String> {
+        if class_name.eq_ignore_ascii_case("self")
+            || class_name.eq_ignore_ascii_case("static")
+            || class_name.eq_ignore_ascii_case("parent")
+        {
+            let Some(current_class_name) = &self.current_class_name else {
+                return Some(format!(
+                    "Cannot use \"{}\" in the global scope",
+                    class_name.to_ascii_lowercase()
+                ));
+            };
+            if class_name.eq_ignore_ascii_case("parent")
+                && self
+                    .classes
+                    .iter()
+                    .find(|class| class.name.eq_ignore_ascii_case(current_class_name))
+                    .and_then(|class| class.parent_name.as_deref())
+                    .is_none()
+            {
+                return Some(
+                    "Cannot use \"parent\" when current class scope has no parent".to_string(),
+                );
+            }
+        }
+        None
     }
 
     fn direct_user_function(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
@@ -6308,6 +6404,12 @@ impl ValueEmitter {
                 argument_names,
                 line,
             } => self.emit_new_object(out, class_name, arguments, argument_names, *line),
+            ValueExpr::DynamicNewObject {
+                class_name,
+                arguments,
+                argument_names,
+                line,
+            } => self.emit_dynamic_new_object(out, class_name, arguments, argument_names, *line),
             ValueExpr::Clone { expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
@@ -7079,176 +7181,307 @@ impl ValueEmitter {
             .find(|class| class.name.eq_ignore_ascii_case(class_name))
             .cloned()
         {
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_object_new_shell(&runtime, \"");
-            out.push_str(&c_string(&declared_class.name));
-            out.push_str("\");\n");
-            for (declaring_class_name, property) in
-                class_property_initialization_chain(&declared_class, &self.classes)
-            {
-                let value_temp = match &property.value {
-                    Some(value) => self.emit_materialized_value(out, value),
-                    None => {
-                        let temp = self.next_temp();
-                        out.push_str("    PtnValue ");
-                        out.push_str(&temp);
-                        out.push_str(" = ptn_null();\n");
-                        temp
-                    }
-                };
-                let assigned_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&assigned_temp);
-                out.push_str(" = ptn_object_declare_property(&runtime, ");
-                out.push_str(&result_temp);
-                out.push_str(", \"");
-                out.push_str(&c_string(&property.name));
-                out.push_str("\", \"");
-                out.push_str(&c_string(&declaring_class_name));
-                out.push_str("\", ");
-                out.push_str(c_property_visibility(property.visibility));
-                out.push_str(", ");
-                out.push_str(c_property_visibility(property.set_visibility));
-                out.push_str(", ");
-                out.push_str(if property.is_readonly { "1" } else { "0" });
-                out.push_str(", ");
-                out.push_str(if property.is_readonly && property.value.is_none() {
-                    "0"
-                } else {
-                    "1"
-                });
-                out.push_str(", ");
-                out.push_str(&value_temp);
-                out.push_str(", ");
-                out.push_str(&property.line.to_string());
-                out.push_str(");\n");
-                emit_value_cleanup(out, "    ", &assigned_temp);
-                emit_value_cleanup(out, "    ", &value_temp);
-            }
-            if let Some(constructor_parameters) =
-                class_constructor_method(&declared_class, &self.classes).map(|constructor| {
-                    self.user_functions[constructor.function_index]
-                        .parameters
-                        .clone()
-                })
-            {
-                let constructor_result = self.next_temp();
-                if arguments.is_empty() {
-                    out.push_str("    PtnValue ");
-                    out.push_str(&constructor_result);
-                    out.push_str(" = ptn_call_declared_method(&runtime, ");
-                    out.push_str(&result_temp);
-                    out.push_str(", \"__construct\", 0, NULL, ");
-                    out.push_str(&line.to_string());
-                    out.push_str(");\n");
-                } else {
-                    let mut constructor_argument_temps = Vec::with_capacity(arguments.len());
-                    let mut unwrap_append_reference_temps = Vec::new();
-                    for (argument_index, argument) in arguments.iter().enumerate() {
-                        let by_ref_parameter =
-                            by_ref_parameter_for_argument(&constructor_parameters, argument_index);
-                        if let Some(parameter) = by_ref_parameter {
-                            let temp = self.emit_by_ref_call_argument(
-                                out,
-                                argument,
-                                "__construct",
-                                argument_index,
-                                &parameter.name,
-                                line,
-                                true,
-                            );
-                            if value_is_append_reference_target(argument) {
-                                unwrap_append_reference_temps.push(temp.clone());
-                            }
-                            constructor_argument_temps.push(temp);
-                        } else {
-                            constructor_argument_temps.push(self.emit_call_argument(
-                                out,
-                                "__construct",
-                                argument_index,
-                                argument,
-                            ));
-                        }
-                    }
-                    let args_temp = self.next_temp();
-                    out.push_str("    PtnValue ");
-                    out.push_str(&args_temp);
-                    out.push_str("[] = { ");
-                    for (index, temp) in constructor_argument_temps.iter().enumerate() {
-                        if index > 0 {
-                            out.push_str(", ");
-                        }
-                        out.push_str("ptn_value_share(");
-                        out.push_str(temp);
-                        out.push(')');
-                    }
-                    out.push_str(" };\n");
-                    out.push_str("    PtnValue ");
-                    out.push_str(&constructor_result);
-                    out.push_str(" = ptn_call_declared_method(&runtime, ");
-                    out.push_str(&result_temp);
-                    out.push_str(", \"__construct\", ");
-                    out.push_str(&constructor_argument_temps.len().to_string());
-                    out.push_str(", ");
-                    out.push_str(&args_temp);
-                    out.push_str(", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(");\n");
-                    for temp in &unwrap_append_reference_temps {
-                        emit_unwrap_append_reference_call_argument(out, "    ", temp);
-                    }
-                    for index in 0..constructor_argument_temps.len() {
-                        emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
-                    }
-                    for temp in constructor_argument_temps {
-                        emit_value_cleanup(out, "    ", &temp);
-                    }
-                }
-                emit_value_cleanup(out, "    ", &constructor_result);
-            } else {
-                for argument in arguments {
-                    let argument_temp = self.emit_materialized_value(out, argument);
-                    emit_value_cleanup(out, "    ", &argument_temp);
-                }
-            }
+            self.emit_declared_new_object(
+                out,
+                &result_temp,
+                &declared_class,
+                arguments,
+                line,
+                true,
+            );
         } else {
-            let mut argument_temps = Vec::with_capacity(arguments.len());
-            for argument in arguments {
-                argument_temps.push(self.emit_materialized_value(out, argument));
+            self.emit_runtime_new_object(out, &result_temp, class_name, arguments, line, true);
+        }
+        result_temp
+    }
+
+    fn emit_dynamic_new_object(
+        &mut self,
+        out: &mut String,
+        class_name: &ValueExpr,
+        arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
+        line: usize,
+    ) -> String {
+        if argument_names.iter().any(Option::is_some) {
+            let result_temp = self.next_temp();
+            self.emit_fatal_value(
+                out,
+                &result_temp,
+                "named arguments currently support user-defined functions",
+            );
+            return result_temp;
+        }
+        let class_value_temp = self.emit_materialized_value(out, class_name);
+        let class_name_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&class_name_temp);
+        out.push_str(" = ptn_value_to_string(ptn_value_deref(");
+        out.push_str(&class_value_temp);
+        out.push_str("));\n");
+        emit_value_cleanup(out, "    ", &class_value_temp);
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        let declared_classes = self.classes.clone();
+        let mut emitted_branch = false;
+        for declared_class in declared_classes {
+            out.push_str("    ");
+            if emitted_branch {
+                out.push_str("} else ");
             }
-            if argument_temps.is_empty() {
+            out.push_str("if (ptn_ascii_case_equal(");
+            out.push_str(&class_name_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str("\")) {\n");
+            self.emit_declared_new_object(
+                out,
+                &result_temp,
+                &declared_class,
+                arguments,
+                line,
+                false,
+            );
+            emitted_branch = true;
+        }
+        if emitted_branch {
+            out.push_str("    } else {\n");
+            self.emit_runtime_new_object(
+                out,
+                &result_temp,
+                &format!("{class_name_temp}"),
+                arguments,
+                line,
+                false,
+            );
+            out.push_str("    }\n");
+        } else {
+            self.emit_runtime_new_object(
+                out,
+                &result_temp,
+                &class_name_temp,
+                arguments,
+                line,
+                false,
+            );
+        }
+        out.push_str("    free(");
+        out.push_str(&class_name_temp);
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_declared_new_object(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        declared_class: &ClassDecl,
+        arguments: &[ValueExpr],
+        line: usize,
+        declare_result: bool,
+    ) {
+        out.push_str("    ");
+        if declare_result {
+            out.push_str("PtnValue ");
+        }
+        out.push_str(result_temp);
+        out.push_str(" = ptn_object_new_shell(&runtime, \"");
+        out.push_str(&c_string(&declared_class.name));
+        out.push_str("\");\n");
+        for (declaring_class_name, property) in
+            class_property_initialization_chain(declared_class, &self.classes)
+        {
+            let value_temp = match &property.value {
+                Some(value) => self.emit_materialized_value(out, value),
+                None => {
+                    let temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&temp);
+                    out.push_str(" = ptn_null();\n");
+                    temp
+                }
+            };
+            let assigned_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&assigned_temp);
+            out.push_str(" = ptn_object_declare_property(&runtime, ");
+            out.push_str(result_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&declaring_class_name));
+            out.push_str("\", ");
+            out.push_str(c_property_visibility(property.visibility));
+            out.push_str(", ");
+            out.push_str(c_property_visibility(property.set_visibility));
+            out.push_str(", ");
+            out.push_str(if property.is_readonly { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(if property.is_readonly && property.value.is_none() {
+                "0"
+            } else {
+                "1"
+            });
+            out.push_str(", ");
+            out.push_str(&value_temp);
+            out.push_str(", ");
+            out.push_str(&property.line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &assigned_temp);
+            emit_value_cleanup(out, "    ", &value_temp);
+        }
+        if let Some(constructor_parameters) =
+            class_constructor_method(declared_class, &self.classes).map(|constructor| {
+                self.user_functions[constructor.function_index]
+                    .parameters
+                    .clone()
+            })
+        {
+            let constructor_result = self.next_temp();
+            if arguments.is_empty() {
                 out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_new_object(&runtime, \"");
-                out.push_str(&c_string(class_name));
-                out.push_str("\", 0, NULL, ");
+                out.push_str(&constructor_result);
+                out.push_str(" = ptn_call_declared_method(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(", \"__construct\", 0, NULL, ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
             } else {
+                let mut constructor_argument_temps = Vec::with_capacity(arguments.len());
+                let mut unwrap_append_reference_temps = Vec::new();
+                for (argument_index, argument) in arguments.iter().enumerate() {
+                    let by_ref_parameter =
+                        by_ref_parameter_for_argument(&constructor_parameters, argument_index);
+                    if let Some(parameter) = by_ref_parameter {
+                        let temp = self.emit_by_ref_call_argument(
+                            out,
+                            argument,
+                            "__construct",
+                            argument_index,
+                            &parameter.name,
+                            line,
+                            true,
+                        );
+                        if value_is_append_reference_target(argument) {
+                            unwrap_append_reference_temps.push(temp.clone());
+                        }
+                        constructor_argument_temps.push(temp);
+                    } else {
+                        constructor_argument_temps.push(self.emit_call_argument(
+                            out,
+                            "__construct",
+                            argument_index,
+                            argument,
+                        ));
+                    }
+                }
                 let args_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&args_temp);
                 out.push_str("[] = { ");
-                out.push_str(&argument_temps.join(", "));
+                for (index, temp) in constructor_argument_temps.iter().enumerate() {
+                    if index > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str("ptn_value_share(");
+                    out.push_str(temp);
+                    out.push(')');
+                }
                 out.push_str(" };\n");
                 out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_new_object(&runtime, \"");
-                out.push_str(&c_string(class_name));
-                out.push_str("\", ");
-                out.push_str(&argument_temps.len().to_string());
+                out.push_str(&constructor_result);
+                out.push_str(" = ptn_call_declared_method(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(", \"__construct\", ");
+                out.push_str(&constructor_argument_temps.len().to_string());
                 out.push_str(", ");
                 out.push_str(&args_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                for temp in &unwrap_append_reference_temps {
+                    emit_unwrap_append_reference_call_argument(out, "    ", temp);
+                }
+                for index in 0..constructor_argument_temps.len() {
+                    emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+                }
+                for temp in constructor_argument_temps {
+                    emit_value_cleanup(out, "    ", &temp);
+                }
             }
-            for argument_temp in argument_temps {
+            emit_value_cleanup(out, "    ", &constructor_result);
+        } else {
+            for argument in arguments {
+                let argument_temp = self.emit_materialized_value(out, argument);
                 emit_value_cleanup(out, "    ", &argument_temp);
             }
         }
-        result_temp
+    }
+
+    fn emit_runtime_new_object(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        class_name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+        declare_result: bool,
+    ) {
+        let mut argument_temps = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            argument_temps.push(self.emit_materialized_value(out, argument));
+        }
+        if argument_temps.is_empty() {
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_new_object(&runtime, ");
+            if declare_result {
+                out.push('"');
+                out.push_str(&c_string(class_name));
+                out.push('"');
+            } else {
+                out.push_str(class_name);
+            }
+            out.push_str(", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        } else {
+            let args_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ");
+            out.push_str(&argument_temps.join(", "));
+            out.push_str(" };\n");
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_new_object(&runtime, ");
+            if declare_result {
+                out.push('"');
+                out.push_str(&c_string(class_name));
+                out.push('"');
+            } else {
+                out.push_str(class_name);
+            }
+            out.push_str(", ");
+            out.push_str(&argument_temps.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
+        for argument_temp in argument_temps {
+            emit_value_cleanup(out, "    ", &argument_temp);
+        }
     }
 
     fn emit_print(&mut self, out: &mut String, expression: &ValueExpr) -> String {
@@ -7318,10 +7551,54 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         if name.eq_ignore_ascii_case("class") {
-            let resolved_class_name = self.class_name_fetch_name(class_name);
-            out.push_str(" = ptn_string(\"");
-            out.push_str(&c_string(&resolved_class_name));
-            out.push_str("\");\n");
+            if let Some(message) = self.class_name_fetch_error_message(class_name) {
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"");
+                out.push_str(&c_string(&message));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            } else if class_name.eq_ignore_ascii_case("static") {
+                let fallback_class_name = self.class_name_fetch_name(class_name);
+                out.push_str(";\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str("_receiver = ptn_value_deref(receiver);\n");
+                out.push_str("    if (");
+                out.push_str(&result_temp);
+                out.push_str("_receiver.type == PTN_STRING) {\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone_deref(");
+                out.push_str(&result_temp);
+                out.push_str("_receiver);\n");
+                out.push_str("    } else if (");
+                out.push_str(&result_temp);
+                out.push_str("_receiver.type == PTN_OBJECT || ");
+                out.push_str(&result_temp);
+                out.push_str("_receiver.type == PTN_EXCEPTION || ");
+                out.push_str(&result_temp);
+                out.push_str("_receiver.type == PTN_CLOSURE) {\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_fetch_dynamic_class_name(&runtime, receiver, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_string(\"");
+                out.push_str(&c_string(&fallback_class_name));
+                out.push_str("\");\n");
+                out.push_str("    }\n");
+            } else {
+                let resolved_class_name = self.class_name_fetch_name(class_name);
+                out.push_str(" = ptn_string(\"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\");\n");
+            }
         } else {
             let resolved_class_name = self.static_member_class_name(class_name);
             out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
@@ -8837,17 +9114,22 @@ impl ValueEmitter {
         }
 
         let result_temp = self.next_temp();
-        let direct_user = self
-            .direct_user_function(name)
-            .map(|(index, function)| (user_function_c_name(index), function.parameters.clone()));
+        let direct_user = self.direct_user_function(name).map(|(index, function)| {
+            (
+                user_function_c_name(index),
+                function.parameters.clone(),
+                static_call_receiver_class_name(name, function),
+            )
+        });
         if has_named_arguments {
-            if let Some((c_name, parameters)) = &direct_user {
+            if let Some((c_name, parameters, receiver_class_name)) = &direct_user {
                 return self.emit_named_user_call(
                     out,
                     &result_temp,
                     name,
                     c_name,
                     parameters,
+                    receiver_class_name.as_deref(),
                     arguments,
                     argument_names,
                     line,
@@ -8864,9 +9146,11 @@ impl ValueEmitter {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ");
-            if let Some((c_name, _)) = &direct_user {
+            if let Some((c_name, _, receiver_class_name)) = &direct_user {
                 out.push_str(&c_name);
-                out.push_str("(&runtime, ptn_null(), 0, NULL, ");
+                out.push_str("(&runtime, ");
+                emit_static_call_receiver(out, receiver_class_name.as_deref());
+                out.push_str(", 0, NULL, ");
             } else {
                 out.push_str("ptn_call_function(&runtime, \"");
                 out.push_str(&c_string(name));
@@ -8880,7 +9164,7 @@ impl ValueEmitter {
         let mut temps = Vec::with_capacity(arguments.len());
         let mut unwrap_append_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
-            let by_ref_parameter = direct_user.as_ref().and_then(|(_, parameters)| {
+            let by_ref_parameter = direct_user.as_ref().and_then(|(_, parameters, _)| {
                 by_ref_parameter_for_argument(parameters, argument_index)
             });
             if let Some(parameter) = by_ref_parameter {
@@ -8934,9 +9218,11 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ");
-        if let Some((c_name, _)) = &direct_user {
+        if let Some((c_name, _, receiver_class_name)) = &direct_user {
             out.push_str(&c_name);
-            out.push_str("(&runtime, ptn_null(), ");
+            out.push_str("(&runtime, ");
+            emit_static_call_receiver(out, receiver_class_name.as_deref());
+            out.push_str(", ");
         } else {
             out.push_str("ptn_call_function(&runtime, \"");
             out.push_str(&c_string(name));
@@ -8967,6 +9253,7 @@ impl ValueEmitter {
         name: &str,
         c_name: &str,
         parameters: &[crate::ir::FunctionParameter],
+        receiver_class_name: Option<&str>,
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
         line: usize,
@@ -9035,7 +9322,9 @@ impl ValueEmitter {
         out.push_str(result_temp);
         out.push_str(" = ");
         out.push_str(c_name);
-        out.push_str("(&runtime, ptn_null(), ");
+        out.push_str("(&runtime, ");
+        emit_static_call_receiver(out, receiver_class_name);
+        out.push_str(", ");
         out.push_str(&arguments.len().to_string());
         out.push_str(", ");
         out.push_str(&args_temp);

@@ -363,6 +363,12 @@ pub enum ValueExpr {
         argument_names: Vec<Option<String>>,
         line: usize,
     },
+    DynamicNewObject {
+        class_name: Box<ValueExpr>,
+        arguments: Vec<ValueExpr>,
+        argument_names: Vec<Option<String>>,
+        line: usize,
+    },
     Clone {
         expr: Box<ValueExpr>,
         line: usize,
@@ -1655,6 +1661,20 @@ impl<'a> LoweringContext<'a> {
                 argument_names: argument_names.clone(),
                 line: span.line,
             },
+            Expr::DynamicNewObject {
+                class_name,
+                arguments,
+                argument_names,
+                span,
+            } => ValueExpr::DynamicNewObject {
+                class_name: Box::new(self.lower_expr(class_name)),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.lower_expr(argument))
+                    .collect(),
+                argument_names: argument_names.clone(),
+                line: span.line,
+            },
             Expr::Clone { expr, span } => ValueExpr::Clone {
                 expr: Box::new(self.lower_expr(expr)),
                 line: span.line,
@@ -1887,6 +1907,15 @@ fn assertion_expr_text(expr: &Expr) -> String {
             ..
         } => format!(
             "new {class_name}({})",
+            assertion_argument_list_text(arguments)
+        ),
+        Expr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => format!(
+            "new {}({})",
+            assertion_expr_text(class_name),
             assertion_argument_list_text(arguments)
         ),
         Expr::Clone { expr, .. } => format!("clone {}", assertion_expr_text(expr)),

@@ -848,13 +848,17 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
     size_t line
 ) {
     (void)line;
-    char *key = ptn_class_constant_key(class_name, constant);
-    PtnValue value;
-    if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+    const char *lookup_class_name = class_name;
+    while (lookup_class_name != NULL) {
+        char *key = ptn_class_constant_key(lookup_class_name, constant);
+        PtnValue value;
+        if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+            free(key);
+            return ptn_value_clone_deref(value);
+        }
         free(key);
-        return ptn_value_clone_deref(value);
+        lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
     }
-    free(key);
     return ptn_runtime_undefined_class_constant(runtime, class_name, constant);
 }
 
@@ -902,6 +906,11 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_class_name(
     }
     if (class_name != NULL) {
         return ptn_owned_string(ptn_duplicate_string(class_name));
+    }
+
+    if (receiver.type == PTN_NULL) {
+        ptn_throw_exception(runtime, "TypeError", "Cannot use \"::class\" on null");
+        return ptn_null();
     }
 
     const char *type_name = ptn_dynamic_class_name_fetch_type_name(receiver);
