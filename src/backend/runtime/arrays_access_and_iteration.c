@@ -2224,6 +2224,16 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_root_for_write(
     const char *name,
     size_t line
 ) {
+    if (strcmp(name, "this") == 0 && !runtime->has_current_receiver) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Using $this when not in object context",
+            runtime->source_path,
+            line
+        );
+        return NULL;
+    }
     PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
     if (slot != NULL) {
         return ptn_array_root_slot_for_write(runtime, slot, line);

@@ -1,3 +1,11 @@
+static PTN_UNUSED void ptn_throw_exception_at(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *message,
+    const char *path,
+    size_t line
+);
+
 static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnRuntime *caller_runtime) {
     ptn_symbols_init(&runtime->symbols);
     runtime->global_symbols = caller_runtime->global_symbols;

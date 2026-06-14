@@ -14171,7 +14171,7 @@ fn compile_append_call_argument_by_value_diagnostic_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "Fatal error: Cannot use [] for reading in {} on line 2\n",
+            "Fatal error: Cannot use [] for reading in {} on line 1\n",
             input.display()
         )
     );
@@ -14271,6 +14271,12 @@ try {\n\
     array_merge_recursive([\"\" => [PHP_INT_MAX => null]], [\"\" => [null]]);\n\
 } catch (Throwable $e) {\n\
     echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    $push = [PHP_INT_MAX => \"full\"];\n\
+    array_push($push, \"overflow\");\n\
+} catch (Throwable $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
 }",
     )
     .unwrap();
@@ -14281,7 +14287,7 @@ try {\n\
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Cannot add element to the array as the next element is already occupied\nint(9223372036854775807)\nCannot add element to the array as the next element is already occupied\n"
+        "Cannot add element to the array as the next element is already occupied\nint(9223372036854775807)\nCannot add element to the array as the next element is already occupied\nCannot add element to the array as the next element is already occupied\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
