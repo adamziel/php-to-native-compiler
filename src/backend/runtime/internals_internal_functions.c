@@ -919,7 +919,7 @@ static void ptn_var_export_append_key(PtnStringBuffer *buffer, PtnArrayKey key) 
     if (key.type == PTN_ARRAY_KEY_INT) {
         ptn_string_buffer_append_format(buffer, "%lld", (long long)key.as.integer);
     } else {
-        ptn_var_export_append_string(buffer, key.as.string, strlen(key.as.string));
+        ptn_var_export_append_string(buffer, key.as.string, key.string_len);
     }
 }
 
@@ -1152,7 +1152,7 @@ static void ptn_json_encode_append_array(
                 }
                 ptn_json_encode_append_string(buffer, (const unsigned char *)key_buffer, (size_t)written);
             } else {
-                ptn_json_encode_append_string(buffer, (const unsigned char *)key.as.string, strlen(key.as.string));
+                ptn_json_encode_append_string(buffer, (const unsigned char *)key.as.string, key.string_len);
             }
             ptn_string_buffer_append_char(buffer, ':');
         }
@@ -1195,7 +1195,7 @@ static void ptn_json_encode_append_object(
         ptn_json_encode_append_string(
             buffer,
             (const unsigned char *)entry->key.as.string,
-            strlen(entry->key.as.string)
+            entry->key.string_len
         );
         ptn_string_buffer_append_char(buffer, ':');
         ptn_json_encode_append_value(buffer, entry->value, seen, depth - 1, ok);
@@ -2386,7 +2386,7 @@ static PtnArrayKey ptn_array_change_key_case_key(PtnArrayKey source, int upperca
         return ptn_array_int_key(source.as.integer);
     }
 
-    size_t len = strlen(source.as.string);
+    size_t len = source.string_len;
     char *changed = malloc(len + 1);
     if (changed == NULL) {
         ptn_abort_out_of_memory();

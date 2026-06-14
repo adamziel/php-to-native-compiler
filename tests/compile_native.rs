@@ -104,11 +104,12 @@ fn lexer_accepts_leading_dot_float_literals() {
 
 #[test]
 fn lexer_preserves_unknown_string_escape_backslashes() {
-    let tokens = lexer::lex("<?php \"\\+\" '\\t' \"\\$\" \"\\n\"").unwrap();
+    let tokens = lexer::lex("<?php \"\\+\" '\\t' \"\\$\" \"\\n\" \"\\e\"").unwrap();
     assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "\\+"));
     assert!(matches!(&tokens[2].kind, TokenKind::String(value) if value == "\\t"));
     assert!(matches!(&tokens[3].kind, TokenKind::String(value) if value == "$"));
     assert!(matches!(&tokens[4].kind, TokenKind::String(value) if value == "\n"));
+    assert!(matches!(&tokens[5].kind, TokenKind::String(value) if value.as_bytes() == [0x1b]));
 }
 
 #[test]
@@ -5873,6 +5874,7 @@ fn compile_double_quoted_byte_escapes_to_native_binary() {
 $bytes = "\x00\x0a\x7f\x80\x90\xff\377\x100";
 echo strlen($bytes), " ", bin2hex($bytes), "\n";
 echo ord("\xFF"), " ", ord("\377"), "\n";
+echo ord("\e"), "\n";
 "#,
     )
     .unwrap();
@@ -5883,7 +5885,7 @@ echo ord("\xFF"), " ", ord("\377"), "\n";
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "9 000a7f8090ffff1030\n255 255\n"
+        "9 000a7f8090ffff1030\n255 255\n27\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -6265,6 +6267,8 @@ echo json_encode(null), \"\\n\";\n\
 echo json_encode(true), \"\\n\";\n\
 echo json_encode([1, true, null, \"a\\nb\", \"/\"]), \"\\n\";\n\
 echo json_encode([\"x\" => 1, \"two\" => false]), \"\\n\";\n\
+$nul = chr(0);\n\
+echo json_encode([\"a\" . $nul . \"b\" => 1]), \"\\n\";\n\
 var_dump(printf(\"%s: %s\\n\", \"flag\", json_encode(false)));\n\
 var_dump(function_exists(\"json_encode\"), function_exists(\"printf\"), function_exists(\"PRINTF\"));",
     )
@@ -6280,6 +6284,7 @@ var_dump(function_exists(\"json_encode\"), function_exists(\"printf\"), function
 true\n\
 [1,true,null,\"a\\nb\",\"\\/\"]\n\
 {\"x\":1,\"two\":false}\n\
+{\"a\\u0000b\":1}\n\
 flag: false\n\
 int(12)\n\
 bool(true)\n\
@@ -14656,9 +14661,15 @@ fn compile_array_change_key_case_to_native_binary() {
         &input,
         "<?php\n\
 $source = array('One' => 1, 'TWO' => 2, 3 => 'three', 'two' => 4, 'MiXeD' => 'case');\n\
+$nul = chr(0);\n\
+$binary = array('A' . $nul . 'B' => 1);\n\
 var_dump(array_change_key_case(array()));\n\
 var_dump(array_change_key_case($source));\n\
 var_dump(array_change_key_case($source, CASE_UPPER));\n\
+$lowerBinaryKeys = array_keys(array_change_key_case($binary));\n\
+$upperBinaryKeys = array_keys(array_change_key_case($binary, CASE_UPPER));\n\
+echo strlen($lowerBinaryKeys[0]), ':', ord($lowerBinaryKeys[0][0]), ':', ord($lowerBinaryKeys[0][1]), ':', ord($lowerBinaryKeys[0][2]), \"\\n\";\n\
+echo strlen($upperBinaryKeys[0]), ':', ord($upperBinaryKeys[0][0]), ':', ord($upperBinaryKeys[0][1]), ':', ord($upperBinaryKeys[0][2]), \"\\n\";\n\
 try { array_change_key_case($source, -10); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(CASE_LOWER, CASE_UPPER, function_exists('array_change_key_case'), function_exists('ARRAY_CHANGE_KEY_CASE'));",
     )
@@ -14670,7 +14681,7 @@ var_dump(CASE_LOWER, CASE_UPPER, function_exists('array_change_key_case'), funct
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(0) {\n}\narray(4) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(4)\n  [3]=>\n  string(5) \"three\"\n  [\"mixed\"]=>\n  string(4) \"case\"\n}\narray(4) {\n  [\"ONE\"]=>\n  int(1)\n  [\"TWO\"]=>\n  int(4)\n  [3]=>\n  string(5) \"three\"\n  [\"MIXED\"]=>\n  string(4) \"case\"\n}\narray_change_key_case(): Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER\nint(0)\nint(1)\nbool(true)\nbool(true)\n"
+        "array(0) {\n}\narray(4) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(4)\n  [3]=>\n  string(5) \"three\"\n  [\"mixed\"]=>\n  string(4) \"case\"\n}\narray(4) {\n  [\"ONE\"]=>\n  int(1)\n  [\"TWO\"]=>\n  int(4)\n  [3]=>\n  string(5) \"three\"\n  [\"MIXED\"]=>\n  string(4) \"case\"\n}\n3:97:0:98\n3:65:0:66\narray_change_key_case(): Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER\nint(0)\nint(1)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -16963,6 +16974,8 @@ fn compile_var_export_embedded_nul_strings_to_native_binary() {
 $nul = chr(0);\n\
 $cases = [\"\", $nul, \"a\" . $nul, $nul . \"b\", \"a\" . $nul . \"b\", \"a\" . $nul . $nul . \"b\"];\n\
 echo var_export($cases, true), \"\\n\";\n\
+$keyed = [\"a\" . $nul . \"b\" => \"key\"];\n\
+echo var_export($keyed, true), \"\\n\";\n\
 $explodeShape = [\"a\", \"b\" . $nul . \"d\", \"f\", \"1\", \"d\"];\n\
 echo md5(var_export($explodeShape, true)), \"\\n\";\n",
     )
@@ -16982,6 +16995,9 @@ echo md5(var_export($explodeShape, true)), \"\\n\";\n",
             "  3 => '' . \"\\0\" . 'b',\n",
             "  4 => 'a' . \"\\0\" . 'b',\n",
             "  5 => 'a' . \"\\0\" . '' . \"\\0\" . 'b',\n",
+            ")\n",
+            "array (\n",
+            "  'a' . \"\\0\" . 'b' => 'key',\n",
             ")\n",
             "d6bee42a771449205344c0938ad4f035\n",
         )

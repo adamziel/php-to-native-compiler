@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T05:49Z.
-Measured: `ptn-oe6i`.
+Refresh: 2026-06-14T05:56Z.
+Measured: `ptn-ubqw`.
 
 ## Dashboard
 
@@ -43,11 +43,12 @@ Measured: `ptn-oe6i`.
 | Attribute blocker bucket | 141 | 0 | 141 |
 | Heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | Standard-array tdei slice | 71 | 61 | 10 |
+| Zend op/control frontier | 26 | 15 | 11 |
+| Binary key row | 1 | 1 | 0 |
 | COW gate | 26 | 26 | 0 |
 | PHPT 1k baseline | 1000 | 265 | 735 |
 
 ## Remaining
 
-- Broad 428/572; bounded 456/486.
-- Arrays 64/119 setops, 61/71 tdei, 49/66 callbacks, 28/38 registry, 21/30 map/filter, 243/296 standard.
-- COW/ref 10/12, 17/72, 31/103; classes 1/78; metadata 0/74; dynamic types 0/44.
+- Broad 428/572; bounded 456/486; arrays: setops 64/119, tdei 61/71, standard 243/296.
+- COW/ref 10/12,17/72,31/103; classes 1/78; metadata 0/74; dynamic 0/44; op/control 15/26.

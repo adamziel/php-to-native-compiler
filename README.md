@@ -14,8 +14,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Numeric literals cover digit separators, integer radices, leading-zero
   decimal floats, and leading-dot float forms.
 - Strings cover interpolation, legacy `${name}` deprecations, common/control
-  escapes, hex/octal byte escapes, binary-prefixed string literals, and inline
-  HTML output.
+  escapes including `\e`, hex/octal byte escapes, binary-prefixed string
+  literals, and inline HTML output.
 - Top-level functions and declared methods include magic constants, call-frame
   introspection, scalar, array, class-name, and void return type hints, array
   defaults, by-reference returns, typed coercion, constructor dispatch, public
@@ -55,7 +55,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   visibility; `array_fill()` has bounded huge-count allocation diagnostics.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
-  embedded-NUL string escaping.
+  embedded-NUL string and string-key escaping.
 - `pow()` uses the boxed exponentiation helper, `min()`/`max()` use the shared
   loose ordering helper, `flush()` flushes native stdout, `call_user_func_array()`
   expands ordered arrays through callable dispatch, `call_user_func()` and
@@ -101,6 +101,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   length-aware CRC-32 integers; `strpbrk()` returns binary-safe suffix slices;
   trim-family internals, including the `chop()` alias, use PHP default bytes
   plus bounded charlists.
+- `array_change_key_case()` preserves binary-safe string-key lengths while
+  changing ASCII key case.
 - `str_replace()` supports scalar and ordered-array search/replacement/subject
   byte replacement, dereferences array entries, preserves subject-array keys,
   writes the optional `$count` argument by reference, and throws PHP-style
@@ -235,6 +237,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_ARRAY_NAMED_CALLBACK_FRONTIER_2026-06-14.md`: current
   broad 1k array named-argument classifier movement plus focused
   `array_map()`/`array_filter()` blocker map.
+- `docs/PHPT_BROAD_1K_ZEND_OPERATOR_CONTROL_FRONTIER_2026-06-14.md`: broad
+  1k Zend operator/control/AST/assertion blocker map plus the `\e` escape and
+  binary-safe array-key movement.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and

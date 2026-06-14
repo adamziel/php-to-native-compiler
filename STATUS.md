@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T05:49Z.
-Measured: `ptn-oe6i`.
+Last refresh: 2026-06-14T05:56Z.
+Measured: `ptn-ubqw`.
 
 ## Operating Goal
 
@@ -52,6 +52,8 @@ Source unit tests 3/3; Native Rust 721/721; Bounded PHPT 479/486; Zend PHPT 119/
 | Attribute blocker bucket | 0/141 |
 | Heredoc/nowdoc array frontier | 14/70 |
 | Standard-array tdei slice | 61/71 |
+| Zend op/control frontier | 15/26 |
+| Binary key row | 1/1 |
 | COW gate | 26/26 |
 | PHPT 1k baseline | 265/1000 |
 
