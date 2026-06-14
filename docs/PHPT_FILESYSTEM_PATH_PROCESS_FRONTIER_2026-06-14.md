@@ -1,6 +1,6 @@
 # PHPT Filesystem/Path/Process Frontier: 2026-06-14
 
-Issue: `ptn-d3vd`
+Issue: `ptn-d3vd`; refreshed by `ptn-dvu9`
 
 This slice started from a fresh broad 1k classify-only baseline on current
 `origin/master`, then focused the existing filesystem/path/process manifest.
@@ -55,6 +55,21 @@ Top classifier buckets:
 | `sapi-behavior` | 13 |
 | `unsupported-assertion-runtime` | 9 |
 
+Refresh evidence from `ptn-dvu9` reran the broad 1k classify-only baseline at
+PTN state `a8856615c`:
+
+```text
+.runtime/ptn-dvu9-baseline-before/20260614T062734Z/phpt-baseline-1000.txt
+.runtime/phpt-progress/classification-20260614T062734Z.tsv
+.runtime/phpt-progress/runnable-20260614T062734Z.txt
+.runtime/phpt-progress/excluded-20260614T062734Z.tsv
+```
+
+The refreshed broad result was 1,000 selected, 425 runnable, and 575 excluded.
+The filesystem/process conclusion did not change: the current 1k tier contains
+only a small direct process-boundary sample, so the focused 46-row manifest is
+still the actionable frontier.
+
 ## Focused Filesystem/Path/Process Evidence
 
 Manifest:
@@ -97,6 +112,18 @@ Focused result:
 | Selected | Runnable | Excluded | Passed | Failed | Skipped | Warned |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 46 | 13 | 33 | 13 | 0 | 0 | 0 |
+
+Refresh evidence from `ptn-dvu9` reran the same focused manifest:
+
+```text
+.runtime/phpt-progress/classification-20260614T063307Z.tsv
+.runtime/phpt-progress/runnable-20260614T063307Z.txt
+.runtime/phpt-progress/excluded-20260614T063307Z.tsv
+.runtime/phpt-progress/run-20260614T063307Z-manifest.log
+```
+
+The refreshed focused result was unchanged: 46 selected, 13 runnable, 33
+excluded, 13 passed, 0 failed, 0 skipped, and 0 warned.
 
 Classifier split:
 
@@ -203,8 +230,11 @@ outside measured program output. They are not evidence of missing
 
 ```sh
 cargo fmt --check
+cargo test --test phpt_classifier
 tools/run-phpt-baseline.sh --tier 1000 --classify-only \
   --out-dir .runtime/ptn-d3vd-before
+tools/run-phpt-baseline.sh --tier 1000 --classify-only \
+  --out-dir .runtime/ptn-dvu9-baseline-before
 tools/run-bounded-phpt.sh --classify-only \
   tools/phpt-filesystem-path-process-manifest.txt
 tools/run-bounded-phpt.sh tools/phpt-filesystem-path-process-manifest.txt
