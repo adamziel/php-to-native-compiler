@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-14T05:25Z.
-Measured: `ptn-sdcx`.
+Refresh: 2026-06-14T05:30Z.
+Measured: `ptn-bkcv`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 721 | 721 | 0 |
+| Native Rust suite | 721 | 721 | 0 |
 | PHPT bounded manifest | 486 | 479 | 7 |
 | PHPT Zend rows | 119 | 119 | 0 |
 | PHPT ext/standard rows | 281 | 274 | 7 |
@@ -20,7 +20,7 @@ Measured: `ptn-sdcx`.
 | PHPT array fill/pad rows | 12 | 11 | 1 |
 | PHPT array set/callback frontier | 106 | 86 | 20 |
 | PHPT broad array callback slice | 38 | 28 | 10 |
-| PHPT focused filesystem/path/process rows | 46 | 13 | 33 |
+| PHPT filesystem/path/process rows | 46 | 13 | 33 |
 | PHPT tests/basic+func+lang | 78 | 78 | 0 |
 | PHPT COW manifest | 54 | 54 | 0 |
 | PHPT nested foreach/reference rows | 3 | 2 | 1 |
@@ -35,20 +35,17 @@ Measured: `ptn-sdcx`.
 | PHPT broad magic/object conversion frontier | 69 | 20 | 49 |
 | PHPT broad magic-method metadata frontier | 69 | 0 | 69 |
 | PHPT broad standard-array frontier | 297 | 0 | 297 |
+| PHPT broad standard-array execution | 296 | 243 | 53 |
 | PHPT broad array map/filter callback slice | 30 | 21 | 9 |
 | PHPT broad request/SAPI input frontier | 41 | 1 | 40 |
-| PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
+| PHPT attribute blocker bucket | 141 | 0 | 141 |
 | PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | PHPT broad standard-array tdei slice | 71 | 61 | 10 |
-| Post-merge COW gate | 26 | 26 | 0 |
-| PHPT broad 1k baseline | 1000 | 265 | 735 |
+| COW gate | 26 | 26 | 0 |
+| PHPT 1k baseline | 1000 | 265 | 735 |
 
 ## Remaining
 
 - Broad 428/572; bounded 456/486.
-- Arrays 64/119 setops, 61/71 tdei, 49/66 callbacks, 28/38 registry, 21/30 map/filter.
+- Arrays 64/119 setops, 61/71 tdei, 49/66 callbacks, 28/38 registry, 21/30 map/filter, 243/296 standard.
 - COW/ref 10/12, 17/72, 31/103; classes 1/78.
-
-## Verification
-
-`ptn-sdcx`: broad 429/571 -> 428/572; map/filter 21/30.

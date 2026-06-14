@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T05:25Z.
-Measured: `ptn-sdcx`.
+Last refresh: 2026-06-14T05:30Z.
+Measured: `ptn-bkcv`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
+Source unit tests 3/3; Native Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 721/721 |
+| Native Rust suite | 721/721 |
 | PHPT bounded manifest | 479/486 |
 | PHPT Zend rows | 119/119 |
 | PHPT ext/standard rows | 274/281 |
@@ -29,7 +29,7 @@ Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest
 | PHPT array fill/pad rows | 11/12 |
 | PHPT array set/callback frontier | 86/106 |
 | PHPT broad array callback slice | 28/38 |
-| PHPT focused filesystem/path/process rows | 13/46 |
+| PHPT filesystem/path/process rows | 13/46 |
 | PHPT tests/basic+func+lang | 78/78 |
 | PHPT COW manifest | 54/54 |
 | PHPT nested foreach/reference rows | 2/3 |
@@ -44,13 +44,14 @@ Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest
 | PHPT broad magic/object conversion frontier | 20/69 |
 | PHPT broad magic-method metadata frontier | 0/69 |
 | PHPT broad standard-array frontier | 0/297 |
+| PHPT broad standard-array execution | 243/296 |
 | PHPT broad array map/filter callback slice | 21/30 |
 | PHPT broad request/SAPI input frontier | 1/41 |
-| PHPT broad 1k attribute blocker bucket | 0/141 |
+| PHPT attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | PHPT broad standard-array tdei slice | 61/71 |
-| Post-merge COW gate | 26/26 |
-| PHPT broad 1k baseline | 265/1000 |
+| COW gate | 26/26 |
+| PHPT 1k baseline | 265/1000 |
 
 ## Rules
 
