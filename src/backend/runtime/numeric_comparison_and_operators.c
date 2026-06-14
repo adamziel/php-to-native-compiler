@@ -968,6 +968,12 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
 }
 
 static PTN_UNUSED PtnValue ptn_modulo(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (left.type == PTN_ARRAY || right.type == PTN_ARRAY) {
+        ptn_throw_unsupported_operand_types(runtime, left, "%", right, line);
+        return ptn_null();
+    }
     int64_t left_fast_integer = 0;
     int64_t right_fast_integer = 0;
     if (ptn_fast_integer_value(left, &left_fast_integer) &&

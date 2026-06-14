@@ -8912,6 +8912,58 @@ var_dump($box->name);
 }
 
 #[test]
+fn compile_this_outside_object_context_to_native_binary() {
+    let root = temp_dir("ptn-native-this-outside-object-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("this-outside-object-context.php");
+    let output = root.join("this-outside-object-context-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(isset($this));
+try {
+    $this->a = new stdClass;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $this[\"x\"] = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+class ThisContextBox {
+    public $a = 0;
+    public function set() {
+        $this->a = 1;
+        return $this->a;
+    }
+}
+var_dump((new ThisContextBox)->set());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "Using $this when not in object context\n",
+            "Using $this when not in object context\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.has_current_receiver = 1;"));
+    assert!(c_source.contains("ptn_runtime_read_variable(&runtime, \"this\""));
+}
+
+#[test]
 fn compile_private_instance_properties_to_native_binary() {
     let root = temp_dir("ptn-native-private-instance-properties");
     fs::create_dir_all(&root).unwrap();
@@ -19461,6 +19513,39 @@ fn compile_scalar_shift_compound_assignments_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Bitwise ops:\nint(3)\nint(1)\nint(2)\nint(6)\nint(1)\nModulo:\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_modulo_shift_compound_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-array-modulo-shift-compound-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-modulo-shift-compound-type-errors.php");
+    let output = root.join("array-modulo-shift-compound-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([\"%=\" => \"%\", \"<<=\" => \"<<\", \">>=\" => \">>\"] as $assign => $operator) {\n\
+    $x = [];\n\
+    try {\n\
+        if ($assign === \"%=\") { $x %= \"1\"; }\n\
+        if ($assign === \"<<=\") { $x <<= \"1\"; }\n\
+        if ($assign === \">>=\") { $x >>= \"1\"; }\n\
+    } catch (TypeError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Unsupported operand types: array % string\nUnsupported operand types: array << string\nUnsupported operand types: array >> string\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -305,6 +305,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(
     if (strcmp(name, "GLOBALS") == 0) {
         return ptn_runtime_globals_snapshot(runtime);
     }
+    if (strcmp(name, "this") == 0 && !runtime->has_current_receiver) {
+        ptn_throw_exception_at(runtime, "Error", "Using $this when not in object context", path, line);
+        return ptn_null();
+    }
     PtnValue value;
     if (ptn_symbols_get(&runtime->symbols, name, &value)) {
         return ptn_value_deref(value);
@@ -319,6 +323,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_array_mutation(
     const char *path,
     size_t line
 ) {
+    if (strcmp(name, "this") == 0 && !runtime->has_current_receiver) {
+        ptn_throw_exception_at(runtime, "Error", "Using $this when not in object context", path, line);
+        return ptn_null();
+    }
     PtnValue *slot = ptn_symbols_get_slot(&runtime->symbols, name);
     if (slot == NULL) {
         ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
