@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T20:09Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; `ptn-g7ta` object-string array row pack +24 broad 1k rows and focused 23/23; COW 69/103 passed.
+Refresh: 2026-06-14T20:52Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; `ptn-g7ta` object-string array row pack +24 broad 1k rows and focused 23/23; COW 69/103 passed; `ptn-601n` anonymous-class/object metadata row pack 0/21 raw focused baseline -> 10/10 runnable after split and final broad 1k classify-only 558/442.
 
 ## Dashboard
 
@@ -69,6 +69,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Attribute-internal|8|0|8|
 |Attribute-meta|204|0|204|
 |Heredoc-array|70|20|50|
+|Anon-class-pack|21|10|11|
 |Std-array-row-pack|10|10|0|
 |Std-array-s80e|20|20|0|
 |Std-array-tdei|71|61|10|
@@ -80,6 +81,52 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |COW-gate|26|26|0|
 |COW-reference-tiqh|21|21|0|
 |1k-baseline|1000|419|581|
+
+## 2026-06-14 ptn-601n Anonymous Class/Object Metadata Row Pack
+
+Final manifest: `tools/phpt-ptn-601n-anonymous-class-row-pack.txt`.
+
+Pre-change focused baseline captured on `f66ce2e11` selected these 21 rows as
+`unsupported-anonymous-class`; raw execution selected 21 runnable rows, with
+0 passed and 21 failed.
+
+Current rebased branch command:
+`PHPT_PROGRESS_DIR=.runtime/ptn-601n-anon-row-pack-final-af64 timeout 1200s tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-601n-anonymous-class-row-pack.txt`.
+Artifact `run-20260614T204218Z-manifest.log` selected 21 rows: 10 runnable,
+10 passed, 0 failed, and 11 classified (`unsupported-anonymous-class` 8,
+`unsupported-attribute-syntax-metadata` 3).
+
+Final broad 1k classify-only artifact
+`.runtime/ptn-601n-broad-1k-final-af64-classify/manifest-20260614T204507Z.txt`
+selected 1,000 rows: 558 runnable and 442 classified. This was classification
+only; broad pass-count evidence for this bead is the focused row pack above.
+
+Newly passing focused rows:
+
+- `Zend/tests/ArrayAccess/bug78356.phpt`
+- `Zend/tests/anon/001.phpt`
+- `Zend/tests/anon/002.phpt`
+- `Zend/tests/anon/003.phpt`
+- `Zend/tests/anon/004.phpt`
+- `Zend/tests/anon/005.phpt`
+- `Zend/tests/anon/006.phpt`
+- `Zend/tests/anon/007.phpt`
+- `Zend/tests/anon/012.phpt`
+- `Zend/tests/attributes/override/019.phpt`
+
+Implemented behavior: parser/IR/backend support for anonymous class expressions
+with constructor arguments, `extends`, `implements`, declared metadata, object
+construction, and `instanceof`; runtime support for `rand()`; nested
+function/method frames inherit diagnostic suppression; array-offset warnings use
+runtime warning emission so suppression/error-reporting gates apply; and the
+classifier now splits the supported anonymous subset from remaining anonymous
+class and attribute metadata blockers.
+
+Remaining blockers in this pack are dynamic static member access through
+anonymous class objects, runtime `class_alias()` metadata for anonymous names,
+`Closure::bind()` scope binding, PHP hidden-suffix anonymous class names in
+`get_class()`/diagnostics, abstract anonymous diagnostics, and broader
+attribute validation metadata.
 
 ## 2026-06-14 ptn-qg7b Asymmetric Visibility Row Pack
 

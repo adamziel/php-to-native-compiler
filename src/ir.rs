@@ -420,6 +420,11 @@ pub enum ValueExpr {
         receiver: Box<ValueExpr>,
         line: usize,
     },
+    InstanceOf {
+        expr: Box<ValueExpr>,
+        class_name: String,
+        line: usize,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<ValueExpr>,
@@ -1848,6 +1853,15 @@ impl<'a> LoweringContext<'a> {
                 receiver: Box::new(self.lower_expr(receiver)),
                 line: span.line,
             },
+            Expr::InstanceOf {
+                expr,
+                class_name,
+                span,
+            } => ValueExpr::InstanceOf {
+                expr: Box::new(self.lower_expr(expr)),
+                class_name: class_name.clone(),
+                line: span.line,
+            },
             Expr::Unary { op, expr, span } => ValueExpr::Unary {
                 op: lower_unary_op(*op),
                 expr: Box::new(self.lower_expr(expr)),
@@ -2076,6 +2090,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::DynamicClassNameFetch { receiver, .. } => {
             format!("{}::class", assertion_expr_text(receiver))
         }
+        Expr::InstanceOf {
+            expr, class_name, ..
+        } => format!("{} instanceof {class_name}", assertion_expr_text(expr)),
         Expr::Array { elements, .. } => format!(
             "[{}]",
             elements

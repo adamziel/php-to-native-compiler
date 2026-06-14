@@ -581,6 +581,11 @@ pub enum Expr {
         receiver: Box<Expr>,
         span: SourceSpan,
     },
+    InstanceOf {
+        expr: Box<Expr>,
+        class_name: String,
+        span: SourceSpan,
+    },
     Array {
         elements: Vec<ArrayElement>,
         span: SourceSpan,
@@ -753,7 +758,8 @@ impl Expr {
             | Expr::PropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. }
-            | Expr::DynamicClassNameFetch { span, .. } => *span,
+            | Expr::DynamicClassNameFetch { span, .. }
+            | Expr::InstanceOf { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::List(list) => list.span,
             Expr::ArrayAccess { span, .. } => *span,

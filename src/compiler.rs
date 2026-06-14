@@ -353,6 +353,7 @@ impl IncludeCollector {
             Expr::DynamicClassNameFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
+            Expr::InstanceOf { expr, .. } => self.collect_expr(expr, source_file, source_dir),
             Expr::Array { elements, .. } => {
                 for element in elements {
                     if let Some(key) = &element.key {

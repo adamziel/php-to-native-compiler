@@ -48,6 +48,8 @@ pub fn parse(source: &str) -> Result<Program> {
         class_aliases: HashMap::new(),
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
+        anonymous_classes: Vec::new(),
+        anonymous_class_name_counts: HashMap::new(),
         allow_append_array_read: false,
         strict_types: false,
     }
@@ -65,6 +67,8 @@ struct Parser {
     class_aliases: HashMap<String, String>,
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
+    anonymous_classes: Vec<ClassDecl>,
+    anonymous_class_name_counts: HashMap<String, usize>,
     allow_append_array_read: bool,
     strict_types: bool,
 }
@@ -176,6 +180,7 @@ impl Parser {
             &mut statements,
             TopLevelScope::Program,
         )?;
+        classes.append(&mut self.anonymous_classes);
         validate_class_names(&classes)?;
         validate_parent_class_names(&classes)?;
         validate_interface_references(&classes)?;
@@ -3089,7 +3094,26 @@ impl Parser {
 
     fn parse_binary_expr(&mut self, min_precedence: u8) -> Result<Expr> {
         let mut left = self.parse_unary_expr()?;
-        while let Some((op, precedence, right_associative)) = self.peek_binary_op() {
+        loop {
+            if token_is_identifier_named(self.peek(), "instanceof") {
+                if COMPARISON_PRECEDENCE < min_precedence {
+                    break;
+                }
+                self.advance();
+                let (class_name, class_span) =
+                    self.parse_resolved_class_name("expected class name")?;
+                let span = combine_spans(left.span(), class_span);
+                left = Expr::InstanceOf {
+                    expr: Box::new(left),
+                    class_name,
+                    span,
+                };
+                continue;
+            }
+
+            let Some((op, precedence, right_associative)) = self.peek_binary_op() else {
+                break;
+            };
             if precedence < min_precedence {
                 break;
             }
@@ -3676,6 +3700,9 @@ impl Parser {
     }
 
     fn parse_new_object_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        if token_is_identifier_named(self.peek(), "class") {
+            return self.parse_anonymous_class_expr(start_span);
+        }
         if matches!(
             self.peek().kind,
             TokenKind::Variable(_) | TokenKind::Dollar | TokenKind::LeftParen
@@ -3722,6 +3749,104 @@ impl Parser {
 
     fn parse_new_object_class_name(&mut self) -> Result<(String, SourceSpan)> {
         self.parse_resolved_class_name("expected class name")
+    }
+
+    fn parse_anonymous_class_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        let class_span = self.advance().span;
+        let (arguments, argument_names, argument_unpacks) =
+            if matches!(self.peek().kind, TokenKind::LeftParen) {
+                let (arguments, argument_names, argument_unpacks, _) =
+                    self.parse_call_arguments()?;
+                (arguments, argument_names, argument_unpacks)
+            } else {
+                (Vec::new(), Vec::new(), Vec::new())
+            };
+
+        let parent_name = if token_is_identifier_named(self.peek(), "extends") {
+            self.advance();
+            Some(
+                self.parse_resolved_class_name("expected parent class name")?
+                    .0,
+            )
+        } else {
+            None
+        };
+
+        let mut interfaces = Vec::new();
+        if token_is_identifier_named(self.peek(), "implements") {
+            self.advance();
+            interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            }
+        }
+
+        let class_name = self.next_anonymous_class_name(parent_name.as_deref(), &interfaces);
+        self.expect_left_brace()?;
+        let mut properties = Vec::new();
+        let mut static_properties = Vec::new();
+        let mut constants = Vec::new();
+        let mut methods = Vec::new();
+        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            match self.parse_class_member(false, false, &class_name)? {
+                ParsedClassMember::Method(method) => methods.push(method),
+                ParsedClassMember::Properties(parsed_properties) => {
+                    properties.extend(parsed_properties);
+                }
+                ParsedClassMember::StaticProperties(parsed_properties) => {
+                    static_properties.extend(parsed_properties);
+                }
+                ParsedClassMember::Constants(parsed_constants) => {
+                    constants.extend(parsed_constants);
+                }
+            }
+        }
+        let right_span = self.expect_right_brace()?;
+        let span = combine_spans(start_span, right_span);
+        self.anonymous_classes.push(ClassDecl {
+            name: class_name.clone(),
+            parent_name,
+            interfaces,
+            is_abstract: false,
+            is_final: false,
+            is_interface: false,
+            is_readonly: false,
+            properties,
+            static_properties,
+            constants,
+            methods,
+            span: class_span,
+        });
+
+        Ok(Expr::NewObject {
+            class_name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            span,
+        })
+    }
+
+    fn next_anonymous_class_name(
+        &mut self,
+        parent_name: Option<&str>,
+        interfaces: &[String],
+    ) -> String {
+        let base = parent_name
+            .or_else(|| interfaces.first().map(String::as_str))
+            .map(|name| format!("{name}@anonymous"))
+            .unwrap_or_else(|| "class@anonymous".to_string());
+        let count = self
+            .anonymous_class_name_counts
+            .entry(base.clone())
+            .and_modify(|count| *count += 1)
+            .or_insert(1);
+        if *count == 1 {
+            base
+        } else {
+            format!("{base}#{}", *count)
+        }
     }
 
     fn reject_unsupported_class_like_declaration(&mut self) -> Result<Statement> {
@@ -5045,6 +5170,9 @@ fn collect_arrow_captures_from_expr(
         Expr::DynamicClassNameFetch { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
+        Expr::InstanceOf { expr, .. } => {
+            collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
+        }
         Expr::String(_, _)
         | Expr::Int(_, _)
         | Expr::Float(_, _)
@@ -5841,6 +5969,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
+        | Expr::InstanceOf { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. }
@@ -6232,6 +6361,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         Expr::DynamicClassNameFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
         }
+        Expr::InstanceOf { expr, .. } => {
+            validate_anonymous_functions_in_expr(expr, functions)?;
+        }
         Expr::Clone { expr, .. } => {
             validate_anonymous_functions_in_expr(expr, functions)?;
         }
@@ -6609,6 +6741,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "intval"
             | "chr"
             | "ord"
+            | "rand"
             | "range"
             | "arsort"
             | "asort"
@@ -7783,6 +7916,9 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::DynamicClassNameFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
+        Expr::InstanceOf { expr, .. } => {
+            reject_append_array_read(expr)?;
+        }
         Expr::Clone { expr, .. } => reject_append_array_read(expr)?,
         Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
@@ -8019,6 +8155,7 @@ fn is_supported_global_const_expr_with_options(
         | Expr::PropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
+        | Expr::InstanceOf { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,
@@ -8108,6 +8245,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::PropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
+        | Expr::InstanceOf { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,
@@ -8185,6 +8323,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
             validate_class_scoped_constant_expr(left, parent_name)?;
             validate_class_scoped_constant_expr(right, parent_name)
         }
+        Expr::InstanceOf { expr, .. } => validate_class_scoped_constant_expr(expr, parent_name),
         Expr::Ternary {
             condition,
             if_true,

@@ -3864,6 +3864,63 @@ class Child extends Base {
 }
 
 #[test]
+fn parser_accepts_anonymous_class_metadata_and_instanceof() {
+    let program = parser::parse(
+        "<?php
+interface Contract {
+    public function run();
+}
+
+class Base {
+    public function label($value) { return $value; }
+}
+
+$worker = new class(\"native\") extends Base implements Contract {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+
+    public function run() {
+        return $this->label($this->name);
+    }
+};
+
+var_dump($worker instanceof Base, $worker instanceof Contract);
+",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes.len(), 3);
+    assert_eq!(program.classes[2].name, "Base@anonymous");
+    assert_eq!(program.classes[2].parent_name.as_deref(), Some("Base"));
+    assert_eq!(program.classes[2].interfaces, vec!["Contract"]);
+    assert_eq!(program.classes[2].properties[0].name, "name");
+    assert_eq!(program.classes[2].methods.len(), 2);
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected anonymous class assignment");
+    };
+    assert!(matches!(
+        value,
+        Expr::NewObject { class_name, .. } if class_name == "Base@anonymous"
+    ));
+
+    let Statement::Call { arguments, .. } = &program.statements[1] else {
+        panic!("expected var_dump statement");
+    };
+    assert!(matches!(
+        &arguments[0],
+        Expr::InstanceOf { class_name, .. } if class_name == "Base"
+    ));
+    assert!(matches!(
+        &arguments[1],
+        Expr::InstanceOf { class_name, .. } if class_name == "Contract"
+    ));
+}
+
+#[test]
 fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
     let cases = [
         (
@@ -9397,6 +9454,69 @@ echo $child->label(), \"\\n\";
     assert!(c_source.contains("ptn_object_new_shell(&runtime, \"ChildBox\")"));
     assert!(c_source.contains("BaseBox::__construct"));
     assert!(c_source.contains("ptn_call_declared_method(&runtime"));
+}
+
+#[test]
+fn compile_anonymous_class_metadata_and_instanceof_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-class-metadata-instanceof");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-class-metadata-instanceof.php");
+    let output = root.join("anonymous-class-metadata-instanceof-bin");
+    fs::write(
+        &input,
+        "<?php
+interface Contract {
+    public function run();
+}
+
+class Base {
+    public $prefix = \"base\";
+
+    public function label($value) {
+        return $this->prefix . \":\" . $value;
+    }
+}
+
+$worker = new class(\"native\") extends Base implements Contract {
+    public $name = \"unset\";
+
+    public function __construct($name) {
+        $this->name = $name;
+        $this->prefix = \"child\";
+    }
+
+    public function run() {
+        return $this->label($this->name);
+    }
+};
+
+echo $worker->run(), \"\\n\";
+var_dump($worker instanceof Base);
+var_dump($worker instanceof Contract);
+var_dump($worker instanceof stdClass);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "child:native\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_new_shell(&runtime, \"Base@anonymous\")"));
+    assert!(c_source.contains("ptn_declared_class_is_same_or_descendant"));
+    assert!(c_source.contains("ptn_declared_class_implements_interface"));
 }
 
 #[test]

@@ -2315,7 +2315,7 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_emit_array_runtime_diagnostic("Warning", message, line);
+            ptn_emit_array_runtime_warning(runtime, message, line);
         }
         return ptn_lookup_missing();
     }

@@ -1034,22 +1034,87 @@ ptn_phpt_first_unsupported_language_surface() {
                 }
                 next
             }
-            if (ptn_has_php_attribute_syntax($0)) {
-                print "unsupported-attribute-syntax-metadata\trequires PHP attribute syntax (`#[...]`) plus declaration/reflection metadata, outside PTN parser/metadata model"
-                found = 1
-                exit
-            }
             if (ptn_start_heredoc(ptn_php_code_line_raw($0))) {
                 next
             }
             line = ptn_php_code_line($0)
+            if (line ~ /(^|[^[:alnum:]_$])interface[[:space:]]+[a-z_\\][a-z0-9_\\]*/) {
+                saw_interface = 1
+            }
+            if (!saw_anonymous_class && saw_interface && match(line, /function[[:space:]]+([a-z_][a-z0-9_]*)[[:space:]]*[(]/, method_match)) {
+                override_interface_methods[method_match[1]] = 1
+            }
+            if (ptn_has_php_attribute_syntax($0)) {
+                attr_raw = tolower($0)
+                if (attr_raw ~ /#\[[[:space:]]*\\?override[[:space:]]*\]/) {
+                    pending_override_attribute = 1
+                    next
+                }
+                print "unsupported-attribute-syntax-metadata\trequires PHP attribute syntax (`#[...]`) plus declaration/reflection metadata, outside PTN parser/metadata model"
+                found = 1
+                exit
+            }
+            if (pending_override_attribute && line !~ /^[[:space:]]*$/) {
+                if (match(line, /function[[:space:]]+([a-z_][a-z0-9_]*)[[:space:]]*[(]/, override_method_match) &&
+                    (override_method_match[1] in override_interface_methods)) {
+                    pending_override_attribute = 0
+                } else {
+                    print "unsupported-attribute-syntax-metadata\trequires #[Override] validation metadata, outside PTN modeled attribute subset"
+                    found = 1
+                    exit
+                }
+            }
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/) {
                 print "unsupported-generator-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
                 found = 1
                 exit
             }
+            if (line ~ /(^|[^[:alnum:]_$])abstract[[:space:]]+class[[:space:]]+/) {
+                saw_abstract_class = 1
+            }
+            if (line ~ /(^|[^[:alnum:]_$])get_class[[:space:]]*[(]/) {
+                saw_get_class = 1
+            }
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+class([^[:alnum:]_]|$)/) {
-                print "unsupported-anonymous-class\trequires anonymous class syntax (`new class`), generated class metadata, constructor dispatch, and reflection naming"
+                saw_anonymous_class = 1
+                if (saw_abstract_class) {
+                    print "unsupported-anonymous-class\trequires anonymous class abstract parent implementation diagnostics, outside PTN modeled anonymous class subset"
+                    found = 1
+                    exit
+                }
+                if (saw_get_class) {
+                    print "unsupported-anonymous-class\trequires PHP hidden-suffix anonymous class generated names, outside PTN modeled anonymous class subset"
+                    found = 1
+                    exit
+                }
+            }
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])class_alias[[:space:]]*[(]/) {
+                print "unsupported-anonymous-class\trequires anonymous class runtime class_alias metadata, outside PTN modeled anonymous class subset"
+                found = 1
+                exit
+            }
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])closure[[:space:]]*::[[:space:]]*bind[[:space:]]*[(]/) {
+                print "unsupported-anonymous-class\trequires Closure::bind() scope binding for anonymous class instances, outside PTN modeled anonymous class subset"
+                found = 1
+                exit
+            }
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])trigger_error[[:space:]]*[(]/) {
+                print "unsupported-anonymous-class\trequires trigger_error() diagnostics containing anonymous class generated names, outside PTN modeled anonymous class subset"
+                found = 1
+                exit
+            }
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])get_class[[:space:]]*[(]/) {
+                print "unsupported-anonymous-class\trequires PHP hidden-suffix anonymous class generated names, outside PTN modeled anonymous class subset"
+                found = 1
+                exit
+            }
+            if (saw_anonymous_class && line ~ /[$][A-Za-z_][A-Za-z0-9_]*[[:space:]]*::/) {
+                print "unsupported-anonymous-class\trequires dynamic static member access through anonymous class objects, outside PTN modeled anonymous class subset"
+                found = 1
+                exit
+            }
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])abstract[[:space:]]+(public|protected|private|static|function)/) {
+                print "unsupported-anonymous-class\trequires anonymous class abstract method diagnostics, outside PTN modeled anonymous class subset"
                 found = 1
                 exit
             }
@@ -1323,10 +1388,10 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (((readonly_class_context || readonly_property_seen) &&
+            if ((readonly_class_context || readonly_property_seen) &&
                 (line ~ /=[[:space:]]*&[[:space:]]*\$[a-z_][a-z0-9_]*->[a-z_][a-z0-9_]*/ ||
-                    line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*&/)) ||
-                line ~ /->[a-z_][a-z0-9_]*[[:space:]]*(\[|\+\+|--)/) {
+                    line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*&/ ||
+                    line ~ /->[a-z_][a-z0-9_]*[[:space:]]*(\[|\+\+|--)/)) {
                 print "unsupported-readonly-property-metadata\trequires indirect readonly property mutation diagnostics, outside PTN modeled readonly property subset"
                 found = 1
                 exit

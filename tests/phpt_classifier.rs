@@ -288,10 +288,10 @@ fn phpt_classifier_section_cache_preserves_row_classification() {
 fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
     let cases = [
         (
-            "anonymous class",
-            "--TEST--\nanon\n--FILE--\n<?php\nvar_dump(new class {});\n--EXPECT--\n",
+            "anonymous class generated name",
+            "--TEST--\nanon name\n--FILE--\n<?php\n$obj = new class {};\nvar_dump(get_class($obj));\n--EXPECT--\n",
             "unsupported-anonymous-class\t",
-            "requires anonymous class syntax",
+            "requires PHP hidden-suffix anonymous class generated names",
         ),
         (
             "trait declaration",
@@ -364,6 +364,22 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
         assert!(
             classification.contains(reason),
             "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_supported_anonymous_class_rows_runnable() {
+    let cases = [
+        "--TEST--\nanon\n--FILE--\n<?php\nvar_dump(new class {});\n--EXPECT--\n",
+        "--TEST--\nanon contract\n--FILE--\n<?php\ninterface Contract { public function run(); }\nclass Base { public function label($value) { return $value; } }\n$obj = new class extends Base implements Contract { public function run() { return $this->label(1); } };\nvar_dump($obj instanceof Base, $obj instanceof Contract);\n--EXPECT--\n",
+        "--TEST--\noverride\n--FILE--\n<?php\ninterface Contract { public function run(); }\n$obj = new class implements Contract { #[\\Override] public function run() {} };\n--EXPECT--\n",
+    ];
+
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt),
+            "runnable\tselected for PTN semantic measurement\n"
         );
     }
 }

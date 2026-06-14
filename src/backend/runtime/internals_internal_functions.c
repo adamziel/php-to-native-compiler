@@ -11848,6 +11848,22 @@ static PtnValue ptn_internal_getrandmax(PtnRuntime *runtime, size_t argc, const 
     return ptn_int(2147483647);
 }
 
+static PtnValue ptn_internal_rand(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t min = 0;
+    int64_t max = 2147483647;
+    if (argc == 2) {
+        min = ptn_internal_expect_integer_arg(runtime, "rand", 1, "min", args[0], line);
+        max = ptn_internal_expect_integer_arg(runtime, "rand", 2, "max", args[1], line);
+        if (min > max) {
+            ptn_throw_exception(runtime, "ValueError", "rand(): Argument #1 ($min) must be less than or equal to argument #2 ($max)");
+            return ptn_null();
+        }
+    }
+    uint64_t span = (uint64_t)(max - min) + 1;
+    int64_t value = min + (int64_t)((uint64_t)rand() % span);
+    return ptn_int(value);
+}
+
 static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -13317,6 +13333,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "putenv", 1, 1, ptn_internal_putenv },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
+        { "rand", 0, 2, ptn_internal_rand },
         { "range", 2, 3, ptn_internal_range },
         { "realpath", 1, 1, ptn_internal_realpath },
         { "reset", 1, 1, ptn_internal_reset },

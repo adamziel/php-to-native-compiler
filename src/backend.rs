@@ -3964,6 +3964,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
+        ValueExpr::InstanceOf { expr, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
+        }
         ValueExpr::String(_)
         | ValueExpr::Int(_)
         | ValueExpr::Float(_)
@@ -4458,6 +4461,9 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
+        }
+        ValueExpr::InstanceOf { expr, .. } => {
+            collect_value_runtime_requirements(expr, functions, requirements);
         }
         ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => {}
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
@@ -5515,6 +5521,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             value_mentions_variable(receiver, name)
         }
+        ValueExpr::InstanceOf { expr, .. } => value_mentions_variable(expr, name),
         ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => false,
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             value_mentions_variable(expr, name)
@@ -7238,6 +7245,9 @@ impl ValueEmitter {
                 if_false,
                 ..
             } => self.emit_ternary(out, condition, if_true.as_deref(), if_false),
+            ValueExpr::InstanceOf {
+                expr, class_name, ..
+            } => self.emit_instanceof(out, expr, class_name),
             ValueExpr::Unary { op, expr, line } => {
                 if matches!(op, UnaryOp::ErrorSuppress) {
                     let saved_temp = self.next_temp();
@@ -8659,6 +8669,48 @@ impl ValueEmitter {
         for argument_temp in argument_temps {
             emit_value_cleanup(out, "    ", &argument_temp);
         }
+    }
+
+    fn emit_instanceof(&mut self, out: &mut String, expr: &ValueExpr, class_name: &str) -> String {
+        let expr_temp = self.emit_materialized_value(out, expr);
+        let resolved_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&resolved_temp);
+        out.push_str(" = ptn_value_deref(");
+        out.push_str(&expr_temp);
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(0);\n");
+        out.push_str("    if (");
+        out.push_str(&resolved_temp);
+        out.push_str(".type == PTN_OBJECT) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(ptn_declared_class_is_same_or_descendant(");
+        out.push_str(&resolved_temp);
+        out.push_str(".as.object->class_name, \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\") || ptn_declared_class_implements_interface(");
+        out.push_str(&resolved_temp);
+        out.push_str(".as.object->class_name, \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\"));\n");
+        out.push_str("    } else if (");
+        out.push_str(&resolved_temp);
+        out.push_str(".type == PTN_EXCEPTION) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(ptn_exception_type_matches_name(");
+        out.push_str(&resolved_temp);
+        out.push_str(".as.exception->class_name, \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\"));\n");
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &expr_temp);
+        result_temp
     }
 
     fn emit_print(&mut self, out: &mut String, expression: &ValueExpr) -> String {

@@ -13,6 +13,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->static_property_set_visibility = caller_runtime->static_property_set_visibility;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->diagnostics.error_reporting = caller_runtime->diagnostics.error_reporting;
+    runtime->diagnostics.suppressed = caller_runtime->diagnostics.suppressed;
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
     runtime->exceptions = caller_runtime->exceptions;
