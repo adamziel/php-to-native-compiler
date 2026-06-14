@@ -238,6 +238,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   296-row frontier.
 - `docs/PHPT_BROAD_1K_UNPACKING_BLOCKERS_2026-06-14.md`: broad 1k
   argument/array unpacking blocker map.
+- `docs/PHPT_BROAD_1K_CALL_UNPACKING_CATEGORY_PTN_WD68_2026-06-14.md`:
+  current broad 1k `unsupported-call-unpacking` category map with a committed
+  34-row focused manifest.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_FRONTIER_2026-06-14.md`: broad 1k
   standard-array runnable frontier blocker map with current family counts.
 - `docs/PHPT_BROAD_1K_ARRAY_KEY_COERCION_FRONTIER_2026-06-14.md`: broad 1k

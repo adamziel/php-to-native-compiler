@@ -1,0 +1,45 @@
+# Broad 1k unsupported-call-unpacking frontier rows.
+#
+# Source: `.runtime/phpt-progress/classification-20260614T100636Z.tsv` from:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only --out-dir .runtime/ptn-wd68-baseline-1k
+#
+# Selection: rows classified as `unsupported-call-unpacking`.
+#
+# Focused evidence: 34 selected, 0 runnable, 34 excluded as
+# `unsupported-call-unpacking` in:
+#   .runtime/ptn-wd68-call-unpacking-focused/classification-20260614T101159Z.tsv
+#
+Zend/tests/arg_unpack/basic.phpt
+Zend/tests/arg_unpack/by_ref.phpt
+Zend/tests/arg_unpack/by_ref_separation.phpt
+Zend/tests/arg_unpack/dynamic.phpt
+Zend/tests/arg_unpack/internal.phpt
+Zend/tests/arg_unpack/invalid_type.phpt
+Zend/tests/arg_unpack/many_args.phpt
+Zend/tests/arg_unpack/method.phpt
+Zend/tests/arg_unpack/new.phpt
+Zend/tests/arg_unpack/non_integer_keys.phpt
+Zend/tests/arg_unpack/positional_arg_after_unpack_error.phpt
+Zend/tests/arg_unpack/string_keys.phpt
+Zend/tests/arg_unpack/traversable_with_by_ref_parameters.phpt
+Zend/tests/array_unpack/already_occupied.phpt
+Zend/tests/array_unpack/basic.phpt
+Zend/tests/array_unpack/classes.phpt
+Zend/tests/array_unpack/gh19303.phpt
+Zend/tests/array_unpack/gh9769.phpt
+Zend/tests/array_unpack/in_destructuring.phpt
+Zend/tests/array_unpack/in_destructuring_2.phpt
+Zend/tests/array_unpack/non_integer_keys.phpt
+Zend/tests/array_unpack/ref1.phpt
+Zend/tests/array_unpack/string_keys.phpt
+Zend/tests/array_unpack/undef_var.phpt
+Zend/tests/array_unpack/unpack_invalid_type_compile_time.phpt
+Zend/tests/array_unpack/unpack_string_keys_compile_time.phpt
+Zend/tests/array_unpack_string_keys.phpt
+Zend/tests/arrow_functions/008.phpt
+ext/standard/tests/array/GHSA-h96m-rvf9-jgm2.phpt
+ext/standard/tests/array/array_diff_max_elements.phpt
+ext/standard/tests/array/array_diff_uassoc_basic.phpt
+ext/standard/tests/array/array_find_types.phpt
+ext/standard/tests/array/array_intersect_uassoc_basic.phpt
+ext/standard/tests/array/array_push_empty.phpt
