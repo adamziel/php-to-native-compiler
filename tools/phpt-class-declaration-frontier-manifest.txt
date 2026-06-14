@@ -1,16 +1,13 @@
-# Broad 1k interface/trait/anonymous-class frontier rows.
+# Broad 1k unsupported-class-declaration frontier rows.
 #
-# Source: `.runtime/phpt-progress/classification-20260614T023205Z.tsv` from:
-#   tools/run-phpt-baseline.sh --tier 1000 --classify-only --out-dir .runtime/ptn-zzr2-baseline-current
+# Current source: `.runtime/phpt-progress/classification-20260614T095127Z.tsv` from:
+#   tools/run-phpt-baseline.sh --tier 1000 --classify-only --out-dir .runtime/ptn-bo7q-baseline-1k
 #
-# Selection:
-#   requires trait declarations
-#   requires interface declarations
-#   requires interface implementation checks
-#   requires anonymous class syntax (`new class`)
+# Selection: rows classified as `unsupported-class-declaration`.
 #
-# Focused evidence:
-#   .runtime/phpt-progress/run-20260614T023712Z-manifest.log
+# Focused evidence: 78 selected, 0 runnable, 78 excluded as
+# `unsupported-class-declaration` in:
+#   .runtime/ptn-bo7q-class-declaration-focused/classification-20260614T095636Z.tsv
 #
 Zend/tests/ArrayAccess/ArrayAccess_indirect_append.phpt
 Zend/tests/ArrayAccess/bug30346.phpt
