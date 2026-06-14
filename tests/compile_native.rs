@@ -4727,6 +4727,29 @@ fn compile_var_dump_null_phpt_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_var_dump_recursive_object_to_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-recursive-object");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-recursive-object.php");
+    let output = root.join("var-dump-recursive-object-bin");
+    fs::write(
+        &input,
+        "<?php $box = new stdClass; $box->self =& $box; var_dump($box);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(stdClass)#1 (1) {\n  [\"self\"]=>\n  *RECURSION*\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_print_expression_contexts_to_native_binary() {
     let root = temp_dir("ptn-native-print-expression-contexts");
     fs::create_dir_all(&root).unwrap();

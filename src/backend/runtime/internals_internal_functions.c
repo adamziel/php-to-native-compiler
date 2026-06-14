@@ -447,12 +447,18 @@ typedef struct {
     PtnArray **items;
     size_t len;
     size_t capacity;
+    PtnObject **objects;
+    size_t object_len;
+    size_t object_capacity;
 } PtnDumpSeenArrays;
 
 static void ptn_dump_seen_arrays_init(PtnDumpSeenArrays *seen) {
     seen->items = NULL;
     seen->len = 0;
     seen->capacity = 0;
+    seen->objects = NULL;
+    seen->object_len = 0;
+    seen->object_capacity = 0;
 }
 
 static void ptn_dump_seen_arrays_free(PtnDumpSeenArrays *seen) {
@@ -460,6 +466,10 @@ static void ptn_dump_seen_arrays_free(PtnDumpSeenArrays *seen) {
     seen->items = NULL;
     seen->len = 0;
     seen->capacity = 0;
+    free(seen->objects);
+    seen->objects = NULL;
+    seen->object_len = 0;
+    seen->object_capacity = 0;
 }
 
 static int ptn_dump_seen_arrays_contains(PtnDumpSeenArrays *seen, PtnArray *array) {
@@ -493,6 +503,37 @@ static void ptn_dump_seen_arrays_pop(PtnDumpSeenArrays *seen) {
     }
 }
 
+static int ptn_dump_seen_objects_contains(PtnDumpSeenArrays *seen, PtnObject *object) {
+    for (size_t i = 0; i < seen->object_len; i++) {
+        if (seen->objects[i] == object) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_dump_seen_objects_push(PtnDumpSeenArrays *seen, PtnObject *object) {
+    if (seen->object_len == seen->object_capacity) {
+        size_t new_capacity = seen->object_capacity == 0 ? 8 : seen->object_capacity * 2;
+        if (new_capacity < seen->object_capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnObject **new_objects = realloc(seen->objects, new_capacity * sizeof(PtnObject *));
+        if (new_objects == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->objects = new_objects;
+        seen->object_capacity = new_capacity;
+    }
+    seen->objects[seen->object_len++] = object;
+}
+
+static void ptn_dump_seen_objects_pop(PtnDumpSeenArrays *seen) {
+    if (seen->object_len > 0) {
+        seen->object_len--;
+    }
+}
+
 static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         printf("[%lld]=>\n", (long long)key.as.integer);
@@ -522,6 +563,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
         value = ptn_value_deref(value);
     }
     if (value.type == PTN_ARRAY && ptn_dump_seen_arrays_contains(seen, value.as.array)) {
+        ptn_var_dump_indent(indent);
+        fputs("*RECURSION*\n", stdout);
+        return;
+    }
+    if (value.type == PTN_OBJECT && ptn_dump_seen_objects_contains(seen, value.as.object)) {
         ptn_var_dump_indent(indent);
         fputs("*RECURSION*\n", stdout);
         return;
@@ -574,12 +620,14 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             PtnObject *object = value.as.object;
             PtnArray *properties = object->properties;
             printf("object(%s)#%zu (%zu) {\n", object->class_name, object->object_id, properties->len);
+            ptn_dump_seen_objects_push(seen, object);
             for (size_t i = 0; i < properties->len; i++) {
                 ptn_var_dump_indent(indent + 1);
                 PtnArrayKey key = properties->entries[i].key;
                 ptn_var_dump_object_property_key(object, key);
                 ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
             }
+            ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;
@@ -670,6 +718,10 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
         }
         case PTN_OBJECT: {
             PtnObject *object = value.as.object;
+            if (ptn_dump_seen_objects_contains(seen, object)) {
+                fputs("*RECURSION*\n", stdout);
+                break;
+            }
             PtnArray *properties = object->properties;
             printf(
                 "object(%s)#%zu (%zu) refcount(%zu){\n",
@@ -678,12 +730,14 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 properties->len,
                 object->refcount
             );
+            ptn_dump_seen_objects_push(seen, object);
             for (size_t i = 0; i < properties->len; i++) {
                 ptn_var_dump_indent(indent + 1);
                 PtnArrayKey key = properties->entries[i].key;
                 ptn_var_dump_object_property_key(object, key);
                 ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
             }
+            ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
             break;

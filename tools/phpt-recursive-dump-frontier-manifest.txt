@@ -1,0 +1,5 @@
+# Runnable broad 1k rows that exercise recursive array/object dump output.
+Zend/tests/bug35163.phpt
+Zend/tests/bug35163_2.phpt
+Zend/tests/bug35239.phpt
+ext/standard/tests/array/array_map_variation2.phpt

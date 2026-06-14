@@ -243,6 +243,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_ZEND_OPERATOR_CONTROL_FRONTIER_2026-06-14.md`: broad
   1k Zend operator/control/AST/assertion blocker map plus the `\e` escape and
   binary-safe array-key movement.
+- `docs/PHPT_BROAD_1K_RECURSIVE_DUMP_FRONTIER_2026-06-14.md`: broad 1k
+  recursive dump blocker map and `bug35239` fix evidence.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and

@@ -575,11 +575,13 @@ Post-RC architecture remains explicit rather than hidden:
   modeled global variables by reference.
 - `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, `string(length) "value"`, and ordered literal
-  arrays. Finite floats use the shortest decimal spelling that round-trips to
-  the same native double, keep integer-valued floats below `1e17` in fixed
-  decimal notation, and use PHP-style uppercase `E`, decimal mantissas, and
-  unpadded exponent widths when scientific notation is required. `INF`,
-  `-INF`, and `NAN` keep PHP-like special spellings.
+  arrays. Recursive arrays and recursive object properties emit the modeled
+  `*RECURSION*` marker instead of recursing through dump output indefinitely.
+  Finite floats use the shortest decimal spelling that round-trips to the same
+  native double, keep integer-valued floats below `1e17` in fixed decimal
+  notation, and use PHP-style uppercase `E`, decimal mantissas, and unpadded
+  exponent widths when scientific notation is required. `INF`, `-INF`, and
+  `NAN` keep PHP-like special spellings.
 - `print_r()` output for current boxed values, including scalar output,
   ordered-array formatting, nested arrays, and string-return mode through the
   optional second argument.
