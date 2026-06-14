@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T13:30Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; COW 69/103 passed.
+Refresh: 2026-06-14T16:19Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-jsvb` COW/reference row pack 41/46 focused and exact broad 1k 329/424 -> 345/424 with 16 FAIL->PASS and 0 PASS->FAIL; COW 69/103 passed.
 
 ## Dashboard
 
@@ -67,6 +67,8 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Attribute-meta|204|0|204|
 |Heredoc-array|70|20|50|
 |Std-array-row-pack|10|10|0|
+|COW/ref-row-pack|46|41|5|
+|1k-runnable-jsvb|424|345|79|
 |Std-array-tdei|71|61|10|
 |array_rand|7|6|1|
 |Zend-op/control|26|15|11|
@@ -74,3 +76,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Runtime-config|54|0|54|
 |COW-gate|26|26|0|
 |1k-baseline|1000|265|735|
+
+## Recent Evidence
+
+`ptn-jsvb` (2026-06-14): focused `tools/phpt-ptn-jsvb-cow-reference-row-pack.txt` ran 46 selected / 46 runnable / 41 passed / 5 failed. The exact broad 1k manifest from `.runtime/phpt-progress/manifest-20260614T140547Z.txt` improved from 329/424 to 345/424 (`.runtime/ptn-jsvb-after-1k/summary-20260614T151829Z.txt`) with these FAIL->PASS rows and no PASS->FAIL rows: `Zend/tests/array_append_reading_error.phpt`, `Zend/tests/array_literal_next_element_error.phpt`, `Zend/tests/array_merge_recursive_next_key_overflow.phpt`, `Zend/tests/assign_op_type_error.phpt`, `Zend/tests/assign_to_obj_002.phpt`, `ext/standard/tests/array/array_map_error.phpt`, `ext/standard/tests/array/array_map_variation10.phpt`, `ext/standard/tests/array/array_map_variation9.phpt`, `ext/standard/tests/array/array_push_error2.phpt`, `ext/standard/tests/array/array_reduce_variation1.phpt`, `ext/standard/tests/array/array_search_variation3.phpt`, `ext/standard/tests/array/array_udiff_assoc_variation5.phpt`, `ext/standard/tests/array/array_udiff_uassoc_variation6.phpt`, `ext/standard/tests/array/array_udiff_variation5.phpt`, `ext/standard/tests/array/array_uintersect_assoc_variation5.phpt`, `ext/standard/tests/array/array_uintersect_uassoc_variation6.phpt`.
