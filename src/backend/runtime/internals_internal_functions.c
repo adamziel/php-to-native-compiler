@@ -2835,6 +2835,72 @@ static PtnValue ptn_internal_array_key_last(PtnRuntime *runtime, size_t argc, co
     return ptn_array_key_value(array->entries[array->len - 1].key);
 }
 
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+);
+
+static PtnValue ptn_internal_array_rand(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_rand", 1, "array", args[0]);
+    int64_t requested = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "array_rand", 2, "num", args[1], line)
+        : 1;
+    if (array->len == 0) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_rand(): Argument #1 ($array) must not be empty"
+        );
+        return ptn_null();
+    }
+    if (requested < 1 || (uint64_t)requested > (uint64_t)array->len) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_rand(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)"
+        );
+        return ptn_null();
+    }
+    if (requested == 1) {
+        size_t index = ptn_random_bounded_index(array->len - 1);
+        return ptn_array_key_value(array->entries[index].key);
+    }
+
+    size_t *indices = malloc(array->len * sizeof(size_t));
+    if (indices == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        indices[i] = i;
+    }
+    size_t count = (size_t)requested;
+    for (size_t i = 0; i < count; i++) {
+        size_t j = i + ptn_random_bounded_index(array->len - i - 1);
+        size_t tmp = indices[i];
+        indices[i] = indices[j];
+        indices[j] = tmp;
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < count; i++) {
+        if (i > (size_t)INT64_MAX) {
+            free(indices);
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_array_key_value(array->entries[indices[i]].key)
+        );
+    }
+    free(indices);
+    return result;
+}
+
 static PtnValue ptn_internal_array_first(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -11655,6 +11721,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_product", 1, 1, ptn_internal_array_product },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
+        { "array_rand", 1, 2, ptn_internal_array_rand },
         { "array_reduce", 2, 3, ptn_internal_array_reduce },
         { "array_replace", 1, PTN_VARIADIC_ARGS, ptn_internal_array_replace },
         { "array_replace_recursive", 1, PTN_VARIADIC_ARGS, ptn_internal_array_replace_recursive },

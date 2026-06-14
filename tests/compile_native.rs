@@ -14392,6 +14392,53 @@ var_dump(function_exists('array_key_first'), function_exists('ARRAY_KEY_LAST'));
 }
 
 #[test]
+fn compile_array_rand_to_native_binary() {
+    let root = temp_dir("ptn-native-array-rand");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-rand.php");
+    let output = root.join("array-rand-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$input = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4];\n\
+$keys = array_rand($input, 3);\n\
+$ok = is_array($keys) && count($keys) === 3 && array_key_exists(0, $keys) && array_key_exists(1, $keys) && array_key_exists(2, $keys);\n\
+$ok = $ok && $keys[0] !== $keys[1] && $keys[0] !== $keys[2] && $keys[1] !== $keys[2];\n\
+foreach ($keys as $key) {\n\
+    $ok = $ok && is_string($key) && array_key_exists($key, $input);\n\
+}\n\
+$single = array_rand($input);\n\
+$ok = $ok && is_string($single) && array_key_exists($single, $input);\n\
+var_dump($ok, function_exists('array_rand'), function_exists('ARRAY_RAND'));\n\
+try {\n\
+    array_rand([]);\n\
+} catch (\\ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    array_rand($input, 5);\n\
+} catch (\\ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+array_rand(): Argument #1 ($array) must not be empty\n\
+array_rand(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_first_and_last_to_native_binary() {
     let root = temp_dir("ptn-native-array-first-last");
     fs::create_dir_all(&root).unwrap();

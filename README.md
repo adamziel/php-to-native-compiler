@@ -46,7 +46,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Array internals cover set/key/list/search/unique/slice/pad/reverse/
   sum/product/fill/filter/chunk/merge/replace helpers, predicate/find helpers
   (`array_all()`, `array_any()`, `array_find()`, and `array_find_key()`), key-aware
-  diff/intersect helpers with user comparators, sum/product warning and
+  diff/intersect helpers with user comparators, `array_rand()` key selection,
+  sum/product warning and
   overflow parity,
   `count()`/`sizeof()` modes, `array_splice()` mutation, sort mutators through
   ordered-array/COW paths, a bounded callable `array_multisort()` path with
@@ -233,6 +234,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_TDEI_2026-06-14.md`: broad 1k
   standard-array evidence, with `array_chunk()` green and residual callback/
   set-operation blocker splits.
+- `docs/PHPT_BROAD_1K_ARRAY_RAND_SLICE_2026-06-14.md`: broad 1k
+  `array_chunk()` green check, `array_rand()` implementation evidence, and
+  remaining heredoc-key blocker.
 - `docs/PHPT_BROAD_1K_ASYMMETRIC_VISIBILITY_FRONTIER_2026-06-14.md`: broad
   1k asymmetric property visibility frontier map.
 - `docs/PHPT_BROAD_1K_CALLBACK_REGISTRY_SLICE_2026-06-14.md`: broad 1k

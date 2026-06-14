@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T06:20Z.
+Last refresh: 2026-06-14T06:26Z.
 Source: `PROGRESS.md`
-Measured: `ptn-iyhh`.
+Measured: `ptn-y75s`.
 
-Compact signal: Source unit tests 3/3; Native Rust 721/721; Bounded PHPT 479/486; Zend PHPT 119/119; ext/standard PHPT 274/281; Array key/callback 38/75.
+Compact signal: Source unit tests 3/3; Native Rust 723/723; Bounded PHPT 479/486; Zend PHPT 119/119; ext/standard PHPT 274/281; Array key/callback 38/75.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native Rust | 721/721 |
+| Native Rust | 723/723 |
 | Bounded PHPT | 479/486 |
 | Zend PHPT | 119/119 |
 | ext/standard PHPT | 274/281 |
@@ -44,9 +44,10 @@ Compact signal: Source unit tests 3/3; Native Rust 721/721; Bounded PHPT 479/486
 | Request/SAPI input | 1/41 |
 | Attribute blocker bucket | 0/141 |
 | Attribute metadata frontier | 0/204 |
-| Heredoc/nowdoc array | 14/70 |
-| Standard-array tdei | 61/71 |
-| Zend op/control | 15/26 |
+| Heredoc/nowdoc array frontier | 14/70 |
+| Standard-array tdei slice | 61/71 |
+| Broad array_rand slice | 6/7 |
+| Zend op/control frontier | 15/26 |
 | Binary key row | 1/1 |
 | COW gate | 26/26 |
 | PHPT 1k baseline | 265/1000 |

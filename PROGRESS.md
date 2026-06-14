@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-14T06:20Z.
-Measured: `ptn-iyhh`.
+Refresh: 2026-06-14T06:26Z.
+Measured: `ptn-y75s`.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native Rust | 721 | 721 | 0 |
+| Native Rust | 723 | 723 | 0 |
 | Bounded PHPT | 486 | 479 | 7 |
 | Zend PHPT | 119 | 119 | 0 |
 | ext/standard PHPT | 281 | 274 | 7 |
@@ -43,14 +43,10 @@ Measured: `ptn-iyhh`.
 | Request/SAPI input | 41 | 1 | 40 |
 | Attribute blocker bucket | 141 | 0 | 141 |
 | Attribute metadata frontier | 204 | 0 | 204 |
-| Heredoc/nowdoc array | 70 | 14 | 56 |
-| Standard-array tdei | 71 | 61 | 10 |
-| Zend op/control | 26 | 15 | 11 |
+| Heredoc/nowdoc array frontier | 70 | 14 | 56 |
+| Standard-array tdei slice | 71 | 61 | 10 |
+| Broad array_rand slice | 7 | 6 | 1 |
+| Zend op/control frontier | 26 | 15 | 11 |
 | Binary key row | 1 | 1 | 0 |
 | COW gate | 26 | 26 | 0 |
 | PHPT 1k baseline | 1000 | 265 | 735 |
-
-## Remaining
-
-- Broad 428/572; bounded 456/486; arrays: setops 64/119, tdei 61/71, standard 243/296.
-- COW/ref 10/12,17/72,31/103; metadata 0/74; attributes 0/204; recursive dump 2/4.

@@ -418,6 +418,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_intersect_uassoc(expr, expr, callback);`,
   `array_intersect_ukey(expr, expr, callback);`,
   `array_is_list(expr);`, `array_key_first(expr);`, `array_key_last(expr);`,
+  `array_rand(expr[, expr]);`,
   `array_udiff(expr, expr, callback);`,
   `array_udiff_assoc(expr, expr, callback);`,
   `array_udiff_uassoc(expr, expr, callback, callback);`,
@@ -502,6 +503,7 @@ Post-RC architecture remains explicit rather than hidden:
   `array_intersect_uassoc(expr, expr, callback)`,
   `array_intersect_ukey(expr, expr, callback)`,
   `array_is_list(expr)`, `array_key_first(expr)`, `array_key_last(expr)`,
+  `array_rand(expr[, expr])`,
   `array_udiff(expr, expr, callback)`,
   `array_udiff_assoc(expr, expr, callback)`,
   `array_udiff_uassoc(expr, expr, callback, callback)`,
@@ -912,6 +914,10 @@ Post-RC architecture remains explicit rather than hidden:
 - `array_key_first()` and `array_key_last()` over current boxed arrays,
   returning the first or last ordered integer/string key, or `null` for empty
   arrays.
+- `array_rand()` over current boxed arrays, returning one random integer/string
+  key by default or a freshly reindexed ordered array of unique random keys for
+  `$num > 1`. Empty arrays and out-of-range requested counts throw modeled PHP
+  `ValueError` values.
 - `array_change_key_case()` over current boxed arrays, preserving integer keys,
   converting string keys through ASCII lower/upper casing, and cloning
   dereferenced values into a fresh ordered array. The optional case flag accepts
