@@ -454,6 +454,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   1k cluster blocker map on current `master`, with 424 runnable rows, 576
   classified blockers, and zero runnable rows outside committed focused
   manifests.
+- `docs/PHPT_BROAD_1K_CLUSTER_SLICE_PTN_666N_2026-06-14.md`: refreshed broad
+  1k cluster blocker map with 424 runnable rows fully covered by committed
+  focused manifests and 576 classified rows split by semantic owner.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
