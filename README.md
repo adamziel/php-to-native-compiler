@@ -349,6 +349,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   map with a committed 284-row focused manifest.
 - `docs/PHPT_BROAD_1K_REQUEST_SAPI_FRONTIER_2026-06-14.md`: broad 1k
   request/SAPI input boundary blocker map and raw focused evidence.
+- `docs/PHPT_BROAD_1K_REQUEST_SAPI_PTN_BAC4_2026-06-14.md`: current
+  `ptn-bac4` request/SAPI refresh with 41 focused rows, 28 request-input INI
+  blockers, 13 SAPI rows, and raw pass-through evidence.
 - `docs/PHPT_BROAD_1K_RUNTIME_INI_FRONTIER_2026-06-14.md`: broad 1k
   runtime INI/configuration blocker map and focused manifest.
 - `docs/PHPT_BROAD_1K_RUNTIME_BOUNDARY_FRONTIER_PTN_YPMU_2026-06-14.md`:
