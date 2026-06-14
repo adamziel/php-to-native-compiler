@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T13:18Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; COW 69/103 passed.
+Last refresh: 2026-06-14T13:30Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; COW 69/103 passed.
 
 ## Operating Goal
 
@@ -23,10 +23,10 @@ Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/
 | ext/standard-PHPT | 274/281 |
 | Array-key/cb | 38/75 |
 | Array-cb-valid | 49/66 |
-| Array-diff | 58/61 |
-| Diff-cmp | 64/76 |
-| Array-setops | 64/119 |
-| Fill/pad | 11/12 |
+| Array-diff | 59/61 |
+| Diff-cmp | 67/76 |
+| Array-setops | 67/119 |
+| Fill/pad | 12/12 |
 | Array-set/cb | 86/106 |
 | Array-cb-slice | 28/38 |
 | FS/process | 13/46 |
@@ -57,7 +57,7 @@ Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/
 | Magic-methods | 0/8 |
 | Object-string-meta | 0/61 |
 | Std-array-map | 0/297 |
-| Std-arrays | 243/296 |
+| Std-arrays | 253/296 |
 | Map/filter | 21/30 |
 | Request/SAPI | 1/41 |
 | Anon-class | 0/15 |
@@ -74,7 +74,8 @@ Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/
 | Attribute-syntax | 0/141 |
 | Attribute-internal | 0/8 |
 | Attribute-meta | 0/204 |
-| Heredoc-array | 14/70 |
+| Heredoc-array | 20/70 |
+| Std-array-row-pack | 10/10 |
 | Std-array-tdei | 61/71 |
 | array_rand | 6/7 |
 | Zend-op/control | 15/26 |

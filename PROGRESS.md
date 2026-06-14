@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T13:18Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; COW 69/103 passed.
+Refresh: 2026-06-14T13:30Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; COW 69/103 passed.
 
 ## Dashboard
 
@@ -14,10 +14,10 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |ext/standard-PHPT|281|274|7|
 |Array-key/cb|75|38|37|
 |Array-cb-valid|66|49|17|
-|Array-diff|61|58|3|
-|Diff-cmp|76|64|12|
-|Array-setops|119|64|55|
-|Fill/pad|12|11|1|
+|Array-diff|61|59|2|
+|Diff-cmp|76|67|9|
+|Array-setops|119|67|52|
+|Fill/pad|12|12|0|
 |Array-set/cb|106|86|20|
 |Array-cb-slice|38|28|10|
 |FS/process|46|13|33|
@@ -48,7 +48,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Magic-methods|8|0|8|
 |Object-string-meta|61|0|61|
 |Std-array-map|297|0|297|
-|Std-arrays|296|243|53|
+|Std-arrays|296|253|43|
 |Map/filter|30|21|9|
 |Request/SAPI|41|1|40|
 |Anon-class|15|0|15|
@@ -65,7 +65,8 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Attribute-syntax|141|0|141|
 |Attribute-internal|8|0|8|
 |Attribute-meta|204|0|204|
-|Heredoc-array|70|14|56|
+|Heredoc-array|70|20|50|
+|Std-array-row-pack|10|10|0|
 |Std-array-tdei|71|61|10|
 |array_rand|7|6|1|
 |Zend-op/control|26|15|11|

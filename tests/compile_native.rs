@@ -129,17 +129,24 @@ fn lexer_decodes_ascii_double_quoted_octal_and_hex_escapes() {
 
 #[test]
 fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
-    let source = "<?php $left = <<<TXT\nHello\nTXT;\n$right = <<<'TXT'\n$literal\nTXT;\n";
+    let source = concat!(
+        "<?php $left = <<<TXT\n",
+        "Hello\\n\\t\\v\\f\\x41\\101\\$\\q\n",
+        "TXT;\n",
+        "$right = <<<'TXT'\n",
+        "$literal\\n\n",
+        "TXT;\n",
+    );
     let program = parser::parse(source).unwrap();
     let Statement::Assign { value, .. } = &program.statements[0] else {
         panic!("expected assignment");
     };
-    assert!(matches!(value, Expr::String(value, _) if value == "Hello"));
+    assert!(matches!(value, Expr::String(value, _) if value == "Hello\n\t\u{0b}\u{0c}AA$\\q"));
 
     let Statement::Assign { value, .. } = &program.statements[1] else {
         panic!("expected assignment");
     };
-    assert!(matches!(value, Expr::String(value, _) if value == "$literal"));
+    assert!(matches!(value, Expr::String(value, _) if value == "$literal\\n"));
 }
 
 #[test]
@@ -14979,7 +14986,7 @@ var_dump(function_exists(\"array_count_values\"), function_exists(\"ARRAY_COUNT_
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(0) {\n}\narray(6) {\n  [1]=>\n  int(3)\n  [\"hello\"]=>\n  int(2)\n  [\"world\"]=>\n  int(1)\n  [-1]=>\n  int(1)\n  [\"02\"]=>\n  int(1)\n  [\"\"]=>\n  int(1)\n}\narray(1) {\n  [\"hello\"]=>\n  int(2)\n}\narray(1) {\n  [0]=>\n  int(2)\n}\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 8\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 8\narray(1) {\n  [\"kept\"]=>\n  int(1)\n}\nbool(true)\nbool(true)\n"
+        "array(0) {\n}\narray(6) {\n  [1]=>\n  int(3)\n  [\"hello\"]=>\n  int(2)\n  [\"world\"]=>\n  int(1)\n  [-1]=>\n  int(1)\n  [\"02\"]=>\n  int(1)\n  [\"\"]=>\n  int(1)\n}\narray(1) {\n  [\"hello\"]=>\n  int(2)\n}\narray(1) {\n  [0]=>\n  int(2)\n}\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 8\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 8\narray(1) {\n  [\"kept\"]=>\n  int(1)\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -15010,7 +15017,7 @@ var_dump(function_exists('array_flip'), function_exists('ARRAY_FLIP'));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(2) {\n  [1]=>\n  int(0)\n  [2]=>\n  int(1)\n}\narray(2) {\n  [\"value1\"]=>\n  int(0)\n  [\"value2\"]=>\n  int(1)\n}\narray(2) {\n  [1]=>\n  string(4) \"key1\"\n  [2]=>\n  string(4) \"key2\"\n}\narray(2) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n}\narray(5) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n  [\"three\"]=>\n  int(3)\n  [4]=>\n  int(4)\n  [5]=>\n  string(4) \"five\"\n}\narray(2) {\n  [\"same\"]=>\n  string(6) \"second\"\n  [\"other\"]=>\n  string(4) \"kept\"\n}\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 8\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 8\narray(2) {\n  [\"ok\"]=>\n  int(0)\n  [\"done\"]=>\n  int(3)\n}\nbool(true)\nbool(true)\n"
+        "array(2) {\n  [1]=>\n  int(0)\n  [2]=>\n  int(1)\n}\narray(2) {\n  [\"value1\"]=>\n  int(0)\n  [\"value2\"]=>\n  int(1)\n}\narray(2) {\n  [1]=>\n  string(4) \"key1\"\n  [2]=>\n  string(4) \"key2\"\n}\narray(2) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n}\narray(5) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n  [\"three\"]=>\n  int(3)\n  [4]=>\n  int(4)\n  [5]=>\n  string(4) \"five\"\n}\narray(2) {\n  [\"same\"]=>\n  string(6) \"second\"\n  [\"other\"]=>\n  string(4) \"kept\"\n}\n\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 8\n\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 8\narray(2) {\n  [\"ok\"]=>\n  int(0)\n  [\"done\"]=>\n  int(3)\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -15336,7 +15343,7 @@ var_dump(defined(\"E_WARNING\"), defined(\"E_ALL\"));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(32767)\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 3\narray(1) {\n  [\"shown\"]=>\n  int(1)\n}\nint(32767)\nint(1)\narray(1) {\n  [\"hidden\"]=>\n  int(1)\n}\nbool(true)\nint(1)\nint(1)\nint(32767)\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 10\narray(1) {\n  [\"shown-again\"]=>\n  int(1)\n}\nWarning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line 11\nbool(true)\nint(2)\nbool(true)\nbool(true)\n"
+        "int(32767)\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 3\narray(1) {\n  [\"shown\"]=>\n  int(1)\n}\nint(32767)\nint(1)\narray(1) {\n  [\"hidden\"]=>\n  int(1)\n}\nbool(true)\nint(1)\nint(1)\nint(32767)\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 10\narray(1) {\n  [\"shown-again\"]=>\n  int(1)\n}\nWarning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line 11\nbool(true)\nint(2)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -17276,6 +17283,75 @@ echo \"OK\\n\";",
 }
 
 #[test]
+fn compile_array_set_operations_warn_for_array_string_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-array-set-operation-array-string-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-set-operation-array-string-warnings.php");
+    let output = root.join("array-set-operation-array-string-warnings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$left = [[1], [2]];\n\
+$right = [[3], [4]];\n\
+var_dump(array_diff($left, $right));\n\
+var_dump(array_intersect_assoc($left, $right));\n\
+var_dump(array_diff($left));\n\
+$binary = \"a\" . chr(0) . \"b\";\n\
+var_dump(array_flip([\"value\" => $binary]));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: Array to string conversion in ptn on line 4\n",
+            "\nWarning: Array to string conversion in ptn on line 4\n",
+            "\nWarning: Array to string conversion in ptn on line 4\n",
+            "\nWarning: Array to string conversion in ptn on line 4\n",
+            "array(0) {\n",
+            "}\n",
+            "\nWarning: Array to string conversion in ptn on line 5\n",
+            "\nWarning: Array to string conversion in ptn on line 5\n",
+            "\nWarning: Array to string conversion in ptn on line 5\n",
+            "\nWarning: Array to string conversion in ptn on line 5\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(1)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(2)\n",
+            "  }\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(1)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(2)\n",
+            "  }\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"a\0b\"]=>\n",
+            "  string(5) \"value\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_var_export_embedded_nul_strings_to_native_binary() {
     let root = temp_dir("ptn-native-var-export-embedded-nul-strings");
     fs::create_dir_all(&root).unwrap();
@@ -17943,7 +18019,13 @@ $recursive = array_replace_recursive([\"n\" => [\"keep\" => 0]], $right);\n\
 $x = 2;\n\
 $replaced[\"r\"] = 3;\n\
 $recursive[\"n\"][\"r\"] = 4;\n\
-var_dump($x, $right, $replaced, $recursive);",
+var_dump($x, $right, $replaced, $recursive);\n\
+$one = [1];\n\
+$two = [42];\n\
+$left = [\"k\" => &$one];\n\
+$replacement = [\"k\" => &$two];\n\
+array_replace_recursive($left, $replacement);\n\
+var_dump(current($one), current($two));",
     )
     .unwrap();
 
@@ -17983,6 +18065,8 @@ var_dump($x, $right, $replaced, $recursive);",
             "  [\"r\"]=>\n",
             "  &int(4)\n",
             "}\n",
+            "int(1)\n",
+            "int(42)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

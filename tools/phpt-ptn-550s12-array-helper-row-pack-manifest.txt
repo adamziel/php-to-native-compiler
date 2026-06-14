@@ -1,0 +1,15 @@
+# Broad 1k array helper row pack for ptn-550s.12.
+#
+# Rows moved by generic heredoc escape decoding, array helper warning spacing,
+# array set-operation array-to-string warnings, binary-safe var_dump key output,
+# and array_replace_recursive reference separation.
+ext/standard/tests/array/array_combine_variation3.phpt
+ext/standard/tests/array/array_count_values2.phpt
+ext/standard/tests/array/array_diff_variation9.phpt
+ext/standard/tests/array/array_flip.phpt
+ext/standard/tests/array/array_flip_variation3.phpt
+ext/standard/tests/array/array_intersect_variation3.phpt
+ext/standard/tests/array/array_intersect_variation4.phpt
+ext/standard/tests/array/array_merge_recursive_variation3.phpt
+ext/standard/tests/array/array_pad_variation6.phpt
+ext/standard/tests/array/array_replace_merge_recursive_ref.phpt

@@ -813,7 +813,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
                 if (key.type == PTN_ARRAY_KEY_INT) {
                     printf("[%lld]=>\n", (long long)key.as.integer);
                 } else {
-                    printf("[\"%s\"]=>\n", key.as.string);
+                    fputs("[\"", stdout);
+                    fwrite(key.as.string, 1, key.string_len, stdout);
+                    fputs("\"]=>\n", stdout);
                 }
                 ptn_var_dump_value_indented(array->entries[i].value, indent + 1, seen);
             }
@@ -2954,7 +2956,7 @@ static int ptn_array_count_values_key_from_value(PtnRuntime *runtime, PtnValue v
         case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
-            ptn_emit_warning(
+            ptn_emit_spaced_warning(
                 &runtime->diagnostics,
                 "array_count_values(): Can only count string and integer values, entry skipped",
                 line
@@ -3001,7 +3003,7 @@ static int ptn_array_flip_key_from_value(PtnRuntime *runtime, PtnValue value, si
         case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
-            ptn_emit_warning(
+            ptn_emit_spaced_warning(
                 &runtime->diagnostics,
                 "array_flip(): Can only flip string and integer values, entry skipped",
                 line
@@ -3202,6 +3204,27 @@ static int ptn_array_value_strings_equal(PtnValue left, PtnValue right) {
     return equal;
 }
 
+static void ptn_array_emit_string_conversion_warning_for_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+}
+
+static void ptn_array_emit_set_operation_string_conversion_warnings(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    size_t line
+) {
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_array_emit_string_conversion_warning_for_value(runtime, array->entries[i].value, line);
+    }
+}
+
 static int ptn_array_contains_value(PtnArray *array, PtnValue value) {
     for (size_t i = 0; i < array->len; i++) {
         if (ptn_array_value_strings_equal(value, array->entries[i].value)) {
@@ -3251,12 +3274,21 @@ static int ptn_array_entry_matches_any(
 }
 
 static PtnValue ptn_array_intersect_or_diff(
+    PtnRuntime *runtime,
     PtnArray *source,
     size_t array_count,
     PtnArray **arrays,
     int compare_keys,
-    int keep_matches
+    int keep_matches,
+    size_t line
 ) {
+    if (array_count != 0) {
+        ptn_array_emit_set_operation_string_conversion_warnings(runtime, source, line);
+        for (size_t i = 0; i < array_count; i++) {
+            ptn_array_emit_set_operation_string_conversion_warnings(runtime, arrays[i], line);
+        }
+    }
+
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayEntry *entry = &source->entries[i];
@@ -3313,19 +3345,17 @@ static PtnArray **ptn_array_set_operation_array_args(
 }
 
 static PtnValue ptn_internal_array_diff(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_diff", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_diff", argc, args);
-    PtnValue result = ptn_array_intersect_or_diff(source, argc - 1, arrays, 0, 0);
+    PtnValue result = ptn_array_intersect_or_diff(runtime, source, argc - 1, arrays, 0, 0, line);
     free(arrays);
     return result;
 }
 
 static PtnValue ptn_internal_array_diff_assoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_diff_assoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_diff_assoc", argc, args);
-    PtnValue result = ptn_array_intersect_or_diff(source, argc - 1, arrays, 1, 0);
+    PtnValue result = ptn_array_intersect_or_diff(runtime, source, argc - 1, arrays, 1, 0, line);
     free(arrays);
     return result;
 }
@@ -3381,19 +3411,17 @@ static PtnValue ptn_internal_array_diff_key(PtnRuntime *runtime, size_t argc, co
 }
 
 static PtnValue ptn_internal_array_intersect(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_intersect", argc, args);
-    PtnValue result = ptn_array_intersect_or_diff(source, argc - 1, arrays, 0, 1);
+    PtnValue result = ptn_array_intersect_or_diff(runtime, source, argc - 1, arrays, 0, 1, line);
     free(arrays);
     return result;
 }
 
 static PtnValue ptn_internal_array_intersect_assoc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect_assoc", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_intersect_assoc", argc, args);
-    PtnValue result = ptn_array_intersect_or_diff(source, argc - 1, arrays, 1, 1);
+    PtnValue result = ptn_array_intersect_or_diff(runtime, source, argc - 1, arrays, 1, 1, line);
     free(arrays);
     return result;
 }
@@ -4925,7 +4953,10 @@ static void ptn_array_replace_recursive_entry(PtnArray *target, PtnArrayKey key,
     PtnValue existing = ptn_value_deref(*entry_value);
     PtnValue incoming = ptn_value_deref(value);
     if (existing.type == PTN_ARRAY && incoming.type == PTN_ARRAY) {
-        PtnArray *target_child = ptn_array_detach_value(entry_value);
+        PtnValue separated = ptn_value_clone_deref(existing);
+        ptn_value_destroy(&entry->value);
+        entry->value = separated;
+        PtnArray *target_child = ptn_array_detach_value(&entry->value);
         if (target_child != NULL) {
             ptn_array_replace_recursive_into(target_child, incoming.as.array);
         }

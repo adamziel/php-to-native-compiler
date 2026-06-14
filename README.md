@@ -15,7 +15,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   decimal floats, and leading-dot float forms.
 - Strings cover interpolation, legacy `${name}` deprecations, common/control
   escapes including `\e`, hex/octal byte escapes, binary-prefixed string
-  literals, and inline HTML output.
+  literals, plain heredoc escape decoding with literal nowdoc bodies, and
+  inline HTML output.
 - Top-level functions and declared methods include magic constants, call-frame
   introspection, scalar, array, class-name, and void return type hints, array
   defaults, by-reference returns, typed coercion, constructor dispatch, public
@@ -49,7 +50,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Array internals cover set/key/list/search/unique/slice/pad/reverse/
   sum/product/fill/filter/chunk/merge/replace helpers, predicate/find helpers
   (`array_all()`, `array_any()`, `array_find()`, and `array_find_key()`), key-aware
-  diff/intersect helpers with user comparators, `array_rand()` key selection,
+  diff/intersect helpers with user comparators and PHP-style array-to-string
+  conversion warnings for set-operation normalization, `array_rand()` key selection,
   sum/product warning and
   overflow parity,
   `count()`/`sizeof()` modes, `array_splice()` mutation, sort mutators through
