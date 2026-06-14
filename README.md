@@ -207,6 +207,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   1k magic method metadata blocker map.
 - `docs/PHPT_BROAD_1K_MAGIC_OBJECT_CONVERSION_FRONTIER_2026-06-14.md`: broad
   1k magic-method/object-conversion blocker map and raw focused evidence.
+- `docs/PHPT_BROAD_1K_NONARRAY_CLASS_METADATA_FRONTIER_2026-06-14.md`: broad
+  1k non-array class/object metadata blocker map and focused manifest.
 - `docs/PHPT_BROAD_1K_REQUEST_SAPI_FRONTIER_2026-06-14.md`: broad 1k
   request/SAPI input boundary blocker map and raw focused evidence.
 - `docs/PHPT_BROAD_1K_ARRAY_OBJECT_METADATA_FRONTIER_2026-06-14.md`: broad
