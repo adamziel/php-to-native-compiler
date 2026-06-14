@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-14T17:43Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; COW 69/103 passed.
+Refresh: 2026-06-14T17:53Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); COW 69/103 passed.
 
 ## Dashboard
 
 |Source|Ported|Passing|Gap|
 |---|---:|---:|---:|
 |Units|3|3|0|
-|Native|730|730|0|
+|Native|731|731|0|
 |Bounded|486|479|7|
 |Zend|119|119|0|
 |ext/standard-PHPT|281|274|7|
@@ -46,7 +46,8 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Resource-limit|1|0|1|
 |Magic/object|69|20|49|
 |Magic-methods|8|0|8|
-|Object-string-meta|61|0|61|
+|Object-string-meta|61|53|8|
+|Object-string-array-pack|34|34|0|
 |Std-array-map|297|0|297|
 |Std-arrays|296|263|33|
 |Map/filter|30|25|5|
@@ -75,7 +76,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Runtime-config|54|10|44|
 |COW-gate|26|26|0|
 |COW-reference-tiqh|21|21|0|
-|1k-baseline|1000|379|621|
+|1k-baseline|1000|419|581|
 
 ## 2026-06-14 ptn-55u0 Broad Array-Unpack Row Pack
 

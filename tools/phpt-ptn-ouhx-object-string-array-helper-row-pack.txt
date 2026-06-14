@@ -1,0 +1,40 @@
+# Broad 1k object-string/class metadata row pack for ptn-ouhx.
+#
+# Source: tools/phpt-object-string-conversion-metadata-ptn-i0p3-manifest.txt
+# Selection: rows that were runnable but failing with PTN_PHPT_CLASSIFY=0
+# before ptn-ouhx, then pass after runtime-aware object string key conversion,
+# resource key warnings, and PHP-style boolean array-argument diagnostics.
+ext/standard/tests/array/array_column_basic.phpt
+ext/standard/tests/array/array_column_object_cast.phpt
+ext/standard/tests/array/array_combine_variation4.phpt
+ext/standard/tests/array/array_combine_variation5.phpt
+ext/standard/tests/array/array_diff_key_variation1.phpt
+ext/standard/tests/array/array_diff_key_variation2.phpt
+ext/standard/tests/array/array_diff_uassoc_variation1.phpt
+ext/standard/tests/array/array_diff_uassoc_variation2.phpt
+ext/standard/tests/array/array_diff_ukey_variation1.phpt
+ext/standard/tests/array/array_diff_ukey_variation2.phpt
+ext/standard/tests/array/array_intersect_assoc_variation1.phpt
+ext/standard/tests/array/array_intersect_assoc_variation2.phpt
+ext/standard/tests/array/array_intersect_key_variation1.phpt
+ext/standard/tests/array/array_intersect_key_variation2.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation1.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation2.phpt
+ext/standard/tests/array/array_intersect_ukey_variation1.phpt
+ext/standard/tests/array/array_intersect_ukey_variation2.phpt
+ext/standard/tests/array/array_intersect_variation1.phpt
+ext/standard/tests/array/array_intersect_variation2.phpt
+ext/standard/tests/array/array_map_variation4.phpt
+ext/standard/tests/array/array_merge_recursive_variation4.phpt
+ext/standard/tests/array/array_reverse_variation4.phpt
+ext/standard/tests/array/array_udiff_assoc_variation1.phpt
+ext/standard/tests/array/array_udiff_assoc_variation2.phpt
+ext/standard/tests/array/array_udiff_uassoc_variation1.phpt
+ext/standard/tests/array/array_udiff_uassoc_variation2.phpt
+ext/standard/tests/array/array_udiff_variation1.phpt
+ext/standard/tests/array/array_udiff_variation2.phpt
+ext/standard/tests/array/array_uintersect_assoc_variation1.phpt
+ext/standard/tests/array/array_uintersect_assoc_variation2.phpt
+ext/standard/tests/array/array_uintersect_uassoc_variation1.phpt
+ext/standard/tests/array/array_uintersect_uassoc_variation2.phpt
+ext/standard/tests/array/array_uintersect_variation1.phpt

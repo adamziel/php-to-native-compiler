@@ -1668,6 +1668,17 @@ static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
+static const char *ptn_internal_array_arg_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_BOOL) {
+        return value.as.boolean ? "true" : "false";
+    }
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    return ptn_offset_container_type_name(value);
+}
+
 static PtnArray *ptn_internal_expect_array_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -1680,9 +1691,7 @@ static PtnArray *ptn_internal_expect_array_arg(
         return value.as.array;
     }
 
-    const char *given = value.type == PTN_OBJECT
-        ? value.as.object->class_name
-        : ptn_offset_container_type_name(value);
+    const char *given = ptn_internal_array_arg_type_name(value);
     char message[192];
     int written = argument_name != NULL && argument_name[0] != '\0'
         ? snprintf(
@@ -3381,7 +3390,8 @@ static PtnArrayColumnKey ptn_array_column_key_from_arg(
     PtnRuntime *runtime,
     size_t position,
     const char *argument_name,
-    PtnValue value
+    PtnValue value,
+    size_t line
 ) {
     value = ptn_value_deref(value);
     PtnArrayColumnKey key;
@@ -3418,9 +3428,34 @@ static PtnArrayColumnKey ptn_array_column_key_from_arg(
             key.array_key = ptn_array_key_from_value(value);
             key.property_name = ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
             return key;
+        case PTN_OBJECT: {
+            PtnStringOperand object_string;
+            if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+                PtnValue key_value = ptn_string_literal(object_string.data, object_string.len);
+                key.array_key = ptn_array_key_from_value(key_value);
+                key.property_name = ptn_duplicate_string_len(object_string.data, object_string.len);
+                ptn_string_operand_free(object_string);
+                return key;
+            }
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "array_column(): Argument #%zu ($%s) must be of type string|int|null, %s given",
+                position,
+                argument_name,
+                ptn_array_column_argument_type_name(value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            key.is_null = 1;
+            key.array_key = ptn_array_int_key(0);
+            return key;
+        }
         case PTN_RESOURCE:
         case PTN_ARRAY:
-        case PTN_OBJECT:
         case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
@@ -3500,11 +3535,10 @@ static void ptn_array_column_add_value(PtnValue *result, PtnValue row, PtnArrayC
 }
 
 static PtnValue ptn_internal_array_column(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_column", 1, "array", args[0]);
-    PtnArrayColumnKey column_key = ptn_array_column_key_from_arg(runtime, 2, "column_key", args[1]);
+    PtnArrayColumnKey column_key = ptn_array_column_key_from_arg(runtime, 2, "column_key", args[1], line);
     PtnArrayColumnKey index_key = argc >= 3
-        ? ptn_array_column_key_from_arg(runtime, 3, "index_key", args[2])
+        ? ptn_array_column_key_from_arg(runtime, 3, "index_key", args[2], line)
         : (PtnArrayColumnKey){ 1, { 0 }, NULL };
 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
@@ -4724,7 +4758,7 @@ static PtnArrayKey ptn_array_key_from_key_value(PtnRuntime *runtime, PtnValue va
         ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
     }
 
-    PtnStringOperand string = ptn_value_to_string_operand(value);
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
     PtnValue key_value = ptn_string_literal(string.data, string.len);
     PtnArrayKey key = ptn_array_key_from_value(key_value);
     ptn_string_operand_free(string);

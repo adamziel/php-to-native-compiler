@@ -4724,6 +4724,55 @@ echo \"prefix:$value\\n\";
 }
 
 #[test]
+fn compile_object_string_array_helper_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-object-string-array-helper-keys");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-string-array-helper-keys.php");
+    let output = root.join("object-string-array-helper-keys-bin");
+    fs::write(
+        &input,
+        "<?php
+class KeyName {
+    public function __toString() {
+        return \"name\";
+    }
+}
+class ColumnName {
+    public function __toString() {
+        return \"first\";
+    }
+}
+class IndexName {
+    public function __toString() {
+        return \"id\";
+    }
+}
+
+var_dump(array_combine([new KeyName()], [\"value\"]));
+var_dump(array_fill_keys([new KeyName()], \"value\"));
+$records = [[\"id\" => 7, \"first\" => \"Ada\"]];
+var_dump(array_column($records, new ColumnName(), new IndexName()));
+try {
+    array_diff_key(true, []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [\"name\"]=>\n  string(5) \"value\"\n}\narray(1) {\n  [\"name\"]=>\n  string(5) \"value\"\n}\narray(1) {\n  [7]=>\n  string(3) \"Ada\"\n}\narray_diff_key(): Argument #1 ($array) must be of type array, true given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_parenthesized_expression_grouping_to_native_binary() {
     let root = temp_dir("ptn-native-parenthesized-grouping");
     fs::create_dir_all(&root).unwrap();

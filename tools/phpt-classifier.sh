@@ -1246,11 +1246,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /function[[:space:]]+__tostring[[:space:]]*\(/) {
-                print "unsupported-object-string-conversion-metadata\trequires object-to-string magic conversion metadata shared by comparisons, array helpers, diagnostics, and reflection"
-                found = 1
-                exit
-            }
             if (line ~ /function[[:space:]]+__(call|callstatic|get|set|isset|unset|debuginfo|serialize|unserialize|sleep|wakeup)[[:space:]]*\(/) {
                 print "unsupported-magic-method-metadata\trequires magic method dispatch/reflection metadata, outside PTN modeled object/class metadata"
                 found = 1
