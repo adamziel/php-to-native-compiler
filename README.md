@@ -335,6 +335,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   broad 1k coverage map after the explicit 149-row attribute metadata split,
   with 424 runnable rows reconciled against committed focused manifests and
   zero unmatched runnable rows.
+- `docs/PHPT_BROAD_1K_CLUSTER_SLICE_PTN_U5MR_2026-06-14.md`: refreshed broad
+  1k cluster blocker map showing the current 424 runnable rows are fully
+  covered by committed focused manifests.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
