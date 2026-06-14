@@ -14014,7 +14014,13 @@ $other = 4;\n\
 $arr[0] =& $other;\n\
 $other = 5;\n\
 $elem = 6;\n\
-var_dump($arr[0], $other, $elem);",
+var_dump($arr[0], $other, $elem);\n\
+$nested = ['a1' => ['alfa' => 'ok']];\n\
+$nested =& $nested['a1'];\n\
+echo '-', $nested['alfa'], \"-\\n\";\n\
+$scalar = [1];\n\
+$scalar =& $scalar[0];\n\
+var_dump($scalar);",
     )
     .unwrap();
 
@@ -14024,7 +14030,7 @@ var_dump($arr[0], $other, $elem);",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(2)\nint(1)\nint(2)\nint(3)\nint(3)\nint(5)\nint(5)\nint(6)\n"
+        "int(2)\nint(1)\nint(2)\nint(3)\nint(3)\nint(5)\nint(5)\nint(6)\n-ok-\nint(1)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -14038,7 +14044,7 @@ fn compile_property_references_to_native_binary() {
     fs::write(
         &input,
         "<?php\n\
-class Box { public $value = 'initial'; public $other = 'seed'; }\n\
+class Box { public $value = 'initial'; public $other = 'seed'; public $items = []; }\n\
 $box = new Box();\n\
 $value = 'a';\n\
 $box->value =& $value;\n\
@@ -14052,7 +14058,11 @@ echo $box->value, ':', $value, ':', $alias, \"\\n\";\n\
 $box->other = 'x';\n\
 $other =& $box->other;\n\
 $other = 'y';\n\
-echo $box->other, ':', $other, \"\\n\";",
+echo $box->other, ':', $other, \"\\n\";\n\
+$box->items = [1];\n\
+$box->items[] =& $box->items;\n\
+$box->items[0] = 2;\n\
+var_dump($box->items);",
     )
     .unwrap();
 
@@ -14062,7 +14072,18 @@ echo $box->other, ':', $other, \"\\n\";",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "b:b\nc:c\nd:d:d\ny:y\n"
+        concat!(
+            "b:b\n",
+            "c:c\n",
+            "d:d:d\n",
+            "y:y\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  *RECURSION*\n",
+            "}\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -15130,6 +15151,63 @@ fn compile_append_call_argument_by_value_diagnostic_to_native_binary() {
 }
 
 #[test]
+fn compile_append_method_call_arguments_use_declared_parameter_modes_to_native_binary() {
+    let root = temp_dir("ptn-native-append-method-argument-parameter-modes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("append-method-argument-parameter-modes.php");
+    let output = root.join("append-method-argument-parameter-modes-bin");
+    fs::write(
+        &input,
+        "<?php class Box { function fill(&$value) { $value = \"ok\"; } function read($value) {} function run() { $items = []; $this->fill($items[]); var_dump($items); $this->read($items[]); } } (new Box())->run();",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  string(2) \"ok\"\n}\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Cannot use [] for reading in {} on line 1\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn compile_this_method_call_keeps_virtual_by_ref_override_to_native_binary() {
+    let root = temp_dir("ptn-native-this-method-virtual-by-ref-override");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("this-method-virtual-by-ref-override.php");
+    let output = root.join("this-method-virtual-by-ref-override-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Test1 {\n\
+    public function method1() { $this->method2($x); var_dump($x); }\n\
+    public function method2() {}\n\
+}\n\
+class Test2 extends Test1 {\n\
+    public function method2(&$x = null) { ++$x; }\n\
+}\n\
+(new Test2)->method1();",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(1)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_by_reference_assignment_call_result_value_fallback_to_native_binary() {
     let root = temp_dir("ptn-native-by-reference-assignment-call-result-value-fallback");
     fs::create_dir_all(&root).unwrap();
@@ -15140,7 +15218,13 @@ fn compile_by_reference_assignment_call_result_value_fallback_to_native_binary()
         "<?php\n\
 function value() { return 1; }\n\
 $alias =& value();\n\
-echo $alias, \"\\n\";\n",
+echo $alias, \"\\n\";\n\
+class Foo {\n\
+    function getThis() { return $this; }\n\
+    function run() { $local =& $this->getThis(); echo $local instanceof Foo ? \"foo\\n\" : \"bad\\n\"; }\n\
+}\n\
+$foo = new Foo();\n\
+$foo->run();\n",
     )
     .unwrap();
 
@@ -15150,7 +15234,12 @@ echo $alias, \"\\n\";\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "\nNotice: Only variables should be assigned by reference in ptn on line 3\n1\n"
+        concat!(
+            "\nNotice: Only variables should be assigned by reference in ptn on line 3\n",
+            "1\n",
+            "\nNotice: Only variables should be assigned by reference in ptn on line 7\n",
+            "foo\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

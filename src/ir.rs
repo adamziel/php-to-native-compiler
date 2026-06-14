@@ -541,6 +541,12 @@ pub enum ReferenceTarget {
         line: usize,
     },
     ArrayDim(ArrayDimTarget),
+    PropertyArrayDim {
+        receiver: Box<ValueExpr>,
+        name: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
     Property {
         receiver: Box<ValueExpr>,
         name: String,
@@ -1435,6 +1441,24 @@ impl<'a> LoweringContext<'a> {
             AstReferenceTarget::ArrayDim(target) => {
                 ReferenceTarget::ArrayDim(self.lower_array_dim_target(target))
             }
+            AstReferenceTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                span,
+            } => ReferenceTarget::PropertyArrayDim {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
+            },
             AstReferenceTarget::Property {
                 receiver,
                 name,
@@ -2307,6 +2331,24 @@ fn assertion_reference_target_text(target: &AstReferenceTarget) -> String {
     match target {
         AstReferenceTarget::Variable { name, .. } => format!("${name}"),
         AstReferenceTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
+        AstReferenceTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            let mut text = format!("{}->{name}", assertion_expr_text(receiver));
+            for dimension in dimensions {
+                let index = dimension
+                    .as_ref()
+                    .map(assertion_expr_text)
+                    .unwrap_or_default();
+                text.push('[');
+                text.push_str(&index);
+                text.push(']');
+            }
+            text
+        }
         AstReferenceTarget::Property { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }

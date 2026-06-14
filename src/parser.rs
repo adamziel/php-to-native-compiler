@@ -51,6 +51,7 @@ pub fn parse(source: &str) -> Result<Program> {
         anonymous_classes: Vec::new(),
         anonymous_class_name_counts: HashMap::new(),
         allow_append_array_read: false,
+        return_by_ref_stack: Vec::new(),
         strict_types: false,
     }
     .parse_program()
@@ -70,6 +71,7 @@ struct Parser {
     anonymous_classes: Vec<ClassDecl>,
     anonymous_class_name_counts: HashMap<String, usize>,
     allow_append_array_read: bool,
+    return_by_ref_stack: Vec<bool>,
     strict_types: bool,
 }
 
@@ -1499,9 +1501,11 @@ impl Parser {
             self.expect_semicolon()?;
             Vec::new()
         } else {
+            self.return_by_ref_stack.push(return_by_ref);
             self.function_depth += 1;
             let body = self.parse_block();
             self.function_depth -= 1;
+            self.return_by_ref_stack.pop();
             body?
         };
         if allow_promoted_properties && !modifiers.is_abstract {
@@ -1611,9 +1615,11 @@ impl Parser {
             None
         };
         let _ = return_by_ref_span;
+        self.return_by_ref_stack.push(return_by_ref);
         self.function_depth += 1;
         let body = self.parse_block();
         self.function_depth -= 1;
+        self.return_by_ref_stack.pop();
         let body = body?;
         Ok(FunctionDecl {
             name,
@@ -1641,9 +1647,11 @@ impl Parser {
         } else {
             None
         };
+        self.return_by_ref_stack.push(return_by_ref);
         self.function_depth += 1;
         let body = self.parse_block();
         self.function_depth -= 1;
+        self.return_by_ref_stack.pop();
         let body = body?;
         Ok(Expr::AnonymousFunction(AnonymousFunction {
             parameters,
@@ -2098,12 +2106,6 @@ impl Parser {
         if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             let source = self.parse_reference_source()?;
-            if reference_source_is_array_dim_of(&source, &name) {
-                return Err(Diagnostic::new(
-                    "self-referential array-element aliases are unsupported",
-                    Some(token.span),
-                ));
-            }
             self.expect_statement_terminator()?;
             return Ok(Statement::AssignRef {
                 name,
@@ -2744,7 +2746,13 @@ impl Parser {
         ) {
             None
         } else {
-            Some(self.parse_expr()?)
+            let previous = self.allow_append_array_read;
+            if self.return_by_ref_stack.last().copied().unwrap_or(false) {
+                self.allow_append_array_read = true;
+            }
+            let value = self.parse_expr();
+            self.allow_append_array_read = previous;
+            Some(value?)
         };
         self.expect_statement_terminator()?;
         Ok(Statement::Return { value, span })
@@ -3670,9 +3678,16 @@ impl Parser {
             None
         };
         self.expect_double_arrow()?;
+        let previous_allow_append_array_read = self.allow_append_array_read;
+        if return_by_ref {
+            self.allow_append_array_read = true;
+        }
+        self.return_by_ref_stack.push(return_by_ref);
         self.function_depth += 1;
         let expression = self.parse_expr();
         self.function_depth -= 1;
+        self.return_by_ref_stack.pop();
+        self.allow_append_array_read = previous_allow_append_array_read;
         let expression = expression?;
         let captures = arrow_function_captures(&parameters, &expression, is_static);
         let expression_span = expression.span();
@@ -5338,6 +5353,16 @@ fn collect_arrow_captures_from_reference_target(
             add_arrow_capture(&target.array, target.span, exclusions, seen, captures);
             collect_arrow_captures_from_array_dim_target(target, exclusions, seen, captures);
         }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            for dimension in dimensions.iter().flatten() {
+                collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+            }
+        }
         ReferenceTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
@@ -6282,6 +6307,14 @@ fn validate_control_transfers_in_reference_target(target: &ReferenceTarget) -> R
         ReferenceTarget::ArrayDim(target) => {
             validate_control_transfers_in_array_dim_target(target)?;
         }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_optional_exprs(dimensions)?;
+        }
         ReferenceTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
@@ -6356,18 +6389,6 @@ fn reference_source_is_variable(source: &Expr, variable: &str) -> bool {
     match source {
         Expr::Variable(name, _) => name == variable,
         Expr::Grouped { expr, .. } => reference_source_is_variable(expr, variable),
-        _ => false,
-    }
-}
-
-fn reference_source_is_array_dim_of(source: &Expr, variable: &str) -> bool {
-    match source {
-        Expr::ArrayAccess { array, .. } => match array.as_ref() {
-            Expr::Variable(name, _) => name == variable,
-            Expr::Grouped { expr, .. } => reference_source_is_array_dim_of(expr, variable),
-            _ => false,
-        },
-        Expr::Grouped { expr, .. } => reference_source_is_array_dim_of(expr, variable),
         _ => false,
     }
 }
@@ -6530,6 +6551,16 @@ fn reference_target_reference_to_variable(
         ReferenceTarget::ArrayDim(target) if target.array == variable => {
             Some(RecursiveReferenceDiagnostic::SameArrayElement(target.span))
         }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => expr_array_literal_reference_to_variable(receiver, variable).or_else(|| {
+            dimensions
+                .iter()
+                .flatten()
+                .find_map(|dimension| expr_array_literal_reference_to_variable(dimension, variable))
+        }),
         _ => None,
     }
 }
@@ -6556,11 +6587,14 @@ fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
 
 fn validate_reference_source_expr(source: &Expr) -> Result<()> {
     match source {
-        Expr::Variable(_, _) | Expr::Call { .. } | Expr::PropertyFetch { .. } => Ok(()),
+        Expr::Variable(_, _)
+        | Expr::Call { .. }
+        | Expr::DynamicCall { .. }
+        | Expr::MethodCall { .. }
+        | Expr::PropertyFetch { .. } => Ok(()),
         Expr::Grouped { expr, .. } => validate_reference_source_expr(expr),
-        Expr::ArrayAccess { .. } => validate_variable_root_array_reference_expr(
+        Expr::ArrayAccess { .. } => validate_array_reference_lvalue_expr(
             source,
-            "append reference sources are unsupported",
             "temporary array offset references are unsupported",
         ),
         _ => Err(Diagnostic::new(
@@ -6570,36 +6604,26 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
     }
 }
 
-fn validate_variable_root_array_reference_expr(
-    expr: &Expr,
-    append_message: &str,
-    temporary_message: &str,
-) -> Result<()> {
+fn validate_array_reference_lvalue_expr(expr: &Expr, temporary_message: &str) -> Result<()> {
     match expr {
-        Expr::Variable(_, _) => Ok(()),
-        Expr::Grouped { expr, .. } => {
-            validate_variable_root_array_reference_expr(expr, append_message, temporary_message)
-        }
+        Expr::Variable(_, _) | Expr::PropertyFetch { .. } => Ok(()),
+        Expr::Grouped { expr, .. } => validate_array_reference_lvalue_expr(expr, temporary_message),
         Expr::ArrayAccess { array, index, span } => {
-            if index.is_none() {
-                return Err(Diagnostic::new(append_message, Some(*span)));
+            if let Some(index) = index {
+                reject_append_array_read(index)?;
             }
             match array.as_ref() {
-                Expr::Variable(_, _) => Ok(()),
+                Expr::Variable(_, _) | Expr::PropertyFetch { .. } => Ok(()),
                 Expr::Grouped { expr, .. } => match expr.as_ref() {
-                    Expr::Variable(_, _) => Ok(()),
-                    Expr::ArrayAccess { .. } => validate_variable_root_array_reference_expr(
-                        expr.as_ref(),
-                        append_message,
-                        temporary_message,
-                    ),
+                    Expr::Variable(_, _) | Expr::PropertyFetch { .. } => Ok(()),
+                    Expr::ArrayAccess { .. } => {
+                        validate_array_reference_lvalue_expr(expr.as_ref(), temporary_message)
+                    }
                     _ => Err(Diagnostic::new(temporary_message, Some(*span))),
                 },
-                Expr::ArrayAccess { .. } => validate_variable_root_array_reference_expr(
-                    array.as_ref(),
-                    append_message,
-                    temporary_message,
-                ),
+                Expr::ArrayAccess { .. } => {
+                    validate_array_reference_lvalue_expr(array.as_ref(), temporary_message)
+                }
                 _ => Err(Diagnostic::new(temporary_message, Some(*span))),
             }
         }
@@ -7103,23 +7127,15 @@ fn validate_by_reference_return_value(value: &Expr, function_name: &str) -> Resu
     match value {
         Expr::Variable(_, _) => Ok(()),
         Expr::Grouped { expr, .. } => validate_by_reference_return_value(expr, function_name),
+        Expr::PropertyFetch { .. } => Ok(()),
         Expr::ArrayAccess {
             array: _,
-            index,
-            span,
-        } => {
-            if index.is_none() {
-                return Err(Diagnostic::new(
-                    "by-reference return requires a variable or array element",
-                    Some(*span),
-                ));
-            }
-            validate_variable_root_array_reference_expr(
-                value,
-                "by-reference return requires a variable or array element",
-                "by-reference return requires a variable or array element",
-            )
-        }
+            index: _,
+            span: _,
+        } => validate_array_reference_lvalue_expr(
+            value,
+            "by-reference return requires a variable or array element",
+        ),
         Expr::Call { name, span, .. } if name.eq_ignore_ascii_case(function_name) => {
             Err(Diagnostic::new(
                 "recursive by-reference returns are unsupported",
@@ -7971,9 +7987,9 @@ fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
     match expr {
         Expr::Variable(name, span) => Ok(ReferenceTarget::Variable { name, span }),
         Expr::Grouped { expr, .. } => reference_target_from_expr(*expr),
-        array_expr @ Expr::ArrayAccess { .. } => Ok(ReferenceTarget::ArrayDim(
-            reference_array_dim_target_from_expr(array_expr, span)?,
-        )),
+        array_expr @ Expr::ArrayAccess { .. } => {
+            reference_array_dim_target_from_expr(array_expr, span)
+        }
         Expr::PropertyFetch {
             receiver,
             name,
@@ -7993,7 +8009,7 @@ fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
 fn reference_array_dim_target_from_expr(
     expr: Expr,
     target_span: SourceSpan,
-) -> Result<ArrayDimTarget> {
+) -> Result<ReferenceTarget> {
     let mut dimensions = Vec::new();
     let mut current = expr;
     loop {
@@ -8007,10 +8023,23 @@ fn reference_array_dim_target_from_expr(
             }
             Expr::Variable(array, _) => {
                 dimensions.reverse();
-                return Ok(ArrayDimTarget {
+                return Ok(ReferenceTarget::ArrayDim(ArrayDimTarget {
                     array,
                     dimensions,
                     span: target_span,
+                }));
+            }
+            Expr::PropertyFetch {
+                receiver,
+                name,
+                span: property_span,
+            } => {
+                dimensions.reverse();
+                return Ok(ReferenceTarget::PropertyArrayDim {
+                    receiver,
+                    name,
+                    dimensions,
+                    span: combine_spans(property_span, target_span),
                 });
             }
             _ => {
@@ -8167,6 +8196,7 @@ fn reference_target_span(target: &ReferenceTarget) -> SourceSpan {
     match target {
         ReferenceTarget::Variable { span, .. } => *span,
         ReferenceTarget::ArrayDim(target) => target.span,
+        ReferenceTarget::PropertyArrayDim { span, .. } => *span,
         ReferenceTarget::Property { span, .. } => *span,
     }
 }
@@ -8270,14 +8300,7 @@ fn validate_reference_assignment_target_source(
     span: SourceSpan,
 ) -> Result<()> {
     match target {
-        AssignmentTarget::Variable { name, span } => {
-            if reference_source_is_array_dim_of(source, name) {
-                return Err(Diagnostic::new(
-                    "self-referential array-element aliases are unsupported",
-                    Some(*span),
-                ));
-            }
-        }
+        AssignmentTarget::Variable { .. } => {}
         AssignmentTarget::DynamicVariable { .. } => {
             return Err(Diagnostic::new(
                 "unsupported by-reference assignment target",
@@ -8298,12 +8321,7 @@ fn validate_reference_assignment_target_source(
                 ));
             }
         }
-        AssignmentTarget::PropertyArrayDim { .. } => {
-            return Err(Diagnostic::new(
-                "unsupported by-reference assignment target",
-                Some(span),
-            ));
-        }
+        AssignmentTarget::PropertyArrayDim { .. } => {}
         AssignmentTarget::Property { .. } => {}
         AssignmentTarget::StaticProperty { .. } => {
             return Err(Diagnostic::new(

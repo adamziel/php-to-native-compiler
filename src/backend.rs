@@ -4234,6 +4234,16 @@ fn collect_reference_target_legacy_dollar_brace_deprecations(
         ReferenceTarget::ArrayDim(target) => {
             collect_array_dim_target_legacy_dollar_brace_deprecations(target, deprecations);
         }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            for dimension in dimensions.iter().flatten() {
+                collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+            }
+        }
         ReferenceTarget::Property { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
@@ -4667,6 +4677,16 @@ fn collect_reference_target_runtime_requirements(
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
                 }
+            }
+        }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            for dimension in dimensions.iter().flatten() {
+                collect_value_runtime_requirements(dimension, functions, requirements);
             }
         }
         ReferenceTarget::Property { receiver, .. } => {
@@ -5345,6 +5365,10 @@ fn value_is_append_reference_target(value: &ValueExpr) -> bool {
         reference_target_from_value(value),
         Some(ReferenceTarget::ArrayDim(target))
             if target.dimensions.iter().any(Option::is_none)
+    ) || matches!(
+        reference_target_from_value(value),
+        Some(ReferenceTarget::PropertyArrayDim { dimensions, .. })
+            if dimensions.iter().any(Option::is_none)
     )
 }
 
@@ -5385,6 +5409,19 @@ fn reference_array_dim_target_from_value(value: &ValueExpr) -> Option<ReferenceT
                     dimensions,
                     line: line.unwrap_or(*load_line),
                 }));
+            }
+            ValueExpr::PropertyFetch {
+                receiver,
+                name,
+                line: property_line,
+            } => {
+                dimensions.reverse();
+                return Some(ReferenceTarget::PropertyArrayDim {
+                    receiver: receiver.clone(),
+                    name: name.clone(),
+                    dimensions,
+                    line: line.unwrap_or(*property_line),
+                });
             }
             _ => return None,
         }
@@ -5816,6 +5853,7 @@ impl AssignmentTargetLine for ReferenceTarget {
         match self {
             ReferenceTarget::Variable { line, .. } => *line,
             ReferenceTarget::ArrayDim(target) => target.line,
+            ReferenceTarget::PropertyArrayDim { line, .. } => *line,
             ReferenceTarget::Property { line, .. } => *line,
         }
     }
@@ -5887,6 +5925,17 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
     match target {
         ReferenceTarget::Variable { name: target, .. } => target == name,
         ReferenceTarget::ArrayDim(target) => target.array == name,
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_mentions_variable(receiver, name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
         ReferenceTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
     }
 }
@@ -6465,6 +6514,37 @@ impl ValueEmitter {
         out.push_str("\", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+    }
+
+    fn declared_class_has_descendant(&self, class_name: &str) -> bool {
+        self.classes.iter().any(|class| {
+            !class.name.eq_ignore_ascii_case(class_name)
+                && self.class_is_same_or_descendant(&class.name, class_name)
+        })
+    }
+
+    fn declared_instance_method_signature_for_receiver(
+        &self,
+        receiver: &ValueExpr,
+        name: &str,
+    ) -> Option<(String, Vec<FunctionParameter>)> {
+        let class_name = match receiver {
+            ValueExpr::Load { name, .. } if name == "this" => {
+                let class_name = self.current_class_name.clone()?;
+                if self.declared_class_has_descendant(&class_name) {
+                    return None;
+                }
+                class_name
+            }
+            ValueExpr::NewObject { class_name, .. } => self.class_name_fetch_name(class_name),
+            _ => return None,
+        };
+        let class = class_by_name(&self.classes, &class_name)?;
+        let method = class_method_lookup_chain(class, &self.classes)
+            .into_iter()
+            .find(|method| !method.is_static && method.name.eq_ignore_ascii_case(name))?;
+        let function = self.user_functions.get(method.function_index)?;
+        Some((function.display_name.clone(), function.parameters.clone()))
     }
 
     fn source_is_declared_by_ref_call(&self, source: &ValueExpr) -> bool {
@@ -7401,8 +7481,22 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
-            AssignmentTarget::PropertyArrayDim { .. } => {
-                unreachable!("parser rejects by-reference assignment to property array targets");
+            AssignmentTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                line,
+            } => {
+                self.emit_bind_reference_target(
+                    out,
+                    &ReferenceTarget::PropertyArrayDim {
+                        receiver: receiver.clone(),
+                        name: name.clone(),
+                        dimensions: dimensions.clone(),
+                        line: *line,
+                    },
+                    reference_temp,
+                );
             }
             AssignmentTarget::Property {
                 receiver,
@@ -7835,6 +7929,45 @@ impl ValueEmitter {
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
+            }
+            ReferenceTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let property_reference_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&property_reference_temp);
+                out.push_str(" = ptn_object_reference_for_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let path = emit_array_path_segments(out, self, dimensions);
+                out.push_str("    ptn_value_bind_array_path_reference(&runtime, &");
+                out.push_str(&property_reference_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                emit_value_cleanup(out, "    ", &property_reference_temp);
+                emit_value_cleanup(out, "    ", &receiver_temp);
             }
             ReferenceTarget::Property {
                 receiver,
@@ -10218,20 +10351,31 @@ impl ValueEmitter {
         name: &str,
         line: usize,
     ) -> String {
-        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
         let lookup_temp = self.next_temp();
         out.push_str("        PtnLookupResult ");
         out.push_str(&lookup_temp);
+        out.push_str(";\n");
+        out.push_str("        if (");
+        out.push_str(&receiver_lookup_temp);
+        out.push_str(".exists) {\n");
+        out.push_str("            ");
+        out.push_str(&lookup_temp);
         out.push_str(" = ptn_object_property_probe_quiet(&runtime, ");
-        out.push_str(&receiver_temp);
-        out.push_str(", \"");
+        out.push_str(&receiver_lookup_temp);
+        out.push_str(".value, \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
         out.push_str(&c_optional_string(self.current_class_name.as_deref()));
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        emit_value_cleanup(out, "        ", &receiver_temp);
+        out.push_str("        } else {\n");
+        out.push_str("            ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_lookup_missing();\n");
+        out.push_str("        }\n");
+        emit_value_cleanup(out, "        ", &format!("{receiver_lookup_temp}.value"));
         lookup_temp
     }
 
@@ -10976,6 +11120,48 @@ impl ValueEmitter {
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
+                temp
+            }
+            ReferenceTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let property_reference_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&property_reference_temp);
+                out.push_str(" = ptn_object_reference_for_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let path = emit_array_path_segments(out, self, dimensions);
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_value_reference_for_array_path(&runtime, &");
+                out.push_str(&property_reference_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push('"');
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                emit_value_cleanup(out, "    ", &property_reference_temp);
+                emit_value_cleanup(out, "    ", &receiver_temp);
                 temp
             }
             ReferenceTarget::Property {
@@ -12288,11 +12474,35 @@ impl ValueEmitter {
             return result_temp;
         }
 
+        let declared_signature =
+            self.declared_instance_method_signature_for_receiver(receiver, name);
         let mut temps = Vec::with_capacity(arguments.len());
         let mut unwrap_append_reference_temps = Vec::new();
-        for argument in arguments {
-            let temp = self.emit_dynamic_call_argument(out, argument);
-            if value_is_append_reference_target(argument) {
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            let by_ref_parameter = declared_signature.as_ref().and_then(|(_, parameters)| {
+                by_ref_parameter_for_argument(parameters, argument_index)
+            });
+            let temp = if let Some(parameter) = by_ref_parameter {
+                let display_name = declared_signature
+                    .as_ref()
+                    .map(|(display_name, _)| display_name.as_str())
+                    .unwrap_or(name);
+                self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    display_name,
+                    argument_index,
+                    &parameter.name,
+                    line,
+                    true,
+                    false,
+                )
+            } else if declared_signature.is_some() {
+                self.emit_call_argument(out, name, argument_index, argument)
+            } else {
+                self.emit_dynamic_call_argument(out, argument)
+            };
+            if by_ref_parameter.is_some() && value_is_append_reference_target(argument) {
                 unwrap_append_reference_temps.push(temp.clone());
             }
             temps.push(temp);

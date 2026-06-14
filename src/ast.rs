@@ -364,6 +364,12 @@ pub enum ReferenceTarget {
         span: SourceSpan,
     },
     ArrayDim(ArrayDimTarget),
+    PropertyArrayDim {
+        receiver: Box<Expr>,
+        name: String,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,
