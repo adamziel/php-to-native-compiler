@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T09:40Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp`; COW 69/103 passed.
+Refresh: 2026-06-14T10:06Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; COW 69/103 passed.
 
 ## Dashboard
 
@@ -49,7 +49,10 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp`; COW 69/103 passed.
 |Std-arrays|296|243|53|
 |Map/filter|30|21|9|
 |Request/SAPI|41|1|40|
-|Class-decl|78|0|78|
+|Anon-class|15|0|15|
+|Interface-decl|23|0|23|
+|Interface-impl|15|0|15|
+|Trait-decl|25|0|25|
 |Call-unpack|34|0|34|
 |Type-hint|14|0|14|
 |Function-state|11|0|11|

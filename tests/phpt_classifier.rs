@@ -181,25 +181,25 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
         (
             "anonymous class",
             "--TEST--\nanon\n--FILE--\n<?php\nvar_dump(new class {});\n--EXPECT--\n",
-            "unsupported-class-declaration\t",
+            "unsupported-anonymous-class\t",
             "requires anonymous class syntax",
         ),
         (
             "interface implementation",
             "--TEST--\niface\n--FILE--\n<?php\nclass Bag implements ArrayAccess {}\n--EXPECT--\n",
-            "unsupported-class-declaration\t",
+            "unsupported-interface-implementation\t",
             "requires interface implementation checks",
         ),
         (
             "interface declaration",
             "--TEST--\ninterface\n--FILE--\n<?php\ninterface Contract {}\n--EXPECT--\n",
-            "unsupported-class-declaration\t",
+            "unsupported-interface-declaration\t",
             "requires interface declarations",
         ),
         (
             "trait declaration",
             "--TEST--\ntrait\n--FILE--\n<?php\ntrait SharedBehavior {}\n--EXPECT--\n",
-            "unsupported-class-declaration\t",
+            "unsupported-trait-declaration\t",
             "requires trait declarations",
         ),
         (

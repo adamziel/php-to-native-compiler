@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T09:40Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp`; COW 69/103 passed.
+Last refresh: 2026-06-14T10:06Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; COW 69/103 passed.
 
 ## Operating Goal
 
@@ -58,7 +58,10 @@ Units 3/3; Native 729/729; Bounded 479/486; Zend 119/119; ext/standard-PHPT 274/
 | Std-arrays | 243/296 |
 | Map/filter | 21/30 |
 | Request/SAPI | 1/41 |
-| Class-decl | 0/78 |
+| Anon-class | 0/15 |
+| Interface-decl | 0/23 |
+| Interface-impl | 0/15 |
+| Trait-decl | 0/25 |
 | Call-unpack | 0/34 |
 | Type-hint | 0/14 |
 | Function-state | 0/11 |

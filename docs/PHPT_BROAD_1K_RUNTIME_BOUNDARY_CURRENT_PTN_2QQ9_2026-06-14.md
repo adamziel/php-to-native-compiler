@@ -2,10 +2,11 @@
 
 Issue: `ptn-2qq9`
 
-This slice refreshes the broad 1k PHPT classifier on current `origin/master`
-after the language and class-metadata bucket splits, then records the current
+This slice refreshes the broad 1k PHPT classifier on `origin/master` after the
+language and class-metadata bucket splits, then records the
 runtime/configuration/diagnostics boundary as a focused 144-row manifest. It is
-a blocker map, not a runtime implementation claim.
+a blocker map, not a runtime implementation claim. The class-declaration bucket
+names below have been reconciled with the later `ptn-gkvr` split.
 
 The selected rows are excluded for process-global or host/runtime boundaries:
 request/SAPI state, extension availability, assertion and diagnostic runtime
@@ -56,15 +57,18 @@ Largest current excluded buckets:
 | Classification | Rows |
 | --- | ---: |
 | `unsupported-attribute-metadata` | 149 |
-| `unsupported-class-declaration` | 78 |
 | `unsupported-magic-method-metadata` | 69 |
 | `unsupported-call-unpacking` | 34 |
 | `unsupported-request-input-ini` | 28 |
+| `unsupported-trait-declaration` | 25 |
+| `unsupported-interface-declaration` | 23 |
 | `unsupported-extension` | 20 |
 | `unsupported-property-visibility-metadata` | 19 |
 | `unsupported-diagnostics-runtime` | 17 |
 | `unsupported-assertion-ini` | 17 |
 | `unsupported-resource-limit-ini` | 15 |
+| `unsupported-interface-implementation` | 15 |
+| `unsupported-anonymous-class` | 15 |
 
 ## Focused Runtime Boundary Manifest
 

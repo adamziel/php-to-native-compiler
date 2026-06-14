@@ -3,10 +3,12 @@
 Issue: `ptn-bo7q`
 
 This slice refreshes the broad 1k PHPT evidence after the language classifier
-split and records the now-explicit `unsupported-class-declaration` category.
-It is a blocker map, not a runtime implementation claim.
+split and records the aggregate `unsupported-class-declaration` category. It is
+a blocker map, not a runtime implementation claim. The later `ptn-gkvr` split
+keeps the same 78 rows classified while replacing this aggregate bucket with
+explicit trait, interface, implementation-check, and anonymous-class buckets.
 
-The current classifier no longer leaves these rows in a generic
+The recorded classifier no longer leaves these rows in a generic
 `unsupported-language` bucket. It assigns them to the class-declaration
 frontier that needs generic interface, trait, implementation-check, anonymous
 class, and related class metadata work before the rows should run.
@@ -69,7 +71,7 @@ Committed manifest:
 tools/phpt-class-declaration-frontier-manifest.txt
 ```
 
-The committed manifest's 78 unique rows match the current broad category:
+The committed manifest's 78 unique rows match the recorded broad category:
 
 ```sh
 awk 'NF && $1 !~ /^#/ {print $1}' \
@@ -113,7 +115,7 @@ Focused result:
 
 ## Category Split
 
-Reason split from the current broad classifier:
+Reason split from the recorded broad classifier:
 
 | Generic blocker | Rows |
 | --- | ---: |

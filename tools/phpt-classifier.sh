@@ -896,22 +896,22 @@ ptn_phpt_first_unsupported_language_surface() {
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+class([^[:alnum:]_]|$)/) {
-                print "unsupported-class-declaration\trequires anonymous class syntax (`new class`), outside PTN modeled class metadata"
+                print "unsupported-anonymous-class\trequires anonymous class syntax (`new class`), generated class metadata, constructor dispatch, and reflection naming"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])interface[[:space:]]+[a-z_\\]/) {
-                print "unsupported-class-declaration\trequires interface declarations, outside PTN modeled class metadata"
+                print "unsupported-interface-declaration\trequires interface declarations, constants, method contracts, and interface metadata tables"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])implements[[:space:]]+[a-z_\\]/) {
-                print "unsupported-class-declaration\trequires interface implementation checks, outside PTN modeled class metadata"
+                print "unsupported-interface-implementation\trequires interface implementation checks, method compatibility validation, and runtime interface metadata"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])trait[[:space:]]+[a-z_\\]/) {
-                print "unsupported-class-declaration\trequires trait declarations, outside PTN modeled class metadata"
+                print "unsupported-trait-declaration\trequires trait declarations, composition, aliases, precedence, and conflict diagnostics"
                 found = 1
                 exit
             }

@@ -2,19 +2,20 @@
 
 Issue: `ptn-zxe0`
 
-This records the `ptn-zxe0` classifier evidence against the current class
-declaration taxonomy. The original branch moved 78 broad 1k rows out of the
-older `unsupported-language` bucket into `unsupported-class-declaration`.
+This records the `ptn-zxe0` classifier evidence against the class declaration
+taxonomy that existed before the later `ptn-gkvr` split. The original branch
+moved 78 broad 1k rows out of the older `unsupported-language` bucket into
+`unsupported-class-declaration`.
 
 That behavior is already integrated on `master` through the later broad
 language split and the `ptn-bo7q` class declaration category evidence. The
-current category remains:
+superseded aggregate category was:
 
-| Current bucket | Rows |
+| Aggregate bucket | Rows |
 | --- | ---: |
 | `unsupported-class-declaration` | 78 |
 
-The current category split is:
+The current `ptn-gkvr` category split is:
 
 | Generic blocker | Rows |
 | --- | ---: |
@@ -23,16 +24,18 @@ The current category split is:
 | Interface implementation checks | 15 |
 | Anonymous class syntax (`new class`) | 15 |
 
-The current committed focused manifest is:
+The committed focused manifest is:
 
 ```text
 tools/phpt-class-declaration-frontier-manifest.txt
 ```
 
-Current evidence is documented in
-`PHPT_BROAD_1K_CLASS_DECLARATION_CATEGORY_PTN_BO7Q_2026-06-14.md`. This note
-exists so the older `ptn-zxe0` merge request is integrated without reverting to
-the stale broad `unsupported-language` bucket accounting.
+Aggregate evidence is documented in
+`PHPT_BROAD_1K_CLASS_DECLARATION_CATEGORY_PTN_BO7Q_2026-06-14.md`, and the
+current explicit split is documented in
+`PHPT_BROAD_1K_CLASS_DECLARATION_SPLIT_PTN_GKVR_2026-06-14.md`. This note exists
+so the older `ptn-zxe0` merge request is integrated without reverting to the
+stale broad `unsupported-language` bucket accounting.
 
 ## Validation
 
