@@ -1,0 +1,32 @@
+# Focused broad 1k extension/environment availability frontier.
+#
+# Rows here are excluded because they require unavailable PHP extensions,
+# child-process execution, php-src external service harnesses, static host
+# preconditions, or PHPT environment setup outside the measured program.
+Zend/tests/GHSA-wm6j-2649-pv75.phpt
+Zend/tests/attributes/016_custom_attribute_validation.phpt
+Zend/tests/attributes/constants/ast_export.phpt
+Zend/tests/attributes/constants/repeatable-internal.phpt
+Zend/tests/attributes/delayed_target_validation/opcache_validator_errors.phpt
+Zend/tests/attributes/nodiscard/006.phpt
+Zend/tests/attributes/nodiscard/007.phpt
+Zend/tests/attributes/nodiscard/009.phpt
+Zend/tests/attributes/nodiscard/010.phpt
+Zend/tests/backtrace/bug_debug_backtrace_replace_zend_execute_ex.phpt
+Zend/tests/binary-32bit.phpt
+Zend/tests/bug34199.phpt
+Zend/tests/bug34617.phpt
+ext/standard/tests/array/array_product_objects_operation_no_cast.phpt
+ext/standard/tests/array/array_product_variation6.phpt
+ext/standard/tests/array/array_sum_objects_operation_no_cast.phpt
+ext/standard/tests/array/array_sum_objects_operation_no_cast_FFI.phpt
+ext/standard/tests/array/array_sum_variation9.phpt
+tests/basic/029.phpt
+tests/basic/GHSA-9pqp-7h25-4f32.phpt
+tests/basic/bug20539.phpt
+tests/basic/bug67198.phpt
+tests/basic/bug71273.phpt
+tests/basic/consistent_float_string_casts.phpt
+tests/basic/gh16998.phpt
+tests/basic/gh7896.phpt
+tests/basic/req44164.phpt

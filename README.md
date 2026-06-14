@@ -267,6 +267,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_ASSERTION_RUNTIME_FRONTIER_2026-06-14.md`: broad 1k
   assertion runtime/INI blocker map, with the current focused native assertion
   rows green.
+- `docs/PHPT_BROAD_1K_EXTENSION_ENVIRONMENT_FRONTIER_2026-06-14.md`: broad
+  1k unavailable-extension, process-boundary, host-precondition, external
+  service, and PHPT environment setup blocker map.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
