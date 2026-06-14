@@ -14693,7 +14693,10 @@ fn compile_append_call_argument_by_value_diagnostic_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Fatal error: Cannot use [] for reading\n"
+        format!(
+            "Fatal error: Cannot use [] for reading in {} on line 1\n",
+            input.display()
+        )
     );
 }
 
@@ -16293,6 +16296,55 @@ echo \"done\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_expect_nullable_callback_arg"));
     assert!(c_source.contains("ptn_internal_expect_callback_arg"));
+}
+
+#[test]
+fn compile_array_map_invalid_callback_operand_messages_to_native_binary() {
+    let root = temp_dir("ptn-native-array-map-invalid-callback-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-map-invalid-callback-operands.php");
+    let output = root.join("array-map-invalid-callback-operands-bin");
+    fs::write(
+        &input,
+        "<?php
+function report($callback) {
+    try {
+        array_map($callback, [1]);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+report(0);
+report(3.5);
+report(true);
+report(new stdClass());
+report([1, 'method']);
+report([[1], 'method']);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, first array member is not a valid class name or object\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, first array member is not a valid class name or object\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("first array member is not a valid class name or object"));
+    assert!(c_source.contains("no array or string given"));
 }
 
 #[test]
@@ -26526,6 +26578,134 @@ try {
     assert!(c_source.contains("ptn_object_declare_property(&runtime"));
     assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
     assert!(c_source.contains("PTN_PROPERTY_PROTECTED"));
+}
+
+#[test]
+fn compile_asymmetric_property_reference_indirect_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-property-reference-indirect");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-property-reference-indirect.php");
+    let output = root.join("asymmetric-property-reference-indirect-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public private(set) int $bar = 0;
+
+    public function test() {
+        $bar = &$this->bar;
+        $bar++;
+    }
+}
+
+$foo = new Foo();
+
+try {
+    $bar = &$foo->bar;
+    $bar++;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($foo->bar);
+
+$foo->test();
+var_dump($foo->bar);
+
+class C {
+    public private(set) int $prop = 1;
+}
+
+function testForbidden($c) {
+    $prop = &$c->prop;
+    $prop = 42;
+}
+
+try {
+    testForbidden(new C());
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    testForbidden(new C());
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot indirectly modify private(set) property Foo::$bar from global scope\n",
+            "int(0)\n",
+            "int(1)\n",
+            "Cannot indirectly modify private(set) property C::$prop from global scope\n",
+            "Cannot indirectly modify private(set) property C::$prop from global scope\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_property_indirect_set_visibility_error"));
+}
+
+#[test]
+fn compile_asymmetric_object_property_reference_returns_copy_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-object-property-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-object-property-reference.php");
+    let output = root.join("asymmetric-object-property-reference-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public private(set) Bar $bar;
+
+    public function __construct() {
+        $this->bar = new Bar();
+    }
+}
+
+class Bar {}
+
+function test() {
+    $foo = new Foo();
+    $bar = &$foo->bar;
+    var_dump($foo);
+}
+
+test();
+test();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(Foo)#1 (1) {\n",
+            "  [\"bar\"]=>\n",
+            "  object(Bar)#2 (0) {\n",
+            "  }\n",
+            "}\n",
+            "object(Foo)#2 (1) {\n",
+            "  [\"bar\"]=>\n",
+            "  object(Bar)#1 (0) {\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

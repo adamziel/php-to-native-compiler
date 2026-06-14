@@ -1,0 +1,38 @@
+# Current broad 1k COW/reference row pack for ptn-mqvk.
+#
+# Derived from .runtime/phpt-progress/runnable-20260614T191343Z.txt on
+# commit 750fc9a5b199. The selected rows cover broad 1k reference identity,
+# append lvalues, function-boundary references, asymmetric property references,
+# recursive array/reference dumps, and standard array callback/reference helpers.
+#
+# Run:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-mqvk-broad-cow-reference-row-pack-manifest.txt
+
+Zend/tests/add_optional_by_ref_arg.phpt
+Zend/tests/array_append_COW.phpt
+Zend/tests/array_append_by_reference.phpt
+Zend/tests/array_append_reading_error.phpt
+Zend/tests/array_with_refs_identical.phpt
+Zend/tests/assign_by_val_function_by_ref_return_value.phpt
+Zend/tests/assign_dim_op_same_var.phpt
+Zend/tests/assign_dim_ref_free.phpt
+Zend/tests/assign_ref_error_var_handling.phpt
+Zend/tests/assign_ref_func_leak.phpt
+Zend/tests/assign_to_var_001.phpt
+Zend/tests/assign_to_var_002.phpt
+Zend/tests/assign_to_var_003.phpt
+Zend/tests/assign_to_var_004.phpt
+Zend/tests/asymmetric_visibility/object_reference.phpt
+Zend/tests/asymmetric_visibility/reference.phpt
+Zend/tests/asymmetric_visibility/reference_2.phpt
+Zend/tests/bug35163.phpt
+Zend/tests/bug38469.phpt
+ext/standard/tests/array/array_map_variation17.phpt
+ext/standard/tests/array/array_map_variation2.phpt
+ext/standard/tests/array/array_merge_recursive_basic1.phpt
+ext/standard/tests/array/array_merge_replace_recursive_refs.phpt
+ext/standard/tests/array/array_reduce.phpt
+ext/standard/tests/array/array_reduce_accumulator_refcount.phpt
+ext/standard/tests/array/array_reduce_return_by_ref.phpt
+ext/standard/tests/array/array_reduce_variation3.phpt
+ext/standard/tests/array/array_sum_on_reference.phpt

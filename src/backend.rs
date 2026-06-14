@@ -7418,13 +7418,16 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &index_temp);
                 result_temp
             }
-            ValueExpr::ArrayAppendAccess { .. } => {
+            ValueExpr::ArrayAppendAccess { line, .. } => {
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_null();\n");
-                out.push_str("    ptn_emit_type_error(&runtime.diagnostics, \"Cannot use [] for reading\");\n");
-                out.push_str("    exit(255);\n");
+                out.push_str("    ptn_abort_type_error_at(\"Cannot use [] for reading\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
                 result_temp
             }
             ValueExpr::NewObject {

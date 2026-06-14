@@ -989,6 +989,43 @@ static PTN_UNUSED void ptn_throw_property_set_visibility_error(
     ptn_throw_exception(runtime, "Error", message);
 }
 
+static PTN_UNUSED void ptn_throw_property_indirect_set_visibility_error(
+    PtnRuntime *runtime,
+    PtnPropertyVisibility visibility,
+    const char *declaring_class,
+    const char *property,
+    const char *access_scope
+) {
+    char message[320];
+    const char *scope = access_scope == NULL ? "global scope" : access_scope;
+    int written;
+    if (access_scope == NULL) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot indirectly modify %s(set) property %s::$%s from %s",
+            ptn_property_visibility_name(visibility),
+            declaring_class,
+            property,
+            scope
+        );
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot indirectly modify %s(set) property %s::$%s from scope %s",
+            ptn_property_visibility_name(visibility),
+            declaring_class,
+            property,
+            scope
+        );
+    }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
 static PTN_UNUSED char *ptn_static_property_key(const char *class_name, const char *property) {
     size_t class_len = strlen(class_name);
     size_t property_len = strlen(property);

@@ -610,6 +610,7 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     const char *property,
     const char *access_scope,
     int for_write,
+    int indirect_write,
     int quiet
 ) {
     const PtnObjectPropertyMetadata *scoped_private =
@@ -641,13 +642,23 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                     access_scope
                 );
             } else if (for_write && scoped_private->set_visibility != scoped_private->read_visibility) {
-                ptn_throw_property_set_visibility_error(
-                    runtime,
-                    scoped_private->set_visibility,
-                    scoped_private->declaring_class,
-                    property,
-                    access_scope
-                );
+                if (indirect_write) {
+                    ptn_throw_property_indirect_set_visibility_error(
+                        runtime,
+                        scoped_private->set_visibility,
+                        scoped_private->declaring_class,
+                        property,
+                        access_scope
+                    );
+                } else {
+                    ptn_throw_property_set_visibility_error(
+                        runtime,
+                        scoped_private->set_visibility,
+                        scoped_private->declaring_class,
+                        property,
+                        access_scope
+                    );
+                }
             } else {
                 ptn_throw_property_visibility_error(
                     runtime,
@@ -689,13 +700,23 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                     access_scope
                 );
             } else if (for_write && shared_property->set_visibility != shared_property->read_visibility) {
-                ptn_throw_property_set_visibility_error(
-                    runtime,
-                    shared_property->set_visibility,
-                    shared_property->declaring_class,
-                    property,
-                    access_scope
-                );
+                if (indirect_write) {
+                    ptn_throw_property_indirect_set_visibility_error(
+                        runtime,
+                        shared_property->set_visibility,
+                        shared_property->declaring_class,
+                        property,
+                        access_scope
+                    );
+                } else {
+                    ptn_throw_property_set_visibility_error(
+                        runtime,
+                        shared_property->set_visibility,
+                        shared_property->declaring_class,
+                        property,
+                        access_scope
+                    );
+                }
             } else {
                 ptn_throw_property_visibility_error(
                     runtime,
@@ -764,6 +785,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         property,
         access_scope,
         0,
+        0,
         0
     );
     if (storage_key == NULL) {
@@ -808,6 +830,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         property,
         access_scope,
         0,
+        0,
         1
     );
     if (storage_key == NULL) {
@@ -840,6 +863,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         receiver.as.object,
         property,
         access_scope,
+        0,
         0,
         1
     );
@@ -887,6 +911,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
         property,
         access_scope,
         1,
+        0,
         0
     );
     if (storage_key == NULL) {
@@ -947,6 +972,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         property,
         access_scope,
         1,
+        0,
         0
     );
     if (storage_key == NULL) {
@@ -1000,10 +1026,46 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         property,
         access_scope,
         1,
-        0
+        1,
+        1
     );
     if (storage_key == NULL) {
-        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        char *read_storage_key = ptn_object_resolve_property_storage_key(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            0,
+            0,
+            1
+        );
+        if (read_storage_key != NULL) {
+            PtnArrayKey read_key = ptn_array_string_key(read_storage_key);
+            PtnArrayEntry *read_entry =
+                ptn_array_entry_for_key(receiver.as.object->properties, read_key);
+            ptn_array_key_free(read_key);
+            if (read_entry != NULL) {
+                PtnValue current = ptn_value_clone_deref(read_entry->value);
+                if (current.type == PTN_OBJECT) {
+                    free(read_storage_key);
+                    return ptn_reference_value(ptn_reference_new_owned(current));
+                }
+                ptn_value_destroy(&current);
+            }
+            free(read_storage_key);
+        }
+        storage_key = ptn_object_resolve_property_storage_key(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            1,
+            1,
+            0
+        );
+        if (storage_key == NULL) {
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
@@ -1052,6 +1114,7 @@ static PTN_UNUSED void ptn_object_unset_property(
         property,
         access_scope,
         1,
+        0,
         1
     );
     if (storage_key == NULL) {

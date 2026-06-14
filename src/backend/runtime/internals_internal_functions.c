@@ -319,8 +319,16 @@ static char *ptn_invalid_array_callback_reason(PtnValue resolved) {
 
     PtnValue scope = ptn_value_deref(scope_entry->value);
     PtnValue method = ptn_value_deref(method_entry->value);
+    if (
+        scope.type != PTN_STRING &&
+        scope.type != PTN_OBJECT &&
+        scope.type != PTN_EXCEPTION &&
+        scope.type != PTN_CLOSURE
+    ) {
+        return ptn_duplicate_string("first array member is not a valid class name or object");
+    }
     if (method.type != PTN_STRING) {
-        return NULL;
+        return ptn_duplicate_string("second array member is not a valid method");
     }
 
     char *method_name = ptn_value_to_string(method);
@@ -386,27 +394,7 @@ static char *ptn_invalid_callback_message(
     } else if (resolved.type == PTN_ARRAY) {
         reason = ptn_invalid_array_callback_reason(resolved);
     } else {
-        char *name = ptn_callable_output_name(callback);
-        int needed = snprintf(
-            NULL,
-            0,
-            "callback \"%s\" not found or invalid function name",
-            name
-        );
-        if (needed < 0) {
-            ptn_abort_out_of_memory();
-        }
-        reason = malloc((size_t)needed + 1);
-        if (reason == NULL) {
-            ptn_abort_out_of_memory();
-        }
-        snprintf(
-            reason,
-            (size_t)needed + 1,
-            "callback \"%s\" not found or invalid function name",
-            name
-        );
-        free(name);
+        reason = ptn_duplicate_string("no array or string given");
     }
     if (reason == NULL) {
         char *name = ptn_callable_output_name(callback);
