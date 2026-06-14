@@ -1,4 +1,7 @@
     for (size_t i = 0; i < argc; i++) {
+        if (!ptn_array_append_key_available(runtime, array)) {
+            return (int64_t)array->len;
+        }
         PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
         ptn_array_set_entry(array, key, ptn_value_clone(values[i]));
     }

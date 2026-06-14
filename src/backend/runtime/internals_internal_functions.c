@@ -1768,7 +1768,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_push_variable(
         name,
         value
     );
-    return ptn_int(ptn_array_push_values(array, value_count, values));
+    return ptn_int(ptn_array_push_values(runtime, array, value_count, values));
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_shift_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
@@ -2425,7 +2425,7 @@ static PtnValue ptn_internal_array_pop(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_array_push(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_push", 1, "array", args[0]);
-    return ptn_int(ptn_array_push_values(array, argc - 1, args + 1));
+    return ptn_int(ptn_array_push_values(runtime, array, argc - 1, args + 1));
 }
 
 static PtnValue ptn_internal_array_shift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

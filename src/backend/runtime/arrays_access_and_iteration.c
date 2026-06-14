@@ -3547,4 +3547,9 @@ static PTN_UNUSED void ptn_array_shuffle_values(PtnArray *array) {
     ptn_array_rebuild_index(array);
 }
 
-static PTN_UNUSED int64_t ptn_array_push_values(PtnArray *array, size_t argc, const PtnValue *values) {
+static PTN_UNUSED int64_t ptn_array_push_values(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    size_t argc,
+    const PtnValue *values
+) {
