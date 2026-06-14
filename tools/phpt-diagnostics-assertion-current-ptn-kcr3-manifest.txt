@@ -1,0 +1,57 @@
+# Broad 1k diagnostics/assertion current frontier for ptn-kcr3.
+# Generated from .runtime/ptn-kcr3-1k-progress/classification-20260614T121538Z.tsv.
+# Reproduce with:
+#   PHPT_PROGRESS_DIR=.runtime/ptn-kcr3-1k-progress \
+#     tools/run-phpt-baseline.sh --tier 1000 --classify-only \
+#     --out-dir .runtime/ptn-kcr3-1k
+#   PHPT_PROGRESS_DIR=.runtime/ptn-kcr3-diagnostics-assertion-focused \
+#     tools/run-bounded-phpt.sh --classify-only --classify-harness-programs \
+#     tools/phpt-diagnostics-assertion-current-ptn-kcr3-manifest.txt
+Zend/tests/ErrorException_construct.phpt
+Zend/tests/ErrorException_getSeverity.phpt
+Zend/tests/arrow_functions/gh7900.phpt
+Zend/tests/assert/bug70528.phpt
+Zend/tests/assert/bug71922.phpt
+Zend/tests/assert/expect_001.phpt
+Zend/tests/assert/expect_002.phpt
+Zend/tests/assert/expect_003.phpt
+Zend/tests/assert/expect_004.phpt
+Zend/tests/assert/expect_005.phpt
+Zend/tests/assert/expect_006.phpt
+Zend/tests/assert/expect_007.phpt
+Zend/tests/assert/expect_008.phpt
+Zend/tests/assert/expect_009.phpt
+Zend/tests/assert/expect_010.phpt
+Zend/tests/assert/expect_011.phpt
+Zend/tests/assert/expect_012.phpt
+Zend/tests/assert/expect_013.phpt
+Zend/tests/assert/expect_014.phpt
+Zend/tests/assert/expect_016.phpt
+Zend/tests/assert/expect_017.phpt
+Zend/tests/assert/expect_018.phpt
+Zend/tests/assert/expect_019.phpt
+Zend/tests/assert/expect_020.phpt
+Zend/tests/assert/gh11580.phpt
+Zend/tests/assert/gh16293_001.phpt
+Zend/tests/assert/gh16293_002.phpt
+Zend/tests/asymmetric_visibility/ast_printing.phpt
+Zend/tests/backtrace/bug28377.phpt
+Zend/tests/backtrace/bug30828.phpt
+Zend/tests/backtrace/bug70547.phpt
+Zend/tests/backtrace/bug79108.phpt
+Zend/tests/backtrace/bug_debug_backtrace.phpt
+Zend/tests/backtrace/debug_backtrace_limit.phpt
+Zend/tests/backtrace/debug_backtrace_with_include_and_this.phpt
+Zend/tests/backtrace/debug_print_backtrace_from_main.phpt
+Zend/tests/backtrace/debug_print_backtrace_limit.phpt
+Zend/tests/backtrace/fatal_error_backtraces_001.phpt
+Zend/tests/backtrace/fatal_error_backtraces_002.phpt
+Zend/tests/backtrace/fatal_error_backtraces_003.phpt
+Zend/tests/bitwise_not_precision_exception.phpt
+Zend/tests/bug29890.phpt
+Zend/tests/bug29896.phpt
+Zend/tests/bug30998.phpt
+Zend/tests/bug35017.phpt
+Zend/tests/bug35634.phpt
+tests/basic/errorlog_permission.phpt
+tests/basic/ini_directive_deprecated_report_memleaks.phpt
