@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T05:05Z.
-Measured: `ptn-d6n9`.
+Refresh: 2026-06-14T05:19Z.
+Measured: `ptn-0pys`.
 
 ## Dashboard
 
@@ -29,7 +29,7 @@ Measured: `ptn-d6n9`.
 | PHPT foreach list destructuring rows | 4 | 4 | 0 |
 | PHPT broad reference-call bucket | 12 | 10 | 2 |
 | PHPT broad Zend assignment/reference frontier | 32 | 23 | 9 |
-| PHPT broad class declaration frontier | 78 | 0 | 78 |
+| PHPT broad class declaration frontier | 78 | 1 | 77 |
 | PHPT broad Zend bug regression frontier | 37 | 18 | 19 |
 | PHPT broad resource-limit classifier row | 1 | 0 | 1 |
 | PHPT broad magic/object conversion frontier | 69 | 20 | 49 |
@@ -44,12 +44,14 @@ Measured: `ptn-d6n9`.
 
 ## Remaining Exclusions
 
-- Broad 1k 443/557; bounded 456/486.
-- Arrays: setops 64/119; tdei 61/71; callbacks 49/66; registry 28/38.
-- References/COW: call 10/12, internal 17/72, foreach 31/103.
+- Broad 443/557; bounded 456/486.
+- Arrays: setops 64/119, tdei 61/71, callbacks 49/66, registry 28/38.
+- COW/ref 10/12, 17/72, 31/103.
+- Classes: 1/78; 77 blockers.
 
 ## Verification
 
-`ptn-tdei`: standard-array 296/87, chunk 32/32, callbacks 29/39.
-`ptn-oiin`: setops 64/76 runnable, 43 excluded. `ptn-d6n9`: array_filter
-registry lookup covered; callback slice 28/38.
+`ptn-0pys`: metadata cluster 6/6 (`class_exists_003`,
+`class_constants_004`, `objects_012/013/014/018`); frontier 1/78.
+`ptn-oiin`: setops 64/76 runnable, 43 excluded.
+`ptn-d6n9`: callbacks 28/38.

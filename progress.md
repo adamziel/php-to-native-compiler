@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T05:05Z.
+Last refresh: 2026-06-14T05:19Z.
 Source: `PROGRESS.md`
-Measured: `ptn-d6n9`.
+Measured: `ptn-0pys`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
@@ -30,7 +30,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT 
 | PHPT foreach list destructuring rows | 4/4 |
 | PHPT broad reference-call bucket | 10/12 |
 | PHPT broad Zend assignment/reference frontier | 23/32 |
-| PHPT broad class declaration frontier | 0/78 |
+| PHPT broad class declaration frontier | 1/78 |
 | PHPT broad Zend bug regression frontier | 18/37 |
 | PHPT broad resource-limit classifier row | 0/1 |
 | PHPT broad magic/object conversion frontier | 20/69 |

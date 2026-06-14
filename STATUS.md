@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T05:05Z.
-Measured: `ptn-d6n9`.
+Last refresh: 2026-06-14T05:19Z.
+Measured: `ptn-0pys`.
 
 ## Operating Goal
 
@@ -38,7 +38,7 @@ Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest
 | PHPT foreach list destructuring rows | 4/4 |
 | PHPT broad reference-call bucket | 10/12 |
 | PHPT broad Zend assignment/reference frontier | 23/32 |
-| PHPT broad class declaration frontier | 0/78 |
+| PHPT broad class declaration frontier | 1/78 |
 | PHPT broad Zend bug regression frontier | 18/37 |
 | PHPT broad resource-limit classifier row | 0/1 |
 | PHPT broad magic/object conversion frontier | 20/69 |

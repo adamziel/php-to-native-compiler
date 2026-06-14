@@ -59,22 +59,43 @@ Selection from `classification-20260614T023205Z.tsv`:
 awk -F'\t' '$3 ~ /interface|trait declarations|anonymous class/ {print $1}'
 ```
 
-Focused classifier result:
+Focused classifier result after `ptn-0pys`:
 
-Result at `.runtime/phpt-progress/run-20260614T023712Z-manifest.log`:
+Result at `.runtime/phpt-progress/run-20260614T040446Z-manifest.log`:
 
-| Selected | Runnable | Excluded |
-| ---: | ---: | ---: |
-| 78 | 0 | 78 |
+| Selected | Runnable | Passing | Excluded |
+| ---: | ---: | ---: | ---: |
+| 78 | 1 | 1 | 77 |
 
-Sub-buckets:
+Current classified blockers:
 
 | Class declaration blocker | Rows |
 | --- | ---: |
-| trait declarations | 25 |
-| interface declarations | 23 |
-| interface implementation checks | 15 |
-| anonymous class syntax (`new class`) | 15 |
+| unsupported language / class-like runtime surfaces | 73 |
+| unsupported class/reflection metadata | 4 |
+
+Runnable row:
+
+```text
+Zend/tests/bug32427.phpt
+```
+
+Adjacent assigned `ptn-0pys` raw PHPT cluster:
+
+| Selected | Runnable | Passing |
+| ---: | ---: | ---: |
+| 6 | 6 | 6 |
+
+Passing rows:
+
+```text
+Zend/tests/class_exists_003.phpt
+Zend/tests/constants/class_constants_004.phpt
+Zend/tests/objects/objects_012.phpt
+Zend/tests/objects/objects_013.phpt
+Zend/tests/objects/objects_014.phpt
+Zend/tests/objects/objects_018.phpt
+```
 
 Path concentration:
 
@@ -90,14 +111,16 @@ Path concentration:
 
 ## Why This Is A Blocker
 
-The rows share a semantic root: PTN has a bounded public-class model, but not
-the declaration graph needed for full class metadata. Generic support needs:
+The remaining rows share a semantic root: PTN now has bounded class-like
+metadata for interfaces, traits, abstract/final classes, interface constants,
+and duplicate/non-interface implementation diagnostics, but not the full
+declaration graph needed for complete class metadata. Generic support still
+needs:
 
-- parser and AST forms for `interface`, `trait`, `implements`, trait `use`,
-  aliases, precedence rules, and anonymous class expressions;
-- class-table entries for interfaces and traits, not only instantiable classes;
-- validation for interface contracts, abstract requirements, method signature
-  compatibility, trait conflict resolution, and trait adaptation;
+- trait composition with aliases and precedence rules, and anonymous class
+  expressions;
+- validation for full interface contracts, method signature compatibility,
+  trait conflict resolution, and trait adaptation;
 - anonymous class naming, source metadata, constructor dispatch, inheritance,
   closure binding, and reflection exposure;
 - runtime checks for `instanceof`, `is_subclass_of()`, `class_implements()`,

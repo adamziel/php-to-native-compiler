@@ -77,8 +77,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `get_loaded_extensions()`, stable PHP locale constants, bounded
   `setlocale()`/`localeconv()` helpers, `spl_object_id()`/
   `spl_object_hash()`, `get_parent_class()`, Closure internal class metadata,
-  Closure-backed `ReflectionFunction` count/name metadata, and bounded
-  class/property existence checks.
+  Closure-backed `ReflectionFunction` count/name metadata, bounded
+  class/interface/trait/property/method existence checks, abstract/final
+  class metadata, interface constants, and duplicate/non-interface
+  implementation diagnostics.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable, variable-root array/append, property, and static-property
@@ -120,8 +122,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Static properties support read/write visibility, asymmetric set visibility,
   reads/writes, compounds, `??=`, plus quiet `isset()`, `empty()`, and `??`.
 - Public class constants support scalar/array defaults, direct
-  `Class::CONST`/`self::CONST` reads, and `constant()`/`defined()` lookup;
-  typed/non-public/inherited/dynamic constants remain bounded.
+  `Class::CONST`/`self::CONST` reads, dynamic `$class::CONST` reads, and
+  `constant()`/`defined()` lookup; typed/non-public/inherited constants remain
+  bounded.
 - Stream resources from `STDIN`/`STDOUT`/`STDERR` and `fopen()`/`fclose()` are
   boxed with type, dump, and array-key cast behavior; `file_get_contents()`
   reads filesystem paths into binary-safe strings with bounded offset/length
