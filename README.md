@@ -215,6 +215,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_TDEI_2026-06-14.md`: broad 1k
   standard-array evidence, with `array_chunk()` green and residual callback/
   set-operation blocker splits.
+- `docs/PHPT_BROAD_1K_ASYMMETRIC_VISIBILITY_FRONTIER_2026-06-14.md`: broad
+  1k asymmetric property visibility frontier map.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
