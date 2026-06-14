@@ -10843,81 +10843,39 @@ impl ValueEmitter {
             return None;
         }
 
-        let helper = if name.eq_ignore_ascii_case("array_push") {
-            Some("ptn_runtime_array_push_variable")
+        let helpers = if name.eq_ignore_ascii_case("array_push") {
+            Some((
+                "ptn_runtime_array_push_variable",
+                "ptn_runtime_array_push_path",
+            ))
         } else if name.eq_ignore_ascii_case("array_unshift") {
-            Some("ptn_runtime_array_unshift_variable")
+            Some((
+                "ptn_runtime_array_unshift_variable",
+                "ptn_runtime_array_unshift_path",
+            ))
         } else {
             None
         };
-        let Some(helper) = helper else {
+        let Some((variable_helper, path_helper)) = helpers else {
             return None;
         };
 
-        if variable_name.is_none() && name.eq_ignore_ascii_case("array_push") {
-            if let Some(ReferenceTarget::ArrayDim(target)) =
-                reference_array_dim_target_from_value(first_argument)
-            {
-                let path = emit_array_path_segments(out, self, &target.dimensions);
-                let mut value_temps = Vec::with_capacity(arguments.len().saturating_sub(1));
-                for argument in &arguments[1..] {
-                    value_temps.push(self.emit_materialized_value(out, argument));
-                }
-                let values_temp = if value_temps.is_empty() {
-                    None
-                } else {
-                    let values_temp = self.next_temp();
-                    out.push_str("    PtnValue ");
-                    out.push_str(&values_temp);
-                    out.push_str("[] = { ");
-                    for (index, temp) in value_temps.iter().enumerate() {
-                        if index > 0 {
-                            out.push_str(", ");
-                        }
-                        out.push_str("ptn_value_share(");
-                        out.push_str(temp);
-                        out.push(')');
-                    }
-                    out.push_str(" };\n");
-                    Some(values_temp)
-                };
-                let result_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_runtime_array_push_path(&runtime, \"");
-                out.push_str(&c_string(&target.array));
-                out.push_str("\", ");
-                out.push_str(&path.name);
-                out.push_str(", ");
-                out.push_str(&path.len.to_string());
-                out.push_str(", ");
-                out.push_str(&target.line.to_string());
-                out.push_str(", ");
-                out.push_str(&value_temps.len().to_string());
-                out.push_str(", ");
-                if let Some(values_temp) = &values_temp {
-                    out.push_str(values_temp);
-                } else {
-                    out.push_str("NULL");
-                }
-                out.push_str(");\n");
-                if let Some(values_temp) = &values_temp {
-                    for index in 0..value_temps.len() {
-                        emit_value_cleanup(out, "    ", &format!("{values_temp}[{index}]"));
-                    }
-                }
-                for temp in value_temps {
-                    emit_value_cleanup(out, "    ", &temp);
-                }
-                for segment_temp in path.value_temps {
-                    emit_value_cleanup(out, "    ", &segment_temp);
-                }
-                return Some(result_temp);
+        let path_target = if variable_name.is_none() {
+            match reference_array_dim_target_from_value(first_argument) {
+                Some(ReferenceTarget::ArrayDim(target)) => Some(target),
+                _ => None,
             }
+        } else {
+            None
+        };
+        if variable_name.is_none() && path_target.is_none() {
+            return None;
         }
 
-        let variable_name = variable_name?;
-        let array_temp = self.emit_materialized_value(out, &arguments[0]);
+        let path = path_target
+            .as_ref()
+            .map(|target| emit_array_path_segments(out, self, &target.dimensions));
+        let array_temp = variable_name.map(|_| self.emit_materialized_value(out, &arguments[0]));
         let mut value_temps = Vec::with_capacity(arguments.len().saturating_sub(1));
         for argument in &arguments[1..] {
             value_temps.push(self.emit_materialized_value(out, argument));
@@ -10946,18 +10904,40 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ");
-        out.push_str(helper);
-        out.push_str("(&runtime, \"");
-        out.push_str(&c_string(variable_name));
-        out.push_str("\", ");
-        out.push_str(&array_temp);
-        out.push_str(", ");
-        out.push_str(&value_temps.len().to_string());
-        out.push_str(", ");
-        if let Some(values_temp) = &values_temp {
-            out.push_str(values_temp);
+        if let Some(variable_name) = variable_name {
+            out.push_str(variable_helper);
+            out.push_str("(&runtime, \"");
+            out.push_str(&c_string(variable_name));
+            out.push_str("\", ");
+            out.push_str(array_temp.as_ref().expect("variable mutator temp"));
+            out.push_str(", ");
+            out.push_str(&value_temps.len().to_string());
+            out.push_str(", ");
+            if let Some(values_temp) = &values_temp {
+                out.push_str(values_temp);
+            } else {
+                out.push_str("NULL");
+            }
         } else {
-            out.push_str("NULL");
+            let target = path_target.as_ref().expect("array path mutator target");
+            let path = path.as_ref().expect("array path mutator segments");
+            out.push_str(path_helper);
+            out.push_str("(&runtime, \"");
+            out.push_str(&c_string(&target.array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(", ");
+            out.push_str(&value_temps.len().to_string());
+            out.push_str(", ");
+            if let Some(values_temp) = &values_temp {
+                out.push_str(values_temp);
+            } else {
+                out.push_str("NULL");
+            }
         }
         out.push_str(");\n");
         if let Some(values_temp) = &values_temp {
@@ -10968,7 +10948,14 @@ impl ValueEmitter {
         for temp in value_temps {
             emit_value_cleanup(out, "    ", &temp);
         }
-        emit_value_cleanup(out, "    ", &array_temp);
+        if let Some(array_temp) = &array_temp {
+            emit_value_cleanup(out, "    ", array_temp);
+        }
+        if let Some(path) = path {
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+        }
         Some(result_temp)
     }
 

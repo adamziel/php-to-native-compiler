@@ -6564,10 +6564,10 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
     )
 }
 
-fn is_single_array_path_mutation_name(name: &str) -> bool {
+fn is_array_path_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "array_pop" | "array_push" | "array_shift"
+        "array_pop" | "array_push" | "array_shift" | "array_unshift"
     )
 }
 
@@ -6642,16 +6642,12 @@ fn is_variable_array_access_argument(expr: &Expr) -> bool {
     }
 }
 
-fn is_function_call_argument(expr: &Expr) -> bool {
+fn is_by_ref_temporary_array_mutation_argument(expr: &Expr) -> bool {
     match expr {
         Expr::Call { .. } | Expr::DynamicCall { .. } | Expr::MethodCall { .. } => true,
-        Expr::Grouped { expr, .. } => is_function_call_argument(expr),
+        Expr::Grouped { expr, .. } => is_by_ref_temporary_array_mutation_argument(expr),
         _ => false,
     }
-}
-
-fn is_by_ref_temporary_argument(expr: &Expr) -> bool {
-    is_function_call_argument(expr)
 }
 
 fn validate_mutating_array_internal_call(
@@ -6736,19 +6732,13 @@ fn validate_mutating_array_internal_call(
     if is_direct_variable_argument(&arguments[0]) {
         return Ok(());
     }
-    if is_single_array_path_mutation_name(name)
-        && (is_variable_array_access_argument(&arguments[0])
-            || (arguments.len() == 1 && is_by_ref_temporary_argument(&arguments[0])))
-    {
+    if is_array_path_mutation_name(name) && is_variable_array_access_argument(&arguments[0]) {
         return Ok(());
     }
     if name.eq_ignore_ascii_case("array_shift")
         && arguments.len() == 1
-        && is_function_call_argument(&arguments[0])
+        && is_by_ref_temporary_array_mutation_argument(&arguments[0])
     {
-        return Ok(());
-    }
-    if name.eq_ignore_ascii_case("array_push") && is_variable_array_access_argument(&arguments[0]) {
         return Ok(());
     }
     Err(Diagnostic::new(

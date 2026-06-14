@@ -376,14 +376,19 @@ static PTN_UNUSED PtnValue ptn_cast_array(PtnValue value) {
     }
 
     if (value.type == PTN_OBJECT) {
-        for (size_t i = 0; i < value.as.object->properties->len; i++) {
-            PtnArrayEntry *entry = &value.as.object->properties->entries[i];
+        PtnArray *properties = value.as.object->properties;
+        for (size_t i = 0; i < properties->len; i++) {
+            PtnArrayEntry *entry = &properties->entries[i];
             ptn_array_set_entry(
                 array,
                 ptn_array_key_clone(entry->key),
-                ptn_value_clone(entry->value)
+                ptn_value_clone_deref(entry->value)
             );
         }
+        return array_value;
+    }
+
+    if (value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
         return array_value;
     }
 

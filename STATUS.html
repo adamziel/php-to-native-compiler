@@ -2,14 +2,14 @@
 <meta charset="utf-8">
 <title>PTN Status</title>
 <h1>PTN Status</h1>
-<p><strong>Last refresh:</strong> 2026-06-14T14:35Z.<br>
-<strong>Measured:</strong> <code>ptn-c284; ptn-xymv; ptn-j8b8/b35n/18tp/gkvr; ptn-gt7b; ptn-30ji; ptn-h0qa broad 1k classify-only 424 runnable / 576 classified; ptn-dkcs call-unpacking 34 selected / 0 runnable / 34 classified; ptn-ei36 unpacking split 20 call / 14 array classified; ptn-550s.12 broad 1k array-helper row pack 0/10 -&gt; 10/10; ptn-qsmv.16 array callback/map-filter row pack; ptn-qsmv.17 assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; ptn-s80e broad 1k array/reference row pack 10/20 -&gt; 20/20; COW 69/103 passed.</code></p>
+<p><strong>Last refresh:</strong> 2026-06-14T18:27Z.<br>
+<strong>Measured:</strong> <code>ptn-c284; ptn-xymv; ptn-j8b8/b35n/18tp/gkvr; ptn-gt7b; ptn-30ji; ptn-h0qa broad 1k classify-only 424 runnable / 576 classified; ptn-dkcs call-unpacking 34 selected / 0 runnable / 34 classified; ptn-ei36 unpacking split 20 call / 14 array classified; ptn-550s.12 broad 1k array-helper row pack 0/10 -&gt; 10/10; ptn-qsmv.14 class/interface row pack; ptn-qsmv.16 array callback/map-filter row pack; ptn-qsmv.17 assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; ptn-s80e broad 1k array/reference row pack 10/20 -&gt; 20/20; ptn-j6gv broad 1k string/runtime row pack 15/25 -&gt; 25/25; ptn-55u0 broad 1k unpack row pack 2/34 raw baseline -&gt; 10/10 runnable after split; ptn-tiqh COW/reference row pack 21/21 on submitted base; ptn-ouhx object-string array-helper row pack 0/34 -&gt; 34/34, object-string source bucket 19/61 -&gt; 53/61, broad 1k 285 -&gt; 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); ptn-lxw1 array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; COW 69/103 passed.</code></p>
 <p>Hold the RC line to generic PHP semantics while expanding toward broad php-src PHPT coverage.</p>
 <table>
   <thead><tr><th>Bucket</th><th>Count</th></tr></thead>
   <tbody>
     <tr><td>Units</td><td>3/3</td></tr>
-    <tr><td>Native</td><td>730/730</td></tr>
+    <tr><td>Native</td><td>731/731</td></tr>
     <tr><td>Bounded</td><td>479/486</td></tr>
     <tr><td>Zend</td><td>119/119</td></tr>
     <tr><td>ext/standard-PHPT</td><td>274/281</td></tr>
@@ -47,7 +47,8 @@
     <tr><td>Resource-limit</td><td>0/1</td></tr>
     <tr><td>Magic/object</td><td>20/69</td></tr>
     <tr><td>Magic-methods</td><td>0/8</td></tr>
-    <tr><td>Object-string-meta</td><td>0/61</td></tr>
+    <tr><td>Object-string-meta</td><td>53/61</td></tr>
+    <tr><td>Object-string-array-pack</td><td>34/34</td></tr>
     <tr><td>Std-array-map</td><td>0/297</td></tr>
     <tr><td>Std-arrays</td><td>263/296</td></tr>
     <tr><td>Map/filter</td><td>25/30</td></tr>
@@ -57,12 +58,12 @@
     <tr><td>Interface-impl</td><td>0/15</td></tr>
     <tr><td>Trait-decl</td><td>0/25</td></tr>
     <tr><td>Call-unpack</td><td>0/20</td></tr>
-    <tr><td>Array-unpack</td><td>0/14</td></tr>
+    <tr><td>Array-unpack</td><td>10/14</td></tr>
     <tr><td>Type-hint</td><td>0/14</td></tr>
     <tr><td>Function-state</td><td>0/11</td></tr>
-    <tr><td>Dynamic-symbol</td><td>0/8</td></tr>
+    <tr><td>Dynamic-symbol</td><td>3/8</td></tr>
     <tr><td>Generator-runtime</td><td>0/1</td></tr>
-    <tr><td>Internal-call-bind</td><td>0/1</td></tr>
+    <tr><td>Internal-call-bind</td><td>1/1</td></tr>
     <tr><td>Attribute-syntax</td><td>0/141</td></tr>
     <tr><td>Attribute-internal</td><td>0/8</td></tr>
     <tr><td>Attribute-meta</td><td>0/204</td></tr>
@@ -70,12 +71,14 @@
     <tr><td>Std-array-row-pack</td><td>10/10</td></tr>
     <tr><td>Std-array-s80e</td><td>20/20</td></tr>
     <tr><td>Std-array-tdei</td><td>61/71</td></tr>
+    <tr><td>Std-array-lxw1</td><td>19/20</td></tr>
     <tr><td>array_rand</td><td>6/7</td></tr>
     <tr><td>Zend-op/control</td><td>15/26</td></tr>
     <tr><td>Binary-key</td><td>1/1</td></tr>
     <tr><td>Runtime-config</td><td>10/54</td></tr>
     <tr><td>COW-gate</td><td>26/26</td></tr>
-    <tr><td>1k-baseline</td><td>285/1000</td></tr>
+    <tr><td>COW-reference-tiqh</td><td>21/21</td></tr>
+    <tr><td>1k-baseline</td><td>419/1000</td></tr>
   </tbody>
 </table>
 <p>Canonical text status lives in <code>STATUS.md</code>.</p>

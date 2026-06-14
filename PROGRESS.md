@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T17:53Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); COW 69/103 passed.
+Refresh: 2026-06-14T18:27Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; COW 69/103 passed.
 
 ## Dashboard
 
@@ -70,6 +70,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Std-array-row-pack|10|10|0|
 |Std-array-s80e|20|20|0|
 |Std-array-tdei|71|61|10|
+|Std-array-lxw1|20|19|1|
 |array_rand|7|6|1|
 |Zend-op/control|26|15|11|
 |Binary-key|1|1|0|
@@ -77,6 +78,31 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |COW-gate|26|26|0|
 |COW-reference-tiqh|21|21|0|
 |1k-baseline|1000|419|581|
+
+## 2026-06-14 ptn-lxw1 Array COW/Reference Row Pack
+
+Post-rebase focused PHPT checks on the final squashed branch state:
+
+- 9-row array COW/reference pack: 9 selected, 9 runnable, 9 passed, 0 failed
+  (`.runtime/ptn-lxw1-nine-final/run-20260614T182113Z-manifest.log`).
+- 2 candidate rows: 2 selected, 2 runnable, 2 passed, 0 failed
+  (`.runtime/ptn-lxw1-two-candidates-final-amended/run-20260614T182307Z-manifest.log`).
+- 20-row mixed control: 20 selected, 20 runnable, 19 passed, 1 failed
+  (`array_map_variation2.phpt`;
+  `.runtime/ptn-lxw1-final-pack-final-amended/run-20260614T182354Z-manifest.log`).
+
+Implemented behavior: `array_push()` and `array_unshift()` support mutable
+array-dimension paths with normal COW separation; temporary by-reference
+`array_shift()` calls mutate an owned temporary instead of the source expression;
+`array_push()` checks append-key overflow through the runtime; `(array)` object
+casts dereference property references and closure/exception casts produce empty
+arrays; and `array_merge_recursive()` separates referenced result entries before
+recursive mutation.
+
+Earlier broad 1k measurement on the pre-rebase base `abfb48341ef2` was
+unchanged before/after this work: 440 runnable rows, 366 passed, 74 failed.
+The dashboard keeps the newer `ptn-ouhx` broad 1k baseline instead of that
+older broad count.
 
 ## 2026-06-14 ptn-55u0 Broad Array-Unpack Row Pack
 

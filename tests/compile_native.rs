@@ -16374,6 +16374,7 @@ var_dump(array_shift($items[0]));\n\
 var_dump(current($items[0]));\n\
 var_dump(array_push($items[0], 4, 5));\n\
 var_dump(array_pop($items[1]));\n\
+var_dump(array_unshift($items[1], \"z\"));\n\
 var_dump($items);\n\
 $source = [[10, 20]];\n\
 $copy = $source;\n\
@@ -16382,7 +16383,9 @@ var_dump($source[0]);\n\
 var_dump($copy[0]);\n\
 $max = [PHP_INT_MAX => \"top\"];\n\
 try { var_dump(array_push($max, \"new\")); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
-var_dump($max);",
+var_dump($max);\n\
+$stack = [[[\"zero\", \"one\", \"two\"], \"un\", \"deux\"], \"eins\", \"zwei\"];\n\
+var_dump(array_shift(array_shift(array_shift($stack))));",
     )
     .unwrap();
 
@@ -16392,7 +16395,55 @@ var_dump($max);",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(2)\nint(1)\nint(2)\nint(4)\nstring(1) \"b\"\narray(2) {\n  [0]=>\n  array(4) {\n    [0]=>\n    int(2)\n    [1]=>\n    int(3)\n    [2]=>\n    int(4)\n    [3]=>\n    int(5)\n  }\n  [1]=>\n  array(1) {\n    [0]=>\n    string(1) \"a\"\n  }\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(1) {\n  [0]=>\n  int(20)\n}\nCannot add element to the array as the next element is already occupied\narray(1) {\n  [9223372036854775807]=>\n  string(3) \"top\"\n}\n"
+        concat!(
+            "int(2)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(4)\n",
+            "string(1) \"b\"\n",
+            "int(2)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(4) {\n",
+            "    [0]=>\n",
+            "    int(2)\n",
+            "    [1]=>\n",
+            "    int(3)\n",
+            "    [2]=>\n",
+            "    int(4)\n",
+            "    [3]=>\n",
+            "    int(5)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(1) \"z\"\n",
+            "    [1]=>\n",
+            "    string(1) \"a\"\n",
+            "  }\n",
+            "}\n",
+            "int(10)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(10)\n",
+            "  [1]=>\n",
+            "  int(20)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(20)\n",
+            "}\n",
+            "Cannot add element to the array as the next element is already occupied\n",
+            "array(1) {\n",
+            "  [9223372036854775807]=>\n",
+            "  string(3) \"top\"\n",
+            "}\n",
+            "\n",
+            "Notice: Only variables should be passed by reference in ptn on line 19\n",
+            "\n",
+            "Notice: Only variables should be passed by reference in ptn on line 19\n",
+            "string(4) \"zero\"\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -16401,6 +16452,7 @@ var_dump($max);",
     assert!(c_source.contains("ptn_runtime_array_shift_path"));
     assert!(c_source.contains("ptn_runtime_array_pop_path"));
     assert!(c_source.contains("ptn_runtime_array_push_path"));
+    assert!(c_source.contains("ptn_runtime_array_unshift_path"));
 }
 
 #[test]
@@ -16578,10 +16630,6 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php shuffle([1, 2, 3]);", "shuffle"),
         ("<?php sort([3, 2, 1]);", "sort"),
         ("<?php rsort([3, 2, 1]);", "rsort"),
-        (
-            "<?php $items = [[1], [2]]; array_unshift($items[0], 0);",
-            "array_unshift",
-        ),
     ] {
         let error = parser::parse(source).unwrap_err();
         assert!(
@@ -16612,6 +16660,7 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
     parser::parse("<?php $items = [[1], [2]]; array_pop($items[0]);").unwrap();
     parser::parse("<?php $items = [[1], [2]]; array_shift($items[0]);").unwrap();
     parser::parse("<?php $items = [[1], [2]]; array_push($items[0], 3);").unwrap();
+    parser::parse("<?php $items = [[1], [2]]; array_unshift($items[0], 0);").unwrap();
     parser::parse("<?php $items = [[1], [2]]; var_dump(array_shift(current($items)));").unwrap();
     parser::parse(
         "<?php $stack = [[[1]]]; var_dump(array_shift(array_shift(array_shift($stack))));",
