@@ -314,6 +314,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   1k residual coverage map reconciling runnable rows against committed focused
   manifests and isolating `ErrorException::getSeverity()` as the one current
   residual runner-runnable diagnostics row.
+- `docs/PHPT_BROAD_1K_CLUSTER_SLICE_PTN_DBFC_2026-06-14.md`: refreshed broad
+  1k cluster slice showing no single credible current implementation cluster
+  reaches the 25-row target; records current classifier and blocker counts.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
