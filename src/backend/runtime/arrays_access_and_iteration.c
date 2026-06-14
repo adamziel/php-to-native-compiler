@@ -1224,6 +1224,14 @@ static PTN_UNUSED void ptn_array_unpack_invalid_operand_message(
     size_t message_len
 ) {
     const char *given = ptn_offset_container_type_name(value);
+    PtnValue deref_value = ptn_value_deref(value);
+    if (deref_value.type == PTN_OBJECT) {
+        given = deref_value.as.object->class_name;
+    } else if (deref_value.type == PTN_EXCEPTION) {
+        given = deref_value.as.exception->class_name;
+    } else if (deref_value.type == PTN_CLOSURE) {
+        given = "Closure";
+    }
     snprintf(
         message,
         message_len,
@@ -1341,6 +1349,83 @@ static PTN_UNUSED void ptn_array_unpack_into_or_fatal(
     size_t line
 ) {
     ptn_array_unpack_into_common(runtime, target, value, line, 1);
+}
+
+typedef struct {
+    size_t len;
+    size_t capacity;
+    PtnValue *values;
+} PtnCallArguments;
+
+static PTN_UNUSED void ptn_call_arguments_init(PtnCallArguments *arguments) {
+    arguments->len = 0;
+    arguments->capacity = 0;
+    arguments->values = NULL;
+}
+
+static PTN_UNUSED void ptn_call_arguments_reserve(PtnCallArguments *arguments, size_t additional) {
+    if (additional > SIZE_MAX - arguments->len) {
+        ptn_abort_out_of_memory();
+    }
+    size_t needed = arguments->len + additional;
+    if (needed <= arguments->capacity) {
+        return;
+    }
+    size_t next_capacity = arguments->capacity == 0 ? 8 : arguments->capacity;
+    while (next_capacity < needed) {
+        if (next_capacity > SIZE_MAX / 2) {
+            next_capacity = needed;
+            break;
+        }
+        next_capacity *= 2;
+    }
+    PtnValue *values = realloc(arguments->values, next_capacity * sizeof(PtnValue));
+    if (values == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    arguments->values = values;
+    arguments->capacity = next_capacity;
+}
+
+static PTN_UNUSED void ptn_call_arguments_append_owned(PtnCallArguments *arguments, PtnValue value) {
+    ptn_call_arguments_reserve(arguments, 1);
+    arguments->values[arguments->len++] = value;
+}
+
+static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArguments *arguments, PtnValue value, size_t line) {
+    PtnValue source = ptn_value_deref(value);
+    if (source.type != PTN_ARRAY) {
+        char message[160];
+        ptn_array_unpack_invalid_operand_message(source, message, sizeof(message));
+        ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+        return;
+    }
+
+    ptn_call_arguments_reserve(arguments, source.as.array->len);
+    for (size_t i = 0; i < source.as.array->len; i++) {
+        PtnArrayEntry *entry = &source.as.array->entries[i];
+        if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "Cannot use positional argument after named argument during unpacking",
+                runtime->source_path,
+                line
+            );
+            return;
+        }
+        ptn_call_arguments_append_owned(arguments, ptn_value_clone_deref(entry->value));
+    }
+}
+
+static PTN_UNUSED void ptn_call_arguments_destroy(PtnCallArguments *arguments) {
+    for (size_t i = 0; i < arguments->len; i++) {
+        ptn_value_destroy(&arguments->values[i]);
+    }
+    free(arguments->values);
+    arguments->values = NULL;
+    arguments->len = 0;
+    arguments->capacity = 0;
 }
 
 static PTN_UNUSED PtnArrayEntry *ptn_array_reference_entry(PtnArray *array, const PtnValue *key_value) {

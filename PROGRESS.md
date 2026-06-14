@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T18:47Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; COW 69/103 passed.
+Refresh: 2026-06-14T18:58Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; COW 69/103 passed.
 
 ## Dashboard
 
@@ -57,7 +57,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Interface-decl|23|0|23|
 |Interface-impl|15|0|15|
 |Trait-decl|25|0|25|
-|Call-unpack|20|0|20|
+|Call-unpack|20|11|9|
 |Array-unpack|14|10|4|
 |Type-hint|14|0|14|
 |Function-state|11|0|11|
@@ -150,6 +150,50 @@ at `20260614T183916Z`, but `run-bounded-phpt.sh` blocked in classifier
 `pipe_read` after 400 rows and before PHPT execution. The dashboard
 `1k-baseline` row remains the last completed broad measurement (`ptn-ouhx`,
 419 passing).
+
+## 2026-06-14 ptn-s8cn Broad Call-Unpacking Row Pack
+
+Focused manifest: `tools/phpt-call-unpacking-current-ptn-ei36-manifest.txt`.
+
+Before broad 1k classify-only artifact `20260614T180636Z` selected 1,000
+rows: 472 runnable, 528 classified, including 22
+`unsupported-call-unpacking` rows.
+
+After broad 1k classify-only artifact `20260614T184955Z` selected the same
+1,000-row tier shape on the rebased final branch: 545 runnable, 455 classified,
+with the old blanket
+`unsupported-call-unpacking` bucket removed and split into by-reference,
+Traversable/generator, and resource-limit buckets.
+
+Focused execution artifact `20260614T184726Z` selected 20 call-unpacking rows:
+11 runnable, 11 passed, 0 failed, 9 classified
+(`unsupported-generator-runtime` 3,
+`unsupported-call-unpacking-reference` 3,
+`unsupported-call-unpacking-traversable` 1,
+`unsupported-resource-limit` 2).
+
+Newly passing call-unpacking rows:
+
+- `Zend/tests/arg_unpack/dynamic.phpt`
+- `Zend/tests/arg_unpack/internal.phpt`
+- `Zend/tests/arg_unpack/invalid_type.phpt`
+- `Zend/tests/arg_unpack/many_args.phpt`
+- `Zend/tests/arg_unpack/method.phpt`
+- `Zend/tests/arg_unpack/new.phpt`
+- `Zend/tests/arg_unpack/positional_arg_after_unpack_error.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_basic.phpt`
+- `ext/standard/tests/array/array_find_types.phpt`
+- `ext/standard/tests/array/array_intersect_uassoc_basic.phpt`
+- `ext/standard/tests/array/array_push_empty.phpt`
+
+Implemented behavior: parser/AST/IR/backend support for call-site argument
+unpacking on direct, dynamic, method, static, constructor, and internal calls;
+runtime `PtnCallArguments` expansion for ordered array operands; PHP-style
+`TypeError` invalid-operand diagnostics with object class names; and parser
+diagnostics for positional arguments after unpack. Remaining call-unpacking
+blockers are by-reference parameter preservation through spread expansion,
+Traversable/SPL/generator spread inputs, and max-array-size/resource-limit
+stress diagnostics.
 
 ## 2026-06-14 ptn-55u0 Broad Array-Unpack Row Pack
 

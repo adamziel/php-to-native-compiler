@@ -984,6 +984,15 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_has_named_modeled_array_internal_call(line) {
             return line ~ /(^|[^[:alnum:]_$\\])array_(all|any|change_key_case|chunk|column|combine|count_values|diff|diff_assoc|diff_key|diff_uassoc|diff_ukey|fill|fill_keys|find|find_key|first|flip|intersect|intersect_assoc|intersect_key|intersect_uassoc|intersect_ukey|is_list|key_exists|key_first|key_last|keys|last|map|merge|merge_recursive|pad|pop|product|push|reduce|replace|replace_recursive|reverse|search|shift|slice|splice|sum|udiff|udiff_assoc|udiff_uassoc|uintersect|uintersect_assoc|uintersect_uassoc|unique|unshift|values|walk|walk_recursive)[[:space:]]*\([^)]*[(,][[:space:]]*[a-z_][a-z0-9_]*[[:space:]]*:[^:]/
         }
+        function ptn_has_by_reference_parameter(line) {
+            return line ~ /(^|[^[:alnum:]_$])function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*&[[:space:]]*(\.\.\.)?[[:space:]]*\$[a-z_]/
+        }
+        function ptn_is_function_declaration(line) {
+            return line ~ /(^|[^[:alnum:]_$])function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\(/
+        }
+        function ptn_has_spl_iterator_object(line) {
+            return line ~ /(^|[^[:alnum:]_$])new[[:space:]]+(arrayiterator|arrayobject|splfixedarray|limititerator|iteratoriterator|regexiterator|callbackfilteriterator)([^[:alnum:]_]|$)/
+        }
         function ptn_spread_context(line,    i, ch, triple, prefix, stack_depth, stack) {
             stack_depth = 0
             for (i = 1; i <= length(line); i++) {
@@ -1052,6 +1061,19 @@ ptn_phpt_first_unsupported_language_surface() {
             if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]*&[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\(/) {
                 ptn_by_ref_function_context = 1
             }
+            if (ptn_has_by_reference_parameter(line)) {
+                ptn_call_unpack_by_reference_context = 1
+            }
+            if (ptn_has_spl_iterator_object(line) && ptn_spread_context(line) == "call") {
+                print "unsupported-call-unpacking-traversable\trequires Traversable/SPL iterator argument unpacking, outside PTN array-only call unpacking runtime"
+                found = 1
+                exit
+            }
+            if (ptn_call_unpack_by_reference_context && !ptn_is_function_declaration(line) && ptn_spread_context(line) == "call") {
+                print "unsupported-call-unpacking-reference\trequires preserving by-reference parameter binding through spread-expanded arguments, outside PTN call unpacking runtime"
+                found = 1
+                exit
+            }
             if (ptn_deferred_generator_reason != "" &&
                 line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*&[[:space:]]*\$[a-z_]/) {
                 print "unsupported-generator-runtime\trequires generator foreach by-reference iteration boundary and generator reference diagnostics, outside PTN generator runtime"
@@ -1111,18 +1133,6 @@ ptn_phpt_first_unsupported_language_surface() {
                 print "unsupported-internal-call-binding\trequires named-argument binding for modeled array internal calls, outside PTN internal-call lowering"
                 found = 1
                 exit
-            }
-            if ($0 ~ /\.\.\./) {
-                declaration = line ~ /(^|[^[:alnum:]_$])(function|fn)[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*\.\.\./
-                first_class_callable = line ~ /\([[:space:]]*\.\.\.[[:space:]]*\)/
-                if (!declaration && !first_class_callable) {
-                    spread_context = ptn_spread_context(line)
-                    if (spread_context != "array") {
-                        print "unsupported-call-unpacking\trequires call-site argument unpacking (`...`), outside PTN modeled call lowering"
-                        found = 1
-                        exit
-                    }
-                }
             }
         }
         END {
@@ -1539,6 +1549,11 @@ ptn_phpt_first_unsupported_internal_surface() {
                     found = 1
                     exit
                 }
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(array_merge|array_diff)[[:space:]]*\([[:space:]]*\.\.\.[[:space:]]*array_fill[[:space:]]*\([^,]*,[[:space:]]*2[[:space:]]*\*\*[[:space:]]*\([[:space:]]*32/) {
+                print "unsupported-resource-limit\trequires PHP max-array-size/resource-limit diagnostics for spread-expanded multi-billion element array calls, outside PTN safe PHPT execution bounds"
+                found = 1
+                exit
             }
             if (line ~ /(^|[^[:alnum:]_$])array_splice[[:space:]]*\(/) {
                 array_splice_seen = 1

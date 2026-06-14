@@ -5075,6 +5075,48 @@ fn compile_internal_call_arguments_evaluate_left_to_right_to_native_binary() {
 }
 
 #[test]
+fn compile_array_call_unpacking_to_native_binary() {
+    let root = temp_dir("ptn-native-array-call-unpacking");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-call-unpacking.php");
+    let output = root.join("array-call-unpacking-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function collect(...$args) { var_dump($args); }
+collect(1, ...[2, 3], ...[], ...[4]);
+$fn = function(...$args) { var_dump($args); };
+$fn(...[5, 6], ...[7]);
+class Box {
+    public function __construct(...$args) { var_dump($args); }
+    public static function show(...$args) { var_dump($args); }
+}
+new Box(...[8], ...[9, 10]);
+Box::show(11, ...[12, 13]);
+$arrays = [[1, 2], [3, 4]];
+var_dump(array_map(null, ...$arrays));
+try { collect(...42); } catch (TypeError $e) { echo $e::class, ": ", $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n  [3]=>\n  int(4)\n}\n\
+array(3) {\n  [0]=>\n  int(5)\n  [1]=>\n  int(6)\n  [2]=>\n  int(7)\n}\n\
+array(3) {\n  [0]=>\n  int(8)\n  [1]=>\n  int(9)\n  [2]=>\n  int(10)\n}\n\
+array(3) {\n  [0]=>\n  int(11)\n  [1]=>\n  int(12)\n  [2]=>\n  int(13)\n}\n\
+array(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    int(1)\n    [1]=>\n    int(3)\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    int(2)\n    [1]=>\n    int(4)\n  }\n}\n\
+TypeError: Only arrays and Traversables can be unpacked, int given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_flush_and_binary_prefixed_strings_to_native_binary() {
     let root = temp_dir("ptn-native-flush-binary-strings");
     fs::create_dir_all(&root).unwrap();

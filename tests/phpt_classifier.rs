@@ -300,12 +300,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires trait declarations",
         ),
         (
-            "call-site unpack",
-            "--TEST--\nunpack\n--FILE--\n<?php\nfunction f(...$args) {}\nf(...[1, 2]);\n--EXPECT--\n",
-            "unsupported-call-unpacking\t",
-            "requires call-site argument unpacking",
-        ),
-        (
             "generator yield",
             "--TEST--\nyield\n--FILE--\n<?php\n$fn = fn() => yield 123;\n--EXPECT--\n",
             "unsupported-generator-runtime\t",
@@ -405,13 +399,9 @@ fn phpt_classifier_splits_unpacking_blockers() {
     let call_unpack = classify(
         "--TEST--\ncall unpack\n--FILE--\n<?php\nfunction collect(...$args) { return $args; }\nvar_dump(collect(...[1, 2]));\n--EXPECT--\n",
     );
-    assert!(
-        call_unpack.starts_with("unsupported-call-unpacking\t"),
-        "{call_unpack:?}"
-    );
-    assert!(
-        call_unpack.contains("requires call-site argument unpacking"),
-        "{call_unpack:?}"
+    assert_eq!(
+        call_unpack.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
     );
 
     for phpt in [
@@ -423,6 +413,22 @@ fn phpt_classifier_splits_unpacking_blockers() {
             "runnable\tselected for PTN semantic measurement"
         );
     }
+
+    let by_ref_unpack = classify(
+        "--TEST--\nby-ref call unpack\n--FILE--\n<?php\nfunction inc(&$value) { $value++; }\n$items = [1];\ninc(...$items);\n--EXPECT--\n",
+    );
+    assert!(
+        by_ref_unpack.starts_with("unsupported-call-unpacking-reference\t"),
+        "{by_ref_unpack:?}"
+    );
+
+    let spl_iterator_unpack = classify(
+        "--TEST--\nSPL iterator unpack\n--FILE--\n<?php\nvar_dump(...new ArrayIterator([1, 2]));\n--EXPECT--\n",
+    );
+    assert!(
+        spl_iterator_unpack.starts_with("unsupported-call-unpacking-traversable\t"),
+        "{spl_iterator_unpack:?}"
+    );
 }
 
 #[test]
@@ -1111,21 +1117,28 @@ fn phpt_classifier_excludes_huge_array_allocation_rows() {
         (
             "literal huge count",
             "--TEST--\nhuge array fill\n--FILE--\n<?php\narray_fill(0, 2147483647, 1);\n--EXPECTF--\n",
+            "multi-billion element array_fill()",
         ),
         (
             "constant-scale variable count",
             "--TEST--\nhuge array fill variable\n--FILE--\n<?php\n$intMax = PHP_INT_MAX;\narray_fill(0, $intMax, 1);\n--EXPECTF--\n",
+            "multi-billion element array_fill()",
+        ),
+        (
+            "spread-expanded max elements",
+            "--TEST--\nspread max elements\n--FILE--\n<?php\n$power = 20;\n$arr = range(0, 2**$power);\narray_diff(...array_fill(0, 2**(32-$power), $arr));\n--EXPECTF--\n",
+            "max-array-size/resource-limit diagnostics",
         ),
     ];
 
-    for (name, phpt) in cases {
+    for (name, phpt, reason) in cases {
         let classification = classify(phpt);
         assert!(
             classification.starts_with("unsupported-resource-limit\t"),
             "{name}: {classification:?}"
         );
         assert!(
-            classification.contains("multi-billion element array_fill()"),
+            classification.contains(reason),
             "{name}: {classification:?}"
         );
     }

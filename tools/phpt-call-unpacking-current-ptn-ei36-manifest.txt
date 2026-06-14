@@ -1,14 +1,24 @@
-# Broad 1k current call-site unpacking rows for ptn-ei36.
+# Broad 1k call-site unpacking row pack, refreshed by ptn-s8cn.
 #
 # Source: `.runtime/ptn-ei36-current-progress/classification-20260614T131921Z.tsv` from:
 #   tools/run-phpt-baseline.sh --tier 1000 --classify-only \
 #     --out-dir .runtime/ptn-ei36-current-baseline
 #
-# Selection: rows classified as `unsupported-call-unpacking`.
+# Original selection: rows classified as `unsupported-call-unpacking`.
 #
-# Focused evidence: 20 selected, 0 runnable, 20 excluded as
+# ptn-ei36 focused evidence: 20 selected, 0 runnable, 20 excluded as
 # `unsupported-call-unpacking` in:
 #   .runtime/ptn-ei36-current-call/classification-20260614T131920Z.tsv
+#
+# ptn-s8cn focused evidence:
+#   .runtime/ptn-s8cn-call-unpacking-run-final/summary-20260614T184726Z.txt
+#   20 selected, 11 runnable, 11 passed, 0 failed, 9 classified.
+#
+# ptn-s8cn broad 1k classify-only:
+#   before `.runtime/phpt-progress/summary-20260614T180636Z.txt`
+#     1000 selected, 472 runnable, 528 excluded
+#   after `.runtime/phpt-progress/summary-20260614T184955Z.txt`
+#     1000 selected, 545 runnable, 455 excluded
 #
 Zend/tests/arg_unpack/basic.phpt
 Zend/tests/arg_unpack/by_ref.phpt

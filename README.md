@@ -71,8 +71,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   checks, and resolve scoped class/parent method callable forms with PHP-style
   deprecation diagnostics; callback dispatch observes `global` bindings for
   user functions reached through direct calls, and public `__invoke` objects
-  can be called directly or through callback dispatch; `is_callable()` writes
-  callable-name output for supported callable shapes.
+  can be called directly or through callback dispatch; array-backed positional
+  call-site argument unpacking (`...`) works for direct, dynamic, method, static,
+  constructor, and modeled internal calls; `is_callable()` writes callable-name
+  output for supported callable shapes.
 - `assert()` observes modeled `zend.assertions`/`assert.exception` runtime INI
   state and throws catchable `AssertionError` when exception mode is enabled;
   userland `throw` statements and PHP 8 throw expressions propagate boxed
@@ -161,8 +163,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   native process boundary. Harness cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, broad unsupported language surfaces such as anonymous
-  classes, interfaces/traits, call-site unpacking,
-  array-literal/destructuring unpacking,
+  classes, interfaces/traits, remaining call-unpacking edges
+  (by-reference spread, Traversable/SPL/generator spread inputs, and
+  resource-limit stress rows),
   generator/Fiber execution boundaries including by-reference yields/returns,
   nullable type hints, interpolating heredoc bodies,
   variable variables,

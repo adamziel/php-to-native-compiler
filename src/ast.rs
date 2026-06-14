@@ -172,6 +172,7 @@ pub enum Statement {
         name: String,
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         span: SourceSpan,
     },
     Echo {
@@ -512,6 +513,7 @@ pub enum Expr {
         name: String,
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         span: SourceSpan,
     },
     FirstClassCallable {
@@ -522,6 +524,7 @@ pub enum Expr {
         callee: Box<Expr>,
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         span: SourceSpan,
     },
     MethodCall {
@@ -529,18 +532,21 @@ pub enum Expr {
         name: String,
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         span: SourceSpan,
     },
     NewObject {
         class_name: String,
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         span: SourceSpan,
     },
     DynamicNewObject {
         class_name: Box<Expr>,
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         span: SourceSpan,
     },
     Clone {

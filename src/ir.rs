@@ -209,6 +209,7 @@ pub enum Instruction {
         name: String,
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         line: usize,
     },
     Return {
@@ -360,6 +361,7 @@ pub enum ValueExpr {
         name: String,
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         line: usize,
     },
     FirstClassCallable {
@@ -370,6 +372,7 @@ pub enum ValueExpr {
         callee: Box<ValueExpr>,
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         line: usize,
     },
     MethodCall {
@@ -377,18 +380,21 @@ pub enum ValueExpr {
         name: String,
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         line: usize,
     },
     NewObject {
         class_name: String,
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         line: usize,
     },
     DynamicNewObject {
         class_name: Box<ValueExpr>,
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
         line: usize,
     },
     Clone {
@@ -996,6 +1002,7 @@ impl<'a> LoweringContext<'a> {
                     name,
                     arguments,
                     argument_names,
+                    argument_unpacks,
                     span,
                 } => {
                     let (arguments, argument_names) =
@@ -1004,6 +1011,7 @@ impl<'a> LoweringContext<'a> {
                         name: name.clone(),
                         arguments,
                         argument_names,
+                        argument_unpacks: argument_unpacks.clone(),
                         line: span.line,
                     });
                 }
@@ -1722,6 +1730,7 @@ impl<'a> LoweringContext<'a> {
                 name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 span,
             } => {
                 let (arguments, argument_names) =
@@ -1730,6 +1739,7 @@ impl<'a> LoweringContext<'a> {
                     name: name.clone(),
                     arguments,
                     argument_names,
+                    argument_unpacks: argument_unpacks.clone(),
                     line: span.line,
                 }
             }
@@ -1741,6 +1751,7 @@ impl<'a> LoweringContext<'a> {
                 callee,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 span,
             } => ValueExpr::DynamicCall {
                 callee: Box::new(self.lower_expr(callee)),
@@ -1749,6 +1760,7 @@ impl<'a> LoweringContext<'a> {
                     .map(|argument| self.lower_expr(argument))
                     .collect(),
                 argument_names: argument_names.clone(),
+                argument_unpacks: argument_unpacks.clone(),
                 line: span.line,
             },
             Expr::MethodCall {
@@ -1756,6 +1768,7 @@ impl<'a> LoweringContext<'a> {
                 name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 span,
             } => ValueExpr::MethodCall {
                 receiver: Box::new(self.lower_expr(receiver)),
@@ -1765,12 +1778,14 @@ impl<'a> LoweringContext<'a> {
                     .map(|argument| self.lower_expr(argument))
                     .collect(),
                 argument_names: argument_names.clone(),
+                argument_unpacks: argument_unpacks.clone(),
                 line: span.line,
             },
             Expr::NewObject {
                 class_name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 span,
             } => ValueExpr::NewObject {
                 class_name: class_name.clone(),
@@ -1779,12 +1794,14 @@ impl<'a> LoweringContext<'a> {
                     .map(|argument| self.lower_expr(argument))
                     .collect(),
                 argument_names: argument_names.clone(),
+                argument_unpacks: argument_unpacks.clone(),
                 line: span.line,
             },
             Expr::DynamicNewObject {
                 class_name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 span,
             } => ValueExpr::DynamicNewObject {
                 class_name: Box::new(self.lower_expr(class_name)),
@@ -1793,6 +1810,7 @@ impl<'a> LoweringContext<'a> {
                     .map(|argument| self.lower_expr(argument))
                     .collect(),
                 argument_names: argument_names.clone(),
+                argument_unpacks: argument_unpacks.clone(),
                 line: span.line,
             },
             Expr::Clone { expr, span } => ValueExpr::Clone {

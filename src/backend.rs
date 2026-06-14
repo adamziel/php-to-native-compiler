@@ -2789,10 +2789,17 @@ fn emit_instruction(
             name,
             arguments,
             argument_names,
+            argument_unpacks,
             line,
         } => {
-            let result_temp =
-                values.emit_internal_call(out, name, arguments, argument_names, *line);
+            let result_temp = values.emit_internal_call(
+                out,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            );
             out.push_str("    (void)");
             out.push_str(&result_temp);
             out.push_str(";\n");
@@ -7414,14 +7421,30 @@ impl ValueEmitter {
                 class_name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 line,
-            } => self.emit_new_object(out, class_name, arguments, argument_names, *line),
+            } => self.emit_new_object(
+                out,
+                class_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            ),
             ValueExpr::DynamicNewObject {
                 class_name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 line,
-            } => self.emit_dynamic_new_object(out, class_name, arguments, argument_names, *line),
+            } => self.emit_dynamic_new_object(
+                out,
+                class_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            ),
             ValueExpr::Clone { expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
@@ -7536,8 +7559,16 @@ impl ValueEmitter {
                 name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 line,
-            } => self.emit_internal_call(out, name, arguments, argument_names, *line),
+            } => self.emit_internal_call(
+                out,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            ),
             ValueExpr::FirstClassCallable { callable, line } => {
                 self.emit_first_class_callable(out, callable, *line)
             }
@@ -7545,15 +7576,32 @@ impl ValueEmitter {
                 callee,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 line,
-            } => self.emit_dynamic_call(out, callee, arguments, argument_names, *line),
+            } => self.emit_dynamic_call(
+                out,
+                callee,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            ),
             ValueExpr::MethodCall {
                 receiver,
                 name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 line,
-            } => self.emit_method_call(out, receiver, name, arguments, argument_names, *line),
+            } => self.emit_method_call(
+                out,
+                receiver,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            ),
         }
     }
 
@@ -8186,6 +8234,7 @@ impl ValueEmitter {
         class_name: &str,
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
         line: usize,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
@@ -8209,11 +8258,20 @@ impl ValueEmitter {
                 &result_temp,
                 &declared_class,
                 arguments,
+                argument_unpacks,
                 line,
                 true,
             );
         } else {
-            self.emit_runtime_new_object(out, &result_temp, class_name, arguments, line, true);
+            self.emit_runtime_new_object(
+                out,
+                &result_temp,
+                class_name,
+                arguments,
+                argument_unpacks,
+                line,
+                true,
+            );
         }
         result_temp
     }
@@ -8224,6 +8282,7 @@ impl ValueEmitter {
         class_name: &ValueExpr,
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
         line: usize,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
@@ -8265,6 +8324,7 @@ impl ValueEmitter {
                 &result_temp,
                 &declared_class,
                 arguments,
+                argument_unpacks,
                 line,
                 false,
             );
@@ -8277,6 +8337,7 @@ impl ValueEmitter {
                 &result_temp,
                 &format!("{class_name_temp}"),
                 arguments,
+                argument_unpacks,
                 line,
                 false,
             );
@@ -8287,6 +8348,7 @@ impl ValueEmitter {
                 &result_temp,
                 &class_name_temp,
                 arguments,
+                argument_unpacks,
                 line,
                 false,
             );
@@ -8303,6 +8365,7 @@ impl ValueEmitter {
         result_temp: &str,
         declared_class: &ClassDecl,
         arguments: &[ValueExpr],
+        argument_unpacks: &[bool],
         line: usize,
         declare_result: bool,
     ) {
@@ -8381,7 +8444,30 @@ impl ValueEmitter {
             })
         {
             let constructor_result = self.next_temp();
-            if arguments.is_empty() {
+            if argument_unpacks.iter().any(|unpack| *unpack) {
+                let args_temp = self.emit_call_arguments_builder(
+                    out,
+                    "__construct",
+                    arguments,
+                    argument_unpacks,
+                    line,
+                    true,
+                );
+                out.push_str("    PtnValue ");
+                out.push_str(&constructor_result);
+                out.push_str(" = ptn_call_declared_method(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(", \"__construct\", ");
+                out.push_str(&args_temp);
+                out.push_str(".len, ");
+                out.push_str(&args_temp);
+                out.push_str(".values, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    ptn_call_arguments_destroy(&");
+                out.push_str(&args_temp);
+                out.push_str(");\n");
+            } else if arguments.is_empty() {
                 out.push_str("    PtnValue ");
                 out.push_str(&constructor_result);
                 out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -8455,9 +8541,23 @@ impl ValueEmitter {
             }
             emit_value_cleanup(out, "    ", &constructor_result);
         } else {
-            for argument in arguments {
-                let argument_temp = self.emit_materialized_value(out, argument);
-                emit_value_cleanup(out, "    ", &argument_temp);
+            if argument_unpacks.iter().any(|unpack| *unpack) {
+                let args_temp = self.emit_call_arguments_builder(
+                    out,
+                    "__construct",
+                    arguments,
+                    argument_unpacks,
+                    line,
+                    true,
+                );
+                out.push_str("    ptn_call_arguments_destroy(&");
+                out.push_str(&args_temp);
+                out.push_str(");\n");
+            } else {
+                for argument in arguments {
+                    let argument_temp = self.emit_materialized_value(out, argument);
+                    emit_value_cleanup(out, "    ", &argument_temp);
+                }
             }
         }
     }
@@ -8468,9 +8568,45 @@ impl ValueEmitter {
         result_temp: &str,
         class_name: &str,
         arguments: &[ValueExpr],
+        argument_unpacks: &[bool],
         line: usize,
         declare_result: bool,
     ) {
+        if argument_unpacks.iter().any(|unpack| *unpack) {
+            let args_temp = self.emit_call_arguments_builder(
+                out,
+                "__construct",
+                arguments,
+                argument_unpacks,
+                line,
+                true,
+            );
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_new_object(&runtime, ");
+            if declare_result {
+                out.push('"');
+                out.push_str(&c_string(class_name));
+                out.push('"');
+            } else {
+                out.push_str(class_name);
+            }
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(".len, ");
+            out.push_str(&args_temp);
+            out.push_str(".values, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+            return;
+        }
+
         let mut argument_temps = Vec::with_capacity(arguments.len());
         for argument in arguments {
             argument_temps.push(self.emit_materialized_value(out, argument));
@@ -10095,10 +10231,18 @@ impl ValueEmitter {
             name,
             arguments,
             argument_names,
+            argument_unpacks,
             line,
         } = source
         {
-            let result_temp = self.emit_internal_call(out, name, arguments, argument_names, *line);
+            let result_temp = self.emit_internal_call(
+                out,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            );
             let reference_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&reference_temp);
@@ -10176,16 +10320,70 @@ impl ValueEmitter {
         }
     }
 
+    fn emit_call_arguments_builder(
+        &mut self,
+        out: &mut String,
+        function_name: &str,
+        arguments: &[ValueExpr],
+        argument_unpacks: &[bool],
+        line: usize,
+        dynamic_argument_materialization: bool,
+    ) -> String {
+        let args_temp = self.next_temp();
+        out.push_str("    PtnCallArguments ");
+        out.push_str(&args_temp);
+        out.push_str(";\n");
+        out.push_str("    ptn_call_arguments_init(&");
+        out.push_str(&args_temp);
+        out.push_str(");\n");
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            if argument_unpacks
+                .get(argument_index)
+                .copied()
+                .unwrap_or(false)
+            {
+                let value_temp = self.emit_materialized_value(out, argument);
+                out.push_str("    ptn_call_arguments_unpack(&runtime, &");
+                out.push_str(&args_temp);
+                out.push_str(", ");
+                out.push_str(&value_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &value_temp);
+            } else {
+                let value_temp = if dynamic_argument_materialization {
+                    self.emit_dynamic_call_argument(out, argument)
+                } else {
+                    self.emit_call_argument(out, function_name, argument_index, argument)
+                };
+                out.push_str("    ptn_call_arguments_append_owned(&");
+                out.push_str(&args_temp);
+                out.push_str(", ptn_value_share(");
+                out.push_str(&value_temp);
+                out.push_str("));\n");
+                emit_value_cleanup(out, "    ", &value_temp);
+            }
+        }
+        args_temp
+    }
+
     fn emit_internal_call(
         &mut self,
         out: &mut String,
         name: &str,
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
         line: usize,
     ) -> String {
         let has_named_arguments = argument_names.iter().any(Option::is_some);
-        if !has_named_arguments && name.eq_ignore_ascii_case("count") && arguments.len() == 1 {
+        let has_unpacked_arguments = argument_unpacks.iter().any(|unpack| *unpack);
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("count")
+            && arguments.len() == 1
+        {
             let argument_temp = self.emit_materialized_value(out, &arguments[0]);
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -10200,6 +10398,7 @@ impl ValueEmitter {
         }
 
         if !has_named_arguments
+            && !has_unpacked_arguments
             && name.eq_ignore_ascii_case("array_key_exists")
             && arguments.len() == 2
         {
@@ -10220,7 +10419,7 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        if !has_named_arguments {
+        if !has_named_arguments && !has_unpacked_arguments {
             if let Some(result_temp) =
                 self.emit_variable_array_mutator_call(out, name, arguments, line)
             {
@@ -10240,6 +10439,52 @@ impl ValueEmitter {
                     static_call_receiver_class_name(&resolved_name, function),
                 )
             });
+        if has_unpacked_arguments {
+            if has_named_arguments {
+                self.emit_fatal_value(
+                    out,
+                    &result_temp,
+                    "named arguments with argument unpacking are unsupported",
+                );
+                return result_temp;
+            }
+            let args_temp = self.emit_call_arguments_builder(
+                out,
+                name,
+                arguments,
+                argument_unpacks,
+                line,
+                false,
+            );
+            if let Some((c_name, _, receiver_class_name)) = &direct_user {
+                self.emit_direct_user_function_call(
+                    out,
+                    &result_temp,
+                    c_name,
+                    &format!("{args_temp}.len"),
+                    &format!("{args_temp}.values"),
+                    line,
+                    called_class_override.as_ref(),
+                    receiver_class_name.as_deref(),
+                );
+            } else {
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_call_function(&runtime, \"");
+                out.push_str(&c_string(&resolved_name));
+                out.push_str("\", ");
+                out.push_str(&args_temp);
+                out.push_str(".len, ");
+                out.push_str(&args_temp);
+                out.push_str(".values, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            out.push_str("    ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+            return result_temp;
+        }
         if has_named_arguments {
             if direct_user.is_none() {
                 if let Some(binding) =
@@ -10253,6 +10498,7 @@ impl ValueEmitter {
                                 name,
                                 &normalized_arguments,
                                 &normalized_argument_names,
+                                &vec![false; normalized_arguments.len()],
                                 line,
                             )
                         }
@@ -10626,6 +10872,7 @@ impl ValueEmitter {
         callee: &ValueExpr,
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
         line: usize,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
@@ -10639,6 +10886,32 @@ impl ValueEmitter {
         }
         let callee_temp = self.emit_materialized_value(out, callee);
         let result_temp = self.next_temp();
+        if argument_unpacks.iter().any(|unpack| *unpack) {
+            let args_temp = self.emit_call_arguments_builder(
+                out,
+                "{closure}",
+                arguments,
+                argument_unpacks,
+                line,
+                true,
+            );
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_callable(&runtime, ");
+            out.push_str(&callee_temp);
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(".len, ");
+            out.push_str(&args_temp);
+            out.push_str(".values, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &callee_temp);
+            return result_temp;
+        }
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -11180,6 +11453,7 @@ impl ValueEmitter {
         name: &str,
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
         line: usize,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
@@ -11193,6 +11467,34 @@ impl ValueEmitter {
         }
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let result_temp = self.next_temp();
+        if argument_unpacks.iter().any(|unpack| *unpack) {
+            let args_temp = self.emit_call_arguments_builder(
+                out,
+                name,
+                arguments,
+                argument_unpacks,
+                line,
+                true,
+            );
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&args_temp);
+            out.push_str(".len, ");
+            out.push_str(&args_temp);
+            out.push_str(".values, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &receiver_temp);
+            return result_temp;
+        }
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
