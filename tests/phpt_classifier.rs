@@ -226,6 +226,41 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
 }
 
 #[test]
+fn phpt_classifier_keeps_plain_heredoc_and_nowdoc_runnable() {
+    let cases = [
+        (
+            "plain heredoc",
+            "--TEST--\nheredoc\n--FILE--\n<?php\n$value = <<<TXT\nHello\nTXT;\nvar_dump($value);\n--EXPECT--\nstring(5) \"Hello\"\n",
+        ),
+        (
+            "plain nowdoc",
+            "--TEST--\nnowdoc\n--FILE--\n<?php\n$value = <<<'TXT'\n$literal\nTXT;\nvar_dump($value);\n--EXPECT--\nstring(8) \"$literal\"\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_excludes_interpolating_heredoc_bodies() {
+    let classification = classify(
+        "--TEST--\nheredoc interpolation\n--FILE--\n<?php\n$name = \"world\";\necho <<<TXT\nHello $name\nTXT;\n--EXPECT--\nHello world\n",
+    );
+
+    assert!(
+        classification.starts_with("unsupported-language\t")
+            && classification.contains("requires heredoc interpolation"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
     let cases = [
         (

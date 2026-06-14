@@ -1,13 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-14T02:10Z.
+Refresh: 2026-06-14T02:22Z.
+Measured: `ptn-4fd3` heredoc classifier frontier.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 714 | 714 | 0 |
+| Native/compiler Rust suite | 715 | 715 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
@@ -26,6 +27,7 @@ Refresh: 2026-06-14T02:10Z.
 | PHPT broad reference-call bucket | 12 | 9 | 3 |
 | PHPT broad Zend assignment/reference frontier | 32 | 22 | 10 |
 | PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
+| PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT callback manifest | 5 | 5 | 0 |
 | PHPT include manifest | 2 | 2 | 0 |
@@ -35,30 +37,26 @@ Refresh: 2026-06-14T02:10Z.
 
 ## Remaining Exclusions
 
-- Bounded: 485/485; classify-only: 459 runnable/26 excluded.
-- COW/reference: array-internal 72/17/55, foreach/reference 103/31/72,
-  reference-call 12 selected, 11 runnable, 9 pass.
-- Broad 1k classify-only is 409 runnable/591 excluded after `ptn-1f0f`.
-- Diagnostics metadata: 18 diagnostics-runtime rows, 9 assertion-runtime rows,
-  and 11 internal attribute/arginfo registry rows.
-- Zend frontier: 32 runnable, 22 pass; residuals: append lvalues, next-key
-  overflow, object/member lvalues, compound TypeErrors, `$this`.
-- `ptn-igxz`: broad 1,000 selected, 443 runnable, 557 excluded; diff/intersect
-  leaves three nested-array warning rows.
+- Bounded: 485/485; classifier 459 runnable/26 excluded.
+- Broad 1k classify-only is 443 runnable/557 excluded after `ptn-4fd3`.
+- Heredoc/nowdoc: 70 rows left the coarse blocker; 21 runnable, 49 magic
+  method/reflection metadata.
+- `ptn-1f0f` keeps attribute, arginfo/class registry, diagnostics, assertion,
+  and exception trace rows in explicit buckets.
+- Zend assignment/reference is 22/32; array diff/intersect is 58/61.
+- COW/reference frontiers: array-internal 17/72, foreach/reference 31/103,
+  reference-call 9/12.
 
 ## Verification
 
-`ptn-1f0f` classifies internal attribute metadata, arginfo/class registry
-reflection, and exception trace APIs. Broad 1k classify-only is 409/591,
-12 beyond `ptn-lrlt`; focused classifier tests pass 22/22.
+`ptn-4fd3` keeps plain heredoc and nowdoc PHPT rows runnable while classifying
+interpolating heredoc bodies. Broad 1k classify-only moved from 422/578 to
+443/557; focused `tools/phpt-heredoc-nowdoc-frontier-manifest.txt` selected 70
+rows: 21 runnable, 14 pass, 7 fail, 49 excluded.
 
-`ptn-igxz` makes catchable set-operation TypeErrors, accepts one-source forms,
-prevalidates callbacks, lexes `.5` floats, and keeps registry order sorted.
-Evidence: native tests, inventory 3+714, PHPT diff/intersect 58/61.
+`ptn-1f0f` classifies broad diagnostics metadata; broad classify-only was
+409/591 and classifier tests passed 22/22.
 
-`ptn-gwlo` maps a 32-row Zend assignment/reference frontier:
-`tools/phpt-zend-assignment-reference-frontier-manifest.txt` and focused PHPT
-`run-20260614T012211Z-manifest.log` at 22/32.
-
-`ptn-x6x5` validates callbacks; native passes, and callback PHPT is
-65 selected, 46 pass, 19 mapped failures.
+`ptn-igxz` makes array set-operation TypeErrors catchable, accepts one-source
+forms, prevalidates callbacks, lexes `.5` floats, and keeps registry order
+sorted. Native target tests pass; diff/intersect PHPT is 58/61.

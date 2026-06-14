@@ -144,7 +144,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   expectation rows, and broad unsupported language surfaces such as anonymous
   classes, interfaces/traits, PHP attributes, call-site/array unpacking,
   generator/Fiber execution boundaries including by-reference yields/returns,
-  nullable type hints, heredoc/nowdoc strings,
+  nullable type hints, interpolating heredoc bodies,
   plain variable-variable unsets,
   class/reflection-metadata blockers, readonly static property diagnostics,
   and currently unmodeled mutating array-internal helpers such as
@@ -165,7 +165,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Focused string/scalar alias telemetry covers quiet string-offset
   `isset()`/`empty()` diagnostics, numeric string offsets, string-offset COW,
   concat-assignment aliasing, and classified blocker rows for unsupported
-  heredoc/ini/typed-property/extension surfaces.
+  interpolating heredoc/ini/typed-property/extension surfaces.
 - Focused nested foreach/reference telemetry covers live by-reference iterator
   unset/rekey behavior, child-array rekeying through by-reference function
   parameters, and classified plain variable-variable unset blockers.
@@ -179,6 +179,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   1k callback/set-operation array-helper blocker map.
 - `docs/PHPT_BROAD_1K_ZEND_ASSIGNMENT_FRONTIER_2026-06-14.md`: broad 1k
   Zend assignment/reference/object-write blocker map and focused manifest.
+- `docs/PHPT_BROAD_1K_HEREDOC_NOWDOC_FRONTIER_2026-06-14.md`: plain
+  heredoc/nowdoc broad 1k classifier movement and focused array-helper
+  frontier.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and

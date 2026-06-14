@@ -693,6 +693,55 @@ ptn_phpt_first_unsupported_language_surface() {
     local path=$1
 
     ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+        function ptn_php_code_line_raw(raw,    i, ch, next_ch, out, quote, escaped) {
+            quote = ""
+            escaped = 0
+            out = ""
+            for (i = 1; i <= length(raw); i++) {
+                ch = substr(raw, i, 1)
+                next_ch = substr(raw, i + 1, 1)
+                if (ptn_block_comment_raw) {
+                    if (ch == "*" && next_ch == "/") {
+                        ptn_block_comment_raw = 0
+                        out = out "  "
+                        i++
+                    } else {
+                        out = out " "
+                    }
+                    continue
+                }
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    out = out " "
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    out = out " "
+                    continue
+                }
+                if (ch == "/" && next_ch == "/") {
+                    break
+                }
+                if (ch == "#") {
+                    break
+                }
+                if (ch == "/" && next_ch == "*") {
+                    ptn_block_comment_raw = 1
+                    out = out "  "
+                    i++
+                    continue
+                }
+                out = out ch
+            }
+            return out
+        }
         function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
             quote = ""
             escaped = 0
@@ -741,6 +790,31 @@ ptn_phpt_first_unsupported_language_surface() {
                 out = out ch
             }
             return tolower(out)
+        }
+        function ptn_start_heredoc(code,    opener, rest, quote) {
+            if (!match(code, /<<<[[:space:]]*["'\''"]?[A-Za-z_][A-Za-z0-9_]*/)) {
+                return 0
+            }
+            opener = substr(code, RSTART, RLENGTH)
+            rest = opener
+            sub(/^<<<[[:space:]]*/, "", rest)
+            quote = substr(rest, 1, 1)
+            ptn_heredoc_nowdoc = 0
+            if (quote == "\047") {
+                ptn_heredoc_nowdoc = 1
+                rest = substr(rest, 2)
+            } else if (quote == "\"") {
+                rest = substr(rest, 2)
+            }
+            ptn_heredoc_label = rest
+            return 1
+        }
+        function ptn_ends_heredoc(raw, label,    suffix) {
+            if (substr(raw, 1, length(label)) != label) {
+                return 0
+            }
+            suffix = substr(raw, length(label) + 1, 1)
+            return suffix == "" || suffix == ";" || suffix == "\r"
         }
         function ptn_has_php_attribute_syntax(raw,    i, ch, next_ch, prev, quote, escaped) {
             quote = ""
@@ -791,19 +865,30 @@ ptn_phpt_first_unsupported_language_surface() {
             }
         }
         {
+            if (ptn_heredoc_label != "") {
+                if (ptn_ends_heredoc($0, ptn_heredoc_label)) {
+                    ptn_heredoc_label = ""
+                    ptn_heredoc_nowdoc = 0
+                    next
+                }
+                if (!ptn_heredoc_nowdoc && $0 ~ /[$]([$A-Za-z_{])/) {
+                    print "unsupported-language\trequires heredoc interpolation inside `<<<` string bodies, outside PTN modeled string parser"
+                    found = 1
+                    exit
+                }
+                next
+            }
             if (ptn_has_php_attribute_syntax($0)) {
                 print "unsupported-language\trequires PHP attribute syntax (`#[...]`) and reflection metadata, outside PTN parser/metadata model"
                 found = 1
                 exit
             }
+            if (ptn_start_heredoc(ptn_php_code_line_raw($0))) {
+                next
+            }
             line = ptn_php_code_line($0)
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/) {
                 print "unsupported-language\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
-                found = 1
-                exit
-            }
-            if (line ~ /<<<[[:space:]]*["'\''"]?[a-z_][a-z0-9_]*/) {
-                print "unsupported-language\trequires heredoc/nowdoc string syntax (`<<<`), outside PTN modeled string parser"
                 found = 1
                 exit
             }

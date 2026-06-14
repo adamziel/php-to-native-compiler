@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T02:10Z.
+Last refresh: 2026-06-14T02:22Z.
 Source: `PROGRESS.md`
-Measured: not recorded
+Measured: `ptn-4fd3` heredoc classifier frontier.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 714/714; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 715/715; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 714/714 |
+| Native/compiler Rust suite | 715/715 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -28,6 +28,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 714/714; Nativ
 | PHPT broad reference-call bucket | 9/12 |
 | PHPT broad Zend assignment/reference frontier | 22/32 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
+| PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |

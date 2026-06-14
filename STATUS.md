@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T02:10Z.
-Measured: not recorded
+Last refresh: 2026-06-14T02:22Z.
+Measured: `ptn-4fd3` heredoc classifier frontier.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 714/714; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 715/715; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 714/714 |
+| Native/compiler Rust suite | 715/715 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -36,6 +36,7 @@ Source unit tests 3/3; Native/compiler Rust suite 714/714; Native smoke matrix 6
 | PHPT broad reference-call bucket | 9/12 |
 | PHPT broad Zend assignment/reference frontier | 22/32 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
+| PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |
 | PHPT include manifest | 2/2 |
