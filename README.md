@@ -204,6 +204,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_CURRENT_FRONTIER_2026-06-14.md`:
   refreshed broad 1k standard-array runnable frontier, focused manifest, and
   current 53-row residual blocker map.
+- `docs/PHPT_BROAD_1K_STANDARD_ARRAY_PTN_0YN0_2026-06-14.md`: refreshed
+  broad 1k standard-array blocker map on the current 294-row focused runnable
+  set, with 243 passing and 51 residual rows split by runtime primitive.
 - `docs/PHPT_BROAD_1K_UNPACKING_BLOCKERS_2026-06-14.md`: broad 1k
   argument/array unpacking blocker map.
 - `docs/PHPT_BROAD_1K_STANDARD_ARRAY_FRONTIER_2026-06-14.md`: broad 1k
