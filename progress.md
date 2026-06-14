@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T04:46Z.
+Last refresh: 2026-06-14T04:51Z.
 Source: `PROGRESS.md`
-Measured: `ptn-exlu` broad Zend bug blocker map after `ptn-j9kg`.
+Measured: `ptn-oiin` setops map after `ptn-exlu`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
@@ -17,6 +17,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT 
 | PHPT focused array callback validation rows | 49/66 |
 | PHPT focused array diff/intersect rows | 58/61 |
 | PHPT broad diff/intersect comparator rows | 64/76 |
+| PHPT broad array set-operation frontier | 64/119 |
 | PHPT array fill/pad rows | 11/12 |
 | PHPT array set/callback frontier | 86/106 |
 | PHPT focused filesystem/path/process rows | 13/46 |

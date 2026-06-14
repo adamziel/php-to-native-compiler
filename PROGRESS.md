@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T04:46Z.
-Measured: `ptn-exlu` broad Zend bug blocker map after `ptn-j9kg`.
+Refresh: 2026-06-14T04:51Z.
+Measured: `ptn-oiin` setops map after `ptn-exlu`.
 
 ## Dashboard
 
@@ -16,6 +16,7 @@ Measured: `ptn-exlu` broad Zend bug blocker map after `ptn-j9kg`.
 | PHPT focused array callback validation rows | 66 | 49 | 17 |
 | PHPT focused array diff/intersect rows | 61 | 58 | 3 |
 | PHPT broad diff/intersect comparator rows | 76 | 64 | 12 |
+| PHPT broad array set-operation frontier | 119 | 64 | 55 |
 | PHPT array fill/pad rows | 12 | 11 | 1 |
 | PHPT array set/callback frontier | 106 | 86 | 20 |
 | PHPT focused filesystem/path/process rows | 46 | 13 | 33 |
@@ -41,14 +42,15 @@ Measured: `ptn-exlu` broad Zend bug blocker map after `ptn-j9kg`.
 
 ## Remaining Exclusions
 
-- Bounded 456/486 runnable; broad 1k classify-only 443/557.
-- Arrays: set/callback 86/106; validation 49/66; key/value 28/42;
-  request/SAPI 1/41.
+- Bounded 456/486; broad 1k 443/557.
+- Arrays: setops 64/119; set/callback 86/106; validation 49/66;
+  key/value 28/42; request/SAPI 1/41.
 - References/COW: reference-call 10/12, internal 17/72, foreach 31/103.
-- `ptn-exlu`: Zend bug 18/37; `bug35239.phpt` is a recursive dump blocker.
+- Zend bug 18/37; `bug35239.phpt` is a recursive dump blocker.
 
 ## Verification
 
-`ptn-hpxo`: append-reference native tests and target PHPT pass. `ptn-j9kg`:
-broad 1k 430 runnable/570 excluded; callback rows 49/66. `ptn-exlu`:
-broad 1k 429/571; Zend bug split 18/36 plus `bug35239.phpt`.
+`ptn-hpxo`: append-reference PHPT passes. `ptn-j9kg`: broad 1k 430/570;
+callbacks 49/66. `ptn-exlu`: broad 1k 429/571; Zend bug 18/36 plus
+`bug35239.phpt`. `ptn-oiin`: setops 119 selected, 76 runnable, 64 pass,
+12 fail, 43 excluded.

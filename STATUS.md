@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T04:46Z.
-Measured: `ptn-exlu` broad Zend bug blocker map after `ptn-j9kg`.
+Last refresh: 2026-06-14T04:51Z.
+Measured: `ptn-oiin` setops map after `ptn-exlu`.
 
 ## Operating Goal
 
@@ -25,6 +25,7 @@ Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest
 | PHPT focused array callback validation rows | 49/66 |
 | PHPT focused array diff/intersect rows | 58/61 |
 | PHPT broad diff/intersect comparator rows | 64/76 |
+| PHPT broad array set-operation frontier | 64/119 |
 | PHPT array fill/pad rows | 11/12 |
 | PHPT array set/callback frontier | 86/106 |
 | PHPT focused filesystem/path/process rows | 13/46 |

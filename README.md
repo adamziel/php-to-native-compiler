@@ -210,6 +210,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   manifest.
 - `docs/PHPT_BROAD_1K_ZEND_BUG_REGRESSION_FRONTIER_2026-06-14.md`: broad 1k
   root-level Zend historical bug-regression blocker map and focused manifest.
+- `docs/PHPT_BROAD_1K_ARRAY_SETOPS_FRONTIER_2026-06-14.md`: broad 1k
+  array diff/intersect set-operation blocker map and focused PHPT evidence.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
