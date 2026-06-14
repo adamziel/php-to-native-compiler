@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T04:51Z.
-Measured: `ptn-oiin` setops map after `ptn-exlu`.
+Refresh: 2026-06-14T04:58Z.
+Measured: `ptn-tdei` standard array.
 
 ## Dashboard
 
@@ -37,20 +37,19 @@ Measured: `ptn-oiin` setops map after `ptn-exlu`.
 | PHPT broad request/SAPI input frontier | 41 | 1 | 40 |
 | PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
 | PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
+| PHPT broad standard-array tdei slice | 71 | 61 | 10 |
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT broad 1k baseline | 1000 | 265 | 735 |
 
 ## Remaining Exclusions
 
 - Bounded 456/486; broad 1k 443/557.
-- Arrays: setops 64/119; set/callback 86/106; validation 49/66;
-  key/value 28/42; request/SAPI 1/41.
+- Arrays: setops 64/119; tdei 61/71; callbacks 49/66; key/value 28/42.
 - References/COW: reference-call 10/12, internal 17/72, foreach 31/103.
-- Zend bug 18/37; `bug35239.phpt` is a recursive dump blocker.
+- Zend bug 18/37; `bug35239.phpt` blocks on recursive dump.
 
 ## Verification
 
-`ptn-hpxo`: append-reference PHPT passes. `ptn-j9kg`: broad 1k 430/570;
-callbacks 49/66. `ptn-exlu`: broad 1k 429/571; Zend bug 18/36 plus
-`bug35239.phpt`. `ptn-oiin`: setops 119 selected, 76 runnable, 64 pass,
-12 fail, 43 excluded.
+`ptn-tdei`: broad 1k 430/570; standard-array 296/87; `array_chunk()` 32/32;
+callback helpers 29/39. `ptn-oiin`: setops 119 selected, 76 runnable, 64
+pass, 12 fail, 43 excluded.

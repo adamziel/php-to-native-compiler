@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T04:51Z.
+Last refresh: 2026-06-14T04:58Z.
 Source: `PROGRESS.md`
-Measured: `ptn-oiin` setops map after `ptn-exlu`.
+Measured: `ptn-tdei` standard array.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
@@ -38,6 +38,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT 
 | PHPT broad request/SAPI input frontier | 1/41 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
+| PHPT broad standard-array tdei slice | 61/71 |
 | Post-merge COW gate | 26/26 |
 | PHPT broad 1k baseline | 265/1000 |
 
