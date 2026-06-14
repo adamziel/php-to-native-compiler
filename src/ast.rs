@@ -109,7 +109,7 @@ pub struct ClosureUseCapture {
     pub span: SourceSpan,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeHint {
     Null,
     Array,
@@ -118,6 +118,7 @@ pub enum TypeHint {
     String,
     Bool,
     Void,
+    Class(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

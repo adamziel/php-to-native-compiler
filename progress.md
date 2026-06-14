@@ -1,15 +1,15 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T00:42Z
+Last refresh: 2026-06-14T00:52Z
 Source: `PROGRESS.md`
-Measured: `ptn-kgqa` array predicate/find helpers after `ptn-550s.10`.
+Measured: `ptn-yl7i` callable class-name type checks after `ptn-kgqa`.
 
-Compact signal: Source unit tests 3/3; Native/compiler Rust suite 706/706; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Compact signal: Source unit tests 3/3; Native/compiler Rust suite 708/708; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 | Format / source | Passing |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 706/706 |
+| Native/compiler Rust suite | 708/708 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -25,7 +25,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 706/706; Nativ
 | PHPT array-internal COW frontier | 17/72 |
 | PHPT COW foreach/reference frontier | 31/103 |
 | PHPT foreach list destructuring rows | 4/4 |
-| PHPT broad reference-call bucket | 8/12 |
+| PHPT broad reference-call bucket | 9/12 |
 | PHPT generator/fiber COW boundary bucket | 0/12 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |

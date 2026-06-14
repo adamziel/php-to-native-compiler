@@ -169,7 +169,7 @@ impl Parser {
                         &format!("{}::{}", class.name, method.name),
                     )?;
                 }
-                if method.return_type == Some(TypeHint::Void) {
+                if matches!(&method.return_type, Some(TypeHint::Void)) {
                     validate_void_returns_in_statements(&method.body)?;
                 }
                 validate_anonymous_functions_in_statements(&method.body, &functions)?;
@@ -1521,39 +1521,95 @@ impl Parser {
     }
 
     fn parse_type_hint(&mut self) -> Result<TypeHint> {
-        let token = self.advance();
-        match &token.kind {
-            TokenKind::Null => Ok(TypeHint::Null),
+        match &self.peek().kind {
+            TokenKind::Null => {
+                self.advance();
+                Ok(TypeHint::Null)
+            }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
+                self.advance();
                 Ok(TypeHint::Array)
             }
-            TokenKind::IntType | TokenKind::IntegerType => Ok(TypeHint::Int),
-            TokenKind::FloatType | TokenKind::DoubleType => Ok(TypeHint::Float),
-            TokenKind::StringType | TokenKind::BinaryType => Ok(TypeHint::String),
-            TokenKind::BoolType | TokenKind::BooleanType => Ok(TypeHint::Bool),
-            _ => Err(Diagnostic::new("expected type hint", Some(token.span))),
+            TokenKind::IntType | TokenKind::IntegerType => {
+                self.advance();
+                Ok(TypeHint::Int)
+            }
+            TokenKind::FloatType | TokenKind::DoubleType => {
+                self.advance();
+                Ok(TypeHint::Float)
+            }
+            TokenKind::StringType | TokenKind::BinaryType => {
+                self.advance();
+                Ok(TypeHint::String)
+            }
+            TokenKind::BoolType | TokenKind::BooleanType => {
+                self.advance();
+                Ok(TypeHint::Bool)
+            }
+            TokenKind::Backslash => {
+                let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
+                Ok(TypeHint::Class(class_name))
+            }
+            TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
+                let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
+                Ok(TypeHint::Class(class_name))
+            }
+            _ => {
+                let token = self.advance();
+                Err(Diagnostic::new("expected type hint", Some(token.span)))
+            }
         }
     }
 
     fn parse_return_type_hint(&mut self) -> Result<TypeHint> {
-        let token = self.advance();
-        match &token.kind {
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("void") => Ok(TypeHint::Void),
+        match &self.peek().kind {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("void") => {
+                self.advance();
+                Ok(TypeHint::Void)
+            }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
+                self.advance();
                 Ok(TypeHint::Array)
             }
-            TokenKind::Null => Ok(TypeHint::Null),
-            TokenKind::IntType | TokenKind::IntegerType => Ok(TypeHint::Int),
-            TokenKind::FloatType | TokenKind::DoubleType => Ok(TypeHint::Float),
-            TokenKind::StringType | TokenKind::BinaryType => Ok(TypeHint::String),
-            TokenKind::BoolType | TokenKind::BooleanType => Ok(TypeHint::Bool),
-            _ => Err(Diagnostic::new("expected type hint", Some(token.span))),
+            TokenKind::Null => {
+                self.advance();
+                Ok(TypeHint::Null)
+            }
+            TokenKind::IntType | TokenKind::IntegerType => {
+                self.advance();
+                Ok(TypeHint::Int)
+            }
+            TokenKind::FloatType | TokenKind::DoubleType => {
+                self.advance();
+                Ok(TypeHint::Float)
+            }
+            TokenKind::StringType | TokenKind::BinaryType => {
+                self.advance();
+                Ok(TypeHint::String)
+            }
+            TokenKind::BoolType | TokenKind::BooleanType => {
+                self.advance();
+                Ok(TypeHint::Bool)
+            }
+            TokenKind::Backslash => {
+                let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
+                Ok(TypeHint::Class(class_name))
+            }
+            TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
+                let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
+                Ok(TypeHint::Class(class_name))
+            }
+            _ => {
+                let token = self.advance();
+                Err(Diagnostic::new("expected type hint", Some(token.span)))
+            }
         }
     }
 
     fn peek_is_type_hint(&self) -> bool {
         match &self.peek().kind {
-            TokenKind::Null
+            TokenKind::Backslash
+            | TokenKind::Null
             | TokenKind::IntType
             | TokenKind::IntegerType
             | TokenKind::FloatType
@@ -1562,7 +1618,9 @@ impl Parser {
             | TokenKind::BinaryType
             | TokenKind::BoolType
             | TokenKind::BooleanType => true,
-            TokenKind::Identifier(name) => name.eq_ignore_ascii_case("array"),
+            TokenKind::Identifier(name) => {
+                name.eq_ignore_ascii_case("array") || !is_unsupported_builtin_type_hint_name(name)
+            }
             _ => false,
         }
     }
@@ -4108,6 +4166,21 @@ fn is_auto_global_name(name: &str) -> bool {
     )
 }
 
+fn is_unsupported_builtin_type_hint_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "callable"
+            | "false"
+            | "iterable"
+            | "mixed"
+            | "never"
+            | "object"
+            | "static"
+            | "true"
+            | "void"
+    )
+}
+
 fn nested_ternary_message(first_is_short: bool, second_is_short: bool) -> &'static str {
     match (first_is_short, second_is_short) {
         (true, _) => "Unparenthesized `a ?: b ? c : d` is not supported. Use either `(a ?: b) ? c : d` or `a ?: (b ? c : d)`",
@@ -5121,7 +5194,7 @@ fn validate_by_reference_returns(functions: &[FunctionDecl]) -> Result<()> {
 
 fn validate_void_returns(functions: &[FunctionDecl]) -> Result<()> {
     for function in functions {
-        if function.return_type == Some(TypeHint::Void) {
+        if matches!(&function.return_type, Some(TypeHint::Void)) {
             validate_void_returns_in_statements(&function.body)?;
         }
     }
@@ -5334,7 +5407,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             if function.return_by_ref {
                 validate_by_reference_returns_in_statements(&function.body, "{closure}")?;
             }
-            if function.return_type == Some(TypeHint::Void) {
+            if matches!(&function.return_type, Some(TypeHint::Void)) {
                 validate_void_returns_in_statements(&function.body)?;
             }
             validate_anonymous_functions_in_statements(&function.body, functions)?;

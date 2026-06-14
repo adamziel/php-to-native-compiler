@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T00:42Z
-Measured: `ptn-kgqa` array predicate/find helpers after `ptn-550s.10`.
+Last refresh: 2026-06-14T00:52Z
+Measured: `ptn-yl7i` callable class-name type checks after `ptn-kgqa`.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 706/706; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 708/708; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 706/706 |
+| Native/compiler Rust suite | 708/708 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -33,7 +33,7 @@ Source unit tests 3/3; Native/compiler Rust suite 706/706; Native smoke matrix 6
 | PHPT array-internal COW frontier | 17/72 |
 | PHPT COW foreach/reference frontier | 31/103 |
 | PHPT foreach list destructuring rows | 4/4 |
-| PHPT broad reference-call bucket | 8/12 |
+| PHPT broad reference-call bucket | 9/12 |
 | PHPT generator/fiber COW boundary bucket | 0/12 |
 | Post-merge COW gate | 26/26 |
 | PHPT callback manifest | 5/5 |

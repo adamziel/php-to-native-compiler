@@ -15,9 +15,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   escapes, hex/octal byte escapes, binary-prefixed string literals, and inline
   HTML output.
 - Top-level functions and declared methods include magic constants, call-frame
-  introspection, scalar, array, and void return type hints, array defaults,
-  by-reference returns, typed coercion, constructor dispatch, public destructor
-  dispatch, inherited static call dispatch, and metadata intrinsics.
+  introspection, scalar, array, class-name, and void return type hints, array
+  defaults, by-reference returns, typed coercion, constructor dispatch, public
+  destructor dispatch, inherited static call dispatch, and metadata intrinsics.
 - Anonymous closures and arrow functions lower through the shared closure
   runtime, including explicit `use(...)` captures, implicit arrow by-value
   captures, nested capture propagation, by-reference returns, typed parameters,
@@ -58,9 +58,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   loose ordering helper, `flush()` flushes native stdout, `call_user_func_array()`
   expands ordered arrays through callable dispatch, `call_user_func()` and
   `call_user_func_array()` downgrade fixed-parameter callback by-reference
-  mismatches to warnings while invoking user callbacks against by-value locals,
-  callback dispatch observes `global` bindings for user functions reached
-  through direct calls, and
+  mismatches to warnings, invoke user callbacks against by-value locals, and
+  continue into userland type checks; callback dispatch observes `global`
+  bindings for user functions reached through direct calls, and
   public `__invoke` objects can be called directly or through callback
   dispatch; `is_callable()` writes callable-name output for supported callable
   shapes.

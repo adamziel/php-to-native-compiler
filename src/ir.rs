@@ -120,7 +120,7 @@ pub struct FunctionParameter {
     pub default_value: Option<ValueExpr>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeHint {
     Null,
     Array,
@@ -129,6 +129,7 @@ pub enum TypeHint {
     String,
     Bool,
     Void,
+    Class(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -684,7 +685,7 @@ impl<'a> LoweringContext<'a> {
                 method_name: None,
                 is_static: false,
                 parameters,
-                return_type: function.return_type.map(lower_type_hint),
+                return_type: function.return_type.clone().map(lower_type_hint),
                 return_by_ref: function.return_by_ref,
                 is_anonymous: false,
                 body: Vec::new(),
@@ -723,7 +724,7 @@ impl<'a> LoweringContext<'a> {
             method_name: None,
             is_static: false,
             parameters,
-            return_type: function.return_type.map(lower_type_hint),
+            return_type: function.return_type.clone().map(lower_type_hint),
             return_by_ref: function.return_by_ref,
             is_anonymous: true,
             body: Vec::new(),
@@ -790,7 +791,7 @@ impl<'a> LoweringContext<'a> {
                     method_name: Some(method.name.clone()),
                     is_static: method.is_static,
                     parameters,
-                    return_type: method.return_type.map(lower_type_hint),
+                    return_type: method.return_type.clone().map(lower_type_hint),
                     return_by_ref: method.return_by_ref,
                     is_anonymous: false,
                     body: Vec::new(),
@@ -1100,7 +1101,7 @@ impl<'a> LoweringContext<'a> {
     fn lower_parameter(&mut self, parameter: &AstFunctionParameter) -> FunctionParameter {
         FunctionParameter {
             name: parameter.name.clone(),
-            type_hint: parameter.type_hint.map(lower_type_hint),
+            type_hint: parameter.type_hint.clone().map(lower_type_hint),
             by_ref: parameter.by_ref,
             is_variadic: parameter.is_variadic,
             default_value: parameter
@@ -1137,6 +1138,7 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::String => TypeHint::String,
         AstTypeHint::Bool => TypeHint::Bool,
         AstTypeHint::Void => TypeHint::Void,
+        AstTypeHint::Class(name) => TypeHint::Class(name),
     }
 }
 

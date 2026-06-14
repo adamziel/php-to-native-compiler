@@ -32,6 +32,7 @@ pub fn emit_c(module: &Module) -> String {
     let needs_method_dispatch = runtime_requirements.method_dispatch || has_declared_methods;
     emit_private_property_metadata_prototype(&mut out);
     emit_runtime(&mut out, &runtime_requirements);
+    emit_type_hint_runtime_helpers(&mut out);
     emit_include_prototypes(&mut out, &module.includes);
     emit_include_once_state(&mut out, &module.includes);
     if !module.includes.is_empty() {
@@ -256,6 +257,79 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     out.push_str(&runtime_c[internal_functions.after_end..]);
 }
 
+fn emit_type_hint_runtime_helpers(out: &mut String) {
+    out.push_str(
+        "\nstatic int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
+    );
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_user_type_hint_given_name(PtnValue value) {\n",
+    );
+    out.push_str("    value = ptn_value_deref(value);\n");
+    out.push_str("    switch (value.type) {\n");
+    out.push_str("        case PTN_OBJECT:\n");
+    out.push_str("            return value.as.object->class_name;\n");
+    out.push_str("        case PTN_EXCEPTION:\n");
+    out.push_str("            return value.as.exception->class_name;\n");
+    out.push_str("        case PTN_CLOSURE:\n");
+    out.push_str("            return \"Closure\";\n");
+    out.push_str("        case PTN_NULL:\n");
+    out.push_str("        case PTN_BOOL:\n");
+    out.push_str("        case PTN_INT:\n");
+    out.push_str("        case PTN_FLOAT:\n");
+    out.push_str("        case PTN_STRING:\n");
+    out.push_str("        case PTN_RESOURCE:\n");
+    out.push_str("        case PTN_ARRAY:\n");
+    out.push_str("        case PTN_REFERENCE:\n");
+    out.push_str("            return ptn_offset_container_type_name(value);\n");
+    out.push_str("    }\n");
+    out.push_str("    return ptn_offset_container_type_name(value);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_value_satisfies_class_type_hint(PtnValue value, const char *expected_class_name) {\n",
+    );
+    out.push_str("    value = ptn_value_deref(value);\n");
+    out.push_str("    if (value.type == PTN_OBJECT) {\n");
+    out.push_str("        return ptn_declared_class_is_same_or_descendant(value.as.object->class_name, expected_class_name);\n");
+    out.push_str("    }\n");
+    out.push_str("    if (value.type == PTN_EXCEPTION) {\n");
+    out.push_str("        return ptn_exception_type_matches_name(value.as.exception->class_name, expected_class_name);\n");
+    out.push_str("    }\n");
+    out.push_str("    if (value.type == PTN_CLOSURE) {\n");
+    out.push_str("        return ptn_ascii_case_equal(expected_class_name, \"Closure\");\n");
+    out.push_str("    }\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_throw_user_parameter_class_type_error(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_class_name, PtnValue value, size_t line) {\n",
+    );
+    out.push_str("    const char *given = ptn_user_type_hint_given_name(value);\n");
+    out.push_str(
+        "    const char *path = runtime->source_path != NULL ? runtime->source_path : \"ptn\";\n",
+    );
+    out.push_str("    int needed;\n");
+    out.push_str("    if (line != 0) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, path, line);\n");
+    out.push_str("    } else {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
+    out.push_str("    }\n");
+    out.push_str("    if (needed < 0) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    char *message = malloc((size_t)needed + 1);\n");
+    out.push_str("    if (message == NULL) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    if (line != 0) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, path, line);\n");
+    out.push_str("    } else {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_exception_owned_message(runtime, \"TypeError\", message);\n");
+    out.push_str("}\n");
+}
+
 struct RuntimeChunkRange {
     start: usize,
     after_start: usize,
@@ -444,16 +518,51 @@ fn emit_user_functions(
                 } else {
                     (format!("args[{parameter_index}]"), None)
                 };
-            if let Some(TypeHint::Null) = parameter.type_hint {
-                out.push_str("    if (");
+            if parameter.by_ref {
+                let check_indent = if let Some(default_guard) = &default_guard {
+                    out.push_str("    if (!");
+                    out.push_str(default_guard);
+                    out.push_str(") {\n");
+                    "        "
+                } else {
+                    "    "
+                };
+                out.push_str(check_indent);
+                out.push_str("if (");
                 out.push_str(&parameter_source);
-                out.push_str(".type != PTN_NULL");
-                if parameter.by_ref {
-                    out.push_str(" && ptn_value_deref(");
-                    out.push_str(&parameter_source);
-                    out.push_str(").type != PTN_NULL");
+                out.push_str(".type != PTN_REFERENCE) {\n");
+                out.push_str(check_indent);
+                out.push_str("    if (caller_runtime->warn_by_ref_argument_mismatch) {\n");
+                out.push_str(check_indent);
+                out.push_str("        ptn_emit_by_reference_argument_warning(caller_runtime, ptn_by_reference_argument_function_name(caller_runtime, \"");
+                out.push_str(&c_string(&function.display_name));
+                out.push_str("\"), ");
+                out.push_str(&(parameter_index + 1).to_string());
+                out.push_str(", \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\", line);\n");
+                out.push_str(check_indent);
+                out.push_str("    } else {\n");
+                out.push_str(check_indent);
+                out.push_str("        ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
+                out.push_str(&c_string(&function.display_name));
+                out.push_str("\"), ");
+                out.push_str(&(parameter_index + 1).to_string());
+                out.push_str(", \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\");\n");
+                out.push_str(check_indent);
+                out.push_str("    }\n");
+                out.push_str(check_indent);
+                out.push_str("}\n");
+                if default_guard.is_some() {
+                    out.push_str("    }\n");
                 }
-                out.push_str(") {\n");
+            }
+            if matches!(parameter.type_hint.as_ref(), Some(TypeHint::Null)) {
+                out.push_str("    if (ptn_value_deref(");
+                out.push_str(&parameter_source);
+                out.push_str(").type != PTN_NULL) {\n");
                 out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
                 out.push_str(&c_string(&function.display_name));
                 out.push_str("() argument $");
@@ -463,7 +572,7 @@ fn emit_user_functions(
                 out.push_str("        exit(255);\n");
                 out.push_str("    }\n");
             }
-            if let Some(TypeHint::Array) = parameter.type_hint {
+            if matches!(parameter.type_hint.as_ref(), Some(TypeHint::Array)) {
                 out.push_str("    if (ptn_value_deref(");
                 out.push_str(&parameter_source);
                 out.push_str(").type != PTN_ARRAY) {\n");
@@ -476,20 +585,44 @@ fn emit_user_functions(
                 out.push_str("        exit(255);\n");
                 out.push_str("    }\n");
             }
-            let parameter_cast_temp =
-                if let Some(cast_helper) = type_hint_scalar_cast_helper(parameter.type_hint) {
-                    let temp = format!("ptn_parameter_{}", parameter_index);
-                    out.push_str("    PtnValue ");
-                    out.push_str(&temp);
-                    out.push_str(" = ");
-                    out.push_str(cast_helper);
-                    out.push('(');
-                    out.push_str(&parameter_source);
-                    out.push_str(");\n");
-                    Some(temp)
-                } else {
-                    None
-                };
+            if let Some(TypeHint::Class(class_name)) = parameter.type_hint.as_ref() {
+                out.push_str("    if (!ptn_value_satisfies_class_type_hint(");
+                out.push_str(&parameter_source);
+                out.push_str(", \"");
+                out.push_str(&c_string(class_name));
+                out.push_str("\")) {\n");
+                out.push_str("        ptn_runtime_free(&runtime);\n");
+                out.push_str(
+                    "        ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
+                );
+                out.push_str(&c_string(&function.display_name));
+                out.push_str("\", ");
+                out.push_str(&(parameter_index + 1).to_string());
+                out.push_str(", \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(class_name));
+                out.push_str("\", ");
+                out.push_str(&parameter_source);
+                out.push_str(", line);\n");
+                out.push_str("        return ptn_null();\n");
+                out.push_str("    }\n");
+            }
+            let parameter_cast_temp = if let Some(cast_helper) =
+                type_hint_scalar_cast_helper(parameter.type_hint.as_ref())
+            {
+                let temp = format!("ptn_parameter_{}", parameter_index);
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ");
+                out.push_str(cast_helper);
+                out.push('(');
+                out.push_str(&parameter_source);
+                out.push_str(");\n");
+                Some(temp)
+            } else {
+                None
+            };
             let parameter_value = parameter_cast_temp
                 .as_deref()
                 .map(str::to_string)
@@ -500,29 +633,6 @@ fn emit_user_functions(
                     out.push_str(default_guard);
                     out.push_str(") {\n");
                 }
-                out.push_str("    if (");
-                out.push_str(&parameter_source);
-                out.push_str(".type != PTN_REFERENCE) {\n");
-                out.push_str("        if (caller_runtime->warn_by_ref_argument_mismatch) {\n");
-                out.push_str(
-                    "            ptn_emit_by_reference_argument_warning(caller_runtime, ptn_by_reference_argument_function_name(caller_runtime, \"",
-                );
-                out.push_str(&c_string(&function.display_name));
-                out.push_str("\"), ");
-                out.push_str(&(parameter_index + 1).to_string());
-                out.push_str(", \"");
-                out.push_str(&c_string(&parameter.name));
-                out.push_str("\", line);\n");
-                out.push_str("        } else {\n");
-                out.push_str("            ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
-                out.push_str(&c_string(&function.display_name));
-                out.push_str("\"), ");
-                out.push_str(&(parameter_index + 1).to_string());
-                out.push_str(", \"");
-                out.push_str(&c_string(&parameter.name));
-                out.push_str("\");\n");
-                out.push_str("        }\n");
-                out.push_str("    }\n");
                 out.push_str("    if (");
                 out.push_str(&parameter_source);
                 out.push_str(".type == PTN_REFERENCE) {\n");
@@ -588,7 +698,7 @@ fn emit_user_functions(
         out.push_str("    ");
         out.push_str(&return_label);
         out.push_str(":\n");
-        if let Some(return_type) = function.return_type {
+        if let Some(return_type) = function.return_type.as_ref() {
             emit_return_type_boundary(
                 out,
                 return_type,
@@ -666,10 +776,7 @@ fn emit_variadic_parameter_binding(
         out.push_str(" + 1, \"");
         out.push_str(&c_string(&parameter.name));
         out.push_str("\", line);\n");
-        emit_value_cleanup(out, "                ", &array_temp);
-        out.push_str("                ptn_runtime_free(&runtime);\n");
-        out.push_str("                return ptn_null();\n");
-        out.push_str("            }\n");
+        out.push_str("            } else {\n");
         out.push_str("            ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
         out.push_str(&c_string(&function.display_name));
         out.push_str("\"), ");
@@ -677,10 +784,11 @@ fn emit_variadic_parameter_binding(
         out.push_str(" + 1, \"");
         out.push_str(&c_string(&parameter.name));
         out.push_str("\");\n");
+        out.push_str("            }\n");
         out.push_str("        }\n");
     }
 
-    if let Some(TypeHint::Null) = parameter.type_hint {
+    if matches!(parameter.type_hint.as_ref(), Some(TypeHint::Null)) {
         out.push_str("        if (ptn_value_deref(args[");
         out.push_str(&index_temp);
         out.push_str("]).type != PTN_NULL) {\n");
@@ -696,7 +804,7 @@ fn emit_variadic_parameter_binding(
         out.push_str("            exit(255);\n");
         out.push_str("        }\n");
     }
-    if let Some(TypeHint::Array) = parameter.type_hint {
+    if matches!(parameter.type_hint.as_ref(), Some(TypeHint::Array)) {
         out.push_str("        if (ptn_value_deref(args[");
         out.push_str(&index_temp);
         out.push_str("]).type != PTN_ARRAY) {\n");
@@ -712,8 +820,34 @@ fn emit_variadic_parameter_binding(
         out.push_str("            exit(255);\n");
         out.push_str("        }\n");
     }
+    if let Some(TypeHint::Class(class_name)) = parameter.type_hint.as_ref() {
+        out.push_str("        if (!ptn_value_satisfies_class_type_hint(args[");
+        out.push_str(&index_temp);
+        out.push_str("], \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\")) {\n");
+        out.push_str("            ptn_value_drop(&");
+        out.push_str(&array_temp);
+        out.push_str(");\n");
+        out.push_str("            ptn_runtime_free(&runtime);\n");
+        out.push_str("            ptn_throw_user_parameter_class_type_error(caller_runtime, \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\", ");
+        out.push_str(&index_temp);
+        out.push_str(" + 1, \"");
+        out.push_str(&c_string(&parameter.name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\", args[");
+        out.push_str(&index_temp);
+        out.push_str("], line);\n");
+        out.push_str("            return ptn_null();\n");
+        out.push_str("        }\n");
+    }
 
-    let value_expr = if let Some(cast_helper) = type_hint_scalar_cast_helper(parameter.type_hint) {
+    let value_expr = if let Some(cast_helper) =
+        type_hint_scalar_cast_helper(parameter.type_hint.as_ref())
+    {
         let value_temp = format!("ptn_variadic_value_{}", parameter_index);
         out.push_str("        PtnValue ");
         out.push_str(&value_temp);
@@ -723,13 +857,19 @@ fn emit_variadic_parameter_binding(
         out.push_str(&index_temp);
         out.push_str("]);\n");
         if parameter.by_ref {
-            out.push_str("        ptn_reference_assign(args[");
+            out.push_str("        if (args[");
+            out.push_str(&index_temp);
+            out.push_str("].type == PTN_REFERENCE) {\n");
+            out.push_str("            ptn_reference_assign(args[");
             out.push_str(&index_temp);
             out.push_str("].as.reference, ");
             out.push_str(&value_temp);
             out.push_str(");\n");
-            emit_value_cleanup(out, "        ", &value_temp);
-            format!("ptn_value_clone(args[{index_temp}])")
+            emit_value_cleanup(out, "            ", &value_temp);
+            out.push_str("        }\n");
+            format!(
+                "args[{index_temp}].type == PTN_REFERENCE ? ptn_value_clone(args[{index_temp}]) : {value_temp}"
+            )
         } else {
             value_temp
         }
@@ -930,7 +1070,7 @@ fn emit_magic_visibility_warnings(out: &mut String, warnings: &[MagicVisibilityW
 
 fn emit_return_type_boundary(
     out: &mut String,
-    return_type: TypeHint,
+    return_type: &TypeHint,
     function_name: &str,
     return_by_ref: bool,
 ) {
@@ -975,17 +1115,30 @@ fn emit_return_type_boundary(
                 out.push_str("    ptn_return_value = ptn_typed_return_value;\n");
             }
         }
+        TypeHint::Class(class_name) => {
+            out.push_str("    if (!ptn_value_satisfies_class_type_hint(ptn_return_value, \"");
+            out.push_str(&c_string(class_name));
+            out.push_str("\")) {\n");
+            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str(&c_string(function_name));
+            out.push_str("() return value must be of type ");
+            out.push_str(&c_string(class_name));
+            out.push_str("\");\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            out.push_str("        exit(255);\n");
+            out.push_str("    }\n");
+        }
         TypeHint::Void => {}
     }
 }
 
-fn type_hint_scalar_cast_helper(type_hint: Option<TypeHint>) -> Option<&'static str> {
+fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static str> {
     match type_hint {
         Some(TypeHint::Int) => Some("ptn_cast_int"),
         Some(TypeHint::Float) => Some("ptn_cast_float"),
         Some(TypeHint::String) => Some("ptn_cast_string"),
         Some(TypeHint::Bool) => Some("ptn_cast_bool"),
-        Some(TypeHint::Null | TypeHint::Array | TypeHint::Void) | None => None,
+        Some(TypeHint::Null | TypeHint::Array | TypeHint::Void | TypeHint::Class(_)) | None => None,
     }
 }
 

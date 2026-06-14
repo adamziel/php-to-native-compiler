@@ -1281,6 +1281,26 @@ fn parser_accepts_array_parameter_return_hints_for_functions_and_closures() {
 }
 
 #[test]
+fn parser_accepts_class_name_parameter_and_return_type_hints() {
+    let program = parser::parse(
+        "<?php namespace App; use Vendor\\Type as Imported; \
+         function test(Imported &$value): \\Vendor\\Type { return $value; }",
+    )
+    .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(
+        function.return_type,
+        Some(TypeHint::Class("Vendor\\Type".to_string()))
+    );
+    assert_eq!(
+        function.parameters[0].type_hint,
+        Some(TypeHint::Class("Vendor\\Type".to_string()))
+    );
+    assert!(function.parameters[0].by_ref);
+}
+
+#[test]
 fn parser_validates_closure_use_lists() {
     let program = parser::parse("<?php $b = 'test'; $fn = function () use ($b, &$a,) {};").unwrap();
     let Statement::Assign { value, .. } = &program.statements[1] else {
@@ -14719,6 +14739,46 @@ var_dump($referenced);",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_call_user_func_by_ref_class_type_boundary_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-by-ref-class-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-by-ref-class-type.php");
+    let output = root.join("call-user-func-by-ref-class-type-bin");
+    fs::write(
+        &input,
+        "<?php
+function test(Type &$ref) {
+    echo \"unreached\\n\";
+}
+try {
+    call_user_func(\"test\", 0);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: test(): Argument #1 ($ref) must be passed by reference, value given in ptn on line 6\n\
+test(): Argument #1 ($ref) must be of type Type, int given, called in {} on line 6\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_satisfies_class_type_hint"));
+    assert!(c_source.contains("ptn_throw_user_parameter_class_type_error"));
 }
 
 #[test]
