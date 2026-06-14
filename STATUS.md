@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T02:50Z.
-Measured: `ptn-zzr2` class declaration frontier.
+Last refresh: 2026-06-14T03:02Z.
+Measured: `ptn-7xxw` resource-limit classifier.
 
 ## Operating Goal
 
@@ -10,14 +10,14 @@ php-src PHPT coverage. Report numbers, not compatibility claims.
 
 ## Current Signal
 
-Source unit tests 3/3; Native/compiler Rust suite 716/716; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
+Source unit tests 3/3; Native/compiler Rust suite 718/718; Native smoke matrix 6/6; PHPT bounded manifest 485/485; PHPT Zend rows 119/119; PHPT ext/standard rows 280/280.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 3/3 |
-| Native/compiler Rust suite | 716/716 |
+| Native/compiler Rust suite | 718/718 |
 | Native smoke matrix | 6/6 |
 | PHPT bounded manifest | 485/485 |
 | PHPT Zend rows | 119/119 |
@@ -36,6 +36,7 @@ Source unit tests 3/3; Native/compiler Rust suite 716/716; Native smoke matrix 6
 | PHPT broad reference-call bucket | 9/12 |
 | PHPT broad Zend assignment/reference frontier | 22/32 |
 | PHPT broad class declaration frontier | 0/78 |
+| PHPT broad resource-limit classifier row | 0/1 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |
 | Post-merge COW gate | 26/26 |

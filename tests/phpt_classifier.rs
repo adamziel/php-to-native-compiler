@@ -681,6 +681,44 @@ fn phpt_classifier_keeps_modeled_mutating_array_helpers_runnable() {
 }
 
 #[test]
+fn phpt_classifier_excludes_huge_array_allocation_rows() {
+    let cases = [
+        (
+            "literal huge count",
+            "--TEST--\nhuge array fill\n--FILE--\n<?php\narray_fill(0, 2147483647, 1);\n--EXPECTF--\n",
+        ),
+        (
+            "constant-scale variable count",
+            "--TEST--\nhuge array fill variable\n--FILE--\n<?php\n$intMax = PHP_INT_MAX;\narray_fill(0, $intMax, 1);\n--EXPECTF--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("unsupported-resource-limit\t"),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains("multi-billion element array_fill()"),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_large_array_fill_start_key_runnable() {
+    let classification = classify(
+        "--TEST--\nlarge start key\n--FILE--\n<?php\narray_fill(PHP_INT_MAX, 1, 'x');\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_unsupported_internal_names_in_strings_and_comments_runnable() {
     let classification = classify(
         "--TEST--\ninternal names text\n--FILE--\n<?php\n// array_splice($a, 0); debug_backtrace(); get_defined_functions();\n# array_multisort($a)\n/* usort($a, \"cmp\"); array_walk_recursive($a, \"cb\"); ini_set(\"zend.assertions\", 0); */\necho \"array_splice array_multisort usort uasort uksort array_walk_recursive debug_backtrace get_defined_functions ini_set zend.assertions\";\n--EXPECT--\narray_splice array_multisort usort uasort uksort array_walk_recursive debug_backtrace get_defined_functions ini_set zend.assertions\n",

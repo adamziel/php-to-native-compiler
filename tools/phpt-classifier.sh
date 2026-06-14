@@ -1349,6 +1349,23 @@ ptn_phpt_first_unsupported_internal_surface() {
         }
         {
             line = ptn_php_code_line($0)
+            if (match(line, /\$[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*(php_int_max|2147483647)/)) {
+                huge_array_count_var = substr(line, RSTART, RLENGTH)
+                sub(/[[:space:]]*=.*/, "", huge_array_count_var)
+            }
+            if (line ~ /(^|[^[:alnum:]_$])array_fill[[:space:]]*\(/) {
+                call = line
+                sub(/^.*array_fill[[:space:]]*\([[:space:]]*/, "", call)
+                sub(/^[^,]*,[[:space:]]*/, "", call)
+                count_arg = call
+                sub(/,.*/, "", count_arg)
+                if (count_arg ~ /(php_int_max|2147483647)/ ||
+                    (huge_array_count_var != "" && index(count_arg, huge_array_count_var) > 0)) {
+                    print "unsupported-resource-limit\trequires PHP memory allocation failure/resource-limit diagnostics for multi-billion element array_fill(), outside PTN safe PHPT execution bounds"
+                    found = 1
+                    exit
+                }
+            }
             if (line ~ /(^|[^[:alnum:]_$])array_splice[[:space:]]*\(/) {
                 array_splice_seen = 1
             }

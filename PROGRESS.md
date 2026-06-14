@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-14T02:50Z.
-Measured: `ptn-zzr2` class declaration frontier.
+Refresh: 2026-06-14T03:02Z.
+Measured: `ptn-7xxw` resource-limit classifier.
 
 ## Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native/compiler Rust suite | 716 | 716 | 0 |
+| Native/compiler Rust suite | 718 | 718 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 485 | 485 | 0 |
 | PHPT Zend rows | 119 | 119 | 0 |
@@ -27,6 +27,7 @@ Measured: `ptn-zzr2` class declaration frontier.
 | PHPT broad reference-call bucket | 12 | 9 | 3 |
 | PHPT broad Zend assignment/reference frontier | 32 | 22 | 10 |
 | PHPT broad class declaration frontier | 78 | 0 | 78 |
+| PHPT broad resource-limit classifier row | 1 | 0 | 1 |
 | PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
 | PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
 | Post-merge COW gate | 26 | 26 | 0 |
@@ -40,22 +41,19 @@ Measured: `ptn-zzr2` class declaration frontier.
 
 - Bounded: 485/485; classifier 459 runnable/26 excluded.
 - Broad 1k classify-only is 443 runnable/557 excluded after `ptn-4fd3`.
+- `ptn-7xxw` classifies huge `array_fill()` allocation as resource-limited.
 - Class declarations: 78 trait/interface/anonymous-class rows classified.
 - Heredoc/nowdoc: 70 rows moved; 21 runnable, 49 metadata blockers.
 - `ptn-ndkl`: callback helper frontier is 29/39; 10 residual rows mapped.
-- `ptn-1f0f` keeps metadata/runtime buckets explicit.
 - Zend assignment/reference is 22/32; array diff/intersect is 58/61.
 - COW/reference: array-internal 17/72, foreach/reference 31/103,
   reference-call 9/12.
 
 ## Verification
 
-`ptn-zzr2` maps broad class declaration blockers. The committed manifest
-selects 78 rows; all stay classified and documented.
+`ptn-7xxw` guards `array_fill()` rows with `PHP_INT_MAX`-scale counts. Its
+blocker map records broad evidence and 32/32 passing `array_chunk()` rows.
 
-`ptn-ndkl` adds `array_first()`/`array_last()` over ordered array entries.
-Native target coverage passed; helper PHPT is 6/6.
-
-`ptn-4fd3` keeps plain heredoc/nowdoc rows runnable while classifying
-interpolation. Broad classify-only is 443/557; frontier is 70 selected,
-21 runnable, 14 pass, 7 fail, 49 excluded.
+`ptn-zzr2` maps class declaration blockers; 78 selected rows stay classified.
+`ptn-ndkl` adds `array_first()`/`array_last()`; helper PHPT is 6/6.
+`ptn-4fd3` keeps plain heredoc/nowdoc runnable; frontier is 14/70.
