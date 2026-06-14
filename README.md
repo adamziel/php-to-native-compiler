@@ -292,6 +292,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   1k non-array class/object metadata blocker map and focused manifest.
 - `docs/PHPT_BROAD_1K_CLASS_METADATA_CURRENT_FRONTIER_2026-06-14.md`: current
   broad 1k combined class/object metadata blocker map and focused manifest.
+- `docs/PHPT_BROAD_1K_CLASS_OBJECT_METADATA_GRANULAR_PTN_GT7B_2026-06-14.md`:
+  current broad 1k granular class/object metadata blocker map and 135-row
+  focused manifest after the aggregate metadata bucket split.
 - `docs/PHPT_BROAD_1K_CLASS_OBJECT_METADATA_ROLLUP_PTN_XYMV_2026-06-14.md`:
   current broad 1k class-like parser and object metadata blocker rollup.
 - `docs/PHPT_BROAD_1K_CLASS_METADATA_SPLIT_PTN_0FMH_2026-06-14.md`: broad
