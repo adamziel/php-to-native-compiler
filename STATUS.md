@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-14T05:19Z.
-Measured: `ptn-0pys`.
+Last refresh: 2026-06-14T05:25Z.
+Measured: `ptn-sdcx`.
 
 ## Operating Goal
 
@@ -44,6 +44,7 @@ Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest
 | PHPT broad magic/object conversion frontier | 20/69 |
 | PHPT broad magic-method metadata frontier | 0/69 |
 | PHPT broad standard-array frontier | 0/297 |
+| PHPT broad array map/filter callback slice | 21/30 |
 | PHPT broad request/SAPI input frontier | 1/41 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |

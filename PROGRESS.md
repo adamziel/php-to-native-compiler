@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T05:19Z.
-Measured: `ptn-0pys`.
+Refresh: 2026-06-14T05:25Z.
+Measured: `ptn-sdcx`.
 
 ## Dashboard
 
@@ -35,6 +35,7 @@ Measured: `ptn-0pys`.
 | PHPT broad magic/object conversion frontier | 69 | 20 | 49 |
 | PHPT broad magic-method metadata frontier | 69 | 0 | 69 |
 | PHPT broad standard-array frontier | 297 | 0 | 297 |
+| PHPT broad array map/filter callback slice | 30 | 21 | 9 |
 | PHPT broad request/SAPI input frontier | 41 | 1 | 40 |
 | PHPT broad 1k attribute blocker bucket | 141 | 0 | 141 |
 | PHPT broad heredoc/nowdoc array frontier | 70 | 14 | 56 |
@@ -42,16 +43,12 @@ Measured: `ptn-0pys`.
 | Post-merge COW gate | 26 | 26 | 0 |
 | PHPT broad 1k baseline | 1000 | 265 | 735 |
 
-## Remaining Exclusions
+## Remaining
 
-- Broad 443/557; bounded 456/486.
-- Arrays: setops 64/119, tdei 61/71, callbacks 49/66, registry 28/38.
-- COW/ref 10/12, 17/72, 31/103.
-- Classes: 1/78; 77 blockers.
+- Broad 428/572; bounded 456/486.
+- Arrays 64/119 setops, 61/71 tdei, 49/66 callbacks, 28/38 registry, 21/30 map/filter.
+- COW/ref 10/12, 17/72, 31/103; classes 1/78.
 
 ## Verification
 
-`ptn-0pys`: metadata cluster 6/6 (`class_exists_003`,
-`class_constants_004`, `objects_012/013/014/018`); frontier 1/78.
-`ptn-oiin`: setops 64/76 runnable, 43 excluded.
-`ptn-d6n9`: callbacks 28/38.
+`ptn-sdcx`: broad 429/571 -> 428/572; map/filter 21/30.

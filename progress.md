@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T05:19Z.
+Last refresh: 2026-06-14T05:25Z.
 Source: `PROGRESS.md`
-Measured: `ptn-0pys`.
+Measured: `ptn-sdcx`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
@@ -36,6 +36,7 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 721/721; PHPT 
 | PHPT broad magic/object conversion frontier | 20/69 |
 | PHPT broad magic-method metadata frontier | 0/69 |
 | PHPT broad standard-array frontier | 0/297 |
+| PHPT broad array map/filter callback slice | 21/30 |
 | PHPT broad request/SAPI input frontier | 1/41 |
 | PHPT broad 1k attribute blocker bucket | 0/141 |
 | PHPT broad heredoc/nowdoc array frontier | 14/70 |

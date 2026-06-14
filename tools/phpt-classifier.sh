@@ -864,6 +864,9 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_deferred_generator_reason = reason
             }
         }
+        function ptn_has_named_modeled_array_internal_call(line) {
+            return line ~ /(^|[^[:alnum:]_$\\])array_(all|any|change_key_case|chunk|column|combine|count_values|diff|diff_assoc|diff_key|diff_uassoc|diff_ukey|fill|fill_keys|filter|find|find_key|first|flip|intersect|intersect_assoc|intersect_key|intersect_uassoc|intersect_ukey|is_list|key_exists|key_first|key_last|keys|last|map|merge|merge_recursive|pad|pop|product|push|reduce|replace|replace_recursive|reverse|search|shift|slice|splice|sum|udiff|udiff_assoc|udiff_uassoc|uintersect|uintersect_assoc|uintersect_uassoc|unique|unshift|values|walk|walk_recursive)[[:space:]]*\([^)]*[(,][[:space:]]*[a-z_][a-z0-9_]*[[:space:]]*:[^:]/
+        }
         {
             if (ptn_heredoc_label != "") {
                 if (ptn_ends_heredoc($0, ptn_heredoc_label)) {
@@ -967,6 +970,11 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])unset[[:space:]]*\([[:space:]]*[$][$]/) {
                 print "unsupported-language\trequires plain variable-variable unset, outside PTN modeled dynamic-root array unset/write support"
+                found = 1
+                exit
+            }
+            if (ptn_has_named_modeled_array_internal_call(line)) {
+                print "unsupported-language\trequires named-argument binding for modeled array internal calls, outside PTN internal-call lowering"
                 found = 1
                 exit
             }

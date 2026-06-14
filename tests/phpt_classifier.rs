@@ -210,6 +210,11 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "--TEST--\ndynamic unset\n--FILE--\n<?php\n$name = 'value';\nunset($$name);\n--EXPECT--\n",
             "requires plain variable-variable unset",
         ),
+        (
+            "array internal named argument",
+            "--TEST--\nnamed internal\n--FILE--\n<?php\nvar_dump(array_filter([], mode: 1));\n--EXPECT--\n",
+            "requires named-argument binding for modeled array internal calls",
+        ),
     ];
 
     for (name, phpt, reason) in cases {
@@ -223,6 +228,42 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_user_named_arguments_runnable() {
+    let classification = classify(
+        "--TEST--\nuser named arguments\n--FILE--\n<?php\nfunction pick($left, $right) { return $right; }\necho pick(right: 2, left: 1);\n--EXPECT--\n2\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_array_literals_in_internal_calls_runnable() {
+    let classification = classify(
+        "--TEST--\narray literal\n--FILE--\n<?php\nvar_dump(array_map(null, [\"name\" => 1]));\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_does_not_treat_static_member_syntax_as_named_internal_argument() {
+    let classification = classify(
+        "--TEST--\nstatic member in internal call\n--FILE--\n<?php\nclass Bag { public static function values() { return [1]; } }\narray_pop((Bag::values()));\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
 }
 
 #[test]
