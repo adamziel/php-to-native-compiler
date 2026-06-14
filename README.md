@@ -191,6 +191,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   plain heredoc/nowdoc classifier refinement and focused PHPT evidence.
 - `docs/PHPT_BROAD_1K_MAGIC_METADATA_BLOCKERS_2026-06-14.md`: current broad
   1k magic method metadata blocker map.
+- `docs/PHPT_BROAD_1K_MAGIC_OBJECT_CONVERSION_FRONTIER_2026-06-14.md`: broad
+  1k magic-method/object-conversion blocker map and raw focused evidence.
 - `STATUS.md` and generated mirrors: current operating status.
 - After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
   commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
