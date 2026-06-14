@@ -204,6 +204,7 @@ impl Parser {
                 }
                 validate_anonymous_functions_in_statements(&method.body, &functions)?;
                 validate_reference_assignment_sources(&method.body, &functions)?;
+                validate_control_transfers_in_statements(&method.body, 0)?;
                 validate_goto_labels(&method.body)?;
             }
         }
@@ -212,9 +213,11 @@ impl Parser {
         validate_void_returns(&functions)?;
         validate_anonymous_functions_in_statements(&statements, &functions)?;
         validate_reference_assignment_sources(&statements, &functions)?;
+        validate_control_transfers_in_statements(&statements, 0)?;
         for function in &functions {
             validate_anonymous_functions_in_statements(&function.body, &functions)?;
             validate_reference_assignment_sources(&function.body, &functions)?;
+            validate_control_transfers_in_statements(&function.body, 0)?;
             validate_goto_labels(&function.body)?;
         }
         validate_goto_labels(&statements)?;
@@ -2687,28 +2690,39 @@ impl Parser {
 
     fn parse_break(&mut self) -> Result<Statement> {
         let span = self.expect_break()?;
-        let level = match self.peek().kind {
-            TokenKind::Int(value) if value >= 0 => {
-                self.advance();
-                value as usize
-            }
-            _ => 1,
-        };
+        let level = self.parse_control_transfer_level("break")?;
         self.expect_statement_terminator()?;
         Ok(Statement::Break { level, span })
     }
 
     fn parse_continue(&mut self) -> Result<Statement> {
         let span = self.expect_continue()?;
-        let level = match self.peek().kind {
-            TokenKind::Int(value) if value >= 0 => {
-                self.advance();
-                value as usize
-            }
-            _ => 1,
-        };
+        let level = self.parse_control_transfer_level("continue")?;
         self.expect_statement_terminator()?;
         Ok(Statement::Continue { level, span })
+    }
+
+    fn parse_control_transfer_level(&mut self, keyword: &str) -> Result<usize> {
+        let level = match self.peek().kind {
+            TokenKind::Semicolon | TokenKind::CloseTag | TokenKind::Eof => 1,
+            TokenKind::Int(value) => {
+                let span = self.advance().span;
+                if value <= 0 {
+                    return Err(Diagnostic::new(
+                        format!("'{keyword}' operator accepts only positive integers"),
+                        Some(span),
+                    ));
+                }
+                value as usize
+            }
+            _ => {
+                return Err(Diagnostic::new(
+                    format!("'{keyword}' operator with non-integer operand is no longer supported"),
+                    Some(self.peek().span),
+                ));
+            }
+        };
+        Ok(level)
     }
 
     fn parse_return(&mut self) -> Result<Statement> {
@@ -5850,6 +5864,454 @@ fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
     let mut control_path = Vec::new();
     collect_labels(statements, &mut labels, &mut control_path)?;
     validate_gotos(statements, &labels, &mut control_path)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ControlTransfer {
+    Break,
+    Continue,
+}
+
+impl ControlTransfer {
+    fn keyword(self) -> &'static str {
+        match self {
+            Self::Break => "break",
+            Self::Continue => "continue",
+        }
+    }
+}
+
+fn validate_control_transfers_in_statements(
+    statements: &[Statement],
+    control_depth: usize,
+) -> Result<()> {
+    for statement in statements {
+        match statement {
+            Statement::Assign { value, .. }
+            | Statement::AssignRef { source: value, .. }
+            | Statement::Print {
+                expression: value, ..
+            }
+            | Statement::Expression {
+                expression: value, ..
+            }
+            | Statement::Return {
+                value: Some(value), ..
+            }
+            | Statement::Throw { value, .. } => {
+                validate_control_transfers_in_expr(value)?;
+            }
+            Statement::ArrayAssign { target, value, .. } => {
+                validate_control_transfers_in_array_dim_target(target)?;
+                validate_control_transfers_in_expr(value)?;
+            }
+            Statement::ArrayAssignRef { target, source, .. } => {
+                validate_control_transfers_in_array_dim_target(target)?;
+                validate_control_transfers_in_expr(source)?;
+            }
+            Statement::Call { arguments, .. }
+            | Statement::Echo {
+                expressions: arguments,
+                ..
+            } => {
+                validate_control_transfers_in_exprs(arguments)?;
+            }
+            Statement::Const { declarations, .. } => {
+                for declaration in declarations {
+                    validate_control_transfers_in_expr(&declaration.value)?;
+                }
+            }
+            Statement::Block { statements, .. } => {
+                validate_control_transfers_in_statements(statements, control_depth)?;
+            }
+            Statement::If {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
+                validate_control_transfers_in_expr(condition)?;
+                validate_control_transfers_in_statements(then_body, control_depth)?;
+                validate_control_transfers_in_statements(else_body, control_depth)?;
+            }
+            Statement::While {
+                condition, body, ..
+            } => {
+                validate_control_transfers_in_expr(condition)?;
+                validate_control_transfers_in_statements(body, control_depth + 1)?;
+            }
+            Statement::DoWhile {
+                body, condition, ..
+            } => {
+                validate_control_transfers_in_statements(body, control_depth + 1)?;
+                validate_control_transfers_in_expr(condition)?;
+            }
+            Statement::For {
+                initializers,
+                condition,
+                updates,
+                body,
+                ..
+            } => {
+                validate_control_transfers_in_statements(initializers, control_depth)?;
+                if let Some(condition) = condition {
+                    validate_control_transfers_in_expr(condition)?;
+                }
+                validate_control_transfers_in_statements(updates, control_depth)?;
+                validate_control_transfers_in_statements(body, control_depth + 1)?;
+            }
+            Statement::Foreach {
+                iterable,
+                key,
+                value,
+                body,
+                ..
+            } => {
+                validate_control_transfers_in_expr(iterable)?;
+                if let Some(key) = key {
+                    validate_control_transfers_in_assignment_target(key)?;
+                }
+                validate_control_transfers_in_assignment_target(value)?;
+                validate_control_transfers_in_statements(body, control_depth + 1)?;
+            }
+            Statement::Switch {
+                expression, cases, ..
+            } => {
+                validate_control_transfers_in_expr(expression)?;
+                for case in cases {
+                    if let Some(condition) = &case.condition {
+                        validate_control_transfers_in_expr(condition)?;
+                    }
+                    validate_control_transfers_in_statements(&case.body, control_depth + 1)?;
+                }
+            }
+            Statement::Break { level, span } => validate_control_transfer_target(
+                ControlTransfer::Break,
+                *level,
+                *span,
+                control_depth,
+            )?,
+            Statement::Continue { level, span } => validate_control_transfer_target(
+                ControlTransfer::Continue,
+                *level,
+                *span,
+                control_depth,
+            )?,
+            Statement::Try { body, catches, .. } => {
+                validate_control_transfers_in_statements(body, control_depth)?;
+                for catch in catches {
+                    validate_control_transfers_in_statements(&catch.body, control_depth)?;
+                }
+            }
+            Statement::Increment { target, .. } => {
+                validate_control_transfers_in_inc_dec_target(target)?;
+            }
+            Statement::Unset { targets, .. } => {
+                for target in targets {
+                    validate_control_transfers_in_unset_target(target)?;
+                }
+            }
+            Statement::Return { value: None, .. }
+            | Statement::Empty { .. }
+            | Statement::Global { .. }
+            | Statement::Label { .. }
+            | Statement::Goto { .. }
+            | Statement::InlineHtml { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_control_transfer_target(
+    transfer: ControlTransfer,
+    level: usize,
+    span: SourceSpan,
+    control_depth: usize,
+) -> Result<()> {
+    let keyword = transfer.keyword();
+    if level == 0 {
+        return Err(Diagnostic::new(
+            format!("'{keyword}' operator accepts only positive integers"),
+            Some(span),
+        ));
+    }
+    if control_depth == 0 {
+        return Err(Diagnostic::new(
+            format!("'{keyword}' not in the 'loop' or 'switch' context"),
+            Some(span),
+        ));
+    }
+    if level > control_depth {
+        let suffix = if level == 1 { "level" } else { "levels" };
+        return Err(Diagnostic::new(
+            format!("Cannot '{keyword}' {level} {suffix}"),
+            Some(span),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_control_transfers_in_exprs(expressions: &[Expr]) -> Result<()> {
+    for expression in expressions {
+        validate_control_transfers_in_expr(expression)?;
+    }
+    Ok(())
+}
+
+fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
+    match expr {
+        Expr::AnonymousFunction(function) => {
+            validate_control_transfers_in_statements(&function.body, 0)?;
+        }
+        Expr::DynamicVariable { name, .. } => validate_control_transfers_in_expr(name)?,
+        Expr::IncDec { target, .. } => validate_control_transfers_in_inc_dec_target(target)?,
+        Expr::Assign { target, value, .. } => {
+            validate_control_transfers_in_assignment_target(target)?;
+            validate_control_transfers_in_expr(value)?;
+        }
+        Expr::AssignRef { target, source, .. } => {
+            validate_control_transfers_in_assignment_target(target)?;
+            validate_control_transfers_in_expr(source)?;
+        }
+        Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => {
+            validate_control_transfers_in_exprs(arguments)?;
+        }
+        Expr::FirstClassCallable { callable, .. } => {
+            validate_control_transfers_in_expr(callable)?;
+        }
+        Expr::DynamicCall {
+            callee, arguments, ..
+        } => {
+            validate_control_transfers_in_expr(callee)?;
+            validate_control_transfers_in_exprs(arguments)?;
+        }
+        Expr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_exprs(arguments)?;
+        }
+        Expr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
+            validate_control_transfers_in_expr(class_name)?;
+            validate_control_transfers_in_exprs(arguments)?;
+        }
+        Expr::Clone { expr, .. }
+        | Expr::PropertyFetch { receiver: expr, .. }
+        | Expr::DynamicClassNameFetch { receiver: expr, .. }
+        | Expr::InstanceOf { expr, .. }
+        | Expr::Empty { target: expr, .. }
+        | Expr::Print {
+            expression: expr, ..
+        }
+        | Expr::Include { path: expr, .. }
+        | Expr::Throw { value: expr, .. }
+        | Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::Grouped { expr, .. } => validate_control_transfers_in_expr(expr)?,
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    validate_control_transfers_in_expr(key)?;
+                }
+                match &element.value {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        validate_control_transfers_in_expr(value)?;
+                    }
+                    ArrayElementValue::Reference(target) => {
+                        validate_control_transfers_in_reference_target(target)?;
+                    }
+                }
+            }
+        }
+        Expr::List(list) => validate_control_transfers_in_list_expr(list)?,
+        Expr::ArrayAccess { array, index, .. } => {
+            validate_control_transfers_in_expr(array)?;
+            if let Some(index) = index {
+                validate_control_transfers_in_expr(index)?;
+            }
+        }
+        Expr::Isset { targets, .. } => validate_control_transfers_in_exprs(targets)?,
+        Expr::Binary { left, right, .. } => {
+            validate_control_transfers_in_expr(left)?;
+            validate_control_transfers_in_expr(right)?;
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            validate_control_transfers_in_expr(condition)?;
+            if let Some(if_true) = if_true {
+                validate_control_transfers_in_expr(if_true)?;
+            }
+            validate_control_transfers_in_expr(if_false)?;
+        }
+        Expr::String(_, _)
+        | Expr::InterpolatedString(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _)
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. } => {}
+    }
+    Ok(())
+}
+
+fn validate_control_transfers_in_assignment_target(target: &AssignmentTarget) -> Result<()> {
+    match target {
+        AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::DynamicVariable { name, .. } => {
+            validate_control_transfers_in_expr(name)?;
+        }
+        AssignmentTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            validate_control_transfers_in_expr(name)?;
+            validate_control_transfers_in_optional_exprs(dimensions)?;
+        }
+        AssignmentTarget::ArrayDim(target) => {
+            validate_control_transfers_in_array_dim_target(target)?;
+        }
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_optional_exprs(dimensions)?;
+        }
+        AssignmentTarget::Property { receiver, .. } => {
+            validate_control_transfers_in_expr(receiver)?;
+        }
+        AssignmentTarget::List(list) => {
+            validate_control_transfers_in_list_assignment_target(list)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_control_transfers_in_list_assignment_target(
+    target: &ListAssignmentTarget,
+) -> Result<()> {
+    for element in &target.elements {
+        if let Some(key) = &element.key {
+            validate_control_transfers_in_expr(key)?;
+        }
+        match &element.target {
+            ListAssignmentElementTarget::Value(target) => {
+                validate_control_transfers_in_assignment_target(target)?;
+            }
+            ListAssignmentElementTarget::Reference(target) => {
+                validate_control_transfers_in_reference_target(target)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_control_transfers_in_list_expr(list: &ListExpr) -> Result<()> {
+    for element in &list.elements {
+        if let Some(key) = &element.key {
+            validate_control_transfers_in_expr(key)?;
+        }
+        match &element.target {
+            Some(ListExprElementTarget::Value(value)) => {
+                validate_control_transfers_in_expr(value)?;
+            }
+            Some(ListExprElementTarget::Reference(target)) => {
+                validate_control_transfers_in_reference_target(target)?;
+            }
+            None => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_control_transfers_in_reference_target(target: &ReferenceTarget) -> Result<()> {
+    match target {
+        ReferenceTarget::Variable { .. } => {}
+        ReferenceTarget::ArrayDim(target) => {
+            validate_control_transfers_in_array_dim_target(target)?;
+        }
+        ReferenceTarget::Property { receiver, .. } => {
+            validate_control_transfers_in_expr(receiver)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_control_transfers_in_array_dim_target(target: &ArrayDimTarget) -> Result<()> {
+    validate_control_transfers_in_optional_exprs(&target.dimensions)
+}
+
+fn validate_control_transfers_in_inc_dec_target(target: &IncDecTarget) -> Result<()> {
+    match target {
+        IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => {}
+        IncDecTarget::DynamicVariable { name, .. } => {
+            validate_control_transfers_in_expr(name)?;
+        }
+        IncDecTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            validate_control_transfers_in_expr(name)?;
+            validate_control_transfers_in_optional_exprs(dimensions)?;
+        }
+        IncDecTarget::ArrayDim(target) => {
+            validate_control_transfers_in_array_dim_target(target)?;
+        }
+        IncDecTarget::Property { receiver, .. } => {
+            validate_control_transfers_in_expr(receiver)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_control_transfers_in_unset_target(target: &UnsetTarget) -> Result<()> {
+    match target {
+        UnsetTarget::Variable { .. } => {}
+        UnsetTarget::DynamicVariable { name, .. } => {
+            validate_control_transfers_in_expr(name)?;
+        }
+        UnsetTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            validate_control_transfers_in_expr(name)?;
+            validate_control_transfers_in_exprs(dimensions)?;
+        }
+        UnsetTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_exprs(dimensions)?;
+        }
+        UnsetTarget::Property { receiver, .. } => {
+            validate_control_transfers_in_expr(receiver)?;
+        }
+        UnsetTarget::ArrayDim(target) => {
+            validate_control_transfers_in_array_dim_target(target)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_control_transfers_in_optional_exprs(expressions: &[Option<Expr>]) -> Result<()> {
+    for expression in expressions.iter().flatten() {
+        validate_control_transfers_in_expr(expression)?;
+    }
+    Ok(())
 }
 
 fn reference_source_is_variable(source: &Expr, variable: &str) -> bool {

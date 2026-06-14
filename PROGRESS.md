@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T21:58Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; `ptn-g7ta` object-string array row pack +24 broad 1k rows and focused 23/23; `ptn-mqvk` broad 1k classify-only 546/454 before -> 532/468 after and broad COW/reference row pack 22/28 -> 27/27 runnable plus 1 classified; COW 69/103 passed; `ptn-601n` anonymous-class/object metadata row pack 0/21 raw focused baseline -> 10/10 runnable after split and final broad 1k classify-only 558/442; `ptn-c5ar` object/class metadata runtime diagnostics row pack 9 passed / 7 failed / 4 classified -> 20/20 passed and current-target broad 1k classify-only 532/468 -> 563/437; `ptn-zhup` object/callback/merge row pack 13/18 -> 17/18 runnable plus 2 classified, merge slice 21/25 -> 24/25, and final broad 1k classify-only 558/442 on submitted base.
+Refresh: 2026-06-14T22:15Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; `ptn-g7ta` object-string array row pack +24 broad 1k rows and focused 23/23; `ptn-mqvk` broad 1k classify-only 546/454 before -> 532/468 after and broad COW/reference row pack 22/28 -> 27/27 runnable plus 1 classified; COW 69/103 passed; `ptn-601n` anonymous-class/object metadata row pack 0/21 raw focused baseline -> 10/10 runnable after split and final broad 1k classify-only 558/442; `ptn-c5ar` object/class metadata runtime diagnostics row pack 9 passed / 7 failed / 4 classified -> 20/20 passed and current-target broad 1k classify-only 532/468 -> 563/437; `ptn-zhup` object/callback/merge row pack 13/18 -> 17/18 runnable plus 2 classified, merge slice 21/25 -> 24/25, and final broad 1k classify-only 558/442 on submitted base; `ptn-buig` break/continue diagnostics moved the broad 1k Zend bucket 137/198 -> 141/198 and focused Zend operator/control frontier 21/26.
 
 ## Dashboard
 
@@ -77,7 +77,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Std-array-tdei|71|61|10|
 |Std-array-lxw1|20|19|1|
 |array_rand|7|6|1|
-|Zend-op/control|26|15|11|
+|Zend-op/control|26|21|5|
 |Binary-key|1|1|0|
 |Runtime-config|54|10|44|
 |COW-gate|26|26|0|
@@ -135,6 +135,48 @@ Remaining focused failure is
 matches but an uncaught fatal does not yet render PHP's stack trace. The two
 classified rows require object-to-string conversion through array comparator or
 callback helper metadata outside the currently modeled object-string subset.
+
+## 2026-06-14 ptn-buig Break/Continue Control Diagnostics
+
+Focused command:
+`tools/run-bounded-phpt.sh tools/phpt-zend-operator-control-frontier-manifest.txt`.
+
+Broad 1k classification artifact
+`.runtime/ptn-buig-broad-before/20260614T211916Z/phpt-baseline-1000.txt`
+selected 1,000 rows: 558 runnable and 442 classified. The full broad
+execution attempt used `timeout 1800 tools/run-phpt-baseline.sh --tier 1000
+--out-dir .runtime/ptn-buig-broad-before`; it completed the broad Zend bucket
+and reached standard test 6/344 before the timeout, so no completed full-broad
+pass count was produced.
+
+Completed broad Zend-bucket evidence used
+`.runtime/phpt-progress/buckets-20260614T211916Z/zend.paths`, the 198 runnable
+Zend rows selected by the broad 1k run. Before:
+`.runtime/phpt-progress/run-20260614T211916Z-zend.log` had 137 passed and 61
+failed. After the parser change, the same bucket had 141 passed and 57 failed.
+This completed broad Zend-bucket after-run was taken before the final rebase;
+the rebased source was checked with the focused frontier artifact below.
+
+Newly passing broad rows:
+
+- `Zend/tests/break_error_001.phpt`
+- `Zend/tests/break_error_002.phpt`
+- `Zend/tests/break_error_003.phpt`
+- `Zend/tests/break_error_004.phpt`
+
+After rebasing onto current `origin/master`, focused frontier artifact
+`.runtime/ptn-buig-focused-rebased/run-20260614T221857Z-manifest.log` selected
+26 rows: 26 runnable, 21 passed, and 5 failed. The remaining focused failures
+are backtick/floating AST serialization, constant-expression `(unset)`
+rejection, `#[NoDiscard]` native-method metadata, and binary literal
+formatting.
+
+Implemented behavior: the parser now rejects zero and non-literal operands for
+`break` and `continue`, validates that transfer levels target an enclosing loop
+or switch, reports PHP-style fatal diagnostics for out-of-context and excessive
+levels, and walks nested statements, expressions, methods, functions, and
+anonymous functions so each function-like body gets its own fresh control
+context.
 
 ## 2026-06-14 ptn-601n Anonymous Class/Object Metadata Row Pack
 

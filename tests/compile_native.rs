@@ -4545,6 +4545,60 @@ fn phpc_renders_goto_into_loop_or_switch_as_php_fatal() {
 }
 
 #[test]
+fn phpc_renders_break_continue_compile_time_control_errors() {
+    let cases = [
+        (
+            "break-zero.php",
+            "<?php\nfunction foo() {\n    break 0;\n}\n",
+            "Fatal error: 'break' operator accepts only positive integers",
+            3,
+        ),
+        (
+            "break-variable.php",
+            "<?php\nfunction foo() {\n    break $x;\n}\n",
+            "Fatal error: 'break' operator with non-integer operand is no longer supported",
+            3,
+        ),
+        (
+            "break-outside-loop.php",
+            "<?php\nfunction foo() {\n    break;\n}\n",
+            "Fatal error: 'break' not in the 'loop' or 'switch' context",
+            3,
+        ),
+        (
+            "break-too-many-levels.php",
+            "<?php\nfunction foo() {\n    while (1) {\n        break 2;\n    }\n}\n",
+            "Fatal error: Cannot 'break' 2 levels",
+            4,
+        ),
+        (
+            "continue-outside-loop.php",
+            "<?php\nfunction foo() {\n    continue;\n}\n",
+            "Fatal error: 'continue' not in the 'loop' or 'switch' context",
+            3,
+        ),
+    ];
+
+    for (name, source, message, line) in cases {
+        let root_name = format!("ptn-phpc-control-transfer-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(name);
+        fs::write(&input, source).unwrap();
+
+        let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!("{message} in {} on line {line}\n", input.display()),
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn phpc_renders_spanned_parse_diagnostics_as_php_parse_errors() {
     let root = temp_dir("ptn-phpc-parse-error");
     fs::create_dir_all(&root).unwrap();
