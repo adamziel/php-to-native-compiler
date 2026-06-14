@@ -255,6 +255,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   1k standard-array object/magic/visibility metadata blocker map.
 - `docs/PHPT_BROAD_1K_ARRAY_KEY_VALUE_FRONTIER_2026-06-14.md`: broad 1k
   standard-array key/value helper blocker map and focused manifest.
+- `docs/PHPT_BROAD_1K_CLASS_OBJECT_METADATA_CLUSTER_PTN_IVFW_2026-06-14.md`:
+  current broad 1k class/object metadata cluster blocker map with 362 focused
+  classified rows.
 - `docs/PHPT_BROAD_1K_ARRAY_CALLBACK_FRONTIER_PTN_J9KG_2026-06-14.md`: current
   broad 1k array callback/set-operation blocker map and committed focused
   manifest.
