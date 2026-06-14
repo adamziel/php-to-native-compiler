@@ -4253,7 +4253,7 @@ fn parser_accepts_braced_switch_cases_default_and_break() {
 #[test]
 fn parser_accepts_single_statement_loop_bodies_and_break_levels() {
     let program = parser::parse(
-        "<?php for (;;) break 2147483648; while (false) echo \"bad\"; do print \"once\"; while (false);",
+        "<?php for (;;) break; while (false) echo \"bad\"; do print \"once\"; while (false);",
     )
     .unwrap();
 
@@ -4261,13 +4261,7 @@ fn parser_accepts_single_statement_loop_bodies_and_break_levels() {
     let Statement::For { body, .. } = &program.statements[0] else {
         panic!("expected for statement");
     };
-    assert!(matches!(
-        &body[0],
-        Statement::Break {
-            level: 2_147_483_648usize,
-            ..
-        }
-    ));
+    assert!(matches!(&body[0], Statement::Break { level: 1, .. }));
     let Statement::While { body, .. } = &program.statements[1] else {
         panic!("expected while statement");
     };
@@ -4303,6 +4297,49 @@ fn parser_accepts_continue_statements_and_levels() {
         panic!("expected do while statement");
     };
     assert!(matches!(&body[0], Statement::Continue { level: 1, .. }));
+}
+
+#[test]
+fn parser_rejects_invalid_break_and_continue_levels_and_contexts() {
+    let cases = [
+        (
+            "<?php function foo() { break 0; }",
+            "'break' operator accepts only positive integers",
+        ),
+        (
+            "<?php function foo() { break $x; }",
+            "'break' operator with non-integer operand is no longer supported",
+        ),
+        (
+            "<?php function foo() { break; }",
+            "'break' not in the 'loop' or 'switch' context",
+        ),
+        (
+            "<?php function foo() { while (1) { break 2; } }",
+            "Cannot 'break' 2 levels",
+        ),
+        (
+            "<?php function foo() { continue 0; }",
+            "'continue' operator accepts only positive integers",
+        ),
+        (
+            "<?php function foo() { continue $x; }",
+            "'continue' operator with non-integer operand is no longer supported",
+        ),
+        (
+            "<?php function foo() { continue; }",
+            "'continue' not in the 'loop' or 'switch' context",
+        ),
+        (
+            "<?php function foo() { while (1) { continue 2; } }",
+            "Cannot 'continue' 2 levels",
+        ),
+    ];
+
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, expected, "{source}");
+    }
 }
 
 #[test]
@@ -21936,19 +21973,10 @@ fn compile_unmatched_large_continue_level_reports_source_line_to_native_binary()
     let output = root.join("large-continue-level-bin");
     fs::write(&input, "<?php\nfor(;;) continue 2147483648;\n").unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
-
-    let execution = Command::new(&output).output().unwrap();
-    assert!(!execution.status.success());
-    assert_eq!(execution.status.code(), Some(255));
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "Fatal error: Cannot 'continue' 2147483648 levels in {} on line 2\n",
-            input.display()
-        )
-    );
+    let error = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap_err();
+    assert_eq!(error.message, "Cannot 'continue' 2147483648 levels");
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.span.unwrap().line, 2);
 }
 
 #[test]
@@ -21959,19 +21987,10 @@ fn compile_unmatched_large_break_level_reports_source_line_to_native_binary() {
     let output = root.join("large-break-level-bin");
     fs::write(&input, "<?php\nfor(;;) break 2147483648;\n").unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
-
-    let execution = Command::new(&output).output().unwrap();
-    assert!(!execution.status.success());
-    assert_eq!(execution.status.code(), Some(255));
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "Fatal error: Cannot 'break' 2147483648 levels in {} on line 2\n",
-            input.display()
-        )
-    );
+    let error = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap_err();
+    assert_eq!(error.message, "Cannot 'break' 2147483648 levels");
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.span.unwrap().line, 2);
 }
 
 #[test]
