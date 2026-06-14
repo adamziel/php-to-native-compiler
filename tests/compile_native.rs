@@ -14201,6 +14201,43 @@ var_dump(function_exists('array_key_first'), function_exists('ARRAY_KEY_LAST'));
 }
 
 #[test]
+fn compile_array_first_and_last_to_native_binary() {
+    let root = temp_dir("ptn-native-array-first-last");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-first-last.php");
+    let output = root.join("array-first-last-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$empty = [];\n\
+var_dump(array_first($empty), array_last($empty));\n\
+$items = [2 => 'a', '02' => 'b', 3 => 'c'];\n\
+var_dump(array_first($items), array_last($items));\n\
+$value = 'x';\n\
+$refs = ['first' => &$value, 'last' => 'y'];\n\
+var_dump(array_first($refs), array_last($refs));\n\
+$value = 'changed';\n\
+var_dump(array_first($refs));\n\
+var_dump(function_exists('array_first'), function_exists('ARRAY_LAST'));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "NULL\nNULL\nstring(1) \"a\"\nstring(1) \"c\"\nstring(1) \"x\"\nstring(1) \"y\"\nstring(7) \"changed\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_first"));
+    assert!(c_source.contains("ptn_internal_array_last"));
+}
+
+#[test]
 fn compile_array_is_list_to_native_binary() {
     let root = temp_dir("ptn-native-array-is-list");
     fs::create_dir_all(&root).unwrap();

@@ -3958,7 +3958,11 @@ fn bind_named_call_arguments(
 }
 
 fn internal_call_may_invoke_callable(name: &str) -> bool {
-    name.eq_ignore_ascii_case("array_filter")
+    name.eq_ignore_ascii_case("array_all")
+        || name.eq_ignore_ascii_case("array_any")
+        || name.eq_ignore_ascii_case("array_filter")
+        || name.eq_ignore_ascii_case("array_find")
+        || name.eq_ignore_ascii_case("array_find_key")
         || name.eq_ignore_ascii_case("array_diff_uassoc")
         || name.eq_ignore_ascii_case("array_diff_ukey")
         || name.eq_ignore_ascii_case("array_intersect_uassoc")

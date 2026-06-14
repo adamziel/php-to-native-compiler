@@ -2781,6 +2781,26 @@ static PtnValue ptn_internal_array_key_last(PtnRuntime *runtime, size_t argc, co
     return ptn_array_key_value(array->entries[array->len - 1].key);
 }
 
+static PtnValue ptn_internal_array_first(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_first", 1, "array", args[0]);
+    if (array->len == 0) {
+        return ptn_null();
+    }
+    return ptn_value_clone(ptn_array_reindexing_internal_value(array->entries[0].value));
+}
+
+static PtnValue ptn_internal_array_last(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_last", 1, "array", args[0]);
+    if (array->len == 0) {
+        return ptn_null();
+    }
+    return ptn_value_clone(ptn_array_reindexing_internal_value(array->entries[array->len - 1].value));
+}
+
 static PtnValue ptn_internal_array_is_list(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -11545,6 +11565,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_filter", 1, 3, ptn_internal_array_filter },
         { "array_find", 2, 2, ptn_internal_array_find },
         { "array_find_key", 2, 2, ptn_internal_array_find_key },
+        { "array_first", 1, 1, ptn_internal_array_first },
         { "array_flip", 1, 1, ptn_internal_array_flip },
         { "array_intersect", 1, PTN_VARIADIC_ARGS, ptn_internal_array_intersect },
         { "array_intersect_assoc", 1, PTN_VARIADIC_ARGS, ptn_internal_array_intersect_assoc },
@@ -11556,6 +11577,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_key_first", 1, 1, ptn_internal_array_key_first },
         { "array_key_last", 1, 1, ptn_internal_array_key_last },
         { "array_keys", 1, 3, ptn_internal_array_keys },
+        { "array_last", 1, 1, ptn_internal_array_last },
         { "array_map", 2, PTN_VARIADIC_ARGS, ptn_internal_array_map },
         { "array_merge", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge },
         { "array_merge_recursive", 0, PTN_VARIADIC_ARGS, ptn_internal_array_merge_recursive },
