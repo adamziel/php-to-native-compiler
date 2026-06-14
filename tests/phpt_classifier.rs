@@ -272,6 +272,32 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
 }
 
 #[test]
+fn phpt_classifier_splits_unpacking_blockers() {
+    let cases = [
+        (
+            "call-site unpack",
+            "--TEST--\ncall unpack\n--FILE--\n<?php\nfunction collect(...$args) { return $args; }\nvar_dump(collect(...[1, 2]));\n--EXPECT--\n",
+        ),
+        (
+            "array literal unpack",
+            "--TEST--\narray unpack\n--FILE--\n<?php\nvar_dump([0, ...[1, 2]]);\n--EXPECT--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("unsupported-call-unpacking\t"),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains("requires call-site or array unpacking"),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_splits_attribute_metadata_blockers() {
     let cases = [
         (
