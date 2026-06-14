@@ -1,8 +1,8 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-14T03:56Z.
+Last refresh: 2026-06-14T04:01Z.
 Source: `PROGRESS.md`
-Measured: `ptn-f62z` after `ptn-c8z6`.
+Measured: `ptn-yvgh` after `ptn-f62z`.
 
 Compact signal: Source unit tests 3/3; Native/compiler Rust suite 718/718; PHPT bounded manifest 479/486; PHPT Zend rows 119/119; PHPT ext/standard rows 274/281; PHPT focused array key/callback set rows 38/75.
 
@@ -17,9 +17,10 @@ Compact signal: Source unit tests 3/3; Native/compiler Rust suite 718/718; PHPT 
 | PHPT focused array callback validation rows | 46/65 |
 | PHPT focused array diff/intersect rows | 58/61 |
 | PHPT broad diff/intersect comparator rows | 64/76 |
+| PHPT array fill/pad rows | 11/12 |
+| PHPT array set/callback frontier | 86/106 |
 | PHPT focused filesystem/path/process rows | 13/46 |
 | PHPT tests/basic+func+lang | 78/78 |
-| PHPT other rows | 8/8 |
 | PHPT COW manifest | 54/54 |
 | PHPT nested foreach/reference rows | 2/3 |
 | PHPT array-internal COW frontier | 17/72 |

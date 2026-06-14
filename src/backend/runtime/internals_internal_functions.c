@@ -3632,7 +3632,6 @@ static PtnValue ptn_internal_array_search(PtnRuntime *runtime, size_t argc, cons
 
 static PtnValue ptn_internal_array_fill(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
     int64_t start = ptn_value_to_integer(args[0]);
     int64_t count = ptn_value_to_integer(args[1]);
     if (count < 0) {
@@ -3640,6 +3639,22 @@ static PtnValue ptn_internal_array_fill(PtnRuntime *runtime, size_t argc, const 
             runtime,
             "ValueError",
             "array_fill(): Argument #2 ($count) must be greater than or equal to 0"
+        );
+    }
+    if (count > INT32_MAX) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "array_fill(): Argument #2 ($count) is too large"
+        );
+    }
+    if ((uint64_t)count > PTN_ARRAY_MAX_ALLOC_ENTRIES) {
+        ptn_emit_memory_allocation_overflow_error(
+            runtime,
+            (size_t)count,
+            sizeof(PtnArrayEntry),
+            sizeof(PtnArray),
+            line
         );
     }
 

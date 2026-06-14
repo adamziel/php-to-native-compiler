@@ -346,6 +346,29 @@ static PTN_UNUSED void ptn_emit_type_error(PtnDiagnosticSink *diagnostics, const
     fputc('\n', stream);
 }
 
+static PTN_UNUSED void ptn_emit_memory_allocation_overflow_error(
+    PtnRuntime *runtime,
+    size_t count,
+    size_t element_size,
+    size_t overhead,
+    size_t line
+) {
+    fflush(stdout);
+    if (runtime->diagnostics.display_errors) {
+        FILE *stream = runtime->diagnostics.stream == NULL ? stderr : runtime->diagnostics.stream;
+        fprintf(
+            stream,
+            "\nFatal error: Possible integer overflow in memory allocation (%zu * %zu + %zu) in %s on line %zu\n",
+            count,
+            element_size,
+            overhead,
+            runtime->source_path != NULL ? runtime->source_path : "ptn",
+            line
+        );
+    }
+    exit(255);
+}
+
 static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
         return;

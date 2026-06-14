@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-14T03:56Z.
-Measured: `ptn-f62z` after `ptn-c8z6`.
+Refresh: 2026-06-14T04:01Z.
+Measured: `ptn-yvgh` after `ptn-f62z`.
 
 ## Dashboard
 
@@ -16,9 +16,10 @@ Measured: `ptn-f62z` after `ptn-c8z6`.
 | PHPT focused array callback validation rows | 65 | 46 | 19 |
 | PHPT focused array diff/intersect rows | 61 | 58 | 3 |
 | PHPT broad diff/intersect comparator rows | 76 | 64 | 12 |
+| PHPT array fill/pad rows | 12 | 11 | 1 |
+| PHPT array set/callback frontier | 106 | 86 | 20 |
 | PHPT focused filesystem/path/process rows | 46 | 13 | 33 |
 | PHPT tests/basic+func+lang | 78 | 78 | 0 |
-| PHPT other rows | 8 | 8 | 0 |
 | PHPT COW manifest | 54 | 54 | 0 |
 | PHPT nested foreach/reference rows | 3 | 2 | 1 |
 | PHPT array-internal COW frontier | 72 | 17 | 55 |
@@ -40,21 +41,18 @@ Measured: `ptn-f62z` after `ptn-c8z6`.
 
 - Bounded: 486 selected, 456 runnable, 30 excluded; 449 pass, 7 fail.
 - Broad 1k classify-only: 443/557; class declarations 78; attributes 141.
-- Magic-method metadata: 69 selected, 0 runnable, 69 excluded; 60 are
-  `ext/standard/tests/array` rows.
-- Standard-array frontier: 297 runnable; largest families are set/diff/
-  intersect 76, covered `array_chunk()` 32, key helpers 21.
-- Diff/intersect: 76 selected, 64 pass, 12 fail; residuals are string/
-  nested-array warnings and user-comparator rows.
+- `array_fill()` now preflights impossible counts before entry allocation; the
+  huge PHPT row remains classified as resource-limited.
+- Fill/pad: 12 selected, 11 runnable/pass, 1 resource-limit exclusion.
+- Set/callback frontier: 106 selected/runnable, 86 pass, 20 failures split
+  across validation, value conversion, filter/map/reduce, and comparators.
 - COW/reference: internal 17/72, foreach 31/103, reference-call 9/12.
 
 ## Verification
 
-`ptn-f62z`: `tools/phpt-magic-method-metadata-frontier-manifest.txt`
-classify-only selected 69 rows, 0 runnable, 69 excluded.
+`ptn-yvgh`: native `compile_array_fill` coverage passes huge-count `ValueError`
+and fatal allocation-preflight paths; rebased fill/pad PHPT is 11/12 with one
+resource-limit exclusion.
 
-`ptn-c8z6`: diff/intersect PHPT `run-20260614T024433Z-manifest.log` records
-76 selected, 64 pass, 12 fail.
-
-`ptn-51ey`: broad 1k selected 1000 rows, kept 430 runnable, excluded 570;
-standard-array classify-only selected 297 rows, all runnable.
+`ptn-f62z`: magic-method metadata manifest selected 69 rows, all excluded.
+`ptn-c8z6`: diff/intersect focused PHPT is 64/76.

@@ -50,7 +50,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   ordered-array/COW paths, a bounded callable `array_multisort()` path with
   prefer-ref argument separation, and recursive/non-recursive `array_walk()`
   callback diagnostics, userdata separation, key snapshots, and mutation
-  visibility.
+  visibility; `array_fill()` has bounded huge-count allocation diagnostics.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string escaping.

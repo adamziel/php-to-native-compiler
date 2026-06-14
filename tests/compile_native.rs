@@ -14910,6 +14910,7 @@ $filled = array_fill(-1, 2, $value);\n\
 $filled[-1][] = 'copy';\n\
 var_dump($filled);\n\
 try { array_fill(0, -1, 'x'); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_fill(0, 2147483648, 'x'); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { array_fill(PHP_INT_MAX, 2, 'x'); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(function_exists('array_fill'), function_exists('ARRAY_FILL'));",
     )
@@ -14921,9 +14922,33 @@ var_dump(function_exists('array_fill'), function_exists('ARRAY_FILL'));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(0) {\n}\narray(2) {\n  [1]=>\n  string(1) \"x\"\n  [2]=>\n  string(1) \"x\"\n}\narray(2) {\n  [-1]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [0]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\narray_fill(): Argument #2 ($count) must be greater than or equal to 0\nCannot add element to the array as the next element is already occupied\nbool(true)\nbool(true)\n"
+        "array(0) {\n}\narray(2) {\n  [1]=>\n  string(1) \"x\"\n  [2]=>\n  string(1) \"x\"\n}\narray(2) {\n  [-1]=>\n  array(2) {\n    [0]=>\n    string(4) \"seed\"\n    [1]=>\n    string(4) \"copy\"\n  }\n  [0]=>\n  array(1) {\n    [0]=>\n    string(4) \"seed\"\n  }\n}\narray_fill(): Argument #2 ($count) must be greater than or equal to 0\narray_fill(): Argument #2 ($count) is too large\nCannot add element to the array as the next element is already occupied\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_fill_huge_count_fails_before_allocation_to_native_binary() {
+    let root = temp_dir("ptn-native-array-fill-huge-count");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-fill-huge-count.php");
+    let output = root.join("array-fill-huge-count-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+array_fill(0, 2147483647, 'x');\n\
+echo \"unreached\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Possible integer overflow in memory allocation"));
+    assert!(stderr.contains("array-fill-huge-count.php on line 2"));
 }
 
 #[test]
