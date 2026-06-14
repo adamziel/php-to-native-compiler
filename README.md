@@ -283,6 +283,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_MAGIC_METHOD_METADATA_CURRENT_PTN_7FYM_2026-06-14.md`:
   current broad 1k `unsupported-magic-method-metadata` category map with a
   committed 69-row focused manifest.
+- `docs/PHPT_BROAD_1K_MAGIC_METHOD_METADATA_CURRENT_PTN_XDL8_2026-06-14.md`:
+  current `unsupported-magic-method-metadata` category replay against the
+  committed 69-row focused manifest.
 - `docs/PHPT_BROAD_1K_MAGIC_METHOD_CLASSIFIER_PTN_U889_2026-06-14.md`:
   broad 1k classifier split evidence moving 69 magic-method metadata rows out
   of the aggregate class-metadata bucket, with current classifier tests.
