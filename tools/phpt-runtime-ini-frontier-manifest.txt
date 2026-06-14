@@ -1,0 +1,54 @@
+# Focused broad 1k runtime/system INI frontier.
+#
+# Rows selected from .runtime/phpt-progress/classification-20260614T060358Z.tsv
+# where the classifier category is one of:
+# unsupported-assertion-ini, unsupported-resource-limit-ini,
+# unsupported-resource-limit, unsupported-diagnostics-ini,
+# unsupported-function-disable-ini, unsupported-scalar-format-ini,
+# unsupported-opcache-ini, unsupported-host-path-ini.
+Zend/tests/ArrayAccess/bug63217.phpt
+Zend/tests/arrow_functions/gh7900.phpt
+Zend/tests/assert/bug71922.phpt
+Zend/tests/assert/disable_assert_function.phpt
+Zend/tests/assert/expect_001.phpt
+Zend/tests/assert/expect_002.phpt
+Zend/tests/assert/expect_003.phpt
+Zend/tests/assert/expect_004.phpt
+Zend/tests/assert/expect_005.phpt
+Zend/tests/assert/expect_006.phpt
+Zend/tests/assert/expect_007.phpt
+Zend/tests/assert/expect_008.phpt
+Zend/tests/assert/expect_009.phpt
+Zend/tests/assert/expect_010.phpt
+Zend/tests/assert/expect_011.phpt
+Zend/tests/assert/expect_012.phpt
+Zend/tests/assert/expect_013.phpt
+Zend/tests/assert/expect_014.phpt
+Zend/tests/asymmetric_visibility/ast_printing.phpt
+Zend/tests/backtrace/fatal_error_backtraces_001.phpt
+Zend/tests/backtrace/fatal_error_backtraces_002.phpt
+Zend/tests/backtrace/fatal_error_backtraces_003.phpt
+Zend/tests/bug30820.phpt
+Zend/tests/bug36568.phpt
+Zend/tests/bug39438.phpt
+ext/standard/tests/GHSA-96wq-48vp-hh57.phpt
+ext/standard/tests/array/array_fill_error2.phpt
+ext/standard/tests/array/array_sum.phpt
+tests/basic/bug31875.phpt
+tests/basic/bug67988.phpt
+tests/basic/errorlog_permission.phpt
+tests/basic/gh17951_ini_parse_1.phpt
+tests/basic/gh17951_ini_parse_2.phpt
+tests/basic/gh17951_ini_parse_3.phpt
+tests/basic/gh17951_ini_parse_4.phpt
+tests/basic/gh17951_ini_parse_5.phpt
+tests/basic/gh17951_runtime_change_1.phpt
+tests/basic/gh17951_runtime_change_2.phpt
+tests/basic/gh17951_runtime_change_3.phpt
+tests/basic/gh17951_runtime_change_4.phpt
+tests/basic/gh17951_runtime_change_5.phpt
+tests/basic/gh17951_runtime_change_6.phpt
+tests/basic/gh20858.phpt
+tests/basic/ini_directive_deprecated_report_memleaks.phpt
+tests/basic/precision.phpt
+tests/basic/req60524-win.phpt
