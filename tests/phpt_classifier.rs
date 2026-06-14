@@ -541,7 +541,7 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "magic method dispatch",
             "--TEST--\nmagic\n--FILE--\n<?php\nclass Bag { public function __get($name) { return 1; } }\n--EXPECT--\n",
             "unsupported-magic-method-metadata\t",
-            "requires unsupported magic method dispatch/reflection metadata",
+            "requires magic method dispatch/reflection metadata",
         ),
         (
             "autoload",
@@ -631,6 +631,36 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         );
         assert!(
             classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_splits_magic_method_metadata_blockers() {
+    let cases = [
+        (
+            "object string conversion",
+            "--TEST--\nmagic tostring\n--FILE--\n<?php\nclass Box { public function __toString() { return 'box'; } }\n--EXPECT--\n",
+        ),
+        (
+            "property magic hook",
+            "--TEST--\nmagic get\n--FILE--\n<?php\nclass Box { public function __get($name) { return 1; } }\n--EXPECT--\n",
+        ),
+        (
+            "debug info hook",
+            "--TEST--\nmagic debug\n--FILE--\n<?php\nclass Box { public function __debugInfo() { return []; } }\n--EXPECT--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("unsupported-magic-method-metadata\t"),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains("requires magic method dispatch/reflection metadata"),
             "{name}: {classification:?}"
         );
     }

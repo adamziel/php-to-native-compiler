@@ -1099,7 +1099,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 exit
             }
             if (line ~ /function[[:space:]]+__(call|callstatic|get|set|isset|unset|debuginfo|serialize|unserialize|sleep|wakeup|tostring)[[:space:]]*\(/) {
-                print "unsupported-magic-method-metadata\trequires unsupported magic method dispatch/reflection metadata"
+                print "unsupported-magic-method-metadata\trequires magic method dispatch/reflection metadata, outside PTN modeled object/class metadata"
                 found = 1
                 exit
             }
