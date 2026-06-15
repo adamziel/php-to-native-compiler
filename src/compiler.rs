@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::{
     ArrayDimTarget, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CatchClause, Expr,
-    IncDecTarget, ListAssignmentElementTarget, MagicConstantKind, Program, ReferenceTarget,
-    Statement, SwitchCase, UnsetTarget,
+    IncDecTarget, InstanceOfTarget, ListAssignmentElementTarget, MagicConstantKind, Program,
+    ReferenceTarget, Statement, SwitchCase, UnsetTarget,
 };
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
@@ -631,7 +631,13 @@ impl IncludeCollector {
             Expr::DynamicClassNameFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
-            Expr::InstanceOf { expr, .. } => self.collect_expr(expr, source_file, source_dir),
+            Expr::InstanceOf { expr, target, .. } => {
+                self.collect_expr(expr, source_file, source_dir)?;
+                if let InstanceOfTarget::Expr(target) = target {
+                    self.collect_expr(target, source_file, source_dir)?;
+                }
+                Ok(())
+            }
             Expr::Array { elements, .. } => {
                 for element in elements {
                     if let Some(key) = &element.key {

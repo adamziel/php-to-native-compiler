@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-vvpn class_alias metadata slice | 38 | 13 |
 | ptn-w17z.36 extract typed references | 1 | 1 |
 | ptn-2cij ENV/CLEAN SKIPIF preconditions | 33 | 0 |
 | ptn-vj4r class_alias namespace metadata | 5 | 5 |
@@ -2851,3 +2852,10 @@ The submitted branch reported the focused COW/reference mutation row pack as
 (`abfb48341ef2`) before `ptn-j6gv` and `ptn-qsmv.14` landed, so the current
 dashboard keeps the newer `ptn-qsmv.14` broad 1k baseline row rather than
 downgrading to that stale broad count.
+
+## 2026-06-15 ptn-vvpn Class Alias Metadata Slice
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final rebased class_alias bucket (`.runtime/ptn-vvpn-class-alias-after-rebased-final/summary-20260615T184412Z.txt`) | 38 selected / 33 runnable | 13 |
+| Integrated focused merge run (`.runtime/merge-ptn-vvpn-class-alias/summary-20260615T190216Z.txt`) | 38 selected / 33 runnable | 13 |

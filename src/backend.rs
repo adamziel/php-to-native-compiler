@@ -10,10 +10,10 @@ use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
-    FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, Instruction,
-    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    MatchArm as IrMatchArm, Module, PropertyTypeHint, PropertyTypeKind, PropertyVisibility,
-    ReferenceTarget, TraitDecl, TypeHint, UnaryOp, ValueExpr,
+    FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, InstanceOfTarget,
+    Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
+    MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint, PropertyTypeKind,
+    PropertyVisibility, ReferenceTarget, TraitDecl, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -4466,7 +4466,9 @@ fn emit_callable_dispatch(
             "        return ptn_duplicate_string(parent != NULL ? parent : scope_name);\n",
         );
         out.push_str("    }\n");
-        out.push_str("    return ptn_duplicate_string(scope_name);\n");
+        out.push_str(
+            "    return ptn_duplicate_string(ptn_runtime_resolve_class_alias(runtime, scope_name));\n",
+        );
         out.push_str("}\n");
 
         out.push_str(
@@ -6482,8 +6484,11 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
-        ValueExpr::InstanceOf { expr, .. } => {
+        ValueExpr::InstanceOf { expr, target, .. } => {
             collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
+            if let InstanceOfTarget::Expr(target) = target {
+                collect_value_legacy_dollar_brace_deprecations(target, deprecations);
+            }
         }
         ValueExpr::String(_)
         | ValueExpr::Int(_)
@@ -7054,8 +7059,11 @@ fn collect_value_runtime_requirements(
         ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
-        ValueExpr::InstanceOf { expr, .. } => {
+        ValueExpr::InstanceOf { expr, target, .. } => {
             collect_value_runtime_requirements(expr, functions, requirements);
+            if let InstanceOfTarget::Expr(target) = target {
+                collect_value_runtime_requirements(target, functions, requirements);
+            }
         }
         ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => {}
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
@@ -8301,7 +8309,10 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         } => {
             value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
         }
-        ValueExpr::InstanceOf { expr, .. } => value_mentions_variable(expr, name),
+        ValueExpr::InstanceOf { expr, target, .. } => {
+            value_mentions_variable(expr, name)
+                || matches!(target, InstanceOfTarget::Expr(target) if value_mentions_variable(target, name))
+        }
         ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => false,
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             value_mentions_variable(expr, name)
@@ -10462,9 +10473,7 @@ impl ValueEmitter {
                 arms,
                 line,
             } => self.emit_match(out, subject, arms, *line),
-            ValueExpr::InstanceOf {
-                expr, class_name, ..
-            } => self.emit_instanceof(out, expr, class_name),
+            ValueExpr::InstanceOf { expr, target, .. } => self.emit_instanceof(out, expr, target),
             ValueExpr::Unary { op, expr, line } => {
                 if matches!(op, UnaryOp::ErrorSuppress) {
                     let saved_temp = self.next_temp();
@@ -12063,7 +12072,12 @@ impl ValueEmitter {
         }
     }
 
-    fn emit_instanceof(&mut self, out: &mut String, expr: &ValueExpr, class_name: &str) -> String {
+    fn emit_instanceof(
+        &mut self,
+        out: &mut String,
+        expr: &ValueExpr,
+        target: &InstanceOfTarget,
+    ) -> String {
         let expr_temp = self.emit_materialized_value(out, expr);
         let resolved_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -12072,22 +12086,98 @@ impl ValueEmitter {
         out.push_str(&expr_temp);
         out.push_str(");\n");
         let expected_class_temp = self.next_temp();
-        out.push_str("    const char *");
-        out.push_str(&expected_class_temp);
-        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
-        out.push_str(&c_string(class_name));
-        out.push_str("\");\n");
+        let mut dynamic_target_temp = None;
+        let mut dynamic_owned_temp = None;
+        match target {
+            InstanceOfTarget::ClassName(class_name) => {
+                out.push_str("    const char *");
+                out.push_str(&expected_class_temp);
+                out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+                out.push_str(&c_string(class_name));
+                out.push_str("\");\n");
+            }
+            InstanceOfTarget::Expr(target) => {
+                let target_temp = self.emit_materialized_value(out, target);
+                let target_resolved_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&target_resolved_temp);
+                out.push_str(" = ptn_value_deref(");
+                out.push_str(&target_temp);
+                out.push_str(");\n");
+                let raw_temp = self.next_temp();
+                out.push_str("    const char *");
+                out.push_str(&raw_temp);
+                out.push_str(" = NULL;\n");
+                let owned_temp = self.next_temp();
+                out.push_str("    char *");
+                out.push_str(&owned_temp);
+                out.push_str(" = NULL;\n");
+                out.push_str("    if (");
+                out.push_str(&target_resolved_temp);
+                out.push_str(".type == PTN_OBJECT) {\n");
+                out.push_str("        ");
+                out.push_str(&raw_temp);
+                out.push_str(" = ");
+                out.push_str(&target_resolved_temp);
+                out.push_str(".as.object->class_name;\n");
+                out.push_str("    } else if (");
+                out.push_str(&target_resolved_temp);
+                out.push_str(".type == PTN_EXCEPTION) {\n");
+                out.push_str("        ");
+                out.push_str(&raw_temp);
+                out.push_str(" = ");
+                out.push_str(&target_resolved_temp);
+                out.push_str(".as.exception->class_name;\n");
+                out.push_str("    } else if (");
+                out.push_str(&target_resolved_temp);
+                out.push_str(".type == PTN_CLOSURE) {\n");
+                out.push_str("        ");
+                out.push_str(&raw_temp);
+                out.push_str(" = \"Closure\";\n");
+                out.push_str("    } else if (");
+                out.push_str(&target_resolved_temp);
+                out.push_str(".type == PTN_STRING) {\n");
+                out.push_str("        ");
+                out.push_str(&owned_temp);
+                out.push_str(" = ptn_value_to_string(");
+                out.push_str(&target_resolved_temp);
+                out.push_str(");\n");
+                out.push_str("        ");
+                out.push_str(&raw_temp);
+                out.push_str(" = ptn_symbol_name_without_leading_slash(");
+                out.push_str(&owned_temp);
+                out.push_str(");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ptn_throw_exception(&runtime, \"Error\", \"Class name must be a valid object or a string\");\n");
+                out.push_str("    }\n");
+                out.push_str("    const char *");
+                out.push_str(&expected_class_temp);
+                out.push_str(" = ");
+                out.push_str(&raw_temp);
+                out.push_str(" == NULL ? NULL : ptn_runtime_resolve_class_alias(&runtime, ");
+                out.push_str(&raw_temp);
+                out.push_str(");\n");
+                dynamic_target_temp = Some(target_temp);
+                dynamic_owned_temp = Some(owned_temp);
+            }
+        }
 
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_bool(0);\n");
         out.push_str("    if (");
+        out.push_str(&expected_class_temp);
+        out.push_str(" != NULL && ");
         out.push_str(&resolved_temp);
         out.push_str(".type == PTN_OBJECT) {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_bool(ptn_declared_class_is_same_or_descendant(");
+        out.push_str(" = ptn_bool(ptn_ascii_case_equal(");
+        out.push_str(&resolved_temp);
+        out.push_str(".as.object->class_name, ");
+        out.push_str(&expected_class_temp);
+        out.push_str(") || ptn_declared_class_is_same_or_descendant(");
         out.push_str(&resolved_temp);
         out.push_str(".as.object->class_name, ");
         out.push_str(&expected_class_temp);
@@ -12095,8 +12185,14 @@ impl ValueEmitter {
         out.push_str(&resolved_temp);
         out.push_str(".as.object->class_name, ");
         out.push_str(&expected_class_temp);
+        out.push_str(") || ptn_builtin_class_implements_interface(");
+        out.push_str(&resolved_temp);
+        out.push_str(".as.object->class_name, ");
+        out.push_str(&expected_class_temp);
         out.push_str("));\n");
         out.push_str("    } else if (");
+        out.push_str(&expected_class_temp);
+        out.push_str(" != NULL && ");
         out.push_str(&resolved_temp);
         out.push_str(".type == PTN_EXCEPTION) {\n");
         out.push_str("        ");
@@ -12107,6 +12203,14 @@ impl ValueEmitter {
         out.push_str(&expected_class_temp);
         out.push_str("));\n");
         out.push_str("    }\n");
+        if let Some(owned_temp) = dynamic_owned_temp {
+            out.push_str("    free(");
+            out.push_str(&owned_temp);
+            out.push_str(");\n");
+        }
+        if let Some(target_temp) = dynamic_target_temp {
+            emit_value_cleanup(out, "    ", &target_temp);
+        }
         emit_value_cleanup(out, "    ", &expr_temp);
         result_temp
     }
