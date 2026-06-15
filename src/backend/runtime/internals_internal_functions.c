@@ -11486,7 +11486,7 @@ static PtnValue ptn_internal_similar_text(PtnRuntime *runtime, size_t argc, cons
         double percent = (left.len + right.len) == 0
             ? 0.0
             : ((double)score * 200.0) / (double)(left.len + right.len);
-        ptn_reference_assign(args[2].as.reference, ptn_float(percent));
+        ptn_reference_assign(runtime, args[2].as.reference, ptn_float(percent));
     }
     ptn_string_operand_free(left);
     ptn_string_operand_free(right);

@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-456b ext-standard strings row pack | 27 | 27 |
 | ptn-w17z.31 iterable/DNF type row pack | 27 | 27 |
 | ptn-w17z.29 SPL iterator wrapper row pack | 7 | 7 |
 | ptn-50g7 COW/reference array-walk and sort row pack | 10 | 10 |
@@ -36,15 +37,21 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:58Z.
-Measured latest: `ptn-50g7` COW/reference array-walk and sort row pack added 10 unique newly passing full-corpus-source PHPT rows.
-Latest: `ptn-50g7` moved the focused array-internal COW frontier from 54/61 to 59/61 runnable rows and the COW/foreach reference frontier from 81/90 to 87/90 runnable rows.
+Refresh: 2026-06-15T20:06Z.
+Measured latest: `ptn-456b` ext-standard strings row pack selected 27 rows, kept 27 runnable, and passed 27/27 in the focused run.
+Latest: `ptn-456b` completed the checked-in ext-standard strings row pack. Previous: `ptn-w17z.31` completed the checked-in iterable/DNF type row pack.
 
-Current hook: `ptn-50g7` final focused runs:
-`.runtime/ptn-50g7-final-array-internal/summary-20260615T183512Z.txt` and
-`.runtime/ptn-50g7-final-cow-foreach/summary-20260615T183512Z.txt`.
-Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
-`.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
+Current hook: `ptn-456b` ext-standard strings row pack passed 27/27 at
+`.runtime/ptn-456b/ext-standard-strings-rebased-final/summary-20260615T200636Z.txt`.
+Previous hook: `ptn-w17z.31` iterable/DNF type row pack passed 27/27 at
+`.runtime/merge-ptn-w17z31-iterable-dnf/summary-20260615T200733Z.txt`.
+
+## 2026-06-15 ptn-456b Ext-Standard Strings Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start ext-standard strings candidate baseline (`.runtime/ptn-456b/candidate-before/summary-20260615T190700Z.txt`) | 47 selected / 47 runnable | 0 |
+| Final rebased checked-in focused row pack (`.runtime/ptn-456b/ext-standard-strings-rebased-final/summary-20260615T200636Z.txt`; manifest `tools/phpt-ptn-456b-ext-standard-strings-row-pack.txt`) | 27 selected / 27 runnable | 27 |
 
 ## 2026-06-15 ptn-w17z.31 Iterable/DNF Type Row Pack
 
