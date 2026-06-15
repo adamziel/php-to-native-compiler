@@ -2002,7 +2002,7 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_anonymous_function_expr(&mut self, span: SourceSpan) -> Result<Expr> {
+    fn parse_anonymous_function_expr(&mut self, span: SourceSpan, is_static: bool) -> Result<Expr> {
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             true
@@ -2029,6 +2029,7 @@ impl Parser<'_> {
             captures,
             return_type,
             return_by_ref,
+            is_static,
             is_arrow: false,
             body,
             span,
@@ -4077,7 +4078,7 @@ impl Parser<'_> {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Dollar => self.parse_dynamic_variable_expr(token.span),
-            TokenKind::Function => self.parse_anonymous_function_expr(token.span),
+            TokenKind::Function => self.parse_anonymous_function_expr(token.span, false),
             TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Identifier(name) => {
                 if name.eq_ignore_ascii_case("fn") {
@@ -4087,6 +4088,15 @@ impl Parser<'_> {
                     let fn_span = self.advance().span;
                     return self
                         .parse_arrow_function_expr(combine_spans(token.span, fn_span), true);
+                }
+                if name.eq_ignore_ascii_case("static")
+                    && matches!(self.peek().kind, TokenKind::Function)
+                {
+                    let function_span = self.advance().span;
+                    return self.parse_anonymous_function_expr(
+                        combine_spans(token.span, function_span),
+                        true,
+                    );
                 }
                 if name.eq_ignore_ascii_case("match") {
                     return self.parse_match_expr(token.span);
@@ -4332,6 +4342,7 @@ impl Parser<'_> {
             captures,
             return_type,
             return_by_ref,
+            is_static,
             is_arrow: true,
             body: vec![Statement::Return {
                 value: Some(expression),
@@ -8674,6 +8685,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "convert_uudecode"
             | "convert_uuencode"
             | "closedir"
+            | "compact"
             | "strip_tags"
             | "count_chars"
             | "crc32"

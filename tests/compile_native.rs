@@ -1564,6 +1564,33 @@ fn parser_validates_closure_use_lists() {
 }
 
 #[test]
+fn parser_accepts_static_anonymous_functions() {
+    let program = parser::parse(
+        "<?php $fn = static function () { return isset($this); }; \
+         $arrow = static fn() => isset($this);",
+    )
+    .unwrap();
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected static closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert!(closure.is_static);
+    assert!(!closure.is_arrow);
+
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected static arrow assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected arrow function to lower to anonymous function");
+    };
+    assert!(closure.is_static);
+    assert!(closure.is_arrow);
+}
+
+#[test]
 fn parser_accepts_arrow_functions_as_implicit_capture_closures() {
     let program = parser::parse(
         "<?php $outer = 1; \
@@ -1580,6 +1607,7 @@ fn parser_accepts_arrow_functions_as_implicit_capture_closures() {
 
     assert_eq!(closure.return_type, Some(TypeHint::Array));
     assert!(!closure.return_by_ref);
+    assert!(!closure.is_static);
     assert_eq!(closure.parameters.len(), 2);
     assert_eq!(closure.parameters[0].type_hint, Some(TypeHint::Int));
     assert_eq!(closure.parameters[1].type_hint, Some(TypeHint::String));
@@ -26129,6 +26157,57 @@ call_user_func([$test, \"__invoke\"], null);
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("by_ref_argument_function_name_override = \"Closure::__invoke\""));
     assert!(c_source.contains("ptn_callable_output_name"));
+}
+
+#[test]
+fn compile_compact_observes_closure_this_binding_to_native_binary() {
+    let root = temp_dir("ptn-native-compact-closure-this-binding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compact-closure-this-binding.php");
+    let output = root.join("compact-closure-this-binding-bin");
+    fs::write(
+        &input,
+        "<?php
+class CompactThisProbe {
+    public function direct() {
+        return count(compact('this'));
+    }
+
+    public function nested() {
+        return count(compact([['this']]));
+    }
+
+    public function closure() {
+        return (function () { return count(compact('this')); })();
+    }
+
+    public function staticClosure() {
+        return (static function () { return count(compact('this')); })();
+    }
+}
+
+$probe = new CompactThisProbe();
+var_dump($probe->direct());
+var_dump($probe->nested());
+var_dump($probe->closure());
+var_dump($probe->staticClosure());
+var_dump(count(compact('this')));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(1)\nint(1)\nint(0)\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_import_closure_captures(&runtime, receiver);"));
 }
 
 #[test]

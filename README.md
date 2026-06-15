@@ -27,8 +27,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Anonymous closures and arrow functions lower through the shared closure
   runtime, including explicit `use(...)` captures, implicit arrow by-value
   captures, nested capture propagation, by-reference returns, typed parameters,
-  variadics, validated `use` lists with trailing commas, and `static fn`
-  `$this` exclusion. `Closure::bindTo()` clones preserve captured variables,
+  variadics, validated `use` lists with trailing commas, non-static closure
+  `$this` binding, and static anonymous/arrow function `$this` exclusion.
+  `Closure::bindTo()` clones preserve captured variables,
   `Closure::fromCallable()` and first-class callable syntax wrap supported
   function, static-method, object-method, and closure callables with callable
   dump/reflection metadata, `Closure::__invoke` reference diagnostics use
@@ -59,7 +60,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   conversion warnings for set-operation normalization, `array_rand()` key selection,
   sum/product warning and
   overflow parity,
-  `count()`/`sizeof()` modes including `Countable` dispatch, `array_splice()`
+  `compact()` symbol-table packing, `count()`/`sizeof()` modes including
+  `Countable` dispatch, `array_splice()`
   mutation, sort mutators through
   ordered-array/COW paths, a bounded callable `array_multisort()` path with
   prefer-ref argument separation, and recursive/non-recursive `array_walk()`

@@ -11147,6 +11147,13 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&parameter_names);
         out.push_str("));\n");
+        if !function.is_static {
+            out.push_str("    if (runtime.has_current_receiver) {\n");
+            out.push_str("        ptn_closure_set_capture(");
+            out.push_str(&closure_temp);
+            out.push_str(", \"this\", runtime.current_receiver);\n");
+            out.push_str("    }\n");
+        }
 
         for capture in captures {
             let capture_temp = self.next_temp();

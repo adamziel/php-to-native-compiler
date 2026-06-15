@@ -1,0 +1,3 @@
+# ptn-w17z.35 compact closure $this binding row pack.
+ext/standard/tests/array/compact_no_this.phpt
+ext/standard/tests/array/compact_this.phpt
