@@ -4128,18 +4128,11 @@ var_dump($worker instanceof Base, $worker instanceof Contract);
 
 #[test]
 fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
-    let cases = [
-        (
-            "enum",
-            "<?php\nenum Sample { case A; }",
-            "enum declarations are unsupported",
-        ),
-        (
-            "trait",
-            "<?php\ntrait Sample {}",
-            "trait declarations are unsupported",
-        ),
-    ];
+    let cases = [(
+        "enum",
+        "<?php\nenum Sample { case A; }",
+        "enum declarations are unsupported",
+    )];
 
     for (name, source, message) in cases {
         let error = parser::parse(source).unwrap_err();
@@ -4147,6 +4140,32 @@ fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
         assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
         assert_eq!(error.span.unwrap().line, 2, "{name}");
     }
+}
+
+#[test]
+fn parser_accepts_simple_trait_declarations_and_use_composition() {
+    let program = parser::parse(
+        "<?php
+trait SharedBehavior {
+    public $label = 'ok';
+    public function run() { return __TRAIT__; }
+}
+class Worker {
+    use SharedBehavior;
+}",
+    )
+    .unwrap();
+
+    assert_eq!(program.traits.len(), 1);
+    assert_eq!(program.traits[0].name, "SharedBehavior");
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].trait_uses.len(), 1);
+    assert_eq!(program.classes[0].properties.len(), 1);
+    assert_eq!(program.classes[0].methods.len(), 1);
+    assert_eq!(
+        program.classes[0].methods[0].trait_name.as_deref(),
+        Some("SharedBehavior")
+    );
 }
 
 #[test]
@@ -10391,6 +10410,69 @@ var_dump(function_exists(\"get_class\"));
     assert!(c_source.contains("ptn_internal_get_class"));
     assert!(c_source.contains("ptn_internal_get_parent_class"));
     assert!(c_source.contains("ptn_internal_method_exists"));
+}
+
+#[test]
+fn compile_simple_trait_composition_to_native_binary() {
+    let root = temp_dir("ptn-native-simple-trait-composition");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simple-trait-composition.php");
+    let output = root.join("simple-trait-composition-bin");
+    fs::write(
+        &input,
+        "<?php
+trait Greets {
+    public $label = 'ready';
+    public function greet() {
+        var_dump(__TRAIT__, __CLASS__, $this->label);
+        return 'done';
+    }
+}
+
+trait Counts {
+    public static $count = 2;
+    public static function countIt() {
+        return self::$count;
+    }
+}
+
+class Worker {
+    use Greets, Counts;
+}
+
+$worker = new Worker();
+var_dump(trait_exists('Greets'), trait_exists('Worker'), class_exists('Greets'));
+var_dump(method_exists('Worker', 'greet'), property_exists('Worker', 'label'));
+var_dump($worker->greet());
+var_dump(Worker::countIt());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(6) \"Greets\"\n",
+            "string(6) \"Worker\"\n",
+            "string(5) \"ready\"\n",
+            "string(4) \"done\"\n",
+            "int(2)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_trait_exists"));
+    assert!(c_source.contains("ptn_string(\"Greets\")"));
 }
 
 #[test]

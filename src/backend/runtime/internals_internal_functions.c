@@ -15181,6 +15181,7 @@ static int ptn_user_function_exists(PtnRuntime *runtime, const char *name);
 static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
+static int ptn_declared_trait_exists(const char *name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
@@ -15196,6 +15197,7 @@ static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, 
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -15487,6 +15489,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "substr_count", 2, 4, ptn_internal_substr_count },
         { "substr_replace", 3, 4, ptn_internal_substr_replace },
         { "touch", 1, 3, ptn_internal_touch },
+        { "trait_exists", 1, 2, ptn_internal_trait_exists },
         { "trim", 1, 2, ptn_internal_trim },
         { "uasort", 2, 2, ptn_internal_uasort },
         { "ucfirst", 1, 1, ptn_internal_ucfirst },
@@ -15839,6 +15842,16 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     (void)line;
     char *name = ptn_value_to_string(args[0]);
     int exists = ptn_user_function_exists(runtime, name) || ptn_find_internal_function(name) != NULL;
+    free(name);
+    return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *name = ptn_value_to_string(args[0]);
+    int exists = ptn_declared_trait_exists(name);
     free(name);
     return ptn_bool(exists);
 }

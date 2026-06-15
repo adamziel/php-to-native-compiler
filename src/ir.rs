@@ -21,6 +21,7 @@ use crate::ast::{
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub classes: Vec<ClassDecl>,
+    pub traits: Vec<TraitDecl>,
     pub functions: Vec<FunctionDecl>,
     pub includes: Vec<IncludeFile>,
     pub instructions: Vec<Instruction>,
@@ -60,6 +61,11 @@ pub struct ClassDecl {
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<MethodDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitDecl {
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -109,6 +115,7 @@ pub struct FunctionDecl {
     pub name: String,
     pub display_name: String,
     pub class_name: Option<String>,
+    pub trait_name: Option<String>,
     pub method_name: Option<String>,
     pub is_static: bool,
     pub parameters: Vec<FunctionParameter>,
@@ -711,6 +718,7 @@ pub fn lower_with_source_and_includes(
         .iter()
         .map(|class| context.lower_class(class))
         .collect();
+    let traits = program.traits.iter().map(lower_trait).collect();
     let includes = include_sources
         .iter()
         .map(|include| context.lower_include_source(include))
@@ -718,6 +726,7 @@ pub fn lower_with_source_and_includes(
     let instructions = context.lower_statements(&program.statements);
     Module {
         classes,
+        traits,
         functions: context.functions,
         includes,
         instructions,
@@ -733,6 +742,7 @@ struct LoweringContext<'a> {
     source_dir: String,
     include_resolutions: &'a IncludeResolutionMap,
     current_class_name: Option<String>,
+    current_trait_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -780,6 +790,7 @@ impl<'a> LoweringContext<'a> {
             source_dir,
             include_resolutions,
             current_class_name: None,
+            current_trait_name: None,
         };
         for function in &program.functions {
             context.declare_function(function);
@@ -827,6 +838,7 @@ impl<'a> LoweringContext<'a> {
             name: function.name.clone(),
             display_name: function.name.clone(),
             class_name: None,
+            trait_name: None,
             method_name: None,
             is_static: false,
             parameters,
@@ -873,6 +885,7 @@ impl<'a> LoweringContext<'a> {
             name: "{closure}".to_string(),
             display_name: format!("{{closure:{}:{}}}", self.source_file, function.span.line),
             class_name: self.current_class_name.clone(),
+            trait_name: self.current_trait_name.clone(),
             method_name: None,
             is_static: false,
             parameters,
@@ -941,6 +954,7 @@ impl<'a> LoweringContext<'a> {
                     name: format!("{}::{}", class.name, method.name),
                     display_name: format!("{}::{}", class.name, method.name),
                     class_name: Some(class.name.clone()),
+                    trait_name: method.trait_name.clone(),
                     method_name: Some(method.name.clone()),
                     is_static: method.is_static,
                     parameters,
@@ -952,8 +966,11 @@ impl<'a> LoweringContext<'a> {
                 });
                 let previous_class_name =
                     std::mem::replace(&mut self.current_class_name, Some(class.name.clone()));
+                let previous_trait_name =
+                    std::mem::replace(&mut self.current_trait_name, method.trait_name.clone());
                 let body = self.lower_statements(&method.body);
                 self.current_class_name = previous_class_name;
+                self.current_trait_name = previous_trait_name;
                 self.functions[function_index].body = body;
                 MethodDecl {
                     name: method.name.clone(),
@@ -1290,6 +1307,12 @@ impl<'a> LoweringContext<'a> {
                 .as_ref()
                 .map(|value| self.lower_expr(value)),
         }
+    }
+}
+
+fn lower_trait(trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
+    TraitDecl {
+        name: trait_decl.name.clone(),
     }
 }
 

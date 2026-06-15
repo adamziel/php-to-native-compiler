@@ -3,6 +3,7 @@ use crate::diagnostic::SourceSpan;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub classes: Vec<ClassDecl>,
+    pub traits: Vec<TraitDecl>,
     pub functions: Vec<FunctionDecl>,
     pub statements: Vec<Statement>,
     pub strict_types: bool,
@@ -13,6 +14,7 @@ pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
     pub interfaces: Vec<String>,
+    pub trait_uses: Vec<TraitUseDecl>,
     pub is_abstract: bool,
     pub is_final: bool,
     pub is_interface: bool,
@@ -21,6 +23,23 @@ pub struct ClassDecl {
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<MethodDecl>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitDecl {
+    pub name: String,
+    pub trait_uses: Vec<TraitUseDecl>,
+    pub properties: Vec<PropertyDecl>,
+    pub static_properties: Vec<StaticPropertyDecl>,
+    pub constants: Vec<ClassConstantDecl>,
+    pub methods: Vec<MethodDecl>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitUseDecl {
+    pub name: String,
     pub span: SourceSpan,
 }
 
@@ -68,6 +87,7 @@ pub struct ClassConstantDecl {
 pub struct MethodDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub trait_name: Option<String>,
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,

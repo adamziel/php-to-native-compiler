@@ -12,8 +12,8 @@ use crate::ir::{
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
     FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, Instruction,
     ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    MatchArm as IrMatchArm, Module, PropertyVisibility, ReferenceTarget, TypeHint, UnaryOp,
-    ValueExpr,
+    MatchArm as IrMatchArm, Module, PropertyVisibility, ReferenceTarget, TraitDecl, TypeHint,
+    UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -98,7 +98,7 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions, &module.classes);
     }
-    emit_class_metadata_helpers(&mut out, &module.classes);
+    emit_class_metadata_helpers(&mut out, &module.classes, &module.traits);
     if runtime_requirements.internal_function_dispatch {
         emit_callable_validation_helpers(&mut out);
     }
@@ -1737,6 +1737,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
         "static const char *ptn_declared_private_property_class(const char *class_name, const char *property_name);\n",
     );
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
+    out.push_str("static int ptn_declared_trait_exists(const char *name);\n");
 }
 
 fn emit_method_visibility_prototypes(out: &mut String) {
@@ -1746,7 +1747,7 @@ fn emit_method_visibility_prototypes(out: &mut String) {
     out.push_str("static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);\n");
 }
 
-fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
+fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: &[TraitDecl]) {
     out.push_str(
         "\nstatic PTN_UNUSED const char *ptn_declared_private_property_class(const char *class_name, const char *property_name) {\n",
     );
@@ -1825,6 +1826,20 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
         }
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_trait_exists(const char *name) {\n");
+    if traits.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&trait_decl.name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -6455,6 +6470,7 @@ struct ValueEmitter {
     current_function_name: Option<String>,
     current_method_name: Option<String>,
     current_class_name: Option<String>,
+    current_trait_name: Option<String>,
     current_function_return_by_ref: bool,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
@@ -6825,6 +6841,7 @@ impl ValueEmitter {
             None,
             None,
             None,
+            None,
             false,
         )
     }
@@ -6850,6 +6867,7 @@ impl ValueEmitter {
             Some(function_magic_name),
             Some(function.name.as_str()),
             function.class_name.as_deref(),
+            function.trait_name.as_deref(),
             function.return_by_ref,
         )
     }
@@ -6863,6 +6881,7 @@ impl ValueEmitter {
         current_function_name: Option<&str>,
         current_method_name: Option<&str>,
         current_class_name: Option<&str>,
+        current_trait_name: Option<&str>,
         current_function_return_by_ref: bool,
     ) -> Self {
         Self {
@@ -6875,6 +6894,7 @@ impl ValueEmitter {
             current_function_name: current_function_name.map(str::to_string),
             current_method_name: current_method_name.map(str::to_string),
             current_class_name: current_class_name.map(str::to_string),
+            current_trait_name: current_trait_name.map(str::to_string),
             current_function_return_by_ref,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
@@ -9139,9 +9159,13 @@ impl ValueEmitter {
                         c_string(self.current_class_name.as_deref().unwrap_or(""))
                     )
                 }
-                MagicConstantKind::Trait | MagicConstantKind::Namespace => {
-                    "ptn_string(\"\")".to_string()
+                MagicConstantKind::Trait => {
+                    format!(
+                        "ptn_string(\"{}\")",
+                        c_string(self.current_trait_name.as_deref().unwrap_or(""))
+                    )
                 }
+                MagicConstantKind::Namespace => "ptn_string(\"\")".to_string(),
             },
             ValueExpr::InternalCall {
                 name,

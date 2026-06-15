@@ -91,9 +91,14 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `spl_object_hash()`, `get_class()`/`get_parent_class()` explicit operands
   plus legacy no-argument lexical class scope, `get_called_class()`, Closure
   internal class metadata, Closure-backed `ReflectionFunction` count/name
-  metadata, bounded class/interface/trait/property/method existence checks,
-  abstract/final class metadata, interface constants, and
-  duplicate/non-interface implementation diagnostics.
+  metadata, bounded class/interface/trait/property/method existence checks
+  including `trait_exists()`, abstract/final class metadata, interface
+  constants, and duplicate/non-interface implementation diagnostics.
+- Simple trait declarations compose into using classes, including imported
+  methods, instance/static properties, and constants. `__TRAIT__` reports the
+  source trait for imported methods. Trait adaptations/aliases, precedence
+  conflict resolution, direct trait instantiation/reflection, and strict
+  abstract/signature/property conflict diagnostics remain bounded.
 - Direct variable, array-offset, property, and static-property inc/dec support
   statement and expression pre/post forms over boxed PHP values.
 - Direct variable, variable-root array/append, property, and static-property
@@ -163,7 +168,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   native process boundary. Harness cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, broad unsupported language surfaces such as anonymous
-  classes, interfaces/traits, remaining call-unpacking edges
+  classes, interfaces, trait adaptations/conflicts/reflection edges, remaining
+  call-unpacking edges
   (by-reference spread, Traversable/SPL/generator spread inputs, and
   resource-limit stress rows),
   generator/Fiber execution boundaries including by-reference yields/returns,

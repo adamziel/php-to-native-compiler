@@ -8,7 +8,8 @@ use crate::ast::{
     ListAssignmentTarget, ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind,
     MatchArm, MethodDecl, Program, PromotedProperty, PropertyDecl, PropertyVisibility,
     ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
-    StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    StringInterpolationIndex, StringPart, SwitchCase, TraitDecl, TraitUseDecl, TypeHint, UnaryOp,
+    UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -172,6 +173,7 @@ enum ParsedClassMember {
     Properties(Vec<PropertyDecl>),
     StaticProperties(Vec<StaticPropertyDecl>),
     Constants(Vec<ClassConstantDecl>),
+    TraitUses(Vec<TraitUseDecl>),
 }
 
 impl Parser<'_> {
@@ -185,17 +187,22 @@ impl Parser<'_> {
             ));
         }
         let mut classes = Vec::new();
+        let mut traits = Vec::new();
         let mut functions = Vec::new();
         let mut statements = Vec::new();
         self.parse_top_level_items(
             &mut classes,
+            &mut traits,
             &mut functions,
             &mut statements,
             TopLevelScope::Program,
         )?;
         functions.append(&mut self.nested_functions);
         classes.append(&mut self.anonymous_classes);
-        validate_class_names(&classes)?;
+        compose_traits(&mut traits)?;
+        compose_class_traits(&mut classes, &traits)?;
+        validate_class_names(&classes, &traits)?;
+        validate_trait_names(&traits)?;
         validate_parent_class_names(&classes)?;
         validate_interface_references(&classes)?;
         validate_abstract_methods(&classes)?;
@@ -237,6 +244,7 @@ impl Parser<'_> {
         validate_goto_labels(&statements)?;
         Ok(Program {
             classes,
+            traits,
             functions,
             statements,
             strict_types: self.strict_types,
@@ -246,6 +254,7 @@ impl Parser<'_> {
     fn parse_top_level_items(
         &mut self,
         classes: &mut Vec<ClassDecl>,
+        traits: &mut Vec<TraitDecl>,
         functions: &mut Vec<FunctionDecl>,
         statements: &mut Vec<Statement>,
         scope: TopLevelScope,
@@ -279,13 +288,16 @@ impl Parser<'_> {
                         Some(self.peek().span),
                     ));
                 }
-                self.parse_namespace_declaration(classes, functions, statements)?;
+                self.parse_namespace_declaration(classes, traits, functions, statements)?;
             } else if token_is_identifier_named(self.peek(), "use") {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 self.parse_use_declarations()?;
             } else if self.peek_starts_function_decl() {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 functions.push(self.parse_function_decl()?);
+            } else if token_is_identifier_named(self.peek(), "trait") {
+                self.reject_code_outside_bracketed_namespace(scope)?;
+                traits.push(self.parse_trait_decl()?);
             } else if self.peek_starts_class_decl() {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 classes.push(self.parse_class_decl()?);
@@ -312,6 +324,7 @@ impl Parser<'_> {
     fn parse_namespace_declaration(
         &mut self,
         classes: &mut Vec<ClassDecl>,
+        traits: &mut Vec<TraitDecl>,
         functions: &mut Vec<FunctionDecl>,
         statements: &mut Vec<Statement>,
     ) -> Result<()> {
@@ -330,7 +343,9 @@ impl Parser<'_> {
                 namespace_span,
             )?;
             self.seen_namespace_declaration = true;
-            return self.parse_bracketed_namespace_block(namespace, classes, functions, statements);
+            return self.parse_bracketed_namespace_block(
+                namespace, classes, traits, functions, statements,
+            );
         }
         self.note_namespace_declaration_style(
             NamespaceDeclarationStyle::Unbracketed,
@@ -365,6 +380,7 @@ impl Parser<'_> {
         &mut self,
         namespace: Option<String>,
         classes: &mut Vec<ClassDecl>,
+        traits: &mut Vec<TraitDecl>,
         functions: &mut Vec<FunctionDecl>,
         statements: &mut Vec<Statement>,
     ) -> Result<()> {
@@ -380,6 +396,7 @@ impl Parser<'_> {
         let result = (|| {
             self.parse_top_level_items(
                 classes,
+                traits,
                 functions,
                 statements,
                 TopLevelScope::NamespaceBlock,
@@ -893,6 +910,7 @@ impl Parser<'_> {
         let mut static_properties = Vec::new();
         let mut constants = Vec::new();
         let mut methods = Vec::new();
+        let mut trait_uses = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             match self.parse_class_member(is_readonly, is_interface, &class_name)? {
                 ParsedClassMember::Method(method) => {
@@ -911,6 +929,9 @@ impl Parser<'_> {
                 ParsedClassMember::Constants(parsed_constants) => {
                     constants.extend(parsed_constants);
                 }
+                ParsedClassMember::TraitUses(parsed_trait_uses) => {
+                    trait_uses.extend(parsed_trait_uses);
+                }
             }
         }
         let right_span = self.expect_right_brace()?;
@@ -922,6 +943,7 @@ impl Parser<'_> {
             name: class_name,
             parent_name,
             interfaces,
+            trait_uses,
             is_abstract: is_abstract || is_interface,
             is_final,
             is_interface,
@@ -934,6 +956,72 @@ impl Parser<'_> {
         })
     }
 
+    fn parse_trait_decl(&mut self) -> Result<TraitDecl> {
+        let trait_token = self.advance().clone();
+        if !token_is_identifier_named(&trait_token, "trait") {
+            return Err(Diagnostic::new("expected trait", Some(trait_token.span)));
+        }
+        let (trait_name, _) = self.parse_declaration_name("expected trait name")?;
+        self.expect_left_brace()?;
+
+        let mut properties = Vec::new();
+        let mut static_properties = Vec::new();
+        let mut constants = Vec::new();
+        let mut methods = Vec::new();
+        let mut trait_uses = Vec::new();
+        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            match self.parse_class_member(false, false, &trait_name)? {
+                ParsedClassMember::Method(mut method) => {
+                    method.trait_name = Some(trait_name.clone());
+                    methods.push(method);
+                }
+                ParsedClassMember::Properties(parsed_properties) => {
+                    properties.extend(parsed_properties);
+                }
+                ParsedClassMember::StaticProperties(parsed_properties) => {
+                    static_properties.extend(parsed_properties);
+                }
+                ParsedClassMember::Constants(parsed_constants) => {
+                    constants.extend(parsed_constants);
+                }
+                ParsedClassMember::TraitUses(parsed_trait_uses) => {
+                    trait_uses.extend(parsed_trait_uses);
+                }
+            }
+        }
+        let right_span = self.expect_right_brace()?;
+        Ok(TraitDecl {
+            name: trait_name,
+            trait_uses,
+            properties,
+            static_properties,
+            constants,
+            methods,
+            span: combine_spans(trait_token.span, right_span),
+        })
+    }
+
+    fn parse_trait_use_declarations(&mut self) -> Result<Vec<TraitUseDecl>> {
+        self.advance();
+        let mut trait_uses = Vec::new();
+        loop {
+            let (name, span) = self.parse_resolved_class_name("expected trait name")?;
+            trait_uses.push(TraitUseDecl { name, span });
+            if !matches!(self.peek().kind, TokenKind::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            return Err(Diagnostic::new(
+                "trait adaptations are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        self.expect_semicolon()?;
+        Ok(trait_uses)
+    }
+
     fn parse_class_member(
         &mut self,
         class_is_readonly: bool,
@@ -941,6 +1029,35 @@ impl Parser<'_> {
         class_name: &str,
     ) -> Result<ParsedClassMember> {
         let mut modifiers = self.parse_class_modifiers()?;
+        if token_is_identifier_named(self.peek(), "use") {
+            if class_is_interface {
+                return Err(Diagnostic::new(
+                    "interfaces may not use traits",
+                    Some(self.peek().span),
+                ));
+            }
+            if modifiers.visibility_span.is_some()
+                || modifiers.static_span.is_some()
+                || modifiers.abstract_span.is_some()
+                || modifiers.final_span.is_some()
+                || modifiers.readonly_span.is_some()
+                || modifiers.set_visibility_span.is_some()
+            {
+                return Err(Diagnostic::new(
+                    "trait use declarations cannot have modifiers",
+                    modifiers
+                        .visibility_span
+                        .or(modifiers.static_span)
+                        .or(modifiers.abstract_span)
+                        .or(modifiers.final_span)
+                        .or(modifiers.readonly_span)
+                        .or(modifiers.set_visibility_span),
+                ));
+            }
+            return Ok(ParsedClassMember::TraitUses(
+                self.parse_trait_use_declarations()?,
+            ));
+        }
         if modifiers.is_abstract && modifiers.is_final {
             return Err(Diagnostic::new(
                 "Cannot use the final modifier on an abstract method",
@@ -1637,6 +1754,7 @@ impl Parser<'_> {
         Ok(MethodDecl {
             name,
             visibility: modifiers.visibility,
+            trait_name: None,
             parameters,
             return_type,
             return_by_ref,
@@ -4201,6 +4319,7 @@ impl Parser<'_> {
         let mut static_properties = Vec::new();
         let mut constants = Vec::new();
         let mut methods = Vec::new();
+        let mut trait_uses = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             match self.parse_class_member(false, false, &class_name)? {
                 ParsedClassMember::Method(method) => methods.push(method),
@@ -4212,6 +4331,9 @@ impl Parser<'_> {
                 }
                 ParsedClassMember::Constants(parsed_constants) => {
                     constants.extend(parsed_constants);
+                }
+                ParsedClassMember::TraitUses(parsed_trait_uses) => {
+                    trait_uses.extend(parsed_trait_uses);
                 }
             }
         }
@@ -4226,6 +4348,7 @@ impl Parser<'_> {
             name: class_name.clone(),
             parent_name,
             interfaces,
+            trait_uses,
             is_abstract: false,
             is_final: false,
             is_interface: false,
@@ -5896,7 +6019,7 @@ fn escape_token_text(value: &str) -> String {
 }
 
 fn is_unsupported_class_like_declaration(name: &str) -> bool {
-    matches!(name.to_ascii_lowercase().as_str(), "enum" | "trait")
+    matches!(name.to_ascii_lowercase().as_str(), "enum")
 }
 
 fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
@@ -6066,7 +6189,186 @@ fn reject_unpacked_language_construct_arguments(
     Ok(())
 }
 
-fn validate_class_names(classes: &[ClassDecl]) -> Result<()> {
+fn compose_traits(traits: &mut [TraitDecl]) -> Result<()> {
+    let originals = traits.to_vec();
+    let mut cache = HashMap::new();
+    let mut visiting = HashSet::new();
+    for trait_decl in traits {
+        *trait_decl = compose_trait_decl(&trait_decl.name, &originals, &mut visiting, &mut cache)?;
+    }
+    Ok(())
+}
+
+fn compose_trait_decl(
+    name: &str,
+    traits: &[TraitDecl],
+    visiting: &mut HashSet<String>,
+    cache: &mut HashMap<String, TraitDecl>,
+) -> Result<TraitDecl> {
+    let lookup_name = name.to_ascii_lowercase();
+    if let Some(cached) = cache.get(&lookup_name) {
+        return Ok(cached.clone());
+    }
+    if !visiting.insert(lookup_name.clone()) {
+        return Err(Diagnostic::new(
+            format!("Trait \"{name}\" circular reference detected"),
+            None,
+        ));
+    }
+    let Some(trait_decl) = traits
+        .iter()
+        .find(|candidate| candidate.name.eq_ignore_ascii_case(name))
+    else {
+        visiting.remove(&lookup_name);
+        return Err(Diagnostic::new(format!("Trait \"{name}\" not found"), None));
+    };
+    let mut composed = trait_decl.clone();
+    for trait_use in &trait_decl.trait_uses {
+        let used_trait = compose_trait_decl(&trait_use.name, traits, visiting, cache)?;
+        import_trait_members_into_trait(&mut composed, &used_trait);
+    }
+    visiting.remove(&lookup_name);
+    cache.insert(lookup_name, composed.clone());
+    Ok(composed)
+}
+
+fn import_trait_members_into_trait(target: &mut TraitDecl, source: &TraitDecl) {
+    for property in &source.properties {
+        if !target
+            .properties
+            .iter()
+            .any(|candidate| candidate.name == property.name)
+        {
+            target.properties.push(property.clone());
+        }
+    }
+    for property in &source.static_properties {
+        if !target
+            .static_properties
+            .iter()
+            .any(|candidate| candidate.name == property.name)
+        {
+            target.static_properties.push(property.clone());
+        }
+    }
+    for constant in &source.constants {
+        if !target
+            .constants
+            .iter()
+            .any(|candidate| candidate.name.eq_ignore_ascii_case(&constant.name))
+        {
+            target.constants.push(constant.clone());
+        }
+    }
+    for method in &source.methods {
+        if !target
+            .methods
+            .iter()
+            .any(|candidate| candidate.name.eq_ignore_ascii_case(&method.name))
+        {
+            target
+                .methods
+                .push(method_with_trait_origin(method, source));
+        }
+    }
+}
+
+fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Result<()> {
+    for class in classes {
+        if class.trait_uses.is_empty() {
+            continue;
+        }
+        let own_method_names = class
+            .methods
+            .iter()
+            .map(|method| method.name.to_ascii_lowercase())
+            .collect::<HashSet<_>>();
+        let mut imported_method_names = HashSet::new();
+        let trait_uses = class.trait_uses.clone();
+        for trait_use in trait_uses {
+            let Some(trait_decl) = traits
+                .iter()
+                .find(|candidate| candidate.name.eq_ignore_ascii_case(&trait_use.name))
+            else {
+                return Err(Diagnostic::new(
+                    format!("Trait \"{}\" not found", trait_use.name),
+                    Some(trait_use.span),
+                ));
+            };
+            import_trait_members_into_class(
+                class,
+                trait_decl,
+                &own_method_names,
+                &mut imported_method_names,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn import_trait_members_into_class(
+    class: &mut ClassDecl,
+    trait_decl: &TraitDecl,
+    own_method_names: &HashSet<String>,
+    imported_method_names: &mut HashSet<String>,
+) -> Result<()> {
+    for property in &trait_decl.properties {
+        if !class
+            .properties
+            .iter()
+            .any(|candidate| candidate.name == property.name)
+        {
+            class.properties.push(property.clone());
+        }
+    }
+    for property in &trait_decl.static_properties {
+        if !class
+            .static_properties
+            .iter()
+            .any(|candidate| candidate.name == property.name)
+        {
+            class.static_properties.push(property.clone());
+        }
+    }
+    for constant in &trait_decl.constants {
+        if !class
+            .constants
+            .iter()
+            .any(|candidate| candidate.name.eq_ignore_ascii_case(&constant.name))
+        {
+            class.constants.push(constant.clone());
+        }
+    }
+    for method in &trait_decl.methods {
+        let method_key = method.name.to_ascii_lowercase();
+        if own_method_names.contains(&method_key) {
+            continue;
+        }
+        if !imported_method_names.insert(method_key) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Trait method {}::{} has not been applied because of a collision",
+                    trait_decl.name, method.name
+                ),
+                Some(class.span),
+            ));
+        }
+        class
+            .methods
+            .push(method_with_trait_origin(method, trait_decl));
+    }
+    Ok(())
+}
+
+fn method_with_trait_origin(method: &MethodDecl, trait_decl: &TraitDecl) -> MethodDecl {
+    let mut imported = method.clone();
+    if imported.trait_name.is_none() {
+        imported.trait_name = Some(trait_decl.name.clone());
+    }
+    imported
+}
+
+fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<()> {
     let mut names = HashSet::new();
     for class in classes {
         let lookup_name = class.name.to_ascii_lowercase();
@@ -6074,6 +6376,29 @@ fn validate_class_names(classes: &[ClassDecl]) -> Result<()> {
             return Err(Diagnostic::new(
                 format!("Cannot declare class {lookup_name}, because the name is already in use"),
                 Some(class.span),
+            ));
+        }
+    }
+    for trait_decl in traits {
+        let lookup_name = trait_decl.name.to_ascii_lowercase();
+        if !names.insert(lookup_name.clone()) {
+            return Err(Diagnostic::new(
+                format!("Cannot declare trait {lookup_name}, because the name is already in use"),
+                Some(trait_decl.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_trait_names(traits: &[TraitDecl]) -> Result<()> {
+    let mut names = HashSet::new();
+    for trait_decl in traits {
+        let lookup_name = trait_decl.name.to_ascii_lowercase();
+        if !names.insert(lookup_name.clone()) {
+            return Err(Diagnostic::new(
+                format!("Cannot declare trait {lookup_name}, because the name is already in use"),
+                Some(trait_decl.span),
             ));
         }
     }
@@ -7661,6 +7986,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "lcfirst"
             | "chop"
             | "touch"
+            | "trait_exists"
             | "trim"
             | "ltrim"
             | "rtrim"

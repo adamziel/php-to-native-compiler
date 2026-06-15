@@ -317,10 +317,10 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires PHP hidden-suffix anonymous class generated names",
         ),
         (
-            "trait declaration",
-            "--TEST--\ntrait\n--FILE--\n<?php\ntrait SharedBehavior {}\n--EXPECT--\n",
+            "trait adaptation",
+            "--TEST--\ntrait adaptation\n--FILE--\n<?php\ntrait SharedBehavior { public function run() {} }\nclass Worker { use SharedBehavior { run as go; } }\n--EXPECT--\n",
             "unsupported-trait-declaration\t",
-            "requires trait declarations",
+            "requires trait adaptation aliases",
         ),
         (
             "generator yield",
@@ -377,6 +377,16 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_simple_trait_composition_runnable() {
+    let row = "--TEST--\ntrait\n--FILE--\n<?php\ntrait SharedBehavior { public function run() { echo \"ok\\n\"; } }\nclass Worker { use SharedBehavior; }\n(new Worker())->run();\n--EXPECT--\nok\n";
+    assert_eq!(
+        classify(row).trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+    assert_eq!(classify(row), classify_with_section_cache(row));
 }
 
 #[test]
