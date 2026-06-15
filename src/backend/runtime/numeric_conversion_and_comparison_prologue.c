@@ -64,6 +64,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->include_path = NULL;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
+    runtime->exception_string_param_max_len = caller_runtime->exception_string_param_max_len;
     runtime->strict_types = caller_runtime->strict_types;
     runtime->initial_zend_assertions = caller_runtime->initial_zend_assertions;
     runtime->zend_assertions = caller_runtime->zend_assertions;
@@ -154,6 +155,19 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     size_t line
 );
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
+static PTN_UNUSED void ptn_string_buffer_init(PtnStringBuffer *buffer);
+static PTN_UNUSED void ptn_string_buffer_append(PtnStringBuffer *buffer, const char *value);
+static PTN_UNUSED void ptn_string_buffer_append_len(
+    PtnStringBuffer *buffer,
+    const char *value,
+    size_t len
+);
+static PTN_UNUSED void ptn_string_buffer_append_char(PtnStringBuffer *buffer, char value);
+static PTN_UNUSED void ptn_string_buffer_append_format(
+    PtnStringBuffer *buffer,
+    const char *format,
+    ...
+);
 
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_global_symbol_table(PtnRuntime *runtime) {
     return runtime->global_symbols == NULL ? &runtime->symbols : runtime->global_symbols;
@@ -531,6 +545,261 @@ static PTN_UNUSED PtnValue ptn_trace_frame_array(PtnTraceFrame *frame) {
     return result;
 }
 
+static PTN_UNUSED size_t ptn_runtime_exception_string_param_max_len(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return 15;
+    }
+    return root->exception_string_param_max_len;
+}
+
+static PTN_UNUSED void ptn_runtime_set_exception_string_param_max_len(
+    PtnRuntime *runtime,
+    size_t value
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    root->exception_string_param_max_len = value;
+}
+
+static PtnValue *ptn_trace_array_string_slot(PtnValue frame, const char *key) {
+    frame = ptn_value_deref(frame);
+    if (frame.type != PTN_ARRAY || frame.as.array == NULL) {
+        return NULL;
+    }
+    size_t key_len = strlen(key);
+    for (size_t i = 0; i < frame.as.array->len; i++) {
+        PtnArrayEntry *entry = &frame.as.array->entries[i];
+        if (
+            entry->key.type == PTN_ARRAY_KEY_STRING &&
+            entry->key.string_len == key_len &&
+            memcmp(entry->key.as.string, key, key_len) == 0
+        ) {
+            return &entry->value;
+        }
+    }
+    return NULL;
+}
+
+static void ptn_trace_append_quoted_string(
+    PtnStringBuffer *buffer,
+    const unsigned char *data,
+    size_t len,
+    size_t max_len
+) {
+    ptn_string_buffer_append_char(buffer, '\'');
+    size_t display_len = len;
+    int append_ellipsis = 0;
+    if (len > max_len) {
+        display_len = max_len;
+        append_ellipsis = 1;
+    }
+    for (size_t i = 0; i < display_len; i++) {
+        unsigned char byte = data[i];
+        switch (byte) {
+            case '\n':
+                ptn_string_buffer_append(buffer, "\\n");
+                break;
+            case '\r':
+                ptn_string_buffer_append(buffer, "\\r");
+                break;
+            case '\t':
+                ptn_string_buffer_append(buffer, "\\t");
+                break;
+            case '\\':
+                ptn_string_buffer_append(buffer, "\\\\");
+                break;
+            case '\'':
+                ptn_string_buffer_append(buffer, "\\'");
+                break;
+            default:
+                if (byte < 0x20 || byte >= 0x7f) {
+                    ptn_string_buffer_append_format(buffer, "\\x%02X", (unsigned int)byte);
+                } else {
+                    ptn_string_buffer_append_char(buffer, (char)byte);
+                }
+                break;
+        }
+    }
+    if (append_ellipsis) {
+        ptn_string_buffer_append(buffer, "...");
+    }
+    ptn_string_buffer_append_char(buffer, '\'');
+}
+
+static void ptn_trace_append_arg(PtnStringBuffer *buffer, PtnValue value, size_t max_string_len) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_string_buffer_append(buffer, "NULL");
+            break;
+        case PTN_BOOL:
+            ptn_string_buffer_append(buffer, value.as.boolean ? "true" : "false");
+            break;
+        case PTN_INT:
+            ptn_string_buffer_append_format(buffer, "%lld", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT: {
+            char formatted[128];
+            ptn_format_scalar_float(value.as.floating, formatted, sizeof(formatted));
+            ptn_string_buffer_append(buffer, formatted);
+            break;
+        }
+        case PTN_STRING:
+            ptn_trace_append_quoted_string(
+                buffer,
+                value.as.string.data,
+                value.as.string.len,
+                max_string_len
+            );
+            break;
+        case PTN_ARRAY:
+            ptn_string_buffer_append(buffer, "Array");
+            break;
+        case PTN_OBJECT:
+            ptn_string_buffer_append_format(buffer, "Object(%s)", value.as.object->class_name);
+            break;
+        case PTN_CLOSURE:
+            ptn_string_buffer_append(buffer, "Object(Closure)");
+            break;
+        case PTN_EXCEPTION:
+            ptn_string_buffer_append_format(buffer, "Object(%s)", value.as.exception->class_name);
+            break;
+        case PTN_RESOURCE:
+            ptn_string_buffer_append_format(
+                buffer,
+                "Resource id #%lld",
+                (long long)value.as.resource->id
+            );
+            break;
+        case PTN_REFERENCE:
+            ptn_string_buffer_append(buffer, "NULL");
+            break;
+    }
+}
+
+static void ptn_exception_append_display_function(
+    PtnStringBuffer *buffer,
+    const char *function_name
+) {
+    const char *constructor_separator = strstr(function_name, "::__construct");
+    if (constructor_separator != NULL && constructor_separator[13] == '\0') {
+        ptn_string_buffer_append_len(
+            buffer,
+            function_name,
+            (size_t)(constructor_separator - function_name)
+        );
+        ptn_string_buffer_append(buffer, "->__construct");
+        return;
+    }
+    ptn_string_buffer_append(buffer, function_name);
+}
+
+static void ptn_exception_append_trace_frame(
+    PtnStringBuffer *buffer,
+    size_t index,
+    PtnValue frame,
+    size_t max_string_len
+) {
+    ptn_string_buffer_append_format(buffer, "#%zu ", index);
+    frame = ptn_value_deref(frame);
+    if (frame.type != PTN_ARRAY || frame.as.array == NULL) {
+        ptn_string_buffer_append(buffer, "{main}");
+        return;
+    }
+
+    PtnValue *file_slot = ptn_trace_array_string_slot(frame, "file");
+    PtnValue *line_slot = ptn_trace_array_string_slot(frame, "line");
+    PtnValue file_value = file_slot == NULL ? ptn_null() : ptn_value_deref(*file_slot);
+    PtnValue line_value = line_slot == NULL ? ptn_null() : ptn_value_deref(*line_slot);
+    if (file_value.type == PTN_STRING && line_value.type == PTN_INT) {
+        ptn_string_buffer_append_len(
+            buffer,
+            (const char *)file_value.as.string.data,
+            file_value.as.string.len
+        );
+        ptn_string_buffer_append_format(buffer, "(%lld): ", (long long)line_value.as.integer);
+    }
+
+    PtnValue *function_slot = ptn_trace_array_string_slot(frame, "function");
+    PtnValue function_value = function_slot == NULL ? ptn_null() : ptn_value_deref(*function_slot);
+    if (function_value.type == PTN_STRING) {
+        char *function_name = ptn_duplicate_string_len(
+            (const char *)function_value.as.string.data,
+            function_value.as.string.len
+        );
+        ptn_exception_append_display_function(buffer, function_name);
+        free(function_name);
+    }
+    ptn_string_buffer_append_char(buffer, '(');
+    PtnValue *args_slot = ptn_trace_array_string_slot(frame, "args");
+    PtnValue args_value = args_slot == NULL ? ptn_null() : ptn_value_deref(*args_slot);
+    if (args_value.type == PTN_ARRAY && args_value.as.array != NULL) {
+        for (size_t i = 0; i < args_value.as.array->len; i++) {
+            if (i != 0) {
+                ptn_string_buffer_append(buffer, ", ");
+            }
+            ptn_trace_append_arg(buffer, args_value.as.array->entries[i].value, max_string_len);
+        }
+    }
+    ptn_string_buffer_append_char(buffer, ')');
+}
+
+static PTN_UNUSED PtnStringOperand ptn_exception_trace_as_string_operand(
+    PtnRuntime *runtime,
+    PtnException *exception
+) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    size_t max_string_len = ptn_runtime_exception_string_param_max_len(runtime);
+    PtnValue trace = exception == NULL ? ptn_null() : ptn_value_deref(exception->trace);
+    size_t index = 0;
+    if (trace.type == PTN_ARRAY && trace.as.array != NULL) {
+        for (size_t i = 0; i < trace.as.array->len; i++) {
+            if (index != 0) {
+                ptn_string_buffer_append_char(&buffer, '\n');
+            }
+            ptn_exception_append_trace_frame(
+                &buffer,
+                index,
+                trace.as.array->entries[i].value,
+                max_string_len
+            );
+            index++;
+        }
+    }
+    if (index != 0) {
+        ptn_string_buffer_append_char(&buffer, '\n');
+    }
+    ptn_string_buffer_append_format(&buffer, "#%zu {main}", index);
+    return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
+}
+
+static PTN_UNUSED PtnStringOperand ptn_exception_to_string_operand(
+    PtnRuntime *runtime,
+    PtnException *exception
+) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    if (exception == NULL) {
+        return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
+    }
+    ptn_string_buffer_append(&buffer, exception->class_name);
+    if (exception->message_len != 0) {
+        ptn_string_buffer_append(&buffer, ": ");
+        ptn_string_buffer_append_len(&buffer, exception->message, exception->message_len);
+    }
+    ptn_string_buffer_append(&buffer, " in ");
+    ptn_string_buffer_append(&buffer, exception->path == NULL ? "ptn" : exception->path);
+    ptn_string_buffer_append_format(&buffer, ":%zu\nStack trace:\n", exception->line);
+    PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
+    ptn_string_buffer_append_len(&buffer, trace.data, trace.len);
+    free(trace.owned);
+    return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
+}
+
 static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
     PtnValue trace = ptn_array_from_literal_entries(0, NULL);
     size_t index = 0;
@@ -554,6 +823,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     PtnRuntime *runtime,
     const char *class_name,
     char *message,
+    size_t message_len,
     int64_t code,
     PtnValue previous,
     int64_t severity,
@@ -569,6 +839,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->lifecycle_runtime = ptn_runtime_root(runtime);
     exception->class_name = class_name;
     exception->message = message;
+    exception->message_len = message_len;
     exception->code = code;
     exception->path = path;
     exception->line = line;
@@ -576,6 +847,26 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->previous = ptn_value_clone_deref(previous);
     exception->severity = severity;
     return exception;
+}
+
+static PTN_UNUSED PtnException *ptn_exception_new_owned_cstr(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message,
+    const char *path,
+    size_t line
+) {
+    return ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        strlen(message),
+        0,
+        ptn_null(),
+        PTN_E_ERROR,
+        path,
+        line
+    );
 }
 
 static PTN_UNUSED PtnException *ptn_exception_new(
@@ -589,6 +880,7 @@ static PTN_UNUSED PtnException *ptn_exception_new(
         runtime,
         class_name,
         ptn_duplicate_string(message),
+        strlen(message),
         0,
         ptn_null(),
         PTN_E_ERROR,
@@ -708,53 +1000,16 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
     }
 }
 
-static void ptn_emit_uncaught_trace_arg(FILE *stream, PtnValue value) {
-    value = ptn_value_deref(value);
-    switch (value.type) {
-        case PTN_NULL:
-            fputs("NULL", stream);
-            break;
-        case PTN_BOOL:
-            fputs(value.as.boolean ? "true" : "false", stream);
-            break;
-        case PTN_INT:
-            fprintf(stream, "%lld", (long long)value.as.integer);
-            break;
-        case PTN_FLOAT: {
-            char formatted[128];
-            ptn_format_scalar_float(value.as.floating, formatted, sizeof(formatted));
-            fputs(formatted, stream);
-            break;
-        }
-        case PTN_STRING:
-            fputc('\'', stream);
-            if (value.as.string.len > 15) {
-                fwrite(value.as.string.data, 1, 15, stream);
-                fputs("...", stream);
-            } else {
-                fwrite(value.as.string.data, 1, value.as.string.len, stream);
-            }
-            fputc('\'', stream);
-            break;
-        case PTN_ARRAY:
-            fputs("Array", stream);
-            break;
-        case PTN_OBJECT:
-            fputs("Object", stream);
-            break;
-        case PTN_CLOSURE:
-            fputs("Object", stream);
-            break;
-        case PTN_EXCEPTION:
-            fputs("Object", stream);
-            break;
-        case PTN_RESOURCE:
-            fprintf(stream, "Resource id #%lld", (long long)value.as.resource->id);
-            break;
-        case PTN_REFERENCE:
-            fputs("NULL", stream);
-            break;
-    }
+static void ptn_emit_uncaught_trace_arg(FILE *stream, PtnRuntime *runtime, PtnValue value) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_trace_append_arg(
+        &buffer,
+        value,
+        ptn_runtime_exception_string_param_max_len(runtime)
+    );
+    fwrite(buffer.data, 1, buffer.len, stream);
+    free(buffer.data);
 }
 
 static int ptn_emit_uncaught_internal_trace(PtnRuntime *runtime) {
@@ -794,7 +1049,7 @@ static int ptn_emit_uncaught_internal_trace(PtnRuntime *runtime) {
             if (i != 0) {
                 fputs(", ", stderr);
             }
-            ptn_emit_uncaught_trace_arg(stderr, frame->args[i]);
+            ptn_emit_uncaught_trace_arg(stderr, runtime, frame->args[i]);
         }
         fputs(")\n", stderr);
         index++;
@@ -867,20 +1122,18 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
     }
     if (display_path == NULL || display_line == 0) {
         fputs("Fatal error: ", stderr);
-        fputs(exception->message, stderr);
+        fwrite(exception->message, 1, exception->message_len, stderr);
         fputc('\n', stderr);
         return;
     }
 
     fputc('\n', stderr);
-    fprintf(
-        stderr,
-        "Fatal error: Uncaught %s: %s in %s:%zu\n",
-        exception->class_name,
-        exception->message,
-        display_path,
-        display_line
-    );
+    fprintf(stderr, "Fatal error: Uncaught %s", exception->class_name);
+    if (exception->message_len != 0) {
+        fputs(": ", stderr);
+        fwrite(exception->message, 1, exception->message_len, stderr);
+    }
+    fprintf(stderr, " in %s:%zu\n", display_path, display_line);
     fputs("Stack trace:\n", stderr);
     if (ptn_emit_uncaught_internal_trace(runtime)) {
         /* Trace emitted from the active internal call frame. */
@@ -924,16 +1177,8 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
     char *message
 ) {
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = ptn_exception_new_owned(
-        runtime,
-        class_name,
-        message,
-        0,
-        ptn_null(),
-        PTN_E_ERROR,
-        NULL,
-        0
-    );
+    runtime->exceptions->active_exception =
+        ptn_exception_new_owned_cstr(runtime, class_name, message, NULL, 0);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -949,21 +1194,140 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at(
     size_t line
 ) {
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = ptn_exception_new_owned(
-        runtime,
-        class_name,
-        message,
-        0,
-        ptn_null(),
-        PTN_E_ERROR,
-        path,
-        line
-    );
+    runtime->exceptions->active_exception =
+        ptn_exception_new_owned_cstr(runtime, class_name, message, path, line);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
     exit(255);
+}
+
+static PTN_UNUSED const char *ptn_exception_constructor_declaring_class(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    (void)runtime;
+    if (ptn_declared_class_is_same_or_descendant(class_name, "ErrorException")) {
+        return "ErrorException";
+    }
+    if (ptn_declared_class_is_same_or_descendant(class_name, "Error")) {
+        return "Error";
+    }
+    return "Exception";
+}
+
+static PTN_UNUSED size_t ptn_exception_constructor_max_args(const char *declaring_class) {
+    return ptn_exception_name_equal(declaring_class, "ErrorException") ? 6 : 3;
+}
+
+static const char *ptn_exception_constructor_given_type(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            return "null";
+        case PTN_BOOL:
+            return "bool";
+        case PTN_INT:
+            return "int";
+        case PTN_FLOAT:
+            return "float";
+        case PTN_STRING:
+            return "string";
+        case PTN_ARRAY:
+            return "array";
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_RESOURCE:
+            return "resource";
+        case PTN_REFERENCE:
+            return "reference";
+    }
+    return "unknown";
+}
+
+static PTN_UNUSED PtnStringOperand ptn_exception_constructor_message(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc == 0) {
+        char *message = ptn_duplicate_string("");
+        return (PtnStringOperand) { message, message, 0 };
+    }
+
+    PtnTraceFrame trace_frame;
+    char trace_name[64];
+    int written = snprintf(trace_name, sizeof(trace_name), "%s::__construct", declaring_class);
+    if (written < 0 || (size_t)written >= sizeof(trace_name)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        trace_name,
+        runtime != NULL ? runtime->source_path : NULL,
+        line,
+        argc,
+        args
+    );
+
+    PtnValue value = ptn_value_deref(args[0]);
+    if (
+        value.type == PTN_ARRAY ||
+        value.type == PTN_OBJECT ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION ||
+        value.type == PTN_RESOURCE
+    ) {
+        const char *given = ptn_exception_constructor_given_type(value);
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s::__construct(): Argument #1 ($message) must be of type string, %s given",
+            declaring_class,
+            given
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s::__construct(): Argument #1 ($message) must be of type string, %s given",
+            declaring_class,
+            given
+        );
+        ptn_throw_exception_owned_message_at(
+            runtime,
+            "TypeError",
+            message,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+    }
+
+    char *message;
+    size_t message_len;
+    if (value.type == PTN_STRING) {
+        message_len = value.as.string.len;
+        message = ptn_duplicate_string_len((const char *)value.as.string.data, message_len);
+    } else {
+        message = ptn_value_to_string(value);
+        message_len = strlen(message);
+    }
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    return (PtnStringOperand) { message, message, message_len };
 }
 
 static PTN_UNUSED int ptn_object_is_declared_throwable(PtnRuntime *runtime, PtnObject *object) {
@@ -972,7 +1336,7 @@ static PTN_UNUSED int ptn_object_is_declared_throwable(PtnRuntime *runtime, PtnO
             runtime->class_scope_allows(object->class_name, "Error"));
 }
 
-static PTN_UNUSED char *ptn_object_exception_message(
+static PTN_UNUSED PtnStringOperand ptn_object_exception_message(
     PtnRuntime *runtime,
     PtnValue object,
     size_t line
@@ -986,11 +1350,21 @@ static PTN_UNUSED char *ptn_object_exception_message(
         line
     );
     if (!lookup.exists) {
-        return ptn_duplicate_string("");
+        char *message = ptn_duplicate_string("");
+        return (PtnStringOperand) { message, message, 0 };
     }
-    char *message = ptn_value_to_string(lookup.value);
+    PtnValue message_value = ptn_value_deref(lookup.value);
+    char *message;
+    size_t message_len;
+    if (message_value.type == PTN_STRING) {
+        message_len = message_value.as.string.len;
+        message = ptn_duplicate_string_len((const char *)message_value.as.string.data, message_len);
+    } else {
+        message = ptn_value_to_string(message_value);
+        message_len = strlen(message);
+    }
     ptn_value_destroy(&lookup.value);
-    return message;
+    return (PtnStringOperand) { message, message, message_len };
 }
 
 static PTN_UNUSED PtnLookupResult ptn_throwable_object_property(
@@ -1015,7 +1389,10 @@ static PTN_UNUSED PtnLookupResult ptn_throwable_object_property(
 static PTN_UNUSED char *ptn_throwable_message_string(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type == PTN_EXCEPTION) {
-        return ptn_duplicate_string(receiver.as.exception->message);
+        return ptn_duplicate_string_len(
+            receiver.as.exception->message,
+            receiver.as.exception->message_len
+        );
     }
     PtnLookupResult lookup = ptn_throwable_object_property(runtime, receiver, "message", line);
     if (!lookup.exists) {
@@ -1104,16 +1481,26 @@ static PTN_UNUSED PtnValue ptn_throwable_trace_value(PtnRuntime *runtime, PtnVal
 }
 
 static PTN_UNUSED PtnValue ptn_throwable_trace_string(PtnRuntime *runtime, PtnValue receiver, size_t line) {
-    (void)runtime;
-    (void)receiver;
     (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        PtnStringOperand trace = ptn_exception_trace_as_string_operand(
+            runtime,
+            receiver.as.exception
+        );
+        return ptn_owned_string_len(trace.owned, trace.len);
+    }
     return ptn_owned_string(ptn_duplicate_string("#0 {main}"));
 }
 
 static PTN_UNUSED PtnValue ptn_throwable_to_string(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type == PTN_EXCEPTION) {
-        return ptn_owned_string(ptn_value_to_string(receiver));
+        PtnStringOperand text = ptn_exception_to_string_operand(
+            runtime,
+            receiver.as.exception
+        );
+        return ptn_owned_string_len(text.owned, text.len);
     }
     const char *class_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : "Exception";
     char *message = ptn_throwable_message_string(runtime, receiver, line);
@@ -1163,7 +1550,7 @@ static PTN_UNUSED PtnValue ptn_throw_value(
 ) {
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, resolved.as.object)) {
-        char *message = ptn_throwable_message_string(runtime, resolved, line);
+        PtnStringOperand message = ptn_object_exception_message(runtime, resolved, line);
         int64_t code = ptn_throwable_int_property(runtime, resolved, "code", 0, line);
         int64_t severity = ptn_throwable_int_property(runtime, resolved, "severity", PTN_E_ERROR, line);
         PtnValue previous = ptn_throwable_previous_value(runtime, resolved, line);
@@ -1175,7 +1562,8 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         runtime->exceptions->active_exception = ptn_exception_new_owned(
             runtime,
             resolved.as.object->class_name,
-            message,
+            message.owned,
+            message.len,
             code,
             previous,
             severity,
@@ -1934,7 +2322,17 @@ static PTN_UNUSED PtnValue ptn_call_method(
             );
         }
         if (ptn_exception_name_equal(name, "getMessage")) {
-            return ptn_owned_string(ptn_throwable_message_string(runtime, receiver, line));
+            if (receiver.type == PTN_EXCEPTION) {
+                return ptn_owned_string_len(
+                    ptn_duplicate_string_len(
+                        receiver.as.exception->message,
+                        receiver.as.exception->message_len
+                    ),
+                    receiver.as.exception->message_len
+                );
+            }
+            PtnStringOperand message = ptn_object_exception_message(runtime, receiver, line);
+            return ptn_owned_string_len(message.owned, message.len);
         }
         if (ptn_exception_name_equal(name, "getCode")) {
             return ptn_int(ptn_throwable_int_property(runtime, receiver, "code", 0, line));

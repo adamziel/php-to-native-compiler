@@ -6284,6 +6284,7 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
         "exception"
             | "errorexception"
             | "reflectionexception"
+            | "runtimeexception"
             | "error"
             | "typeerror"
             | "argumentcounterror"

@@ -1,0 +1,13 @@
+Zend/tests/exceptions/bug60569.phpt
+Zend/tests/exceptions/bug61362.phpt
+Zend/tests/exceptions/bug63762.phpt
+Zend/tests/exceptions/bug73350.phpt
+Zend/tests/exceptions/exception_018.phpt
+Zend/tests/exceptions/exception_019.phpt
+Zend/tests/exceptions/exception_020.phpt
+Zend/tests/exceptions/exception_021.phpt
+Zend/tests/exceptions/exception_022.phpt
+Zend/tests/exceptions/exception_023.phpt
+Zend/tests/exceptions/exception_024.phpt
+Zend/tests/exceptions/exception_025.phpt
+Zend/tests/exceptions/gh10810.phpt

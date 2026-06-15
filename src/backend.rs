@@ -21,9 +21,12 @@ mod runtime;
 const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
     "Using ${var} in strings is deprecated, use {$var} instead";
+const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ErrorException", "Exception"),
     ("ReflectionException", "Exception"),
+    ("RuntimeException", "Exception"),
+    ("UnhandledMatchError", "Error"),
     ("TypeError", "Error"),
     ("ArgumentCountError", "TypeError"),
     ("ValueError", "Error"),
@@ -462,22 +465,22 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "\nstatic PTN_UNUSED void ptn_initialize_declared_exception_object(PtnRuntime *runtime, PtnValue object, size_t argc, const PtnValue *args, size_t line) {\n",
     );
-    out.push_str("    if (argc > 3) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(object);\n");
+    out.push_str("    const char *declaring_class = \"Exception\";\n");
+    out.push_str("    if (resolved.type == PTN_OBJECT) {\n");
+    out.push_str("        declaring_class = ptn_exception_constructor_declaring_class(runtime, resolved.as.object->class_name);\n");
+    out.push_str("    }\n");
+    out.push_str("    if (argc > ptn_exception_constructor_max_args(declaring_class)) {\n");
     out.push_str("        ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception constructor expects at most 3 arguments\");\n");
     out.push_str("        return;\n");
     out.push_str("    }\n");
-    out.push_str("    PtnValue message = argc >= 1 ? ptn_owned_string(ptn_value_to_string(args[0])) : ptn_owned_string(ptn_duplicate_string(\"\"));\n");
+    out.push_str("    PtnStringOperand message_payload = ptn_exception_constructor_message(runtime, declaring_class, argc, args, line);\n");
+    out.push_str("    PtnValue message = ptn_owned_string_len(message_payload.owned, message_payload.len);\n");
     out.push_str("    PtnValue code = argc >= 2 ? ptn_int(ptn_value_deref(args[1]).type == PTN_INT ? ptn_value_deref(args[1]).as.integer : 0) : ptn_int(0);\n");
+    out.push_str("    size_t previous_index = ptn_exception_name_equal(declaring_class, \"ErrorException\") ? 5 : 2;\n");
     out.push_str(
-        "    PtnValue previous = argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_null();\n",
+        "    PtnValue previous = argc > previous_index ? ptn_value_clone_deref(args[previous_index]) : ptn_null();\n",
     );
-    out.push_str("    PtnValue resolved = ptn_value_deref(object);\n");
-    out.push_str("    const char *declaring_class = \"Exception\";\n");
-    out.push_str("    if (resolved.type == PTN_OBJECT && runtime->class_scope_allows != NULL && runtime->class_scope_allows(resolved.as.object->class_name, \"ErrorException\")) {\n");
-    out.push_str("        declaring_class = \"ErrorException\";\n");
-    out.push_str("    } else if (resolved.type == PTN_OBJECT && runtime->class_scope_allows != NULL && runtime->class_scope_allows(resolved.as.object->class_name, \"Error\")) {\n");
-    out.push_str("        declaring_class = \"Error\";\n");
-    out.push_str("    }\n");
     out.push_str("    PtnValue assigned = ptn_object_declare_property(runtime, object, \"message\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, message, line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
     out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"code\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, code, line);\n");
@@ -489,8 +492,10 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"previous\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, previous, line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
     out.push_str("    if (ptn_exception_name_equal(declaring_class, \"ErrorException\")) {\n");
-    out.push_str("        assigned = ptn_object_declare_property(runtime, object, \"severity\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, ptn_int(PTN_E_ERROR), line);\n");
+    out.push_str("        PtnValue severity = argc >= 3 ? ptn_int(ptn_value_deref(args[2]).type == PTN_INT ? ptn_value_deref(args[2]).as.integer : PTN_E_ERROR) : ptn_int(PTN_E_ERROR);\n");
+    out.push_str("        assigned = ptn_object_declare_property(runtime, object, \"severity\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, severity, line);\n");
     out.push_str("        ptn_value_destroy(&assigned);\n");
+    out.push_str("        ptn_value_destroy(&severity);\n");
     out.push_str("    }\n");
     out.push_str("    ptn_value_destroy(&previous);\n");
     out.push_str("    ptn_value_destroy(&message);\n");
@@ -1883,6 +1888,9 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
         "static const char *ptn_declared_private_property_class(const char *class_name, const char *property_name);\n",
     );
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
+    out.push_str(
+        "static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
+    );
     out.push_str("static int ptn_declared_trait_exists(const char *name);\n");
     out.push_str(
         "static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);\n",
@@ -1949,6 +1957,20 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (ptn_ascii_case_equal(name, \"stdClass\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
     for class in classes {
         if class.is_interface {
             continue;

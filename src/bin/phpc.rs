@@ -108,6 +108,7 @@ struct RuntimeIni {
     zend_assertions: Option<String>,
     memory_limit: Option<String>,
     max_memory_limit: Option<String>,
+    exception_string_param_max_len: Option<String>,
 }
 
 impl Invocation {
@@ -224,6 +225,12 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         }
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("zend.exception_string_param_max_len") {
+        if let Ok(parsed) = raw_value.parse::<i64>() {
+            if (0..=1_000_000).contains(&parsed) {
+                ini.exception_string_param_max_len = Some(parsed.to_string());
+            }
+        }
     } else if name.eq_ignore_ascii_case("memory_limit") {
         ini.memory_limit = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("max_memory_limit") {
@@ -499,6 +506,7 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
         zend_assertions: ini.zend_assertions.clone(),
         memory_limit: ini.memory_limit.clone(),
         max_memory_limit: ini.max_memory_limit.clone(),
+        exception_string_param_max_len: ini.exception_string_param_max_len.clone(),
     };
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
     let native = TempPath::new("ptn-phpc-native", "bin");
@@ -532,6 +540,12 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);
+    }
+    if let Some(exception_string_param_max_len) = &ini.exception_string_param_max_len {
+        command.env(
+            "PTN_EXCEPTION_STRING_PARAM_MAX_LEN",
+            exception_string_param_max_len,
+        );
     }
     if let Some(memory_limit) = &ini.memory_limit {
         command.env("PTN_MEMORY_LIMIT", memory_limit);

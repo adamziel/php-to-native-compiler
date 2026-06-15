@@ -11,7 +11,7 @@
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard,Reflection"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="assert.exception,date.timezone,display_errors,error_reporting,extension_dir,include_path,max_memory_limit,memory_limit,pcre.backtrack_limit,precision,zend.assertions"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="assert.exception,date.timezone,display_errors,error_reporting,extension_dir,include_path,max_memory_limit,memory_limit,pcre.backtrack_limit,precision,zend.assertions,zend.exception_string_param_max_len"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CAPTURE_STDIO,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,GET,HEADERS,PHPDBG,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT=""
@@ -1551,6 +1551,12 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /->[[:space:]]*getclosurethis[[:space:]]*\(/) {
                 print "unsupported-reflection-metadata\trequires ReflectionFunction closure binding metadata (`getClosureThis()`), outside PTN modeled reflection metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\(/ ||
+                line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::/) {
+                print "unsupported-internal-reflection-metadata\trequires ReflectionProperty metadata/mutation support, outside PTN modeled reflection metadata"
                 found = 1
                 exit
             }

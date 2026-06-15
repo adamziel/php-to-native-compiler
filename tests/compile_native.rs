@@ -22616,6 +22616,76 @@ var_dump(class_exists('Exception'));\n",
 }
 
 #[test]
+fn compile_exception_string_and_trace_formatting_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-string-trace-formatting");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-string-trace-formatting.php");
+    let output = root.join("exception-string-trace-formatting-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function test($arg) { throw new Exception(\"Hello\\0World\"); }\n\
+$arg = \"\\xD1\\x82\\xD0\\xB5\\xD1\\x81\\xD1\\x82\";\n\
+try {\n\
+    test($arg);\n\
+} catch (Exception $e) {\n\
+    echo bin2hex($e->getMessage()), \"\\n\";\n\
+    echo $e->getTraceAsString(), \"\\n\";\n\
+    echo (string)$e;\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "48656c6c6f00576f726c64\n#0 {}(5): test('\\xD1\\x82\\xD0\\xB5\\xD1\\x81\\xD1\\x82')\n#1 {{main}}\nException: Hello\0World in {}:2\nStack trace:\n#0 {}(5): test('\\xD1\\x82\\xD0\\xB5\\xD1\\x81\\xD1\\x82')\n#1 {{main}}",
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_errorexception_subclass_constructor_type_error_to_native_binary() {
+    let root = temp_dir("ptn-native-errorexception-subclass-constructor-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("errorexception-subclass-constructor-type-error.php");
+    let output = root.join("errorexception-subclass-constructor-type-error-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class MyErrorException extends ErrorException {}\n\
+try {\n\
+    new MyErrorException(new stdClass);\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+    echo $e->getTraceAsString(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "ErrorException::__construct(): Argument #1 ($message) must be of type string, stdClass given\n#0 {}(4): ErrorException->__construct(Object(stdClass))\n#1 {{main}}\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_exception_get_trace_for_array_walk_closure_throw_to_native_binary() {
     let root = temp_dir("ptn-native-exception-get-trace-array-walk");
     fs::create_dir_all(&root).unwrap();

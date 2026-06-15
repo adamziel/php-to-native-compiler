@@ -59,9 +59,13 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
         case PTN_CLOSURE:
             fputs("Object", stdout);
             break;
-        case PTN_EXCEPTION:
-            fputs("Object", stdout);
+        case PTN_EXCEPTION: {
+            PtnStringOperand exception_string =
+                ptn_exception_to_string_operand(runtime, value.as.exception);
+            fwrite(exception_string.data, 1, exception_string.len, stdout);
+            free(exception_string.owned);
             break;
+        }
         case PTN_RESOURCE:
             printf("Resource id #%lld", (long long)value.as.resource->id);
             break;
@@ -2281,6 +2285,60 @@ static void ptn_var_export_append_object(PtnStringBuffer *buffer, PtnObject *obj
     }
 }
 
+static void ptn_var_export_append_exception(
+    PtnStringBuffer *buffer,
+    PtnRuntime *runtime,
+    PtnException *exception,
+    size_t indent
+) {
+    ptn_string_buffer_append_char(buffer, '\\');
+    ptn_string_buffer_append(buffer, exception->class_name);
+    ptn_string_buffer_append(buffer, "::__set_state(array(\n");
+
+    ptn_string_buffer_append_indent(buffer, indent + 3);
+    ptn_string_buffer_append(buffer, "'message' => ");
+    ptn_var_export_append_string(buffer, exception->message, exception->message_len);
+    ptn_string_buffer_append(buffer, ",\n");
+
+    ptn_string_buffer_append_indent(buffer, indent + 3);
+    ptn_string_buffer_append(buffer, "'string' => ");
+    PtnStringOperand exception_string = ptn_exception_to_string_operand(runtime, exception);
+    ptn_var_export_append_string(buffer, exception_string.data, exception_string.len);
+    free(exception_string.owned);
+    ptn_string_buffer_append(buffer, ",\n");
+
+    ptn_string_buffer_append_indent(buffer, indent + 3);
+    ptn_string_buffer_append(buffer, "'code' => 0,\n");
+
+    ptn_string_buffer_append_indent(buffer, indent + 3);
+    ptn_string_buffer_append(buffer, "'file' => ");
+    ptn_var_export_append_string(
+        buffer,
+        exception->path == NULL ? "ptn" : exception->path,
+        strlen(exception->path == NULL ? "ptn" : exception->path)
+    );
+    ptn_string_buffer_append(buffer, ",\n");
+
+    ptn_string_buffer_append_indent(buffer, indent + 3);
+    ptn_string_buffer_append_format(buffer, "'line' => %zu,\n", exception->line);
+
+    ptn_string_buffer_append_indent(buffer, indent + 3);
+    ptn_string_buffer_append(buffer, "'trace' => ");
+    PtnValue trace = ptn_value_deref(exception->trace);
+    if (ptn_var_export_is_complex_value(trace)) {
+        ptn_string_buffer_append_char(buffer, '\n');
+        ptn_string_buffer_append_indent(buffer, indent + 2);
+    }
+    ptn_var_export_append_value(buffer, trace, indent + 2);
+    ptn_string_buffer_append(buffer, ",\n");
+
+    ptn_string_buffer_append_indent(buffer, indent + 3);
+    ptn_string_buffer_append(buffer, "'previous' => NULL,\n");
+
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, "))");
+}
+
 static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value, size_t indent) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -2316,20 +2374,26 @@ static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value,
             ptn_var_export_append_object(buffer, value.as.object, indent);
             break;
         case PTN_CLOSURE:
-        case PTN_EXCEPTION:
         case PTN_REFERENCE:
             ptn_string_buffer_append(buffer, "NULL");
+            break;
+        case PTN_EXCEPTION:
+            ptn_var_export_append_exception(buffer, NULL, value.as.exception, indent);
             break;
     }
 }
 
 static PtnValue ptn_internal_var_export(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)line;
     int return_output = argc >= 2 && ptn_is_truthy(args[1]);
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
-    ptn_var_export_append_value(&buffer, args[0], 0);
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type == PTN_EXCEPTION) {
+        ptn_var_export_append_exception(&buffer, runtime, value.as.exception, 0);
+    } else {
+        ptn_var_export_append_value(&buffer, value, 0);
+    }
     if (return_output) {
         return ptn_owned_string_len(buffer.data, buffer.len);
     }
@@ -16562,6 +16626,15 @@ static PtnValue ptn_ini_int_string(int value) {
     return ptn_owned_string(ptn_duplicate_string(buffer));
 }
 
+static PtnValue ptn_ini_size_string(size_t value) {
+    char buffer[32];
+    int written = snprintf(buffer, sizeof(buffer), "%zu", value);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_owned_string(ptn_duplicate_string(buffer));
+}
+
 static const char *ptn_runtime_memory_limit(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->memory_limit == NULL) {
@@ -16840,6 +16913,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_ini_int_string(ptn_runtime_current_zend_assertions(runtime));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.exception_string_param_max_len")) {
+        *out = ptn_ini_size_string(ptn_runtime_exception_string_param_max_len(runtime));
+        return 1;
+    }
     return 0;
 }
 
@@ -16972,6 +17049,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.exception_string_param_max_len")) {
+        ptn_runtime_set_exception_string_param_max_len(runtime, 15);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     PtnValue value;
     int known = ptn_ini_value(runtime, option, &value);
     if (known) {
@@ -17003,6 +17085,18 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_exception(runtime));
         ptn_runtime_set_assert_exception(runtime, ptn_is_truthy(args[1]));
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.exception_string_param_max_len")) {
+        int64_t requested = ptn_value_to_integer(args[1]);
+        if (requested < 0 || requested > 1000000) {
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
+        PtnValue previous =
+            ptn_ini_size_string(ptn_runtime_exception_string_param_max_len(runtime));
+        ptn_runtime_set_exception_string_param_max_len(runtime, (size_t)requested);
         ptn_string_operand_free(option);
         return previous;
     }
@@ -18823,7 +18917,6 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
 static PtnValue ptn_internal_tmpfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
-    /* Keep sorted by ASCII case-insensitive name for ptn_find_internal_function. */
     static const PtnInternalFunction functions[] = {
         { "_ptn_cow_debug_assert_balanced", 0, 0, ptn_internal__ptn_cow_debug_assert_balanced },
         { "_ptn_cow_debug_assert_counter", 2, 2, ptn_internal__ptn_cow_debug_assert_counter },
@@ -19191,18 +19284,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
 static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
     size_t count = 0;
     const PtnInternalFunction *functions = ptn_internal_functions(&count);
-    size_t low = 0;
-    size_t high = count;
-    while (low < high) {
-        size_t mid = low + ((high - low) / 2);
-        int ordering = ptn_ascii_case_compare(name, functions[mid].name);
-        if (ordering == 0) {
-            return &functions[mid];
-        }
-        if (ordering < 0) {
-            high = mid;
-        } else {
-            low = mid + 1;
+    for (size_t i = 0; i < count; i++) {
+        if (ptn_ascii_case_equal(name, functions[i].name)) {
+            return &functions[i];
         }
     }
     return NULL;
