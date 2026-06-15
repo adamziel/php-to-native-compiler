@@ -436,6 +436,10 @@ static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const ch
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
+    if (diagnostics->emitted_deprecation || diagnostics->emitted_warning) {
+        fputc('\n', stdout);
+    }
+    diagnostics->emitted_warning = 1;
     fputs("Warning: ", stdout);
     fputs(message, stdout);
     fputs(" in ptn on line ", stdout);
@@ -678,4 +682,5 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->call_site_line = 0;
     runtime->warn_by_ref_argument_mismatch = 0;
     runtime->throw_argument_count_errors = 0;
+    runtime->active_unserialize_state = NULL;
 }

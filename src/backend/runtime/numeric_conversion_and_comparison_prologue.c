@@ -13,6 +13,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->static_property_set_visibility = caller_runtime->static_property_set_visibility;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->diagnostics.error_reporting = caller_runtime->diagnostics.error_reporting;
+    runtime->diagnostics.emitted_deprecation = caller_runtime->diagnostics.emitted_deprecation;
+    runtime->diagnostics.emitted_warning = caller_runtime->diagnostics.emitted_warning;
     runtime->diagnostics.suppressed = caller_runtime->diagnostics.suppressed;
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
@@ -77,6 +79,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->call_site_line = 0;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
+    runtime->active_unserialize_state = caller_runtime->active_unserialize_state;
 }
 
 static PTN_UNUSED void ptn_runtime_set_call_frame(

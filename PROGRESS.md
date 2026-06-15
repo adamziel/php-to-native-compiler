@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.26 Serializable/SPL unserialize row pack | 5 | 5 |
 | ptn-w17z.23 union type declaration parser row | 1 | 1 |
 | ptn-utht filtered stream copy row pack | 4 | 4 |
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
@@ -22,14 +23,22 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:00Z.
-Measured latest: `ptn-w17z.23` union type declaration parser row selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.23` completed the checked-in union type declaration parser row. Previous: `ptn-utht` completed the checked-in filtered stream copy row pack.
+Refresh: 2026-06-15T18:07Z.
+Measured latest: `ptn-w17z.26` Serializable/SPL unserialize row pack selected 5 rows, kept 5 runnable, and passed 5/5 in the focused run.
+Latest: `ptn-w17z.26` completed the checked-in Serializable/SPL unserialize row pack. Previous: `ptn-w17z.23` completed the checked-in union type declaration parser row.
 
-Current hook: `ptn-w17z.23` union type declaration parser row passed 1/1 at
+Current hook: `ptn-w17z.26` Serializable/SPL unserialize row pack passed 5/5 at
+`.runtime/merge-ptn-w17z26-serializable-spl-unserialize/summary-20260615T180738Z.txt`.
+Previous hook: `ptn-w17z.23` union type declaration parser row passed 1/1 at
 `.runtime/merge-ptn-w17z23-union-type-fpow/summary-20260615T180055Z.txt`.
-Previous hook: `ptn-utht` filtered stream copy row pack passed 4/4 at
-`.runtime/merge-ptn-utht-filtered-stream-copy/summary-20260615T175250Z.txt`.
+
+## 2026-06-15 ptn-w17z.26 Serializable/SPL Unserialize Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-w17z26-before/summary-20260615T155843Z.txt`) | 5 selected / 5 runnable | 0 |
+| Final rebased branch focused (`.runtime/ptn-w17z26-final2/summary-20260615T164138Z.txt`) | 5 selected / 5 runnable | 5 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z26-serializable-spl-unserialize/summary-20260615T180738Z.txt`) | 5 selected / 5 runnable | 5 |
 
 ## 2026-06-15 ptn-w17z.23 Union Type Declaration Parser Row
 

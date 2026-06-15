@@ -22,6 +22,8 @@ const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
     "Using ${var} in strings is deprecated, use {$var} instead";
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
+const SERIALIZABLE_DEPRECATION_SUFFIX: &str =
+    " implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)";
 const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ErrorException", "Exception"),
     ("ReflectionException", "Exception"),
@@ -40,6 +42,7 @@ pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let runtime_requirements = module_runtime_requirements(module);
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
+    let serializable_deprecations = collect_module_serializable_deprecations(module);
     let magic_declaration_fatals = collect_module_magic_declaration_fatals(module);
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
     let needs_callable_dispatch = runtime_requirements.internal_function_dispatch
@@ -198,6 +201,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
     );
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
+    emit_serializable_deprecations(&mut out, &serializable_deprecations);
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
     emit_class_constant_initializers(&mut out, &mut values, &module.classes);
@@ -1450,6 +1454,12 @@ struct LegacyDollarBraceDeprecation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct SerializableDeprecation {
+    class_name: String,
+    line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct MagicVisibilityWarning {
     class_name: String,
     method_name: String,
@@ -1469,6 +1479,20 @@ fn emit_legacy_dollar_brace_deprecations(
     for deprecation in deprecations {
         out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
         out.push_str(&c_string(LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE));
+        out.push_str("\", ");
+        out.push_str(&deprecation.line.to_string());
+        out.push_str(");\n");
+    }
+}
+
+fn emit_serializable_deprecations(out: &mut String, deprecations: &[SerializableDeprecation]) {
+    for deprecation in deprecations {
+        let message = format!(
+            "{}{}",
+            deprecation.class_name, SERIALIZABLE_DEPRECATION_SUFFIX
+        );
+        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(&message));
         out.push_str("\", ");
         out.push_str(&deprecation.line.to_string());
         out.push_str(");\n");
@@ -5801,6 +5825,23 @@ fn collect_module_legacy_dollar_brace_deprecations(
     }
     collect_instructions_legacy_dollar_brace_deprecations(&module.instructions, &mut deprecations);
     deprecations
+}
+
+fn collect_module_serializable_deprecations(module: &Module) -> Vec<SerializableDeprecation> {
+    module
+        .classes
+        .iter()
+        .filter(|class| {
+            !class.is_interface
+                && class_transitive_interfaces(class, &module.classes)
+                    .into_iter()
+                    .any(|interface| interface.eq_ignore_ascii_case("Serializable"))
+        })
+        .map(|class| SerializableDeprecation {
+            class_name: class.name.clone(),
+            line: class.line,
+        })
+        .collect()
 }
 
 fn collect_module_magic_visibility_warnings(module: &Module) -> Vec<MagicVisibilityWarning> {

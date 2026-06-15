@@ -5869,6 +5869,153 @@ var_dump($d);
 }
 
 #[test]
+fn compile_serializable_payloads_and_nested_unserialize_to_native_binary() {
+    let root = temp_dir("ptn-native-serializable-payloads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serializable-payloads.php");
+    let output = root.join("serializable-payloads-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Obj implements Serializable {
+    public $data;
+    public function serialize(): string { return serialize($this->data) . 'garbage'; }
+    public function unserialize($data) { $this->data = unserialize($data); }
+}
+
+$payload = 'a:2:{i:0;i:1;i:1;C:3:"Obj":4:{R:2;}}';
+var_dump(unserialize($payload));
+
+$obj = new Obj;
+$obj->data = ['a', 'b', 'c'];
+$encoded = serialize($obj);
+var_dump($encoded);
+var_dump(unserialize($encoded . 'tail'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Deprecated: Obj implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("object(Obj)#"), "{stdout}");
+    assert!(stdout.contains("[\"data\"]=>\n    int(1)"), "{stdout}");
+    assert!(
+        stdout.contains("C:3:\"Obj\":49:{a:3:{i:0;s:1:\"a\";i:1;s:1:\"b\";i:2;s:1:\"c\";}garbage}"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Extra data starting at offset 42 of 49 bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Extra data starting at offset 64 of 68 bytes"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_spl_array_backed_unserialize_incomplete_classes_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-incomplete-unserialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-incomplete-unserialize.php");
+    let output = root.join("spl-incomplete-unserialize-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo1 extends ArrayIterator {}
+class Foo2 {}
+
+$values = [new Foo1(), new Foo2()];
+$encoded = str_replace('Foo', 'Bar', serialize($values));
+var_dump($encoded);
+var_dump(unserialize($encoded));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("O:4:\"Bar1\":4:{i:0;i:0;i:1;a:0:{}i:2;a:0:{}i:3;N;}"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("object(__PHP_Incomplete_Class)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"__PHP_Incomplete_Class_Name\"]=>\n    string(4) \"Bar1\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[\"0\"]=>\n    int(0)"), "{stdout}");
+    assert!(stdout.contains("[\"3\"]=>\n    NULL"), "{stdout}");
+    assert!(
+        stdout.contains("[\"__PHP_Incomplete_Class_Name\"]=>\n    string(4) \"Bar2\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_spl_object_storage_unserialize_payload_error_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-object-storage-unserialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-object-storage-unserialize.php");
+    let output = root.join("spl-object-storage-unserialize-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$payload = 'C:16:"SplObjectStorage":113:{x:i:2;O:8:"stdClass":1:{},a:2:{s:4:"prev";i:2;s:4:"next";O:8:"stdClass":0:{}};r:7;,R:2;s:4:"next";;r:3;};m:a:0:{}}';
+try {
+    var_dump(unserialize($payload));
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Warning: SplObjectStorage::unserialize(): Unexpected end of serialized data in ptn on line 4\n",
+            "Error at offset 24 of 113 bytes\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_print_expression_contexts_to_native_binary() {
     let root = temp_dir("ptn-native-print-expression-contexts");
     fs::create_dir_all(&root).unwrap();
