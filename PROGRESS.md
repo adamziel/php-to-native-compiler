@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-g0yw filesystem helper residual row pack | 10 | 10 |
 | ptn-w17z.22 compile-time include path variables | 1 | 1 |
 | ptn-w17z.28 collected Generator runtime row pack | 6 | 6 |
 | ptn-w17z.34 output-buffer compact row | 1 | 1 |
@@ -17,14 +18,37 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T16:15Z.
-Measured latest: `ptn-w17z.22` compile-time include path variable acceptance selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path. Previous: `ptn-w17z.28` completed the collected Generator runtime row pack at 6/6.
+Refresh: 2026-06-15T17:25Z.
+Measured latest: `ptn-g0yw` filesystem helper residuals selected 10 rows, kept 10 runnable, and passed 10/10 in the focused run.
+Latest: `ptn-g0yw` supports generic residual filesystem helpers for file URI `fopen()`, `fscanf()` scalar scans, `glob()`, simple `parse_ini_file()`, `copy()`, POSIX `symlink()`/`link()`, `readfile()` null-byte ValueError parity, and `open_basedir` INI round-tripping. Previous: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path.
 
-Current hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
+Current hook: `ptn-g0yw` filesystem helper residual row pack passed 10/10 at
+`.runtime/ptn-g0yw-filesystem-helper-final/run-20260615T172044Z-manifest.log`.
+Previous hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
 `.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
-Previous hook: `ptn-w17z.28` collected Generator runtime row pack passed 6/6 at
-`.runtime/merge-ptn-w17z28-generator-runtime/summary-20260615T163051Z.txt`.
+
+## 2026-06-15 ptn-g0yw Filesystem Helper Residual Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final focused helper residual pack (`.runtime/ptn-g0yw-filesystem-helper-final/run-20260615T172044Z-manifest.log`) | 10 selected / 10 runnable | 10 |
+
+Implemented behavior: file URI `fopen()` now rejects remote host forms with PHP-style wrapper diagnostics while opening local `file:///` paths, and normal `fopen()` can use modeled include-path lookup. Stream/file helpers now include generic `fscanf()` scalar scanning for `%s`, integer formats, width/length modifiers, scansets, assignment suppression, variadic by-reference result slots, NULL materialization for failed conversions, and PHP-style format mismatch `ValueError`s. Filesystem internals add bounded `glob()`, `copy()`, simple scalar/section `parse_ini_file()`, POSIX `symlink()`/`link()`, and `readfile()` null-byte `ValueError` parity. Runtime INI state now round-trips `open_basedir` without enforcing path restrictions.
+
+Focused row pack manifest: `tools/phpt-ptn-g0yw-filesystem-helper-residuals.txt`.
+
+Newly passing rows:
+
+- `ext/standard/tests/file/fopen_variation14.phpt`
+- `ext/standard/tests/file/fopen_variation15.phpt`
+- `ext/standard/tests/file/fopen_variation19.phpt`
+- `ext/standard/tests/file/fscanf.phpt`
+- `ext/standard/tests/file/fscanf_variation1.phpt`
+- `ext/standard/tests/file/fscanf_variation2.phpt`
+- `ext/standard/tests/file/glob_variation5.phpt`
+- `ext/standard/tests/file/parse_ini_file_variation6.phpt`
+- `ext/standard/tests/file/readfile_variation10.phpt`
+- `ext/standard/tests/file/readfile_variation2.phpt`
 
 ## 2026-06-15 ptn-w17z.22 Compile-Time Include Path Variables
 

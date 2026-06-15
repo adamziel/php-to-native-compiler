@@ -8107,6 +8107,78 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_filesystem_residual_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-filesystem-residual-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filesystem-residual-helpers.php");
+    let output = root.join("filesystem-residual-helpers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$scan = __DIR__ . '/scan.txt';\n\
+file_put_contents($scan, \"hello 123\\n-2147483648\\nabc\\n\");\n\
+$fp = fopen($scan, 'r');\n\
+var_dump(fscanf($fp, '%s %d'));\n\
+var_dump(fscanf($fp, '%4d'));\n\
+$v = 'seed';\n\
+var_dump(fscanf($fp, '%d', $v));\n\
+var_dump($v);\n\
+fclose($fp);\n\
+$fp = fopen($scan, 'r');\n\
+try { fscanf($fp, '%s%d', $v); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+fclose($fp);\n\
+$ini = __DIR__ . '/settings.ini';\n\
+file_put_contents($ini, \"a=test\\n[sec]\\nb=two\\n\");\n\
+var_dump(parse_ini_file($ini));\n\
+$parsed = parse_ini_file($ini, true);\n\
+var_dump($parsed['sec']['b']);\n\
+var_dump(glob(__DIR__ . '/*.none'));\n\
+var_dump(ini_set('open_basedir', '/tmp/ptn-open-basedir'));\n\
+var_dump(ini_get('open_basedir'));\n\
+$copy = __DIR__ . '/copy.txt';\n\
+var_dump(copy($scan, $copy));\n\
+$fp = fopen('file://' . $copy, 'r');\n\
+var_dump(fgets($fp));\n\
+fclose($fp);\n\
+$soft = __DIR__ . '/soft-link.txt';\n\
+$hard = __DIR__ . '/hard-link.txt';\n\
+var_dump(symlink($copy, $soft));\n\
+var_dump(link($copy, $hard));\n\
+var_dump(filesize($soft) === filesize($hard));\n\
+@unlink($soft);\n\
+@unlink($hard);\n\
+@unlink($copy);\n\
+@unlink($ini);\n\
+@unlink($scan);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  string(5) \"hello\"\n  [1]=>\n  int(123)\n}\n\
+array(1) {\n  [0]=>\n  int(-214)\n}\n\
+int(0)\n\
+NULL\n\
+Different numbers of variable names and field specifiers\n\
+array(2) {\n  [\"a\"]=>\n  string(4) \"test\"\n  [\"b\"]=>\n  string(3) \"two\"\n}\n\
+string(3) \"two\"\n\
+array(0) {\n}\n\
+string(0) \"\"\n\
+string(21) \"/tmp/ptn-open-basedir\"\n\
+bool(true)\n\
+string(10) \"hello 123\n\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_file_metadata_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-file-metadata-diagnostics");
     fs::create_dir_all(&root).unwrap();

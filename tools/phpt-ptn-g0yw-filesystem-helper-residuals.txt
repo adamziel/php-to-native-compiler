@@ -1,0 +1,14 @@
+# ptn-g0yw filesystem helper residual row pack.
+#
+# Rows from the PHPT CLEAN-harness residual cluster that now pass through
+# generic filesystem/internal helper semantics.
+ext/standard/tests/file/fopen_variation14.phpt
+ext/standard/tests/file/fopen_variation15.phpt
+ext/standard/tests/file/fopen_variation19.phpt
+ext/standard/tests/file/fscanf.phpt
+ext/standard/tests/file/fscanf_variation1.phpt
+ext/standard/tests/file/fscanf_variation2.phpt
+ext/standard/tests/file/glob_variation5.phpt
+ext/standard/tests/file/parse_ini_file_variation6.phpt
+ext/standard/tests/file/readfile_variation10.phpt
+ext/standard/tests/file/readfile_variation2.phpt

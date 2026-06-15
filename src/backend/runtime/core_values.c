@@ -23,6 +23,7 @@
 #include <sys/utime.h>
 #else
 #include <dirent.h>
+#include <glob.h>
 #include <regex.h>
 #include <sys/utsname.h>
 #include <utime.h>
@@ -601,6 +602,7 @@ struct PtnRuntime {
     PtnValue current_receiver;
     const char *by_ref_argument_function_name_override;
     char *include_path;
+    char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
     size_t exception_string_param_max_len;
