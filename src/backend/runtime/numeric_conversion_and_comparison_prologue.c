@@ -77,6 +77,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->call_site_line = 0;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
+    runtime->active_unserialize_state = caller_runtime->active_unserialize_state;
 }
 
 static PTN_UNUSED void ptn_runtime_set_call_frame(

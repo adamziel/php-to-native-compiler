@@ -896,6 +896,15 @@ static void ptn_dump_seen_objects_pop(PtnDumpSeenArrays *seen) {
     }
 }
 
+typedef struct {
+    PtnArray *array;
+    size_t index;
+} PtnArrayIteratorData;
+
+typedef struct {
+    PtnArray *array;
+} PtnArrayObjectData;
+
 static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         printf("[%lld]=>\n", (long long)key.as.integer);
@@ -1657,6 +1666,8 @@ typedef struct {
 
 typedef struct {
     PtnDumpSeenArrays seen;
+    PtnRuntime *runtime;
+    size_t line;
     PtnSerializeIdEntry *references;
     size_t reference_len;
     size_t reference_capacity;
@@ -1666,8 +1677,10 @@ typedef struct {
     size_t next_id;
 } PtnSerializeState;
 
-static void ptn_serialize_state_init(PtnSerializeState *state) {
+static void ptn_serialize_state_init(PtnSerializeState *state, PtnRuntime *runtime, size_t line) {
     ptn_dump_seen_arrays_init(&state->seen);
+    state->runtime = runtime;
+    state->line = line;
     state->references = NULL;
     state->reference_len = 0;
     state->reference_capacity = 0;
@@ -19821,6 +19834,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *c
     return ptn_ascii_case_equal(class_name, "IteratorIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplObjectStorage");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Closure");
 }
@@ -19842,6 +19859,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_array_iterator(class_name)
         || ptn_internal_class_name_is_array_object(class_name)
         || ptn_internal_class_name_is_iterator_iterator(class_name)
+        || ptn_internal_class_name_is_spl_object_storage(class_name)
         || ptn_internal_class_name_is_closure(class_name)
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
@@ -20814,15 +20832,6 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
 typedef struct {
     PtnFunctionMetadata metadata;
 } PtnReflectionFunctionData;
-
-typedef struct {
-    PtnArray *array;
-    size_t index;
-} PtnArrayIteratorData;
-
-typedef struct {
-    PtnArray *array;
-} PtnArrayObjectData;
 
 typedef struct {
     PtnValue inner;
