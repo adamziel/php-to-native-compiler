@@ -6956,10 +6956,14 @@ var_dump(strcspn(\"hello\" . chr(0) . \"world\", chr(0)));\n\
 var_dump(strnatcmp(\"abc2\", \"abc10\"));\n\
 var_dump(strnatcmp(\" 00\", \" 0\"));\n\
 var_dump(strnatcasecmp(\"Rfc822.txt\", \"rfc822.TXT\"));\n\
+var_dump(strnatcasecmp(\"acc \", \"acc\"));\n\
 var_dump(strnatcasecmp(\"Hello\" . chr(0) . \"world\", \"Helloworld\"));\n\
+var_dump(str_getcsv(\"\\\"f\\\", \\\"o\\\", \\\"\\\"\", escape: \"\"));\n\
+var_dump(str_getcsv(\".foo..bar.\", \".\", \".\", \".\"));\n\
 var_dump(str_getcsv(\"foo||bar\", \"|\", \"\\\"\", \"\"));\n\
 var_dump(str_getcsv(\"\", escape: \"\"));\n\
 try { str_getcsv(\"csv\", \"separator\", \"\\\"\", \"\"); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { str_getcsv(\"csv\", \",\", \"\\\"\", \"escape\"); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(function_exists(\"strspn\"), function_exists(\"STR_GETCSV\"));",
     )
     .unwrap();
@@ -6977,7 +6981,20 @@ int(5)\n\
 int(-1)\n\
 int(1)\n\
 int(0)\n\
+int(1)\n\
 int(-1)\n\
+array(3) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(1) \"f\"\n\
+\x20\x20[1]=>\n\
+\x20\x20string(1) \"o\"\n\
+\x20\x20[2]=>\n\
+\x20\x20string(0) \"\"\n\
+}\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(7) \"foo.bar\"\n\
+}\n\
 array(3) {\n\
 \x20\x20[0]=>\n\
 \x20\x20string(3) \"foo\"\n\
@@ -6991,6 +7008,7 @@ array(1) {\n\
 \x20\x20NULL\n\
 }\n\
 str_getcsv(): Argument #2 ($separator) must be a single character\n\
+str_getcsv(): Argument #4 ($escape) must be empty or a single character\n\
 bool(true)\n\
 bool(true)\n"
     );

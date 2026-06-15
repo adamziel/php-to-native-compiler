@@ -11184,6 +11184,12 @@ static int ptn_natcompare_bytes(
     size_t left_index = 0;
     size_t right_index = 0;
     while (left_index < left_len || right_index < right_len) {
+        if (left_index >= left_len) {
+            return right_index >= right_len ? 0 : -1;
+        }
+        if (right_index >= right_len) {
+            return 1;
+        }
         while (left_index < left_len && isspace(left[left_index])) {
             left_index++;
         }
@@ -11191,8 +11197,11 @@ static int ptn_natcompare_bytes(
             right_index++;
         }
 
-        if (left_index >= left_len || right_index >= right_len) {
-            break;
+        if (left_index >= left_len) {
+            return right_index >= right_len ? 0 : -1;
+        }
+        if (right_index >= right_len) {
+            return 1;
         }
 
         if (isdigit(left[left_index]) && isdigit(right[right_index])) {
@@ -11224,18 +11233,6 @@ static int ptn_natcompare_bytes(
         }
     }
 
-    while (left_index < left_len && isspace(left[left_index])) {
-        left_index++;
-    }
-    while (right_index < right_len && isspace(right[right_index])) {
-        right_index++;
-    }
-    if (left_index < left_len) {
-        return 1;
-    }
-    if (right_index < right_len) {
-        return -1;
-    }
     return 0;
 }
 
@@ -14356,13 +14353,15 @@ static int ptn_csv_char_arg(
     }
     if (operand.len != 1) {
         char message[160];
+        const char *requirement = allow_empty ? "empty or a single character" : "a single character";
         int written = snprintf(
             message,
             sizeof(message),
-            "%s(): Argument #%zu ($%s) must be a single character",
+            "%s(): Argument #%zu ($%s) must be %s",
             function_name,
             position,
-            argument_name
+            argument_name,
+            requirement
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
@@ -14517,6 +14516,19 @@ static void ptn_csv_append_field(PtnValue result, PtnStringBuffer *field, size_t
     }
 }
 
+static int ptn_csv_field_padding_before_enclosure(
+    const char *data,
+    size_t len,
+    size_t offset,
+    char enclosure
+) {
+    size_t cursor = offset;
+    while (cursor < len && (data[cursor] == ' ' || data[cursor] == '\t')) {
+        cursor++;
+    }
+    return cursor < len && data[cursor] == enclosure;
+}
+
 static PtnValue ptn_parse_csv_record(
     const char *data,
     size_t len,
@@ -14546,6 +14558,12 @@ static PtnValue ptn_parse_csv_record(
             }
             break;
         }
+        if (at_field_start &&
+            byte != (unsigned char)delimiter &&
+            (byte == ' ' || byte == '\t') &&
+            ptn_csv_field_padding_before_enclosure(data, len, i, enclosure)) {
+            continue;
+        }
         if (in_enclosure) {
             if (byte == (unsigned char)enclosure) {
                 if (ptn_csv_char_is_escaped(field.data, field.len, escape_enabled, escape)) {
@@ -14559,6 +14577,12 @@ static PtnValue ptn_parse_csv_record(
                     continue;
                 }
                 in_enclosure = 0;
+                at_field_start = 0;
+                continue;
+            }
+            if (escape_enabled && byte == (unsigned char)escape && i + 1 < len) {
+                ptn_string_buffer_append_char(&field, (char)byte);
+                ptn_string_buffer_append_char(&field, data[++i]);
                 at_field_start = 0;
                 continue;
             }
