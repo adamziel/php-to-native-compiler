@@ -8224,11 +8224,11 @@ var_dump(feof($fp));\n\
 fclose($fp);\n\
 $fp = fopen($path, 'rb');\n\
 var_dump(fgetcsv($fp, escape: '\\\\'));\n\
-var_dump(fgetcsv($fp));\n\
+var_dump(fgetcsv($fp, escape: '\\\\'));\n\
 fclose($fp);\n\
 $out = __DIR__ . '/written.csv';\n\
 $fp = fopen($out, 'wb');\n\
-var_dump(fputcsv($fp, ['x,y', 'z']));\n\
+var_dump(fputcsv($fp, ['x,y', 'z'], escape: '\\\\'));\n\
 fclose($fp);\n\
 var_dump(file($out));\n\
 $fp = fopen($path, 'rb');\n\

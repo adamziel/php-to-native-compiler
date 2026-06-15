@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-jrzu CSV stream parity row pack | 22 | 22 |
 | ptn-144g parser residual row pack | 2 | 2 |
 | ptn-evvk stream mode diagnostics | 8 | 8 |
 | ptn-w17z.26 Serializable/SPL unserialize row pack | 5 | 5 |
@@ -25,14 +26,78 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:27Z.
-Measured latest: `ptn-144g` parser residual row pack selected 2 rows, kept 2 runnable, and passed 2/2 in the focused run.
-Latest: `ptn-144g` completed the checked-in parser residual row pack. Previous: `ptn-evvk` completed the checked-in stream mode diagnostics row pack.
+Refresh: 2026-06-15T18:29Z.
+Measured latest: `ptn-jrzu` CSV stream parity row pack selected 22 rows, ran all 22, and passed 22/22.
+Latest: `ptn-jrzu` completed the file-stream `fgetcsv()`/`fputcsv()` CSV parity row pack. Previous: `ptn-144g` completed the checked-in parser residual row pack.
 
-Current hook: `ptn-144g` parser residual row pack passed 2/2 at
+Current hook: `ptn-jrzu` CSV stream parity row pack passed 22/22 at
+`.runtime/ptn-jrzu-csv-row-pack-final-rebased/summary-20260615T182239Z.txt`.
+Previous hook: `ptn-144g` parser residual row pack passed 2/2 at
 `.runtime/merge-ptn-144g-parser-residuals/summary-20260615T182723Z.txt`.
-Previous hook: `ptn-evvk` stream mode diagnostics passed 8/8 at
-`.runtime/merge-ptn-evvk-stream-mode-diagnostics/summary-20260615T181618Z.txt`.
+
+## 2026-06-15 ptn-jrzu CSV Stream Parity Row Pack
+
+Final checked-in focused manifest:
+`tools/phpt-ptn-jrzu-csv-stream-parity-row-pack.txt`.
+
+Implemented behavior: `fgetcsv()` now validates PHP 8.4 length bounds, emits the
+omitted-escape deprecation, returns `NULL` for blank CSV records, preserves
+leading whitespace unless it precedes an opening enclosure, honors empty escape
+strings, handles odd escape runs before enclosures, reads through multiline
+enclosed fields through the shared stream resource path, and matches PHP
+length-limit behavior for both open and exactly closed enclosures.
+`fputcsv()` now emits the omitted-escape deprecation, warns for array-to-string
+field conversion without mutating the source array, honors empty/custom escape
+semantics when deciding whether to double enclosures, and writes caller-provided
+EOL bytes including NUL.
+
+Before evidence:
+`.runtime/ptn-jrzu-csv-before/summary-20260615T163806Z.txt` selected 57
+CSV-reference rows, all runnable, with 32 passed and 25 failed. The failed set
+included the 22 file-stream rows now checked into the focused row pack plus
+three adjacent string/`str_getcsv()` rows that remain outside this stream
+surface.
+
+After evidence:
+
+- Checked-in focused row pack:
+  `.runtime/ptn-jrzu-csv-row-pack-final-rebased/summary-20260615T182239Z.txt`
+  selected 22 rows, all runnable, and passed 22.
+- Full file-stream CSV family:
+  `.runtime/ptn-jrzu-csv-file-rebased/summary-20260615T175302Z.txt`
+  selected 54 rows, all runnable, and passed 54.
+
+Newly passing file-stream rows:
+
+- `ext/standard/tests/file/bug12556.phpt`
+- `ext/standard/tests/file/bug39538.phpt`
+- `ext/standard/tests/file/bug40501.phpt`
+- `ext/standard/tests/file/bug66588.phpt`
+- `ext/standard/tests/file/fgetcsv.phpt`
+- `ext/standard/tests/file/fgetcsv_default_escape_deprecation.phpt`
+- `ext/standard/tests/file/fgetcsv_error_conditions.phpt`
+- `ext/standard/tests/file/fgetcsv_variation14.phpt`
+- `ext/standard/tests/file/fgetcsv_variation15.phpt`
+- `ext/standard/tests/file/fgetcsv_variation16.phpt`
+- `ext/standard/tests/file/fgetcsv_variation17.phpt`
+- `ext/standard/tests/file/fgetcsv_variation21.phpt`
+- `ext/standard/tests/file/fgetcsv_variation32.phpt`
+- `ext/standard/tests/file/fgetcsv_variation33.phpt`
+- `ext/standard/tests/file/fgetcsv_variation6.phpt`
+- `ext/standard/tests/file/fputcsv.phpt`
+- `ext/standard/tests/file/fputcsv_002.phpt`
+- `ext/standard/tests/file/fputcsv_default_escape_deprecation.phpt`
+- `ext/standard/tests/file/fputcsv_variation16.phpt`
+- `ext/standard/tests/file/fputcsv_variation17.phpt`
+- `ext/standard/tests/file/fputcsv_variation18.phpt`
+- `ext/standard/tests/file/gh15653.phpt`
+
+Verification:
+
+- `cargo build --bin phpc` passed.
+- `cargo test compile_stream_read_and_csv_internals_to_native_binary --test compile_native -- --nocapture` passed.
+- `PHPT_PROGRESS_DIR=.runtime/ptn-jrzu-csv-row-pack-final-rebased timeout 900s tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-jrzu-csv-stream-parity-row-pack.txt` passed 22/22.
+- `PHPT_PROGRESS_DIR=.runtime/ptn-jrzu-csv-file-rebased timeout 1200s tools/run-bounded-phpt.sh --classify-harness-programs /tmp/ptn-jrzu-csv-file-candidates.txt` passed 54/54.
 
 ## 2026-06-15 ptn-144g Parser Residual Row Pack
 
@@ -362,12 +427,12 @@ Newly passing runnable rows:
 - `ext/standard/tests/streams/stream_get_contents_001.phpt`
 - `ext/standard/tests/streams/stream_get_contents_negative_length.phpt`
 
-Residual focused 89-row failures are mostly outside this row pack:
-full `fgetcsv()`/`fputcsv()` parity, write-only read diagnostics, deprecated
+Residual focused stream/path failures are mostly outside this row pack:
+write-only read diagnostics, deprecated
 `FILE_BINARY`/`FILE_TEXT` constants, filtered stream-copy behavior, php://temp
 spillover seek state, and include bookkeeping for include-path readfile rows.
-Follow-up beads: `ptn-jrzu`, `ptn-evvk`, `ptn-klcf`, `ptn-utht`, `ptn-vqg1`,
-and `ptn-fio3`.
+Follow-up beads: `ptn-evvk`, `ptn-klcf`, `ptn-utht`, `ptn-vqg1`, and
+`ptn-fio3`.
 
 ## 2026-06-15 ptn-w17z.7 ReflectionClass Metadata Row Pack
 

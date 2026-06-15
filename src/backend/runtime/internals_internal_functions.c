@@ -13506,18 +13506,54 @@ static int ptn_csv_char_arg(
     return byte;
 }
 
+static int ptn_csv_char_is_escaped(
+    const char *data,
+    size_t len_before_char,
+    int escape_enabled,
+    char escape
+) {
+    if (!escape_enabled || data == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    while (len_before_char > 0 && (unsigned char)data[len_before_char - 1] == (unsigned char)escape) {
+        count++;
+        len_before_char--;
+    }
+    return (count % 2) == 1;
+}
+
+static size_t ptn_csv_record_payload_len(const char *data, size_t len) {
+    if (len > 0 && data[len - 1] == '\n') {
+        len--;
+        if (len > 0 && data[len - 1] == '\r') {
+            len--;
+        }
+    } else if (len > 0 && data[len - 1] == '\r') {
+        len--;
+    }
+    return len;
+}
+
 static int ptn_stream_read_csv_record(
     PtnRuntime *runtime,
     PtnResource *resource,
     int64_t length,
+    char delimiter,
     char enclosure,
+    int escape_enabled,
+    char escape,
     PtnStringBuffer *record,
     size_t line
 ) {
     ptn_string_buffer_init(record);
     int in_enclosure = 0;
     int at_field_start = 1;
-    while (length <= 0 || record->len < (size_t)length) {
+    int length_crossed_in_enclosure = 0;
+    while (1) {
+        if (length > 0 && record->len >= (size_t)length && !in_enclosure && !length_crossed_in_enclosure) {
+            break;
+        }
         errno = 0;
         int byte = ptn_stream_get_byte(resource);
         if (byte == EOF) {
@@ -13531,29 +13567,67 @@ static int ptn_stream_read_csv_record(
             break;
         }
         ptn_string_buffer_append_char(record, (char)(unsigned char)byte);
+        if (length > 0 && record->len >= (size_t)length && in_enclosure) {
+            length_crossed_in_enclosure = 1;
+        }
         if (at_field_start && byte == (unsigned char)enclosure) {
             in_enclosure = 1;
             at_field_start = 0;
             continue;
         }
         if (byte == (unsigned char)enclosure && in_enclosure) {
+            if (ptn_csv_char_is_escaped(record->data, record->len - 1, escape_enabled, escape)) {
+                at_field_start = 0;
+                continue;
+            }
             int next = ptn_stream_get_byte(resource);
             if (next == (unsigned char)enclosure) {
                 ptn_string_buffer_append_char(record, (char)(unsigned char)next);
                 continue;
             }
             if (next != EOF) {
+                if (length_crossed_in_enclosure && (next == '\n' || next == '\r')) {
+                    ptn_string_buffer_append_char(record, (char)(unsigned char)next);
+                    if (next == '\r') {
+                        int maybe_lf = ptn_stream_get_byte(resource);
+                        if (maybe_lf == '\n') {
+                            ptn_string_buffer_append_char(record, (char)(unsigned char)maybe_lf);
+                        } else if (maybe_lf != EOF) {
+                            ptn_stream_unget_byte(resource, maybe_lf);
+                        }
+                    }
+                    return 1;
+                }
                 ptn_stream_unget_byte(resource, next);
             }
             in_enclosure = 0;
+            if (length_crossed_in_enclosure && length > 0 && record->len == (size_t)length) {
+                break;
+            }
             continue;
         }
         if (!in_enclosure && byte == '\n') {
             break;
         }
+        if (!in_enclosure && byte == (unsigned char)delimiter) {
+            at_field_start = 1;
+            continue;
+        }
+        if (!in_enclosure && at_field_start && (byte == ' ' || byte == '\t')) {
+            continue;
+        }
         at_field_start = 0;
     }
     return record->len == 0 ? 0 : 1;
+}
+
+static void ptn_csv_append_null_field(PtnValue result, size_t *field_index) {
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key((int64_t)(*field_index)),
+        ptn_null()
+    );
+    (*field_index)++;
 }
 
 static void ptn_csv_append_field(PtnValue result, PtnStringBuffer *field, size_t *field_index) {
@@ -13579,6 +13653,12 @@ static PtnValue ptn_parse_csv_record(
     char escape
 ) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (ptn_csv_record_payload_len(data, len) == 0) {
+        size_t field_index = 0;
+        ptn_csv_append_null_field(result, &field_index);
+        return result;
+    }
+
     PtnStringBuffer field;
     ptn_string_buffer_init(&field);
     size_t field_index = 0;
@@ -13593,19 +13673,13 @@ static PtnValue ptn_parse_csv_record(
             }
             break;
         }
-        if (at_field_start && byte == (unsigned char)enclosure) {
-            in_enclosure = 1;
-            at_field_start = 0;
-            continue;
-        }
         if (in_enclosure) {
-            if (escape_enabled && byte == (unsigned char)escape && i + 1 < len) {
-                ptn_string_buffer_append_char(&field, (char)byte);
-                ptn_string_buffer_append_char(&field, data[++i]);
-                at_field_start = 0;
-                continue;
-            }
             if (byte == (unsigned char)enclosure) {
+                if (ptn_csv_char_is_escaped(field.data, field.len, escape_enabled, escape)) {
+                    ptn_string_buffer_append_char(&field, (char)byte);
+                    at_field_start = 0;
+                    continue;
+                }
                 if (i + 1 < len && data[i + 1] == enclosure) {
                     ptn_string_buffer_append_char(&field, enclosure);
                     i++;
@@ -13619,9 +13693,22 @@ static PtnValue ptn_parse_csv_record(
             at_field_start = 0;
             continue;
         }
+        if (at_field_start && byte == (unsigned char)enclosure) {
+            field.len = 0;
+            if (field.data != NULL) {
+                field.data[0] = '\0';
+            }
+            in_enclosure = 1;
+            at_field_start = 0;
+            continue;
+        }
         if (byte == (unsigned char)delimiter) {
             ptn_csv_append_field(result, &field, &field_index);
             at_field_start = 1;
+            continue;
+        }
+        if (at_field_start && (byte == ' ' || byte == '\t')) {
+            ptn_string_buffer_append_char(&field, (char)byte);
             continue;
         }
         ptn_string_buffer_append_char(&field, (char)byte);
@@ -13640,9 +13727,23 @@ static PtnValue ptn_internal_fgetcsv(PtnRuntime *runtime, size_t argc, const Ptn
     int64_t length = 0;
     if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
         length = ptn_internal_expect_integer_arg(runtime, "fgetcsv", 2, "length", args[1], line);
-        if (length < 0) {
-            ptn_throw_exception(runtime, "ValueError", "fgetcsv(): Argument #2 ($length) must be greater than or equal to 0");
+        if (length < 0 || length == LLONG_MAX) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "fgetcsv(): Argument #2 ($length) must be between 0 and %lld",
+                (long long)LLONG_MAX - 1
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
             return ptn_null();
+        }
+        if (length == LLONG_MAX - 1) {
+            fflush(stdout);
+            ptn_abort_out_of_memory();
         }
     }
     char delimiter = argc >= 3
@@ -13658,9 +13759,26 @@ static PtnValue ptn_internal_fgetcsv(PtnRuntime *runtime, size_t argc, const Ptn
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    if (argc < 5) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "fgetcsv(): the $escape parameter must be provided as its default value will change",
+            line
+        );
+    }
 
     PtnStringBuffer record;
-    int status = ptn_stream_read_csv_record(runtime, resource, length, enclosure, &record, line);
+    int status = ptn_stream_read_csv_record(
+        runtime,
+        resource,
+        length,
+        delimiter,
+        enclosure,
+        escape_enabled,
+        escape,
+        &record,
+        line
+    );
     if (status <= 0) {
         return ptn_bool(0);
     }
@@ -13669,12 +13787,18 @@ static PtnValue ptn_internal_fgetcsv(PtnRuntime *runtime, size_t argc, const Ptn
     return parsed;
 }
 
-static int ptn_csv_field_needs_enclosure(PtnStringOperand field, char delimiter, char enclosure, char escape) {
+static int ptn_csv_field_needs_enclosure(
+    PtnStringOperand field,
+    char delimiter,
+    char enclosure,
+    int escape_enabled,
+    char escape
+) {
     for (size_t i = 0; i < field.len; i++) {
         unsigned char byte = (unsigned char)field.data[i];
         if (byte == (unsigned char)delimiter ||
             byte == (unsigned char)enclosure ||
-            byte == (unsigned char)escape ||
+            (escape_enabled && byte == (unsigned char)escape) ||
             byte == '\n' ||
             byte == '\r' ||
             byte == '\t' ||
@@ -13685,16 +13809,27 @@ static int ptn_csv_field_needs_enclosure(PtnStringOperand field, char delimiter,
     return 0;
 }
 
-static void ptn_csv_write_field(PtnStringBuffer *buffer, PtnStringOperand field, char delimiter, char enclosure, char escape) {
-    int quote = ptn_csv_field_needs_enclosure(field, delimiter, enclosure, escape);
+static void ptn_csv_write_field(
+    PtnStringBuffer *buffer,
+    PtnStringOperand field,
+    char delimiter,
+    char enclosure,
+    int escape_enabled,
+    char escape
+) {
+    int quote = ptn_csv_field_needs_enclosure(field, delimiter, enclosure, escape_enabled, escape);
     if (quote) {
         ptn_string_buffer_append_char(buffer, enclosure);
     }
     for (size_t i = 0; i < field.len; i++) {
         char byte = field.data[i];
         if (quote && byte == enclosure) {
-            ptn_string_buffer_append_char(buffer, enclosure);
-            ptn_string_buffer_append_char(buffer, enclosure);
+            if (ptn_csv_char_is_escaped(field.data, i, escape_enabled, escape)) {
+                ptn_string_buffer_append_char(buffer, byte);
+            } else {
+                ptn_string_buffer_append_char(buffer, enclosure);
+                ptn_string_buffer_append_char(buffer, enclosure);
+            }
         } else {
             ptn_string_buffer_append_char(buffer, byte);
         }
@@ -13743,7 +13878,13 @@ static PtnValue ptn_internal_fputcsv(PtnRuntime *runtime, size_t argc, const Ptn
         }
         return ptn_null();
     }
-    (void)escape_enabled;
+    if (argc < 5) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "fputcsv(): the $escape parameter must be provided as its default value will change",
+            line
+        );
+    }
 
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
@@ -13751,8 +13892,20 @@ static PtnValue ptn_internal_fputcsv(PtnRuntime *runtime, size_t argc, const Ptn
         if (i > 0) {
             ptn_string_buffer_append_char(&output, delimiter);
         }
-        PtnStringOperand field = ptn_value_to_string_operand(fields_value.as.array->entries[i].value);
-        ptn_csv_write_field(&output, field, delimiter, enclosure, escape);
+        PtnValue field_value = fields_value.as.array->entries[i].value;
+        if (ptn_value_deref(field_value).type == PTN_ARRAY) {
+            ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+        }
+        PtnStringOperand field = ptn_value_to_string_operand_with_runtime(runtime, field_value, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(field);
+            if (argc >= 6) {
+                ptn_string_operand_free(eol);
+            }
+            free(output.data);
+            return ptn_null();
+        }
+        ptn_csv_write_field(&output, field, delimiter, enclosure, escape_enabled, escape);
         ptn_string_operand_free(field);
     }
     ptn_string_buffer_append_len(&output, eol.data, eol.len);
