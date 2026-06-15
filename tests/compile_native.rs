@@ -5,9 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
-    IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElementTarget, MagicConstantKind,
-    PropertyTypeKind, PropertyVisibility, ReferenceTarget, Statement, StringInterpolationIndex,
-    StringPart, TypeHint, UnaryOp, UnsetTarget,
+    IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElementTarget,
+    MagicConstantKind, PropertyTypeKind, PropertyVisibility, ReferenceTarget, Statement,
+    StringInterpolationIndex, StringPart, TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -4508,11 +4508,17 @@ var_dump($worker instanceof Base, $worker instanceof Contract);
     };
     assert!(matches!(
         &arguments[0],
-        Expr::InstanceOf { class_name, .. } if class_name == "Base"
+        Expr::InstanceOf {
+            target: InstanceOfTarget::ClassName { name, .. },
+            ..
+        } if name == "Base"
     ));
     assert!(matches!(
         &arguments[1],
-        Expr::InstanceOf { class_name, .. } if class_name == "Contract"
+        Expr::InstanceOf {
+            target: InstanceOfTarget::ClassName { name, .. },
+            ..
+        } if name == "Contract"
     ));
 }
 
@@ -31891,6 +31897,129 @@ bool(true)\n\
 bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_instanceof_alias_targets_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-instanceof-alias-targets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-instanceof-alias-targets.php");
+    let output = root.join("dynamic-instanceof-alias-targets-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Base {}
+class Original extends Base {}
+
+class_alias('Original', 'Alias');
+
+$object = new Original;
+$aliasObject = new Alias;
+$aliasName = 'Alias';
+$nestedAlias = '\\Alias';
+
+var_dump($object instanceof $aliasObject);
+var_dump($object instanceof $aliasName);
+var_dump($object instanceof $nestedAlias);
+var_dump($aliasObject instanceof $object);
+var_dump($aliasObject instanceof Base);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_literal_class_alias_declaration_references_to_native_binary() {
+    let root = temp_dir("ptn-native-class-alias-declaration-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-alias-declaration-references.php");
+    let output = root.join("class-alias-declaration-references-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Base {}
+class Original extends Base {
+    static public function msg() {
+        echo "hello\n";
+    }
+}
+
+interface Contract {}
+
+class_alias('Original', 'Alias');
+class_alias('Contract', 'AliasContract');
+
+class Child extends Alias implements AliasContract {
+    public function run() {
+        Original::msg();
+    }
+}
+
+$child = new Child;
+$child->run();
+call_user_func(['Alias', 'msg']);
+var_dump(get_parent_class('Child'));
+var_dump($child instanceof Original);
+var_dump($child instanceof Alias);
+var_dump($child instanceof Base);
+var_dump($child instanceof Contract);
+var_dump($child instanceof AliasContract);
+var_dump(is_subclass_of(new Child, 'Original'));
+var_dump(is_subclass_of(new Child, 'Alias'));
+var_dump(is_subclass_of(new Alias, 'Alias'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "hello\n\
+hello\n\
+string(8) \"Original\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_rejects_duplicate_interface_references_through_class_alias() {
+    let error = parser::parse(
+        r#"<?php
+interface Original {}
+class_alias('Original', 'Alias');
+interface Duplicate extends Original, Alias {}
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert!(error.message.contains(
+        "Interface Duplicate cannot implement previously implemented interface Original"
+    ));
 }
 
 #[test]

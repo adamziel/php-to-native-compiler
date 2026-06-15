@@ -689,7 +689,7 @@ pub enum Expr {
     },
     InstanceOf {
         expr: Box<Expr>,
-        class_name: String,
+        target: InstanceOfTarget,
         span: SourceSpan,
     },
     Match {
@@ -831,6 +831,21 @@ pub enum BinaryOp {
     And,
     Xor,
     Or,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InstanceOfTarget {
+    ClassName { name: String, span: SourceSpan },
+    Expr(Box<Expr>),
+}
+
+impl InstanceOfTarget {
+    pub fn span(&self) -> SourceSpan {
+        match self {
+            Self::ClassName { span, .. } => *span,
+            Self::Expr(expr) => expr.span(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

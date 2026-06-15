@@ -3,6 +3,7 @@
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
 | ptn-w17z.31 iterable/DNF type row pack | 27 | 27 |
+| ptn-vvpn class_alias metadata slice | 38 | 13 |
 | ptn-w17z.36 extract typed references | 1 | 1 |
 | ptn-2cij ENV/CLEAN SKIPIF preconditions | 33 | 0 |
 | ptn-vj4r class_alias namespace metadata | 5 | 5 |
@@ -29,14 +30,14 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T19:10Z.
-Measured latest: `ptn-w17z.31` iterable/DNF type row pack selected 27 rows, kept 27 runnable, and passed 27/27 in the merged focused run.
-Latest: `ptn-w17z.31` completed the checked-in iterable/DNF type row pack. Previous: `ptn-w17z.36` completed the checked-in extract typed references row pack.
+Refresh: 2026-06-15T19:17Z.
+Measured latest: `ptn-w17z.31` iterable/DNF type row pack selected 27 rows, kept 27 runnable, and passed 27/27 in the final integrated focused run.
+Latest: `ptn-w17z.31` completed the checked-in iterable/DNF type row pack. Previous: `ptn-vvpn` completed the checked-in class_alias metadata slice.
 
 Current hook: `ptn-w17z.31` iterable/DNF type row pack passed 27/27 at
-`.runtime/ptn-w17z31-final-integrated/run-20260615T190737Z-manifest.log`.
-Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
-`.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
+`.runtime/ptn-w17z31-vvpn-integrated/run-20260615T191440Z-manifest.log`.
+Previous hook: `ptn-vvpn` class_alias metadata slice passed 13/33 runnable rows at
+`.runtime/merge-ptn-vvpn-class-alias/summary-20260615T190216Z.txt`.
 
 ## 2026-06-15 ptn-w17z.31 Iterable/DNF Type Row Pack
 
@@ -48,6 +49,7 @@ Final manifest: `tools/phpt-ptn-w17z31-iterable-dnf-row-pack.txt`.
 | Final focused run (`.runtime/ptn-w17z31-final-focused-27-pass/run-20260615T183817Z-manifest.log`) | 27 selected / 27 runnable | 27 |
 | Merged focused run (`.runtime/ptn-w17z31-merged-focused/run-20260615T185932Z-manifest.log`) | 27 selected / 27 runnable | 27 |
 | Final integrated focused run (`.runtime/ptn-w17z31-final-integrated/run-20260615T190737Z-manifest.log`) | 27 selected / 27 runnable | 27 |
+| Final ptn-vvpn-integrated focused run (`.runtime/ptn-w17z31-vvpn-integrated/run-20260615T191440Z-manifest.log`) | 27 selected / 27 runnable | 27 |
 
 Implemented behavior: parser/IR/runtime support for `object`, `iterable`,
 union, intersection, and DNF user type hints; method signature compatibility
@@ -2869,3 +2871,10 @@ The submitted branch reported the focused COW/reference mutation row pack as
 (`abfb48341ef2`) before `ptn-j6gv` and `ptn-qsmv.14` landed, so the current
 dashboard keeps the newer `ptn-qsmv.14` broad 1k baseline row rather than
 downgrading to that stale broad count.
+
+## 2026-06-15 ptn-vvpn Class Alias Metadata Slice
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final rebased class_alias bucket (`.runtime/ptn-vvpn-class-alias-after-rebased-final/summary-20260615T184412Z.txt`) | 38 selected / 33 runnable | 13 |
+| Integrated focused merge run (`.runtime/merge-ptn-vvpn-class-alias/summary-20260615T190216Z.txt`) | 38 selected / 33 runnable | 13 |
