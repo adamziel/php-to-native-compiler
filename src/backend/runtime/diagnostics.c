@@ -491,6 +491,19 @@ static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice(PtnD
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice_at(PtnRuntime *runtime, size_t line) {
+    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
+        return;
+    }
+    fputc('\n', stdout);
+    fputs("Notice: Only variables should be assigned by reference in ", stdout);
+    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
+    fputs(" on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static PTN_UNUSED void ptn_emit_only_variables_passed_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
         return;
@@ -505,6 +518,7 @@ static PTN_UNUSED void ptn_emit_only_variable_references_returned_by_reference_n
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
         return;
     }
+    fputc('\n', stdout);
     fputs("Notice: Only variable references should be returned by reference in ptn on line ", stdout);
     fprintf(stdout, "%zu", line);
     fputc('\n', stdout);

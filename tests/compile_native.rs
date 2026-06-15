@@ -2644,11 +2644,7 @@ takes_ref(($items[0][]));\n",
 
 #[test]
 fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
-    let by_ref_return = parser::parse("<?php function &factory() { return null; }").unwrap_err();
-    assert_eq!(
-        by_ref_return.message,
-        "by-reference return requires a variable or array element"
-    );
+    parser::parse("<?php function &factory() { return null; }").unwrap();
 
     let temporary_assignment = parser::parse("<?php $alias =& 1;").unwrap_err();
     assert_eq!(
@@ -2656,13 +2652,7 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "unsupported by-reference assignment target"
     );
 
-    let dynamic_call_result_return =
-        parser::parse("<?php function &factory(&$value) { $fn = 'id'; return $fn($value); }")
-            .unwrap_err();
-    assert_eq!(
-        dynamic_call_result_return.message,
-        "by-reference call-result returns are unsupported"
-    );
+    parser::parse("<?php function &factory(&$value) { $fn = 'id'; return $fn($value); }").unwrap();
 
     let recursive_return =
         parser::parse("<?php function &factory(&$value) { return factory($value); }").unwrap_err();
@@ -16326,8 +16316,10 @@ echo gettype($typed), \":\", $typed, \"\\n\";\n",
         String::from_utf8(execution.stdout).unwrap(),
         "2|2\n\
 2|3\n\
+\n\
 Notice: Only variable references should be returned by reference in ptn on line 12\n\
 9\n\
+\n\
 Notice: Only variable references should be returned by reference in ptn on line 15\n\
 string:9\n"
     );
@@ -24673,7 +24665,7 @@ var_dump(array_reduce($array, \"pick_reduce_value\", 0));
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_reduce"));
-    assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
+    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("carry = ptn_value_clone_deref(callback_result);"));
 }
 
@@ -25162,7 +25154,7 @@ echo array_reduce([6], [1 => \"combine\", 0 => \"Reducer\"], 0), \"\\n\";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_reduce"));
-    assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
+    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("Reducer::combine"));
 }
 
@@ -25196,7 +25188,7 @@ echo array_reduce([\"a\", \"b\"], [$reducer, \"combine\"], \"seed\"), \"\\n\";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_reduce"));
-    assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
+    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("receiver.type == PTN_OBJECT || receiver.type == PTN_EXCEPTION"));
     assert!(c_source.contains("ptn_call_declared_method(runtime, receiver"));
 }
@@ -25288,7 +25280,7 @@ var_dump(array_reduce($array, function &($carry, $value) {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_reduce"));
-    assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
+    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("ptn_closure("));
 }
 

@@ -3436,6 +3436,15 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
     int emit_null_key_deprecation
 );
 
+static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    const char *path,
+    size_t line
+);
+
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
     PtnRuntime *runtime,
     const char *name,
@@ -3444,6 +3453,30 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
     const char *path,
     size_t line
 ) {
+    if (ptn_runtime_is_globals_name(name)) {
+        if (segment_count == 0) {
+            return ptn_runtime_reference_for_variable(runtime, name);
+        }
+
+        char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+        if (global_name == NULL) {
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
+        PtnValue *slot = ptn_runtime_global_variable_slot_for_write(runtime, global_name);
+        free(global_name);
+        if (slot == NULL) {
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
+        return ptn_value_reference_for_array_path(
+            runtime,
+            slot,
+            segments + 1,
+            segment_count - 1,
+            path,
+            line
+        );
+    }
+
     if (segment_count == 0) {
         return ptn_runtime_reference_for_variable(runtime, name);
     }
