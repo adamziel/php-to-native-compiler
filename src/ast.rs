@@ -773,6 +773,7 @@ pub struct MatchArm {
 pub struct ArrayElement {
     pub key: Option<Expr>,
     pub value: ArrayElementValue,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]

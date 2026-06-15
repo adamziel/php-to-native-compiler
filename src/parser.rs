@@ -246,6 +246,7 @@ impl Parser<'_> {
         validate_class_scoped_constant_exprs(&classes)?;
         for class in &classes {
             validate_method_names(class)?;
+            validate_property_names(class)?;
             validate_class_constant_names(class)?;
             for method in &class.methods {
                 if method.return_by_ref {
@@ -1340,6 +1341,17 @@ impl Parser<'_> {
                         )?;
                         continue;
                     }
+                    if modifiers.visibility_span.is_some() {
+                        return Err(Diagnostic::new(
+                            "Multiple access type modifiers are not allowed",
+                            Some(self.peek().span),
+                        ));
+                    }
+                    modifiers.visibility = PropertyVisibility::Public;
+                    modifiers.visibility_span = Some(self.peek().span);
+                    self.advance();
+                }
+                "var" => {
                     if modifiers.visibility_span.is_some() {
                         return Err(Diagnostic::new(
                             "Multiple access type modifiers are not allowed",
@@ -4137,9 +4149,15 @@ impl Parser<'_> {
                                 None => (None, Some(name_expr), member_span),
                             }
                         }
-                        _ => {
-                            return Err(Diagnostic::new("expected member name", Some(member.span)));
-                        }
+                        kind => match object_member_name_from_token(&kind) {
+                            Some(name) => (Some(name), None, member.span),
+                            None => {
+                                return Err(Diagnostic::new(
+                                    "expected member name",
+                                    Some(member.span),
+                                ));
+                            }
+                        },
                     };
                     if !matches!(self.peek().kind, TokenKind::LeftParen) {
                         let span = combine_spans(start_span, member_span);
@@ -4166,6 +4184,7 @@ impl Parser<'_> {
                                 ArrayElement {
                                     key: None,
                                     value: ArrayElementValue::Value(expr),
+                                    line: start_span.line,
                                 },
                                 ArrayElement {
                                     key: None,
@@ -4173,6 +4192,7 @@ impl Parser<'_> {
                                         || dynamic_name.clone().expect("dynamic member name"),
                                         |name| Expr::String(name, member_span),
                                     )),
+                                    line: member_span.line,
                                 },
                             ],
                             span: callable_span,
@@ -4779,10 +4799,12 @@ impl Parser<'_> {
                 ArrayElement {
                     key: None,
                     value: ArrayElementValue::Value(class_name),
+                    line: class_span.line,
                 },
                 ArrayElement {
                     key: None,
                     value: ArrayElementValue::Value(method_name),
+                    line: class_span.line,
                 },
             ],
             span: class_span,
@@ -5101,12 +5123,14 @@ impl Parser<'_> {
     }
 
     fn parse_array_element(&mut self) -> Result<ArrayElement> {
+        let line = self.peek().span.line;
         if matches!(self.peek().kind, TokenKind::Ellipsis) {
             self.advance();
             let value = self.parse_expr()?;
             return Ok(ArrayElement {
                 key: None,
                 value: ArrayElementValue::Unpack(value),
+                line,
             });
         }
 
@@ -5119,7 +5143,11 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            return Ok(ArrayElement { key: None, value });
+            return Ok(ArrayElement {
+                key: None,
+                value,
+                line,
+            });
         }
 
         let first = self.parse_expr()?;
@@ -5129,11 +5157,13 @@ impl Parser<'_> {
             Ok(ArrayElement {
                 key: Some(first),
                 value,
+                line,
             })
         } else {
             Ok(ArrayElement {
                 key: None,
                 value: ArrayElementValue::Value(first),
+                line,
             })
         }
     }
@@ -6209,6 +6239,58 @@ fn describe_unexpected_token(token: &Token) -> String {
         TokenKind::Eof => "end of file".to_string(),
         _ => format!("token \"{}\"", token_text(&token.kind)),
     }
+}
+
+fn object_member_name_from_token(kind: &TokenKind) -> Option<String> {
+    let name = match kind {
+        TokenKind::Echo
+        | TokenKind::Print
+        | TokenKind::If
+        | TokenKind::Elseif
+        | TokenKind::Else
+        | TokenKind::Do
+        | TokenKind::While
+        | TokenKind::For
+        | TokenKind::Foreach
+        | TokenKind::As
+        | TokenKind::Switch
+        | TokenKind::Match
+        | TokenKind::Case
+        | TokenKind::Default
+        | TokenKind::Break
+        | TokenKind::Continue
+        | TokenKind::Return
+        | TokenKind::Include
+        | TokenKind::IncludeOnce
+        | TokenKind::Require
+        | TokenKind::RequireOnce
+        | TokenKind::Try
+        | TokenKind::Catch
+        | TokenKind::Throw
+        | TokenKind::Yield
+        | TokenKind::Goto
+        | TokenKind::Const
+        | TokenKind::Function
+        | TokenKind::Global
+        | TokenKind::New
+        | TokenKind::Clone
+        | TokenKind::True
+        | TokenKind::False
+        | TokenKind::Null
+        | TokenKind::KeywordAnd
+        | TokenKind::KeywordOr
+        | TokenKind::KeywordXor
+        | TokenKind::IntType
+        | TokenKind::IntegerType
+        | TokenKind::FloatType
+        | TokenKind::DoubleType
+        | TokenKind::StringType
+        | TokenKind::BinaryType
+        | TokenKind::BoolType
+        | TokenKind::BooleanType => token_text(kind),
+        _ => return None,
+    };
+    Some(name.to_string())
 }
 
 fn token_text(kind: &TokenKind) -> &'static str {
@@ -8397,7 +8479,11 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
         if class.is_abstract {
             continue;
         }
-        if let Some(method) = class.methods.iter().find(|method| method.is_abstract) {
+        if let Some(method) = class
+            .methods
+            .iter()
+            .find(|method| method.is_abstract && method.trait_name.is_none())
+        {
             if parent_concrete_method_exists(class, &method.name, classes) {
                 continue;
             }
@@ -8577,6 +8663,27 @@ fn validate_method_names(class: &ClassDecl) -> Result<()> {
             return Err(Diagnostic::new(
                 format!("Cannot redeclare {}::{}()", class.name, lookup_name),
                 Some(method.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_property_names(class: &ClassDecl) -> Result<()> {
+    let mut names = HashSet::new();
+    for property in &class.properties {
+        if !names.insert(property.name.clone()) {
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare {}::${}", class.name, property.name),
+                Some(property.span),
+            ));
+        }
+    }
+    for property in &class.static_properties {
+        if !names.insert(property.name.clone()) {
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare {}::${}", class.name, property.name),
+                Some(property.span),
             ));
         }
     }

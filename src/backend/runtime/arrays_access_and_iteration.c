@@ -170,8 +170,13 @@ static PTN_UNUSED void ptn_emit_resource_offset_warning(PtnRuntime *runtime, Ptn
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    fputc('\n', stdout);
-    ptn_emit_warning(&runtime->diagnostics, message, line);
+    ptn_emit_array_runtime_diagnostic_at_path(
+        "Warning",
+        message,
+        runtime->source_path == NULL ? "ptn" : runtime->source_path,
+        line
+    );
+    runtime->diagnostics.emitted_warning = 1;
 }
 
 static PTN_UNUSED int ptn_class_name_is_stdclass(const char *class_name) {
@@ -2210,10 +2215,13 @@ static PTN_UNUSED void ptn_array_literal_append_entry(
     PtnValue value
 ) {
     if (has_key) {
-        if (ptn_value_deref(key_value).type == PTN_NULL) {
+        PtnValue key_value_deref = ptn_value_deref(key_value);
+        if (key_value_deref.type == PTN_NULL) {
             ptn_emit_null_array_offset_deprecation(runtime, line);
+        } else if (key_value_deref.type == PTN_RESOURCE) {
+            ptn_emit_resource_offset_warning(runtime, key_value_deref.as.resource, line);
         }
-        PtnArrayKey key = ptn_array_key_from_value(key_value);
+        PtnArrayKey key = ptn_array_key_from_value(key_value_deref);
         ptn_array_set_entry(array, key, ptn_value_clone(value));
         return;
     }

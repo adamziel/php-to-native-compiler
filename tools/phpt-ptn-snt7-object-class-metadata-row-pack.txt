@@ -1,0 +1,8 @@
+Zend/tests/abstract_implicit.phpt
+Zend/tests/errmsg/errmsg_039.phpt
+Zend/tests/grammar/semi_reserved_003.phpt
+ext/standard/tests/array/array_combine_variation4.phpt
+ext/standard/tests/array/array_key_exists_variation1.phpt
+ext/standard/tests/array/array_map_object3.phpt
+ext/standard/tests/array/array_map_variation4.phpt
+ext/standard/tests/array/array_reverse_variation4.phpt

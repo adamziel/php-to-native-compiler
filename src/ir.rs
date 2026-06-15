@@ -552,6 +552,7 @@ pub struct ClosureCapture {
 pub struct ArrayElement {
     pub key: Option<ValueExpr>,
     pub value: ArrayElementValue,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2466,6 +2467,7 @@ impl<'a> LoweringContext<'a> {
         ArrayElement {
             key: element.key.as_ref().map(|key| self.lower_expr(key)),
             value: self.lower_array_element_value(&element.value),
+            line: element.line,
         }
     }
 
