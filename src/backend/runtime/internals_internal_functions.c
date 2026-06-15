@@ -19298,6 +19298,7 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
 static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_getdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_defined_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -19512,6 +19513,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_called_class", 0, 0, ptn_internal_get_called_class },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 0, 1, ptn_internal_get_class },
+        { "get_defined_vars", 0, 0, ptn_internal_get_defined_vars },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
@@ -21580,6 +21582,23 @@ static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const P
     }
     ptn_throw_exception(runtime, "TypeError", message);
     return ptn_null();
+}
+
+static PtnValue ptn_internal_get_defined_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (runtime == NULL) {
+        return result;
+    }
+    PtnSymbolTable *symbols = &runtime->symbols;
+    for (size_t i = 0; i < symbols->len; i++) {
+        PtnSymbol *symbol = &symbols->items[i];
+        PtnArrayKey key = ptn_array_string_key(symbol->name);
+        ptn_array_set_entry(result.as.array, key, ptn_value_clone_deref(symbol->value));
+    }
+    return result;
 }
 
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

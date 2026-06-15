@@ -1395,6 +1395,11 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
+            if (line ~ /(^|[^[:alnum:]_$])eval[[:space:]]*\(/) {
+                print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
+                found = 1
+                exit
+            }
             if (line ~ /[$][{][[:space:]]*[$]/ || line ~ /(^|[;{}])[[:space:]]*global[[:space:]][^;]*[$][$]/ || line ~ /[$][$][a-z_][a-z0-9_]*([[:space:]]*\[[^]]*\])*[[:space:]]*([+*\/%.&|^-]?=|[?][?]=)/) {
                 print "unsupported-dynamic-symbol\trequires variable-variable symbol-table mutation, outside PTN modeled dynamic reads"
                 found = 1

@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
 | ptn-w17z.22 compile-time include path variables | 1 | 1 |
 | ptn-w17z.28 collected Generator runtime row pack | 6 | 6 |
@@ -18,14 +19,22 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:00Z.
-Measured latest: `ptn-w17z.2` sort flags row pack selected 78 rows, kept 78 runnable, and passed 72/78 in the focused run.
-Latest: `ptn-w17z.2` advances single-array sort flag rows to 72/78. Previous: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path.
+Refresh: 2026-06-15T17:09Z.
+Measured latest: `ptn-w17z.30` foreach mutation visibility row pack selected 11 rows, kept 7 runnable, classified 4 eval dynamic-code rows, and passed 7/7 runnable rows in the focused run.
+Latest: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack. Previous: `ptn-w17z.2` advances single-array sort flag rows to 72/78.
 
-Current hook: `ptn-w17z.2` sort flags row pack passed 72/78 at
+Current hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
+`.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`.
+Previous hook: `ptn-w17z.2` sort flags row pack passed 72/78 at
 `.runtime/merge-ptn-w17z2-sort-flags/summary-20260615T164329Z.txt`.
-Previous hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
-`.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
+
+## 2026-06-15 ptn-w17z.30 Foreach Mutation Visibility Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-w17z30-before-focused/summary-20260615T154026Z.txt`) | 10 selected / 10 runnable / 0 classified | 0 |
+| Final rebased focused run (`.runtime/ptn-w17z30-after-rebase/summary-20260615T161455Z.txt`) | 11 selected / 7 runnable / 4 classified | 7 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`) | 11 selected / 7 runnable / 4 classified | 7 |
 
 ## 2026-06-15 ptn-w17z.2 Sort Flags Row Pack
 

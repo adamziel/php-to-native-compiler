@@ -347,6 +347,7 @@ typedef struct {
     size_t index;
     size_t length;
     PtnArrayKey current_key;
+    PtnReference *current_reference;
     PtnValue *watched_slot;
     size_t line;
     int has_current_key;

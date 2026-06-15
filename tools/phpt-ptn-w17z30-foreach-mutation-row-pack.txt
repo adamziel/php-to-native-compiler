@@ -1,0 +1,14 @@
+# Focused PHPT foreach mutation visibility row pack for ptn-w17z.30.
+#
+# Bucket: foreach array/object mutation visibility.
+tests/lang/foreachLoop.009.phpt
+tests/lang/foreachLoop.012.phpt
+tests/lang/foreachLoop.013.phpt
+tests/lang/foreachLoop.014.phpt
+tests/lang/foreachLoop.015.phpt
+tests/lang/foreachLoopObjects.004.phpt
+tests/lang/foreachLoopObjects.005.phpt
+tests/lang/foreachLoopObjects.006.phpt
+Zend/tests/foreach/foreach_shadowed_dyn_property.phpt
+Zend/tests/foreach/foreach_shadowed_property.phpt
+Zend/tests/foreach/bug39036.phpt

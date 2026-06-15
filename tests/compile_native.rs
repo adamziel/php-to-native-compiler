@@ -15122,6 +15122,46 @@ $box->dump();\n",
 }
 
 #[test]
+fn compile_foreach_object_shadowed_private_property_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-shadowed-private-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-shadowed-private-property.php");
+    let output = root.join("foreach-shadowed-private-property-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test {
+    private $prop = "Test";
+
+    function run() {
+        foreach ($this as $key => $value) {
+            echo $key, " => ", $value, "\n";
+        }
+        var_dump(get_object_vars($this));
+    }
+}
+
+class Test2 extends Test {
+    public $prop = "Test2";
+}
+
+(new Test2())->run();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "prop => Test\narray(1) {\n  [\"prop\"]=>\n  string(4) \"Test\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_by_value_snapshots_iteration_set_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-cow-snapshot");
     fs::create_dir_all(&root).unwrap();
@@ -15165,7 +15205,7 @@ var_dump($items);",
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_array_retain(iterator.array);"));
+    assert!(c_source.contains("iterator.array = ptn_array_clone(array);"));
     assert!(c_source.contains("ptn_array_iterator_destroy(&"));
     assert!(c_source.contains("ptn_foreach_cleanup"));
 }
@@ -15244,6 +15284,56 @@ var_dump($post);",
 }
 
 #[test]
+fn compile_foreach_mutation_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-mutation-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-mutation-visibility.php");
+    let output = root.join("foreach-mutation-visibility-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$items = ["original.0", "original.1", "original.2"];
+$ref =& $items;
+foreach ($items as $key => $value) {
+    array_pop($items);
+    echo "snapshot:", $key, "=", $value, "\n";
+}
+var_dump($items);
+
+$shift = ["v.0", "v.1", "v.2"];
+foreach ($shift as $key => &$value) {
+    echo "live:", $key, "=", $value, "\n";
+    array_shift($shift);
+}
+unset($value);
+var_dump($shift);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "snapshot:0=original.0\n",
+            "snapshot:1=original.1\n",
+            "snapshot:2=original.2\n",
+            "array(0) {\n",
+            "}\n",
+            "live:0=v.0\n",
+            "live:0=v.1\n",
+            "live:0=v.2\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_temporary_reference_array_literal_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-temp-reference-array");
     fs::create_dir_all(&root).unwrap();
@@ -15270,6 +15360,42 @@ var_dump($a, $b);",
         "string(5) \"a-foo\"\nstring(5) \"b-foo\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_get_defined_vars_dynamic_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-get-defined-vars-dynamic-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-defined-vars-dynamic-unset.php");
+    let output = root.join("get-defined-vars-dynamic-unset-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$key = "asdf";
+foreach (get_defined_vars() as $key => $value) {
+    unset($$key);
+}
+var_dump($key);
+echo "Done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: Undefined variable $key in {} on line 6\nNULL\nDone\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_defined_vars"));
 }
 
 #[test]

@@ -470,6 +470,12 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires foreach assignment diagnostics for `$this`",
         ),
         (
+            "eval dynamic code",
+            "--TEST--\neval\n--FILE--\n<?php\n$code = 'echo \"x\\n\";';\neval($code);\n--EXPECT--\nx\n",
+            "unsupported-dynamic-eval\t",
+            "requires eval runtime fallback",
+        ),
+        (
             "variable-variable write",
             "--TEST--\ndynamic write\n--FILE--\n<?php\n$name = 'value';\n$$name = 1;\n--EXPECT--\n",
             "unsupported-dynamic-symbol\t",
