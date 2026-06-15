@@ -31676,6 +31676,62 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_literal_class_alias_declaration_references_to_native_binary() {
+    let root = temp_dir("ptn-native-class-alias-declaration-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-alias-declaration-references.php");
+    let output = root.join("class-alias-declaration-references-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Base {}
+class Original extends Base {
+    static public function msg() {
+        echo "hello\n";
+    }
+}
+
+interface Contract {}
+
+class_alias('Original', 'Alias');
+class_alias('Contract', 'AliasContract');
+
+class Child extends Alias implements AliasContract {
+    public function run() {
+        Original::msg();
+    }
+}
+
+$child = new Child;
+$child->run();
+var_dump(get_parent_class('Child'));
+var_dump($child instanceof Original);
+var_dump($child instanceof Alias);
+var_dump($child instanceof Base);
+var_dump($child instanceof Contract);
+var_dump($child instanceof AliasContract);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "hello\n\
+string(8) \"Original\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_namespaced_class_alias_metadata_queries_to_native_binary() {
     let root = temp_dir("ptn-native-namespace-class-alias-metadata");
     fs::create_dir_all(&root).unwrap();

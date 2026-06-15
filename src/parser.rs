@@ -50,6 +50,7 @@ pub fn parse(source: &str) -> Result<Program> {
         class_aliases: HashMap::new(),
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
+        runtime_class_aliases: HashMap::new(),
         declared_functions: HashSet::new(),
         anonymous_classes: Vec::new(),
         nested_functions: Vec::new(),
@@ -73,6 +74,7 @@ struct Parser<'a> {
     class_aliases: HashMap<String, String>,
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
+    runtime_class_aliases: HashMap<String, String>,
     declared_functions: HashSet<String>,
     anonymous_classes: Vec<ClassDecl>,
     nested_functions: Vec<FunctionDecl>,
@@ -313,7 +315,9 @@ impl Parser<'_> {
                 classes.push(self.parse_class_decl()?);
             } else {
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                statements.push(self.parse_statement()?);
+                let statement = self.parse_statement()?;
+                self.note_runtime_class_alias_statement(&statement);
+                statements.push(statement);
             }
         }
         Ok(())
@@ -666,7 +670,8 @@ impl Parser<'_> {
     fn parse_resolved_class_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
         let parsed = self.parse_name(expected)?;
         let span = parsed.span;
-        Ok((self.resolve_class_name(&parsed), span))
+        let name = self.resolve_class_name(&parsed);
+        Ok((self.resolve_runtime_class_alias_name(&name), span))
     }
 
     fn parse_resolved_function_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
@@ -823,6 +828,95 @@ impl Parser<'_> {
         } else {
             self.qualify_current_namespace(name)
         }
+    }
+
+    fn note_runtime_class_alias_statement(&mut self, statement: &Statement) {
+        let Some((name, arguments, argument_names, argument_unpacks)) = (match statement {
+            Statement::Call {
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                ..
+            } => Some((name, arguments, argument_names, argument_unpacks)),
+            Statement::Expression {
+                expression:
+                    Expr::Call {
+                        name,
+                        arguments,
+                        argument_names,
+                        argument_unpacks,
+                        ..
+                    },
+                ..
+            } => Some((name, arguments, argument_names, argument_unpacks)),
+            _ => None,
+        }) else {
+            return;
+        };
+        if !name.eq_ignore_ascii_case("class_alias")
+            || arguments.len() < 2
+            || argument_names.iter().take(2).any(Option::is_some)
+            || argument_unpacks.iter().take(2).any(|unpack| *unpack)
+        {
+            return;
+        }
+        let Some(target) = self.compile_time_class_name_string(&arguments[0]) else {
+            return;
+        };
+        let Some(alias) = self.compile_time_class_name_string(&arguments[1]) else {
+            return;
+        };
+        self.runtime_class_aliases.insert(
+            normalize_runtime_class_alias_key(&alias),
+            normalize_runtime_class_alias_target(&target),
+        );
+    }
+
+    fn compile_time_class_name_string(&self, expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::String(value, _) => Some(value.clone()),
+            Expr::MagicConstant(MagicConstantKind::Namespace, _) => {
+                Some(self.current_namespace.clone().unwrap_or_default())
+            }
+            Expr::ClassConstantFetch {
+                class_name, name, ..
+            } if name.eq_ignore_ascii_case("class") => Some(class_name.clone()),
+            Expr::Binary {
+                op: BinaryOp::Concat,
+                left,
+                right,
+                ..
+            } => {
+                let mut value = self.compile_time_class_name_string(left)?;
+                value.push_str(&self.compile_time_class_name_string(right)?);
+                Some(value)
+            }
+            Expr::Grouped { expr, .. } => self.compile_time_class_name_string(expr),
+            _ => None,
+        }
+    }
+
+    fn resolve_runtime_class_alias_name(&self, name: &str) -> String {
+        if matches!(
+            name.to_ascii_lowercase().as_str(),
+            "self" | "static" | "parent"
+        ) {
+            return name.to_string();
+        }
+        let mut resolved = normalize_runtime_class_alias_target(name);
+        let mut seen = HashSet::new();
+        loop {
+            let key = normalize_runtime_class_alias_key(&resolved);
+            if !seen.insert(key.clone()) {
+                break;
+            }
+            let Some(target) = self.runtime_class_aliases.get(&key) else {
+                break;
+            };
+            resolved = normalize_runtime_class_alias_target(target);
+        }
+        resolved
     }
 
     fn parse_class_decl(&mut self) -> Result<ClassDecl> {
@@ -6523,6 +6617,14 @@ fn default_set_visibility(
 
 fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
+}
+
+fn normalize_runtime_class_alias_key(name: &str) -> String {
+    normalize_runtime_class_alias_target(name).to_ascii_lowercase()
+}
+
+fn normalize_runtime_class_alias_target(name: &str) -> String {
+    name.trim_start_matches('\\').to_string()
 }
 
 fn literal_member_name_from_expr(expr: &Expr) -> Option<String> {
