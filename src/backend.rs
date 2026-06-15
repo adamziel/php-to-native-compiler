@@ -1431,6 +1431,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("str_replace") && argument_index == 3 {
         return Some("count");
     }
+    if name.eq_ignore_ascii_case("similar_text") && argument_index == 2 {
+        return Some("percent");
+    }
     if name.eq_ignore_ascii_case("is_callable") && argument_index == 2 {
         return Some("callable_name");
     }

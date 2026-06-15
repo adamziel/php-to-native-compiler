@@ -11356,6 +11356,230 @@ static PtnValue ptn_internal_strncasecmp(PtnRuntime *runtime, size_t argc, const
     return ptn_int(0);
 }
 
+static PtnValue ptn_internal_substr_compare(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand haystack =
+        ptn_internal_expect_string_arg(runtime, "substr_compare", 1, "haystack", args[0], line);
+    PtnStringOperand needle =
+        ptn_internal_expect_string_arg(runtime, "substr_compare", 2, "needle", args[1], line);
+    int64_t offset = ptn_internal_expect_integer_arg(runtime, "substr_compare", 3, "offset", args[2], line);
+    if (offset > (int64_t)haystack.len) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "substr_compare(): Argument #3 ($offset) must be contained in argument #1 ($haystack)"
+        );
+        return ptn_null();
+    }
+
+    size_t start = 0;
+    if (offset >= 0) {
+        start = (size_t)offset;
+    } else if ((uint64_t)(-offset) < (uint64_t)haystack.len) {
+        start = haystack.len - (size_t)(-offset);
+    }
+
+    size_t haystack_len = haystack.len - start;
+    size_t needle_len = needle.len;
+    if (argc >= 4 && ptn_value_deref(args[3]).type != PTN_NULL) {
+        int64_t length = ptn_internal_expect_integer_arg(runtime, "substr_compare", 4, "length", args[3], line);
+        if (length < 0) {
+            ptn_string_operand_free(haystack);
+            ptn_string_operand_free(needle);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "substr_compare(): Argument #4 ($length) must be greater than or equal to 0"
+            );
+            return ptn_null();
+        }
+        size_t limit = (size_t)length;
+        if (haystack_len > limit) {
+            haystack_len = limit;
+        }
+        if (needle_len > limit) {
+            needle_len = limit;
+        }
+    }
+
+    int case_insensitive = argc >= 5 && ptn_is_truthy(args[4]);
+    int compared = case_insensitive
+        ? ptn_compare_string_bytes_ascii_case_insensitive(
+              (const unsigned char *)haystack.data + start,
+              haystack_len,
+              (const unsigned char *)needle.data,
+              needle_len
+          )
+        : ptn_compare_string_bytes(
+              (const unsigned char *)haystack.data + start,
+              haystack_len,
+              (const unsigned char *)needle.data,
+              needle_len
+          );
+    ptn_string_operand_free(haystack);
+    ptn_string_operand_free(needle);
+    if (compared < 0) {
+        return ptn_int(-1);
+    }
+    if (compared > 0) {
+        return ptn_int(1);
+    }
+    return ptn_int(0);
+}
+
+static size_t ptn_similar_text_score(
+    const unsigned char *left,
+    size_t left_len,
+    const unsigned char *right,
+    size_t right_len
+) {
+    size_t best_len = 0;
+    size_t best_left = 0;
+    size_t best_right = 0;
+    for (size_t i = 0; i < left_len; i++) {
+        for (size_t j = 0; j < right_len; j++) {
+            size_t run = 0;
+            while (i + run < left_len && j + run < right_len && left[i + run] == right[j + run]) {
+                run++;
+            }
+            if (run > best_len) {
+                best_len = run;
+                best_left = i;
+                best_right = j;
+            }
+        }
+    }
+    if (best_len == 0) {
+        return 0;
+    }
+
+    size_t score = best_len;
+    if (best_left != 0 && best_right != 0) {
+        score += ptn_similar_text_score(left, best_left, right, best_right);
+    }
+    size_t left_after = best_left + best_len;
+    size_t right_after = best_right + best_len;
+    if (left_after < left_len && right_after < right_len) {
+        score += ptn_similar_text_score(
+            left + left_after,
+            left_len - left_after,
+            right + right_after,
+            right_len - right_after
+        );
+    }
+    return score;
+}
+
+static PtnValue ptn_internal_similar_text(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand left =
+        ptn_internal_expect_string_arg(runtime, "similar_text", 1, "string1", args[0], line);
+    PtnStringOperand right =
+        ptn_internal_expect_string_arg(runtime, "similar_text", 2, "string2", args[1], line);
+    size_t score = ptn_similar_text_score(
+        (const unsigned char *)left.data,
+        left.len,
+        (const unsigned char *)right.data,
+        right.len
+    );
+    if (argc >= 3 && args[2].type == PTN_REFERENCE) {
+        double percent = (left.len + right.len) == 0
+            ? 0.0
+            : ((double)score * 200.0) / (double)(left.len + right.len);
+        ptn_reference_assign(args[2].as.reference, ptn_float(percent));
+    }
+    ptn_string_operand_free(left);
+    ptn_string_operand_free(right);
+    if (score > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)score);
+}
+
+static int ptn_strtok_is_delimiter(unsigned char byte, const unsigned char *tokens, size_t token_len) {
+    for (size_t i = 0; i < token_len; i++) {
+        if (tokens[i] == byte) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnRuntime *ptn_strtok_state_runtime(PtnRuntime *runtime) {
+    return runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+}
+
+static void ptn_strtok_replace_state(PtnRuntime *runtime, PtnStringOperand string) {
+    PtnRuntime *state_runtime = ptn_strtok_state_runtime(runtime);
+    free(state_runtime->strtok_string);
+    state_runtime->strtok_string = ptn_duplicate_string_len(string.data, string.len);
+    state_runtime->strtok_len = string.len;
+    state_runtime->strtok_offset = 0;
+    state_runtime->strtok_has_state = 1;
+}
+
+static PtnValue ptn_internal_strtok(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnRuntime *state_runtime = ptn_strtok_state_runtime(runtime);
+    PtnStringOperand tokens;
+    int starting = argc >= 2;
+    if (starting) {
+        PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "strtok", 1, "string", args[0], line);
+        tokens = ptn_internal_expect_string_arg(runtime, "strtok", 2, "token", args[1], line);
+        ptn_strtok_replace_state(runtime, string);
+        ptn_string_operand_free(string);
+    } else {
+        if (!state_runtime->strtok_has_state) {
+            ptn_output_write(runtime, "\n", 1);
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "strtok(): Both arguments must be provided when starting tokenization",
+                line
+            );
+            return ptn_bool(0);
+        }
+        tokens = ptn_internal_expect_string_arg(runtime, "strtok", 1, "token", args[0], line);
+    }
+
+    if (tokens.len == 0) {
+        ptn_string_operand_free(tokens);
+        return ptn_bool(0);
+    }
+
+    size_t cursor = state_runtime->strtok_offset;
+    size_t original_cursor = cursor;
+    while (cursor < state_runtime->strtok_len &&
+           ptn_strtok_is_delimiter(
+               (unsigned char)state_runtime->strtok_string[cursor],
+               (const unsigned char *)tokens.data,
+               tokens.len
+           )) {
+        cursor++;
+    }
+
+    if (cursor >= state_runtime->strtok_len) {
+        if ((starting && state_runtime->strtok_len != 0) || (!starting && original_cursor < state_runtime->strtok_len)) {
+            state_runtime->strtok_has_state = 0;
+        }
+        state_runtime->strtok_offset = state_runtime->strtok_len;
+        ptn_string_operand_free(tokens);
+        return ptn_bool(0);
+    }
+
+    size_t start = cursor;
+    while (cursor < state_runtime->strtok_len &&
+           !ptn_strtok_is_delimiter(
+               (unsigned char)state_runtime->strtok_string[cursor],
+               (const unsigned char *)tokens.data,
+               tokens.len
+           )) {
+        cursor++;
+    }
+    state_runtime->strtok_offset = cursor < state_runtime->strtok_len ? cursor + 1 : cursor;
+    char *token = ptn_duplicate_string_len(state_runtime->strtok_string + start, cursor - start);
+    ptn_string_operand_free(tokens);
+    return ptn_owned_string_len(token, cursor - start);
+}
+
 static PtnValue ptn_internal_str_contains(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "str_contains", 1, "haystack", args[0], line);
@@ -21711,6 +21935,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
+        { "similar_text", 2, 3, ptn_internal_similar_text },
         { "sin", 1, 1, ptn_internal_sin },
         { "sinh", 1, 1, ptn_internal_sinh },
         { "sizeof", 1, 2, ptn_internal_sizeof },
@@ -21762,9 +21987,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strstr", 2, 3, ptn_internal_strstr },
         { "strtolower", 1, 1, ptn_internal_strtolower },
         { "strtoupper", 1, 1, ptn_internal_strtoupper },
+        { "strtok", 1, 2, ptn_internal_strtok },
         { "strtr", 2, 3, ptn_internal_strtr },
         { "strval", 1, 1, ptn_internal_strval },
         { "substr", 2, 3, ptn_internal_substr },
+        { "substr_compare", 3, 5, ptn_internal_substr_compare },
         { "substr_count", 2, 4, ptn_internal_substr_count },
         { "substr_replace", 3, 4, ptn_internal_substr_replace },
         { "tan", 1, 1, ptn_internal_tan },
