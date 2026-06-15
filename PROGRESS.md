@@ -82,6 +82,9 @@ Final branch verification:
   `cargo test sort_flags --test compile_native -- --nocapture` passed 3/3.
 - After rebasing onto `6aa9adf83`, the 8-row `sort` PHPT smoke passed 8/8 at
   `.runtime/ptn-w17z3-final-base-sort-smoke-run/summary-20260615T112545Z.txt`.
+- After fast-forward integration at `6d4d4d724`, the checked-in 46-row PHPT
+  manifest passed 46/46 at
+  `.runtime/merge-ptn-w17z3-array-sort-flags/summary-20260615T113453Z.txt`.
 - The checked-in 46-row PHPT manifest was split by sort function to avoid
   environment termination of a long single run; after the prior `941f915c0`
   rebase on code commit `33c3bdca8cb3`, the chunks passed 46/46:
