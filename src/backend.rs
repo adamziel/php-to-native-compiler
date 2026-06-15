@@ -1428,6 +1428,12 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("preg_match") && argument_index == 2 {
         return Some("matches");
     }
+    if (name.eq_ignore_ascii_case("preg_replace")
+        || name.eq_ignore_ascii_case("preg_replace_callback"))
+        && argument_index == 4
+    {
+        return Some("count");
+    }
     if (name.eq_ignore_ascii_case("str_replace") || name.eq_ignore_ascii_case("str_ireplace"))
         && argument_index == 3
     {
@@ -8151,6 +8157,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("array_walk_recursive")
         || name.eq_ignore_ascii_case("call_user_func")
         || name.eq_ignore_ascii_case("call_user_func_array")
+        || name.eq_ignore_ascii_case("preg_replace_callback")
 }
 
 fn collect_control_warnings_in(
