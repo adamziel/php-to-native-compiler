@@ -16140,6 +16140,11 @@ var_dump($x->doSomethingParentThis(1));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_call_declared_method_in_scope"));
     assert!(c_source.contains("ptn_callable_resolve_class_scope"));
+    let scoped_method_body = generated_c_static_function_body(
+        &c_source,
+        "static PTN_UNUSED int ptn_call_declared_method_in_scope(PtnRuntime *runtime, PtnValue receiver, const char *target_class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out) {",
+    );
+    assert!(scoped_method_body.contains("(void)runtime;"));
 }
 
 #[test]
