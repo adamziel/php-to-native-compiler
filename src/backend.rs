@@ -2641,6 +2641,7 @@ fn emit_method_dispatch(
     );
     out.push_str("    PtnValue resolved_receiver = ptn_value_deref(receiver);\n");
     out.push_str("    const char *effective_called_class = called_class_name != NULL ? called_class_name : target_class_name;\n");
+    out.push_str("    (void)runtime;\n");
     out.push_str("    (void)receiver;\n");
     out.push_str("    (void)target_class_name;\n");
     out.push_str("    (void)method_name;\n");

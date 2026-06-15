@@ -106,6 +106,19 @@ fn lexer_accepts_numeric_literal_separators_and_radices() {
 }
 
 #[test]
+fn lexer_treats_oversized_integer_literals_as_floats() {
+    let tokens = lexer::lex(
+        "<?php 9223372036854775808 0x8000000000000000 0b1000000000000000000000000000000000000000000000000000000000000000",
+    )
+    .unwrap();
+    for token in &tokens[1..4] {
+        assert!(
+            matches!(token.kind, TokenKind::Float(value) if value == 9_223_372_036_854_775_808.0)
+        );
+    }
+}
+
+#[test]
 fn lexer_rejects_invalid_legacy_octal_integer_literals_as_parse_errors() {
     for source in ["<?php\n$x = 08;", "<?php\n$x = 0_8;", "<?php\n$x = 019;"] {
         let error = lexer::lex(source).unwrap_err();
@@ -11958,6 +11971,16 @@ try {
 } catch (AssertionError $e) {
     echo 'assert(): ', $e->getMessage(), ' failed', \"\\n\";
 }
+try {
+    assert(0.0);
+} catch (AssertionError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    assert(false && `echo -n \"\"`);
+} catch (AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', \"\\n\";
+}
 if (isset($a)) {
     echo \"bad\\n\";
 } else {
@@ -11983,7 +12006,7 @@ try {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nassert(): assert(false && ($a **= 2)) failed\nshort\ncustom failure\nstring(0) \"\"\n"
+        "bool(true)\nbool(true)\nassert(): assert(false && ($a **= 2)) failed\nassert(0.0)\nassert(): assert(false && `echo -n \"\"`) failed\nshort\ncustom failure\nstring(0) \"\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -14239,6 +14262,50 @@ var_dump($copy);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "array(6) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n  [\"foo\"]=>\n  int(11)\n  [3]=>\n  int(4)\n  [\"bar\"]=>\n  int(10)\n}\narray(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  int(2)\n  [\"k\"]=>\n  int(3)\n}\narray(1) {\n  [0]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_literal_auto_key_overflow_to_native_binary() {
+    let root = temp_dir("ptn-native-array-literal-auto-key-overflow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-literal-auto-key-overflow.php");
+    let output = root.join("array-literal-auto-key-overflow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    var_dump([9223372036854775807 => 'max', 'next']);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$i = PHP_INT_MAX;\n\
+try {\n\
+    var_dump([$i => 'max', 'next']);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+function default_array_overflow($array = [PHP_INT_MAX => 'max', 'next']) {}\n\
+try {\n\
+    default_array_overflow();\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot add element to the array as the next element is already occupied\n",
+            "Cannot add element to the array as the next element is already occupied\n",
+            "Cannot add element to the array as the next element is already occupied\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -19091,7 +19158,9 @@ $assoc[\"both\"][\"x\"] = 9;\n\
 var_dump($assoc);\n\
 var_dump($assoc_left[\"both\"][\"x\"], $assoc_right[\"both\"][\"y\"], function_exists(\"array_merge_recursive\"));\n\
 try { array_merge_recursive(1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
-try { array_merge_recursive([], 1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }",
+try { array_merge_recursive([], 1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_merge_recursive(['' => [9223372036854775807 => null]], ['' => [null]]); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_merge_recursive(['foo' => [9223372036854775807 => null]], ['foo' => str_repeat('a', 2)]); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }",
     )
     .unwrap();
 
@@ -19145,6 +19214,8 @@ try { array_merge_recursive([], 1); } catch (TypeError $e) { echo $e->getMessage
             "bool(true)\n",
             "array_merge_recursive(): Argument #1 must be of type array, int given\n",
             "array_merge_recursive(): Argument #2 must be of type array, int given\n",
+            "Cannot add element to the array as the next element is already occupied\n",
+            "Cannot add element to the array as the next element is already occupied\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -24218,6 +24289,40 @@ var_dump($object->value);
 }
 
 #[test]
+fn compile_this_outside_object_context_throws_to_native_binary() {
+    let root = temp_dir("ptn-native-this-outside-object-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("this-outside-object-context.php");
+    let output = root.join("this-outside-object-context-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    var_dump($this);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $this->value = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Using $this when not in object context\nUsing $this when not in object context\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_stdclass_property_null_coalescing_assignment_to_native_binary() {
     let root = temp_dir("ptn-native-stdclass-property-coalesce-assign");
     fs::create_dir_all(&root).unwrap();
@@ -25402,6 +25507,9 @@ try { var_dump(1 + \"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \
 try { var_dump([1] + 2); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump(\"abc\" * 2); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump(\"123abc\" + \"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump([1] % 2); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump([1] << 1); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump([1] >> 1); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(\"123abc\" + 2);\n\
 var_dump(\"3.5x\" * 2);\n\
 $object = new stdClass;\n\
@@ -25423,11 +25531,14 @@ Unsupported operand types: string * int\n\
 \n\
 Warning: A non-numeric value encountered in ptn on line 6\n\
 Unsupported operand types: string + string\n\
+Unsupported operand types: array % int\n\
+Unsupported operand types: array << int\n\
+Unsupported operand types: array >> int\n\
 \n\
-Warning: A non-numeric value encountered in ptn on line 7\n\
+Warning: A non-numeric value encountered in ptn on line 10\n\
 int(125)\n\
 \n\
-Warning: A non-numeric value encountered in ptn on line 8\n\
+Warning: A non-numeric value encountered in ptn on line 11\n\
 float(7)\n\
 Unsupported operand types: stdClass + array\n\
 Unsupported operand types: array + stdClass\n"

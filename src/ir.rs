@@ -1645,6 +1645,13 @@ impl<'a> LoweringContext<'a> {
         match expr {
             Expr::String(value, _) => ValueExpr::String(value.clone()),
             Expr::InterpolatedString(parts, span) => lower_interpolated_string(parts, span.line),
+            Expr::ShellExec { command, span } => ValueExpr::InternalCall {
+                name: "shell_exec".to_string(),
+                arguments: vec![ValueExpr::String(command.clone())],
+                argument_names: vec![None],
+                argument_unpacks: vec![false],
+                line: span.line,
+            },
             Expr::Int(value, _) => ValueExpr::Int(*value),
             Expr::Float(value, _) => ValueExpr::Float(*value),
             Expr::Bool(value, _) => ValueExpr::Bool(*value),
@@ -2012,8 +2019,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
     match expr {
         Expr::String(value, _) => format!("{value:?}"),
         Expr::InterpolatedString(_, _) => "\"\"".to_string(),
+        Expr::ShellExec { command, .. } => format!("`{}`", command.replace('`', "\\`")),
         Expr::Int(value, _) => value.to_string(),
-        Expr::Float(value, _) => value.to_string(),
+        Expr::Float(value, _) => assertion_float_text(*value),
         Expr::Bool(value, _) => value.to_string(),
         Expr::Null(_) => "null".to_string(),
         Expr::Variable(name, _) => format!("${name}"),
@@ -2174,6 +2182,20 @@ fn assertion_expr_text(expr: &Expr) -> String {
         }
         Expr::Grouped { expr, .. } => format!("({})", assertion_expr_text(expr)),
         Expr::AnonymousFunction(_) => "function()".to_string(),
+    }
+}
+
+fn assertion_float_text(value: f64) -> String {
+    let text = value.to_string();
+    if value.is_finite()
+        && value.fract() == 0.0
+        && !text.contains('.')
+        && !text.contains('e')
+        && !text.contains('E')
+    {
+        format!("{text}.0")
+    } else {
+        text
     }
 }
 

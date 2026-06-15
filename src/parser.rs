@@ -3486,6 +3486,10 @@ impl Parser {
                 parts.into_iter().map(lower_string_part).collect(),
                 token.span,
             )),
+            TokenKind::BacktickString(command) => Ok(Expr::ShellExec {
+                command,
+                span: token.span,
+            }),
             TokenKind::Int(value) => Ok(Expr::Int(value, token.span)),
             TokenKind::Float(value) => Ok(Expr::Float(value, token.span)),
             TokenKind::True => Ok(Expr::Bool(true, token.span)),
@@ -3618,6 +3622,17 @@ impl Parser {
                 ))
             }
             TokenKind::LeftParen => {
+                if self.peek_is_unset_cast_name()
+                    && matches!(
+                        self.tokens.get(self.index + 1).map(|token| &token.kind),
+                        Some(TokenKind::RightParen)
+                    )
+                {
+                    return Err(Diagnostic::new(
+                        "The (unset) cast is no longer supported",
+                        Some(token.span),
+                    ));
+                }
                 let expr = self.parse_expr()?;
                 let right_span = self.expect_right_paren()?;
                 Ok(Expr::Grouped {
@@ -4907,6 +4922,9 @@ fn describe_unexpected_token(token: &Token) -> String {
         TokenKind::Identifier(name) => format!("identifier \"{name}\""),
         TokenKind::Variable(name) => format!("variable \"${name}\""),
         TokenKind::String(value) => format!("string \"{}\"", escape_token_text(value)),
+        TokenKind::BacktickString(value) => {
+            format!("execution string \"{}\"", escape_token_text(value))
+        }
         TokenKind::InterpolatedString(_) => "encapsed string".to_string(),
         TokenKind::Int(value) => format!("integer \"{value}\""),
         TokenKind::Float(value) => format!("floating-point number \"{value}\""),
@@ -4951,6 +4969,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Clone => "clone",
         TokenKind::Identifier(_) => "identifier",
         TokenKind::String(_) => "string",
+        TokenKind::BacktickString(_) => "execution string",
         TokenKind::InterpolatedString(_) => "encapsed string",
         TokenKind::Int(_) => "integer",
         TokenKind::Float(_) => "float",
@@ -5217,6 +5236,7 @@ fn collect_arrow_captures_from_expr(
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
         }
         Expr::String(_, _)
+        | Expr::ShellExec { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
@@ -6166,6 +6186,7 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
         }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
+        | Expr::ShellExec { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
@@ -6442,6 +6463,7 @@ fn expr_array_literal_reference_to_variable(
         }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
+        | Expr::ShellExec { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
@@ -6923,6 +6945,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
+        | Expr::ShellExec { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
@@ -8471,6 +8494,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         }
         Expr::InterpolatedString(_, _)
         | Expr::AnonymousFunction(_)
+        | Expr::ShellExec { .. }
         | Expr::String(_, _)
         | Expr::Int(_, _)
         | Expr::Float(_, _)
@@ -8557,6 +8581,7 @@ fn dynamic_class_name_fetch_has_illegal_literal_receiver(expr: &Expr) -> bool {
     match expr {
         Expr::Grouped { expr, .. } => dynamic_class_name_fetch_has_illegal_literal_receiver(expr),
         Expr::String(_, _)
+        | Expr::ShellExec { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
@@ -8627,6 +8652,7 @@ fn is_supported_global_const_expr_with_options(
         }
         Expr::Ternary { .. } => false,
         Expr::InterpolatedString(_, _)
+        | Expr::ShellExec { .. }
         | Expr::Variable(_, _)
         | Expr::DynamicVariable { .. }
         | Expr::IncDec { .. }
@@ -8717,6 +8743,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         }
         Expr::Ternary { .. }
         | Expr::InterpolatedString(_, _)
+        | Expr::ShellExec { .. }
         | Expr::Variable(_, _)
         | Expr::DynamicVariable { .. }
         | Expr::IncDec { .. }
@@ -8832,6 +8859,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
+        | Expr::ShellExec { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)

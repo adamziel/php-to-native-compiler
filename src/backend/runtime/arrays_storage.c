@@ -347,6 +347,7 @@ static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
 
 static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtime, size_t line);
 static PTN_UNUSED void ptn_emit_resource_offset_warning(PtnRuntime *runtime, PtnResource *resource, size_t line);
+static PTN_UNUSED int ptn_array_append_key_available(PtnRuntime *runtime, PtnArray *array);
 
 static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     PtnRuntime *runtime,
@@ -386,9 +387,15 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
                 ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
             }
         }
-        PtnArrayKey key = entries[i].has_key
-            ? ptn_array_key_from_value(key_value)
-            : ptn_array_int_key(array->next_auto_key);
+        PtnArrayKey key;
+        if (entries[i].has_key) {
+            key = ptn_array_key_from_value(key_value);
+        } else {
+            if (runtime != NULL && !ptn_array_append_key_available(runtime, array)) {
+                continue;
+            }
+            key = ptn_array_int_key(array->next_auto_key);
+        }
         ptn_array_set_entry(array, key, ptn_value_clone(entries[i].value));
     }
     return ptn_array(array);

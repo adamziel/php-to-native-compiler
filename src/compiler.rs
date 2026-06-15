@@ -425,6 +425,7 @@ impl IncludeCollector {
             }
             Expr::String(_, _)
             | Expr::InterpolatedString(_, _)
+            | Expr::ShellExec { .. }
             | Expr::Int(_, _)
             | Expr::Float(_, _)
             | Expr::Bool(_, _)
@@ -621,6 +622,7 @@ impl IncludeCollector {
 fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Option<Vec<String>> {
     match expr {
         Expr::String(value, _) => Some(vec![value.clone()]),
+        Expr::ShellExec { .. } => None,
         Expr::MagicConstant(MagicConstantKind::File, _) => Some(vec![source_file.to_string()]),
         Expr::MagicConstant(MagicConstantKind::Dir, _) => Some(vec![source_dir.to_string()]),
         Expr::Binary {

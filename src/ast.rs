@@ -489,6 +489,10 @@ pub enum ListExprElementTarget {
 pub enum Expr {
     String(String, SourceSpan),
     InterpolatedString(Vec<StringPart>, SourceSpan),
+    ShellExec {
+        command: String,
+        span: SourceSpan,
+    },
     Int(i64, SourceSpan),
     Float(f64, SourceSpan),
     Bool(bool, SourceSpan),
@@ -737,6 +741,7 @@ impl Expr {
         match self {
             Expr::String(_, span)
             | Expr::InterpolatedString(_, span)
+            | Expr::ShellExec { span, .. }
             | Expr::Int(_, span)
             | Expr::Float(_, span)
             | Expr::Bool(_, span)

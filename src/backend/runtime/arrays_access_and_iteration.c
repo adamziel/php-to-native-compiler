@@ -1239,13 +1239,13 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_for_reference_write(
 }
 
 static PTN_UNUSED int ptn_array_append_key_available(PtnRuntime *runtime, PtnArray *array) {
-    if (array->next_auto_key < INT64_MAX) {
-        for (size_t i = 0; i < array->len; i++) {
-            if (array->entries[i].key.type == PTN_ARRAY_KEY_INT &&
-                array->entries[i].key.as.integer == INT64_MAX) {
-                goto unavailable;
-            }
+    for (size_t i = 0; i < array->len; i++) {
+        if (array->entries[i].key.type == PTN_ARRAY_KEY_INT &&
+            array->entries[i].key.as.integer == INT64_MAX) {
+            goto unavailable;
         }
+    }
+    if (array->next_auto_key < INT64_MAX) {
         return 1;
     }
 unavailable:

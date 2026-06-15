@@ -356,6 +356,16 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(
     if (ptn_symbols_get(&runtime->symbols, name, &value)) {
         return ptn_value_deref(value);
     }
+    if (strcmp(name, "this") == 0) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Using $this when not in object context",
+            path,
+            line
+        );
+        return ptn_null();
+    }
     ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
     return ptn_null();
 }
@@ -368,6 +378,16 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_array_mutation(
 ) {
     PtnValue *slot = ptn_symbols_get_slot(&runtime->symbols, name);
     if (slot == NULL) {
+        if (strcmp(name, "this") == 0) {
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "Using $this when not in object context",
+                path,
+                line
+            );
+            return ptn_null();
+        }
         ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
         return ptn_null();
     }

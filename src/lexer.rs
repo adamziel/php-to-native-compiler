@@ -38,6 +38,7 @@ pub enum TokenKind {
     Clone,
     Identifier(String),
     String(String),
+    BacktickString(String),
     InterpolatedString(Vec<StringPart>),
     Int(i64),
     Float(f64),
@@ -298,6 +299,7 @@ impl<'a> Lexer<'a> {
                     self.lex_string(quote)?
                 }
                 '\'' | '"' => self.lex_string(ch)?,
+                '`' => self.lex_backtick_string()?,
                 c if c.is_ascii_digit() => self.lex_number()?,
                 c if is_ident_start(c) => self.lex_word()?,
                 _ => {
@@ -437,6 +439,48 @@ impl<'a> Lexer<'a> {
             }
         }
         Err(Diagnostic::new("unterminated string literal", Some(start)))
+    }
+
+    fn lex_backtick_string(&mut self) -> Result<()> {
+        let start = self.current_span(0);
+        self.bump_char();
+        let mut value = String::new();
+        while let Some(ch) = self.peek_char() {
+            if ch == '`' {
+                self.bump_char();
+                self.tokens.push(Token {
+                    kind: TokenKind::BacktickString(value),
+                    span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+                });
+                return Ok(());
+            }
+            if ch == '$' && self.starts_string_interpolation() {
+                return Err(Diagnostic::new(
+                    "backtick interpolation is unsupported",
+                    Some(self.current_char_span()),
+                ));
+            }
+            if ch == '\\' {
+                self.bump_char();
+                let escaped = self.peek_char().ok_or_else(|| {
+                    Diagnostic::new("unterminated backtick escape", Some(self.current_span(0)))
+                })?;
+                match escaped {
+                    '`' => value.push('`'),
+                    '\\' => value.push('\\'),
+                    '$' => value.push('$'),
+                    other => {
+                        value.push('\\');
+                        value.push(other);
+                    }
+                }
+                self.bump_char();
+                continue;
+            }
+            value.push(ch);
+            self.bump_char();
+        }
+        Err(Diagnostic::new("unterminated backtick string", Some(start)))
     }
 
     fn lex_heredoc_string(&mut self) -> Result<()> {
@@ -1162,6 +1206,10 @@ impl<'a> Lexer<'a> {
         )
     }
 
+    fn starts_string_interpolation(&self) -> bool {
+        self.starts_heredoc_interpolation()
+    }
+
     fn lex_number(&mut self) -> Result<()> {
         let start = self.current_span(0);
         let mut text = String::new();
@@ -1172,10 +1220,8 @@ impl<'a> Lexer<'a> {
             self.bump_char();
             self.bump_char();
             self.collect_digits(&mut text, |ch| ch.is_ascii_hexdigit());
-            let value = i64::from_str_radix(&text, 16)
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
             self.tokens.push(Token {
-                kind: TokenKind::Int(value),
+                kind: radix_integer_token_kind(&text, 16, start)?,
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
             return Ok(());
@@ -1187,10 +1233,8 @@ impl<'a> Lexer<'a> {
             self.bump_char();
             self.bump_char();
             self.collect_digits(&mut text, |ch| matches!(ch, '0' | '1'));
-            let value = i64::from_str_radix(&text, 2)
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
             self.tokens.push(Token {
-                kind: TokenKind::Int(value),
+                kind: radix_integer_token_kind(&text, 2, start)?,
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
             return Ok(());
@@ -1202,10 +1246,8 @@ impl<'a> Lexer<'a> {
             self.bump_char();
             self.bump_char();
             self.collect_digits(&mut text, |ch| matches!(ch, '0'..='7'));
-            let value = i64::from_str_radix(&text, 8)
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
             self.tokens.push(Token {
-                kind: TokenKind::Int(value),
+                kind: radix_integer_token_kind(&text, 8, start)?,
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
             return Ok(());
@@ -1241,20 +1283,19 @@ impl<'a> Lexer<'a> {
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
         } else {
-            let value = if text.len() > 1 && text.starts_with('0') {
+            let kind = if text.len() > 1 && text.starts_with('0') {
                 if text.bytes().any(|digit| matches!(digit, b'8' | b'9')) {
                     return Err(Diagnostic::parse_error(
                         "Invalid numeric literal",
                         Some(start),
                     ));
                 }
-                i64::from_str_radix(&text, 8)
+                radix_integer_token_kind(&text, 8, start)
             } else {
-                text.parse::<i64>()
-            }
-            .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
+                decimal_integer_token_kind(&text, start)
+            }?;
             self.tokens.push(Token {
-                kind: TokenKind::Int(value),
+                kind,
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
         }
@@ -1531,6 +1572,37 @@ fn trim_heredoc_terminal_newline(value: &mut String) {
         value.pop();
         if value.ends_with('\r') {
             value.pop();
+        }
+    }
+}
+
+fn radix_integer_token_kind(text: &str, radix: u32, span: SourceSpan) -> Result<TokenKind> {
+    match i64::from_str_radix(text, radix) {
+        Ok(value) => Ok(TokenKind::Int(value)),
+        Err(_) => Ok(TokenKind::Float(radix_digits_to_f64(text, radix, span)?)),
+    }
+}
+
+fn radix_digits_to_f64(text: &str, radix: u32, span: SourceSpan) -> Result<f64> {
+    let mut value = 0.0;
+    let radix_value = radix as f64;
+    for ch in text.chars() {
+        let digit = ch
+            .to_digit(radix)
+            .ok_or_else(|| Diagnostic::new("invalid integer literal", Some(span)))?;
+        value = value * radix_value + digit as f64;
+    }
+    Ok(value)
+}
+
+fn decimal_integer_token_kind(text: &str, span: SourceSpan) -> Result<TokenKind> {
+    match text.parse::<i64>() {
+        Ok(value) => Ok(TokenKind::Int(value)),
+        Err(_) => {
+            let value = text
+                .parse::<f64>()
+                .map_err(|_| Diagnostic::new("invalid integer literal", Some(span)))?;
+            Ok(TokenKind::Float(value))
         }
     }
 }

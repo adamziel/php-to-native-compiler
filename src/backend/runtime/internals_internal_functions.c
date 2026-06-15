@@ -5782,7 +5782,15 @@ static PtnValue ptn_array_merge_recursive_copy_value(PtnValue value, int preserv
     return ptn_value_clone_deref(value);
 }
 
-static void ptn_array_merge_recursive_append(PtnArray *target, PtnValue value, int preserve_reference) {
+static void ptn_array_merge_recursive_append(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnValue value,
+    int preserve_reference
+) {
+    if (!ptn_array_append_key_available(runtime, target)) {
+        return;
+    }
     PtnArrayKey key = ptn_array_int_key(target->next_auto_key);
     ptn_array_set_entry(target, key, ptn_array_merge_recursive_copy_value(value, preserve_reference));
 }
@@ -5820,17 +5828,17 @@ static void ptn_array_merge_recursive_collision(
         if (incoming_value.type == PTN_ARRAY) {
             ptn_array_merge_recursive_into(runtime, target, incoming_value.as.array, seen, line);
         } else {
-            ptn_array_merge_recursive_append(target, incoming, 0);
+            ptn_array_merge_recursive_append(runtime, target, incoming, 0);
         }
         return;
     }
 
     PtnValue merged = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_merge_recursive_append(merged.as.array, existing, 0);
+    ptn_array_merge_recursive_append(runtime, merged.as.array, existing, 0);
     if (incoming_value.type == PTN_ARRAY) {
         ptn_array_merge_recursive_into(runtime, merged.as.array, incoming_value.as.array, seen, line);
     } else {
-        ptn_array_merge_recursive_append(merged.as.array, incoming, 0);
+        ptn_array_merge_recursive_append(runtime, merged.as.array, incoming, 0);
     }
     ptn_value_destroy(&entry->value);
     entry->value = merged;
@@ -5845,7 +5853,7 @@ static void ptn_array_merge_recursive_entry(
     size_t line
 ) {
     if (key.type == PTN_ARRAY_KEY_INT) {
-        ptn_array_merge_recursive_append(target, value, 1);
+        ptn_array_merge_recursive_append(runtime, target, value, 1);
         return;
     }
 

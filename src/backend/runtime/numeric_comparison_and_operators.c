@@ -491,6 +491,26 @@ static PTN_UNUSED const char *ptn_arithmetic_operand_type_name(PtnValue value) {
     return ptn_offset_container_type_name(value);
 }
 
+static PTN_UNUSED int ptn_numeric_operator_rejects_operand(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+            return 1;
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            return 0;
+    }
+    return 0;
+}
+
 static PTN_UNUSED void ptn_throw_unsupported_operand_types(
     PtnRuntime *runtime,
     PtnValue left,
@@ -961,6 +981,14 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
 }
 
 static PTN_UNUSED PtnValue ptn_modulo(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (ptn_numeric_operator_rejects_operand(left) ||
+        ptn_numeric_operator_rejects_operand(right)) {
+        ptn_throw_unsupported_operand_types(runtime, left, "%", right, line);
+        return ptn_null();
+    }
+
     int64_t left_fast_integer = 0;
     int64_t right_fast_integer = 0;
     if (ptn_fast_integer_value(left, &left_fast_integer) &&

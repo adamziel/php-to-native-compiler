@@ -109,6 +109,11 @@ static PTN_UNUSED int64_t ptn_shift_distance(PtnRuntime *runtime, PtnValue value
 static PTN_UNUSED PtnValue ptn_shift_left(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
+    if (ptn_numeric_operator_rejects_operand(left) ||
+        ptn_numeric_operator_rejects_operand(right)) {
+        ptn_throw_unsupported_operand_types(runtime, left, "<<", right, line);
+        return ptn_null();
+    }
     uint64_t left_bits = (uint64_t)ptn_bitwise_integer_operand_checked(runtime, left, line);
     int64_t distance = ptn_shift_distance(runtime, right, line);
     if (distance >= 64) {
@@ -120,6 +125,11 @@ static PTN_UNUSED PtnValue ptn_shift_left(PtnRuntime *runtime, PtnValue left, Pt
 static PTN_UNUSED PtnValue ptn_shift_right(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
+    if (ptn_numeric_operator_rejects_operand(left) ||
+        ptn_numeric_operator_rejects_operand(right)) {
+        ptn_throw_unsupported_operand_types(runtime, left, ">>", right, line);
+        return ptn_null();
+    }
     int64_t left_integer = ptn_bitwise_integer_operand_checked(runtime, left, line);
     int64_t distance = ptn_shift_distance(runtime, right, line);
     if (distance >= 64) {
