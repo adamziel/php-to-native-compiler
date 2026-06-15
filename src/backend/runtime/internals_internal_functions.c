@@ -59,9 +59,13 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
         case PTN_CLOSURE:
             fputs("Object", stdout);
             break;
-        case PTN_EXCEPTION:
-            fputs("Object", stdout);
+        case PTN_EXCEPTION: {
+            PtnStringOperand exception_string =
+                ptn_exception_to_string_operand(runtime, value.as.exception);
+            fwrite(exception_string.data, 1, exception_string.len, stdout);
+            free(exception_string.owned);
             break;
+        }
         case PTN_RESOURCE:
             printf("Resource id #%lld", (long long)value.as.resource->id);
             break;

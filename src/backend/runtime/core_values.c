@@ -413,6 +413,7 @@ struct PtnException {
     PtnRuntime *lifecycle_runtime;
     const char *class_name;
     char *message;
+    size_t message_len;
     int64_t code;
     const char *path;
     size_t line;
@@ -576,6 +577,7 @@ struct PtnRuntime {
     char *include_path;
     char *memory_limit;
     char *max_memory_limit;
+    size_t exception_string_param_max_len;
     int strict_types;
     int initial_zend_assertions;
     int zend_assertions;

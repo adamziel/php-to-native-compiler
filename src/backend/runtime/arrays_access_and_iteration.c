@@ -217,8 +217,9 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
     const PtnValue *args,
     size_t line
 ) {
-    int is_error_exception = ptn_exception_name_equal(class_name, "ErrorException");
-    size_t max_args = is_error_exception ? 6 : 3;
+    const char *declaring_class = ptn_exception_constructor_declaring_class(runtime, class_name);
+    int is_error_exception = ptn_exception_name_equal(declaring_class, "ErrorException");
+    size_t max_args = ptn_exception_constructor_max_args(declaring_class);
     if (argc > max_args) {
         ptn_throw_exception(
             runtime,
@@ -229,48 +230,13 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
         );
         return ptn_null();
     }
-    char *message = ptn_duplicate_string("");
-    if (argc >= 1) {
-        PtnValue message_value = ptn_value_deref(args[0]);
-        if (message_value.type == PTN_OBJECT || message_value.type == PTN_CLOSURE) {
-            PtnStringOperand object_string;
-            if (!ptn_try_object_to_string_operand(runtime, message_value, line, &object_string)) {
-                const char *given = message_value.type == PTN_OBJECT
-                    ? message_value.as.object->class_name
-                    : "Closure";
-                int needed = snprintf(
-                    NULL,
-                    0,
-                    "Exception::__construct(): Argument #1 ($message) must be of type string, %s given",
-                    given
-                );
-                if (needed < 0) {
-                    ptn_abort_out_of_memory();
-                }
-                char *error = malloc((size_t)needed + 1);
-                if (error == NULL) {
-                    ptn_abort_out_of_memory();
-                }
-                snprintf(
-                    error,
-                    (size_t)needed + 1,
-                    "Exception::__construct(): Argument #1 ($message) must be of type string, %s given",
-                    given
-                );
-                free(message);
-                ptn_throw_exception_owned_message_at(runtime, "TypeError", error, runtime->source_path, line);
-                return ptn_null();
-            }
-            free(message);
-            message = ptn_duplicate_string_len(object_string.data, object_string.len);
-            ptn_string_operand_free(object_string);
-        } else {
-            PtnStringOperand message_string = ptn_value_to_string_operand(args[0]);
-            free(message);
-            message = ptn_duplicate_string_len(message_string.data, message_string.len);
-            ptn_string_operand_free(message_string);
-        }
-    }
+    PtnStringOperand message = ptn_exception_constructor_message(
+        runtime,
+        declaring_class,
+        argc,
+        args,
+        line
+    );
     int64_t code = 0;
     if (argc >= 2) {
         PtnValue code_value = ptn_value_deref(args[1]);
@@ -327,7 +293,8 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
     return ptn_exception_value(ptn_exception_new_owned(
         runtime,
         class_name,
-        message,
+        message.owned,
+        message.len,
         code,
         previous,
         severity,
