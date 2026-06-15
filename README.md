@@ -256,6 +256,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `STATUS.html`: generated HTML dashboard published through GitHub Pages.
 - `tools/status-dashboard-features.tsv`: checked-in evidence source for the
   feature and hourly dashboard tables.
+- GitHub Actions publishes `STATUS.html` as `index.html` on the legacy
+  `gh-pages` branch via `tools/publish-status-gh-pages.sh`.
 - `docs/PHPT_BROAD_1K_ARRAY_FRONTIER_2026-06-13.md`: current broad 1k
   runnable array-frontier blocker map.
 - `docs/PHPT_BROAD_1K_DIFF_INTERSECT_FRONTIER_2026-06-14.md`: current broad
