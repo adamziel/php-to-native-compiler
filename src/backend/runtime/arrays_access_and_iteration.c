@@ -5554,6 +5554,7 @@ static int ptn_array_value_compare_natural_case(PtnValue left, PtnValue right) {
     return compared;
 }
 
+<<<<<<< HEAD
 static int ptn_array_sort_flags_case_insensitive(int64_t flags) {
     return flags == (PTN_SORT_STRING | PTN_SORT_FLAG_CASE) ||
         flags == (PTN_SORT_NATURAL | PTN_SORT_FLAG_CASE);
@@ -5568,10 +5569,83 @@ static int64_t ptn_array_sort_flags_base(int64_t flags) {
 static int ptn_array_value_compare_by_sort_flags(PtnValue left, PtnValue right, int64_t flags) {
     int case_insensitive = ptn_array_sort_flags_case_insensitive(flags);
     switch (ptn_array_sort_flags_base(flags)) {
+=======
+static int ptn_array_value_compare_string(PtnValue left, PtnValue right, int case_insensitive) {
+    PtnStringOperand left_string = ptn_value_to_string_operand(left);
+    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+    int compared = 0;
+    if (case_insensitive) {
+        const unsigned char *left_bytes = (const unsigned char *)left_string.data;
+        const unsigned char *right_bytes = (const unsigned char *)right_string.data;
+        size_t shared_len = left_string.len < right_string.len ? left_string.len : right_string.len;
+        for (size_t i = 0; i < shared_len; i++) {
+            unsigned char left_byte = ptn_ascii_natural_case_fold(left_bytes[i]);
+            unsigned char right_byte = ptn_ascii_natural_case_fold(right_bytes[i]);
+            if (left_byte < right_byte) {
+                compared = -1;
+                break;
+            }
+            if (left_byte > right_byte) {
+                compared = 1;
+                break;
+            }
+        }
+        if (compared == 0) {
+            if (left_string.len < right_string.len) {
+                compared = -1;
+            } else if (left_string.len > right_string.len) {
+                compared = 1;
+            }
+        }
+    } else {
+        compared = ptn_compare_string_bytes(
+            (const unsigned char *)left_string.data,
+            left_string.len,
+            (const unsigned char *)right_string.data,
+            right_string.len
+        );
+        if (compared == PTN_COMPARE_LESS) {
+            compared = -1;
+        } else if (compared == PTN_COMPARE_GREATER) {
+            compared = 1;
+        } else {
+            compared = 0;
+        }
+    }
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    return compared;
+}
+
+static int ptn_array_value_compare_numeric(PtnValue left, PtnValue right) {
+    PtnNumber left_number = ptn_to_number(left);
+    PtnNumber right_number = ptn_to_number(right);
+    if (left_number.type == PTN_NUMBER_INT && right_number.type == PTN_NUMBER_INT) {
+        if (left_number.integer < right_number.integer) {
+            return -1;
+        }
+        if (left_number.integer > right_number.integer) {
+            return 1;
+        }
+        return 0;
+    }
+    if (left_number.floating < right_number.floating) {
+        return -1;
+    }
+    if (left_number.floating > right_number.floating) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_array_value_compare_for_sort(PtnValue left, PtnValue right, int64_t flags) {
+    switch (flags) {
+>>>>>>> 4808eaba3 (WIP: checkpoint (auto))
         case PTN_SORT_NUMERIC:
             return ptn_array_value_compare_numeric(left, right);
         case PTN_SORT_STRING:
         case PTN_SORT_LOCALE_STRING:
+<<<<<<< HEAD
             return case_insensitive
                 ? ptn_array_value_compare_string_case(left, right)
                 : ptn_array_value_compare_string(left, right);
@@ -5598,6 +5672,72 @@ static int ptn_array_key_compare_by_sort_flags(PtnArrayKey left, PtnArrayKey rig
 }
 
 static void ptn_array_reindex_after_sort(PtnArray *array) {
+=======
+            return ptn_array_value_compare_string(left, right, 0);
+        case PTN_SORT_STRING | PTN_SORT_FLAG_CASE:
+            return ptn_array_value_compare_string(left, right, 1);
+        case PTN_SORT_NATURAL:
+            return ptn_array_value_compare_natural(left, right);
+        case PTN_SORT_NATURAL | PTN_SORT_FLAG_CASE:
+            return ptn_array_value_compare_natural_case(left, right);
+        case PTN_SORT_REGULAR:
+        default:
+            return ptn_array_value_compare_ascending(left, right);
+    }
+}
+
+static int ptn_array_key_compare_for_sort(PtnArrayKey left, PtnArrayKey right, int64_t flags) {
+    if (flags == PTN_SORT_REGULAR) {
+        return ptn_array_key_compare_ascending(left, right);
+    }
+    PtnValue left_value = ptn_array_key_value(left);
+    PtnValue right_value = ptn_array_key_value(right);
+    int compared = ptn_array_value_compare_for_sort(left_value, right_value, flags);
+    ptn_value_destroy(&left_value);
+    ptn_value_destroy(&right_value);
+    return compared;
+}
+
+static void ptn_array_sort_entries_by_value(PtnArray *array, int64_t flags, int descending) {
+    for (size_t i = 1; i < array->len; i++) {
+        PtnArrayEntry moving = array->entries[i];
+        size_t j = i;
+        while (j > 0) {
+            int compared = ptn_array_value_compare_for_sort(array->entries[j - 1].value, moving.value, flags);
+            if (descending) {
+                compared = -compared;
+            }
+            if (compared <= 0) {
+                break;
+            }
+            array->entries[j] = array->entries[j - 1];
+            j--;
+        }
+        array->entries[j] = moving;
+    }
+}
+
+static void ptn_array_sort_entries_by_key(PtnArray *array, int64_t flags, int descending) {
+    for (size_t i = 1; i < array->len; i++) {
+        PtnArrayEntry moving = array->entries[i];
+        size_t j = i;
+        while (j > 0) {
+            int compared = ptn_array_key_compare_for_sort(array->entries[j - 1].key, moving.key, flags);
+            if (descending) {
+                compared = -compared;
+            }
+            if (compared <= 0) {
+                break;
+            }
+            array->entries[j] = array->entries[j - 1];
+            j--;
+        }
+        array->entries[j] = moving;
+    }
+}
+
+static void ptn_array_reindex_sequential_keys(PtnArray *array) {
+>>>>>>> 4808eaba3 (WIP: checkpoint (auto))
     for (size_t i = 0; i < array->len; i++) {
         if (i > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
@@ -5608,6 +5748,7 @@ static void ptn_array_reindex_after_sort(PtnArray *array) {
     ptn_array_recompute_next_auto_key(array);
 }
 
+<<<<<<< HEAD
 static void ptn_array_sort_entries_by_flags(PtnArray *array, int compare_keys, int descending, int reindex, int64_t flags) {
     for (size_t i = 1; i < array->len; i++) {
         PtnArrayEntry moving = array->entries[i];
@@ -5630,6 +5771,22 @@ static void ptn_array_sort_entries_by_flags(PtnArray *array, int compare_keys, i
     if (reindex) {
         ptn_array_reindex_after_sort(array);
     }
+=======
+static PTN_UNUSED void ptn_array_sort_values_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_value(array, flags, 0);
+    ptn_array_reindex_sequential_keys(array);
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
+static PTN_UNUSED void ptn_array_sort_values(PtnArray *array) {
+    ptn_array_sort_values_with_flags(array, PTN_SORT_REGULAR);
+}
+
+static PTN_UNUSED void ptn_array_rsort_values_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_value(array, flags, 1);
+    ptn_array_reindex_sequential_keys(array);
+>>>>>>> 4808eaba3 (WIP: checkpoint (auto))
     array->current_index = 0;
     ptn_array_rebuild_index(array);
 }
@@ -5664,14 +5821,47 @@ static PTN_UNUSED void ptn_array_sort_values(PtnArray *array) {
 
 static PTN_UNUSED void ptn_array_rsort_values(PtnArray *array) {
     ptn_array_rsort_values_with_flags(array, PTN_SORT_REGULAR);
+<<<<<<< HEAD
+=======
+}
+
+static PTN_UNUSED void ptn_array_asort_values_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_value(array, flags, 0);
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+>>>>>>> 4808eaba3 (WIP: checkpoint (auto))
 }
 
 static PTN_UNUSED void ptn_array_asort_values(PtnArray *array) {
     ptn_array_asort_values_with_flags(array, PTN_SORT_REGULAR);
+<<<<<<< HEAD
+=======
+}
+
+static PTN_UNUSED void ptn_array_arsort_values_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_value(array, flags, 1);
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+>>>>>>> 4808eaba3 (WIP: checkpoint (auto))
 }
 
 static PTN_UNUSED void ptn_array_arsort_values(PtnArray *array) {
     ptn_array_arsort_values_with_flags(array, PTN_SORT_REGULAR);
+<<<<<<< HEAD
+=======
+}
+
+static PTN_UNUSED void ptn_array_ksort_entries_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_key(array, flags, 0);
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
+static PTN_UNUSED void ptn_array_krsort_entries_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_key(array, flags, 1);
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+>>>>>>> 4808eaba3 (WIP: checkpoint (auto))
 }
 
 static PTN_UNUSED void ptn_array_natsort_values(PtnArray *array) {
