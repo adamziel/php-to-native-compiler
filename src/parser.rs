@@ -55,6 +55,9 @@ pub fn parse(source: &str) -> Result<Program> {
         namespace_class_symbols: HashSet::new(),
         namespace_function_symbols: HashSet::new(),
         namespace_constant_symbols: HashSet::new(),
+        namespace_class_import_symbols: HashSet::new(),
+        namespace_function_import_symbols: HashSet::new(),
+        namespace_constant_import_symbols: HashSet::new(),
         compile_warnings: Vec::new(),
         anonymous_classes: Vec::new(),
         nested_functions: Vec::new(),
@@ -83,6 +86,9 @@ struct Parser<'a> {
     namespace_class_symbols: HashSet<String>,
     namespace_function_symbols: HashSet<String>,
     namespace_constant_symbols: HashSet<String>,
+    namespace_class_import_symbols: HashSet<String>,
+    namespace_function_import_symbols: HashSet<String>,
+    namespace_constant_import_symbols: HashSet<String>,
     compile_warnings: Vec<CompileWarning>,
     anonymous_classes: Vec<ClassDecl>,
     nested_functions: Vec<FunctionDecl>,
@@ -124,6 +130,21 @@ enum UseDeclarationKind {
     Class,
     Function,
     Constant,
+}
+
+fn import_alias_key(kind: UseDeclarationKind, alias: &str) -> String {
+    match kind {
+        UseDeclarationKind::Constant => alias.to_string(),
+        UseDeclarationKind::Class | UseDeclarationKind::Function => alias.to_ascii_lowercase(),
+    }
+}
+
+fn import_kind_prefix(kind: UseDeclarationKind) -> &'static str {
+    match kind {
+        UseDeclarationKind::Class => "",
+        UseDeclarationKind::Function => "function ",
+        UseDeclarationKind::Constant => "const ",
+    }
 }
 
 struct ForeachVariable {
@@ -302,7 +323,11 @@ impl Parser<'_> {
                     ));
                 }
                 if !self.seen_namespace_declaration
-                    && (!classes.is_empty() || !functions.is_empty() || !statements.is_empty())
+                    && (!classes.is_empty()
+                        || !functions.is_empty()
+                        || statements
+                            .iter()
+                            .any(|statement| !matches!(statement, Statement::Empty { .. })))
                 {
                     return Err(Diagnostic::new(
                         "Namespace declaration statement has to be the very first statement or after any declare call in the script",
@@ -377,7 +402,7 @@ impl Parser<'_> {
         self.expect_semicolon()?;
         self.current_namespace = namespace;
         self.seen_namespace_declaration = true;
-        self.clear_namespace_imports();
+        self.reset_namespace_scope_state();
         Ok(())
     }
 
@@ -413,9 +438,15 @@ impl Parser<'_> {
         let saved_class_aliases = self.class_aliases.clone();
         let saved_function_aliases = self.function_aliases.clone();
         let saved_constant_aliases = self.constant_aliases.clone();
+        let saved_class_symbols = self.namespace_class_symbols.clone();
+        let saved_function_symbols = self.namespace_function_symbols.clone();
+        let saved_constant_symbols = self.namespace_constant_symbols.clone();
+        let saved_class_import_symbols = self.namespace_class_import_symbols.clone();
+        let saved_function_import_symbols = self.namespace_function_import_symbols.clone();
+        let saved_constant_import_symbols = self.namespace_constant_import_symbols.clone();
 
         self.current_namespace = namespace;
-        self.clear_namespace_imports();
+        self.reset_namespace_scope_state();
         let result = (|| {
             self.parse_top_level_items(
                 classes,
@@ -432,6 +463,12 @@ impl Parser<'_> {
         self.class_aliases = saved_class_aliases;
         self.function_aliases = saved_function_aliases;
         self.constant_aliases = saved_constant_aliases;
+        self.namespace_class_symbols = saved_class_symbols;
+        self.namespace_function_symbols = saved_function_symbols;
+        self.namespace_constant_symbols = saved_constant_symbols;
+        self.namespace_class_import_symbols = saved_class_import_symbols;
+        self.namespace_function_import_symbols = saved_function_import_symbols;
+        self.namespace_constant_import_symbols = saved_constant_import_symbols;
 
         result
     }
@@ -444,10 +481,22 @@ impl Parser<'_> {
                 "namespace declarations cannot use fully qualified names",
                 Some(parsed.span),
             )),
-            NameResolution::NamespaceRelative => Err(Diagnostic::new(
-                "namespace declarations cannot use namespace-relative names",
-                Some(parsed.span),
-            )),
+            NameResolution::NamespaceRelative => {
+                let text = self.span_text(parsed.span);
+                if parsed.name.is_empty() {
+                    Err(Diagnostic::new(
+                        format!("Cannot use '{text}' as namespace name"),
+                        Some(parsed.span),
+                    ))
+                } else {
+                    Err(Diagnostic::parse_error(
+                        format!(
+                            "syntax error, unexpected namespace-relative name \"{text}\", expecting \"{{\""
+                        ),
+                        Some(parsed.span),
+                    ))
+                }
+            }
         }
     }
 
@@ -507,7 +556,7 @@ impl Parser<'_> {
                 .unwrap_or(&target.name)
                 .to_string()
         };
-        self.register_use_import(kind, target, alias);
+        self.register_use_import(kind, target, alias)?;
         Ok(())
     }
 
@@ -523,7 +572,19 @@ impl Parser<'_> {
             ));
         }
         self.expect_left_brace()?;
+        let mut parsed_any = false;
         loop {
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                let expected = if parsed_any {
+                    "\"}\""
+                } else {
+                    "identifier or namespaced name"
+                };
+                return Err(syntax_error_unexpected(self.peek(), Some(expected)));
+            }
+            if parsed_any && matches!(self.peek().kind, TokenKind::RightBrace) {
+                break;
+            }
             let item_kind = if outer_kind == UseDeclarationKind::Class
                 && matches!(self.peek().kind, TokenKind::Function)
             {
@@ -569,7 +630,8 @@ impl Parser<'_> {
                 span: combine_spans(prefix.span, item.span),
                 resolution: prefix.resolution,
             };
-            self.register_use_import(item_kind, grouped_target, alias);
+            self.register_use_import(item_kind, grouped_target, alias)?;
+            parsed_any = true;
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
             }
@@ -579,24 +641,126 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn register_use_import(&mut self, kind: UseDeclarationKind, target: ParsedName, alias: String) {
+    fn register_use_import(
+        &mut self,
+        kind: UseDeclarationKind,
+        target: ParsedName,
+        alias: String,
+    ) -> Result<()> {
+        if self.global_namespace_import_has_no_effect(&target) {
+            self.compile_warnings.push(CompileWarning {
+                message: format!(
+                    "The use statement with non-compound name '{}' has no effect",
+                    target.name
+                ),
+                span: target.span,
+            });
+            return Ok(());
+        }
+        let alias_key = import_alias_key(kind, &alias);
+        if self.namespace_symbol_set(kind).contains(&alias_key) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot use {}{} as {} because the name is already in use",
+                    import_kind_prefix(kind),
+                    target.name,
+                    alias
+                ),
+                Some(target.span),
+            ));
+        }
         let target_name = match target.resolution {
             NameResolution::FullyQualified => target.name,
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&target.name),
             NameResolution::Unqualified | NameResolution::Qualified => target.name,
         };
-        let alias_key = alias.to_ascii_lowercase();
         match kind {
             UseDeclarationKind::Class => {
-                self.class_aliases.insert(alias_key, target_name);
+                self.class_aliases.insert(alias_key.clone(), target_name);
             }
             UseDeclarationKind::Function => {
-                self.function_aliases.insert(alias_key, target_name);
+                self.function_aliases.insert(alias_key.clone(), target_name);
             }
             UseDeclarationKind::Constant => {
-                self.constant_aliases.insert(alias_key, target_name);
+                self.constant_aliases.insert(alias_key.clone(), target_name);
             }
         }
+        self.namespace_symbol_set_mut(kind).insert(alias_key.clone());
+        self.namespace_import_symbol_set_mut(kind).insert(alias_key);
+        Ok(())
+    }
+
+    fn global_namespace_import_has_no_effect(&self, target: &ParsedName) -> bool {
+        self.current_namespace.as_deref().unwrap_or_default().is_empty()
+            && !target.name.contains('\\')
+            && matches!(
+                target.resolution,
+                NameResolution::Unqualified | NameResolution::FullyQualified
+            )
+    }
+
+    fn namespace_symbol_set(&self, kind: UseDeclarationKind) -> &HashSet<String> {
+        match kind {
+            UseDeclarationKind::Class => &self.namespace_class_symbols,
+            UseDeclarationKind::Function => &self.namespace_function_symbols,
+            UseDeclarationKind::Constant => &self.namespace_constant_symbols,
+        }
+    }
+
+    fn namespace_symbol_set_mut(&mut self, kind: UseDeclarationKind) -> &mut HashSet<String> {
+        match kind {
+            UseDeclarationKind::Class => &mut self.namespace_class_symbols,
+            UseDeclarationKind::Function => &mut self.namespace_function_symbols,
+            UseDeclarationKind::Constant => &mut self.namespace_constant_symbols,
+        }
+    }
+
+    fn namespace_import_symbol_set(&self, kind: UseDeclarationKind) -> &HashSet<String> {
+        match kind {
+            UseDeclarationKind::Class => &self.namespace_class_import_symbols,
+            UseDeclarationKind::Function => &self.namespace_function_import_symbols,
+            UseDeclarationKind::Constant => &self.namespace_constant_import_symbols,
+        }
+    }
+
+    fn namespace_import_symbol_set_mut(
+        &mut self,
+        kind: UseDeclarationKind,
+    ) -> &mut HashSet<String> {
+        match kind {
+            UseDeclarationKind::Class => &mut self.namespace_class_import_symbols,
+            UseDeclarationKind::Function => &mut self.namespace_function_import_symbols,
+            UseDeclarationKind::Constant => &mut self.namespace_constant_import_symbols,
+        }
+    }
+
+    fn note_namespace_declaration_symbol(
+        &mut self,
+        kind: UseDeclarationKind,
+        name: &str,
+        span: SourceSpan,
+    ) -> Result<()> {
+        let alias = name.rsplit('\\').next().unwrap_or(name);
+        let key = import_alias_key(kind, alias);
+        if self.namespace_import_symbol_set(kind).contains(&key) {
+            let message = match kind {
+                UseDeclarationKind::Class => {
+                    format!("Cannot redeclare class {alias} (previously declared as local import)")
+                }
+                UseDeclarationKind::Function => {
+                    format!(
+                        "Cannot redeclare function {}() (previously declared as local import)",
+                        alias.to_ascii_lowercase()
+                    )
+                }
+                UseDeclarationKind::Constant => {
+                    format!("Cannot declare const {alias} because the name is already in use")
+                }
+            };
+            return Err(Diagnostic::new(message, Some(span)));
+        }
+        self.namespace_symbol_set_mut(kind).insert(key);
+        Ok(())
     }
 
     fn parse_use_name(&mut self, expected: &str) -> Result<ParsedName> {
@@ -619,11 +783,19 @@ impl Parser<'_> {
                 self.tokens.get(self.index + 1).map(|token| &token.kind),
                 Some(TokenKind::LeftBrace)
             ) {
-                self.advance();
+                let slash_token = self.advance().clone();
+                if slash_token.span.byte_start != span.byte_end {
+                    return Err(syntax_error_unexpected(&slash_token, None));
+                }
                 break;
             }
-            self.advance();
+            let slash_token = self.advance().clone();
             let segment_token = self.advance().clone();
+            if slash_token.span.byte_start != span.byte_end
+                || segment_token.span.byte_start != slash_token.span.byte_end
+            {
+                return Err(syntax_error_unexpected(&slash_token, None));
+            }
             let TokenKind::Identifier(segment) = segment_token.kind else {
                 return Err(Diagnostic::new(expected, Some(segment_token.span)));
             };
@@ -660,6 +832,23 @@ impl Parser<'_> {
         self.class_aliases.clear();
         self.function_aliases.clear();
         self.constant_aliases.clear();
+    }
+
+    fn reset_namespace_scope_state(&mut self) {
+        self.clear_namespace_imports();
+        self.namespace_class_symbols.clear();
+        self.namespace_function_symbols.clear();
+        self.namespace_constant_symbols.clear();
+        self.namespace_class_import_symbols.clear();
+        self.namespace_function_import_symbols.clear();
+        self.namespace_constant_import_symbols.clear();
+    }
+
+    fn span_text(&self, span: SourceSpan) -> String {
+        self.source
+            .get(span.byte_start..span.byte_end)
+            .unwrap_or("")
+            .to_string()
     }
 
     fn parse_declaration_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
@@ -715,8 +904,13 @@ impl Parser<'_> {
             .unwrap_or(first_span);
         let mut segments = vec![first_segment];
         while matches!(self.peek().kind, TokenKind::Backslash) {
-            self.advance();
+            let slash_token = self.advance().clone();
             let segment_token = self.advance().clone();
+            if slash_token.span.byte_start != span.byte_end
+                || segment_token.span.byte_start != slash_token.span.byte_end
+            {
+                return Err(syntax_error_unexpected(&slash_token, None));
+            }
             let TokenKind::Identifier(segment) = segment_token.kind else {
                 return Err(Diagnostic::new(expected, Some(segment_token.span)));
             };
@@ -807,9 +1001,19 @@ impl Parser<'_> {
             NameResolution::FullyQualified => parsed.name.clone(),
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
             NameResolution::Unqualified => {
-                let alias_key = parsed.name.to_ascii_lowercase();
-                if let Some(target) = self.constant_aliases.get(&alias_key) {
+                if let Some(target) = self.constant_aliases.get(&parsed.name) {
                     target.clone()
+                } else if !self
+                    .current_namespace
+                    .as_deref()
+                    .unwrap_or_default()
+                    .is_empty()
+                    && self.namespace_constant_symbols.contains(&import_alias_key(
+                        UseDeclarationKind::Constant,
+                        &parsed.name,
+                    ))
+                {
+                    self.qualify_current_namespace(&parsed.name)
                 } else if is_modeled_global_constant_name(&parsed.name) {
                     parsed.name.clone()
                 } else {
@@ -1001,7 +1205,12 @@ impl Parser<'_> {
         }
         let is_readonly = readonly_span.is_some();
 
-        let (class_name, _) = self.parse_declaration_name("expected class name")?;
+        let (class_name, class_name_span) = self.parse_declaration_name("expected class name")?;
+        self.note_namespace_declaration_symbol(
+            UseDeclarationKind::Class,
+            &class_name,
+            class_name_span,
+        )?;
         let parent_name = if !is_interface && token_is_identifier_named(self.peek(), "extends") {
             self.advance();
             Some(
@@ -1085,7 +1294,12 @@ impl Parser<'_> {
         if !token_is_identifier_named(&trait_token, "trait") {
             return Err(Diagnostic::new("expected trait", Some(trait_token.span)));
         }
-        let (trait_name, _) = self.parse_declaration_name("expected trait name")?;
+        let (trait_name, trait_name_span) = self.parse_declaration_name("expected trait name")?;
+        self.note_namespace_declaration_symbol(
+            UseDeclarationKind::Class,
+            &trait_name,
+            trait_name_span,
+        )?;
         self.expect_left_brace()?;
 
         let mut properties = Vec::new();
@@ -2162,7 +2376,12 @@ impl Parser<'_> {
         } else {
             false
         };
-        let (name, _) = self.parse_declaration_name("expected function name")?;
+        let (name, name_span) = self.parse_declaration_name("expected function name")?;
+        self.note_namespace_declaration_symbol(
+            UseDeclarationKind::Function,
+            &name,
+            name_span,
+        )?;
         self.declared_functions.insert(name.to_ascii_lowercase());
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
@@ -2936,6 +3155,11 @@ impl Parser<'_> {
 
     fn parse_const_declaration(&mut self) -> Result<ConstDeclaration> {
         let (name, token_span) = self.parse_declaration_name("expected constant name")?;
+        self.note_namespace_declaration_symbol(
+            UseDeclarationKind::Constant,
+            &name,
+            token_span,
+        )?;
         self.expect_equal()?;
         let value = self.parse_expr()?;
         if !is_supported_const_declaration_expr(&value) {
