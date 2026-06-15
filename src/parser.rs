@@ -6,9 +6,9 @@ use crate::ast::{
     ClosureUseCapture, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
     IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind,
-    MethodDecl, Program, PromotedProperty, PropertyDecl, PropertyVisibility, ReferenceTarget,
-    Statement, StaticLocalDeclaration, StaticPropertyDecl, StringInterpolationIndex, StringPart,
-    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    MatchArm, MethodDecl, Program, PromotedProperty, PropertyDecl, PropertyVisibility,
+    ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
+    StringInterpolationIndex, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -3434,6 +3434,7 @@ impl Parser<'_> {
             TokenKind::Require => self.parse_include_expr(IncludeKind::Require),
             TokenKind::RequireOnce => self.parse_include_expr(IncludeKind::RequireOnce),
             TokenKind::Throw => self.parse_throw_expr(),
+            TokenKind::Match => self.parse_match_expr(),
             TokenKind::Clone => self.parse_clone_expr(),
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
@@ -3469,6 +3470,67 @@ impl Parser<'_> {
         Ok(Expr::Throw {
             value: Box::new(value),
             span,
+        })
+    }
+
+    fn parse_match_expr(&mut self) -> Result<Expr> {
+        let match_token = self.advance().clone();
+        self.expect_left_paren()?;
+        let subject = self.parse_expr()?;
+        self.expect_right_paren()?;
+        self.expect_left_brace()?;
+
+        let mut arms = Vec::new();
+        let mut saw_default = false;
+        while !matches!(self.peek().kind, TokenKind::RightBrace) {
+            let arm_start = self.peek().span;
+            let (conditions, is_default) = if matches!(self.peek().kind, TokenKind::Default) {
+                let default_span = self.advance().span;
+                if saw_default {
+                    return Err(Diagnostic::new(
+                        "Match expressions may only contain one default arm",
+                        Some(default_span),
+                    ));
+                }
+                saw_default = true;
+                if matches!(self.peek().kind, TokenKind::Comma) {
+                    self.advance();
+                }
+                (Vec::new(), true)
+            } else {
+                let mut conditions = vec![self.parse_expr()?];
+                while matches!(self.peek().kind, TokenKind::Comma) {
+                    self.advance();
+                    if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+                        break;
+                    }
+                    conditions.push(self.parse_expr()?);
+                }
+                (conditions, false)
+            };
+
+            self.expect_double_arrow()?;
+            let value = self.parse_assignment_expr()?;
+            let arm_end = value.span();
+            arms.push(MatchArm {
+                conditions,
+                value,
+                is_default,
+                span: combine_spans(arm_start, arm_end),
+            });
+
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+            } else if !matches!(self.peek().kind, TokenKind::RightBrace) {
+                return Err(syntax_error_unexpected(self.peek(), Some("\",\" or \"}\"")));
+            }
+        }
+
+        let right_span = self.expect_right_brace()?;
+        Ok(Expr::Match {
+            subject: Box::new(subject),
+            arms,
+            span: combine_spans(match_token.span, right_span),
         })
     }
 
@@ -4741,6 +4803,7 @@ impl Parser<'_> {
                 | TokenKind::Require
                 | TokenKind::RequireOnce
                 | TokenKind::Throw
+                | TokenKind::Match
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
                 | TokenKind::Backslash
@@ -5260,6 +5323,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Foreach => "foreach",
         TokenKind::As => "as",
         TokenKind::Switch => "switch",
+        TokenKind::Match => "match",
         TokenKind::Case => "case",
         TokenKind::Default => "default",
         TokenKind::Break => "break",
@@ -5562,6 +5626,15 @@ fn collect_arrow_captures_from_expr(
         Expr::InstanceOf { expr, .. } => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
         }
+        Expr::Match { subject, arms, .. } => {
+            collect_arrow_captures_from_expr(subject, exclusions, seen, captures);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_arrow_captures_from_expr(condition, exclusions, seen, captures);
+                }
+                collect_arrow_captures_from_expr(&arm.value, exclusions, seen, captures);
+            }
+        }
         Expr::String(_, _)
         | Expr::ShellExec { .. }
         | Expr::Int(_, _)
@@ -5839,6 +5912,7 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
             | "divisionbyzeroerror"
             | "assertionerror"
             | "parseerror"
+            | "unhandledmatcherror"
     )
 }
 

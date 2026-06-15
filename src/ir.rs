@@ -12,10 +12,10 @@ use crate::ast::{
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget,
     ListExprElementTarget as AstListExprElementTarget, MagicConstantKind as AstMagicConstantKind,
-    Program, PropertyVisibility as AstPropertyVisibility, ReferenceTarget as AstReferenceTarget,
-    Statement, StringInterpolationIndex as AstStringInterpolationIndex,
-    StringPart as AstStringPart, TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
-    UnsetTarget as AstUnsetTarget,
+    MatchArm as AstMatchArm, Program, PropertyVisibility as AstPropertyVisibility,
+    ReferenceTarget as AstReferenceTarget, Statement,
+    StringInterpolationIndex as AstStringInterpolationIndex, StringPart as AstStringPart,
+    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -471,6 +471,18 @@ pub enum ValueExpr {
         if_false: Box<ValueExpr>,
         line: usize,
     },
+    Match {
+        subject: Box<ValueExpr>,
+        arms: Vec<MatchArm>,
+        line: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub conditions: Vec<ValueExpr>,
+    pub value: ValueExpr,
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2023,7 +2035,28 @@ impl<'a> LoweringContext<'a> {
                 if_false: Box::new(self.lower_expr(if_false)),
                 line: span.line,
             },
+            Expr::Match {
+                subject,
+                arms,
+                span,
+            } => ValueExpr::Match {
+                subject: Box::new(self.lower_expr(subject)),
+                arms: arms.iter().map(|arm| self.lower_match_arm(arm)).collect(),
+                line: span.line,
+            },
             Expr::Grouped { expr, .. } => self.lower_expr(expr),
+        }
+    }
+
+    fn lower_match_arm(&mut self, arm: &AstMatchArm) -> MatchArm {
+        MatchArm {
+            conditions: arm
+                .conditions
+                .iter()
+                .map(|condition| self.lower_expr(condition))
+                .collect(),
+            value: self.lower_expr(&arm.value),
+            is_default: arm.is_default,
         }
     }
 
@@ -2325,9 +2358,30 @@ fn assertion_expr_text(expr: &Expr) -> String {
                 )
             }
         }
+        Expr::Match { subject, arms, .. } => format!(
+            "match ({}) {{ {} }}",
+            assertion_expr_text(subject),
+            arms.iter()
+                .map(assertion_match_arm_text)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         Expr::Grouped { expr, .. } => format!("({})", assertion_expr_text(expr)),
         Expr::AnonymousFunction(function) => assertion_anonymous_function_text(function),
     }
+}
+
+fn assertion_match_arm_text(arm: &AstMatchArm) -> String {
+    let conditions = if arm.is_default {
+        "default".to_string()
+    } else {
+        arm.conditions
+            .iter()
+            .map(assertion_expr_text)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!("{} => {}", conditions, assertion_expr_text(&arm.value))
 }
 
 fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String {

@@ -638,6 +638,11 @@ pub enum Expr {
         class_name: String,
         span: SourceSpan,
     },
+    Match {
+        subject: Box<Expr>,
+        arms: Vec<MatchArm>,
+        span: SourceSpan,
+    },
     Array {
         elements: Vec<ArrayElement>,
         span: SourceSpan,
@@ -695,6 +700,14 @@ pub enum Expr {
         expr: Box<Expr>,
         span: SourceSpan,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub conditions: Vec<Expr>,
+    pub value: Expr,
+    pub is_default: bool,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -814,7 +827,8 @@ impl Expr {
             | Expr::StaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. }
             | Expr::DynamicClassNameFetch { span, .. }
-            | Expr::InstanceOf { span, .. } => *span,
+            | Expr::InstanceOf { span, .. }
+            | Expr::Match { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::List(list) => list.span,
             Expr::ArrayAccess { span, .. } => *span,
