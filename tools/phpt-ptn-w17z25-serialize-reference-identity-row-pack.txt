@@ -1,0 +1,7 @@
+# ptn-w17z.25: serialize/unserialize reference identity residual rows.
+ext/standard/tests/serialize/bug28325.phpt
+ext/standard/tests/serialize/bug31402.phpt
+ext/standard/tests/serialize/serialization_arrays_002.phpt
+ext/standard/tests/serialize/serialization_arrays_003.phpt
+ext/standard/tests/serialize/serialization_arrays_004.phpt
+ext/standard/tests/serialize/serialization_arrays_005.phpt
