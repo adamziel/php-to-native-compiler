@@ -11,6 +11,8 @@ on:
       - tools/update-status-dashboard.sh
       - tools/publish-status-gh-pages.sh
       - .github/workflows/status-pages.yml
+  schedule:
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -34,6 +36,13 @@ jobs:
 
       - name: Check generated dashboard
         run: git diff --exit-code -- STATUS.md STATUS.html
+
+      - name: Refresh runtime dashboard metadata
+        if: github.event_name != 'push'
+        run: |
+          STATUS_DASHBOARD_REFRESH_AT_UTC="$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+          STATUS_DASHBOARD_SOURCE_COMMIT="$(git rev-parse --short=12 HEAD)" \
+            bash tools/update-status-dashboard.sh
 
       - name: Prepare Pages artifact
         run: |
