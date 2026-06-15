@@ -642,6 +642,45 @@ static PTN_UNUSED void ptn_emit_non_object_property_read_warning(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
+static PTN_UNUSED const char *ptn_property_assignment_receiver_name(PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_BOOL) {
+        return receiver.as.boolean ? "true" : "false";
+    }
+    return ptn_offset_container_type_name(receiver);
+}
+
+static PTN_UNUSED void ptn_throw_property_assignment_on_non_object(
+    PtnRuntime *runtime,
+    const char *property,
+    PtnValue receiver,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Attempt to assign property \"%s\" on %s",
+        property,
+        ptn_property_assignment_receiver_name(receiver)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_validate_property_write_receiver(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+) {
+    if (ptn_value_deref(receiver).type != PTN_OBJECT) {
+        ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
+    }
+}
+
 static PTN_UNUSED void ptn_emit_undefined_property_warning(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -1746,18 +1785,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
-        char message[192];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Attempt to assign property \"%s\" on %s",
-            property,
-            ptn_offset_container_type_name(receiver)
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "Error", message);
+        ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
         return ptn_null();
     }
     PtnObjectPropertyMetadata *blocked_metadata =
@@ -1879,18 +1907,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
-        char message[192];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Attempt to assign property \"%s\" on %s",
-            property,
-            ptn_offset_container_type_name(receiver)
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "Error", message);
+        ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
         return;
     }
     if (reference.type != PTN_REFERENCE) {
@@ -1969,18 +1986,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
-        char message[192];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Attempt to assign property \"%s\" on %s",
-            property,
-            ptn_offset_container_type_name(receiver)
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "Error", message);
+        ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
     PtnObjectPropertyMetadata *blocked_metadata =

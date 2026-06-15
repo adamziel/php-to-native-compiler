@@ -11302,6 +11302,13 @@ impl ValueEmitter {
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let path = emit_array_path_segments(out, self, dimensions);
         let current_temp = self.next_temp();
+        out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         out.push_str("    PtnValue ");
         out.push_str(&current_temp);
         out.push_str(" = ptn_object_read_property(&runtime, ");
@@ -11456,6 +11463,13 @@ impl ValueEmitter {
         let value_temp = self.emit_materialized_value(out, value);
 
         let current_temp = self.next_temp();
+        out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         out.push_str("    PtnValue ");
         out.push_str(&current_temp);
         out.push_str(" = ptn_object_read_property(&runtime, ");

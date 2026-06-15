@@ -2232,7 +2232,7 @@ impl Parser<'_> {
                 self.parse_expression_statement()
             }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LeftParen) => {
-                self.parse_call_statement()
+                self.parse_expression_statement()
             }
             TokenKind::Variable(_) if matches!(self.peek_next().kind, TokenKind::LeftParen) => {
                 self.parse_expression_statement()
