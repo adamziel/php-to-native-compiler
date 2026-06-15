@@ -954,6 +954,38 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(7);
         return 1;
     }
+    if (strcmp(name, "EXTR_OVERWRITE") == 0) {
+        *out = ptn_int(PTN_EXTR_OVERWRITE);
+        return 1;
+    }
+    if (strcmp(name, "EXTR_SKIP") == 0) {
+        *out = ptn_int(PTN_EXTR_SKIP);
+        return 1;
+    }
+    if (strcmp(name, "EXTR_PREFIX_SAME") == 0) {
+        *out = ptn_int(PTN_EXTR_PREFIX_SAME);
+        return 1;
+    }
+    if (strcmp(name, "EXTR_PREFIX_ALL") == 0) {
+        *out = ptn_int(PTN_EXTR_PREFIX_ALL);
+        return 1;
+    }
+    if (strcmp(name, "EXTR_PREFIX_INVALID") == 0) {
+        *out = ptn_int(PTN_EXTR_PREFIX_INVALID);
+        return 1;
+    }
+    if (strcmp(name, "EXTR_PREFIX_IF_EXISTS") == 0) {
+        *out = ptn_int(PTN_EXTR_PREFIX_IF_EXISTS);
+        return 1;
+    }
+    if (strcmp(name, "EXTR_IF_EXISTS") == 0) {
+        *out = ptn_int(PTN_EXTR_IF_EXISTS);
+        return 1;
+    }
+    if (strcmp(name, "EXTR_REFS") == 0) {
+        *out = ptn_int(PTN_EXTR_REFS);
+        return 1;
+    }
     if (strcmp(name, "CASE_LOWER") == 0) {
         *out = ptn_int(0);
         return 1;
