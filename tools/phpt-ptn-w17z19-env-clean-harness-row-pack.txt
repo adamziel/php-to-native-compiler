@@ -1,0 +1,9 @@
+# ptn-w17z.19 focused PHPT ENV/CLEAN harness row pack.
+#
+# These rows were classified out by the old default --CLEAN-- blocker and pass
+# once php-src run-tests.php cleanup handling is treated as modeled harness
+# behavior.
+ext/standard/tests/array/array_count_values_variation.phpt
+ext/standard/tests/file/file_get_contents_basic001.phpt
+ext/standard/tests/file/file_get_contents_variation7.phpt
+ext/standard/tests/file/filesize_basic.phpt
