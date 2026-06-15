@@ -20,6 +20,26 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     return ptn_null();
 }
 
+static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len) {
+    if (data == NULL || len == 0) {
+        return;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->output_buffer_callback_depth != 0) {
+        return;
+    }
+    if (root != NULL && root->output_buffers_len != 0) {
+        PtnOutputBuffer *buffer = &root->output_buffers[root->output_buffers_len - 1];
+        ptn_string_buffer_append_len(&buffer->buffer, data, len);
+        return;
+    }
+    fwrite(data, 1, len, stdout);
+}
+
+static PTN_UNUSED void ptn_output_write_cstr(PtnRuntime *runtime, const char *data) {
+    ptn_output_write(runtime, data, data == NULL ? 0 : strlen(data));
+}
+
 static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -27,52 +47,70 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
             break;
         case PTN_BOOL:
             if (value.as.boolean) {
-                fputs("1", stdout);
+                ptn_output_write_cstr(runtime, "1");
             }
             break;
-        case PTN_INT:
-            printf("%lld", (long long)value.as.integer);
+        case PTN_INT: {
+            char buffer[32];
+            int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)value.as.integer);
+            if (written < 0 || (size_t)written >= sizeof(buffer)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_output_write(runtime, buffer, (size_t)written);
             break;
+        }
         case PTN_FLOAT: {
             char formatted[128];
             ptn_format_scalar_float(value.as.floating, formatted, sizeof(formatted));
-            fputs(formatted, stdout);
+            ptn_output_write_cstr(runtime, formatted);
             break;
         }
         case PTN_STRING:
-            fwrite(value.as.string.data, 1, value.as.string.len, stdout);
+            ptn_output_write(runtime, (const char *)value.as.string.data, value.as.string.len);
             break;
         case PTN_ARRAY:
             ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
-            fputs("Array", stdout);
+            ptn_output_write_cstr(runtime, "Array");
             break;
         case PTN_OBJECT: {
             PtnStringOperand object_string;
             if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
-                fwrite(object_string.data, 1, object_string.len, stdout);
+                ptn_output_write(runtime, object_string.data, object_string.len);
                 ptn_string_operand_free(object_string);
                 break;
             }
-            fputs("Object", stdout);
+            ptn_output_write_cstr(runtime, "Object");
             break;
         }
         case PTN_CLOSURE:
-            fputs("Object", stdout);
+            ptn_output_write_cstr(runtime, "Object");
             break;
         case PTN_EXCEPTION: {
             PtnStringOperand exception_string =
                 ptn_exception_to_string_operand(runtime, value.as.exception);
-            fwrite(exception_string.data, 1, exception_string.len, stdout);
+            ptn_output_write(runtime, exception_string.data, exception_string.len);
             free(exception_string.owned);
             break;
         }
-        case PTN_RESOURCE:
-            printf("Resource id #%lld", (long long)value.as.resource->id);
+        case PTN_RESOURCE: {
+            char buffer[64];
+            int written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource->id);
+            if (written < 0 || (size_t)written >= sizeof(buffer)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_output_write(runtime, buffer, (size_t)written);
             break;
+        }
         case PTN_REFERENCE:
             break;
     }
 }
+
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime) {
+    (void)runtime;
+}
+#endif
 
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
 static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
@@ -591,6 +629,149 @@ static PtnValue ptn_internal_call_callback(
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     return result;
+}
+
+static PtnValue ptn_output_buffer_contents_value(PtnOutputBuffer *buffer) {
+    return ptn_owned_string_len(
+        ptn_duplicate_string_len(buffer->buffer.data, buffer->buffer.len),
+        buffer->buffer.len
+    );
+}
+
+static void ptn_output_buffer_destroy(PtnOutputBuffer *buffer) {
+    if (buffer == NULL) {
+        return;
+    }
+    free(buffer->buffer.data);
+    buffer->buffer.data = NULL;
+    buffer->buffer.len = 0;
+    buffer->buffer.capacity = 0;
+    if (buffer->has_callback) {
+        ptn_value_destroy(&buffer->callback);
+    }
+    buffer->has_callback = 0;
+    buffer->callback = ptn_null();
+}
+
+static void ptn_output_buffer_push(PtnRuntime *runtime, int has_callback, PtnValue callback) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root->output_buffers_len == root->output_buffers_capacity) {
+        size_t new_capacity = root->output_buffers_capacity == 0
+            ? 4
+            : root->output_buffers_capacity * 2;
+        if (new_capacity < root->output_buffers_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnOutputBuffer)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnOutputBuffer *new_buffers = realloc(root->output_buffers, new_capacity * sizeof(PtnOutputBuffer));
+        if (new_buffers == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->output_buffers = new_buffers;
+        root->output_buffers_capacity = new_capacity;
+    }
+
+    PtnOutputBuffer *buffer = &root->output_buffers[root->output_buffers_len++];
+    ptn_string_buffer_init(&buffer->buffer);
+    buffer->has_callback = has_callback;
+    buffer->callback = has_callback ? ptn_value_clone_deref(callback) : ptn_null();
+}
+
+static int ptn_output_buffer_pop(PtnRuntime *runtime, PtnOutputBuffer *buffer_out) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->output_buffers_len == 0) {
+        return 0;
+    }
+    root->output_buffers_len--;
+    *buffer_out = root->output_buffers[root->output_buffers_len];
+    return 1;
+}
+
+static void ptn_output_buffer_rethrow_active_exception(PtnRuntime *runtime) {
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+}
+
+static PtnValue ptn_output_buffer_apply_callback(PtnRuntime *runtime, PtnOutputBuffer *buffer, size_t line) {
+    PtnValue original = ptn_output_buffer_contents_value(buffer);
+    if (!buffer->has_callback) {
+        return original;
+    }
+
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    PtnTryFrame handler_frame;
+    PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+    int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+
+    ptn_try_frame_push(runtime, &handler_frame);
+    root->output_buffer_callback_depth++;
+    if (setjmp(handler_frame.jump) != 0) {
+        root->output_buffer_callback_depth--;
+        ptn_try_frame_pop(runtime, &handler_frame);
+        runtime->trace_frame = saved_trace_frame;
+        runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+        runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
+        ptn_value_destroy(&original);
+        ptn_output_buffer_rethrow_active_exception(runtime);
+    }
+
+    PtnValue args[1] = { ptn_value_clone_deref(original) };
+    PtnValue callback_result = ptn_internal_call_callback(runtime, buffer->callback, 1, args, line);
+    ptn_value_destroy(&args[0]);
+    root->output_buffer_callback_depth--;
+    ptn_try_frame_pop(runtime, &handler_frame);
+
+    PtnValue resolved = ptn_value_deref(callback_result);
+    if (resolved.type == PTN_STRING) {
+        PtnValue output = ptn_value_clone_deref(callback_result);
+        ptn_value_destroy(&callback_result);
+        ptn_value_destroy(&original);
+        return output;
+    }
+    if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
+        ptn_value_destroy(&callback_result);
+        return original;
+    }
+    ptn_value_destroy(&callback_result);
+    ptn_value_destroy(&original);
+    return ptn_string("");
+}
+
+static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line) {
+    PtnOutputBuffer buffer;
+    if (!ptn_output_buffer_pop(runtime, &buffer)) {
+        return 0;
+    }
+    PtnValue output = ptn_output_buffer_apply_callback(runtime, &buffer, line);
+    if (flush) {
+        PtnValue string_output = ptn_value_deref(output);
+        if (string_output.type == PTN_STRING) {
+            ptn_output_write(runtime, (const char *)string_output.as.string.data, string_output.as.string.len);
+        }
+    }
+    ptn_value_destroy(&output);
+    ptn_output_buffer_destroy(&buffer);
+    return 1;
+}
+
+static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    while (root->output_buffers_len != 0) {
+        (void)ptn_output_buffer_close(runtime, 1, 0);
+    }
 }
 
 static int ptn_array_user_compare(
@@ -6250,6 +6431,109 @@ static PtnValue ptn_internal_array_fill_keys(PtnRuntime *runtime, size_t argc, c
     return result;
 }
 
+static void ptn_compact_emit_invalid_argument_warning(
+    PtnRuntime *runtime,
+    size_t position,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    const char *given = value.type == PTN_OBJECT
+        ? value.as.object->class_name
+        : ptn_offset_container_type_name(value);
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "compact(): Argument #%zu must be string or array of strings, %s given",
+        position,
+        given
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_compact_emit_undefined_variable_warning(
+    PtnRuntime *runtime,
+    PtnStringOperand name,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "compact(): Undefined variable $%.*s", (int)name.len, name.data);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "compact(): Undefined variable $%.*s", (int)name.len, name.data);
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static int ptn_compact_collect_value(
+    PtnRuntime *runtime,
+    PtnArray *result,
+    PtnValue value,
+    size_t position,
+    PtnCountSeenArrays *seen,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_STRING) {
+        PtnStringOperand name = ptn_value_to_string_operand(value);
+        char *lookup_name = ptn_duplicate_string_len(name.data, name.len);
+        PtnLookupResult lookup = ptn_runtime_read_variable_quiet(runtime, lookup_name);
+        free(lookup_name);
+        if (lookup.exists) {
+            ptn_array_set_entry(
+                result,
+                ptn_array_string_key_len(name.data, name.len),
+                ptn_value_clone_deref(lookup.value)
+            );
+        } else if (!(name.len == 4 && memcmp(name.data, "this", 4) == 0)) {
+            ptn_compact_emit_undefined_variable_warning(runtime, name, line);
+        }
+        ptn_string_operand_free(name);
+        return 1;
+    }
+    if (value.type == PTN_ARRAY) {
+        if (ptn_count_seen_arrays_contains(seen, value.as.array)) {
+            ptn_throw_exception(runtime, "Error", "Recursion detected");
+            return 0;
+        }
+        ptn_count_seen_arrays_push(seen, value.as.array);
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            if (!ptn_compact_collect_value(runtime, result, value.as.array->entries[i].value, position, seen, line)) {
+                seen->len--;
+                return 0;
+            }
+        }
+        seen->len--;
+        return 1;
+    }
+
+    ptn_compact_emit_invalid_argument_warning(runtime, position, value, line);
+    return 1;
+}
+
+static PtnValue ptn_internal_compact(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnCountSeenArrays seen;
+    ptn_count_seen_arrays_init(&seen);
+    for (size_t i = 0; i < argc; i++) {
+        if (!ptn_compact_collect_value(runtime, result.as.array, args[i], i + 1, &seen, line)) {
+            ptn_count_seen_arrays_free(&seen);
+            ptn_value_destroy(&result);
+            return ptn_null();
+        }
+    }
+    ptn_count_seen_arrays_free(&seen);
+    return result;
+}
+
 static int ptn_array_callback_predicate_matches(
     PtnRuntime *runtime,
     PtnValue callback,
@@ -8774,7 +9058,7 @@ static PtnValue ptn_internal_printf(PtnRuntime *runtime, size_t argc, const PtnV
         return formatted;
     }
     PtnValue string_value = ptn_value_deref(formatted);
-    fwrite(string_value.as.string.data, 1, string_value.as.string.len, stdout);
+    ptn_output_write(runtime, (const char *)string_value.as.string.data, string_value.as.string.len);
     if (string_value.as.string.len > (size_t)INT64_MAX) {
         ptn_value_drop(&formatted);
         ptn_abort_out_of_memory();
@@ -8900,7 +9184,7 @@ static PtnValue ptn_internal_vprintf(PtnRuntime *runtime, size_t argc, const Ptn
         return formatted;
     }
     PtnValue string_value = ptn_value_deref(formatted);
-    fwrite(string_value.as.string.data, 1, string_value.as.string.len, stdout);
+    ptn_output_write(runtime, (const char *)string_value.as.string.data, string_value.as.string.len);
     if (string_value.as.string.len > (size_t)INT64_MAX) {
         ptn_value_drop(&formatted);
         ptn_abort_out_of_memory();
@@ -16295,7 +16579,7 @@ static PtnValue ptn_internal_exit(PtnRuntime *runtime, size_t argc, const PtnVal
         PtnValue value = ptn_value_deref(args[0]);
         if (value.type == PTN_STRING) {
             if (value.as.string.len != 0) {
-                fwrite(value.as.string.data, 1, value.as.string.len, stdout);
+                ptn_output_write(runtime, (const char *)value.as.string.data, value.as.string.len);
             }
         } else if (value.type == PTN_INT) {
             status = (int)value.as.integer;
@@ -16305,6 +16589,7 @@ static PtnValue ptn_internal_exit(PtnRuntime *runtime, size_t argc, const PtnVal
             status = (int)value.as.floating;
         }
     }
+    ptn_output_buffer_flush_all(runtime);
     fflush(stdout);
     exit(status);
     return ptn_null();
@@ -18018,12 +18303,128 @@ static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, c
     return ptn_int(previous_level);
 }
 
+static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->output_buffers_len == 0) {
+        return NULL;
+    }
+    return &root->output_buffers[root->output_buffers_len - 1];
+}
+
+static PtnValue ptn_internal_ob_start(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    int has_callback = 0;
+    PtnValue callback = ptn_null();
+    if (argc >= 1) {
+        PtnValue resolved = ptn_value_deref(args[0]);
+        if (resolved.type != PTN_NULL) {
+            callback = ptn_internal_expect_callback_arg(runtime, "ob_start", 1, "callback", args[0]);
+            has_callback = 1;
+        }
+    }
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    ptn_output_buffer_push(runtime, has_callback, callback);
+    if (has_callback) {
+        ptn_value_destroy(&callback);
+    }
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_ob_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)args;
     (void)line;
-    return ptn_bool(0);
+    PtnOutputBuffer *buffer = ptn_output_buffer_top(runtime);
+    if (buffer == NULL) {
+        return ptn_bool(0);
+    }
+    return ptn_output_buffer_contents_value(buffer);
+}
+
+static PtnValue ptn_internal_ob_get_length(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnOutputBuffer *buffer = ptn_output_buffer_top(runtime);
+    if (buffer == NULL) {
+        return ptn_bool(0);
+    }
+    if (buffer->buffer.len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)buffer->buffer.len);
+}
+
+static PtnValue ptn_internal_ob_get_level(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    size_t level = root == NULL ? 0 : root->output_buffers_len;
+    if (level > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)level);
+}
+
+static PtnValue ptn_internal_ob_list_handlers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (root == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < root->output_buffers_len; i++) {
+        PtnOutputBuffer *buffer = &root->output_buffers[i];
+        PtnValue name = buffer->has_callback
+            ? ptn_owned_string(ptn_callable_output_name(buffer->callback))
+            : ptn_string("default output handler");
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), name);
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_ob_end_clean(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    return ptn_bool(ptn_output_buffer_close(runtime, 0, line));
+}
+
+static PtnValue ptn_internal_ob_end_flush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    return ptn_bool(ptn_output_buffer_close(runtime, 1, line));
+}
+
+static PtnValue ptn_internal_ob_get_clean(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    PtnOutputBuffer *buffer = ptn_output_buffer_top(runtime);
+    if (buffer == NULL) {
+        return ptn_bool(0);
+    }
+    PtnValue contents = ptn_output_buffer_contents_value(buffer);
+    (void)ptn_output_buffer_close(runtime, 0, line);
+    return contents;
+}
+
+static PtnValue ptn_internal_ob_get_flush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    PtnOutputBuffer *buffer = ptn_output_buffer_top(runtime);
+    if (buffer == NULL) {
+        return ptn_bool(0);
+    }
+    PtnValue contents = ptn_output_buffer_contents_value(buffer);
+    (void)ptn_output_buffer_close(runtime, 1, line);
+    return contents;
 }
 
 static PtnCallFrame *ptn_current_call_frame(PtnRuntime *runtime, const char *function_name) {
@@ -19191,7 +19592,15 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "next", 1, 1, ptn_internal_next },
         { "nl2br", 1, 2, ptn_internal_nl2br },
         { "number_format", 1, 4, ptn_internal_number_format },
+        { "ob_end_clean", 0, 0, ptn_internal_ob_end_clean },
+        { "ob_end_flush", 0, 0, ptn_internal_ob_end_flush },
+        { "ob_get_clean", 0, 0, ptn_internal_ob_get_clean },
         { "ob_get_contents", 0, 0, ptn_internal_ob_get_contents },
+        { "ob_get_flush", 0, 0, ptn_internal_ob_get_flush },
+        { "ob_get_length", 0, 0, ptn_internal_ob_get_length },
+        { "ob_get_level", 0, 0, ptn_internal_ob_get_level },
+        { "ob_list_handlers", 0, 0, ptn_internal_ob_list_handlers },
+        { "ob_start", 0, 3, ptn_internal_ob_start },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "opendir", 1, 2, ptn_internal_opendir },
         { "ord", 1, 1, ptn_internal_ord },
@@ -21358,91 +21767,6 @@ static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, c
     free(property_name);
     ptn_string_operand_free(property_operand);
     return ptn_bool(exists);
-}
-
-static void ptn_compact_emit_invalid_argument_warning(
-    PtnRuntime *runtime,
-    size_t position,
-    PtnValue value,
-    size_t line
-) {
-    value = ptn_value_deref(value);
-    const char *given = value.type == PTN_OBJECT
-        ? value.as.object->class_name
-        : ptn_offset_container_type_name(value);
-    char message[160];
-    int written = snprintf(
-        message,
-        sizeof(message),
-        "compact(): Argument #%zu must be string or array of strings, %s given",
-        position,
-        given
-    );
-    if (written < 0 || (size_t)written >= sizeof(message)) {
-        ptn_abort_out_of_memory();
-    }
-    ptn_emit_warning(&runtime->diagnostics, message, line);
-}
-
-static void ptn_compact_emit_undefined_variable_warning(
-    PtnRuntime *runtime,
-    PtnStringOperand name,
-    size_t line
-) {
-    int needed = snprintf(NULL, 0, "compact(): Undefined variable $%.*s", (int)name.len, name.data);
-    if (needed < 0) {
-        ptn_abort_out_of_memory();
-    }
-    char *message = malloc((size_t)needed + 1);
-    if (message == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    snprintf(message, (size_t)needed + 1, "compact(): Undefined variable $%.*s", (int)name.len, name.data);
-    ptn_emit_warning(&runtime->diagnostics, message, line);
-    free(message);
-}
-
-static void ptn_compact_collect(
-    PtnRuntime *runtime,
-    PtnValue result,
-    PtnValue spec,
-    size_t position,
-    size_t line
-) {
-    spec = ptn_value_deref(spec);
-    if (spec.type == PTN_ARRAY) {
-        for (size_t i = 0; i < spec.as.array->len; i++) {
-            ptn_compact_collect(runtime, result, spec.as.array->entries[i].value, position, line);
-        }
-        return;
-    }
-    if (spec.type != PTN_STRING) {
-        ptn_compact_emit_invalid_argument_warning(runtime, position, spec, line);
-        return;
-    }
-
-    PtnStringOperand name = ptn_value_to_string_operand(spec);
-    char *lookup_name = ptn_duplicate_string_len(name.data, name.len);
-    PtnLookupResult lookup = ptn_runtime_read_variable_quiet(runtime, lookup_name);
-    free(lookup_name);
-    if (lookup.exists) {
-        ptn_array_set_entry(
-            result.as.array,
-            ptn_array_string_key_len(name.data, name.len),
-            ptn_value_clone(ptn_value_deref(lookup.value))
-        );
-    } else if (!(name.len == 4 && memcmp(name.data, "this", 4) == 0)) {
-        ptn_compact_emit_undefined_variable_warning(runtime, name, line);
-    }
-    ptn_string_operand_free(name);
-}
-
-static PtnValue ptn_internal_compact(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    for (size_t i = 0; i < argc; i++) {
-        ptn_compact_collect(runtime, result, args[i], i + 1, line);
-    }
-    return result;
 }
 
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

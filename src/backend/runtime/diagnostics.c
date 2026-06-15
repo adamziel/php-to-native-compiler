@@ -602,6 +602,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->free_object_ids = NULL;
     runtime->free_object_ids_len = 0;
     runtime->free_object_ids_capacity = 0;
+    runtime->output_buffers = NULL;
+    runtime->output_buffers_len = 0;
+    runtime->output_buffers_capacity = 0;
+    runtime->output_buffer_callback_depth = 0;
     runtime->method_dispatch = NULL;
     runtime->declared_method_exists = NULL;
     runtime->class_scope_allows = NULL;

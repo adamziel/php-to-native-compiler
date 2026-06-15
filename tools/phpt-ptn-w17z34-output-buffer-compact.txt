@@ -1,0 +1,2 @@
+# bucket: output-buffer-compact rows=1
+ext/standard/tests/array/bug71220.phpt
