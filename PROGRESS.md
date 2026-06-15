@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-y4f1 COW/reference sort/object walk row pack | 72 | 59 |
 | ptn-w17z.31 iterable/DNF type row pack | 27 | 27 |
 | ptn-w17z.29 SPL iterator wrapper row pack | 7 | 7 |
 | ptn-50g7 COW/reference array-walk and sort row pack | 10 | 10 |
@@ -45,6 +46,15 @@ Current hook: `ptn-50g7` final focused runs:
 `.runtime/ptn-50g7-final-cow-foreach/summary-20260615T183512Z.txt`.
 Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
+
+## 2026-06-15 ptn-y4f1 COW/Reference Sort/Object Walk Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Broad COW/reference frontier baseline (`.runtime/ptn-y4f1-before-cow-frontier/summary-20260615T181430Z.txt`) | 46 selected / 39 runnable / 7 classified | 37 |
+| Hook-start array-internal COW baseline (`.runtime/ptn-y4f1-before-array-internal/summary-20260615T182512Z.txt`) | 72 selected / 61 runnable / 11 classified | 52 |
+| Final rebased array-internal COW run (`.runtime/ptn-y4f1-postrebase-array-internal/summary-20260615T192945Z.txt`) | 72 selected / 61 runnable / 11 classified | 59 |
+| Integrated array-internal COW run (`.runtime/merge-ptn-y4f1-array-internal/summary-20260615T201659Z.txt`) | 72 selected / 61 runnable / 11 classified | 59 |
 
 ## 2026-06-15 ptn-w17z.31 Iterable/DNF Type Row Pack
 
