@@ -168,8 +168,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `Class::CONST`/`self::CONST` reads, dynamic `$class::CONST` reads, and
   `constant()`/`defined()` lookup; typed/non-public/inherited constants remain
   bounded.
-- Stream resources from `STDIN`/`STDOUT`/`STDERR` and `fopen()`/`fclose()` are
-  boxed with type, dump, and array-key cast behavior; `file_get_contents()`
+- Stream resources from `STDIN`/`STDOUT`/`STDERR`, filesystem
+  `fopen()`/`fclose()`, and `php://memory`/`php://temp` wrapper streams are
+  boxed with type, dump, and array-key cast behavior; `php://temp` supports
+  max-memory spill thresholds, append/overwrite modes, sparse writes, seeking,
+  truncation, fstat size metadata, and PHP/TEMP metadata. `file_get_contents()`
   reads filesystem paths into binary-safe strings with bounded offset/length
   handling; stream internals cover `feof()`, `fflush()`, `fgetc()`, `fgets()`,
   `fread()`, `fpassthru()`, `fseek()`/`ftell()`/`rewind()`, `fstat()`,

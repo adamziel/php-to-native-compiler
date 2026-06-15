@@ -798,11 +798,7 @@ static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
         case PTN_EXCEPTION:
             return ptn_string("object");
         case PTN_RESOURCE:
-            return ptn_string(
-                (value.as.resource->stream == NULL && value.as.resource->directory == NULL)
-                    ? "resource (closed)"
-                    : "resource"
-            );
+            return ptn_string(ptn_resource_is_open(value.as.resource) ? "resource" : "resource (closed)");
         case PTN_REFERENCE:
             return ptn_string("unknown type");
     }

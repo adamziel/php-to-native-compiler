@@ -1006,13 +1006,15 @@ Post-RC architecture remains explicit rather than hidden:
   `is_iterable()` for arrays in the current non-`Traversable` object subset,
   `is_finite()`,
   `is_infinite()`, `is_nan()`, and `is_resource()` for open stream resources.
-- `fopen()` opens filesystem-backed streams through the shared resource value
-  model, and `fclose()` closes those resources. Closed stream resources remain
-  boxed values for `gettype()` and `var_dump()` but no longer satisfy
-  `is_resource()`. `stream_get_meta_data()` reports the current file-stream
-  metadata slice for open `fopen()` streams: timeout/blocking/eof flags,
-  wrapper and stream type, original mode and URI, unread byte count, and
-  seekability.
+- `fopen()` opens filesystem-backed streams plus `php://memory` and
+  `php://temp` wrapper streams through the shared resource value model, and
+  `fclose()` closes those resources. Closed stream resources remain boxed
+  values for `gettype()` and `var_dump()` but no longer satisfy
+  `is_resource()`. `php://memory` and `php://temp` preserve independent
+  read/write positions, append semantics, sparse writes, truncation, fstat size,
+  and `php://temp/maxmemory:{n}` spill thresholds; `stream_get_meta_data()`
+  reports file-stream metadata for filesystem streams and PHP/MEMORY or
+  PHP/TEMP metadata for wrapper streams.
 - `file_get_contents()` reads filesystem-backed paths into binary-safe strings
   using the shared file-read helper, with bounded `offset` and nullable
   `length` handling plus PHP-style negative-length `ValueError`.

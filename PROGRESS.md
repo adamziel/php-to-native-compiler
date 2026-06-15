@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
 | ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
 | ptn-w17z.22 compile-time include path variables | 1 | 1 |
@@ -19,14 +20,22 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:09Z.
-Measured latest: `ptn-w17z.30` foreach mutation visibility row pack selected 11 rows, kept 7 runnable, classified 4 eval dynamic-code rows, and passed 7/7 runnable rows in the focused run.
-Latest: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack. Previous: `ptn-w17z.2` advances single-array sort flag rows to 72/78.
+Refresh: 2026-06-15T17:15Z.
+Measured latest: `ptn-vqg1` temp stream wrappers row pack selected 3 rows, kept 3 runnable, and passed 3/3 in the focused run.
+Latest: `ptn-vqg1` completed the checked-in temp stream wrappers row pack. Previous: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack.
 
-Current hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
+Current hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
+`.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
+Previous hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
 `.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`.
-Previous hook: `ptn-w17z.2` sort flags row pack passed 72/78 at
-`.runtime/merge-ptn-w17z2-sort-flags/summary-20260615T164329Z.txt`.
+
+## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-vqg1-temp-streams-before/run-20260615T160452Z-manifest.log`) | 3 selected / 3 runnable | 0 |
+| Final rebased focused run (`.runtime/ptn-vqg1-temp-streams-rebased/run-20260615T162130Z-manifest.log`) | 3 selected / 3 runnable | 3 |
+| Integrated focused merge run (`.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`) | 3 selected / 3 runnable | 3 |
 
 ## 2026-06-15 ptn-w17z.30 Foreach Mutation Visibility Row Pack
 
