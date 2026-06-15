@@ -6,10 +6,10 @@ use crate::ast::{
     ClosureUseCapture, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
     IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind,
-    MatchArm, MethodDecl, Program, PromotedProperty, PropertyDecl, PropertyVisibility,
-    ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
-    StringInterpolationIndex, StringPart, SwitchCase, TraitDecl, TraitUseDecl, TypeHint, UnaryOp,
-    UnsetTarget,
+    MatchArm, MethodDecl, Program, PromotedProperty, PropertyDecl, PropertyTypeHint,
+    PropertyTypeKind, PropertyVisibility, ReferenceTarget, Statement, StaticLocalDeclaration,
+    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TraitDecl, TraitUseDecl,
+    TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -1353,7 +1353,8 @@ impl Parser<'_> {
         attributes: ParsedAttributes,
         class_name: &str,
     ) -> Result<Vec<StaticPropertyDecl>> {
-        let has_type = self.parse_optional_property_type_hint()?;
+        let type_hint = self.parse_optional_property_type_hint()?;
+        let has_type = type_hint.is_some();
         if set_visibility_span.is_some() && !has_type {
             let property_name = match &self.peek().kind {
                 TokenKind::Variable(name) => name.as_str(),
@@ -1369,6 +1370,7 @@ impl Parser<'_> {
         let mut properties = vec![self.parse_static_property_declaration(
             visibility,
             set_visibility,
+            type_hint.clone(),
             attributes,
             class_name,
         )?];
@@ -1377,6 +1379,7 @@ impl Parser<'_> {
             properties.push(self.parse_static_property_declaration(
                 visibility,
                 set_visibility,
+                type_hint.clone(),
                 attributes,
                 class_name,
             )?);
@@ -1445,7 +1448,8 @@ impl Parser<'_> {
         allow_property_hooks: bool,
         class_name: &str,
     ) -> Result<Vec<PropertyDecl>> {
-        let has_type = self.parse_optional_property_type_hint()?;
+        let type_hint = self.parse_optional_property_type_hint()?;
+        let has_type = type_hint.is_some();
         if is_readonly && !has_type {
             let property_name = match &self.peek().kind {
                 TokenKind::Variable(name) => name.as_str(),
@@ -1472,6 +1476,7 @@ impl Parser<'_> {
             visibility,
             set_visibility,
             is_readonly,
+            type_hint.clone(),
             attributes,
             allow_property_hooks,
             class_name,
@@ -1491,6 +1496,7 @@ impl Parser<'_> {
                 visibility,
                 set_visibility,
                 is_readonly,
+                type_hint.clone(),
                 attributes,
                 allow_property_hooks,
                 class_name,
@@ -1576,6 +1582,7 @@ impl Parser<'_> {
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
         is_readonly: bool,
+        type_hint: Option<PropertyTypeHint>,
         attributes: ParsedAttributes,
         allow_property_hooks: bool,
         class_name: &str,
@@ -1630,6 +1637,7 @@ impl Parser<'_> {
                     visibility,
                     set_visibility,
                     is_readonly,
+                    type_hint,
                     has_override_attribute: attributes.has_override,
                     value: None,
                     span: token.span,
@@ -1662,6 +1670,7 @@ impl Parser<'_> {
                 visibility,
                 set_visibility,
                 is_readonly,
+                type_hint,
                 has_override_attribute: attributes.has_override,
                 value,
                 span: token.span,
@@ -1674,6 +1683,7 @@ impl Parser<'_> {
         &mut self,
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
+        type_hint: Option<PropertyTypeHint>,
         attributes: ParsedAttributes,
         class_name: &str,
     ) -> Result<StaticPropertyDecl> {
@@ -1708,6 +1718,7 @@ impl Parser<'_> {
             name,
             visibility,
             set_visibility,
+            type_hint,
             has_override_attribute: attributes.has_override,
             value,
             span: token.span,
@@ -1734,60 +1745,133 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn parse_optional_property_type_hint(&mut self) -> Result<bool> {
+    fn parse_optional_property_type_hint(&mut self) -> Result<Option<PropertyTypeHint>> {
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
-            return Ok(false);
+            return Ok(None);
         }
         if !self.peek_starts_property_type_hint() {
-            return Ok(false);
+            return Ok(None);
         }
-        self.parse_property_type_atom()?;
+        let mut type_hint = self.parse_property_type_atom()?;
+        let mut complex = false;
         while matches!(self.peek().kind, TokenKind::Pipe | TokenKind::Ampersand) {
-            self.advance();
-            self.parse_property_type_atom()?;
+            let separator = match self.advance().kind {
+                TokenKind::Pipe => "|",
+                TokenKind::Ampersand => "&",
+                _ => unreachable!("property type separator checked"),
+            };
+            let atom = self.parse_property_type_atom()?;
+            complex = true;
+            type_hint.text.push_str(separator);
+            type_hint.text.push_str(&atom.text);
         }
-        Ok(true)
+        if complex {
+            type_hint.kind = PropertyTypeKind::Unsupported;
+            type_hint.allows_null = false;
+        }
+        Ok(Some(type_hint))
     }
 
-    fn parse_property_type_atom(&mut self) -> Result<()> {
-        if matches!(self.peek().kind, TokenKind::Question) {
+    fn parse_property_type_atom(&mut self) -> Result<PropertyTypeHint> {
+        let allows_null = if matches!(self.peek().kind, TokenKind::Question) {
             self.advance();
-        }
-        if matches!(self.peek().kind, TokenKind::Backslash) {
-            self.advance();
-        }
+            true
+        } else {
+            false
+        };
+        let nullable_prefix = if allows_null { "?" } else { "" };
         match &self.peek().kind {
-            TokenKind::Null
-            | TokenKind::IntType
-            | TokenKind::IntegerType
-            | TokenKind::FloatType
-            | TokenKind::DoubleType
-            | TokenKind::StringType
-            | TokenKind::BinaryType
-            | TokenKind::BoolType
-            | TokenKind::BooleanType
-            | TokenKind::Identifier(_) => {
+            TokenKind::Null => {
                 self.advance();
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}null"),
+                    kind: PropertyTypeKind::Null,
+                    allows_null,
+                })
             }
-            _ => {
-                return Err(Diagnostic::new(
-                    "expected property type",
-                    Some(self.peek().span),
-                ));
-            }
-        }
-        while matches!(self.peek().kind, TokenKind::Backslash) {
-            self.advance();
-            if matches!(self.peek().kind, TokenKind::Identifier(_)) {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
                 self.advance();
-            } else {
-                return Err(Diagnostic::new(
-                    "expected property type",
-                    Some(self.peek().span),
-                ));
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}array"),
+                    kind: PropertyTypeKind::Array,
+                    allows_null,
+                })
             }
+            TokenKind::IntType | TokenKind::IntegerType => {
+                let text = property_type_token_text(&self.advance().kind);
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}{text}"),
+                    kind: PropertyTypeKind::Int,
+                    allows_null,
+                })
+            }
+            TokenKind::FloatType | TokenKind::DoubleType => {
+                let text = property_type_token_text(&self.advance().kind);
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}{text}"),
+                    kind: PropertyTypeKind::Float,
+                    allows_null,
+                })
+            }
+            TokenKind::StringType | TokenKind::BinaryType => {
+                let text = property_type_token_text(&self.advance().kind);
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}{text}"),
+                    kind: PropertyTypeKind::String,
+                    allows_null,
+                })
+            }
+            TokenKind::BoolType | TokenKind::BooleanType => {
+                let text = property_type_token_text(&self.advance().kind);
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}{text}"),
+                    kind: PropertyTypeKind::Bool,
+                    allows_null,
+                })
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("mixed") => {
+                self.advance();
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}mixed"),
+                    kind: PropertyTypeKind::Mixed,
+                    allows_null,
+                })
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("object") => {
+                self.advance();
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}object"),
+                    kind: PropertyTypeKind::Object,
+                    allows_null,
+                })
+            }
+            TokenKind::Identifier(name)
+                if matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "callable" | "false" | "iterable" | "never" | "static" | "true" | "void"
+                ) =>
+            {
+                let name = name.clone();
+                self.advance();
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}{name}"),
+                    kind: PropertyTypeKind::Unsupported,
+                    allows_null,
+                })
+            }
+            TokenKind::Backslash | TokenKind::Identifier(_) => {
+                let (class_name, _) = self.parse_resolved_class_name("expected property type")?;
+                Ok(PropertyTypeHint {
+                    text: format!("{nullable_prefix}{class_name}"),
+                    kind: PropertyTypeKind::Class(class_name),
+                    allows_null,
+                })
+            }
+            _ => Err(Diagnostic::new(
+                "expected property type",
+                Some(self.peek().span),
+            )),
         }
-        Ok(())
     }
 
     fn parse_method_decl(
@@ -5681,6 +5765,81 @@ fn is_unsupported_builtin_type_hint_name(name: &str) -> bool {
     )
 }
 
+fn property_type_token_text(kind: &TokenKind) -> &'static str {
+    match kind {
+        TokenKind::IntType => "int",
+        TokenKind::IntegerType => "integer",
+        TokenKind::FloatType => "float",
+        TokenKind::DoubleType => "double",
+        TokenKind::StringType => "string",
+        TokenKind::BinaryType => "binary",
+        TokenKind::BoolType => "bool",
+        TokenKind::BooleanType => "boolean",
+        _ => "mixed",
+    }
+}
+
+fn property_type_hint_from_type_hint(type_hint: &TypeHint) -> PropertyTypeHint {
+    match type_hint {
+        TypeHint::Null => PropertyTypeHint {
+            text: "null".to_string(),
+            kind: PropertyTypeKind::Null,
+            allows_null: false,
+        },
+        TypeHint::Array => PropertyTypeHint {
+            text: "array".to_string(),
+            kind: PropertyTypeKind::Array,
+            allows_null: false,
+        },
+        TypeHint::Int => PropertyTypeHint {
+            text: "int".to_string(),
+            kind: PropertyTypeKind::Int,
+            allows_null: false,
+        },
+        TypeHint::Float => PropertyTypeHint {
+            text: "float".to_string(),
+            kind: PropertyTypeKind::Float,
+            allows_null: false,
+        },
+        TypeHint::String => PropertyTypeHint {
+            text: "string".to_string(),
+            kind: PropertyTypeKind::String,
+            allows_null: false,
+        },
+        TypeHint::Bool => PropertyTypeHint {
+            text: "bool".to_string(),
+            kind: PropertyTypeKind::Bool,
+            allows_null: false,
+        },
+        TypeHint::Mixed => PropertyTypeHint {
+            text: "mixed".to_string(),
+            kind: PropertyTypeKind::Mixed,
+            allows_null: false,
+        },
+        TypeHint::Callable | TypeHint::Union(_) => PropertyTypeHint {
+            text: type_hint_key(type_hint),
+            kind: PropertyTypeKind::Unsupported,
+            allows_null: false,
+        },
+        TypeHint::Void | TypeHint::Never => PropertyTypeHint {
+            text: "mixed".to_string(),
+            kind: PropertyTypeKind::Unsupported,
+            allows_null: false,
+        },
+        TypeHint::Nullable(inner) => {
+            let mut nested = property_type_hint_from_type_hint(inner);
+            nested.text = format!("?{}", nested.text);
+            nested.allows_null = true;
+            nested
+        }
+        TypeHint::Class(name) => PropertyTypeHint {
+            text: name.clone(),
+            kind: PropertyTypeKind::Class(name.clone()),
+            allows_null: false,
+        },
+    }
+}
+
 fn nullable_type_hint(type_hint: TypeHint, span: SourceSpan) -> Result<TypeHint> {
     match type_hint {
         TypeHint::Null
@@ -6447,6 +6606,10 @@ fn promoted_properties_from_constructor(
                 visibility: promoted.visibility,
                 set_visibility: promoted.set_visibility,
                 is_readonly: class_is_readonly || promoted.is_readonly,
+                type_hint: parameter
+                    .type_hint
+                    .as_ref()
+                    .map(property_type_hint_from_type_hint),
                 has_override_attribute: promoted.has_override_attribute,
                 value: None,
                 span: promoted.span,

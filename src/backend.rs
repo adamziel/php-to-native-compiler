@@ -12,8 +12,8 @@ use crate::ir::{
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
     FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, Instruction,
     ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    MatchArm as IrMatchArm, Module, PropertyVisibility, ReferenceTarget, TraitDecl, TypeHint,
-    UnaryOp, ValueExpr,
+    MatchArm as IrMatchArm, Module, PropertyTypeHint, PropertyTypeKind, PropertyVisibility,
+    ReferenceTarget, TraitDecl, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -499,19 +499,19 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "    PtnValue previous = argc > previous_index ? ptn_value_clone_deref(args[previous_index]) : ptn_null();\n",
     );
-    out.push_str("    PtnValue assigned = ptn_object_declare_property(runtime, object, \"message\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, message, line);\n");
+    out.push_str("    PtnValue assigned = ptn_object_declare_property(runtime, object, \"message\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, message, line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
-    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"code\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, code, line);\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"code\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, code, line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
-    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"file\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, ptn_owned_string(ptn_duplicate_string(runtime->source_path != NULL ? runtime->source_path : \"\")), line);\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"file\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, ptn_owned_string(ptn_duplicate_string(runtime->source_path != NULL ? runtime->source_path : \"\")), line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
-    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"line\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, ptn_int((int64_t)line), line);\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"line\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, ptn_int((int64_t)line), line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
-    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"previous\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, previous, line);\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"previous\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, previous, line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
     out.push_str("    if (ptn_exception_name_equal(declaring_class, \"ErrorException\")) {\n");
     out.push_str("        PtnValue severity = argc >= 3 ? ptn_int(ptn_value_deref(args[2]).type == PTN_INT ? ptn_value_deref(args[2]).as.integer : PTN_E_ERROR) : ptn_int(PTN_E_ERROR);\n");
-    out.push_str("        assigned = ptn_object_declare_property(runtime, object, \"severity\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, severity, line);\n");
+    out.push_str("        assigned = ptn_object_declare_property(runtime, object, \"severity\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, severity, line);\n");
     out.push_str("        ptn_value_destroy(&assigned);\n");
     out.push_str("        ptn_value_destroy(&severity);\n");
     out.push_str("    }\n");
@@ -913,7 +913,7 @@ fn emit_user_functions(
                 out.push_str(&parameter_source);
                 out.push_str(".type == PTN_REFERENCE) {\n");
                 if let Some(temp) = &parameter_cast_temp {
-                    out.push_str("        ptn_reference_assign(");
+                    out.push_str("        ptn_reference_assign(caller_runtime, ");
                     out.push_str(&parameter_source);
                     out.push_str(".as.reference, ");
                     out.push_str(temp);
@@ -1239,7 +1239,7 @@ fn emit_variadic_parameter_binding(
             out.push_str("        if (args[");
             out.push_str(&index_temp);
             out.push_str("].type == PTN_REFERENCE) {\n");
-            out.push_str("            ptn_reference_assign(args[");
+            out.push_str("            ptn_reference_assign(caller_runtime, args[");
             out.push_str(&index_temp);
             out.push_str("].as.reference, ");
             out.push_str(&value_temp);
@@ -1719,7 +1719,7 @@ fn emit_return_scalar_cast_boundary(out: &mut String, return_type: &TypeHint, re
         out.push_str("(ptn_return_value);\n");
         out.push_str("    if (ptn_return_value.type == PTN_REFERENCE) {\n");
         out.push_str(
-            "        ptn_reference_assign(ptn_return_value.as.reference, ptn_typed_return_value);\n",
+            "        ptn_reference_assign(caller_runtime, ptn_return_value.as.reference, ptn_typed_return_value);\n",
         );
         out.push_str("        ptn_value_drop(&ptn_typed_return_value);\n");
         out.push_str("    } else {\n");
@@ -11752,11 +11752,21 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(if property.is_readonly { "1" } else { "0" });
             out.push_str(", ");
-            out.push_str(if property.is_readonly && property.value.is_none() {
-                "0"
-            } else {
-                "1"
-            });
+            out.push_str(c_property_type_kind(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(&c_property_type_class_name(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(&c_property_type_text(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(
+                if property.type_hint.is_some() && property.value.is_none() {
+                    "0"
+                } else {
+                    "1"
+                },
+            );
             out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(", ");
@@ -15853,6 +15863,42 @@ fn c_property_visibility(visibility: PropertyVisibility) -> &'static str {
         PropertyVisibility::Public => "PTN_PROPERTY_PUBLIC",
         PropertyVisibility::Protected => "PTN_PROPERTY_PROTECTED",
         PropertyVisibility::Private => "PTN_PROPERTY_PRIVATE",
+    }
+}
+
+fn c_property_type_kind(type_hint: Option<&PropertyTypeHint>) -> &'static str {
+    match type_hint.map(|hint| &hint.kind) {
+        Some(PropertyTypeKind::Null) => "PTN_PROPERTY_TYPE_NULL",
+        Some(PropertyTypeKind::Array) => "PTN_PROPERTY_TYPE_ARRAY",
+        Some(PropertyTypeKind::Int) => "PTN_PROPERTY_TYPE_INT",
+        Some(PropertyTypeKind::Float) => "PTN_PROPERTY_TYPE_FLOAT",
+        Some(PropertyTypeKind::String) => "PTN_PROPERTY_TYPE_STRING",
+        Some(PropertyTypeKind::Bool) => "PTN_PROPERTY_TYPE_BOOL",
+        Some(PropertyTypeKind::Mixed) => "PTN_PROPERTY_TYPE_MIXED",
+        Some(PropertyTypeKind::Object) => "PTN_PROPERTY_TYPE_OBJECT",
+        Some(PropertyTypeKind::Class(_)) => "PTN_PROPERTY_TYPE_CLASS",
+        Some(PropertyTypeKind::Unsupported) | None => "PTN_PROPERTY_TYPE_NONE",
+    }
+}
+
+fn c_property_type_class_name(type_hint: Option<&PropertyTypeHint>) -> String {
+    match type_hint.map(|hint| &hint.kind) {
+        Some(PropertyTypeKind::Class(class_name)) => c_optional_string(Some(class_name)),
+        _ => "NULL".to_string(),
+    }
+}
+
+fn c_property_type_text(type_hint: Option<&PropertyTypeHint>) -> String {
+    type_hint
+        .map(|hint| c_optional_string(Some(&hint.text)))
+        .unwrap_or_else(|| "NULL".to_string())
+}
+
+fn c_property_type_allows_null(type_hint: Option<&PropertyTypeHint>) -> &'static str {
+    if type_hint.is_some_and(|hint| hint.allows_null) {
+        "1"
+    } else {
+        "0"
     }
 }
 

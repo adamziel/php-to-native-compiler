@@ -1707,17 +1707,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 exit
             }
             if (!ptn_has_override_attribute &&
-                !readonly_class_context &&
-                line !~ /(^|[[:space:]])(public|protected|private)[[:space:]]+readonly[[:space:]]+/ &&
-                line !~ /(^|[[:space:]])readonly[[:space:]]+(public|protected|private)[[:space:]]+/ &&
-                line !~ /(^|[[:space:]])(public|protected|private|var)[[:space:]]+static[[:space:]]+[$][a-z_]/ &&
-                line !~ /(^|[[:space:]])static[[:space:]]+(public|protected|private|var)?[[:space:]]*[$][a-z_]/ &&
-                line ~ /(^|[[:space:]])(public|protected|private|var|static|readonly)[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
-                print "unsupported-typed-property-metadata\trequires typed property metadata, outside PTN modeled property declarations"
-                found = 1
-                exit
-            }
-            if (!ptn_has_override_attribute &&
                 line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
                 print "unsupported-typed-property-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
                 found = 1

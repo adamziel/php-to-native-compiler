@@ -1,0 +1,1 @@
+ext/standard/tests/array/extract_typed_ref.phpt

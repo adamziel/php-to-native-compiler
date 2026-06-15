@@ -23,7 +23,7 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_deref(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone_deref(PtnValue value);
-static PTN_UNUSED void ptn_reference_assign(PtnReference *reference, PtnValue value);
+static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *reference, PtnValue value);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_drop(PtnValue *value);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
@@ -312,11 +312,11 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
     ptn_array_index_insert(array, key, entry_index);
 }
 
-static PTN_UNUSED void ptn_array_write_entry(PtnArray *array, PtnArrayKey key, PtnValue value) {
+static PTN_UNUSED void ptn_array_write_entry(PtnRuntime *runtime, PtnArray *array, PtnArrayKey key, PtnValue value) {
     size_t index = ptn_array_find_key(array, key);
     if (index < array->len && array->entries[index].value.type == PTN_REFERENCE) {
         ptn_array_update_next_auto_key(array, key);
-        ptn_reference_assign(array->entries[index].value.as.reference, value);
+        ptn_reference_assign(runtime, array->entries[index].value.as.reference, value);
         ptn_value_destroy(&value);
         ptn_array_key_free(key);
         return;
@@ -575,7 +575,11 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     const char *declaring_class,
     PtnPropertyVisibility read_visibility,
     PtnPropertyVisibility set_visibility,
-    int is_readonly
+    int is_readonly,
+    PtnPropertyTypeKind type_kind,
+    const char *type_class_name,
+    const char *type_text,
+    int type_allows_null
 ) {
     if (object == NULL || property == NULL || declaring_class == NULL) {
         return;
@@ -598,6 +602,14 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             object->property_metadata[i].is_unset = 0;
             free(object->property_metadata[i].last_type_name);
             object->property_metadata[i].last_type_name = NULL;
+            free(object->property_metadata[i].type_class_name);
+            free(object->property_metadata[i].type_text);
+            object->property_metadata[i].type_kind = type_kind;
+            object->property_metadata[i].type_class_name =
+                type_class_name == NULL ? NULL : ptn_duplicate_string(type_class_name);
+            object->property_metadata[i].type_text =
+                type_text == NULL ? NULL : ptn_duplicate_string(type_text);
+            object->property_metadata[i].type_allows_null = type_allows_null;
             return;
         }
     }
@@ -629,6 +641,10 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->is_readonly = is_readonly;
     metadata->is_unset = 0;
     metadata->last_type_name = NULL;
+    metadata->type_kind = type_kind;
+    metadata->type_class_name = type_class_name == NULL ? NULL : ptn_duplicate_string(type_class_name);
+    metadata->type_text = type_text == NULL ? NULL : ptn_duplicate_string(type_text);
+    metadata->type_allows_null = type_allows_null;
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {
@@ -722,6 +738,8 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         free(object->property_metadata[i].display_name);
         free(object->property_metadata[i].declaring_class);
         free(object->property_metadata[i].last_type_name);
+        free(object->property_metadata[i].type_class_name);
+        free(object->property_metadata[i].type_text);
     }
     free(object->property_metadata);
     ptn_array_free(object->properties);

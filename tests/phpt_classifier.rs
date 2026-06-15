@@ -959,6 +959,18 @@ fn phpt_classifier_keeps_asymmetric_property_visibility_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_simple_typed_property_rows_runnable() {
+    let classification = classify(
+        "--TEST--\ntyped property\n--FILE--\n<?php\nclass Bag { public int $value; }\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_readonly_property_rows_runnable() {
     let cases = [
         "--TEST--\nreadonly property\n--FILE--\n<?php\nclass Bag { public readonly int $value; }\n--EXPECT--\n",
@@ -1056,12 +1068,6 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "--TEST--\nreadonly indirect mutation\n--FILE--\n<?php\nclass Bag { public readonly array $value; }\n$bag = new Bag();\n$ref =& $bag->value;\n--EXPECT--\n",
             "unsupported-readonly-property-metadata\t",
             "requires indirect readonly property mutation diagnostics",
-        ),
-        (
-            "typed property metadata",
-            "--TEST--\ntyped property\n--FILE--\n<?php\nclass Bag { public int $value; }\n--EXPECT--\n",
-            "unsupported-typed-property-metadata\t",
-            "requires typed property metadata",
         ),
         (
             "typed class constant metadata",

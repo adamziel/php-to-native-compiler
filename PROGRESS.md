@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.36 extract typed references | 1 | 1 |
 | ptn-2cij ENV/CLEAN SKIPIF preconditions | 33 | 0 |
 | ptn-vj4r class_alias namespace metadata | 5 | 5 |
 | ptn-144g parser residual row pack | 2 | 2 |
@@ -27,14 +28,21 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:37Z.
-Measured latest: `ptn-vj4r` class_alias namespace metadata selected 5 rows, kept 5 runnable, and passed 5/5 in the focused run.
-Latest: `ptn-vj4r` completed the checked-in class_alias namespace metadata row pack. Previous: `ptn-144g` completed the checked-in parser residual row pack.
+Refresh: 2026-06-15T18:54Z.
+Measured latest: `ptn-w17z.36` extract typed references selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
+Latest: `ptn-w17z.36` completed the checked-in extract typed references row pack. Previous: `ptn-vj4r` completed the checked-in class_alias namespace metadata row pack.
 
-Current hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
+Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
+`.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
+Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
 `.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
-Previous hook: `ptn-144g` parser residual row pack passed 2/2 at
-`.runtime/merge-ptn-144g-parser-residuals/summary-20260615T182723Z.txt`.
+
+## 2026-06-15 ptn-w17z.36 Extract Typed References
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final rebased focused acceptance row (`.runtime/ptn-w17z36-extract-typed-ref-postrebase/run-20260615T173320Z-manifest.log`) | 1 selected / 1 runnable | 1 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`) | 1 selected / 1 runnable | 1 |
 
 ## 2026-06-15 ptn-2cij ENV/CLEAN SKIPIF Preconditions
 
