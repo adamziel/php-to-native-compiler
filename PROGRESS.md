@@ -67,6 +67,42 @@ Previous hook: `ptn-w17z.35` compact closure this row pack passed 2/2 at
 | Final rebased branch focused (`.runtime/ptn-w17z16-3-exception-format-after-rebase/summary-20260615T153535Z.txt`) | 13 selected / 12 runnable / 1 classified | 12 |
 | Integrated focused merge run (`.runtime/merge-ptn-w17z16-3-exception-format/summary-20260615T160318Z.txt`) | 13 selected / 12 runnable / 1 classified | 12 |
 
+## 2026-06-15 ptn-w17z.32 SORT_REGULAR Mixed Ordering Residuals
+
+Final checked-in focused manifest:
+`tools/phpt-ptn-w17z2-sort-flags-row-pack.txt`.
+
+Implemented behavior: sort mutators now use a Zend-style hybrid sort over PTN
+array entries with stable original-index fallback, so PHP's non-transitive mixed
+comparisons produce PHP-compatible sort order. `SORT_REGULAR` key sorting now
+compares mixed integer/string keys as PHP values. Sort value comparison preserves
+PHP's unordered compare result for arrays, NaN, and adjacent mixed values instead
+of collapsing it to equality. Loose comparison now treats `null` as equal only to
+numeric zero, `false`, `""`, and empty arrays, and lower than non-zero numerics
+regardless of sign. Same-class object ordering now compares declared/dynamic
+property tables, and string sort modes emit PHP-style array-to-string conversion
+warnings during sort comparisons.
+
+| Evidence | Result |
+| --- | --- |
+| Hook-start residual slice `.runtime/ptn-w17z32-before/summary-20260615T144637Z.txt` | 6 selected, 6 runnable, 0 passed, 6 failed |
+| Final residual slice `.runtime/ptn-w17z32-after-string-warning-residuals/summary-20260615T151223Z.txt` | 6 selected, 6 runnable, 6 passed, 0 failed |
+| Object sort slice `.runtime/ptn-w17z32-object-sort-after/summary-20260615T153243Z.txt` | 8 selected, 8 runnable, 8 passed, 0 failed |
+| Final focused row pack after rebase `.runtime/ptn-w17z32-sort-pack-rebased/summary-20260615T160348Z.txt` | 78 selected, 78 runnable, 78 passed, 0 failed |
+| `cargo fmt --check` | passed |
+| `cargo test compile_sort_regular_flags_to_native_binary --test compile_native -- --nocapture` | passed |
+| `cargo test compile_loose_scalar_comparison_edges_to_native_binary --test compile_native -- --nocapture` | passed |
+| `cargo test compile_object_clone_magic_and_comparison_to_native_binary --test compile_native -- --nocapture` | passed |
+
+Named residual rows now passing:
+
+- `ext/standard/tests/array/sort/internal_sorts_basic.phpt`
+- `ext/standard/tests/array/sort/krsort_variation8.phpt`
+- `ext/standard/tests/array/sort/ksort_variation8.phpt`
+- `ext/standard/tests/array/sort/rsort_variation11.phpt`
+- `ext/standard/tests/array/sort/sort_variation11.phpt`
+- `ext/standard/tests/array/sort/sort_variation9.phpt`
+
 ## 2026-06-15 ptn-kia6 By-Reference Boundary Row Pack
 
 Final checked-in focused manifest:
