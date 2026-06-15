@@ -2220,6 +2220,17 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
             free(key);
             return ptn_value_clone_deref(value);
         }
+        if (runtime->class_constant_initializer != NULL &&
+            runtime->class_constant_initializer(runtime, lookup_class_name, constant)) {
+            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+                free(key);
+                return ptn_null();
+            }
+            if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+                free(key);
+                return ptn_value_clone_deref(value);
+            }
+        }
         free(key);
         lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
     }

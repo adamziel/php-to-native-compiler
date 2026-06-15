@@ -81,6 +81,10 @@ pub fn emit_c(module: &Module) -> String {
         .classes
         .iter()
         .any(|class| class_magic_debug_info_method(class, &module.classes).is_some());
+    let has_declared_class_constants = module
+        .classes
+        .iter()
+        .any(|class| !class.constants.is_empty());
     let needs_magic_property_dispatch = needs_magic_property_read
         || needs_magic_property_isset
         || needs_magic_property_get
@@ -125,6 +129,16 @@ pub fn emit_c(module: &Module) -> String {
         &module.traits,
         runtime_requirements.internal_function_dispatch,
     );
+    if has_declared_class_constants {
+        emit_class_constant_initializer_helper(
+            &mut out,
+            &module.classes,
+            &module.functions,
+            &module.includes,
+            &module.source_file,
+            &module.source_dir,
+        );
+    }
     if runtime_requirements.internal_function_dispatch {
         emit_callable_validation_helpers(&mut out);
     }
@@ -194,6 +208,11 @@ pub fn emit_c(module: &Module) -> String {
     if needs_magic_debug_info {
         out.push_str("    runtime.magic_debug_info = ptn_declared_magic_debug_info;\n");
     }
+    if has_declared_class_constants {
+        out.push_str(
+            "    runtime.class_constant_initializer = ptn_declared_class_constant_initializer;\n",
+        );
+    }
     out.push_str("    runtime.class_scope_allows = ptn_declared_class_scope_allows;\n");
     out.push_str("    runtime.declared_class_is_readonly = ptn_declared_class_is_readonly;\n");
     out.push_str("    runtime.source_path = \"");
@@ -215,7 +234,6 @@ pub fn emit_c(module: &Module) -> String {
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
-    emit_class_constant_initializers(&mut out, &mut values, &module.classes);
     emit_static_property_initializers(&mut out, &mut values, &module.classes);
     for warning in collect_module_control_warnings(module) {
         emit_control_warning(
@@ -1566,26 +1584,50 @@ fn emit_static_property_initializers(
     }
 }
 
-fn emit_class_constant_initializers(
+fn emit_class_constant_initializer_helper(
     out: &mut String,
-    values: &mut ValueEmitter,
     classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    includes: &[IncludeFile],
+    source_file: &str,
+    source_dir: &str,
 ) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_constant_initializer(PtnRuntime *runtime_ptr, const char *class_name, const char *constant_name) {\n",
+    );
+    out.push_str("#define runtime (*runtime_ptr)\n");
+    let mut values = ValueEmitter::new(source_file, source_dir, functions, classes, includes);
     for class in classes {
+        if class.constants.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
         let previous_class_name = values.current_class_name.replace(class.name.clone());
         for constant in &class.constants {
+            out.push_str("        if (strcmp(constant_name, \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\") == 0) {\n");
             let value_temp = values.emit_const_materialized_value(out, &constant.value);
-            out.push_str("    ptn_runtime_define_class_constant(&runtime, \"");
+            out.push_str("            ptn_runtime_define_class_constant(&runtime, \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\", \"");
             out.push_str(&c_string(&constant.name));
             out.push_str("\", ");
             out.push_str(&value_temp);
             out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &value_temp);
+            emit_value_cleanup(out, "            ", &value_temp);
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
         }
         values.current_class_name = previous_class_name;
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
     }
+    out.push_str("#undef runtime\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
