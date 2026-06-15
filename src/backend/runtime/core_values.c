@@ -573,6 +573,8 @@ struct PtnRuntime {
     PtnSymbolTable *global_symbols;
     PtnSymbolTable owned_constants;
     PtnSymbolTable *constants;
+    PtnSymbolTable owned_class_aliases;
+    PtnSymbolTable *class_aliases;
     PtnSymbolTable owned_class_constants;
     PtnSymbolTable *class_constants;
     PtnSymbolTable owned_static_properties;
@@ -680,6 +682,10 @@ static PTN_UNUSED int ptn_cow_debug_counter(const char *name, size_t *out);
 static PTN_UNUSED void ptn_cow_debug_assert_named_counter(const char *name, int64_t expected);
 static PTN_UNUSED void ptn_cow_debug_assert_balanced(void);
 static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime);
+static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(
+    PtnRuntime *runtime,
+    const char *class_name
+);
 
 typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
@@ -779,6 +785,15 @@ static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_
 static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
+static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *class_name);
+static PTN_UNUSED int ptn_runtime_interface_exists(
+    PtnRuntime *runtime,
+    const char *interface_name
+);
+static PTN_UNUSED int ptn_runtime_class_or_interface_exists(
+    PtnRuntime *runtime,
+    const char *class_name
+);
 static PTN_UNUSED PtnValue ptn_reflection_class_new(
     PtnRuntime *runtime,
     size_t argc,

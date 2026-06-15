@@ -31031,6 +31031,104 @@ ns1\Foo::baz();
 }
 
 #[test]
+fn compile_class_alias_metadata_queries_to_native_binary() {
+    let root = temp_dir("ptn-native-class-alias-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-alias-metadata.php");
+    let output = root.join("class-alias-metadata-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Base {}
+class Original extends Base {
+    public $value = 1;
+
+    public function ping() {
+        return "pong";
+    }
+}
+
+var_dump(class_alias('Original', 'Alias'));
+var_dump(class_alias('Alias', 'Nested\\Alias'));
+var_dump(class_exists('\\Alias'));
+var_dump(class_exists('alias'));
+var_dump(class_exists('Original'));
+var_dump(get_parent_class('Alias'));
+var_dump(method_exists('Alias', 'PING'));
+var_dump(property_exists('Nested\\Alias', 'value'));
+$a = new Alias;
+$b = new \Nested\Alias;
+var_dump(get_class($a));
+var_dump($a instanceof Original);
+var_dump($a instanceof Alias);
+var_dump($b instanceof Base);
+var_dump($b instanceof \Nested\Alias);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+string(4) \"Base\"\n\
+bool(true)\n\
+bool(true)\n\
+string(8) \"Original\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_namespaced_class_alias_metadata_queries_to_native_binary() {
+    let root = temp_dir("ptn-native-namespace-class-alias-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespace-class-alias-metadata.php");
+    let output = root.join("namespace-class-alias-metadata-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace foo;
+
+class foo {}
+
+class_alias(__NAMESPACE__ . '\\foo', 'bar');
+var_dump(class_exists('\\bar'));
+var_dump(class_exists('bar'));
+var_dump(class_exists('foo\\bar'));
+var_dump(class_exists('foo\\foo'));
+var_dump(class_exists('foo'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_namespaced_function_and_constant_imports_to_native_binary() {
     let root = temp_dir("ptn-native-namespace-function-constant-imports");
     fs::create_dir_all(&root).unwrap();

@@ -19432,6 +19432,7 @@ static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
 static const char *ptn_property_exists_target_type_name(PtnValue value);
+static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_checkdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_compact(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -19580,6 +19581,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "chop", 1, 2, ptn_internal_chop },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
+        { "class_alias", 2, 3, ptn_internal_class_alias },
         { "class_exists", 1, 2, ptn_internal_class_exists },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "closedir", 1, 1, ptn_internal_closedir },
@@ -19994,6 +19996,79 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
         || ptn_builtin_exception_class_name(class_name) != NULL;
+}
+
+static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *class_name) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    return ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name);
+}
+
+static PTN_UNUSED int ptn_runtime_interface_exists(PtnRuntime *runtime, const char *interface_name) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, interface_name);
+    return ptn_declared_interface_exists(resolved_name) || ptn_internal_interface_exists_name(resolved_name);
+}
+
+static PTN_UNUSED int ptn_runtime_class_or_interface_exists(PtnRuntime *runtime, const char *class_name) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    return ptn_declared_class_exists(resolved_name)
+        || ptn_declared_interface_exists(resolved_name)
+        || ptn_internal_class_exists_name(resolved_name)
+        || ptn_internal_interface_exists_name(resolved_name);
+}
+
+static void ptn_emit_class_alias_warning(
+    PtnRuntime *runtime,
+    const char *format,
+    const char *name,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, format, name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, format, name);
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static PTN_UNUSED int ptn_runtime_register_class_alias(
+    PtnRuntime *runtime,
+    const char *source_name,
+    const char *alias_name,
+    size_t line
+) {
+    const char *source_lookup_name = ptn_symbol_name_without_leading_slash(source_name);
+    const char *source_resolved_name = ptn_runtime_resolve_class_alias(runtime, source_lookup_name);
+    if (!ptn_runtime_class_or_interface_exists(runtime, source_resolved_name)) {
+        ptn_emit_class_alias_warning(runtime, "Class \"%s\" not found", source_lookup_name, line);
+        return 0;
+    }
+
+    const char *alias_lookup_name = ptn_symbol_name_without_leading_slash(alias_name);
+    if (ptn_runtime_class_or_interface_exists(runtime, alias_lookup_name)) {
+        ptn_emit_class_alias_warning(
+            runtime,
+            "Cannot declare class %s, because the name is already in use",
+            alias_lookup_name,
+            line
+        );
+        return 0;
+    }
+
+    PtnSymbolTable *aliases = ptn_runtime_class_alias_table(runtime);
+    if (aliases == NULL) {
+        return 0;
+    }
+    char *key = ptn_class_alias_key(alias_lookup_name);
+    PtnValue value = ptn_owned_string(ptn_duplicate_string(source_resolved_name));
+    ptn_symbols_set(aliases, key, value);
+    ptn_value_destroy(&value);
+    free(key);
+    return 1;
 }
 
 static int ptn_reflection_class_method_exists(const char *method_name) {
@@ -21623,24 +21698,32 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
     return value;
 }
 
+static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *source_name = ptn_value_to_string(args[0]);
+    char *alias_name = ptn_value_to_string(args[1]);
+    int registered = ptn_runtime_register_class_alias(runtime, source_name, alias_name, line);
+    free(alias_name);
+    free(source_name);
+    return ptn_bool(registered);
+}
+
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
-    int exists = ptn_declared_class_exists(lookup_name) || ptn_internal_class_exists_name(lookup_name);
+    int exists = ptn_runtime_class_exists(runtime, lookup_name);
     free(name);
     return ptn_bool(exists);
 }
 
 static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
-    int exists = ptn_declared_interface_exists(lookup_name);
+    int exists = ptn_runtime_interface_exists(runtime, lookup_name);
     free(name);
     return ptn_bool(exists);
 }
@@ -21824,7 +21907,7 @@ static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, 
         class_name = ptn_duplicate_string(target.as.object->class_name);
     } else if (target.type == PTN_STRING) {
         class_name = ptn_value_to_string(target);
-        if (!ptn_declared_class_exists(class_name) && !ptn_internal_class_exists_name(class_name)) {
+        if (!ptn_runtime_class_exists(runtime, class_name)) {
             free(class_name);
             ptn_throw_get_parent_class_type_error(runtime, target);
             return ptn_null();
@@ -21834,7 +21917,8 @@ static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, 
         return ptn_null();
     }
 
-    const char *parent_name = ptn_declared_class_parent_name(class_name);
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    const char *parent_name = ptn_declared_class_parent_name(resolved_class_name);
     free(class_name);
     if (parent_name == NULL) {
         return ptn_bool(0);
@@ -21854,7 +21938,6 @@ static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const
 }
 
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     PtnValue target = ptn_value_deref(args[0]);
@@ -21867,7 +21950,8 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
         class_name = ptn_value_to_string(target);
     }
     char *method_name = ptn_value_to_string(args[1]);
-    int exists = ptn_internal_class_method_exists(class_name, method_name);
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    int exists = ptn_internal_class_method_exists(resolved_class_name, method_name);
     free(method_name);
     free(class_name);
     return ptn_bool(exists);
@@ -21928,7 +22012,8 @@ static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, c
             ptn_object_public_property_slot_exists(target.as.object, property_name);
     } else if (target.type == PTN_STRING) {
         char *class_name = ptn_value_to_string(target);
-        exists = ptn_declared_class_property_exists(class_name, property_name);
+        const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+        exists = ptn_declared_class_property_exists(resolved_class_name, property_name);
         free(class_name);
     } else if (target.type == PTN_CLOSURE) {
         exists = ptn_declared_class_property_exists("Closure", property_name);

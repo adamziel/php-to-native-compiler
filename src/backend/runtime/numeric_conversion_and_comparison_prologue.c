@@ -3,6 +3,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->global_symbols = caller_runtime->global_symbols;
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = caller_runtime->constants;
+    ptn_symbols_init(&runtime->owned_class_aliases);
+    runtime->class_aliases = caller_runtime->class_aliases;
     ptn_symbols_init(&runtime->owned_class_constants);
     runtime->class_constants = caller_runtime->class_constants;
     ptn_symbols_init(&runtime->owned_static_properties);
@@ -133,6 +135,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free(&runtime->owned_static_property_read_visibility);
     ptn_symbols_free(&runtime->owned_static_properties);
     ptn_symbols_free(&runtime->owned_class_constants);
+    ptn_symbols_free(&runtime->owned_class_aliases);
     ptn_symbols_free(&runtime->owned_constants);
     ptn_symbols_free(&runtime->symbols);
     if (runtime->lifecycle_root == runtime) {
@@ -1905,6 +1908,64 @@ static PTN_UNUSED char ptn_ascii_lower_char(char ch) {
 
 static PTN_UNUSED const char *ptn_symbol_name_without_leading_slash(const char *name) {
     return name[0] == '\\' ? name + 1 : name;
+}
+
+static char *ptn_class_alias_key(const char *class_name) {
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(class_name);
+    size_t len = strlen(lookup_name);
+    char *key = malloc(len + 1);
+    if (key == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        key[i] = ptn_ascii_lower_char(lookup_name[i]);
+    }
+    key[len] = '\0';
+    return key;
+}
+
+static PtnSymbolTable *ptn_runtime_class_alias_table(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->class_aliases != NULL) {
+        return root->class_aliases;
+    }
+    return runtime == NULL ? NULL : runtime->class_aliases;
+}
+
+static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    if (class_name == NULL) {
+        return NULL;
+    }
+    const char *current = ptn_symbol_name_without_leading_slash(class_name);
+    PtnSymbolTable *aliases = ptn_runtime_class_alias_table(runtime);
+    if (aliases == NULL) {
+        return current;
+    }
+
+    for (size_t depth = 0; depth < 32; depth++) {
+        char *key = ptn_class_alias_key(current);
+        PtnValue alias_value;
+        int found = ptn_symbols_get(aliases, key, &alias_value);
+        free(key);
+        if (!found) {
+            return current;
+        }
+
+        alias_value = ptn_value_deref(alias_value);
+        if (alias_value.type != PTN_STRING) {
+            return current;
+        }
+        const char *next = (const char *)alias_value.as.string.data;
+        if (ptn_ascii_case_equal(current, next)) {
+            return current;
+        }
+        current = next;
+    }
+
+    return current;
 }
 
 static PTN_UNUSED int ptn_ascii_case_equal_span_to_string(

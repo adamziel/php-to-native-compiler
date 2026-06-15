@@ -415,28 +415,35 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_value_satisfies_class_type_hint(PtnValue value, const char *expected_class_name) {\n",
+        "\nstatic PTN_UNUSED int ptn_value_satisfies_class_type_hint(PtnRuntime *runtime, PtnValue value, const char *expected_class_name) {\n",
     );
     out.push_str("    value = ptn_value_deref(value);\n");
+    out.push_str("    const char *resolved_expected_class_name = ptn_runtime_resolve_class_alias(runtime, expected_class_name);\n");
     out.push_str("    if (value.type == PTN_OBJECT) {\n");
     out.push_str("        if (ptn_object_is_generator(value.as.object)) {\n");
     out.push_str(
-        "            return ptn_ascii_case_equal(expected_class_name, \"Generator\") ||\n",
+        "            return ptn_ascii_case_equal(resolved_expected_class_name, \"Generator\") ||\n",
     );
-    out.push_str("                ptn_ascii_case_equal(expected_class_name, \"Iterator\") ||\n");
-    out.push_str("                ptn_ascii_case_equal(expected_class_name, \"Traversable\");\n");
-    out.push_str("        }\n");
-    out.push_str("        return ptn_declared_class_is_same_or_descendant(value.as.object->class_name, expected_class_name) ||\n");
-    out.push_str("            ptn_declared_class_implements_interface(value.as.object->class_name, expected_class_name) ||\n");
     out.push_str(
-        "            ptn_builtin_class_implements_interface(value.as.object->class_name, expected_class_name);\n",
+        "                ptn_ascii_case_equal(resolved_expected_class_name, \"Iterator\") ||\n",
+    );
+    out.push_str(
+        "                ptn_ascii_case_equal(resolved_expected_class_name, \"Traversable\");\n",
+    );
+    out.push_str("        }\n");
+    out.push_str("        return ptn_declared_class_is_same_or_descendant(value.as.object->class_name, resolved_expected_class_name) ||\n");
+    out.push_str("            ptn_declared_class_implements_interface(value.as.object->class_name, resolved_expected_class_name) ||\n");
+    out.push_str(
+        "            ptn_builtin_class_implements_interface(value.as.object->class_name, resolved_expected_class_name);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (value.type == PTN_EXCEPTION) {\n");
-    out.push_str("        return ptn_exception_type_matches_name(value.as.exception->class_name, expected_class_name);\n");
+    out.push_str("        return ptn_exception_type_matches_name(value.as.exception->class_name, resolved_expected_class_name);\n");
     out.push_str("    }\n");
     out.push_str("    if (value.type == PTN_CLOSURE) {\n");
-    out.push_str("        return ptn_ascii_case_equal(expected_class_name, \"Closure\");\n");
+    out.push_str(
+        "        return ptn_ascii_case_equal(resolved_expected_class_name, \"Closure\");\n",
+    );
     out.push_str("    }\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
@@ -818,7 +825,7 @@ fn emit_user_functions(
                     out.push_str(&parameter_source);
                     out.push_str(").type != PTN_NULL && ");
                 }
-                out.push_str("!ptn_value_satisfies_class_type_hint(");
+                out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, ");
                 out.push_str(&parameter_source);
                 out.push_str(", \"");
                 out.push_str(&c_string(class_name));
@@ -1139,7 +1146,7 @@ fn emit_variadic_parameter_binding(
             out.push_str(&index_temp);
             out.push_str("]).type != PTN_NULL && ");
         }
-        out.push_str("!ptn_value_satisfies_class_type_hint(args[");
+        out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, args[");
         out.push_str(&index_temp);
         out.push_str("], \"");
         out.push_str(&c_string(class_name));
@@ -1511,7 +1518,9 @@ fn emit_return_type_boundary(
             emit_return_scalar_cast_boundary(out, return_type, return_by_ref);
         }
         TypeHint::Class(class_name) => {
-            out.push_str("    if (!ptn_value_satisfies_class_type_hint(ptn_return_value, \"");
+            out.push_str(
+                "    if (!ptn_value_satisfies_class_type_hint(&runtime, ptn_return_value, \"",
+            );
             out.push_str(&c_string(class_name));
             out.push_str("\")) {\n");
             out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
@@ -1584,7 +1593,7 @@ fn emit_nullable_return_type_boundary(
             out.push_str("    }\n");
         }
         TypeHint::Class(class_name) => {
-            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL && !ptn_value_satisfies_class_type_hint(ptn_return_value, \"");
+            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL && !ptn_value_satisfies_class_type_hint(&runtime, ptn_return_value, \"");
             out.push_str(&c_string(class_name));
             out.push_str("\")) {\n");
             out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
@@ -11335,15 +11344,62 @@ impl ValueEmitter {
                 true,
             );
         } else {
-            self.emit_runtime_new_object(
-                out,
-                &result_temp,
-                class_name,
-                arguments,
-                argument_unpacks,
-                line,
-                true,
-            );
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(";\n");
+            let class_lookup_temp = self.next_temp();
+            out.push_str("    const char *");
+            out.push_str(&class_lookup_temp);
+            out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+            out.push_str(&c_string(class_name));
+            out.push_str("\");\n");
+
+            let declared_classes = self.classes.clone();
+            let mut emitted_branch = false;
+            for declared_class in declared_classes {
+                out.push_str("    ");
+                if emitted_branch {
+                    out.push_str("} else ");
+                }
+                out.push_str("if (ptn_ascii_case_equal(");
+                out.push_str(&class_lookup_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&declared_class.name));
+                out.push_str("\")) {\n");
+                self.emit_declared_new_object(
+                    out,
+                    &result_temp,
+                    &declared_class,
+                    arguments,
+                    argument_unpacks,
+                    line,
+                    false,
+                );
+                emitted_branch = true;
+            }
+            if emitted_branch {
+                out.push_str("    } else {\n");
+                self.emit_runtime_new_object(
+                    out,
+                    &result_temp,
+                    &class_lookup_temp,
+                    arguments,
+                    argument_unpacks,
+                    line,
+                    false,
+                );
+                out.push_str("    }\n");
+            } else {
+                self.emit_runtime_new_object(
+                    out,
+                    &result_temp,
+                    &class_lookup_temp,
+                    arguments,
+                    argument_unpacks,
+                    line,
+                    false,
+                );
+            }
         }
         result_temp
     }
@@ -11380,6 +11436,12 @@ impl ValueEmitter {
         out.push_str(" = ptn_symbol_name_without_leading_slash(");
         out.push_str(&class_name_temp);
         out.push_str(");\n");
+        let class_resolved_temp = self.next_temp();
+        out.push_str("    const char *");
+        out.push_str(&class_resolved_temp);
+        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, ");
+        out.push_str(&class_lookup_temp);
+        out.push_str(");\n");
 
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -11393,7 +11455,7 @@ impl ValueEmitter {
                 out.push_str("} else ");
             }
             out.push_str("if (ptn_ascii_case_equal(");
-            out.push_str(&class_lookup_temp);
+            out.push_str(&class_resolved_temp);
             out.push_str(", \"");
             out.push_str(&c_string(&declared_class.name));
             out.push_str("\")) {\n");
@@ -11413,7 +11475,7 @@ impl ValueEmitter {
             self.emit_runtime_new_object(
                 out,
                 &result_temp,
-                &format!("{class_name_temp}"),
+                &class_resolved_temp,
                 arguments,
                 argument_unpacks,
                 line,
@@ -11424,7 +11486,7 @@ impl ValueEmitter {
             self.emit_runtime_new_object(
                 out,
                 &result_temp,
-                &class_name_temp,
+                &class_resolved_temp,
                 arguments,
                 argument_unpacks,
                 line,
@@ -11810,6 +11872,12 @@ impl ValueEmitter {
         out.push_str(" = ptn_value_deref(");
         out.push_str(&expr_temp);
         out.push_str(");\n");
+        let expected_class_temp = self.next_temp();
+        out.push_str("    const char *");
+        out.push_str(&expected_class_temp);
+        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\");\n");
 
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -11822,13 +11890,13 @@ impl ValueEmitter {
         out.push_str(&result_temp);
         out.push_str(" = ptn_bool(ptn_declared_class_is_same_or_descendant(");
         out.push_str(&resolved_temp);
-        out.push_str(".as.object->class_name, \"");
-        out.push_str(&c_string(class_name));
-        out.push_str("\") || ptn_declared_class_implements_interface(");
+        out.push_str(".as.object->class_name, ");
+        out.push_str(&expected_class_temp);
+        out.push_str(") || ptn_declared_class_implements_interface(");
         out.push_str(&resolved_temp);
-        out.push_str(".as.object->class_name, \"");
-        out.push_str(&c_string(class_name));
-        out.push_str("\"));\n");
+        out.push_str(".as.object->class_name, ");
+        out.push_str(&expected_class_temp);
+        out.push_str("));\n");
         out.push_str("    } else if (");
         out.push_str(&resolved_temp);
         out.push_str(".type == PTN_EXCEPTION) {\n");
@@ -11836,9 +11904,9 @@ impl ValueEmitter {
         out.push_str(&result_temp);
         out.push_str(" = ptn_bool(ptn_exception_type_matches_name(");
         out.push_str(&resolved_temp);
-        out.push_str(".as.exception->class_name, \"");
-        out.push_str(&c_string(class_name));
-        out.push_str("\"));\n");
+        out.push_str(".as.exception->class_name, ");
+        out.push_str(&expected_class_temp);
+        out.push_str("));\n");
         out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &expr_temp);
         result_temp

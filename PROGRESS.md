@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-vj4r class_alias namespace metadata | 5 | 5 |
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
 | ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
@@ -20,14 +21,38 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:15Z.
-Measured latest: `ptn-vqg1` temp stream wrappers row pack selected 3 rows, kept 3 runnable, and passed 3/3 in the focused run.
-Latest: `ptn-vqg1` completed the checked-in temp stream wrappers row pack. Previous: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack.
+Refresh: 2026-06-15T17:22Z.
+Measured latest: `ptn-vj4r` class_alias namespace metadata selected 5 rows, kept 5 runnable, and passed 5/5 in the focused run.
+Latest: `ptn-vj4r` stores runtime `class_alias()` metadata and resolves aliases through generic class/interface metadata queries, runtime object construction, `instanceof`, and class type-hint checks. Previous: `ptn-vqg1` completed the checked-in temp stream wrappers row pack.
 
-Current hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
+Current hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
+`.runtime/ptn-vj4r-class-alias-metadata-row-pack-rebased2/summary-20260615T172044Z.txt`.
+Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
 `.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
-Previous hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
-`.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`.
+
+## 2026-06-15 ptn-vj4r Class Alias Namespace Metadata
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final rebased focused row pack (`.runtime/ptn-vj4r-class-alias-metadata-row-pack-rebased2/summary-20260615T172044Z.txt`) | 5 selected / 5 runnable | 5 |
+
+Final checked-in focused manifest:
+`tools/phpt-ptn-vj4r-class-alias-metadata-row-pack.txt`.
+
+Implemented behavior: modeled `class_alias()` is available through the
+internal-function registry, stores case-insensitive runtime class alias
+metadata, and shares that table across function frames. Runtime
+`class_exists()`, `interface_exists()`, `get_parent_class()`,
+`method_exists()`, and `property_exists()` now resolve aliases before generic
+declared/internal metadata checks. Literal and dynamic `new`, `instanceof`,
+and user class type-hint checks also resolve aliases before dispatching through
+their existing metadata paths.
+
+Verification:
+
+- `cargo fmt --check`
+- `cargo test class_alias --test compile_native -- --nocapture`
+- `PHPT_PROGRESS_DIR=.runtime/ptn-vj4r-class-alias-metadata-row-pack-rebased2 timeout 900s tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-vj4r-class-alias-metadata-row-pack.txt`
 
 ## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
 
