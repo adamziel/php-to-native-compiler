@@ -172,6 +172,9 @@ typedef struct {
 #define PTN_SEEK_SET SEEK_SET
 #define PTN_SEEK_CUR SEEK_CUR
 #define PTN_SEEK_END SEEK_END
+#define PTN_STREAM_FILTER_READ 1
+#define PTN_STREAM_FILTER_WRITE 2
+#define PTN_STREAM_FILTER_ALL 3
 #define PTN_LC_CTYPE 0
 #define PTN_LC_NUMERIC 1
 #define PTN_LC_TIME 2
@@ -188,6 +191,7 @@ typedef struct PtnObject PtnObject;
 typedef struct PtnReference PtnReference;
 typedef struct PtnRuntime PtnRuntime;
 typedef struct PtnResource PtnResource;
+typedef struct PtnStreamFilter PtnStreamFilter;
 typedef struct PtnTraceFrame PtnTraceFrame;
 typedef struct PtnTryFrame PtnTryFrame;
 
@@ -211,6 +215,12 @@ typedef enum {
     PTN_ARRAY_KEY_INT,
     PTN_ARRAY_KEY_STRING
 } PtnArrayKeyType;
+
+typedef enum {
+    PTN_STREAM_FILTER_STRING_ROT13,
+    PTN_STREAM_FILTER_STRING_TOUPPER,
+    PTN_STREAM_FILTER_STRING_TOLOWER
+} PtnStreamFilterKind;
 
 typedef struct {
     size_t refcount;
@@ -444,7 +454,15 @@ struct PtnResource {
     void *directory;
     char *stream_uri;
     char *stream_mode;
+    PtnStreamFilter *read_filters;
+    PtnStreamFilter *write_filters;
     int persistent;
+};
+
+struct PtnStreamFilter {
+    PtnStreamFilterKind kind;
+    char *name;
+    PtnStreamFilter *next;
 };
 
 typedef struct {
@@ -1169,6 +1187,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->directory = NULL;
     resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
     resource->stream_mode = mode == NULL ? NULL : ptn_duplicate_string(mode);
+    resource->read_filters = NULL;
+    resource->write_filters = NULL;
     resource->persistent = 0;
     return resource;
 }
@@ -1193,6 +1213,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->directory = directory;
     resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
     resource->stream_mode = ptn_duplicate_string("r");
+    resource->read_filters = NULL;
+    resource->write_filters = NULL;
     resource->persistent = 0;
     return resource;
 }
@@ -1212,8 +1234,19 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->directory = NULL;
     resource->stream_uri = NULL;
     resource->stream_mode = NULL;
+    resource->read_filters = NULL;
+    resource->write_filters = NULL;
     resource->persistent = 0;
     return resource;
+}
+
+static PTN_UNUSED void ptn_stream_filter_chain_free(PtnStreamFilter *filter) {
+    while (filter != NULL) {
+        PtnStreamFilter *next = filter->next;
+        free(filter->name);
+        free(filter);
+        filter = next;
+    }
 }
 
 static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
@@ -1263,6 +1296,8 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
         return;
     }
     ptn_resource_close(resource);
+    ptn_stream_filter_chain_free(resource->read_filters);
+    ptn_stream_filter_chain_free(resource->write_filters);
     free(resource->stream_uri);
     free(resource->stream_mode);
     free(resource);
@@ -1277,9 +1312,9 @@ static PTN_UNUSED PtnValue ptn_resource(PtnResource *resource) {
 }
 
 static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
-    static PtnResource stdin_resource = { SIZE_MAX, 1, "stream", NULL, NULL, NULL, NULL, 1 };
-    static PtnResource stdout_resource = { SIZE_MAX, 2, "stream", NULL, NULL, NULL, NULL, 1 };
-    static PtnResource stderr_resource = { SIZE_MAX, 3, "stream", NULL, NULL, NULL, NULL, 1 };
+    static PtnResource stdin_resource = { SIZE_MAX, 1, "stream", NULL, NULL, NULL, NULL, NULL, NULL, 1 };
+    static PtnResource stdout_resource = { SIZE_MAX, 2, "stream", NULL, NULL, NULL, NULL, NULL, NULL, 1 };
+    static PtnResource stderr_resource = { SIZE_MAX, 3, "stream", NULL, NULL, NULL, NULL, NULL, NULL, 1 };
     PtnResource *resource = &stdin_resource;
     if (id == 2) {
         resource = &stdout_resource;

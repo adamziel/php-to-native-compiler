@@ -1124,6 +1124,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_SEEK_END);
         return 1;
     }
+    if (strcmp(name, "STREAM_FILTER_READ") == 0) {
+        *out = ptn_int(PTN_STREAM_FILTER_READ);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_FILTER_WRITE") == 0) {
+        *out = ptn_int(PTN_STREAM_FILTER_WRITE);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_FILTER_ALL") == 0) {
+        *out = ptn_int(PTN_STREAM_FILTER_ALL);
+        return 1;
+    }
     if (strcmp(name, "STDIN") == 0) {
         *out = ptn_standard_stream_resource_value(1);
         return 1;

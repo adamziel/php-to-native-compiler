@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-utht filtered stream copy row pack | 4 | 4 |
 | ptn-w17z.34 output-buffer compact row | 1 | 1 |
 | ptn-w17z.35 compact closure this row pack | 2 | 2 |
 | ptn-w17z.33 extract globals refs row pack | 3 | 3 |
@@ -15,14 +16,43 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T15:48Z.
-Measured latest: `ptn-w17z.34` output-buffer compact row selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.34` completed the checked-in output-buffer compact row. Previous: `ptn-w17z.35` completed the checked-in compact closure this row pack at 2/2.
+Refresh: 2026-06-15T16:29Z.
+Measured latest: `ptn-utht` filtered stream copy row pack selected 4 rows, kept 4 runnable, and moved the focused pack from 0/4 on `origin/master` to 4/4 on the branch.
+Latest: `ptn-utht` completed the checked-in filtered stream copy row pack. Previous: `ptn-w17z.34` completed the checked-in output-buffer compact row at 1/1.
 
-Current hook: `ptn-w17z.34` output-buffer compact row passed 1/1 at
+Current hook: `ptn-utht` filtered stream copy row pack passed 4/4 runnable at
+`.runtime/ptn-utht-filtered-stream-copy-rebased/summary-20260615T162747Z.txt`.
+Previous hook: `ptn-w17z.34` output-buffer compact row passed 1/1 at
 `.runtime/merge-ptn-w17z34-output-buffer-compact/summary-20260615T162323Z.txt`.
-Previous hook: `ptn-w17z.35` compact closure this row pack passed 2/2 at
-`.runtime/merge-ptn-w17z35-compact-closure-this/summary-20260615T160939Z.txt`.
+
+## 2026-06-15 ptn-utht Filtered Stream Copy Row Pack
+
+Final checked-in focused manifest:
+`tools/phpt-ptn-utht-filtered-stream-copy.txt`.
+
+Implemented behavior: stream resources now carry reusable read/write filter
+chains. `stream_filter_append()` and `stream_filter_prepend()` attach built-in
+`string.rot13`, `string.toupper`, and `string.tolower` filters to read and/or
+write chains using `STREAM_FILTER_READ`, `STREAM_FILTER_WRITE`, and
+`STREAM_FILTER_ALL`; omitted or zero mode uses both chains, matching PHP's
+common default. `fread()`, `fgetc()`, `fgets()`, `fpassthru()`,
+`stream_get_contents()`, `stream_get_line()`, formatted stream writes, direct
+`fwrite()`/`fputs()`, `fputcsv()`, and `stream_copy_to_stream()` now route
+through the shared filtered stream helpers, so source read filters and
+destination write filters affect copied bytes while stream positions and copy
+counts stay tied to the consumed bytes.
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current master focused baseline (`/tmp/ptn-utht-before/.runtime/ptn-utht-filtered-stream-copy-before/summary-20260615T162046Z.txt`) | 4 selected / 4 runnable / 0 classified | 0 |
+| Final rebased branch focused (`.runtime/ptn-utht-filtered-stream-copy-rebased/summary-20260615T162747Z.txt`) | 4 selected / 4 runnable / 0 classified | 4 |
+
+Newly passing rows:
+
+- `ext/standard/tests/file/bug27619.phpt`
+- `ext/standard/tests/file/bug38086.phpt`
+- `ext/standard/tests/file/stream_copy_to_stream.phpt`
+- `ext/standard/tests/filters/basic.phpt`
 
 ## 2026-06-15 ptn-w17z.34 Output Buffer Compact Row
 

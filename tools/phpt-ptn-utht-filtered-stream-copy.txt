@@ -1,0 +1,7 @@
+# ptn-utht filtered stream copy/string-filter row pack.
+# Source bucket: php-src ext/standard file/filter rows around stream_copy_to_stream()
+# and built-in stream string filters.
+ext/standard/tests/file/bug27619.phpt
+ext/standard/tests/file/bug38086.phpt
+ext/standard/tests/file/stream_copy_to_stream.phpt
+ext/standard/tests/filters/basic.phpt

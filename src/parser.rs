@@ -8748,6 +8748,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "rewinddir"
             | "stream_context_create"
             | "stream_copy_to_stream"
+            | "stream_filter_append"
+            | "stream_filter_prepend"
             | "stream_get_contents"
             | "stream_get_line"
             | "tmpfile"
