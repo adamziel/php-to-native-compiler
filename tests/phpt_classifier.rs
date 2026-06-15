@@ -101,10 +101,21 @@ fn classify_with_options(
     for key in [
         "PTN_PHPT_AVAILABLE_LOCALES",
         "PTN_PHPT_PHP_INT_SIZE",
+        "PTN_PHPT_PHP_OS_FAMILY",
+        "PTN_PHPT_PHP_OS",
+        "PTN_PHPT_PHP_DEBUG",
+        "PTN_PHPT_PHP_ZTS",
         "SKIP_ASAN",
         "SKIP_MSAN",
         "SKIP_UBSAN",
         "SKIP_PERF_SENSITIVE",
+        "SKIP_SLOW_TESTS",
+        "SKIP_PRELOAD",
+        "SKIP_IO_CAPTURE_TESTS",
+        "USE_ZEND_ALLOC",
+        "USE_TRACKED_ALLOC",
+        "RUN_RESOURCE_HEAVY_TESTS",
+        "STACK_LIMIT_DEFAULTS_CHECK",
     ] {
         command.env_remove(key);
     }
@@ -282,6 +293,112 @@ fn phpt_classifier_models_static_skipif_preconditions() {
     assert!(
         classification.starts_with("skipif-precondition\t")
             && classification.contains("locale availability guard"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_models_common_platform_skipif_preconditions() {
+    let int_max = "--TEST--\nint max\n--SKIPIF--\n<?php if (PHP_INT_MAX <= 2147483647) die('skip only 64 bit'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification =
+        classify_with_harness_programs_and_env(int_max, true, &[("PTN_PHPT_PHP_INT_SIZE", "8")]);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PHP_INT_MAX"),
+        "{classification:?}"
+    );
+    let classification =
+        classify_with_harness_programs_and_env(int_max, true, &[("PTN_PHPT_PHP_INT_SIZE", "4")]);
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("PHP_INT_MAX guard"),
+        "{classification:?}"
+    );
+
+    let non_windows = "--TEST--\nnon windows\n--SKIPIF--\n<?php if (PHP_OS_FAMILY === 'Windows' && version_compare(PHP_VERSION, '8.4', '<')) die('skip windows'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs_and_env(
+        non_windows,
+        true,
+        &[("PTN_PHPT_PHP_OS_FAMILY", "Linux")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PHP_OS_FAMILY"),
+        "{classification:?}"
+    );
+
+    let windows_only = "--TEST--\nwindows only\n--SKIPIF--\n<?php if (PHP_OS_FAMILY !== 'Windows') die('skip Windows only'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs_and_env(
+        windows_only,
+        true,
+        &[("PTN_PHPT_PHP_OS_FAMILY", "Linux")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("PHP_OS_FAMILY guard"),
+        "{classification:?}"
+    );
+
+    let os_prefix = "--TEST--\nos prefix\n--SKIPIF--\n<?php if (substr(PHP_OS, 0, 3) == 'WIN') die('skip Windows'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification =
+        classify_with_harness_programs_and_env(os_prefix, true, &[("PTN_PHPT_PHP_OS", "Linux")]);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PHP_OS-prefix"),
+        "{classification:?}"
+    );
+
+    let debug = "--TEST--\ndebug\n--SKIPIF--\n<?php if (PHP_DEBUG) die('skip debug build'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification =
+        classify_with_harness_programs_and_env(debug, true, &[("PTN_PHPT_PHP_DEBUG", "0")]);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PHP_DEBUG"),
+        "{classification:?}"
+    );
+
+    let zts = "--TEST--\nzts\n--SKIPIF--\n<?php if (PHP_ZTS) die('skip zts build'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification =
+        classify_with_harness_programs_and_env(zts, true, &[("PTN_PHPT_PHP_ZTS", "0")]);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PHP_ZTS"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_models_common_environment_skipif_preconditions() {
+    let slow = "--TEST--\nslow\n--SKIPIF--\n<?php if (getenv('SKIP_SLOW_TESTS')) die('skip slow test'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(slow, true);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("environment"),
+        "{classification:?}"
+    );
+    let classification =
+        classify_with_harness_programs_and_env(slow, true, &[("SKIP_SLOW_TESTS", "1")]);
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("SKIP_SLOW_TESTS unset"),
+        "{classification:?}"
+    );
+
+    let resource_heavy = "--TEST--\nresource heavy\n--SKIPIF--\n<?php if (!getenv('RUN_RESOURCE_HEAVY_TESTS')) die('skip resource-heavy test'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(resource_heavy, true);
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("RUN_RESOURCE_HEAVY_TESTS set"),
+        "{classification:?}"
+    );
+    let classification = classify_with_harness_programs_and_env(
+        resource_heavy,
+        true,
+        &[("RUN_RESOURCE_HEAVY_TESTS", "1")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("environment"),
+        "{classification:?}"
+    );
+
+    let assigned = "--TEST--\nassigned env\n--SKIPIF--\n<?php $zend_mm_enabled = getenv('USE_ZEND_ALLOC'); if ($zend_mm_enabled === '0') die('skip Zend MM disabled'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(assigned, true);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("environment"),
         "{classification:?}"
     );
 }

@@ -409,6 +409,65 @@ ptn_phpt_eval_int_condition() {
     esac
 }
 
+ptn_phpt_php_int_max() {
+    if [[ "$(ptn_phpt_php_int_size)" -ge 8 ]]; then
+        printf '9223372036854775807\n'
+    else
+        printf '2147483647\n'
+    fi
+}
+
+ptn_phpt_php_os_family() {
+    if [[ -n "${PTN_PHPT_PHP_OS_FAMILY:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_PHP_OS_FAMILY"
+        return 0
+    fi
+
+    local kernel
+    kernel=$(uname -s 2>/dev/null || printf 'Unknown')
+    case "$kernel" in
+        Linux) printf 'Linux\n' ;;
+        Darwin) printf 'Darwin\n' ;;
+        FreeBSD|NetBSD|OpenBSD|DragonFly) printf 'BSD\n' ;;
+        SunOS) printf 'Solaris\n' ;;
+        CYGWIN*|MINGW*|MSYS*|Windows_NT) printf 'Windows\n' ;;
+        *) printf 'Unknown\n' ;;
+    esac
+}
+
+ptn_phpt_php_os() {
+    if [[ -n "${PTN_PHPT_PHP_OS:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_PHP_OS"
+        return 0
+    fi
+    uname -s 2>/dev/null || printf 'Unknown\n'
+}
+
+ptn_phpt_php_debug() {
+    printf '%s\n' "${PTN_PHPT_PHP_DEBUG:-0}"
+}
+
+ptn_phpt_php_zts() {
+    printf '%s\n' "${PTN_PHPT_PHP_ZTS:-0}"
+}
+
+ptn_phpt_php_truthy() {
+    local value=$1
+    [[ -n "$value" && "$value" != "0" ]]
+}
+
+ptn_phpt_eval_string_condition() {
+    local actual=$1
+    local op=$2
+    local expected=$3
+
+    case "$op" in
+        '!='|'!==') [[ "$actual" != "$expected" ]] ;;
+        '=='|'===') [[ "$actual" == "$expected" ]] ;;
+        *) return 1 ;;
+    esac
+}
+
 ptn_phpt_normalized_locale_name() {
     local value
     value=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
@@ -460,36 +519,49 @@ ptn_phpt_modeled_skipif_precondition() {
     local path=$1
     local code
     local code_without_strings
+    local code_for_identifiers
     code=$(ptn_phpt_skipif_code "$path")
     [[ -n "$code" ]] || return 1
 
     code_without_strings=$(printf '%s\n' "$code" | ptn_phpt_strip_php_strings | ptn_phpt_squash_ws)
+    code_for_identifiers=$(printf '%s\n' "$code_without_strings" | sed -E 's/\$[A-Za-z_][A-Za-z0-9_]*/ /g')
 
     local identifier
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|PHP_INT_SIZE|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
+            if|getenv|die|exit|echo|print|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
                 ;;
             *)
                 return 1
                 ;;
         esac
-    done < <(printf '%s\n' "$code_without_strings" | grep -Eo '[A-Za-z_][A-Za-z0-9_]*' || true)
+    done < <(printf '%s\n' "$code_for_identifiers" | grep -Eo '[A-Za-z_][A-Za-z0-9_]*' || true)
 
     local if_count
     local output_count
     local getenv_count
     local php_int_count
+    local php_int_max_count
+    local os_family_count
+    local php_os_count
+    local php_debug_count
+    local php_zts_count
     local setlocale_count
     if_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])if[[:space:]]*\(' "$code_without_strings")
     output_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(die|exit|echo|print)([[:space:]]*\(|[[:space:]])' "$code_without_strings")
     getenv_count=$(ptn_phpt_count_matches 'getenv[[:space:]]*\(' "$code_without_strings")
     php_int_count=$(ptn_phpt_count_matches 'PHP_INT_SIZE' "$code_without_strings")
+    php_int_max_count=$(ptn_phpt_count_matches 'PHP_INT_MAX' "$code_without_strings")
+    os_family_count=$(ptn_phpt_count_matches 'PHP_OS_FAMILY' "$code_without_strings")
+    php_os_count=$(ptn_phpt_count_matches 'PHP_OS([^_A-Za-z0-9]|$)' "$code_without_strings")
+    php_debug_count=$(ptn_phpt_count_matches 'PHP_DEBUG' "$code_without_strings")
+    php_zts_count=$(ptn_phpt_count_matches 'PHP_ZTS' "$code_without_strings")
     setlocale_count=$(ptn_phpt_count_matches 'setlocale[[:space:]]*\(' "$code_without_strings")
 
     local env_probe_lines
     local parsed_env_count=0
+    local env_family="sanitizer-env"
     env_probe_lines=$(printf '%s\n' "$code" \
         | grep -Eo "getenv[[:space:]]*\\([[:space:]]*['\"][A-Za-z_][A-Za-z0-9_]*['\"][[:space:]]*\\)" \
         || true)
@@ -501,17 +573,30 @@ ptn_phpt_modeled_skipif_precondition() {
             case "$env_var" in
                 SKIP_ASAN|SKIP_MSAN|SKIP_UBSAN|SKIP_PERF_SENSITIVE)
                     ;;
+                SKIP_*|USE_ZEND_ALLOC|USE_TRACKED_ALLOC|RUN_RESOURCE_HEAVY_TESTS|STACK_LIMIT_DEFAULTS_CHECK)
+                    env_family="environment"
+                    ;;
                 *)
                     return 1
                     ;;
             esac
             parsed_env_count=$((parsed_env_count + 1))
-            if [[ -n "${!env_var:-}" ]]; then
-                printf 'skipif-precondition\tmodeled static --SKIPIF-- sanitizer/environment gate requires %s unset; current environment sets it\n' "$env_var"
+            local env_value=${!env_var:-}
+            local env_is_truthy=0
+            if ptn_phpt_php_truthy "$env_value"; then
+                env_is_truthy=1
+            fi
+            if printf '%s\n' "$code" | grep -Eq "![[:space:]]*getenv[[:space:]]*\\([[:space:]]*['\"]$env_var['\"][[:space:]]*\\)"; then
+                if [[ "$env_is_truthy" -eq 0 ]]; then
+                    printf 'skipif-precondition\tmodeled static --SKIPIF-- environment gate requires %s set; current environment leaves it unset\n' "$env_var"
+                    return 0
+                fi
+            elif [[ "$env_is_truthy" -eq 1 ]]; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- environment gate requires %s unset; current environment sets it\n' "$env_var"
                 return 0
             fi
         done <<< "$env_probe_lines"
-        modeled_families+=("sanitizer-env")
+        modeled_families+=("$env_family")
     fi
     [[ "$getenv_count" -eq "$parsed_env_count" ]] || return 1
 
@@ -539,6 +624,117 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("PHP_INT_SIZE")
     fi
     [[ "$php_int_count" -eq "$parsed_int_count" ]] || return 1
+
+    local int_max_condition_lines
+    local parsed_int_max_count=0
+    local int_max
+    int_max=$(ptn_phpt_php_int_max)
+    int_max_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo 'PHP_INT_MAX[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*[0-9]+' \
+        || true)
+    if [[ -n "$int_max_condition_lines" ]]; then
+        while IFS= read -r condition; do
+            op=$(printf '%s\n' "$condition" | sed -E 's/PHP_INT_MAX[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*([0-9]+)/\1/')
+            expected=$(printf '%s\n' "$condition" | sed -E 's/PHP_INT_MAX[[:space:]]*(===|!==|==|!=|<=|>=|<|>)[[:space:]]*([0-9]+)/\2/')
+            parsed_int_max_count=$((parsed_int_max_count + 1))
+            if ptn_phpt_eval_int_condition "$int_max" "$op" "$expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_INT_MAX guard skips when PHP_INT_MAX %s %s; modeled PHP_INT_MAX=%s\n' \
+                    "$op" "$expected" "$int_max"
+                return 0
+            fi
+        done <<< "$int_max_condition_lines"
+        modeled_families+=("PHP_INT_MAX")
+    fi
+    [[ "$php_int_max_count" -eq "$parsed_int_max_count" ]] || return 1
+
+    local string_condition_lines
+    local parsed_os_family_count=0
+    local os_family
+    os_family=$(ptn_phpt_php_os_family)
+    string_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "PHP_OS_FAMILY[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][A-Za-z0-9_ -]+['\"]" \
+        || true)
+    if [[ -n "$string_condition_lines" ]]; then
+        while IFS= read -r condition; do
+            op=$(printf '%s\n' "$condition" | sed -E "s/PHP_OS_FAMILY[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][^'\"]+['\"]/\1/")
+            expected=$(printf '%s\n' "$condition" | sed -E "s/PHP_OS_FAMILY[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"]([^'\"]+)['\"]/\2/")
+            parsed_os_family_count=$((parsed_os_family_count + 1))
+            if ptn_phpt_eval_string_condition "$os_family" "$op" "$expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_OS_FAMILY guard skips when PHP_OS_FAMILY %s %s; modeled PHP_OS_FAMILY=%s\n' \
+                    "$op" "$expected" "$os_family"
+                return 0
+            fi
+        done <<< "$string_condition_lines"
+        modeled_families+=("PHP_OS_FAMILY")
+    fi
+    [[ "$os_family_count" -eq "$parsed_os_family_count" ]] || return 1
+
+    local parsed_php_os_count=0
+    local php_os
+    php_os=$(ptn_phpt_php_os)
+    string_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "substr[[:space:]]*\\([[:space:]]*PHP_OS[[:space:]]*,[[:space:]]*0[[:space:]]*,[[:space:]]*[0-9]+[[:space:]]*\\)[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][A-Za-z0-9_ -]+['\"]" \
+        || true)
+    if [[ -n "$string_condition_lines" ]]; then
+        while IFS= read -r condition; do
+            local length
+            length=$(printf '%s\n' "$condition" | sed -E "s/substr[[:space:]]*\\([[:space:]]*PHP_OS[[:space:]]*,[[:space:]]*0[[:space:]]*,[[:space:]]*([0-9]+)[[:space:]]*\\).*/\1/")
+            op=$(printf '%s\n' "$condition" | sed -E "s/.*\\)[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"][^'\"]+['\"]/\1/")
+            expected=$(printf '%s\n' "$condition" | sed -E "s/.*\\)[[:space:]]*(===|!==|==|!=)[[:space:]]*['\"]([^'\"]+)['\"]/\2/")
+            parsed_php_os_count=$((parsed_php_os_count + 1))
+            if ptn_phpt_eval_string_condition "${php_os:0:length}" "$op" "$expected"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_OS prefix guard skips when substr(PHP_OS, 0, %s) %s %s; modeled PHP_OS=%s\n' \
+                    "$length" "$op" "$expected" "$php_os"
+                return 0
+            fi
+        done <<< "$string_condition_lines"
+        modeled_families+=("PHP_OS-prefix")
+    fi
+    [[ "$php_os_count" -eq "$parsed_php_os_count" ]] || return 1
+
+    local parsed_debug_count=0
+    local php_debug
+    php_debug=$(ptn_phpt_php_debug)
+    if [[ "$php_debug_count" -gt 0 ]]; then
+        if printf '%s\n' "$code_without_strings" | grep -Eq '![[:space:]]*PHP_DEBUG'; then
+            parsed_debug_count=$((parsed_debug_count + 1))
+            if ! ptn_phpt_php_truthy "$php_debug"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_DEBUG guard skips when PHP_DEBUG is false\n'
+                return 0
+            fi
+        fi
+        if printf '%s\n' "$code_without_strings" | grep -Eq '(^|[^!A-Za-z0-9_])PHP_DEBUG([^A-Za-z0-9_]|$)'; then
+            parsed_debug_count=$((parsed_debug_count + 1))
+            if ptn_phpt_php_truthy "$php_debug"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_DEBUG guard skips when PHP_DEBUG is true\n'
+                return 0
+            fi
+        fi
+        modeled_families+=("PHP_DEBUG")
+    fi
+    [[ "$php_debug_count" -eq "$parsed_debug_count" ]] || return 1
+
+    local parsed_zts_count=0
+    local php_zts
+    php_zts=$(ptn_phpt_php_zts)
+    if [[ "$php_zts_count" -gt 0 ]]; then
+        if printf '%s\n' "$code_without_strings" | grep -Eq '![[:space:]]*PHP_ZTS'; then
+            parsed_zts_count=$((parsed_zts_count + 1))
+            if ! ptn_phpt_php_truthy "$php_zts"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_ZTS guard skips when PHP_ZTS is false\n'
+                return 0
+            fi
+        fi
+        if printf '%s\n' "$code_without_strings" | grep -Eq '(^|[^!A-Za-z0-9_])PHP_ZTS([^A-Za-z0-9_]|$)'; then
+            parsed_zts_count=$((parsed_zts_count + 1))
+            if ptn_phpt_php_truthy "$php_zts"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- PHP_ZTS guard skips when PHP_ZTS is true\n'
+                return 0
+            fi
+        fi
+        modeled_families+=("PHP_ZTS")
+    fi
+    [[ "$php_zts_count" -eq "$parsed_zts_count" ]] || return 1
 
     local locale_invalid_count
     local locale_availability_count
@@ -573,7 +769,7 @@ ptn_phpt_modeled_skipif_precondition() {
     fi
     [[ "$setlocale_count" -eq "$parsed_locale_count" ]] || return 1
 
-    local recognized_count=$((parsed_env_count + parsed_int_count + parsed_locale_count))
+    local recognized_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count))
     [[ "$recognized_count" -gt 0 ]] || return 1
     [[ "$if_count" -eq "$recognized_count" ]] || return 1
     [[ "$output_count" -eq "$recognized_count" ]] || return 1
