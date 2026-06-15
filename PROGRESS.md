@@ -1152,6 +1152,7 @@ visibility metadata limits.
 |User-comparator-sort-vq7w|26|20|6|
 |Std-strings-m8pk|21|21|0|
 |Std-strings-almd|13|12|1|
+|Sort-flags-w17z2|78|72|6|
 |array_rand|7|6|1|
 |Zend-op/control|26|21|5|
 |Zend-lit/op-3ijs|30|27|3|
