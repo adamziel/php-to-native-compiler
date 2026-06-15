@@ -7179,6 +7179,9 @@ fn compile_sprintf_scalar_formats_to_native_binary() {
         "<?php\n\
 echo sprintf(\"%0.3f\", 1 / 24), \"\\n\";\n\
 echo sprintf(\"[%+05d] [%6.3s] [%04b] [%X] [%%]\", 7, \"abcdef\", 5, 255), \"\\n\";\n\
+echo sprintf(\"[%7.2d] [%-07.2d] [%07.2d]\", 1, 1, 1), \"\\n\";\n\
+echo sprintf(\"[%e] [%E]\", 23333333, 0.000001), \"\\n\";\n\
+echo sprintf(\"[%'#7.2f] [%'#7.2d] [%-07.2f]\", -1, -1, 0), \"\\n\";\n\
 echo bin2hex(sprintf(\"%c\", 0)), \"\\n\";\n\
 var_dump(function_exists(\"sprintf\"));",
     )
@@ -7190,12 +7193,58 @@ var_dump(function_exists(\"sprintf\"));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "0.042\n[+0007] [   abc] [0101] [FF] [%]\n00\nbool(true)\n"
+        "0.042\n\
+[+0007] [   abc] [0101] [FF] [%]\n\
+[      1] [1      ] [0000001]\n\
+[2.333333e+7] [1.000000E-6]\n\
+[##-1.00] [#####-1] [0.00000]\n\
+00\n\
+bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("static PtnValue ptn_internal_sprintf("));
+}
+
+#[test]
+fn compile_scalar_date_time_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-date-time-scalars");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-time-scalars.php");
+    let output = root.join("date-time-scalars-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set(\"UTC\");\n\
+echo date(\"jS w z t L a B g G Z U\", mktime(0, 0, 0, 6, 27, 2006)), \"\\n\";\n\
+echo gmdate(DATE_ISO8601, mktime(8, 8, 8, 8, 8, 2008)), \"\\n\";\n\
+var_dump(checkdate(2, 29, 2008), checkdate(2, 29, 2009));\n\
+$parts = getdate(10);\n\
+echo $parts[\"year\"], \"-\", $parts[\"mon\"], \"-\", $parts[\"mday\"], \"\\n\";\n\
+var_dump(function_exists(\"date_default_timezone_set\"), function_exists(\"gmdate\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "27th 2 177 30 0 am 041 12 0 0 1151366400\n\
+2008-08-08T08:08:08+0000\n\
+bool(true)\n\
+bool(false)\n\
+1970-1-1\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_date_default_timezone_set("));
+    assert!(c_source.contains("static PtnValue ptn_internal_gmdate("));
 }
 
 #[test]
