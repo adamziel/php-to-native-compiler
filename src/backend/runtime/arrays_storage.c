@@ -596,6 +596,8 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             object->property_metadata[i].set_visibility = set_visibility;
             object->property_metadata[i].is_readonly = is_readonly;
             object->property_metadata[i].is_unset = 0;
+            free(object->property_metadata[i].last_type_name);
+            object->property_metadata[i].last_type_name = NULL;
             return;
         }
     }
@@ -626,6 +628,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->set_visibility = set_visibility;
     metadata->is_readonly = is_readonly;
     metadata->is_unset = 0;
+    metadata->last_type_name = NULL;
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {
@@ -718,6 +721,7 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         free(object->property_metadata[i].storage_name);
         free(object->property_metadata[i].display_name);
         free(object->property_metadata[i].declaring_class);
+        free(object->property_metadata[i].last_type_name);
     }
     free(object->property_metadata);
     ptn_array_free(object->properties);

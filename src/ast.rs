@@ -595,6 +595,7 @@ pub enum Expr {
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        anonymous_class_source: Option<String>,
         span: SourceSpan,
     },
     DynamicNewObject {

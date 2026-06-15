@@ -1,0 +1,10 @@
+Zend/tests/assert/bug71922.phpt
+Zend/tests/assert/expect_007.phpt
+Zend/tests/assert/expect_009.phpt
+Zend/tests/assert/expect_010.phpt
+Zend/tests/assert/expect_011.phpt
+Zend/tests/assert/expect_017.phpt
+Zend/tests/asymmetric_visibility/__set.phpt
+Zend/tests/asymmetric_visibility/__unset.phpt
+Zend/tests/asymmetric_visibility/bug001.phpt
+Zend/tests/asymmetric_visibility/bug002.phpt

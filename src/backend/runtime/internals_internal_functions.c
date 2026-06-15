@@ -700,6 +700,46 @@ static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key)
     );
 }
 
+static void ptn_var_dump_object_property_metadata_key(const PtnObjectPropertyMetadata *metadata) {
+    if (metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        printf("[\"%s\"]=>\n", metadata->display_name);
+        return;
+    }
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        printf("[\"%s\":protected]=>\n", metadata->display_name);
+        return;
+    }
+    printf(
+        "[\"%s\":\"%s\":private]=>\n",
+        metadata->display_name,
+        metadata->declaring_class
+    );
+}
+
+static size_t ptn_object_unset_property_dump_count(PtnObject *object) {
+    size_t count = 0;
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (metadata->is_unset && metadata->last_type_name != NULL) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void ptn_var_dump_object_unset_properties(PtnObject *object, size_t indent) {
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (!metadata->is_unset || metadata->last_type_name == NULL) {
+            continue;
+        }
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_object_property_metadata_key(metadata);
+        ptn_var_dump_indent(indent + 1);
+        printf("uninitialized(%s)\n", metadata->last_type_name);
+    }
+}
+
 static const char *ptn_internal_function_parameter_name(const char *name, size_t index) {
     if (name == NULL) {
         return NULL;
@@ -978,6 +1018,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
                 ptn_var_dump_object_property_key(object, key);
                 ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
             }
+            ptn_var_dump_object_unset_properties(object, indent);
             ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
@@ -1135,6 +1176,9 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 PtnArrayKey key = properties->entries[i].key;
                 ptn_var_dump_object_property_key(object, key);
                 ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
+            }
+            if (ptn_object_unset_property_dump_count(object) != 0) {
+                ptn_var_dump_object_unset_properties(object, indent);
             }
             ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
@@ -13831,16 +13875,22 @@ static int ptn_runtime_set_zend_assertions(PtnRuntime *runtime, int64_t requeste
         if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
             fputc('\n', stdout);
         }
-        ptn_emit_warning(
-            &runtime->diagnostics,
+        ptn_emit_runtime_warning(
+            runtime,
             "zend.assertions may be completely enabled or disabled only in php.ini",
             line
         );
         return 0;
     }
     if (root->initial_zend_assertions < 0) {
-        ptn_emit_warning(
-            &runtime->diagnostics,
+        if (
+            runtime->diagnostics.emitted_warning &&
+            ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)
+        ) {
+            fputc('\n', stdout);
+        }
+        ptn_emit_runtime_warning(
+            runtime,
             "zend.assertions may be completely enabled or disabled only in php.ini",
             line
         );
@@ -15014,10 +15064,34 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_bool(1);
     }
 
-    char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
     if (ptn_runtime_assert_exception(runtime)) {
-        ptn_throw_exception_owned_message(runtime, "AssertionError", message);
+        if (argc >= 2) {
+            PtnValue reason = ptn_value_deref(args[1]);
+            if (
+                reason.type == PTN_EXCEPTION ||
+                (reason.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, reason.as.object))
+            ) {
+                if (
+                    runtime->trace_frame != NULL &&
+                    runtime->trace_frame->function_name != NULL &&
+                    ptn_exception_name_equal(runtime->trace_frame->function_name, "assert")
+                ) {
+                    runtime->trace_frame = runtime->trace_frame->previous;
+                }
+                ptn_throw_value(runtime, reason, runtime->source_path, line);
+                return ptn_bool(0);
+            }
+        }
+        char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
+        ptn_throw_exception_owned_message_at(
+            runtime,
+            "AssertionError",
+            message,
+            runtime->source_path,
+            line
+        );
     } else {
+        char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
         size_t message_len = strlen(message);
         const char *prefix = "assert(): ";
         const char *suffix = " failed";

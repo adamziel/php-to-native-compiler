@@ -71,7 +71,7 @@ fn compile_dynamic_variable_unset_to_native_binary() {
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -1155,7 +1155,7 @@ fn compile_inline_html_between_php_blocks_to_native_binary() {
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -3605,7 +3605,7 @@ var_dump($box->{0}, $box->{'name'}, $box->{1});\n",
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -5270,7 +5270,7 @@ try {
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -12580,24 +12580,44 @@ try {
 } catch (\\Error $e) {
     echo $e->getMessage(), \"\\n\";
 }
+class CustomAssertionReason extends AssertionError {}
+$assertionException = new CustomAssertionReason(\"assert exception\");
+try {
+    assert(false, $assertionException);
+} catch (CustomAssertionReason $e) {
+    echo get_class($e), \":\", $e->getMessage(), \"\\n\";
+}
 try {
     call_user_func(\"assert\", false);
 } catch (AssertionError $e) {
     var_dump($e->getMessage());
 }
+try {
+    assert(false && `echo skipped`);
+} catch (AssertionError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    assert(!is_float(0.0));
+} catch (AssertionError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
 ",
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nassert(): assert(false && ($a **= 2)) failed\nassert(0.0)\nassert(): assert(false && `echo -n \"\"`) failed\nshort\ncustom failure\nstring(0) \"\"\n"
+        "bool(true)\nbool(true)\nassert(): assert(false && ($a **= 2)) failed\nassert(0.0)\nassert(): assert(false && `echo -n \"\"`) failed\nshort\ncustom failure\nCustomAssertionReason:assert exception\nstring(0) \"\"\nassert(false && `echo skipped`)\nassert(!is_float(0.0))\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_initialize_declared_exception_object"));
 }
 
 #[test]
@@ -12638,6 +12658,67 @@ try {
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_assertion_text_keeps_anonymous_class_source_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-anonymous-class-text");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-anonymous-class-text.php");
+    let output = root.join("assert-anonymous-class-text-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    assert(0 && new class {
+    } && new class(42) extends stdclass {
+    });
+} catch (AssertionError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "assert(0 && new class {\n} && new class(42) extends stdclass {\n})\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_assert_supplied_throwable_uncaught_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-supplied-throwable-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-supplied-throwable-trace.php");
+    let output = root.join("assert-supplied-throwable-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+class CustomAssertionReason extends AssertionError {}
+assert(false, new CustomAssertionReason(\"bad\"));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught CustomAssertionReason: bad in {}:3\nStack trace:\n#0 {{main}}\n  thrown in {} on line 3\n",
+            input.display(),
+            input.display()
+        )
+    );
 }
 
 #[test]
@@ -12721,9 +12802,13 @@ fn compile_zend_assertions_compile_time_disabled_mode_to_native_binary() {
         .output()
         .unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let input_display = input.to_string_lossy();
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "string(2) \"-1\"\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in ptn on line 1\nbool(true)\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in ptn on line 1\nbool(true)\n"
+        stdout,
+        format!(
+            "string(2) \"-1\"\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in {input_display} on line 1\nbool(true)\n\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in {input_display} on line 1\nbool(true)\n"
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -28421,6 +28506,172 @@ $foo->clearName();
 }
 
 #[test]
+fn compile_unset_asymmetric_typed_property_var_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-unset-var-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-unset-var-dump.php");
+    let output = root.join("asymmetric-unset-var-dump-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public private(set) int $a = 1;
+
+    public function __construct() {
+        unset($this->a);
+    }
+}
+
+class D extends C {
+    public function __unset($name) {
+        unset($this->a);
+    }
+}
+
+$d = new D();
+try {
+    unset($d->missing);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($d);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot unset private(set) property C::$a from scope D\n",
+            "object(D)#1 (0) {\n",
+            "  [\"a\"]=>\n",
+            "  uninitialized(int)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_asymmetric_property_indirect_write_and_unset_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-property-indirect-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-property-indirect-unset.php");
+    let output = root.join("asymmetric-property-indirect-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class Bag {
+    public private(set) array $items = [1];
+    public protected(set) string $name = \"draft\";
+    public private(set) string $secret = \"hidden\";
+
+    public function appendItem($value) {
+        $this->items[] = $value;
+    }
+
+    public function unsetItem() {
+        unset($this->items[0]);
+    }
+
+    public function unsetName() {
+        unset($this->name);
+    }
+}
+
+class ChildBag extends Bag {
+    public function unsetNameFromChild() {
+        unset($this->name);
+    }
+
+    public function unsetSecretFromChild() {
+        unset($this->secret);
+    }
+}
+
+$bag = new ChildBag();
+try {
+    $bag->items[] = 2;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($bag->items);
+$bag->appendItem(2);
+var_dump($bag->items);
+try {
+    unset($bag->items[0]);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($bag->items);
+$bag->unsetItem();
+var_dump($bag->items);
+try {
+    unset($bag->name);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($bag->name ?? 'unset');
+$bag->unsetNameFromChild();
+var_dump($bag->name ?? 'unset');
+try {
+    $bag->unsetSecretFromChild();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($bag->secret ?? 'unset');
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot indirectly modify private(set) property Bag::$items from global scope\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "Cannot indirectly modify private(set) property Bag::$items from global scope\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "Cannot unset protected(set) property Bag::$name from global scope\n",
+            "string(5) \"draft\"\n",
+            "string(5) \"unset\"\n",
+            "Cannot unset private(set) property Bag::$secret from scope ChildBag\n",
+            "string(6) \"hidden\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_write_property_indirect"));
+    assert!(c_source.contains("ptn_throw_property_unset_visibility_error"));
+}
+
+#[test]
 fn compile_asymmetric_object_property_reference_returns_copy_to_native_binary() {
     let root = temp_dir("ptn-native-asymmetric-object-property-reference");
     fs::create_dir_all(&root).unwrap();
@@ -28936,6 +29187,7 @@ echo $a->func2(), \"\\n\";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_magic_property_read"));
+    assert!(c_source.contains("(void)require_isset;"));
     assert!(c_source.contains("ptn_object_read_property_no_magic"));
 }
 

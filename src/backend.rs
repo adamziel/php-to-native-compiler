@@ -20,6 +20,16 @@ mod runtime;
 const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
     "Using ${var} in strings is deprecated, use {$var} instead";
+const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
+    ("ReflectionException", "Exception"),
+    ("TypeError", "Error"),
+    ("ArgumentCountError", "TypeError"),
+    ("ValueError", "Error"),
+    ("ArithmeticError", "Error"),
+    ("DivisionByZeroError", "ArithmeticError"),
+    ("AssertionError", "Error"),
+    ("ParseError", "Error"),
+];
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
@@ -400,6 +410,24 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
     out.push_str("    }\n");
     out.push_str("    ptn_throw_exception_owned_message(runtime, \"TypeError\", message);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_initialize_declared_exception_object(PtnRuntime *runtime, PtnValue object, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    if (argc > 3) {\n");
+    out.push_str("        ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception constructor expects at most 3 arguments\");\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue message = argc >= 1 ? ptn_owned_string(ptn_value_to_string(args[0])) : ptn_owned_string(ptn_duplicate_string(\"\"));\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(object);\n");
+    out.push_str("    const char *declaring_class = \"Exception\";\n");
+    out.push_str("    if (resolved.type == PTN_OBJECT && runtime->class_scope_allows != NULL && runtime->class_scope_allows(resolved.as.object->class_name, \"Error\")) {\n");
+    out.push_str("        declaring_class = \"Error\";\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue assigned = ptn_object_declare_property(runtime, object, \"message\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, message, line);\n");
+    out.push_str("    ptn_value_destroy(&assigned);\n");
+    out.push_str("    ptn_value_destroy(&message);\n");
     out.push_str("}\n");
 }
 
@@ -1826,6 +1854,15 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
     if classes.is_empty() {
         out.push_str("    (void)name;\n");
     }
+    for (class_name, parent_name) in BUILTIN_EXCEPTION_PARENT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return \"");
+        out.push_str(parent_name);
+        out.push_str("\";\n");
+        out.push_str("    }\n");
+    }
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));
@@ -2377,6 +2414,34 @@ fn class_by_name<'a>(classes: &'a [ClassDecl], name: &str) -> Option<&'a ClassDe
         .find(|class| class.name.eq_ignore_ascii_case(name))
 }
 
+fn builtin_exception_parent_name(name: &str) -> Option<&'static str> {
+    BUILTIN_EXCEPTION_PARENT_NAMES
+        .iter()
+        .find(|(class_name, _)| class_name.eq_ignore_ascii_case(name))
+        .map(|(_, parent_name)| *parent_name)
+}
+
+fn class_extends_builtin_throwable(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
+    let mut current = class.parent_name.as_deref();
+    let mut seen_classes = HashSet::new();
+    while let Some(name) = current {
+        if name.eq_ignore_ascii_case("Exception") || name.eq_ignore_ascii_case("Error") {
+            return true;
+        }
+        if !seen_classes.insert(name.to_ascii_lowercase()) {
+            return false;
+        }
+        if let Some(parent_name) = builtin_exception_parent_name(name) {
+            current = Some(parent_name);
+        } else if let Some(parent) = class_by_name(classes, name) {
+            current = parent.parent_name.as_deref();
+        } else {
+            return false;
+        }
+    }
+    false
+}
+
 fn static_method_visibility_for_function(
     function_index: usize,
     classes: &[ClassDecl],
@@ -2632,6 +2697,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    (void)runtime;\n");
     out.push_str("    (void)property;\n");
     out.push_str("    (void)line;\n");
+    out.push_str("    (void)require_isset;\n");
     out.push_str("    (void)value_out;\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
@@ -10047,7 +10113,62 @@ impl ValueEmitter {
             }
             emit_value_cleanup(out, "    ", &constructor_result);
         } else {
-            if argument_unpacks.iter().any(|unpack| *unpack) {
+            if class_extends_builtin_throwable(declared_class, &self.classes) {
+                if argument_unpacks.iter().any(|unpack| *unpack) {
+                    let args_temp = self.emit_call_arguments_builder(
+                        out,
+                        "__construct",
+                        arguments,
+                        argument_unpacks,
+                        line,
+                        true,
+                        None,
+                    );
+                    out.push_str("    ptn_initialize_declared_exception_object(&runtime, ");
+                    out.push_str(result_temp);
+                    out.push_str(", ");
+                    out.push_str(&args_temp);
+                    out.push_str(".len, ");
+                    out.push_str(&args_temp);
+                    out.push_str(".values, ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    ptn_call_arguments_destroy(&");
+                    out.push_str(&args_temp);
+                    out.push_str(");\n");
+                } else {
+                    let mut argument_temps = Vec::with_capacity(arguments.len());
+                    for argument in arguments {
+                        argument_temps.push(self.emit_materialized_value(out, argument));
+                    }
+                    if argument_temps.is_empty() {
+                        out.push_str("    ptn_initialize_declared_exception_object(&runtime, ");
+                        out.push_str(result_temp);
+                        out.push_str(", 0, NULL, ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                    } else {
+                        let args_temp = self.next_temp();
+                        out.push_str("    PtnValue ");
+                        out.push_str(&args_temp);
+                        out.push_str("[] = { ");
+                        out.push_str(&argument_temps.join(", "));
+                        out.push_str(" };\n");
+                        out.push_str("    ptn_initialize_declared_exception_object(&runtime, ");
+                        out.push_str(result_temp);
+                        out.push_str(", ");
+                        out.push_str(&argument_temps.len().to_string());
+                        out.push_str(", ");
+                        out.push_str(&args_temp);
+                        out.push_str(", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                    }
+                    for argument_temp in argument_temps {
+                        emit_value_cleanup(out, "    ", &argument_temp);
+                    }
+                }
+            } else if argument_unpacks.iter().any(|unpack| *unpack) {
                 let args_temp = self.emit_call_arguments_builder(
                     out,
                     "__construct",

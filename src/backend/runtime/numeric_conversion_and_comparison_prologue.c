@@ -673,7 +673,12 @@ static void ptn_emit_uncaught_trace_arg(FILE *stream, PtnValue value) {
         }
         case PTN_STRING:
             fputc('\'', stream);
-            fwrite(value.as.string.data, 1, value.as.string.len, stream);
+            if (value.as.string.len > 15) {
+                fwrite(value.as.string.data, 1, 15, stream);
+                fputs("...", stream);
+            } else {
+                fwrite(value.as.string.data, 1, value.as.string.len, stream);
+            }
             fputc('\'', stream);
             break;
         case PTN_ARRAY:
@@ -698,21 +703,38 @@ static void ptn_emit_uncaught_trace_arg(FILE *stream, PtnValue value) {
 }
 
 static int ptn_emit_uncaught_internal_trace(PtnRuntime *runtime) {
-    PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
-    if (runtime == NULL || frame == NULL) {
+    if (runtime == NULL || runtime->trace_frame == NULL) {
         return 0;
     }
 
     size_t index = 0;
-    for (; frame != NULL; frame = frame->previous) {
+    for (PtnTraceFrame *frame = runtime->trace_frame; frame != NULL; frame = frame->previous) {
         if (frame->function_name == NULL) {
             continue;
         }
-        if (frame->file != NULL && frame->line != 0) {
-            fprintf(stderr, "#%zu %s(%zu): %s(", index, frame->file, frame->line, frame->function_name);
-        } else {
-            fprintf(stderr, "#%zu [internal function]: %s(", index, frame->function_name);
+        const char *file = frame->file;
+        size_t line = frame->line;
+        if ((file == NULL || line == 0) && runtime->source_path != NULL && runtime->call_site_line != 0) {
+            file = runtime->source_path;
+            line = runtime->call_site_line;
         }
+        fprintf(stderr, "#%zu ", index);
+        if (file != NULL && line != 0) {
+            fprintf(stderr, "%s(%zu): ", file, line);
+        }
+        const char *constructor_separator = strstr(frame->function_name, "::__construct");
+        if (constructor_separator != NULL && constructor_separator[13] == '\0') {
+            fwrite(
+                frame->function_name,
+                1,
+                (size_t)(constructor_separator - frame->function_name),
+                stderr
+            );
+            fputs("->__construct", stderr);
+        } else {
+            fputs(frame->function_name, stderr);
+        }
+        fputc('(', stderr);
         for (size_t i = 0; i < frame->argc; i++) {
             if (i != 0) {
                 fputs(", ", stderr);
@@ -1060,43 +1082,6 @@ static PTN_UNUSED void ptn_throw_property_set_visibility_error(
     ptn_throw_exception(runtime, "Error", message);
 }
 
-static PTN_UNUSED void ptn_throw_property_unset_visibility_error(
-    PtnRuntime *runtime,
-    PtnPropertyVisibility visibility,
-    const char *declaring_class,
-    const char *property,
-    const char *access_scope
-) {
-    char message[320];
-    const char *scope = access_scope == NULL ? "global scope" : access_scope;
-    int written;
-    if (access_scope == NULL) {
-        written = snprintf(
-            message,
-            sizeof(message),
-            "Cannot unset %s(set) property %s::$%s from %s",
-            ptn_property_visibility_name(visibility),
-            declaring_class,
-            property,
-            scope
-        );
-    } else {
-        written = snprintf(
-            message,
-            sizeof(message),
-            "Cannot unset %s(set) property %s::$%s from scope %s",
-            ptn_property_visibility_name(visibility),
-            declaring_class,
-            property,
-            scope
-        );
-    }
-    if (written < 0 || (size_t)written >= sizeof(message)) {
-        ptn_abort_out_of_memory();
-    }
-    ptn_throw_exception(runtime, "Error", message);
-}
-
 static PTN_UNUSED void ptn_throw_property_indirect_set_visibility_error(
     PtnRuntime *runtime,
     PtnPropertyVisibility visibility,
@@ -1123,6 +1108,47 @@ static PTN_UNUSED void ptn_throw_property_indirect_set_visibility_error(
             sizeof(message),
             "Cannot indirectly modify %s(set) property %s::$%s from scope %s",
             ptn_property_visibility_name(visibility),
+            declaring_class,
+            property,
+            scope
+        );
+    }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
+static PTN_UNUSED void ptn_throw_property_unset_visibility_error(
+    PtnRuntime *runtime,
+    PtnPropertyVisibility visibility,
+    const char *declaring_class,
+    const char *property,
+    const char *access_scope,
+    int asymmetric_set_visibility
+) {
+    char message[320];
+    const char *scope = access_scope == NULL ? "global scope" : access_scope;
+    const char *set_suffix = asymmetric_set_visibility ? "(set)" : "";
+    int written;
+    if (access_scope == NULL) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot unset %s%s property %s::$%s from %s",
+            ptn_property_visibility_name(visibility),
+            set_suffix,
+            declaring_class,
+            property,
+            scope
+        );
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot unset %s%s property %s::$%s from scope %s",
+            ptn_property_visibility_name(visibility),
+            set_suffix,
             declaring_class,
             property,
             scope

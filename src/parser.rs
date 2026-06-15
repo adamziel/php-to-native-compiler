@@ -160,6 +160,13 @@ impl ClassModifiers {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VirtualPropertyHookKind {
+    GetOnly,
+    SetOnly,
+    Other,
+}
+
 enum ParsedClassMember {
     Method(MethodDecl),
     Properties(Vec<PropertyDecl>),
@@ -1313,6 +1320,11 @@ impl Parser<'_> {
             is_readonly,
             class_name,
         )?];
+        self.reject_asymmetric_virtual_property_hook(
+            &properties[0],
+            set_visibility_span,
+            class_name,
+        )?;
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
             properties.push(self.parse_property_declaration(
@@ -1321,9 +1333,76 @@ impl Parser<'_> {
                 is_readonly,
                 class_name,
             )?);
+            let property = properties
+                .last()
+                .expect("property was just pushed for virtual hook validation");
+            self.reject_asymmetric_virtual_property_hook(
+                property,
+                set_visibility_span,
+                class_name,
+            )?;
         }
         self.expect_semicolon()?;
         Ok(properties)
+    }
+
+    fn reject_asymmetric_virtual_property_hook(
+        &self,
+        property: &PropertyDecl,
+        set_visibility_span: Option<SourceSpan>,
+        class_name: &str,
+    ) -> Result<()> {
+        if set_visibility_span.is_none() || !matches!(self.peek().kind, TokenKind::LeftBrace) {
+            return Ok(());
+        }
+        let hook_kind = self.peek_virtual_property_hook_kind();
+        let description = match hook_kind {
+            VirtualPropertyHookKind::GetOnly => "get-only",
+            VirtualPropertyHookKind::SetOnly => "set-only",
+            VirtualPropertyHookKind::Other => "virtual",
+        };
+        Err(Diagnostic::new(
+            format!(
+                "{description} virtual property {class_name}::${} must not specify asymmetric visibility",
+                property.name
+            ),
+            Some(property.span),
+        ))
+    }
+
+    fn peek_virtual_property_hook_kind(&self) -> VirtualPropertyHookKind {
+        let mut depth = 0usize;
+        let mut has_get = false;
+        let mut has_set = false;
+        for token in self.tokens.iter().skip(self.index) {
+            match &token.kind {
+                TokenKind::LeftBrace => {
+                    depth += 1;
+                }
+                TokenKind::RightBrace => {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                TokenKind::Identifier(name) if depth == 1 && name.eq_ignore_ascii_case("get") => {
+                    has_get = true;
+                }
+                TokenKind::Identifier(name) if depth == 1 && name.eq_ignore_ascii_case("set") => {
+                    has_set = true;
+                }
+                TokenKind::Eof => break,
+                _ => {}
+            }
+        }
+        match (has_get, has_set) {
+            (true, false) => VirtualPropertyHookKind::GetOnly,
+            (false, true) => VirtualPropertyHookKind::SetOnly,
+            _ => VirtualPropertyHookKind::Other,
+        }
     }
 
     fn parse_property_declaration(
@@ -4014,6 +4093,7 @@ impl Parser<'_> {
             arguments,
             argument_names,
             argument_unpacks,
+            anonymous_class_source: None,
             span,
         })
     }
@@ -4075,6 +4155,11 @@ impl Parser<'_> {
         }
         let right_span = self.expect_right_brace()?;
         let span = combine_spans(start_span, right_span);
+        let source = self
+            .source
+            .get(start_span.byte_start..right_span.byte_end)
+            .unwrap_or_default()
+            .to_string();
         self.anonymous_classes.push(ClassDecl {
             name: class_name.clone(),
             parent_name,
@@ -4095,6 +4180,7 @@ impl Parser<'_> {
             arguments,
             argument_names,
             argument_unpacks,
+            anonymous_class_source: Some(source),
             span,
         })
     }
@@ -4631,6 +4717,7 @@ impl Parser<'_> {
         matches!(
             self.peek().kind,
             TokenKind::String(_)
+                | TokenKind::BacktickString(_)
                 | TokenKind::InterpolatedString(_)
                 | TokenKind::Int(_)
                 | TokenKind::Float(_)

@@ -306,6 +306,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         }
         if (cloned_metadata != NULL) {
             cloned_metadata->is_unset = metadata->is_unset;
+            if (metadata->last_type_name != NULL) {
+                cloned_metadata->last_type_name = ptn_duplicate_string(metadata->last_type_name);
+            }
         }
     }
 
@@ -580,6 +583,44 @@ static PTN_UNUSED PtnObjectPropertyMetadata *ptn_object_blocked_magic_metadata(
     return metadata;
 }
 
+static PTN_UNUSED const char *ptn_property_value_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            return "null";
+        case PTN_BOOL:
+            return "bool";
+        case PTN_INT:
+            return "int";
+        case PTN_FLOAT:
+            return "float";
+        case PTN_STRING:
+            return "string";
+        case PTN_RESOURCE:
+            return "resource";
+        case PTN_ARRAY:
+            return "array";
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+            return "object";
+        case PTN_REFERENCE:
+            return "reference";
+    }
+    return "mixed";
+}
+
+static PTN_UNUSED void ptn_object_metadata_remember_value_type(
+    PtnObjectPropertyMetadata *metadata,
+    PtnValue value
+) {
+    if (metadata == NULL) {
+        return;
+    }
+    free(metadata->last_type_name);
+    metadata->last_type_name = ptn_duplicate_string(ptn_property_value_type_name(value));
+}
+
 static PTN_UNUSED int ptn_magic_property_get(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -735,23 +776,29 @@ static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
     ptn_throw_exception(runtime, "Error", message);
 }
 
+#define PTN_PROPERTY_ACCESS_READ 0
+#define PTN_PROPERTY_ACCESS_WRITE 1
+#define PTN_PROPERTY_ACCESS_INDIRECT_WRITE 2
+#define PTN_PROPERTY_ACCESS_UNSET 3
+
 static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     PtnRuntime *runtime,
     PtnObject *object,
     const char *property,
     const char *access_scope,
-    int for_write,
-    int indirect_write,
-    int for_unset,
+    int access_mode,
     int quiet
 ) {
+    int for_write = access_mode != PTN_PROPERTY_ACCESS_READ;
+    int indirect_write = access_mode == PTN_PROPERTY_ACCESS_INDIRECT_WRITE;
+    int unset_write = access_mode == PTN_PROPERTY_ACCESS_UNSET;
     const PtnObjectPropertyMetadata *scoped_private =
         ptn_object_private_property_for_scope(object, property, access_scope);
     if (scoped_private != NULL) {
-        PtnPropertyVisibility visibility = (for_write || for_unset)
+        PtnPropertyVisibility visibility = (for_write || unset_write)
             ? scoped_private->set_visibility
             : scoped_private->read_visibility;
-        int readonly_initialized = (for_write || for_unset) &&
+        int readonly_initialized = (for_write || unset_write) &&
             scoped_private->is_readonly &&
             ptn_object_property_storage_initialized(object, scoped_private->storage_name);
         if (readonly_initialized) {
@@ -782,6 +829,15 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         property,
                         access_scope
                     );
+                } else if (unset_write) {
+                    ptn_throw_property_unset_visibility_error(
+                        runtime,
+                        scoped_private->set_visibility,
+                        scoped_private->declaring_class,
+                        property,
+                        access_scope,
+                        1
+                    );
                 } else {
                     ptn_throw_property_set_visibility_error(
                         runtime,
@@ -791,13 +847,14 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         access_scope
                     );
                 }
-            } else if (for_unset && scoped_private->set_visibility != scoped_private->read_visibility) {
+            } else if (unset_write && scoped_private->set_visibility != scoped_private->read_visibility) {
                 ptn_throw_property_unset_visibility_error(
                     runtime,
                     scoped_private->set_visibility,
                     scoped_private->declaring_class,
                     property,
-                    access_scope
+                    access_scope,
+                    1
                 );
             } else {
                 ptn_throw_property_visibility_error(
@@ -814,10 +871,10 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     const PtnObjectPropertyMetadata *shared_property =
         ptn_object_named_shared_property(object, property);
     if (shared_property != NULL) {
-        PtnPropertyVisibility visibility = (for_write || for_unset)
+        PtnPropertyVisibility visibility = (for_write || unset_write)
             ? shared_property->set_visibility
             : shared_property->read_visibility;
-        int readonly_initialized = (for_write || for_unset) &&
+        int readonly_initialized = (for_write || unset_write) &&
             shared_property->is_readonly &&
             ptn_object_property_storage_initialized(object, shared_property->storage_name);
         if (readonly_initialized) {
@@ -848,6 +905,15 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         property,
                         access_scope
                     );
+                } else if (unset_write) {
+                    ptn_throw_property_unset_visibility_error(
+                        runtime,
+                        shared_property->set_visibility,
+                        shared_property->declaring_class,
+                        property,
+                        access_scope,
+                        1
+                    );
                 } else {
                     ptn_throw_property_set_visibility_error(
                         runtime,
@@ -857,13 +923,14 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         access_scope
                     );
                 }
-            } else if (for_unset && shared_property->set_visibility != shared_property->read_visibility) {
+            } else if (unset_write && shared_property->set_visibility != shared_property->read_visibility) {
                 ptn_throw_property_unset_visibility_error(
                     runtime,
                     shared_property->set_visibility,
                     shared_property->declaring_class,
                     property,
-                    access_scope
+                    access_scope,
+                    1
                 );
             } else {
                 ptn_throw_property_visibility_error(
@@ -940,9 +1007,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         receiver.as.object,
         property,
         access_scope,
-        0,
-        0,
-        0,
+        PTN_PROPERTY_ACCESS_READ,
         1
     );
     if (storage_key == NULL) {
@@ -959,9 +1024,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             receiver.as.object,
             property,
             access_scope,
-            0,
-            0,
-            0,
+            PTN_PROPERTY_ACCESS_READ,
             0
         );
     }
@@ -1014,9 +1077,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
         receiver.as.object,
         property,
         access_scope,
-        0,
-        0,
-        0,
+        PTN_PROPERTY_ACCESS_READ,
         0
     );
     if (storage_key == NULL) {
@@ -1066,9 +1127,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         receiver.as.object,
         property,
         access_scope,
-        0,
-        0,
-        0,
+        PTN_PROPERTY_ACCESS_READ,
         1
     );
     if (storage_key == NULL) {
@@ -1101,9 +1160,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         receiver.as.object,
         property,
         access_scope,
-        0,
-        0,
-        0,
+        PTN_PROPERTY_ACCESS_READ,
         1
     );
     if (storage_key == NULL) {
@@ -1162,9 +1219,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         receiver.as.object,
         property,
         access_scope,
-        1,
-        indirect_write,
-        0,
+        indirect_write ? PTN_PROPERTY_ACCESS_INDIRECT_WRITE : PTN_PROPERTY_ACCESS_WRITE,
         0
     );
     if (storage_key == NULL) {
@@ -1186,12 +1241,13 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     }
     PtnValue stored = ptn_value_clone_deref(value);
     PtnValue result = ptn_value_clone(stored);
-    ptn_array_write_entry(receiver.as.object->properties, key, stored);
     PtnObjectPropertyMetadata *mutable_metadata =
         ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
     if (mutable_metadata != NULL) {
         mutable_metadata->is_unset = 0;
+        ptn_object_metadata_remember_value_type(mutable_metadata, stored);
     }
+    ptn_array_write_entry(receiver.as.object->properties, key, stored);
     free(storage_key);
     return result;
 }
@@ -1273,9 +1329,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         receiver.as.object,
         property,
         access_scope,
-        1,
-        0,
-        0,
+        PTN_PROPERTY_ACCESS_WRITE,
         0
     );
     if (storage_key == NULL) {
@@ -1300,6 +1354,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
     if (mutable_metadata != NULL) {
         mutable_metadata->is_unset = 0;
+        ptn_object_metadata_remember_value_type(mutable_metadata, reference);
     }
     free(storage_key);
 }
@@ -1339,9 +1394,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         receiver.as.object,
         property,
         access_scope,
-        1,
-        1,
-        0,
+        PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
         1
     );
     if (storage_key == NULL) {
@@ -1350,9 +1403,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             receiver.as.object,
             property,
             access_scope,
-            0,
-            0,
-            0,
+            PTN_PROPERTY_ACCESS_READ,
             1
         );
         if (read_storage_key != NULL) {
@@ -1375,9 +1426,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             receiver.as.object,
             property,
             access_scope,
-            1,
-            1,
-            0,
+            PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
             0
         );
         if (storage_key == NULL) {
@@ -1405,6 +1454,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
         if (mutable_metadata != NULL) {
             mutable_metadata->is_unset = 0;
+            ptn_object_metadata_remember_value_type(mutable_metadata, reference);
         }
         free(storage_key);
         return reference;
@@ -1444,7 +1494,8 @@ static PTN_UNUSED void ptn_object_unset_property(
             blocked_metadata->set_visibility,
             blocked_metadata->declaring_class,
             property,
-            access_scope
+            access_scope,
+            1
         );
         return;
     }
@@ -1458,9 +1509,7 @@ static PTN_UNUSED void ptn_object_unset_property(
         receiver.as.object,
         property,
         access_scope,
-        0,
-        0,
-        1,
+        PTN_PROPERTY_ACCESS_UNSET,
         0
     );
     if (storage_key == NULL) {

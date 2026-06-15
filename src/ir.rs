@@ -1908,6 +1908,7 @@ impl<'a> LoweringContext<'a> {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                anonymous_class_source: _,
                 span,
             } => ValueExpr::NewObject {
                 class_name: class_name.clone(),
@@ -2201,11 +2202,18 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::NewObject {
             class_name,
             arguments,
+            anonymous_class_source,
             ..
-        } => format!(
-            "new {class_name}({})",
-            assertion_argument_list_text(arguments)
-        ),
+        } => {
+            if let Some(source) = anonymous_class_source {
+                assertion_anonymous_class_source_text(source)
+            } else {
+                format!(
+                    "new {class_name}({})",
+                    assertion_argument_list_text(arguments)
+                )
+            }
+        }
         Expr::DynamicNewObject {
             class_name,
             arguments,
@@ -2382,6 +2390,33 @@ fn assertion_source_block_text(source: &str, source_column: usize, indent: &str)
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn assertion_anonymous_class_source_text(source: &str) -> String {
+    let mut lines = source.lines();
+    let Some(first) = lines.next() else {
+        return String::new();
+    };
+    let rest = lines.collect::<Vec<_>>();
+    if rest.is_empty() {
+        return first.to_string();
+    }
+    let strip = rest
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.len() - line.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    let mut normalized = Vec::with_capacity(rest.len() + 1);
+    normalized.push(first.to_string());
+    normalized.extend(rest.into_iter().map(|line| {
+        if line.len() >= strip {
+            line[strip..].to_string()
+        } else {
+            line.to_string()
+        }
+    }));
+    normalized.join("\n")
 }
 
 fn assertion_float_text(value: f64) -> String {

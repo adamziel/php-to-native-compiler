@@ -294,6 +294,7 @@ typedef struct {
     PtnPropertyVisibility set_visibility;
     int is_readonly;
     int is_unset;
+    char *last_type_name;
 } PtnObjectPropertyMetadata;
 
 typedef void (*PtnObjectNativeDataFree)(void *data);
