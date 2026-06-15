@@ -8139,6 +8139,37 @@ fn compile_str_repeat_internal_function_to_native_binary() {
 }
 
 #[test]
+fn compile_stateless_string_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-stateless-string-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stateless-string-helpers.php");
+    let output = root.join("stateless-string-helpers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('count_chars'), function_exists('convert_uuencode'), function_exists('levenshtein'), function_exists('quoted_printable_encode'), function_exists('str_word_count'));\n\
+echo implode(count_chars('aba', 1)), \"\\n\";\n\
+$encoded = convert_uuencode(\"abc\");\n\
+var_dump(convert_uudecode($encoded));\n\
+var_dump(levenshtein('kitten', 'sitting'));\n\
+var_dump(quoted_printable_encode(\"\\0A=\"));\n\
+var_dump(str_word_count(\"Hello you're -foo- bar-0var\", 1, '0'));\n\
+try { count_chars('x', 5); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n21\nstring(3) \"abc\"\nint(3)\nstring(7) \"=00A=3D\"\narray(4) {\n  [0]=>\n  string(5) \"Hello\"\n  [1]=>\n  string(6) \"you're\"\n  [2]=>\n  string(3) \"foo\"\n  [3]=>\n  string(8) \"bar-0var\"\n}\ncount_chars(): Argument #2 ($mode) must be between 0 and 4 (inclusive)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strip_tags_bug70720_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-strip-tags-bug70720-phpt-shape");
     fs::create_dir_all(&root).unwrap();

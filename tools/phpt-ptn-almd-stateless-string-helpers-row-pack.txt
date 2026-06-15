@@ -1,0 +1,17 @@
+# ptn-almd broad-derived ext/standard string helper row pack.
+# Source: .runtime/ptn-almd-broad-before/20260615T042822Z/phpt-baseline-10000.txt
+# Note: current tier-1000 and tier-5000 manifests contain zero
+# ext/standard/tests/strings rows; these are the matching broad 10k rows.
+ext/standard/tests/strings/convert_uudecode_basic.phpt
+ext/standard/tests/strings/convert_uuencode_basic.phpt
+ext/standard/tests/strings/count_chars.phpt
+ext/standard/tests/strings/count_chars_basic.phpt
+ext/standard/tests/strings/levenshtein.phpt
+ext/standard/tests/strings/levenshtein_bug_16473.phpt
+ext/standard/tests/strings/levenshtein_bug_6562.phpt
+ext/standard/tests/strings/levenshtein_bug_7368.phpt
+ext/standard/tests/strings/levenshtein_error_conditions.phpt
+ext/standard/tests/strings/quoted_printable_encode_001.phpt
+ext/standard/tests/strings/quoted_printable_encode_002.phpt
+ext/standard/tests/strings/str_word_count.phpt
+ext/standard/tests/strings/str_word_count1.phpt

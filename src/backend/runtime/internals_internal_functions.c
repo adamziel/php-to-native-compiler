@@ -6381,6 +6381,350 @@ static double ptn_internal_expect_numeric_arg(
     size_t line
 );
 
+static PtnValue ptn_internal_count_chars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "count_chars", 1, "string", args[0], line);
+    int64_t mode = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "count_chars", 2, "mode", args[1], line)
+        : 0;
+    if (mode < 0 || mode > 4) {
+        ptn_string_operand_free(string);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "count_chars(): Argument #2 ($mode) must be between 0 and 4 (inclusive)"
+        );
+        return ptn_null();
+    }
+
+    int64_t counts[256];
+    for (size_t i = 0; i < 256; i++) {
+        counts[i] = 0;
+    }
+    for (size_t i = 0; i < string.len; i++) {
+        counts[(unsigned char)string.data[i]]++;
+    }
+
+    if (mode == 3 || mode == 4) {
+        PtnStringBuffer output;
+        ptn_string_buffer_init(&output);
+        for (size_t i = 0; i < 256; i++) {
+            int present = counts[i] > 0;
+            if ((mode == 3 && present) || (mode == 4 && !present)) {
+                ptn_string_buffer_append_char(&output, (char)i);
+            }
+        }
+        ptn_string_operand_free(string);
+        return ptn_owned_string_len(output.data, output.len);
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < 256; i++) {
+        int include = mode == 0 || (mode == 1 && counts[i] > 0) || (mode == 2 && counts[i] == 0);
+        if (include) {
+            ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_int(counts[i]));
+        }
+    }
+    ptn_string_operand_free(string);
+    return result;
+}
+
+static char ptn_uuencode_char(unsigned char value) {
+    value &= 0x3f;
+    return value == 0 ? '`' : (char)(value + 32);
+}
+
+static int ptn_uudecode_value(unsigned char byte) {
+    if (byte == '`') {
+        return 0;
+    }
+    if (byte < 32 || byte > 96) {
+        return -1;
+    }
+    return (int)((byte - 32) & 0x3f);
+}
+
+static PtnValue ptn_internal_convert_uuencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string =
+        ptn_internal_expect_string_arg(runtime, "convert_uuencode", 1, "string", args[0], line);
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t offset = 0; offset < string.len; offset += 45) {
+        size_t line_len = string.len - offset;
+        if (line_len > 45) {
+            line_len = 45;
+        }
+        ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)line_len));
+        for (size_t i = 0; i < line_len; i += 3) {
+            unsigned char a = (unsigned char)string.data[offset + i];
+            unsigned char b = i + 1 < line_len ? (unsigned char)string.data[offset + i + 1] : 0;
+            unsigned char c = i + 2 < line_len ? (unsigned char)string.data[offset + i + 2] : 0;
+            ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)(a >> 2)));
+            ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)(((a << 4) | (b >> 4)) & 0x3f)));
+            ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)(((b << 2) | (c >> 6)) & 0x3f)));
+            ptn_string_buffer_append_char(&output, ptn_uuencode_char((unsigned char)(c & 0x3f)));
+        }
+        ptn_string_buffer_append_char(&output, '\n');
+    }
+    ptn_string_buffer_append(&output, "`\n");
+
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_internal_convert_uudecode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string =
+        ptn_internal_expect_string_arg(runtime, "convert_uudecode", 1, "string", args[0], line);
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t offset = 0;
+    while (offset < string.len) {
+        while (offset < string.len && (string.data[offset] == '\r' || string.data[offset] == '\n')) {
+            offset++;
+        }
+        if (offset >= string.len) {
+            break;
+        }
+        int decoded_len = ptn_uudecode_value((unsigned char)string.data[offset++]);
+        if (decoded_len < 0) {
+            ptn_string_operand_free(string);
+            free(output.data);
+            return ptn_bool(0);
+        }
+        if (decoded_len == 0) {
+            break;
+        }
+
+        int produced = 0;
+        while (produced < decoded_len && offset < string.len && string.data[offset] != '\n' && string.data[offset] != '\r') {
+            int a = ptn_uudecode_value((unsigned char)string.data[offset++]);
+            int b = offset < string.len ? ptn_uudecode_value((unsigned char)string.data[offset++]) : -1;
+            int c = offset < string.len ? ptn_uudecode_value((unsigned char)string.data[offset++]) : -1;
+            int d = offset < string.len ? ptn_uudecode_value((unsigned char)string.data[offset++]) : -1;
+            if (a < 0 || b < 0 || c < 0 || d < 0) {
+                ptn_string_operand_free(string);
+                free(output.data);
+                return ptn_bool(0);
+            }
+            unsigned char bytes[3];
+            bytes[0] = (unsigned char)((a << 2) | (b >> 4));
+            bytes[1] = (unsigned char)(((b & 0x0f) << 4) | (c >> 2));
+            bytes[2] = (unsigned char)(((c & 0x03) << 6) | d);
+            for (size_t i = 0; i < 3 && produced < decoded_len; i++) {
+                ptn_string_buffer_append_char(&output, (char)bytes[i]);
+                produced++;
+            }
+        }
+        while (offset < string.len && string.data[offset] != '\n') {
+            offset++;
+        }
+        if (offset < string.len && string.data[offset] == '\n') {
+            offset++;
+        }
+    }
+
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static int64_t ptn_levenshtein_add_cost(int64_t left, int64_t right) {
+    if (left > INT64_MAX - right) {
+        return INT64_MAX;
+    }
+    return left + right;
+}
+
+static PtnValue ptn_internal_levenshtein(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string1 = ptn_internal_expect_string_arg(runtime, "levenshtein", 1, "string1", args[0], line);
+    PtnStringOperand string2 = ptn_internal_expect_string_arg(runtime, "levenshtein", 2, "string2", args[1], line);
+    int64_t insertion_cost = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "levenshtein", 3, "insertion_cost", args[2], line)
+        : 1;
+    int64_t replacement_cost = argc >= 4
+        ? ptn_internal_expect_integer_arg(runtime, "levenshtein", 4, "replacement_cost", args[3], line)
+        : 1;
+    int64_t deletion_cost = argc >= 5
+        ? ptn_internal_expect_integer_arg(runtime, "levenshtein", 5, "deletion_cost", args[4], line)
+        : 1;
+    if (insertion_cost < 0 || replacement_cost < 0 || deletion_cost < 0) {
+        ptn_string_operand_free(string1);
+        ptn_string_operand_free(string2);
+        ptn_throw_exception(runtime, "ValueError", "levenshtein(): Cost arguments must be non-negative");
+        return ptn_null();
+    }
+
+    size_t columns = string2.len + 1;
+    int64_t *previous = malloc(columns * sizeof(int64_t));
+    int64_t *current = malloc(columns * sizeof(int64_t));
+    if (previous == NULL || current == NULL) {
+        free(previous);
+        free(current);
+        ptn_abort_out_of_memory();
+    }
+    previous[0] = 0;
+    for (size_t j = 1; j < columns; j++) {
+        previous[j] = ptn_levenshtein_add_cost(previous[j - 1], insertion_cost);
+    }
+    for (size_t i = 1; i <= string1.len; i++) {
+        current[0] = ptn_levenshtein_add_cost(previous[0], deletion_cost);
+        for (size_t j = 1; j <= string2.len; j++) {
+            int64_t del = ptn_levenshtein_add_cost(previous[j], deletion_cost);
+            int64_t ins = ptn_levenshtein_add_cost(current[j - 1], insertion_cost);
+            int64_t sub = previous[j - 1];
+            if (string1.data[i - 1] != string2.data[j - 1]) {
+                sub = ptn_levenshtein_add_cost(sub, replacement_cost);
+            }
+            int64_t best = del < ins ? del : ins;
+            if (sub < best) {
+                best = sub;
+            }
+            current[j] = best;
+        }
+        int64_t *tmp = previous;
+        previous = current;
+        current = tmp;
+    }
+    int64_t result = previous[string2.len];
+    free(previous);
+    free(current);
+    ptn_string_operand_free(string1);
+    ptn_string_operand_free(string2);
+    return ptn_int(result);
+}
+
+static void ptn_quoted_printable_encode_append(
+    PtnStringBuffer *output,
+    const char *encoded,
+    size_t encoded_len,
+    size_t *line_len
+) {
+    if (*line_len > 0 && *line_len + encoded_len > 75) {
+        ptn_string_buffer_append(output, "=\r\n");
+        *line_len = 0;
+    }
+    ptn_string_buffer_append_len(output, encoded, encoded_len);
+    *line_len += encoded_len;
+}
+
+static PtnValue ptn_internal_quoted_printable_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string =
+        ptn_internal_expect_string_arg(runtime, "quoted_printable_encode", 1, "string", args[0], line);
+    static const char hex[] = "0123456789ABCDEF";
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t line_len = 0;
+    for (size_t i = 0; i < string.len; i++) {
+        unsigned char byte = (unsigned char)string.data[i];
+        if (byte == '\r') {
+            if (i + 1 < string.len && string.data[i + 1] == '\n') {
+                ptn_string_buffer_append(&output, "\r\n");
+                i++;
+            } else {
+                ptn_string_buffer_append_char(&output, '\r');
+            }
+            line_len = 0;
+            continue;
+        }
+        if (byte == '\n') {
+            ptn_string_buffer_append_char(&output, '\n');
+            line_len = 0;
+            continue;
+        }
+
+        int at_line_end = i + 1 == string.len || string.data[i + 1] == '\r' || string.data[i + 1] == '\n';
+        char encoded[3];
+        if ((byte >= 33 && byte <= 60) || (byte >= 62 && byte <= 126) || ((byte == ' ' || byte == '\t') && !at_line_end)) {
+            encoded[0] = (char)byte;
+            ptn_quoted_printable_encode_append(&output, encoded, 1, &line_len);
+        } else {
+            encoded[0] = '=';
+            encoded[1] = hex[(byte >> 4) & 0x0f];
+            encoded[2] = hex[byte & 0x0f];
+            ptn_quoted_printable_encode_append(&output, encoded, 3, &line_len);
+        }
+    }
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static int ptn_str_word_count_extra_contains(PtnStringOperand extra, unsigned char byte) {
+    for (size_t i = 0; i < extra.len; i++) {
+        if ((unsigned char)extra.data[i] == byte) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_str_word_count_is_base_word_byte(unsigned char byte) {
+    return (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || byte >= 128;
+}
+
+static int ptn_str_word_count_is_word_byte(unsigned char byte, PtnStringOperand extra) {
+    return ptn_str_word_count_is_base_word_byte(byte) || ptn_str_word_count_extra_contains(extra, byte);
+}
+
+static PtnValue ptn_internal_str_word_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string =
+        ptn_internal_expect_string_arg(runtime, "str_word_count", 1, "string", args[0], line);
+    int64_t format = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "str_word_count", 2, "format", args[1], line)
+        : 0;
+    if (format < 0 || format > 2) {
+        ptn_string_operand_free(string);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "str_word_count(): Argument #2 ($format) must be a valid format value"
+        );
+        return ptn_null();
+    }
+    PtnStringOperand extra = argc >= 3
+        ? ptn_internal_expect_string_arg(runtime, "str_word_count", 3, "characters", args[2], line)
+        : ptn_string_operand_borrowed("");
+
+    int64_t count = 0;
+    PtnValue result = format == 0 ? ptn_null() : ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < string.len;) {
+        unsigned char byte = (unsigned char)string.data[i];
+        if (!ptn_str_word_count_is_word_byte(byte, extra)) {
+            i++;
+            continue;
+        }
+        size_t start = i;
+        i++;
+        while (i < string.len) {
+            unsigned char current = (unsigned char)string.data[i];
+            if (ptn_str_word_count_is_word_byte(current, extra) || current == '\'') {
+                i++;
+                continue;
+            }
+            if (current == '-' && i + 1 < string.len &&
+                ptn_str_word_count_is_word_byte((unsigned char)string.data[i + 1], extra)) {
+                i++;
+                continue;
+            }
+            break;
+        }
+        count++;
+        if (format == 1 || format == 2) {
+            char *word = ptn_duplicate_string_len(string.data + start, i - start);
+            PtnArrayKey key = format == 1
+                ? ptn_array_int_key(result.as.array->next_auto_key)
+                : ptn_array_int_key((int64_t)start);
+            ptn_array_set_entry(result.as.array, key, ptn_owned_string_len(word, i - start));
+        }
+    }
+
+    ptn_string_operand_free(string);
+    ptn_string_operand_free(extra);
+    return format == 0 ? ptn_int(count) : result;
+}
+
 static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "strlen", 1, "string", args[0], line);
@@ -14665,7 +15009,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "closedir", 1, 1, ptn_internal_closedir },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "constant", 1, 1, ptn_internal_constant },
+        { "convert_uudecode", 1, 1, ptn_internal_convert_uudecode },
+        { "convert_uuencode", 1, 1, ptn_internal_convert_uuencode },
         { "count", 1, 2, ptn_internal_count },
+        { "count_chars", 1, 2, ptn_internal_count_chars },
         { "crc32", 1, 1, ptn_internal_crc32 },
         { "current", 1, 1, ptn_internal_current },
         { "date", 1, 2, ptn_internal_date },
@@ -14761,6 +15108,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "krsort", 1, 2, ptn_internal_krsort },
         { "ksort", 1, 2, ptn_internal_ksort },
         { "lcfirst", 1, 1, ptn_internal_lcfirst },
+        { "levenshtein", 2, 5, ptn_internal_levenshtein },
         { "localeconv", 0, 0, ptn_internal_localeconv },
         { "lstat", 1, 1, ptn_internal_lstat },
         { "ltrim", 1, 2, ptn_internal_ltrim },
@@ -14793,6 +15141,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "property_exists", 2, 2, ptn_internal_property_exists },
         { "putenv", 1, 1, ptn_internal_putenv },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
+        { "quoted_printable_encode", 1, 1, ptn_internal_quoted_printable_encode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "rand", 0, 2, ptn_internal_rand },
         { "range", 2, 3, ptn_internal_range },
@@ -14825,6 +15174,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_shuffle", 1, 1, ptn_internal_str_shuffle },
         { "str_split", 1, 2, ptn_internal_str_split },
         { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
+        { "str_word_count", 1, 3, ptn_internal_str_word_count },
         { "strcasecmp", 2, 2, ptn_internal_strcasecmp },
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
