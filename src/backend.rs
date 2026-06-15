@@ -132,6 +132,7 @@ pub fn emit_c(module: &Module) -> String {
         emit_method_dispatch(
             &mut out,
             &module.classes,
+            &module.functions,
             runtime_requirements.closure_invoke_method_dispatch,
         );
     }
@@ -616,6 +617,9 @@ fn emit_user_function_prototypes(
         out.push_str(
             "static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);\n",
         );
+        out.push_str(
+            "static PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index);\n",
+        );
     }
     if needs_dynamic_function_dispatch {
         out.push_str("static PTN_UNUSED char *ptn_dynamic_function_name(PtnValue callable);\n");
@@ -625,13 +629,16 @@ fn emit_user_function_prototypes(
     }
     if needs_method_dispatch {
         out.push_str(
-            "static PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line);\n",
-        );
+                "static PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line);\n",
+            );
         out.push_str(
-            "static PTN_UNUSED int ptn_call_declared_method_in_scope(PtnRuntime *runtime, PtnValue receiver, const char *target_class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out);\n",
-        );
+                "static PTN_UNUSED int ptn_declared_method_argument_by_ref(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argument_index);\n",
+            );
         out.push_str(
-            "static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);\n",
+                "static PTN_UNUSED int ptn_call_declared_method_in_scope(PtnRuntime *runtime, PtnValue receiver, const char *target_class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out);\n",
+            );
+        out.push_str(
+                "static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);\n",
         );
     }
     for (index, _) in functions.iter().enumerate() {
@@ -829,13 +836,13 @@ fn emit_user_functions(
                 out.push_str(check_indent);
                 out.push_str("    } else {\n");
                 out.push_str(check_indent);
-                out.push_str("        ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
+                out.push_str("        ptn_throw_by_reference_argument_error(caller_runtime, ptn_by_reference_argument_function_name(caller_runtime, \"");
                 out.push_str(&c_string(&function.display_name));
                 out.push_str("\"), ");
                 out.push_str(&(parameter_index + 1).to_string());
                 out.push_str(", \"");
                 out.push_str(&c_string(&parameter.name));
-                out.push_str("\");\n");
+                out.push_str("\", line);\n");
                 out.push_str(check_indent);
                 out.push_str("    }\n");
                 out.push_str(check_indent);
@@ -1187,13 +1194,13 @@ fn emit_variadic_parameter_binding(
         out.push_str(&c_string(&parameter.name));
         out.push_str("\", line);\n");
         out.push_str("            } else {\n");
-        out.push_str("            ptn_abort_by_reference_argument_error(ptn_by_reference_argument_function_name(caller_runtime, \"");
+        out.push_str("            ptn_throw_by_reference_argument_error(caller_runtime, ptn_by_reference_argument_function_name(caller_runtime, \"");
         out.push_str(&c_string(&function.display_name));
         out.push_str("\"), ");
         out.push_str(&index_temp);
         out.push_str(" + 1, \"");
         out.push_str(&c_string(&parameter.name));
-        out.push_str("\");\n");
+        out.push_str("\", line);\n");
         out.push_str("            }\n");
         out.push_str("        }\n");
     }
@@ -1427,6 +1434,12 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     }
     if name.eq_ignore_ascii_case("preg_match") && argument_index == 2 {
         return Some("matches");
+    }
+    if (name.eq_ignore_ascii_case("preg_replace")
+        || name.eq_ignore_ascii_case("preg_replace_callback"))
+        && argument_index == 4
+    {
+        return Some("count");
     }
     if (name.eq_ignore_ascii_case("str_replace") || name.eq_ignore_ascii_case("str_ireplace"))
         && argument_index == 3
@@ -4366,6 +4379,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
 fn emit_method_dispatch(
     out: &mut String,
     classes: &[ClassDecl],
+    functions: &[FunctionDecl],
     needs_closure_invoke_dispatch: bool,
 ) {
     out.push_str(
@@ -4486,6 +4500,73 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_method_argument_by_ref(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argument_index) {\n",
+    );
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
+    out.push_str("        (void)runtime;\n");
+    out.push_str("        (void)method_name;\n");
+    out.push_str("        (void)argument_index;\n");
+    out.push_str("        return -1;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            if (!ptn_declared_method_visibility_allows(runtime->current_class_name, \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\", ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(")");
+            if method.visibility == PropertyVisibility::Protected {
+                out.push_str(" && !ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
+            }
+            out.push_str(") {\n");
+            out.push_str("                return -1;\n");
+            out.push_str("            }\n");
+            let function = &functions[method.function_index];
+            if function.parameters.is_empty() {
+                out.push_str("            (void)argument_index;\n");
+                out.push_str("            return 0;\n");
+            } else {
+                for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+                    out.push_str("            if (argument_index == ");
+                    out.push_str(&parameter_index.to_string());
+                    out.push_str(") {\n");
+                    out.push_str("                return ");
+                    out.push_str(if parameter.by_ref { "1" } else { "0" });
+                    out.push_str(";\n");
+                    out.push_str("            }\n");
+                    if parameter.is_variadic {
+                        out.push_str("            if (argument_index > ");
+                        out.push_str(&parameter_index.to_string());
+                        out.push_str(") {\n");
+                        out.push_str("                return ");
+                        out.push_str(if parameter.by_ref { "1" } else { "0" });
+                        out.push_str(";\n");
+                        out.push_str("            }\n");
+                        break;
+                    }
+                }
+                out.push_str("            return 0;\n");
+            }
+            out.push_str("        }\n");
+        }
+        out.push_str("    }\n");
+    }
+    out.push_str("    return -1;\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -4718,6 +4799,43 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("}\n");
 }
 
+fn emit_callable_argument_by_ref_return(out: &mut String, function: &FunctionDecl, indent: &str) {
+    if function.parameters.is_empty() {
+        out.push_str(indent);
+        out.push_str("(void)argument_index;\n");
+        out.push_str(indent);
+        out.push_str("return 0;\n");
+        return;
+    }
+    for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+        out.push_str(indent);
+        out.push_str("if (argument_index == ");
+        out.push_str(&parameter_index.to_string());
+        out.push_str(") {\n");
+        out.push_str(indent);
+        out.push_str("    return ");
+        out.push_str(if parameter.by_ref { "1" } else { "0" });
+        out.push_str(";\n");
+        out.push_str(indent);
+        out.push_str("}\n");
+        if parameter.is_variadic {
+            out.push_str(indent);
+            out.push_str("if (argument_index > ");
+            out.push_str(&parameter_index.to_string());
+            out.push_str(") {\n");
+            out.push_str(indent);
+            out.push_str("    return ");
+            out.push_str(if parameter.by_ref { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str(indent);
+            out.push_str("}\n");
+            break;
+        }
+    }
+    out.push_str(indent);
+    out.push_str("return 0;\n");
+}
+
 fn emit_callable_dispatch(
     out: &mut String,
     functions: &[FunctionDecl],
@@ -4767,6 +4885,49 @@ fn emit_callable_dispatch(
         out.push_str("    free(message);\n");
         out.push_str("}\n");
     }
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
+    out.push_str("        if (resolved.as.closure->has_wrapped_callable) {\n");
+    out.push_str("            return ptn_callable_argument_by_ref(runtime, resolved.as.closure->wrapped_callable, argument_index);\n");
+    out.push_str("        }\n");
+    out.push_str("        switch (resolved.as.closure->function_index) {\n");
+    for (index, function) in functions.iter().enumerate() {
+        if !function.is_anonymous {
+            continue;
+        }
+        out.push_str("            case ");
+        out.push_str(&index.to_string());
+        out.push_str(":\n");
+        emit_callable_argument_by_ref_return(out, function, "                ");
+    }
+    out.push_str("            default:\n");
+    out.push_str("                return -1;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    if functions.iter().any(|function| !function.is_anonymous) {
+        out.push_str("    if (resolved.type == PTN_STRING) {\n");
+        out.push_str("        char *callable_name = ptn_value_to_string(resolved);\n");
+        out.push_str(
+            "        const char *lookup_name = ptn_symbol_name_without_leading_slash(callable_name);\n",
+        );
+        for function in functions.iter().filter(|function| !function.is_anonymous) {
+            out.push_str("        if (ptn_ascii_case_equal(lookup_name, \"");
+            out.push_str(&c_string(&function.name));
+            out.push_str("\")) {\n");
+            out.push_str("            free(callable_name);\n");
+            emit_callable_argument_by_ref_return(out, function, "            ");
+            out.push_str("        }\n");
+        }
+        out.push_str("        free(callable_name);\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return -1;\n");
+    out.push_str("}\n");
 
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
@@ -8151,6 +8312,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("array_walk_recursive")
         || name.eq_ignore_ascii_case("call_user_func")
         || name.eq_ignore_ascii_case("call_user_func_array")
+        || name.eq_ignore_ascii_case("preg_replace_callback")
 }
 
 fn collect_control_warnings_in(
@@ -11542,7 +11704,7 @@ impl ValueEmitter {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_null();\n");
-                out.push_str("    ptn_abort_type_error_at(\"Cannot use [] for reading\", \"");
+                out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use [] for reading\", \"");
                 out.push_str(&c_string(&self.source_file));
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
@@ -15038,6 +15200,139 @@ impl ValueEmitter {
         }
     }
 
+    fn emit_runtime_declared_method_call_argument(
+        &mut self,
+        out: &mut String,
+        receiver_temp: &str,
+        method_name: &str,
+        argument_index: usize,
+        argument: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let mode_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&mode_temp);
+        out.push_str(" = ptn_declared_method_argument_by_ref(&runtime, ");
+        out.push_str(receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(method_name));
+        out.push_str("\", ");
+        out.push_str(&argument_index.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+
+        out.push_str("    if (");
+        out.push_str(&mode_temp);
+        out.push_str(" == 1) {\n");
+        let by_ref_temp = self.emit_by_ref_call_argument(
+            out,
+            argument,
+            method_name,
+            argument_index,
+            "",
+            line,
+            true,
+            true,
+        );
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&by_ref_temp);
+        out.push_str(";\n");
+
+        out.push_str("    } else if (");
+        out.push_str(&mode_temp);
+        out.push_str(" == 0) {\n");
+        let by_value_temp = self.emit_call_argument(out, method_name, argument_index, argument);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&by_value_temp);
+        out.push_str(";\n");
+
+        out.push_str("    } else {\n");
+        let dynamic_temp = self.emit_dynamic_call_argument(out, argument);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&dynamic_temp);
+        out.push_str(";\n");
+        out.push_str("    }\n");
+
+        result_temp
+    }
+
+    fn emit_runtime_callable_call_argument(
+        &mut self,
+        out: &mut String,
+        callee_temp: &str,
+        argument_index: usize,
+        argument: &ValueExpr,
+        line: usize,
+    ) -> String {
+        if !value_is_temporary_write_context(argument) {
+            return self.emit_dynamic_call_argument(out, argument);
+        }
+
+        let mode_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&mode_temp);
+        out.push_str(" = ptn_callable_argument_by_ref(&runtime, ");
+        out.push_str(callee_temp);
+        out.push_str(", ");
+        out.push_str(&argument_index.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+
+        out.push_str("    if (");
+        out.push_str(&mode_temp);
+        out.push_str(" == 1) {\n");
+        let by_ref_temp = self.emit_by_ref_call_argument(
+            out,
+            argument,
+            "{closure}",
+            argument_index,
+            "",
+            line,
+            true,
+            true,
+        );
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&by_ref_temp);
+        out.push_str(";\n");
+
+        out.push_str("    } else if (");
+        out.push_str(&mode_temp);
+        out.push_str(" == 0) {\n");
+        let by_value_temp = self.emit_call_argument(out, "{closure}", argument_index, argument);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&by_value_temp);
+        out.push_str(";\n");
+
+        out.push_str("    } else {\n");
+        let dynamic_temp = self.emit_dynamic_call_argument(out, argument);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&dynamic_temp);
+        out.push_str(";\n");
+        out.push_str("    }\n");
+
+        result_temp
+    }
+
     fn emit_reference_source(
         &mut self,
         out: &mut String,
@@ -15984,8 +16279,14 @@ impl ValueEmitter {
 
         let mut temps = Vec::with_capacity(arguments.len());
         let mut unwrap_append_reference_temps = Vec::new();
-        for argument in arguments {
-            let temp = self.emit_dynamic_call_argument(out, argument);
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            let temp = self.emit_runtime_callable_call_argument(
+                out,
+                &callee_temp,
+                argument_index,
+                argument,
+                line,
+            );
             if value_is_append_reference_target(argument) {
                 unwrap_append_reference_temps.push(temp.clone());
             }
@@ -16888,7 +17189,14 @@ impl ValueEmitter {
             } else if declared_signature.is_some() {
                 self.emit_call_argument(out, name, argument_index, argument)
             } else {
-                self.emit_dynamic_call_argument(out, argument)
+                self.emit_runtime_declared_method_call_argument(
+                    out,
+                    &receiver_temp,
+                    name,
+                    argument_index,
+                    argument,
+                    line,
+                )
             };
             if by_ref_parameter.is_some() && value_is_append_reference_target(argument) {
                 unwrap_append_reference_temps.push(temp.clone());
