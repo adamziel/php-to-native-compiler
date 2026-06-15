@@ -3,6 +3,8 @@
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
 | ptn-w17z.31 iterable/DNF type row pack | 27 | 27 |
+| ptn-w17z.36 extract typed references | 1 | 1 |
+| ptn-2cij ENV/CLEAN SKIPIF preconditions | 33 | 0 |
 | ptn-vj4r class_alias namespace metadata | 5 | 5 |
 | ptn-144g parser residual row pack | 2 | 2 |
 | ptn-evvk stream mode diagnostics | 8 | 8 |
@@ -29,12 +31,12 @@
 
 Refresh: 2026-06-15T19:02Z.
 Measured latest: `ptn-w17z.31` iterable/DNF type row pack selected 27 rows, kept 27 runnable, and passed 27/27 in the merged focused run.
-Latest: `ptn-w17z.31` completed the checked-in iterable/DNF type row pack. Previous: `ptn-vj4r` completed the checked-in class_alias namespace metadata row pack.
+Latest: `ptn-w17z.31` completed the checked-in iterable/DNF type row pack. Previous: `ptn-w17z.36` completed the checked-in extract typed references row pack.
 
 Current hook: `ptn-w17z.31` iterable/DNF type row pack passed 27/27 at
 `.runtime/ptn-w17z31-merged-focused/run-20260615T185932Z-manifest.log`.
-Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
-`.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
+Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
+`.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
 
 ## 2026-06-15 ptn-w17z.31 Iterable/DNF Type Row Pack
 
@@ -51,6 +53,20 @@ union, intersection, and DNF user type hints; method signature compatibility
 for iterable, object, and DNF variance; iterable union/intersection redundancy
 diagnostics; declaration-time default diagnostics for iterable defaults; and
 runtime checks/errors for composite parameter and return type boundaries.
+
+## 2026-06-15 ptn-w17z.36 Extract Typed References
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final rebased focused acceptance row (`.runtime/ptn-w17z36-extract-typed-ref-postrebase/run-20260615T173320Z-manifest.log`) | 1 selected / 1 runnable | 1 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`) | 1 selected / 1 runnable | 1 |
+
+## 2026-06-15 ptn-2cij ENV/CLEAN SKIPIF Preconditions
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current `origin/master` classify-only (`.runtime/ptn-2cij/origin-baseline-rebased/summary-20260615T172331Z.txt`) | 2,086 selected / 255 runnable / 50 `harness-skipif` | 0 |
+| Final rebased classify-only (`.runtime/ptn-2cij/env-clean-rebased/summary-20260615T171427Z.txt`) | 2,086 selected / 288 runnable / 17 `harness-skipif` | 0 |
 
 ## 2026-06-15 ptn-vj4r Class Alias Namespace Metadata
 

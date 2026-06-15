@@ -7409,6 +7409,10 @@ static PtnValue ptn_extract_from_array(
             } else {
                 ptn_extract_store_value(runtime, target, array->entries[i].value, 0);
             }
+            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+                free(target);
+                break;
+            }
         }
         free(target);
     }
@@ -7463,6 +7467,12 @@ static PTN_UNUSED PtnValue ptn_internal_extract_globals(PtnRuntime *runtime, siz
                 ptn_value_destroy(&global_reference);
             } else {
                 ptn_extract_store_value(runtime, target, global_value, 0);
+            }
+            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+                free(target);
+                ptn_value_destroy(&global_value);
+                free(global_name);
+                break;
             }
         }
         free(target);
@@ -11528,7 +11538,7 @@ static PtnValue ptn_internal_str_replace(PtnRuntime *runtime, size_t argc, const
 
     if (argc >= 4 && args[3].type == PTN_REFERENCE) {
         PtnValue count_value = ptn_int(replacement_count);
-        ptn_reference_assign(args[3].as.reference, count_value);
+        ptn_reference_assign(runtime, args[3].as.reference, count_value);
     }
 
     ptn_str_replace_string_list_free(&search);
@@ -11870,6 +11880,7 @@ static char *ptn_pcre_pattern_to_posix(
 }
 
 static void ptn_preg_match_assign_matches(
+    PtnRuntime *runtime,
     PtnValue matches_arg,
     const char *subject,
     regmatch_t *matches,
@@ -11896,7 +11907,7 @@ static void ptn_preg_match_assign_matches(
         }
         ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), value);
     }
-    ptn_reference_assign(matches_arg.as.reference, result);
+    ptn_reference_assign(runtime, matches_arg.as.reference, result);
     ptn_value_destroy(&result);
 }
 
@@ -11946,10 +11957,10 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
     int matched = exec_result == 0;
     if (argc >= 3) {
         if (matched) {
-            ptn_preg_match_assign_matches(args[2], subject_c, matches, capture_map, capture_count);
+            ptn_preg_match_assign_matches(runtime, args[2], subject_c, matches, capture_map, capture_count);
         } else if (args[2].type == PTN_REFERENCE) {
             PtnValue empty_matches = ptn_array_from_literal_entries(0, NULL);
-            ptn_reference_assign(args[2].as.reference, empty_matches);
+            ptn_reference_assign(runtime, args[2].as.reference, empty_matches);
             ptn_value_destroy(&empty_matches);
         }
     }
@@ -22015,6 +22026,10 @@ static PTN_UNUSED PtnValue ptn_array_iterator_new(
         PTN_PROPERTY_PRIVATE,
         PTN_PROPERTY_PRIVATE,
         0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
         1,
         storage_value,
         line
@@ -22659,7 +22674,7 @@ static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const
     int syntax_only = argc >= 2 && ptn_is_truthy(args[1]);
     if (argc >= 3 && args[2].type == PTN_REFERENCE) {
         PtnValue callable_name = ptn_owned_string(ptn_callable_output_name(args[0]));
-        ptn_reference_assign(args[2].as.reference, callable_name);
+        ptn_reference_assign(runtime, args[2].as.reference, callable_name);
         ptn_value_destroy(&callable_name);
     }
     return ptn_bool(ptn_callable_is_valid(runtime, args[0], syntax_only));
