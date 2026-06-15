@@ -49,6 +49,7 @@ pub struct PropertyDecl {
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
     pub is_readonly: bool,
+    pub has_override_attribute: bool,
     pub value: Option<Expr>,
     pub span: SourceSpan,
 }
@@ -71,6 +72,7 @@ pub struct StaticPropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
+    pub has_override_attribute: bool,
     pub value: Option<Expr>,
     pub span: SourceSpan,
 }
@@ -88,6 +90,7 @@ pub struct MethodDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub trait_name: Option<String>,
+    pub has_override_attribute: bool,
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
@@ -124,6 +127,7 @@ pub struct PromotedProperty {
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
     pub is_readonly: bool,
+    pub has_override_attribute: bool,
     pub span: SourceSpan,
 }
 

@@ -3814,6 +3814,123 @@ class Book {
 }
 
 #[test]
+fn parser_accepts_override_attributes_with_matching_contracts() {
+    let program = parser::parse(
+        "<?php
+interface Contract {
+    public mixed $contract { get; }
+    public mixed $promoted { get; }
+    public function run();
+}
+
+trait RequiredByTrait {
+    abstract public function traitRun();
+}
+
+class Base {
+    protected mixed $base;
+    public static mixed $shared;
+    protected function parentRun() {}
+}
+
+class Child extends Base implements Contract {
+    use RequiredByTrait;
+
+    #[\\Override]
+    public mixed $contract;
+
+    #[\\Override]
+    public mixed $base;
+
+    #[\\Override]
+    public static mixed $shared;
+
+    #[\\Override]
+    public function run() {}
+
+    #[\\Override]
+    public function parentRun() {}
+
+    #[\\Override]
+    public function traitRun() {}
+
+    public function __construct(
+        #[\\Override]
+        public mixed $promoted,
+    ) {}
+}
+",
+    )
+    .unwrap();
+
+    let child = program
+        .classes
+        .iter()
+        .find(|class| class.name == "Child")
+        .unwrap();
+    assert!(child
+        .properties
+        .iter()
+        .any(|property| property.name == "contract" && property.has_override_attribute));
+    assert!(child
+        .properties
+        .iter()
+        .any(|property| property.name == "base" && property.has_override_attribute));
+    assert!(child
+        .properties
+        .iter()
+        .any(|property| property.name == "promoted" && property.has_override_attribute));
+    assert!(child
+        .static_properties
+        .iter()
+        .any(|property| property.name == "shared" && property.has_override_attribute));
+    assert!(child
+        .methods
+        .iter()
+        .any(|method| method.name == "run" && method.has_override_attribute));
+    assert!(child
+        .methods
+        .iter()
+        .any(|method| method.name == "parentRun" && method.has_override_attribute));
+    assert!(child
+        .methods
+        .iter()
+        .any(|method| method.name == "traitRun" && method.has_override_attribute));
+}
+
+#[test]
+fn parser_rejects_unmatched_override_attributes() {
+    let cases = [
+        (
+            "<?php class C { #[\\Override] public function c() {} }",
+            "C::c() has #[\\Override] attribute, but no matching parent method exists",
+        ),
+        (
+            "<?php class P { private mixed $p; } class C extends P { #[\\Override] public mixed $p; }",
+            "C::$p has #[\\Override] attribute, but no matching parent property exists",
+        ),
+        (
+            "<?php trait T { public function t() {} } class C { use T; #[\\Override] public function t() {} }",
+            "C::t() has #[\\Override] attribute, but no matching parent method exists",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{source}");
+    }
+}
+
+#[test]
+fn parser_ignores_override_identifier_inside_non_override_attribute_arguments() {
+    let program =
+        parser::parse("<?php class C { #[Example(Override::class)] public function c() {} }")
+            .unwrap();
+
+    assert!(!program.classes[0].methods[0].has_override_attribute);
+}
+
+#[test]
 fn parser_accepts_readonly_property_metadata() {
     let program = parser::parse(
         "<?php

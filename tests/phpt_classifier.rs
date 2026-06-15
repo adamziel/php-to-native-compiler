@@ -497,14 +497,14 @@ fn phpt_classifier_splits_attribute_metadata_blockers() {
         (
             "attribute syntax on class",
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nclass Bag {}\n--EXPECT--\n",
-            "unsupported-attribute-syntax-metadata\t",
-            "requires PHP attribute syntax",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "attribute syntax on function",
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n",
-            "unsupported-attribute-syntax-metadata\t",
-            "requires PHP attribute syntax",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "internal attribute reflection metadata",
@@ -517,6 +517,18 @@ fn phpt_classifier_splits_attribute_metadata_blockers() {
             "--TEST--\ndeprecated attribute\n--FILE--\n<?php\n$d = new \\Deprecated(\"message\");\n$d->message = \"updated\";\n--EXPECT--\n",
             "unsupported-internal-attribute-metadata\t",
             "requires internal attribute/reflection metadata",
+        ),
+        (
+            "override typed property validation",
+            "--TEST--\noverride property\n--FILE--\n<?php\nclass P { public mixed $p; }\nclass C extends P { #[\\Override] public mixed $p; }\necho \"Done\";\n--EXPECT--\nDone\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
+        ),
+        (
+            "override promoted property validation",
+            "--TEST--\noverride promoted property\n--FILE--\n<?php\ninterface I { public mixed $p { get; } }\nclass C implements I { public function __construct(#[\\Override] public mixed $p) {} }\necho \"Done\";\n--EXPECT--\nDone\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
     ];
 

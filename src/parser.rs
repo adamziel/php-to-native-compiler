@@ -122,6 +122,11 @@ struct ForeachVariable {
     span: SourceSpan,
 }
 
+#[derive(Default, Clone, Copy)]
+struct ParsedAttributes {
+    has_override: bool,
+}
+
 #[derive(Clone, Copy)]
 struct ClassModifiers {
     is_static: bool,
@@ -207,6 +212,7 @@ impl Parser<'_> {
         validate_trait_names(&traits)?;
         validate_parent_class_names(&classes)?;
         validate_interface_references(&classes)?;
+        validate_override_attributes(&classes, &traits)?;
         validate_abstract_methods(&classes)?;
         validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
@@ -269,6 +275,7 @@ impl Parser<'_> {
             {
                 break;
             }
+            let _ = self.parse_attribute_groups()?;
             if token_is_identifier_named(self.peek(), "declare") {
                 let statement = self.parse_declare_statement()?;
                 if !matches!(statement, Statement::Empty { .. }) {
@@ -1041,6 +1048,7 @@ impl Parser<'_> {
         class_is_interface: bool,
         class_name: &str,
     ) -> Result<ParsedClassMember> {
+        let attributes = self.parse_attribute_groups()?;
         let mut modifiers = self.parse_class_modifiers()?;
         if token_is_identifier_named(self.peek(), "use") {
             if class_is_interface {
@@ -1129,6 +1137,7 @@ impl Parser<'_> {
                         modifiers.visibility,
                         set_visibility,
                         modifiers.set_visibility_span,
+                        attributes,
                         class_name,
                     )?,
                 ));
@@ -1139,6 +1148,8 @@ impl Parser<'_> {
                     set_visibility,
                     modifiers.set_visibility_span,
                     member_is_readonly,
+                    attributes,
+                    class_is_interface,
                     class_name,
                 )?,
             ));
@@ -1156,6 +1167,7 @@ impl Parser<'_> {
                         modifiers.visibility,
                         set_visibility,
                         modifiers.set_visibility_span,
+                        attributes,
                         class_name,
                     )?,
                 ));
@@ -1166,6 +1178,8 @@ impl Parser<'_> {
                     set_visibility,
                     modifiers.set_visibility_span,
                     member_is_readonly,
+                    attributes,
+                    class_is_interface,
                     class_name,
                 )?,
             ));
@@ -1179,7 +1193,8 @@ impl Parser<'_> {
         if class_is_interface {
             modifiers.is_abstract = true;
         }
-        let method = self.parse_method_decl(modifiers, class_is_readonly, class_name)?;
+        let method =
+            self.parse_method_decl(attributes, modifiers, class_is_readonly, class_name)?;
         if class_is_interface && method.visibility != PropertyVisibility::Public {
             return Err(Diagnostic::new(
                 format!(
@@ -1334,6 +1349,7 @@ impl Parser<'_> {
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
         set_visibility_span: Option<SourceSpan>,
+        attributes: ParsedAttributes,
         class_name: &str,
     ) -> Result<Vec<StaticPropertyDecl>> {
         let has_type = self.parse_optional_property_type_hint()?;
@@ -1349,13 +1365,18 @@ impl Parser<'_> {
                 set_visibility_span,
             ));
         }
-        let mut properties =
-            vec![self.parse_static_property_declaration(visibility, set_visibility, class_name)?];
+        let mut properties = vec![self.parse_static_property_declaration(
+            visibility,
+            set_visibility,
+            attributes,
+            class_name,
+        )?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
             properties.push(self.parse_static_property_declaration(
                 visibility,
                 set_visibility,
+                attributes,
                 class_name,
             )?);
         }
@@ -1419,6 +1440,8 @@ impl Parser<'_> {
         set_visibility: PropertyVisibility,
         set_visibility_span: Option<SourceSpan>,
         is_readonly: bool,
+        attributes: ParsedAttributes,
+        allow_property_hooks: bool,
         class_name: &str,
     ) -> Result<Vec<PropertyDecl>> {
         let has_type = self.parse_optional_property_type_hint()?;
@@ -1444,25 +1467,34 @@ impl Parser<'_> {
                 set_visibility_span,
             ));
         }
-        let mut properties = vec![self.parse_property_declaration(
+        let (first_property, first_had_hooks) = self.parse_property_declaration(
             visibility,
             set_visibility,
             is_readonly,
+            attributes,
+            allow_property_hooks,
             class_name,
-        )?];
+        )?;
+        let mut properties = vec![first_property];
         self.reject_asymmetric_virtual_property_hook(
             &properties[0],
             set_visibility_span,
             class_name,
         )?;
+        if first_had_hooks {
+            return Ok(properties);
+        }
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
-            properties.push(self.parse_property_declaration(
+            let (property, had_hooks) = self.parse_property_declaration(
                 visibility,
                 set_visibility,
                 is_readonly,
+                attributes,
+                allow_property_hooks,
                 class_name,
-            )?);
+            )?;
+            properties.push(property);
             let property = properties
                 .last()
                 .expect("property was just pushed for virtual hook validation");
@@ -1471,6 +1503,9 @@ impl Parser<'_> {
                 set_visibility_span,
                 class_name,
             )?;
+            if had_hooks {
+                return Ok(properties);
+            }
         }
         self.expect_semicolon()?;
         Ok(properties)
@@ -1540,8 +1575,10 @@ impl Parser<'_> {
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
         is_readonly: bool,
+        attributes: ParsedAttributes,
+        allow_property_hooks: bool,
         class_name: &str,
-    ) -> Result<PropertyDecl> {
+    ) -> Result<(PropertyDecl, bool)> {
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new("expected property name", Some(token.span)));
@@ -1579,9 +1616,24 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            return Err(Diagnostic::new(
-                "property hooks are unsupported",
-                Some(self.peek().span),
+            if !allow_property_hooks {
+                return Err(Diagnostic::new(
+                    "property hooks are unsupported",
+                    Some(self.peek().span),
+                ));
+            }
+            self.parse_property_hook_block()?;
+            return Ok((
+                PropertyDecl {
+                    name,
+                    visibility,
+                    set_visibility,
+                    is_readonly,
+                    has_override_attribute: attributes.has_override,
+                    value: None,
+                    span: token.span,
+                },
+                true,
             ));
         }
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
@@ -1603,20 +1655,25 @@ impl Parser<'_> {
         } else {
             None
         };
-        Ok(PropertyDecl {
-            name,
-            visibility,
-            set_visibility,
-            is_readonly,
-            value,
-            span: token.span,
-        })
+        Ok((
+            PropertyDecl {
+                name,
+                visibility,
+                set_visibility,
+                is_readonly,
+                has_override_attribute: attributes.has_override,
+                value,
+                span: token.span,
+            },
+            false,
+        ))
     }
 
     fn parse_static_property_declaration(
         &mut self,
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
+        attributes: ParsedAttributes,
         class_name: &str,
     ) -> Result<StaticPropertyDecl> {
         let token = self.advance().clone();
@@ -1650,9 +1707,30 @@ impl Parser<'_> {
             name,
             visibility,
             set_visibility,
+            has_override_attribute: attributes.has_override,
             value,
             span: token.span,
         })
+    }
+
+    fn parse_property_hook_block(&mut self) -> Result<()> {
+        self.expect_left_brace()?;
+        let mut depth = 1usize;
+        while depth > 0 {
+            let token = self.advance().clone();
+            match token.kind {
+                TokenKind::LeftBrace => depth += 1,
+                TokenKind::RightBrace => depth -= 1,
+                TokenKind::Eof => {
+                    return Err(Diagnostic::new(
+                        "unterminated property hook block",
+                        Some(token.span),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     fn parse_optional_property_type_hint(&mut self) -> Result<bool> {
@@ -1713,6 +1791,7 @@ impl Parser<'_> {
 
     fn parse_method_decl(
         &mut self,
+        attributes: ParsedAttributes,
         modifiers: ClassModifiers,
         class_is_readonly: bool,
         class_name: &str,
@@ -1768,6 +1847,7 @@ impl Parser<'_> {
             name,
             visibility: modifiers.visibility,
             trait_name: None,
+            has_override_attribute: attributes.has_override,
             parameters,
             return_type,
             return_by_ref,
@@ -1779,6 +1859,7 @@ impl Parser<'_> {
     }
 
     fn parse_statement(&mut self) -> Result<Statement> {
+        let _ = self.parse_attribute_groups()?;
         match self.peek().kind {
             TokenKind::Semicolon => self.parse_empty_statement(),
             TokenKind::Echo => self.parse_echo(),
@@ -2045,6 +2126,7 @@ impl Parser<'_> {
         class_name_for_promotions: Option<&str>,
         class_is_readonly: bool,
     ) -> Result<FunctionParameter> {
+        let attributes = self.parse_attribute_groups()?;
         let promotion_modifiers = if class_name_for_promotions.is_some() {
             let modifiers = self.parse_class_modifiers()?;
             if modifiers.has_promoted_property_modifier() {
@@ -2104,6 +2186,7 @@ impl Parser<'_> {
                 visibility: modifiers.visibility,
                 set_visibility,
                 is_readonly,
+                has_override_attribute: attributes.has_override,
                 span: modifiers.visibility_span.unwrap_or(token.span),
             })
         } else {
@@ -3319,6 +3402,61 @@ impl Parser<'_> {
         }
     }
 
+    fn parse_attribute_groups(&mut self) -> Result<ParsedAttributes> {
+        let mut attributes = ParsedAttributes::default();
+        while matches!(self.peek().kind, TokenKind::AttributeStart) {
+            let group = self.parse_attribute_group()?;
+            attributes.has_override |= group.has_override;
+        }
+        Ok(attributes)
+    }
+
+    fn parse_attribute_group(&mut self) -> Result<ParsedAttributes> {
+        let start = self.advance().span;
+        let mut bracket_depth = 1usize;
+        let mut paren_depth = 0usize;
+        let mut name_segments = Vec::new();
+        let mut collecting_name = true;
+        let mut attributes = ParsedAttributes::default();
+        while bracket_depth > 0 {
+            let token = self.advance().clone();
+            match token.kind {
+                TokenKind::Identifier(name)
+                    if bracket_depth == 1 && paren_depth == 0 && collecting_name =>
+                {
+                    name_segments.push(name);
+                }
+                TokenKind::Backslash
+                    if bracket_depth == 1 && paren_depth == 0 && collecting_name => {}
+                TokenKind::LeftParen if bracket_depth == 1 => {
+                    attributes.has_override |= attribute_name_is_override(&name_segments);
+                    collecting_name = false;
+                    paren_depth += 1;
+                }
+                TokenKind::RightParen if bracket_depth == 1 && paren_depth > 0 => {
+                    paren_depth -= 1;
+                }
+                TokenKind::Comma if bracket_depth == 1 && paren_depth == 0 => {
+                    attributes.has_override |= attribute_name_is_override(&name_segments);
+                    name_segments.clear();
+                    collecting_name = true;
+                }
+                TokenKind::LeftBracket => bracket_depth += 1,
+                TokenKind::RightBracket => {
+                    if bracket_depth == 1 && paren_depth == 0 {
+                        attributes.has_override |= attribute_name_is_override(&name_segments);
+                    }
+                    bracket_depth -= 1;
+                }
+                TokenKind::Eof => {
+                    return Err(Diagnostic::new("unterminated attribute", Some(start)));
+                }
+                _ => {}
+            }
+        }
+        Ok(attributes)
+    }
+
     fn parse_expr(&mut self) -> Result<Expr> {
         self.parse_assignment_expr()
     }
@@ -3869,6 +4007,7 @@ impl Parser<'_> {
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr> {
+        let _ = self.parse_attribute_groups()?;
         let token = self.advance().clone();
         match token.kind {
             TokenKind::String(value) => Ok(Expr::String(value, token.span)),
@@ -4277,6 +4416,7 @@ impl Parser<'_> {
     }
 
     fn parse_new_object_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        let _ = self.parse_attribute_groups()?;
         if token_is_identifier_named(self.peek(), "class") {
             return self.parse_anonymous_class_expr(start_span);
         }
@@ -5571,6 +5711,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Tilde => "~",
         TokenKind::Bang => "!",
         TokenKind::At => "@",
+        TokenKind::AttributeStart => "#[",
         TokenKind::Backslash => "\\",
         TokenKind::Ellipsis => "...",
         TokenKind::Dot => ".",
@@ -6065,6 +6206,10 @@ fn escape_token_text(value: &str) -> String {
         .collect()
 }
 
+fn attribute_name_is_override(name_segments: &[String]) -> bool {
+    name_segments.len() == 1 && name_segments[0].eq_ignore_ascii_case("Override")
+}
+
 fn is_unsupported_class_like_declaration(name: &str) -> bool {
     matches!(name.to_ascii_lowercase().as_str(), "enum")
 }
@@ -6141,6 +6286,7 @@ fn promoted_properties_from_constructor(
                 visibility: promoted.visibility,
                 set_visibility: promoted.set_visibility,
                 is_readonly: class_is_readonly || promoted.is_readonly,
+                has_override_attribute: promoted.has_override_attribute,
                 value: None,
                 span: promoted.span,
             })
@@ -6510,12 +6656,318 @@ fn validate_interface_references(classes: &[ClassDecl]) -> Result<()> {
     Ok(())
 }
 
+fn validate_override_attributes(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<()> {
+    for class in classes {
+        for method in &class.methods {
+            if !method.has_override_attribute {
+                continue;
+            }
+            if method_override_target_exists(class, method, classes, traits) {
+                continue;
+            }
+            return Err(Diagnostic::new(
+                format!(
+                    "{}::{}() has #[\\Override] attribute, but no matching parent method exists",
+                    class.name, method.name
+                ),
+                Some(method.span),
+            ));
+        }
+        for property in &class.properties {
+            if !property.has_override_attribute {
+                continue;
+            }
+            if property_override_target_exists(class, &property.name, false, classes) {
+                continue;
+            }
+            return Err(Diagnostic::new(
+                format!(
+                    "{}::${} has #[\\Override] attribute, but no matching parent property exists",
+                    class.name, property.name
+                ),
+                Some(property.span),
+            ));
+        }
+        for property in &class.static_properties {
+            if !property.has_override_attribute {
+                continue;
+            }
+            if property_override_target_exists(class, &property.name, true, classes) {
+                continue;
+            }
+            return Err(Diagnostic::new(
+                format!(
+                    "{}::${} has #[\\Override] attribute, but no matching parent property exists",
+                    class.name, property.name
+                ),
+                Some(property.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn method_override_target_exists(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    classes: &[ClassDecl],
+    traits: &[TraitDecl],
+) -> bool {
+    parent_method_override_target_exists(class, method, classes)
+        || class_interface_method_exists(class, &method.name, classes)
+        || trait_abstract_method_exists(class, &method.name, traits)
+}
+
+fn parent_method_override_target_exists(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        if parent.methods.iter().any(|candidate| {
+            method_can_satisfy_override(candidate, &method.name)
+                && (!method.name.eq_ignore_ascii_case("__construct") || candidate.is_abstract)
+        }) {
+            return true;
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    false
+}
+
+fn method_can_satisfy_override(method: &MethodDecl, name: &str) -> bool {
+    method.visibility != PropertyVisibility::Private && method.name.eq_ignore_ascii_case(name)
+}
+
+fn class_interface_method_exists(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut current = Some(class);
+    let mut seen_classes = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        let mut seen_interfaces = HashSet::new();
+        if candidate.interfaces.iter().any(|interface_name| {
+            interface_method_exists(interface_name, method_name, classes, &mut seen_interfaces)
+        }) {
+            return true;
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+    false
+}
+
+fn interface_method_exists(
+    interface_name: &str,
+    method_name: &str,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+) -> bool {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return false;
+    }
+    if modeled_builtin_interface_method_exists(interface_name, method_name) {
+        return true;
+    }
+    let Some(interface) = find_class(classes, interface_name) else {
+        return false;
+    };
+    if !interface.is_interface {
+        return false;
+    }
+    interface
+        .methods
+        .iter()
+        .any(|method| method.name.eq_ignore_ascii_case(method_name))
+        || interface
+            .interfaces
+            .iter()
+            .any(|parent_name| interface_method_exists(parent_name, method_name, classes, seen))
+}
+
+fn modeled_builtin_interface_method_exists(interface_name: &str, method_name: &str) -> bool {
+    let interface_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    let method_name = method_name.to_ascii_lowercase();
+    matches!(
+        (interface_name.as_str(), method_name.as_str()),
+        ("arrayaccess", "offsetexists")
+            | ("arrayaccess", "offsetget")
+            | ("arrayaccess", "offsetset")
+            | ("arrayaccess", "offsetunset")
+            | ("iterator", "current")
+            | ("iterator", "key")
+            | ("iterator", "next")
+            | ("iterator", "rewind")
+            | ("iterator", "valid")
+            | ("iteratoraggregate", "getiterator")
+            | ("serializable", "serialize")
+            | ("serializable", "unserialize")
+            | ("stringable", "__tostring")
+    )
+}
+
+fn trait_abstract_method_exists(
+    class: &ClassDecl,
+    method_name: &str,
+    traits: &[TraitDecl],
+) -> bool {
+    class.trait_uses.iter().any(|trait_use| {
+        find_trait(traits, &trait_use.name).is_some_and(|trait_decl| {
+            trait_decl
+                .methods
+                .iter()
+                .any(|method| method.is_abstract && method.name.eq_ignore_ascii_case(method_name))
+        })
+    })
+}
+
+fn property_override_target_exists(
+    class: &ClassDecl,
+    property_name: &str,
+    is_static: bool,
+    classes: &[ClassDecl],
+) -> bool {
+    parent_property_override_target_exists(class, property_name, is_static, classes)
+        || class_interface_property_exists(class, property_name, is_static, classes)
+}
+
+fn parent_property_override_target_exists(
+    class: &ClassDecl,
+    property_name: &str,
+    is_static: bool,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        let has_property = if is_static {
+            parent.static_properties.iter().any(|candidate| {
+                candidate.visibility != PropertyVisibility::Private
+                    && candidate.name == property_name
+            })
+        } else {
+            parent.properties.iter().any(|candidate| {
+                candidate.visibility != PropertyVisibility::Private
+                    && candidate.name == property_name
+            })
+        };
+        if has_property {
+            return true;
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    false
+}
+
+fn class_interface_property_exists(
+    class: &ClassDecl,
+    property_name: &str,
+    is_static: bool,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut current = Some(class);
+    let mut seen_classes = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        let mut seen_interfaces = HashSet::new();
+        if candidate.interfaces.iter().any(|interface_name| {
+            interface_property_exists(
+                interface_name,
+                property_name,
+                is_static,
+                classes,
+                &mut seen_interfaces,
+            )
+        }) {
+            return true;
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+    false
+}
+
+fn interface_property_exists(
+    interface_name: &str,
+    property_name: &str,
+    is_static: bool,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+) -> bool {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return false;
+    }
+    let Some(interface) = find_class(classes, interface_name) else {
+        return false;
+    };
+    if !interface.is_interface {
+        return false;
+    }
+    let has_property = if is_static {
+        interface
+            .static_properties
+            .iter()
+            .any(|property| property.name == property_name)
+    } else {
+        interface
+            .properties
+            .iter()
+            .any(|property| property.name == property_name)
+    };
+    has_property
+        || interface.interfaces.iter().any(|parent_name| {
+            interface_property_exists(parent_name, property_name, is_static, classes, seen)
+        })
+}
+
+fn find_class<'a>(classes: &'a [ClassDecl], name: &str) -> Option<&'a ClassDecl> {
+    classes
+        .iter()
+        .find(|class| class.name.eq_ignore_ascii_case(name))
+}
+
+fn find_trait<'a>(traits: &'a [TraitDecl], name: &str) -> Option<&'a TraitDecl> {
+    traits
+        .iter()
+        .find(|trait_decl| trait_decl.name.eq_ignore_ascii_case(name))
+}
+
 fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
     for class in classes {
         if class.is_abstract {
             continue;
         }
         if let Some(method) = class.methods.iter().find(|method| method.is_abstract) {
+            if parent_concrete_method_exists(class, &method.name, classes) {
+                continue;
+            }
             return Err(Diagnostic::new(
                 format!(
                     "Class {} declares abstract method {}() and must therefore be declared abstract",
@@ -6526,6 +6978,32 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn parent_concrete_method_exists(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        if parent
+            .methods
+            .iter()
+            .any(|method| method_can_satisfy_override(method, method_name) && !method.is_abstract)
+        {
+            return true;
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    false
 }
 
 fn validate_final_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
