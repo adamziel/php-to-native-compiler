@@ -98,7 +98,12 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions, &module.classes);
     }
-    emit_class_metadata_helpers(&mut out, &module.classes, &module.traits);
+    emit_class_metadata_helpers(
+        &mut out,
+        &module.classes,
+        &module.traits,
+        runtime_requirements.internal_function_dispatch,
+    );
     if runtime_requirements.internal_function_dispatch {
         emit_callable_validation_helpers(&mut out);
     }
@@ -1748,7 +1753,12 @@ fn emit_method_visibility_prototypes(out: &mut String) {
     out.push_str("static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);\n");
 }
 
-fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: &[TraitDecl]) {
+fn emit_class_metadata_helpers(
+    out: &mut String,
+    classes: &[ClassDecl],
+    traits: &[TraitDecl],
+    emit_reflection_metadata_helpers: bool,
+) {
     out.push_str(
         "\nstatic PTN_UNUSED const char *ptn_declared_private_property_class(const char *class_name, const char *property_name) {\n",
     );
@@ -2223,214 +2233,218 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: 
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
-    out.push_str(
-        "\nstatic PTN_UNUSED int ptn_reflection_method_matches_filter(int is_static, int visibility, int filter_present, int filter) {\n",
-    );
-    out.push_str("    if (!filter_present) {\n");
-    out.push_str("        return 1;\n");
-    out.push_str("    }\n");
-    out.push_str("    if (filter == 0) {\n");
-    out.push_str("        return 0;\n");
-    out.push_str("    }\n");
-    out.push_str("    int modifiers = is_static ? 16 : 0;\n");
-    out.push_str("    if (visibility == PTN_PROPERTY_PUBLIC) {\n");
-    out.push_str("        modifiers |= 1;\n");
-    out.push_str("    } else if (visibility == PTN_PROPERTY_PROTECTED) {\n");
-    out.push_str("        modifiers |= 2;\n");
-    out.push_str("    } else if (visibility == PTN_PROPERTY_PRIVATE) {\n");
-    out.push_str("        modifiers |= 4;\n");
-    out.push_str("    }\n");
-    out.push_str("    return (modifiers & filter) != 0;\n");
-    out.push_str("}\n");
+    if emit_reflection_metadata_helpers {
+        out.push_str(
+            "\nstatic PTN_UNUSED int ptn_reflection_method_matches_filter(int is_static, int visibility, int filter_present, int filter) {\n",
+        );
+        out.push_str("    if (!filter_present) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    if (filter == 0) {\n");
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+        out.push_str("    int modifiers = is_static ? 16 : 0;\n");
+        out.push_str("    if (visibility == PTN_PROPERTY_PUBLIC) {\n");
+        out.push_str("        modifiers |= 1;\n");
+        out.push_str("    } else if (visibility == PTN_PROPERTY_PROTECTED) {\n");
+        out.push_str("        modifiers |= 2;\n");
+        out.push_str("    } else if (visibility == PTN_PROPERTY_PRIVATE) {\n");
+        out.push_str("        modifiers |= 4;\n");
+        out.push_str("    }\n");
+        out.push_str("    return (modifiers & filter) != 0;\n");
+        out.push_str("}\n");
 
-    out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const char *class_name, const char *method_name) {\n",
-    );
-    if classes.is_empty() {
-        out.push_str("    (void)class_name;\n");
-    }
-    if classes
-        .iter()
-        .all(|class| class_method_lookup_chain(class, classes).is_empty())
-    {
-        out.push_str("    (void)method_name;\n");
-        out.push_str("    (void)runtime;\n");
-    }
-    for class in classes {
-        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
-        out.push_str(&c_string(&class.name));
-        out.push_str("\")) {\n");
-        for entry in class_method_lookup_chain(class, classes) {
-            let method = entry.method;
-            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
-            out.push_str(&c_string(&method.name));
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const char *class_name, const char *method_name) {\n",
+        );
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+        }
+        if classes
+            .iter()
+            .all(|class| class_method_lookup_chain(class, classes).is_empty())
+        {
+            out.push_str("    (void)method_name;\n");
+            out.push_str("    (void)runtime;\n");
+        }
+        for class in classes {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
             out.push_str("\")) {\n");
-            out.push_str("            return ptn_reflection_method_object_from_name(runtime, \"");
-            out.push_str(&c_string(entry.declaring_class));
-            out.push_str("\", \"");
-            out.push_str(&c_string(&method.name));
-            out.push_str("\");\n");
-            out.push_str("        }\n");
+            for entry in class_method_lookup_chain(class, classes) {
+                let method = entry.method;
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\")) {\n");
+                out.push_str(
+                    "            return ptn_reflection_method_object_from_name(runtime, \"",
+                );
+                out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\");\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return ptn_null();\n");
+            out.push_str("    }\n");
         }
-        out.push_str("        return ptn_null();\n");
-        out.push_str("    }\n");
-    }
-    out.push_str("    return ptn_null();\n");
-    out.push_str("}\n");
+        out.push_str("    return ptn_null();\n");
+        out.push_str("}\n");
 
-    out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
-    );
-    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
-    out.push_str("    int64_t index = 0;\n");
-    if classes.is_empty() {
-        out.push_str("    (void)class_name;\n");
-    }
-    if classes
-        .iter()
-        .all(|class| class_method_lookup_chain(class, classes).is_empty())
-    {
-        out.push_str("    (void)runtime;\n");
-        out.push_str("    (void)filter_present;\n");
-        out.push_str("    (void)filter;\n");
-        out.push_str("    (void)index;\n");
-    }
-    for class in classes {
-        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
-        out.push_str(&c_string(&class.name));
-        out.push_str("\")) {\n");
-        for entry in class_method_lookup_chain(class, classes) {
-            let method = entry.method;
-            if method.visibility == PropertyVisibility::Private
-                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
-            {
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
+        );
+        out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+        out.push_str("    int64_t index = 0;\n");
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+        }
+        if classes
+            .iter()
+            .all(|class| class_method_lookup_chain(class, classes).is_empty())
+        {
+            out.push_str("    (void)runtime;\n");
+            out.push_str("    (void)filter_present;\n");
+            out.push_str("    (void)filter;\n");
+            out.push_str("    (void)index;\n");
+        }
+        for class in classes {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in class_method_lookup_chain(class, classes) {
+                let method = entry.method;
+                if method.visibility == PropertyVisibility::Private
+                    && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+                {
+                    continue;
+                }
+                out.push_str("        if (ptn_reflection_method_matches_filter(");
+                out.push_str(if method.is_static { "1" } else { "0" });
+                out.push_str(", ");
+                out.push_str(c_method_visibility(method.visibility));
+                out.push_str(", filter_present, filter)) {\n");
+                out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_method_object_from_name(runtime, \"");
+                out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\"));\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return result;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return result;\n");
+        out.push_str("}\n");
+
+        out.push_str(
+            "\nstatic PTN_UNUSED int ptn_reflection_property_matches_filter(int is_static, int visibility, int filter_present, int filter) {\n",
+        );
+        out.push_str("    if (!filter_present) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    if (filter == 0) {\n");
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+        out.push_str("    int modifiers = is_static ? 16 : 0;\n");
+        out.push_str("    if (visibility == PTN_PROPERTY_PUBLIC) {\n");
+        out.push_str("        modifiers |= 1;\n");
+        out.push_str("    } else if (visibility == PTN_PROPERTY_PROTECTED) {\n");
+        out.push_str("        modifiers |= 2;\n");
+        out.push_str("    } else if (visibility == PTN_PROPERTY_PRIVATE) {\n");
+        out.push_str("        modifiers |= 4;\n");
+        out.push_str("    }\n");
+        out.push_str("    return (modifiers & filter) != 0;\n");
+        out.push_str("}\n");
+
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
+        );
+        out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+        out.push_str("    int64_t index = 0;\n");
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+        }
+        if classes
+            .iter()
+            .all(|class| class_property_exists_chain(class, classes).is_empty())
+        {
+            out.push_str("    (void)runtime;\n");
+            out.push_str("    (void)filter_present;\n");
+            out.push_str("    (void)filter;\n");
+            out.push_str("    (void)index;\n");
+        }
+        for class in classes {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in class_property_exists_chain(class, classes) {
+                if entry.visibility == PropertyVisibility::Private
+                    && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+                {
+                    continue;
+                }
+                out.push_str("        if (ptn_reflection_property_matches_filter(");
+                out.push_str(if entry.is_static { "1" } else { "0" });
+                out.push_str(", ");
+                out.push_str(c_property_visibility(entry.visibility));
+                out.push_str(", filter_present, filter)) {\n");
+                out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_property_object_from_name(runtime, \"");
+                out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(entry.name));
+                out.push_str("\"));\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return result;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return result;\n");
+        out.push_str("}\n");
+
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_interfaces(PtnRuntime *runtime, const char *class_name, int objects) {\n",
+        );
+        out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+        out.push_str("    int64_t index = 0;\n");
+        if classes
+            .iter()
+            .all(|class| class_interface_lookup_chain(class, classes).is_empty())
+        {
+            out.push_str("    (void)runtime;\n");
+            out.push_str("    (void)class_name;\n");
+            out.push_str("    (void)objects;\n");
+            out.push_str("    (void)index;\n");
+        }
+        for class in classes {
+            let interfaces = class_interface_lookup_chain(class, classes);
+            if interfaces.is_empty() {
                 continue;
             }
-            out.push_str("        if (ptn_reflection_method_matches_filter(");
-            out.push_str(if method.is_static { "1" } else { "0" });
-            out.push_str(", ");
-            out.push_str(c_method_visibility(method.visibility));
-            out.push_str(", filter_present, filter)) {\n");
-            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_method_object_from_name(runtime, \"");
-            out.push_str(&c_string(entry.declaring_class));
-            out.push_str("\", \"");
-            out.push_str(&c_string(&method.name));
-            out.push_str("\"));\n");
-            out.push_str("        }\n");
-        }
-        out.push_str("        return result;\n");
-        out.push_str("    }\n");
-    }
-    out.push_str("    return result;\n");
-    out.push_str("}\n");
-
-    out.push_str(
-        "\nstatic PTN_UNUSED int ptn_reflection_property_matches_filter(int is_static, int visibility, int filter_present, int filter) {\n",
-    );
-    out.push_str("    if (!filter_present) {\n");
-    out.push_str("        return 1;\n");
-    out.push_str("    }\n");
-    out.push_str("    if (filter == 0) {\n");
-    out.push_str("        return 0;\n");
-    out.push_str("    }\n");
-    out.push_str("    int modifiers = is_static ? 16 : 0;\n");
-    out.push_str("    if (visibility == PTN_PROPERTY_PUBLIC) {\n");
-    out.push_str("        modifiers |= 1;\n");
-    out.push_str("    } else if (visibility == PTN_PROPERTY_PROTECTED) {\n");
-    out.push_str("        modifiers |= 2;\n");
-    out.push_str("    } else if (visibility == PTN_PROPERTY_PRIVATE) {\n");
-    out.push_str("        modifiers |= 4;\n");
-    out.push_str("    }\n");
-    out.push_str("    return (modifiers & filter) != 0;\n");
-    out.push_str("}\n");
-
-    out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
-    );
-    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
-    out.push_str("    int64_t index = 0;\n");
-    if classes.is_empty() {
-        out.push_str("    (void)class_name;\n");
-    }
-    if classes
-        .iter()
-        .all(|class| class_property_exists_chain(class, classes).is_empty())
-    {
-        out.push_str("    (void)runtime;\n");
-        out.push_str("    (void)filter_present;\n");
-        out.push_str("    (void)filter;\n");
-        out.push_str("    (void)index;\n");
-    }
-    for class in classes {
-        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
-        out.push_str(&c_string(&class.name));
-        out.push_str("\")) {\n");
-        for entry in class_property_exists_chain(class, classes) {
-            if entry.visibility == PropertyVisibility::Private
-                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
-            {
-                continue;
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for interface in interfaces {
+                out.push_str("        if (objects) {\n");
+                out.push_str(
+                    "            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"",
+                );
+                out.push_str(&c_string(interface));
+                out.push_str("\"), ptn_reflection_class_object_from_name(runtime, \"");
+                out.push_str(&c_string(interface));
+                out.push_str("\"));\n");
+                out.push_str("        } else {\n");
+                out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+                out.push_str(&c_string(interface));
+                out.push_str("\"));\n");
+                out.push_str("        }\n");
             }
-            out.push_str("        if (ptn_reflection_property_matches_filter(");
-            out.push_str(if entry.is_static { "1" } else { "0" });
-            out.push_str(", ");
-            out.push_str(c_property_visibility(entry.visibility));
-            out.push_str(", filter_present, filter)) {\n");
-            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_property_object_from_name(runtime, \"");
-            out.push_str(&c_string(entry.declaring_class));
-            out.push_str("\", \"");
-            out.push_str(&c_string(entry.name));
-            out.push_str("\"));\n");
-            out.push_str("        }\n");
+            out.push_str("        return result;\n");
+            out.push_str("    }\n");
         }
-        out.push_str("        return result;\n");
-        out.push_str("    }\n");
+        out.push_str("    return result;\n");
+        out.push_str("}\n");
     }
-    out.push_str("    return result;\n");
-    out.push_str("}\n");
-
-    out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_interfaces(PtnRuntime *runtime, const char *class_name, int objects) {\n",
-    );
-    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
-    out.push_str("    int64_t index = 0;\n");
-    if classes
-        .iter()
-        .all(|class| class_interface_lookup_chain(class, classes).is_empty())
-    {
-        out.push_str("    (void)runtime;\n");
-        out.push_str("    (void)class_name;\n");
-        out.push_str("    (void)objects;\n");
-        out.push_str("    (void)index;\n");
-    }
-    for class in classes {
-        let interfaces = class_interface_lookup_chain(class, classes);
-        if interfaces.is_empty() {
-            continue;
-        }
-        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
-        out.push_str(&c_string(&class.name));
-        out.push_str("\")) {\n");
-        for interface in interfaces {
-            out.push_str("        if (objects) {\n");
-            out.push_str(
-                "            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"",
-            );
-            out.push_str(&c_string(interface));
-            out.push_str("\"), ptn_reflection_class_object_from_name(runtime, \"");
-            out.push_str(&c_string(interface));
-            out.push_str("\"));\n");
-            out.push_str("        } else {\n");
-            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
-            out.push_str(&c_string(interface));
-            out.push_str("\"));\n");
-            out.push_str("        }\n");
-        }
-        out.push_str("        return result;\n");
-        out.push_str("    }\n");
-    }
-    out.push_str("    return result;\n");
-    out.push_str("}\n");
 
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope) {\n",
