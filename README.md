@@ -178,10 +178,12 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   handling; stream internals cover `feof()`, `fflush()`, `fgetc()`, `fgets()`,
   `fread()`, `fpassthru()`, `fseek()`/`ftell()`/`rewind()`, `fstat()`,
   `ftruncate()`, `tmpfile()`, `stream_get_contents()`, `stream_get_line()`,
-  and plain `stream_copy_to_stream()` paths; `file()`/`readfile()` support
-  bounded include-path lookup; directory resources cover `readdir()` and
-  `rewinddir()`; `fwrite()`/`fputs()` write stream bytes; and filesystem
-  metadata helpers cover `stat()`/`lstat()`, scalar `file*` metadata,
+  `stream_filter_append()`/`stream_filter_prepend()` for built-in string
+  filters, and filtered `stream_copy_to_stream()` paths; `file()`/`readfile()`
+  support bounded include-path lookup; directory resources cover `readdir()`
+  and `rewinddir()`; `fwrite()`/`fputs()` write stream bytes through modeled
+  write filters; and filesystem metadata helpers cover `stat()`/`lstat()`,
+  scalar `file*` metadata,
   `filetype()`, `chmod()`/`touch()`, `clearstatcache()`, and
   readable/writable/executable/link path predicates.
 - Environment and include-path helpers cover `getenv()` snapshots/lookups,

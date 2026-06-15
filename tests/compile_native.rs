@@ -8209,6 +8209,91 @@ stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
 }
 
 #[test]
+fn compile_stream_string_filters_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-string-filters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-string-filters.php");
+    let output = root.join("stream-string-filters-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/filter.txt';\n\
+file_put_contents($path, \"Hello There!\\nabc\");\n\
+$src = fopen($path, 'r');\n\
+$filter = stream_filter_append($src, 'string.rot13', STREAM_FILTER_READ);\n\
+var_dump(is_resource($filter));\n\
+var_dump(fgets($src));\n\
+fclose($src);\n\
+$copy = __DIR__ . '/copy.txt';\n\
+$src = fopen($path, 'r');\n\
+$dest = fopen($copy, 'w');\n\
+stream_filter_append($src, 'string.rot13', STREAM_FILTER_READ);\n\
+var_dump(stream_copy_to_stream($src, $dest, 5));\n\
+var_dump(ftell($src));\n\
+var_dump(ftell($dest));\n\
+fclose($src);\n\
+fclose($dest);\n\
+var_dump(file_get_contents($copy));\n\
+$written = __DIR__ . '/written.txt';\n\
+$dest = fopen($written, 'w');\n\
+stream_filter_append($dest, 'string.rot13', STREAM_FILTER_WRITE);\n\
+var_dump(fwrite($dest, 'abcXYZ'));\n\
+fclose($dest);\n\
+var_dump(file_get_contents($written));\n\
+$tmp = tmpfile();\n\
+fwrite($tmp, 'Hello There!');\n\
+rewind($tmp);\n\
+stream_filter_prepend($tmp, 'string.rot13');\n\
+stream_filter_prepend($tmp, 'string.toupper');\n\
+var_dump(fread($tmp, 12));\n\
+fclose($tmp);\n\
+$rw_path = __DIR__ . '/rw.txt';\n\
+$rw = fopen($rw_path, 'w+');\n\
+$filter = stream_filter_append($rw, 'string.tolower');\n\
+var_dump(is_resource($filter));\n\
+fwrite($rw, 'ABC');\n\
+rewind($rw);\n\
+var_dump(fread($rw, 3));\n\
+fclose($rw);\n\
+var_dump(STREAM_FILTER_READ, STREAM_FILTER_WRITE, STREAM_FILTER_ALL, function_exists('stream_filter_append'), function_exists('stream_filter_prepend'));\n\
+@unlink($path);\n\
+@unlink($copy);\n\
+@unlink($written);\n\
+@unlink($rw_path);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+string(13) \"Uryyb Gurer!\n\"\n\
+int(5)\n\
+int(5)\n\
+int(5)\n\
+string(5) \"Uryyb\"\n\
+int(6)\n\
+string(6) \"nopKLM\"\n\
+string(12) \"URYYB GURER!\"\n\
+bool(true)\n\
+string(3) \"abc\"\n\
+int(1)\n\
+int(2)\n\
+int(3)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_filter_append"));
+    assert!(c_source.contains("ptn_stream_apply_filter_chain_in_place"));
+}
+
+#[test]
 fn compile_file_metadata_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-file-metadata-diagnostics");
     fs::create_dir_all(&root).unwrap();

@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-utht filtered stream copy row pack | 4 | 4 |
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
 | ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
@@ -20,14 +21,22 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:15Z.
-Measured latest: `ptn-vqg1` temp stream wrappers row pack selected 3 rows, kept 3 runnable, and passed 3/3 in the focused run.
-Latest: `ptn-vqg1` completed the checked-in temp stream wrappers row pack. Previous: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack.
+Refresh: 2026-06-15T17:52Z.
+Measured latest: `ptn-utht` filtered stream copy row pack selected 4 rows, kept 4 runnable, and passed 4/4 in the focused run.
+Latest: `ptn-utht` completed the checked-in filtered stream copy row pack. Previous: `ptn-vqg1` completed the checked-in temp stream wrappers row pack.
 
-Current hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
+Current hook: `ptn-utht` filtered stream copy row pack passed 4/4 at
+`.runtime/merge-ptn-utht-filtered-stream-copy/summary-20260615T175250Z.txt`.
+Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
 `.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
-Previous hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
-`.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`.
+
+## 2026-06-15 ptn-utht Filtered Stream Copy Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current master focused baseline (`/tmp/ptn-utht-before/.runtime/ptn-utht-filtered-stream-copy-before/summary-20260615T162046Z.txt`) | 4 selected / 4 runnable / 0 classified | 0 |
+| Final rebased branch focused (`.runtime/ptn-utht-filtered-stream-copy-rebased/summary-20260615T162747Z.txt`) | 4 selected / 4 runnable / 0 classified | 4 |
+| Integrated focused merge run (`.runtime/merge-ptn-utht-filtered-stream-copy/summary-20260615T175250Z.txt`) | 4 selected / 4 runnable | 4 |
 
 ## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
 
