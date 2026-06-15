@@ -1378,3 +1378,183 @@ fn phpt_classifier_keeps_hash_comments_runnable() {
         "{classification:?}"
     );
 }
+
+#[test]
+fn phpt_baseline_full_scope_generates_all_family_manifests() {
+    let root = temp_dir("ptn-full-phpt-baseline");
+    let corpus = root.join("php-src");
+    fs::write(
+        {
+            fs::create_dir_all(&corpus).expect("create fake corpus");
+            corpus.join("run-tests.php")
+        },
+        "<?php\n",
+    )
+    .expect("write run-tests.php");
+
+    let rows = [
+        "Zend/tests/basic_a.phpt",
+        "Zend/tests/basic_b.phpt",
+        "ext/json/tests/json_a.phpt",
+        "ext/json/tests/json_b.phpt",
+        "ext/standard/tests/array_a.phpt",
+        "ext/standard/tests/array_b.phpt",
+        "main/tests/main_a.phpt",
+        "sapi/cli/tests/cli_a.phpt",
+        "sapi/fpm/tests/fpm_a.phpt",
+        "tests/basic/core_a.phpt",
+        "tests/lang/core_b.phpt",
+        "tests/output/core_c.phpt",
+    ];
+    for row in rows {
+        let path = corpus.join(row);
+        fs::create_dir_all(path.parent().expect("PHPT parent")).expect("create PHPT dir");
+        fs::write(
+            path,
+            "--TEST--\ncase\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n",
+        )
+        .expect("write PHPT");
+    }
+
+    let out_dir = root.join("baseline");
+    let output = Command::new("timeout")
+        .arg("10s")
+        .arg("tools/run-phpt-baseline.sh")
+        .arg("--scope")
+        .arg("full")
+        .arg("--tier")
+        .arg("5")
+        .arg("--generate-only")
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .env("PHP_SRC_PHPT", &corpus)
+        .env("PTN_PHPT_AUTO_FETCH", "0")
+        .output()
+        .expect("run full PHPT baseline generator");
+    assert!(
+        output.status.success(),
+        "full baseline generator failed: status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let manifest_dir = fs::read_dir(&out_dir)
+        .expect("read baseline out dir")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| path.is_dir())
+        .expect("timestamped manifest dir");
+    for manifest in [
+        "phpt-full-corpus-5.txt",
+        "phpt-full-corpus-1000.txt",
+        "phpt-full-corpus-5000.txt",
+        "phpt-full-corpus-10000.txt",
+        "phpt-full-corpus-20000.txt",
+        "phpt-full-corpus-all.txt",
+    ] {
+        assert!(
+            manifest_dir.join(manifest).is_file(),
+            "missing {manifest} in {}",
+            manifest_dir.display()
+        );
+    }
+
+    let inventory = fs::read_to_string(manifest_dir.join("inventory.txt")).expect("read inventory");
+    assert!(inventory.contains("scope: full"), "{inventory}");
+    assert!(inventory.contains("available: rows=12"), "{inventory}");
+    assert!(
+        inventory.contains("manifest: scope=full tier=all rows=12"),
+        "{inventory}"
+    );
+    assert!(
+        inventory.contains("available.ext/json: rows=2"),
+        "{inventory}"
+    );
+    assert!(
+        inventory.contains("available.sapi/cli: rows=1"),
+        "{inventory}"
+    );
+
+    let all_rows = fs::read_to_string(manifest_dir.join("full-corpus-inventory.txt"))
+        .expect("read full corpus inventory");
+    assert_eq!(all_rows.lines().count(), 12, "{all_rows}");
+
+    let tier_five = fs::read_to_string(manifest_dir.join("phpt-full-corpus-5.txt"))
+        .expect("read tier five manifest");
+    let selected_rows = tier_five
+        .lines()
+        .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+        .count();
+    assert_eq!(selected_rows, 5, "{tier_five}");
+}
+
+#[test]
+fn phpt_campaign_report_gate_rejects_short_and_duplicate_reports() {
+    let root = temp_dir("ptn-campaign-report-gate");
+    let report_a = root.join("report-a.md");
+    let report_b = root.join("report-b.md");
+    let short_report = root.join("short.md");
+    let duplicate_report = root.join("duplicate.md");
+
+    fs::write(
+        &report_a,
+        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron",
+    )
+    .expect("write report a");
+    fs::write(
+        &report_b,
+        "red blue green yellow violet orange silver copper bronze steel quartz granite marble slate",
+    )
+    .expect("write report b");
+    fs::write(&short_report, "alpha beta gamma").expect("write short report");
+    fs::write(
+        &duplicate_report,
+        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron",
+    )
+    .expect("write duplicate report");
+
+    let ok = Command::new("bash")
+        .arg("tools/check-phpt-campaign-reports.sh")
+        .arg(&report_a)
+        .arg(&report_b)
+        .env("PTN_CAMPAIGN_REPORT_MIN_WORDS", "10")
+        .output()
+        .expect("run report gate success case");
+    assert!(
+        ok.status.success(),
+        "report gate should accept distinct reports: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&ok.stdout),
+        String::from_utf8_lossy(&ok.stderr)
+    );
+
+    let short = Command::new("bash")
+        .arg("tools/check-phpt-campaign-reports.sh")
+        .arg(&short_report)
+        .env("PTN_CAMPAIGN_REPORT_MIN_WORDS", "10")
+        .output()
+        .expect("run report gate short case");
+    assert!(
+        !short.status.success()
+            && String::from_utf8_lossy(&short.stderr).contains("report too short"),
+        "report gate should reject short reports: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&short.stdout),
+        String::from_utf8_lossy(&short.stderr)
+    );
+
+    let duplicate = Command::new("bash")
+        .arg("tools/check-phpt-campaign-reports.sh")
+        .arg(&report_a)
+        .arg(&duplicate_report)
+        .env("PTN_CAMPAIGN_REPORT_MIN_WORDS", "10")
+        .output()
+        .expect("run report gate duplicate case");
+    assert!(
+        !duplicate.status.success()
+            && String::from_utf8_lossy(&duplicate.stderr)
+                .contains("reports are identical after normalization"),
+        "report gate should reject duplicate reports: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&duplicate.stdout),
+        String::from_utf8_lossy(&duplicate.stderr)
+    );
+}

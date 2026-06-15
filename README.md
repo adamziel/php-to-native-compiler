@@ -189,6 +189,12 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   corpus revision plus pass/fail/skip/warn counts without requiring all rows to
   pass; `--classify-only` writes the same selected/runnable/excluded manifests
   without building or running rows.
+- Full-corpus PHPT telemetry uses `tools/run-phpt-baseline.sh --scope full` to
+  inventory every local php-src `.phpt` row and write deterministic
+  1k/5k/10k/20k/all manifests bucketed across the full extension/SAPI/core
+  corpus. `tools/check-phpt-campaign-reports.sh` gates campaign report
+  documents so generated evidence reports are long-form, distinct, and not
+  left as templates.
 - Focused string/scalar alias telemetry covers quiet string-offset
   `isset()`/`empty()` diagnostics, numeric string offsets, string-offset COW,
   concat-assignment aliasing, and classified blocker rows for unsupported
@@ -489,4 +495,7 @@ tools/run-bounded-phpt.sh tools/phpt-array-callback-validation-manifest.txt
 tools/run-phpt-baseline.sh --generate-only
 tools/run-phpt-baseline.sh --tier 1000 --classify-only
 tools/run-phpt-baseline.sh --tier 1000
+tools/run-phpt-baseline.sh --scope full --generate-only
+tools/run-phpt-baseline.sh --scope full --tier 1000 --classify-only
+tools/check-phpt-campaign-reports.sh docs/REPORT.md
 ```
