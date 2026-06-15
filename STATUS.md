@@ -5,7 +5,7 @@
 | last refresh | 2026-06-15T22:24:10Z |
 | source commit | `52604f155feb` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
-| upstream PHPT corpus | `/home/claude/php-src-phpt` |
+| upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
 | evidence source | `tools/status-dashboard-features.tsv` |
 | generator | `tools/update-status-dashboard.sh` |
 
