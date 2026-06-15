@@ -108,6 +108,8 @@ if [[ -z "$refresh" || -z "$source_commit" || -z "$php_src_revision_hint" || -z 
   echo "$features_file: missing required metadata" >&2
   exit 1
 fi
+refresh="${STATUS_DASHBOARD_REFRESH_AT_UTC:-$refresh}"
+source_commit="${STATUS_DASHBOARD_SOURCE_COMMIT:-$source_commit}"
 
 require_hour "$window_start" window_start_utc 1
 require_number "$window_hours" window_hours 1
