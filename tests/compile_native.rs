@@ -7519,6 +7519,63 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_stream_read_and_csv_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-read-csv-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-read-csv.php");
+    let output = root.join("stream-read-csv-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/stream.csv';\n\
+file_put_contents($path, \"a,b\\nc,d\\nlast\");\n\
+$fp = fopen($path, 'rb');\n\
+var_dump(ftell($fp));\n\
+var_dump(fgetc($fp));\n\
+var_dump(ftell($fp));\n\
+var_dump(rewind($fp));\n\
+var_dump(fgets($fp, 4));\n\
+var_dump(rewind($fp));\n\
+var_dump(fread($fp, 3));\n\
+var_dump(feof($fp));\n\
+fclose($fp);\n\
+$fp = fopen($path, 'rb');\n\
+var_dump(fgetcsv($fp, escape: '\\\\'));\n\
+var_dump(fgetcsv($fp));\n\
+fclose($fp);\n\
+$out = __DIR__ . '/written.csv';\n\
+$fp = fopen($out, 'wb');\n\
+var_dump(fputcsv($fp, ['x,y', 'z']));\n\
+fclose($fp);\n\
+var_dump(file($out));\n\
+@unlink($path);\n\
+@unlink($out);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\n\
+string(1) \"a\"\n\
+int(1)\n\
+bool(true)\n\
+string(3) \"a,b\"\n\
+bool(true)\n\
+string(3) \"a,b\"\n\
+bool(false)\n\
+array(2) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n}\n\
+array(2) {\n  [0]=>\n  string(1) \"c\"\n  [1]=>\n  string(1) \"d\"\n}\n\
+int(8)\n\
+array(1) {\n  [0]=>\n  string(8) \"\"x,y\",z\n\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_file_metadata_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-file-metadata-diagnostics");
     fs::create_dir_all(&root).unwrap();

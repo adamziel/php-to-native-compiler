@@ -10602,6 +10602,7 @@ static int64_t ptn_internal_expect_integer_arg(
     PtnValue value,
     size_t line
 );
+static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
 
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
@@ -10951,7 +10952,7 @@ static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_null();
     }
     int64_t requested = ptn_internal_positive_length_arg(runtime, "fread", 2, "length", args[1], line);
-    if (runtime->exception_state.active_exception != NULL) {
+    if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
     size_t length = (size_t)requested;
@@ -11013,7 +11014,7 @@ static PtnValue ptn_internal_fgets(PtnRuntime *runtime, size_t argc, const PtnVa
     size_t max_len = 0;
     if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
         int64_t requested = ptn_internal_positive_length_arg(runtime, "fgets", 2, "length", args[1], line);
-        if (runtime->exception_state.active_exception != NULL) {
+        if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
         has_max_len = 1;
@@ -11227,7 +11228,7 @@ static PtnValue ptn_internal_fgetcsv(PtnRuntime *runtime, size_t argc, const Ptn
     char escape = argc >= 5
         ? (char)ptn_csv_char_arg(runtime, "fgetcsv", 5, "escape", args[4], line, '\\', 1, &escape_enabled)
         : '\\';
-    if (runtime->exception_state.active_exception != NULL) {
+    if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
 
@@ -11309,7 +11310,7 @@ static PtnValue ptn_internal_fputcsv(PtnRuntime *runtime, size_t argc, const Ptn
     PtnStringOperand eol = argc >= 6
         ? ptn_internal_expect_string_arg(runtime, "fputcsv", 6, "eol", args[5], line)
         : ptn_string_operand_borrowed("\n");
-    if (runtime->exception_state.active_exception != NULL) {
+    if (runtime->exceptions->active_exception != NULL) {
         if (argc >= 6) {
             ptn_string_operand_free(eol);
         }
@@ -16632,8 +16633,19 @@ static PtnValue ptn_internal_time(PtnRuntime *runtime, size_t argc, const PtnVal
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_feof(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fgetc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fgetcsv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fgets(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fpassthru(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fputcsv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_ftell(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_rewind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
@@ -16747,6 +16759,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "extension_loaded", 1, 1, ptn_internal_extension_loaded },
         { "fclose", 1, 1, ptn_internal_fclose },
         { "fdiv", 2, 2, ptn_internal_fdiv },
+        { "feof", 1, 1, ptn_internal_feof },
+        { "fflush", 1, 1, ptn_internal_fflush },
+        { "fgetc", 1, 1, ptn_internal_fgetc },
+        { "fgetcsv", 1, 5, ptn_internal_fgetcsv },
+        { "fgets", 1, 2, ptn_internal_fgets },
+        { "file", 1, 3, ptn_internal_file },
         { "file_exists", 1, 1, ptn_internal_file_exists },
         { "file_get_contents", 1, 5, ptn_internal_file_get_contents },
         { "file_put_contents", 2, 2, ptn_internal_file_put_contents },
@@ -16763,8 +16781,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "floor", 1, 1, ptn_internal_floor },
         { "flush", 0, 0, ptn_internal_flush },
         { "fopen", 2, 4, ptn_internal_fopen },
+        { "fpassthru", 1, 1, ptn_internal_fpassthru },
         { "fprintf", 2, PTN_VARIADIC_ARGS, ptn_internal_fprintf },
+        { "fputcsv", 2, 6, ptn_internal_fputcsv },
         { "fputs", 2, 3, ptn_internal_fputs },
+        { "fread", 2, 2, ptn_internal_fread },
+        { "ftell", 1, 1, ptn_internal_ftell },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
@@ -16874,6 +16896,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "range", 2, 3, ptn_internal_range },
         { "realpath", 1, 1, ptn_internal_realpath },
         { "reset", 1, 1, ptn_internal_reset },
+        { "rewind", 1, 1, ptn_internal_rewind },
         { "rmdir", 1, 2, ptn_internal_rmdir },
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
