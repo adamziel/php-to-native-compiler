@@ -39,10 +39,11 @@ Implemented behavior: the lexer recognizes `match`, the parser lowers PHP match
 expressions with multi-condition arms, trailing commas before `=>`, default
 arms, nested matches, and duplicate default diagnostics. IR/native emission
 evaluates the subject once, checks arm conditions with strict identity
-comparison, emits the selected arm value, and throws `UnhandledMatchError` with
-PHP-shaped scalar/type messages when no arm matches. `UnhandledMatchError` is
-modeled as an `Error` subtype for catch matching, and match-expression results
-are treated as temporaries for by-reference method arguments.
+comparison, treats `default` as fallback even when it appears before later
+specific arms, emits the selected arm value, and throws `UnhandledMatchError`
+with PHP-shaped scalar/type messages when no arm matches. `UnhandledMatchError`
+is modeled as an `Error` subtype for catch matching, and match-expression
+results are treated as temporaries for by-reference method arguments.
 
 Source bucket: full-corpus `Zend/tests/match` on php-src corpus revision
 `8c63ec400ce8e07c57a8d9499317b96a8beafb8b`. The broad 20k-family generator for

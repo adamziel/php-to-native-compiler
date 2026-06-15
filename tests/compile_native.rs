@@ -13353,6 +13353,10 @@ echo match (match ('b') { default => 'b' }) {
     'b' => 'B',
     default => 'D',
 }, \"\\n\";
+echo match (1) {
+    default => 'fallback first',
+    1 => 'specific later',
+}, \"\\n\";
 
 try {
     match (3) { 1 => 'one' };
@@ -13383,7 +13387,7 @@ echo $byRef, \"\\n\";
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "zero\nstring zero\nsmall\nother\ntrue\nB\ncaught-int:Unhandled match case 3\ncaught-object:Unhandled match case of type Beep\ncaught-ref:RefTest::usesRef(): Argument #1 ($value) could not be passed by reference\nsame\n"
+        "zero\nstring zero\nsmall\nother\ntrue\nB\nspecific later\ncaught-int:Unhandled match case 3\ncaught-object:Unhandled match case of type Beep\ncaught-ref:RefTest::usesRef(): Argument #1 ($value) could not be passed by reference\nsame\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

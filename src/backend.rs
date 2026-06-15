@@ -10744,21 +10744,9 @@ impl ValueEmitter {
         out.push_str(&matched_temp);
         out.push_str(" = 0;\n");
 
+        let default_arm = arms.iter().find(|arm| arm.is_default);
         for arm in arms {
             if arm.is_default {
-                out.push_str("    if (!");
-                out.push_str(&matched_temp);
-                out.push_str(") {\n");
-                let value_temp = self.emit_materialized_value(out, &arm.value);
-                out.push_str("        ");
-                out.push_str(&result_temp);
-                out.push_str(" = ");
-                out.push_str(&value_temp);
-                out.push_str(";\n");
-                out.push_str("        ");
-                out.push_str(&matched_temp);
-                out.push_str(" = 1;\n");
-                out.push_str("    }\n");
                 continue;
             }
 
@@ -10796,22 +10784,34 @@ impl ValueEmitter {
         out.push_str("    if (!");
         out.push_str(&matched_temp);
         out.push_str(") {\n");
-        let message_temp = self.next_temp();
-        out.push_str("        char *");
-        out.push_str(&message_temp);
-        out.push_str(" = ptn_unhandled_match_message(");
-        out.push_str(&subject_temp);
-        out.push_str(");\n");
-        out.push_str(
-            "        ptn_throw_exception_owned_message_at(&runtime, \"UnhandledMatchError\", ",
-        );
-        out.push_str(&message_temp);
-        out.push_str(", runtime.source_path, ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
-        out.push_str("        ");
-        out.push_str(&result_temp);
-        out.push_str(" = ptn_null();\n");
+        if let Some(default_arm) = default_arm {
+            let value_temp = self.emit_materialized_value(out, &default_arm.value);
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(&value_temp);
+            out.push_str(";\n");
+            out.push_str("        ");
+            out.push_str(&matched_temp);
+            out.push_str(" = 1;\n");
+        } else {
+            let message_temp = self.next_temp();
+            out.push_str("        char *");
+            out.push_str(&message_temp);
+            out.push_str(" = ptn_unhandled_match_message(");
+            out.push_str(&subject_temp);
+            out.push_str(");\n");
+            out.push_str(
+                "        ptn_throw_exception_owned_message_at(&runtime, \"UnhandledMatchError\", ",
+            );
+            out.push_str(&message_temp);
+            out.push_str(", runtime.source_path, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+        }
         out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &subject_temp);
         result_temp
