@@ -1,0 +1,52 @@
+# ptn-5866 full-corpus ext/standard string byte-helper row pack.
+# Source bucket: full php-src PHPT corpus revision
+# 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+# Rows are adjacent ext/standard string/url helpers for byte-safe base64,
+# span/cspan, natural compare, case-insensitive replacement, substr_compare,
+# and bounded HTML entity decode.
+ext/standard/tests/general_functions/007.phpt
+ext/standard/tests/strings/bug21338.phpt
+ext/standard/tests/strings/bug24312.phpt
+ext/standard/tests/strings/bug25707.phpt
+ext/standard/tests/strings/bug27675.phpt
+ext/standard/tests/strings/bug29075.phpt
+ext/standard/tests/strings/bug33076.phpt
+ext/standard/tests/strings/bug33605.phpt
+ext/standard/tests/strings/bug34214.phpt
+ext/standard/tests/strings/bug37244.phpt
+ext/standard/tests/strings/bug39032.phpt
+ext/standard/tests/strings/bug39621.phpt
+ext/standard/tests/strings/bug43927.phpt
+ext/standard/tests/strings/bug54454.phpt
+ext/standard/tests/strings/bug55451.phpt
+ext/standard/tests/strings/bug61374.phpt
+ext/standard/tests/strings/bug65947.phpt
+ext/standard/tests/strings/bug72152.phpt
+ext/standard/tests/strings/bug72263.phpt
+ext/standard/tests/strings/bug72264.phpt
+ext/standard/tests/strings/bug77853.phpt
+ext/standard/tests/strings/html_entity_decode1.phpt
+ext/standard/tests/strings/html_entity_decode2.phpt
+ext/standard/tests/strings/str_ireplace.phpt
+ext/standard/tests/strings/strcspn.phpt
+ext/standard/tests/strings/strcspn_basic.phpt
+ext/standard/tests/strings/strcspn_variation10.phpt
+ext/standard/tests/strings/strcspn_variation11.phpt
+ext/standard/tests/strings/strcspn_variation5.phpt
+ext/standard/tests/strings/strcspn_variation6.phpt
+ext/standard/tests/strings/strcspn_variation9.phpt
+ext/standard/tests/strings/strnatcasecmp_variation1.phpt
+ext/standard/tests/strings/strnatcmp_basic.phpt
+ext/standard/tests/strings/strnatcmp_leftalign.phpt
+ext/standard/tests/strings/strspn.phpt
+ext/standard/tests/strings/strspn_basic.phpt
+ext/standard/tests/strings/strspn_variation10.phpt
+ext/standard/tests/strings/strspn_variation11.phpt
+ext/standard/tests/strings/strspn_variation5.phpt
+ext/standard/tests/strings/strspn_variation6.phpt
+ext/standard/tests/strings/strspn_variation9.phpt
+ext/standard/tests/strings/substr_compare.phpt
+ext/standard/tests/url/base64_decode_basic_001.phpt
+ext/standard/tests/url/base64_decode_basic_002.phpt
+ext/standard/tests/url/base64_encode_basic_002.phpt
+ext/standard/tests/url/bug55273.phpt
