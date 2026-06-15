@@ -14258,7 +14258,8 @@ fn compile_loose_scalar_comparison_edges_to_native_binary() {
     let output = root.join("comparison-edges-bin");
     fs::write(
         &input,
-        "<?php echo null == 0, null == \"\", null == \"0\", \"|\", 0 == \"foo\", \"|\", 2 < \"a\", \"|\", false == \"0\", true == \"0\", false == \"\", \"\\n\";",
+        "<?php echo null == 0, null == \"\", null == \"0\", \"|\", 0 == \"foo\", \"|\", 2 < \"a\", \"|\", false == \"0\", true == \"0\", false == \"\", \"\\n\";\n\
+var_dump(null < -4, null > -4, null <=> -4, -4 <=> null, null <=> 0, null <=> -INF);",
     )
     .unwrap();
 
@@ -14266,7 +14267,10 @@ fn compile_loose_scalar_comparison_edges_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "11||1|11\n");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "11||1|11\nbool(true)\nbool(false)\nint(-1)\nint(1)\nint(0)\nint(-1)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -20101,7 +20105,18 @@ foreach ($krsort as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
 $rsort = [1, 3, 2];\n\
 var_dump(rsort($rsort, 0));\n\
 echo implode(\",\", $rsort), \"\\n\";\n\
-var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));",
+var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));\n\
+$mixedKeys = [\"\" => \"empty\", -2 => \"minus\", \"-.9\" => \"fraction\", 0 => \"zero\", 4 => \"four\", 5 => \"five\", \"True\" => \"true\", \"ab\" => \"ab\", \"array1\" => \"array1\", \"array2\" => \"array2\", \"b\" => \"b\"];\n\
+ksort($mixedKeys, SORT_REGULAR);\n\
+foreach ($mixedKeys as $key => $value) { var_dump($key); }\n\
+krsort($mixedKeys, SORT_REGULAR);\n\
+foreach ($mixedKeys as $key => $value) { var_dump($key); }\n\
+$arrayValues = [[\"a\" => \"orange\", \"b\" => \"banana\", \"c\" => \"apple\"], [1, 2, 3, 4, 5, 6], [\"first\", 5 => \"second\", \"third\"]];\n\
+sort($arrayValues, SORT_REGULAR);\n\
+foreach ($arrayValues as $value) { echo count($value), \":\"; foreach ($value as $key => $_) { var_dump($key); break; } }\n\
+$nanValues = [NAN, 0, 1, -1, \"a\", []];\n\
+sort($nanValues, SORT_REGULAR);\n\
+foreach ($nanValues as $value) { if (is_float($value) && is_nan($value)) { echo \"NAN\\n\"; } elseif (is_array($value)) { echo \"array\\n\"; } else { var_dump($value); } }",
     )
     .unwrap();
 
@@ -20130,7 +20145,38 @@ var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));",
             "3,2,1\n",
             "int(0)\n",
             "bool(true)\n",
-            "int(0)\n"
+            "int(0)\n",
+            "string(0) \"\"\n",
+            "int(-2)\n",
+            "string(3) \"-.9\"\n",
+            "int(0)\n",
+            "int(4)\n",
+            "int(5)\n",
+            "string(4) \"True\"\n",
+            "string(2) \"ab\"\n",
+            "string(6) \"array1\"\n",
+            "string(6) \"array2\"\n",
+            "string(1) \"b\"\n",
+            "string(1) \"b\"\n",
+            "string(6) \"array2\"\n",
+            "string(6) \"array1\"\n",
+            "string(2) \"ab\"\n",
+            "string(4) \"True\"\n",
+            "int(5)\n",
+            "int(4)\n",
+            "int(0)\n",
+            "string(3) \"-.9\"\n",
+            "int(-2)\n",
+            "string(0) \"\"\n",
+            "3:int(0)\n",
+            "3:string(1) \"a\"\n",
+            "6:int(0)\n",
+            "int(-1)\n",
+            "int(0)\n",
+            "int(1)\n",
+            "string(1) \"a\"\n",
+            "NAN\n",
+            "array\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -30533,6 +30579,23 @@ try {
 } catch (TypeError $e) {
     echo \"TypeError: \", $e->getMessage(), \"\\n\";
 }
+
+class SortBox {
+    public $class_value;
+
+    public function __construct($class_value) {
+        $this->class_value = $class_value;
+    }
+}
+
+var_dump(new SortBox(1) <=> new SortBox(2));
+var_dump(new SortBox(2) <=> new SortBox(1));
+var_dump(new SortBox(1) <=> new SortBox(1));
+$boxes = [new SortBox(2), new SortBox(-1), new SortBox(0)];
+sort($boxes, SORT_REGULAR);
+foreach ($boxes as $box) {
+    echo $box->class_value, \"\\n\";
+}
 ",
     )
     .unwrap();
@@ -30552,6 +30615,12 @@ try {
             "bool(true)\n",
             "bool(false)\n",
             "TypeError: clone(): Argument #1 ($object) must be of type object, array given\n",
+            "int(-1)\n",
+            "int(1)\n",
+            "int(0)\n",
+            "-1\n",
+            "0\n",
+            "2\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

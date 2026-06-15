@@ -66,9 +66,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `compact()` current-scope variable collection, sum/product warning and
   overflow parity,
   `compact()` symbol-table packing, `count()`/`sizeof()` modes including
-  `Countable` dispatch, `array_splice()`
-  mutation, sort mutators through
-  ordered-array/COW paths, a bounded callable `array_multisort()` path with
+  `Countable` dispatch, `array_splice()` mutation, sort mutators through
+  ordered-array/COW paths with PHP `SORT_REGULAR` mixed key/value/object
+  ordering and sort-time string-conversion diagnostics, a bounded callable
+  `array_multisort()` path with
   prefer-ref argument separation, and recursive/non-recursive `array_walk()`
   callback diagnostics, userdata separation, key snapshots, and mutation
   visibility; `array_fill()` has bounded huge-count allocation diagnostics.

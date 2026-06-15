@@ -108,6 +108,16 @@ Previous hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 run
 | Final rebased branch focused (`.runtime/ptn-w17z16-3-exception-format-after-rebase/summary-20260615T153535Z.txt`) | 13 selected / 12 runnable / 1 classified | 12 |
 | Integrated focused merge run (`.runtime/merge-ptn-w17z16-3-exception-format/summary-20260615T160318Z.txt`) | 13 selected / 12 runnable / 1 classified | 12 |
 
+## 2026-06-15 ptn-w17z.32 SORT_REGULAR Mixed Ordering Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Baseline focused residual (`.runtime/ptn-w17z32-before/summary-20260615T144637Z.txt`) | 6 selected / 6 runnable | 0 |
+| Final residual slice (`.runtime/ptn-w17z32-after-string-warning-residuals/summary-20260615T151223Z.txt`) | 6 selected / 6 runnable | 6 |
+| Object sort slice (`.runtime/ptn-w17z32-object-sort-after/summary-20260615T153243Z.txt`) | 8 selected / 8 runnable | 8 |
+| Final focused row pack after rebase (`.runtime/ptn-w17z32-sort-pack-rebased/summary-20260615T160348Z.txt`) | 78 selected / 78 runnable | 78 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z32-sort-regular/summary-20260615T172346Z.txt`) | 78 selected / 78 runnable | 78 |
+
 ## 2026-06-15 ptn-kia6 By-Reference Boundary Row Pack
 
 Final checked-in focused manifest:
