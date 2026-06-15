@@ -518,6 +518,18 @@ fn phpt_classifier_splits_attribute_metadata_blockers() {
             "unsupported-internal-attribute-metadata\t",
             "requires internal attribute/reflection metadata",
         ),
+        (
+            "override typed property validation",
+            "--TEST--\noverride property\n--FILE--\n<?php\nclass P { public mixed $p; }\nclass C extends P { #[\\Override] public mixed $p; }\necho \"Done\";\n--EXPECT--\nDone\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
+        ),
+        (
+            "override promoted property validation",
+            "--TEST--\noverride promoted property\n--FILE--\n<?php\ninterface I { public mixed $p { get; } }\nclass C implements I { public function __construct(#[\\Override] public mixed $p) {} }\necho \"Done\";\n--EXPECT--\nDone\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
+        ),
     ];
 
     for (name, phpt, category, reason) in cases {

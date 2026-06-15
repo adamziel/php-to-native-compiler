@@ -1219,8 +1219,13 @@ ptn_phpt_first_unsupported_language_surface() {
 
 ptn_phpt_first_unsupported_class_metadata_surface() {
     local path=$1
+    local ptn_has_override_attribute=0
 
-    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v ptn_path="$path" '
+    if ptn_phpt_section "$path" FILE | LC_ALL=C grep -E '#\[[^]]*\\?Override([^[:alnum:]_]|$)' >/dev/null; then
+        ptn_has_override_attribute=1
+    fi
+
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v ptn_path="$path" -v ptn_has_override_attribute="$ptn_has_override_attribute" '
         function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
             quote = ""
             escaped = 0
@@ -1366,12 +1371,14 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /function[[:space:]]+__construct[[:space:]]*\([^)]*(public|protected|private|readonly)[[:space:]]+/) {
+            if (!ptn_has_override_attribute &&
+                line ~ /function[[:space:]]+__construct[[:space:]]*\([^)]*(public|protected|private|readonly)[[:space:]]+/) {
                 print "unsupported-property-promotion-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
                 found = 1
                 exit
             }
-            if (line ~ /(^|[,([:space:]])(public|protected|private|readonly)[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ &&
+            if (!ptn_has_override_attribute &&
+                line ~ /(^|[,([:space:]])(public|protected|private|readonly)[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ &&
                 line !~ /;/) {
                 print "unsupported-property-promotion-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
                 found = 1
@@ -1385,7 +1392,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (!readonly_class_context &&
+            if (!ptn_has_override_attribute &&
+                !readonly_class_context &&
                 line !~ /(^|[[:space:]])(public|protected|private)[[:space:]]+readonly[[:space:]]+/ &&
                 line !~ /(^|[[:space:]])readonly[[:space:]]+(public|protected|private)[[:space:]]+/ &&
                 line !~ /(^|[[:space:]])(public|protected|private|var)[[:space:]]+static[[:space:]]+[$][a-z_]/ &&
@@ -1395,7 +1403,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
+            if (!ptn_has_override_attribute &&
+                line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
                 print "unsupported-typed-property-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
                 found = 1
                 exit
