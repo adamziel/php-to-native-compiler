@@ -1,0 +1,5 @@
+ext/standard/tests/serialize/bug45706.phpt
+ext/standard/tests/serialize/bug70172.phpt
+ext/standard/tests/serialize/bug70436.phpt
+ext/standard/tests/serialize/unserialize_extra_data_003.phpt
+ext/standard/tests/serialize/unserialize_leak.phpt

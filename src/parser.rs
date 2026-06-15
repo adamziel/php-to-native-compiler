@@ -2324,6 +2324,10 @@ impl Parser<'_> {
                 self.advance();
                 TypeHint::Array
             }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("callable") => {
+                self.advance();
+                TypeHint::Callable
+            }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("object") => {
                 self.advance();
                 TypeHint::Object
@@ -2405,6 +2409,7 @@ impl Parser<'_> {
             | TokenKind::BooleanType => true,
             TokenKind::Identifier(name) => {
                 name.eq_ignore_ascii_case("array")
+                    || name.eq_ignore_ascii_case("callable")
                     || name.eq_ignore_ascii_case("mixed")
                     || name.eq_ignore_ascii_case("object")
                     || name.eq_ignore_ascii_case("iterable")
@@ -5772,6 +5777,7 @@ fn is_unqualified_only_builtin_type_hint_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "array"
+            | "callable"
             | "bool"
             | "boolean"
             | "float"
@@ -5825,6 +5831,24 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
             Some(span),
         ));
     }
+    let mut seen = Vec::new();
+    for type_hint in types {
+        match type_hint {
+            TypeHint::Mixed | TypeHint::Void | TypeHint::Never | TypeHint::Nullable(_) => {
+                return Err(Diagnostic::new("invalid union type hint", Some(span)));
+            }
+            TypeHint::Union(_) => {
+                return Err(Diagnostic::new("invalid union type hint", Some(span)));
+            }
+            _ => {}
+        }
+
+        let key = type_hint_key(type_hint);
+        if seen.iter().any(|seen_key| seen_key == &key) {
+            return Err(Diagnostic::new("duplicate union type hint", Some(span)));
+        }
+        seen.push(key);
+    }
     Ok(())
 }
 
@@ -5858,6 +5882,35 @@ fn type_hint_is_array(type_hint: &TypeHint) -> bool {
 
 fn type_hint_is_class_named(type_hint: &TypeHint, name: &str) -> bool {
     matches!(type_hint, TypeHint::Class(class_name) if class_name.eq_ignore_ascii_case(name))
+}
+
+fn type_hint_key(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Null => "null".to_string(),
+        TypeHint::Array => "array".to_string(),
+        TypeHint::Int => "int".to_string(),
+        TypeHint::Float => "float".to_string(),
+        TypeHint::String => "string".to_string(),
+        TypeHint::Bool => "bool".to_string(),
+        TypeHint::Callable => "callable".to_string(),
+        TypeHint::Object => "object".to_string(),
+        TypeHint::Iterable => "iterable".to_string(),
+        TypeHint::Mixed => "mixed".to_string(),
+        TypeHint::Void => "void".to_string(),
+        TypeHint::Never => "never".to_string(),
+        TypeHint::Nullable(inner) => format!("?{}", type_hint_key(inner)),
+        TypeHint::Union(types) => types
+            .iter()
+            .map(type_hint_key)
+            .collect::<Vec<_>>()
+            .join("|"),
+        TypeHint::Intersection(types) => types
+            .iter()
+            .map(type_hint_key)
+            .collect::<Vec<_>>()
+            .join("&"),
+        TypeHint::Class(name) => name.to_ascii_lowercase(),
+    }
 }
 
 fn nested_ternary_message(first_is_short: bool, second_is_short: bool) -> &'static str {
@@ -9649,6 +9702,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "rewinddir"
             | "stream_context_create"
             | "stream_copy_to_stream"
+            | "stream_filter_append"
+            | "stream_filter_prepend"
             | "stream_get_contents"
             | "stream_get_line"
             | "tmpfile"
@@ -9830,6 +9885,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "unlink"
             | "call_user_func"
             | "call_user_func_array"
+            | "class_alias"
             | "class_exists"
             | "debug_zval_dump"
             | "is_callable"

@@ -1500,6 +1500,22 @@ fn parser_accepts_array_parameter_return_hints_for_functions_and_closures() {
 }
 
 #[test]
+fn parser_accepts_callable_parameter_and_return_type_hints() {
+    let program = parser::parse(
+        "<?php interface One { public function callback(callable $value): callable; }",
+    )
+    .unwrap();
+
+    let interface = &program.classes[0];
+    assert!(interface.is_interface);
+    assert_eq!(interface.methods[0].return_type, Some(TypeHint::Callable));
+    assert_eq!(
+        interface.methods[0].parameters[0].type_hint,
+        Some(TypeHint::Callable)
+    );
+}
+
+#[test]
 fn parser_accepts_class_name_parameter_and_return_type_hints() {
     let program = parser::parse(
         "<?php namespace App; use Vendor\\Type as Imported; \
@@ -1520,14 +1536,23 @@ fn parser_accepts_class_name_parameter_and_return_type_hints() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn parser_accepts_iterable_object_union_intersection_and_dnf_type_hints() {
     let program = parser::parse(
         "<?php function test(object $object, iterable $iterable, (A&B)|array $value): object|iterable {}",
+=======
+fn parser_accepts_union_parameter_and_return_type_hints() {
+    let program = parser::parse(
+        "<?php namespace App; use Vendor\\Type as Imported; \
+         function test(int|float $number, null|Imported $maybe): string|\\Vendor\\Type { return $maybe; } \
+         $callback = fn(int|float ...$values): int|float => $values[0];",
+>>>>>>> origin/master
     )
     .unwrap();
 
     let function = &program.functions[0];
     assert_eq!(
+<<<<<<< HEAD
         function.return_type,
         Some(TypeHint::Union(vec![TypeHint::Object, TypeHint::Iterable,]))
     );
@@ -1599,6 +1624,40 @@ class ChildDnf extends ParentDnf {
     assert_eq!(
         error.message,
         "Declaration of ChildDnf::both(): LeftMarker|RightMarker must be compatible with ParentDnf::both(): LeftMarker&RightMarker"
+=======
+        function.parameters[0].type_hint,
+        Some(TypeHint::Union(vec![TypeHint::Int, TypeHint::Float]))
+    );
+    assert_eq!(
+        function.parameters[1].type_hint,
+        Some(TypeHint::Union(vec![
+            TypeHint::Null,
+            TypeHint::Class("Vendor\\Type".to_string())
+        ]))
+    );
+    assert_eq!(
+        function.return_type,
+        Some(TypeHint::Union(vec![
+            TypeHint::String,
+            TypeHint::Class("Vendor\\Type".to_string())
+        ]))
+    );
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert_eq!(
+        closure.parameters[0].type_hint,
+        Some(TypeHint::Union(vec![TypeHint::Int, TypeHint::Float]))
+    );
+    assert!(closure.parameters[0].is_variadic);
+    assert_eq!(
+        closure.return_type,
+        Some(TypeHint::Union(vec![TypeHint::Int, TypeHint::Float]))
+>>>>>>> origin/master
     );
 }
 
@@ -5906,6 +5965,153 @@ var_dump($d);
 }
 
 #[test]
+fn compile_serializable_payloads_and_nested_unserialize_to_native_binary() {
+    let root = temp_dir("ptn-native-serializable-payloads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serializable-payloads.php");
+    let output = root.join("serializable-payloads-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Obj implements Serializable {
+    public $data;
+    public function serialize(): string { return serialize($this->data) . 'garbage'; }
+    public function unserialize($data) { $this->data = unserialize($data); }
+}
+
+$payload = 'a:2:{i:0;i:1;i:1;C:3:"Obj":4:{R:2;}}';
+var_dump(unserialize($payload));
+
+$obj = new Obj;
+$obj->data = ['a', 'b', 'c'];
+$encoded = serialize($obj);
+var_dump($encoded);
+var_dump(unserialize($encoded . 'tail'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Deprecated: Obj implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("object(Obj)#"), "{stdout}");
+    assert!(stdout.contains("[\"data\"]=>\n    int(1)"), "{stdout}");
+    assert!(
+        stdout.contains("C:3:\"Obj\":49:{a:3:{i:0;s:1:\"a\";i:1;s:1:\"b\";i:2;s:1:\"c\";}garbage}"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Extra data starting at offset 42 of 49 bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Extra data starting at offset 64 of 68 bytes"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_spl_array_backed_unserialize_incomplete_classes_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-incomplete-unserialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-incomplete-unserialize.php");
+    let output = root.join("spl-incomplete-unserialize-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo1 extends ArrayIterator {}
+class Foo2 {}
+
+$values = [new Foo1(), new Foo2()];
+$encoded = str_replace('Foo', 'Bar', serialize($values));
+var_dump($encoded);
+var_dump(unserialize($encoded));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("O:4:\"Bar1\":4:{i:0;i:0;i:1;a:0:{}i:2;a:0:{}i:3;N;}"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("object(__PHP_Incomplete_Class)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"__PHP_Incomplete_Class_Name\"]=>\n    string(4) \"Bar1\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[\"0\"]=>\n    int(0)"), "{stdout}");
+    assert!(stdout.contains("[\"3\"]=>\n    NULL"), "{stdout}");
+    assert!(
+        stdout.contains("[\"__PHP_Incomplete_Class_Name\"]=>\n    string(4) \"Bar2\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_spl_object_storage_unserialize_payload_error_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-object-storage-unserialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-object-storage-unserialize.php");
+    let output = root.join("spl-object-storage-unserialize-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$payload = 'C:16:"SplObjectStorage":113:{x:i:2;O:8:"stdClass":1:{},a:2:{s:4:"prev";i:2;s:4:"next";O:8:"stdClass":0:{}};r:7;,R:2;s:4:"next";;r:3;};m:a:0:{}}';
+try {
+    var_dump(unserialize($payload));
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Warning: SplObjectStorage::unserialize(): Unexpected end of serialized data in ptn on line 4\n",
+            "Error at offset 24 of 113 bytes\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_print_expression_contexts_to_native_binary() {
     let root = temp_dir("ptn-native-print-expression-contexts");
     fs::create_dir_all(&root).unwrap();
@@ -8289,6 +8495,91 @@ string(17) \"resource (closed)\"\n\
 stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_stream_string_filters_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-string-filters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-string-filters.php");
+    let output = root.join("stream-string-filters-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/filter.txt';\n\
+file_put_contents($path, \"Hello There!\\nabc\");\n\
+$src = fopen($path, 'r');\n\
+$filter = stream_filter_append($src, 'string.rot13', STREAM_FILTER_READ);\n\
+var_dump(is_resource($filter));\n\
+var_dump(fgets($src));\n\
+fclose($src);\n\
+$copy = __DIR__ . '/copy.txt';\n\
+$src = fopen($path, 'r');\n\
+$dest = fopen($copy, 'w');\n\
+stream_filter_append($src, 'string.rot13', STREAM_FILTER_READ);\n\
+var_dump(stream_copy_to_stream($src, $dest, 5));\n\
+var_dump(ftell($src));\n\
+var_dump(ftell($dest));\n\
+fclose($src);\n\
+fclose($dest);\n\
+var_dump(file_get_contents($copy));\n\
+$written = __DIR__ . '/written.txt';\n\
+$dest = fopen($written, 'w');\n\
+stream_filter_append($dest, 'string.rot13', STREAM_FILTER_WRITE);\n\
+var_dump(fwrite($dest, 'abcXYZ'));\n\
+fclose($dest);\n\
+var_dump(file_get_contents($written));\n\
+$tmp = tmpfile();\n\
+fwrite($tmp, 'Hello There!');\n\
+rewind($tmp);\n\
+stream_filter_prepend($tmp, 'string.rot13');\n\
+stream_filter_prepend($tmp, 'string.toupper');\n\
+var_dump(fread($tmp, 12));\n\
+fclose($tmp);\n\
+$rw_path = __DIR__ . '/rw.txt';\n\
+$rw = fopen($rw_path, 'w+');\n\
+$filter = stream_filter_append($rw, 'string.tolower');\n\
+var_dump(is_resource($filter));\n\
+fwrite($rw, 'ABC');\n\
+rewind($rw);\n\
+var_dump(fread($rw, 3));\n\
+fclose($rw);\n\
+var_dump(STREAM_FILTER_READ, STREAM_FILTER_WRITE, STREAM_FILTER_ALL, function_exists('stream_filter_append'), function_exists('stream_filter_prepend'));\n\
+@unlink($path);\n\
+@unlink($copy);\n\
+@unlink($written);\n\
+@unlink($rw_path);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+string(13) \"Uryyb Gurer!\n\"\n\
+int(5)\n\
+int(5)\n\
+int(5)\n\
+string(5) \"Uryyb\"\n\
+int(6)\n\
+string(6) \"nopKLM\"\n\
+string(12) \"URYYB GURER!\"\n\
+bool(true)\n\
+string(3) \"abc\"\n\
+int(1)\n\
+int(2)\n\
+int(3)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_filter_append"));
+    assert!(c_source.contains("ptn_stream_apply_filter_chain_in_place"));
 }
 
 #[test]
@@ -12141,6 +12432,7 @@ fn compile_array_type_errors_to_native_binary() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn compile_iterable_default_value_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-iterable-default-value-diagnostics");
     fs::create_dir_all(&root).unwrap();
@@ -12244,6 +12536,58 @@ try { invalid_return(); } catch (TypeError $e) { echo \"return error: \", $e->ge
     assert!(c_source.contains("ptn_value_satisfies_iterable_type_hint"));
     assert!(c_source.contains("ptn_value_satisfies_object_type_hint"));
     assert!(c_source.contains("ptn_throw_user_return_type_error"));
+=======
+fn compile_union_typed_user_function_parameters_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-union-type");
+    fs::create_dir_all(&root).unwrap();
+
+    let input = root.join("user-function-union-type.php");
+    let output = root.join("user-function-union-type-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function safe_to_string(int|float $number): string { return (string)$number; }\n\
+function choose_number(bool $float): int|float { return $float ? 1.5 : 2; }\n\
+function collect(int|float ...$numbers): array { return $numbers; }\n\
+echo safe_to_string(2), \"\\n\";\n\
+echo safe_to_string(3.5), \"\\n\";\n\
+var_dump(choose_number(false));\n\
+var_dump(choose_number(true));\n\
+var_dump(collect(1, 2.5));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2\n3.5\nint(2)\nfloat(1.5)\narray(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  float(2.5)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let error_input = root.join("user-function-union-type-error.php");
+    let error_output = root.join("user-function-union-type-error-bin");
+    fs::write(
+        &error_input,
+        "<?php function safe_to_string(int|float $number): string { return (string)$number; } safe_to_string([]);",
+    )
+    .unwrap();
+    compile_file(
+        &error_input,
+        &error_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let error_execution = Command::new(&error_output).output().unwrap();
+    assert!(!error_execution.status.success());
+    assert_eq!(error_execution.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8(error_execution.stderr).unwrap(),
+        "Fatal error: safe_to_string() argument $number must be of type int|float\n"
+    );
+>>>>>>> origin/master
 }
 
 #[test]
@@ -25181,6 +25525,60 @@ item=compiler bare=Ada legacy=legacy!\n"
 }
 
 #[test]
+fn parser_preserves_unbraced_interpolation_numeric_key_shapes() {
+    let program = parser::parse(
+        "<?php echo \"$a[0] $a[-0] $a[1] $a[-1] $a[0x0] $a[-0x0] $a[00] $a[-00] $a[9223372036854775808]\";",
+    )
+    .unwrap();
+
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+
+    let indices = parts
+        .iter()
+        .filter_map(|part| match part {
+            StringPart::ArrayAccess { array, indices } if array == "a" => Some(indices.as_slice()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(indices.len(), 9);
+    assert_eq!(indices[0], &[StringInterpolationIndex::Int(0)]);
+    assert_eq!(
+        indices[1],
+        &[StringInterpolationIndex::String("-0".to_string())]
+    );
+    assert_eq!(indices[2], &[StringInterpolationIndex::Int(1)]);
+    assert_eq!(indices[3], &[StringInterpolationIndex::Int(-1)]);
+    assert_eq!(
+        indices[4],
+        &[StringInterpolationIndex::String("0x0".to_string())]
+    );
+    assert_eq!(
+        indices[5],
+        &[StringInterpolationIndex::String("-0x0".to_string())]
+    );
+    assert_eq!(
+        indices[6],
+        &[StringInterpolationIndex::String("00".to_string())]
+    );
+    assert_eq!(
+        indices[7],
+        &[StringInterpolationIndex::String("-00".to_string())]
+    );
+    assert_eq!(
+        indices[8],
+        &[StringInterpolationIndex::String(
+            "9223372036854775808".to_string()
+        )]
+    );
+}
+
+#[test]
 fn compile_legacy_interpolation_deprecation_precedes_runtime_diagnostic() {
     let root = temp_dir("ptn-native-legacy-interpolation-diagnostic-order");
     fs::create_dir_all(&root).unwrap();
@@ -31231,6 +31629,72 @@ stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
 }
 
 #[test]
+fn compile_stream_append_modes_track_php_logical_position_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-append-mode-position");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-append-mode-position.php");
+    let output = root.join("stream-append-mode-position-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/append.txt';\n\
+file_put_contents($path, 'base');\n\
+foreach (['a', 'a+'] as $mode) {\n\
+    $fp = fopen($path, $mode);\n\
+    var_dump(stream_get_meta_data($fp)['mode']);\n\
+    var_dump(ftell($fp));\n\
+    var_dump(fwrite($fp, 'XY'));\n\
+    var_dump(ftell($fp));\n\
+    var_dump(fseek($fp, 0));\n\
+    var_dump(ftell($fp));\n\
+    var_dump(fwrite($fp, 'Z'));\n\
+    var_dump(ftell($fp));\n\
+    fclose($fp);\n\
+    var_dump(file_get_contents($path));\n\
+    file_put_contents($path, 'base');\n\
+}\n\
+$read = fopen($path, 'r');\n\
+var_dump(fwrite($read, 'no'));\n\
+fclose($read);\n\
+@unlink($path);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"a\"\n\
+int(0)\n\
+int(2)\n\
+int(2)\n\
+int(0)\n\
+int(0)\n\
+int(1)\n\
+int(1)\n\
+string(7) \"baseXYZ\"\n\
+string(2) \"a+\"\n\
+int(0)\n\
+int(2)\n\
+int(2)\n\
+int(0)\n\
+int(0)\n\
+int(1)\n\
+int(1)\n\
+string(7) \"baseXYZ\"\n\
+Notice: fwrite(): Write of 2 bytes failed with errno=9 Bad file descriptor in ptn on line 19\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_mode_is_append"));
+    assert!(c_source.contains("ptn_emit_stream_write_notice"));
+}
+
+#[test]
 fn compile_namespaced_class_aliases_to_native_binary() {
     let root = temp_dir("ptn-native-namespace-class-aliases");
     fs::create_dir_all(&root).unwrap();
@@ -31286,6 +31750,104 @@ ns1\Foo::baz();
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("test\\\\ns1\\\\Foo"));
+}
+
+#[test]
+fn compile_class_alias_metadata_queries_to_native_binary() {
+    let root = temp_dir("ptn-native-class-alias-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-alias-metadata.php");
+    let output = root.join("class-alias-metadata-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Base {}
+class Original extends Base {
+    public $value = 1;
+
+    public function ping() {
+        return "pong";
+    }
+}
+
+var_dump(class_alias('Original', 'Alias'));
+var_dump(class_alias('Alias', 'Nested\\Alias'));
+var_dump(class_exists('\\Alias'));
+var_dump(class_exists('alias'));
+var_dump(class_exists('Original'));
+var_dump(get_parent_class('Alias'));
+var_dump(method_exists('Alias', 'PING'));
+var_dump(property_exists('Nested\\Alias', 'value'));
+$a = new Alias;
+$b = new \Nested\Alias;
+var_dump(get_class($a));
+var_dump($a instanceof Original);
+var_dump($a instanceof Alias);
+var_dump($b instanceof Base);
+var_dump($b instanceof \Nested\Alias);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+string(4) \"Base\"\n\
+bool(true)\n\
+bool(true)\n\
+string(8) \"Original\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_namespaced_class_alias_metadata_queries_to_native_binary() {
+    let root = temp_dir("ptn-native-namespace-class-alias-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespace-class-alias-metadata.php");
+    let output = root.join("namespace-class-alias-metadata-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace foo;
+
+class foo {}
+
+class_alias(__NAMESPACE__ . '\\foo', 'bar');
+var_dump(class_exists('\\bar'));
+var_dump(class_exists('bar'));
+var_dump(class_exists('foo\\bar'));
+var_dump(class_exists('foo\\foo'));
+var_dump(class_exists('foo'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

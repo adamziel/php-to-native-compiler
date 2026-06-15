@@ -350,7 +350,11 @@ static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *na
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
+static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
+static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
+static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static int ptn_internal_class_exists_name(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
 static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
@@ -895,6 +899,15 @@ static void ptn_dump_seen_objects_pop(PtnDumpSeenArrays *seen) {
         seen->object_len--;
     }
 }
+
+typedef struct {
+    PtnArray *array;
+    size_t index;
+} PtnArrayIteratorData;
+
+typedef struct {
+    PtnArray *array;
+} PtnArrayObjectData;
 
 static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
@@ -1657,6 +1670,8 @@ typedef struct {
 
 typedef struct {
     PtnDumpSeenArrays seen;
+    PtnRuntime *runtime;
+    size_t line;
     PtnSerializeIdEntry *references;
     size_t reference_len;
     size_t reference_capacity;
@@ -1666,8 +1681,10 @@ typedef struct {
     size_t next_id;
 } PtnSerializeState;
 
-static void ptn_serialize_state_init(PtnSerializeState *state) {
+static void ptn_serialize_state_init(PtnSerializeState *state, PtnRuntime *runtime, size_t line) {
     ptn_dump_seen_arrays_init(&state->seen);
+    state->runtime = runtime;
+    state->line = line;
     state->references = NULL;
     state->reference_len = 0;
     state->reference_capacity = 0;
@@ -1801,7 +1818,97 @@ static void ptn_serialize_append_array(
     ptn_string_buffer_append_char(buffer, '}');
 }
 
+static int ptn_serialize_object_is_spl_array_backed(PtnObject *object) {
+    return ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
+        ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject");
+}
+
+static PtnValue ptn_serialize_spl_storage_value(PtnObject *object) {
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") &&
+        object->native_data != NULL) {
+        PtnArrayIteratorData *data = (PtnArrayIteratorData *)object->native_data;
+        return ptn_array(data->array);
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject") &&
+        object->native_data != NULL) {
+        PtnArrayObjectData *data = (PtnArrayObjectData *)object->native_data;
+        return ptn_array(data->array);
+    }
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
+static void ptn_serialize_append_spl_array_backed_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":4:{",
+        strlen(object->class_name),
+        object->class_name
+    );
+    ptn_string_buffer_append(buffer, "i:0;i:0;i:1;");
+    PtnValue storage = ptn_serialize_spl_storage_value(object);
+    ptn_serialize_append_value_with_id(buffer, storage, state, 0);
+    if (storage.type == PTN_ARRAY &&
+        storage.as.array != NULL &&
+        object->native_data == NULL) {
+        ptn_value_destroy(&storage);
+    }
+    ptn_string_buffer_append(buffer, "i:2;");
+    PtnValue properties = ptn_array(object->properties);
+    ptn_serialize_append_value_with_id(buffer, properties, state, 0);
+    ptn_string_buffer_append(buffer, "i:3;N;}");
+}
+
+static int ptn_serialize_append_serializable_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    if (state->runtime == NULL ||
+        state->runtime->method_dispatch == NULL ||
+        !ptn_declared_class_implements_interface(object->class_name, "Serializable")) {
+        return 0;
+    }
+    PtnValue receiver = ptn_object(object);
+    PtnValue payload_value = state->runtime->method_dispatch(
+        state->runtime,
+        receiver,
+        "serialize",
+        0,
+        NULL,
+        state->line
+    );
+    if (state->runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&payload_value);
+        ptn_string_buffer_append(buffer, "N;");
+        return 1;
+    }
+    PtnStringOperand payload = ptn_value_to_string_operand(payload_value);
+    ptn_string_buffer_append_format(
+        buffer,
+        "C:%zu:\"%s\":%zu:{",
+        strlen(object->class_name),
+        object->class_name,
+        payload.len
+    );
+    ptn_string_buffer_append_len(buffer, payload.data, payload.len);
+    ptn_string_buffer_append_char(buffer, '}');
+    ptn_string_operand_free(payload);
+    ptn_value_destroy(&payload_value);
+    return 1;
+}
+
 static void ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state) {
+    if (ptn_serialize_append_serializable_object(buffer, object, state)) {
+        return;
+    }
+    if (ptn_serialize_object_is_spl_array_backed(object)) {
+        ptn_serialize_append_spl_array_backed_object(buffer, object, state);
+        return;
+    }
     ptn_string_buffer_append_format(
         buffer,
         "O:%zu:\"%s\":%zu:{",
@@ -1897,13 +2004,11 @@ static void ptn_serialize_append_value_with_id(
 }
 
 static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
     PtnStringBuffer buffer;
     PtnSerializeState state;
     ptn_string_buffer_init(&buffer);
-    ptn_serialize_state_init(&state);
+    ptn_serialize_state_init(&state, runtime, line);
     ptn_serialize_append_value_with_id(&buffer, args[0], &state, 0);
     ptn_serialize_state_free(&state);
     return ptn_owned_string_len(buffer.data, buffer.len);
@@ -1918,6 +2023,8 @@ typedef struct {
     const char *data;
     size_t len;
     size_t pos;
+    size_t error_pos;
+    size_t line;
     PtnUnserializeIdEntry *ids;
     size_t id_len;
     size_t id_capacity;
@@ -1938,10 +2045,17 @@ static PtnStringOperand ptn_internal_expect_string_arg(
     size_t line
 );
 
-static void ptn_unserialize_state_init(PtnUnserializeState *state, const char *data, size_t len) {
+static void ptn_unserialize_state_init(
+    PtnUnserializeState *state,
+    const char *data,
+    size_t len,
+    size_t line
+) {
     state->data = data;
     state->len = len;
     state->pos = 0;
+    state->error_pos = 0;
+    state->line = line;
     state->ids = NULL;
     state->id_len = 0;
     state->id_capacity = 0;
@@ -1959,9 +2073,28 @@ static int ptn_unserialize_has(PtnUnserializeState *state, size_t count) {
     return state->pos <= state->len && count <= state->len - state->pos;
 }
 
+static void ptn_unserialize_fail_at(PtnUnserializeState *state, size_t pos) {
+    if (!state->failed) {
+        state->error_pos = pos <= state->len ? pos : state->len;
+    }
+    state->failed = 1;
+}
+
+static void ptn_unserialize_fail(PtnUnserializeState *state) {
+    ptn_unserialize_fail_at(state, state->pos);
+}
+
+static int ptn_unserialize_require(PtnUnserializeState *state, size_t count) {
+    if (!ptn_unserialize_has(state, count)) {
+        ptn_unserialize_fail(state);
+        return 0;
+    }
+    return 1;
+}
+
 static int ptn_unserialize_consume(PtnUnserializeState *state, char expected) {
     if (!ptn_unserialize_has(state, 1) || state->data[state->pos] != expected) {
-        state->failed = 1;
+        ptn_unserialize_fail(state);
         return 0;
     }
     state->pos++;
@@ -2008,7 +2141,7 @@ static void ptn_unserialize_update_slot(PtnUnserializeState *state, size_t id, P
 static int ptn_unserialize_parse_unsigned(PtnUnserializeState *state, size_t *value) {
     if (!ptn_unserialize_has(state, 1) ||
         (state->data[state->pos] < '0' || state->data[state->pos] > '9')) {
-        state->failed = 1;
+        ptn_unserialize_fail(state);
         return 0;
     }
     size_t result = 0;
@@ -2038,14 +2171,14 @@ static int ptn_unserialize_parse_int64(PtnUnserializeState *state, int64_t *valu
     }
     if (!negative) {
         if (magnitude > (size_t)INT64_MAX) {
-            state->failed = 1;
+            ptn_unserialize_fail(state);
             return 0;
         }
         *value = (int64_t)magnitude;
         return 1;
     }
     if (magnitude > (size_t)INT64_MAX + 1) {
-        state->failed = 1;
+        ptn_unserialize_fail(state);
         return 0;
     }
     *value = magnitude == (size_t)INT64_MAX + 1 ? INT64_MIN : -(int64_t)magnitude;
@@ -2053,14 +2186,17 @@ static int ptn_unserialize_parse_int64(PtnUnserializeState *state, int64_t *valu
 }
 
 static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *key) {
+    size_t key_start = state->pos;
     if (!ptn_unserialize_has(state, 2)) {
-        state->failed = 1;
+        ptn_unserialize_fail_at(state, key_start);
         return 0;
     }
     char type = state->data[state->pos++];
-    if (!ptn_unserialize_consume(state, ':')) {
+    if (!ptn_unserialize_has(state, 1) || state->data[state->pos] != ':') {
+        ptn_unserialize_fail_at(state, key_start);
         return 0;
     }
+    state->pos++;
     if (type == 'i') {
         int64_t integer = 0;
         if (!ptn_unserialize_parse_int64(state, &integer) ||
@@ -2075,7 +2211,7 @@ static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *ke
         if (!ptn_unserialize_parse_unsigned(state, &len) ||
             !ptn_unserialize_consume(state, ':') ||
             !ptn_unserialize_consume(state, '"') ||
-            !ptn_unserialize_has(state, len)) {
+            !ptn_unserialize_require(state, len)) {
             return 0;
         }
         const char *string = state->data + state->pos;
@@ -2087,13 +2223,13 @@ static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *ke
         *key = ptn_array_string_key_len(string, len);
         return 1;
     }
-    state->failed = 1;
+    ptn_unserialize_fail_at(state, key_start);
     return 0;
 }
 
 static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, size_t id) {
     if (id == 0 || id > state->id_len) {
-        state->failed = 1;
+        ptn_unserialize_fail(state);
         return ptn_null();
     }
     PtnUnserializeIdEntry *entry = &state->ids[id - 1];
@@ -2102,7 +2238,7 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
         return ptn_reference_value(entry->reference);
     }
     if (entry->slot == NULL) {
-        state->failed = 1;
+        ptn_unserialize_fail(state);
         return ptn_null();
     }
     if (entry->slot->type == PTN_REFERENCE) {
@@ -2119,12 +2255,12 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
 
 static PtnValue ptn_unserialize_object_reference_for_id(PtnUnserializeState *state, size_t id) {
     if (id == 0 || id > state->id_len || state->ids[id - 1].slot == NULL) {
-        state->failed = 1;
+        ptn_unserialize_fail(state);
         return ptn_null();
     }
     PtnValue value = ptn_value_deref(*state->ids[id - 1].slot);
     if (value.type != PTN_OBJECT) {
-        state->failed = 1;
+        ptn_unserialize_fail(state);
         return ptn_null();
     }
     return ptn_value_clone(value);
@@ -2146,6 +2282,151 @@ static PtnArray *ptn_unserialize_new_array_with_capacity(size_t capacity) {
 
 static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *state, PtnRuntime *runtime);
 
+static void ptn_unserialize_emit_error_warning(
+    PtnRuntime *runtime,
+    size_t offset,
+    size_t len,
+    size_t line
+) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "unserialize(): Error at offset %zu of %zu bytes",
+        offset,
+        len
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_unserialize_emit_extra_data_warning(
+    PtnRuntime *runtime,
+    size_t offset,
+    size_t len,
+    size_t line
+) {
+    char message[176];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "unserialize(): Extra data starting at offset %zu of %zu bytes",
+        offset,
+        len
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static PtnValue ptn_unserialize_new_object_shell(PtnRuntime *runtime, const char *class_name) {
+    if (ptn_declared_class_exists(class_name) || ptn_internal_class_exists_name(class_name)) {
+        return ptn_object_new_shell(runtime, class_name);
+    }
+
+    PtnValue object = ptn_object_new_shell(runtime, "__PHP_Incomplete_Class");
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("__PHP_Incomplete_Class_Name"),
+        ptn_owned_string(ptn_duplicate_string(class_name))
+    );
+    return object;
+}
+
+static PtnArrayKey ptn_unserialize_object_property_key(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_STRING) {
+        return key;
+    }
+
+    char buffer[32];
+    int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)key.as.integer);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_array_string_key(buffer);
+}
+
+static void ptn_spl_object_storage_throw_unserialize_error(
+    PtnRuntime *runtime,
+    size_t offset,
+    size_t len,
+    size_t line
+) {
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "SplObjectStorage::unserialize(): Unexpected end of serialized data",
+        line
+    );
+    char message[96];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Error at offset %zu of %zu bytes",
+        offset,
+        len
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Exception", message);
+}
+
+static void ptn_spl_object_storage_validate_payload(
+    PtnRuntime *runtime,
+    const char *payload,
+    size_t payload_len,
+    size_t line
+) {
+    PtnUnserializeState probe;
+    ptn_unserialize_state_init(&probe, payload, payload_len, line);
+    size_t count = 0;
+    if (!ptn_unserialize_consume(&probe, 'x') ||
+        !ptn_unserialize_consume(&probe, ':') ||
+        !ptn_unserialize_consume(&probe, 'i') ||
+        !ptn_unserialize_consume(&probe, ':') ||
+        !ptn_unserialize_parse_unsigned(&probe, &count) ||
+        !ptn_unserialize_consume(&probe, ';')) {
+        size_t offset = probe.error_pos;
+        ptn_unserialize_state_free(&probe);
+        ptn_spl_object_storage_throw_unserialize_error(runtime, offset, payload_len, line);
+        return;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        PtnUnserializeValue object = ptn_unserialize_parse_value(&probe, runtime);
+        if (probe.failed) {
+            size_t offset = probe.error_pos;
+            ptn_value_destroy(&object.value);
+            ptn_unserialize_state_free(&probe);
+            ptn_spl_object_storage_throw_unserialize_error(runtime, offset, payload_len, line);
+            return;
+        }
+        ptn_value_destroy(&object.value);
+
+        if (!ptn_unserialize_consume(&probe, ',')) {
+            size_t offset = probe.error_pos;
+            ptn_unserialize_state_free(&probe);
+            ptn_spl_object_storage_throw_unserialize_error(runtime, offset, payload_len, line);
+            return;
+        }
+
+        PtnUnserializeValue info = ptn_unserialize_parse_value(&probe, runtime);
+        if (probe.failed || !ptn_unserialize_consume(&probe, ';')) {
+            size_t offset = probe.error_pos;
+            ptn_value_destroy(&info.value);
+            ptn_unserialize_state_free(&probe);
+            ptn_spl_object_storage_throw_unserialize_error(runtime, offset, payload_len, line);
+            return;
+        }
+        ptn_value_destroy(&info.value);
+    }
+
+    ptn_unserialize_state_free(&probe);
+}
+
 static int ptn_unserialize_store_entry(
     PtnUnserializeState *state,
     PtnArray *array,
@@ -2157,7 +2438,7 @@ static int ptn_unserialize_store_entry(
     size_t index = ptn_array_find_key(array, lookup);
     ptn_array_key_free(lookup);
     if (index >= array->len) {
-        state->failed = 1;
+        ptn_unserialize_fail(state);
         return 0;
     }
     ptn_unserialize_update_slot(state, parsed.id, &array->entries[index].value);
@@ -2168,8 +2449,9 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
     PtnUnserializeValue result;
     result.value = ptn_null();
     result.id = 0;
-    if (!ptn_unserialize_has(state, 1)) {
-        state->failed = 1;
+
+    size_t value_start = state->pos;
+    if (!ptn_unserialize_require(state, 1)) {
         return result;
     }
     char type = state->data[state->pos++];
@@ -2181,18 +2463,20 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         result.id = ptn_unserialize_add_slot(state, &result.value);
         return result;
     }
-    if (!ptn_unserialize_consume(state, ':')) {
+    if (!ptn_unserialize_has(state, 1) || state->data[state->pos] != ':') {
+        ptn_unserialize_fail_at(state, value_start);
         return result;
     }
+    state->pos++;
+
     switch (type) {
         case 'b': {
-            if (!ptn_unserialize_has(state, 1)) {
-                state->failed = 1;
+            if (!ptn_unserialize_require(state, 1)) {
                 return result;
             }
             char boolean = state->data[state->pos++];
             if (!ptn_unserialize_consume(state, ';') || (boolean != '0' && boolean != '1')) {
-                state->failed = 1;
+                ptn_unserialize_fail(state);
                 return result;
             }
             result.value = ptn_bool(boolean == '1');
@@ -2214,8 +2498,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             while (ptn_unserialize_has(state, 1) && state->data[state->pos] != ';') {
                 state->pos++;
             }
-            if (!ptn_unserialize_has(state, 1)) {
-                state->failed = 1;
+            if (!ptn_unserialize_require(state, 1)) {
                 return result;
             }
             size_t len = state->pos - start;
@@ -2224,7 +2507,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             double value = strtod(number, &end);
             if (end == number || *end != '\0') {
                 free(number);
-                state->failed = 1;
+                ptn_unserialize_fail_at(state, start);
                 return result;
             }
             free(number);
@@ -2240,7 +2523,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             if (!ptn_unserialize_parse_unsigned(state, &len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '"') ||
-                !ptn_unserialize_has(state, len)) {
+                !ptn_unserialize_require(state, len)) {
                 return result;
             }
             const char *string = state->data + state->pos;
@@ -2286,7 +2569,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             if (!ptn_unserialize_parse_unsigned(state, &class_len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '"') ||
-                !ptn_unserialize_has(state, class_len)) {
+                !ptn_unserialize_require(state, class_len)) {
                 return result;
             }
             char *class_name = ptn_duplicate_string_len(state->data + state->pos, class_len);
@@ -2299,7 +2582,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 free(class_name);
                 return result;
             }
-            result.value = ptn_object_new_shell(runtime, class_name);
+            result.value = ptn_unserialize_new_object_shell(runtime, class_name);
             free(class_name);
             result.id = ptn_unserialize_add_slot(state, &result.value);
             PtnArray *properties = result.value.as.object->properties;
@@ -2309,8 +2592,9 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                     return result;
                 }
                 PtnUnserializeValue parsed = ptn_unserialize_parse_value(state, runtime);
+                PtnArrayKey property_key = ptn_unserialize_object_property_key(key);
                 if (state->failed ||
-                    !ptn_unserialize_store_entry(state, properties, key, parsed)) {
+                    !ptn_unserialize_store_entry(state, properties, property_key, parsed)) {
                     return result;
                 }
             }
@@ -2318,6 +2602,67 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             if (!ptn_unserialize_consume(state, '}')) {
                 return result;
             }
+            return result;
+        }
+        case 'C': {
+            size_t class_len = 0;
+            size_t payload_len = 0;
+            if (!ptn_unserialize_parse_unsigned(state, &class_len) ||
+                !ptn_unserialize_consume(state, ':') ||
+                !ptn_unserialize_consume(state, '"') ||
+                !ptn_unserialize_require(state, class_len)) {
+                return result;
+            }
+            char *class_name = ptn_duplicate_string_len(state->data + state->pos, class_len);
+            state->pos += class_len;
+            if (!ptn_unserialize_consume(state, '"') ||
+                !ptn_unserialize_consume(state, ':') ||
+                !ptn_unserialize_parse_unsigned(state, &payload_len) ||
+                !ptn_unserialize_consume(state, ':') ||
+                !ptn_unserialize_consume(state, '{') ||
+                !ptn_unserialize_require(state, payload_len)) {
+                free(class_name);
+                return result;
+            }
+            const char *payload = state->data + state->pos;
+            state->pos += payload_len;
+            if (!ptn_unserialize_consume(state, '}')) {
+                free(class_name);
+                return result;
+            }
+
+            if (ptn_internal_class_name_is_spl_object_storage(class_name)) {
+                ptn_spl_object_storage_validate_payload(runtime, payload, payload_len, state->line);
+                result.value = ptn_object_new_shell(runtime, class_name);
+                free(class_name);
+                result.id = ptn_unserialize_add_slot(state, &result.value);
+                return result;
+            }
+
+            result.value = ptn_unserialize_new_object_shell(runtime, class_name);
+            result.id = ptn_unserialize_add_slot(state, &result.value);
+            if (runtime != NULL &&
+                runtime->method_dispatch != NULL &&
+                result.value.type == PTN_OBJECT &&
+                !ptn_ascii_case_equal(result.value.as.object->class_name, "__PHP_Incomplete_Class") &&
+                ptn_declared_class_method_exists(class_name, "unserialize")) {
+                PtnValue payload_arg = ptn_owned_string_len(
+                    ptn_duplicate_string_len(payload, payload_len),
+                    payload_len
+                );
+                PtnValue callback_result = runtime->method_dispatch(
+                    runtime,
+                    result.value,
+                    "unserialize",
+                    1,
+                    &payload_arg,
+                    state->line
+                );
+                ptn_value_destroy(&callback_result);
+                ptn_value_destroy(&payload_arg);
+            }
+            ptn_unserialize_update_slot(state, result.id, &result.value);
+            free(class_name);
             return result;
         }
         case 'R': {
@@ -2339,10 +2684,20 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             return result;
         }
         default:
-            state->failed = 1;
+            ptn_unserialize_fail_at(state, value_start);
             return result;
     }
 }
+
+typedef struct {
+    const char *data;
+    size_t len;
+    size_t pos;
+    size_t error_pos;
+    size_t line;
+    size_t id_len;
+    int failed;
+} PtnUnserializeSavedInput;
 
 static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
@@ -2354,20 +2709,83 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
         args[0],
         line
     );
+
+    PtnUnserializeState *active_state = runtime == NULL
+        ? NULL
+        : (PtnUnserializeState *)runtime->active_unserialize_state;
+    if (active_state != NULL) {
+        PtnUnserializeSavedInput saved;
+        saved.data = active_state->data;
+        saved.len = active_state->len;
+        saved.pos = active_state->pos;
+        saved.error_pos = active_state->error_pos;
+        saved.line = active_state->line;
+        saved.id_len = active_state->id_len;
+        saved.failed = active_state->failed;
+
+        active_state->data = (const char *)input.data;
+        active_state->len = input.len;
+        active_state->pos = 0;
+        active_state->error_pos = 0;
+        active_state->line = line;
+        active_state->failed = 0;
+        PtnUnserializeValue parsed = ptn_unserialize_parse_value(active_state, runtime);
+        int failed = active_state->failed;
+        size_t error_pos = active_state->error_pos;
+        size_t parsed_pos = active_state->pos;
+
+        active_state->data = saved.data;
+        active_state->len = saved.len;
+        active_state->pos = saved.pos;
+        active_state->error_pos = saved.error_pos;
+        active_state->line = saved.line;
+        active_state->id_len = saved.id_len;
+        active_state->failed = saved.failed;
+
+        if (failed) {
+            ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
+            ptn_value_destroy(&parsed.value);
+            ptn_string_operand_free(input);
+            return ptn_bool(0);
+        }
+        if (parsed_pos != input.len) {
+            ptn_unserialize_emit_extra_data_warning(runtime, parsed_pos, input.len, line);
+        }
+        ptn_string_operand_free(input);
+        return parsed.value;
+    }
+
     PtnUnserializeState state;
     ptn_unserialize_state_init(
         &state,
         (const char *)input.data,
-        input.len
+        input.len,
+        line
     );
+    void *previous_active_state = runtime == NULL ? NULL : runtime->active_unserialize_state;
+    if (runtime != NULL) {
+        runtime->active_unserialize_state = &state;
+    }
     PtnUnserializeValue parsed = ptn_unserialize_parse_value(&state, runtime);
-    int failed = state.failed || state.pos != state.len;
-    ptn_unserialize_state_free(&state);
-    ptn_string_operand_free(input);
+    int failed = state.failed;
+    size_t error_pos = state.error_pos;
+    size_t parsed_pos = state.pos;
+    if (runtime != NULL) {
+        runtime->active_unserialize_state = previous_active_state;
+    }
+
     if (failed) {
+        ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
         ptn_value_destroy(&parsed.value);
+        ptn_unserialize_state_free(&state);
+        ptn_string_operand_free(input);
         return ptn_bool(0);
     }
+    if (parsed_pos != input.len) {
+        ptn_unserialize_emit_extra_data_warning(runtime, parsed_pos, input.len, line);
+    }
+    ptn_unserialize_state_free(&state);
+    ptn_string_operand_free(input);
     return parsed.value;
 }
 
@@ -9068,6 +9486,8 @@ static PtnValue ptn_internal_printf(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int(len);
 }
 
+static size_t ptn_stream_write_filtered(PtnResource *resource, const char *data, size_t len);
+
 static PtnValue ptn_internal_write_formatted_stream(
     PtnRuntime *runtime,
     const char *function_name,
@@ -9112,9 +9532,9 @@ static PtnValue ptn_internal_write_formatted_stream(
     if (string_value.type != PTN_STRING) {
         return formatted;
     }
-    size_t written = ptn_stream_write_bytes(
+    size_t written = ptn_stream_write_filtered(
         stream.as.resource,
-        string_value.as.string.data,
+        (const char *)string_value.as.string.data,
         string_value.as.string.len
     );
     if (written != string_value.as.string.len) {
@@ -12194,6 +12614,10 @@ static char *ptn_fopen_c_mode(const char *mode) {
     return c_mode;
 }
 
+static int ptn_stream_mode_is_append(PtnResource *resource) {
+    return resource != NULL && resource->stream_mode != NULL && resource->stream_mode[0] == 'a';
+}
+
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "fopen", 1, "filename", args[0], line);
@@ -12233,6 +12657,9 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(mode);
         free(path);
         return ptn_bool(0);
+    }
+    if (mode[0] == 'a') {
+        (void)fseek(stream, 0, SEEK_SET);
     }
 
     PtnValue resource = ptn_resource(ptn_resource_new_stream(stream, path, mode));
@@ -12408,6 +12835,273 @@ static PtnResource *ptn_internal_expect_open_directory_arg(
     return value.as.resource;
 }
 
+static int ptn_stream_filter_name_equals(PtnStringOperand name, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (name.len != literal_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < literal_len; i++) {
+        unsigned char left = (unsigned char)name.data[i];
+        unsigned char right = (unsigned char)literal[i];
+        if (tolower(left) != tolower(right)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_stream_filter_kind_from_name(PtnStringOperand name, PtnStreamFilterKind *kind) {
+    if (ptn_stream_filter_name_equals(name, "string.rot13")) {
+        *kind = PTN_STREAM_FILTER_STRING_ROT13;
+        return 1;
+    }
+    if (ptn_stream_filter_name_equals(name, "string.toupper")) {
+        *kind = PTN_STREAM_FILTER_STRING_TOUPPER;
+        return 1;
+    }
+    if (ptn_stream_filter_name_equals(name, "string.tolower")) {
+        *kind = PTN_STREAM_FILTER_STRING_TOLOWER;
+        return 1;
+    }
+    return 0;
+}
+
+static PtnStreamFilter *ptn_stream_filter_new(PtnStreamFilterKind kind, PtnStringOperand name) {
+    PtnStreamFilter *filter = malloc(sizeof(PtnStreamFilter));
+    if (filter == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    filter->kind = kind;
+    filter->name = ptn_duplicate_string_len(name.data, name.len);
+    filter->next = NULL;
+    return filter;
+}
+
+static void ptn_stream_filter_chain_insert(
+    PtnStreamFilter **chain,
+    PtnStreamFilter *filter,
+    int prepend
+) {
+    if (prepend || *chain == NULL) {
+        filter->next = *chain;
+        *chain = filter;
+        return;
+    }
+    PtnStreamFilter *tail = *chain;
+    while (tail->next != NULL) {
+        tail = tail->next;
+    }
+    tail->next = filter;
+}
+
+static void ptn_stream_apply_filter_in_place(PtnStreamFilterKind kind, unsigned char *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = data[i];
+        switch (kind) {
+            case PTN_STREAM_FILTER_STRING_ROT13:
+                if (byte >= 'a' && byte <= 'z') {
+                    data[i] = (unsigned char)('a' + ((byte - 'a' + 13) % 26));
+                } else if (byte >= 'A' && byte <= 'Z') {
+                    data[i] = (unsigned char)('A' + ((byte - 'A' + 13) % 26));
+                }
+                break;
+            case PTN_STREAM_FILTER_STRING_TOUPPER:
+                data[i] = (unsigned char)toupper(byte);
+                break;
+            case PTN_STREAM_FILTER_STRING_TOLOWER:
+                data[i] = (unsigned char)tolower(byte);
+                break;
+        }
+    }
+}
+
+static void ptn_stream_apply_filter_chain_in_place(PtnStreamFilter *filter, unsigned char *data, size_t len) {
+    for (; filter != NULL; filter = filter->next) {
+        ptn_stream_apply_filter_in_place(filter->kind, data, len);
+    }
+}
+
+static char *ptn_stream_apply_filter_chain_alloc(
+    PtnStreamFilter *filter,
+    const char *data,
+    size_t len,
+    size_t *out_len
+) {
+    char *output = ptn_duplicate_string_len(data, len);
+    ptn_stream_apply_filter_chain_in_place(filter, (unsigned char *)output, len);
+    *out_len = len;
+    return output;
+}
+
+static int ptn_stream_getc_filtered(PtnResource *resource) {
+    int byte = ptn_stream_get_byte(resource);
+    if (byte == EOF) {
+        return EOF;
+    }
+    unsigned char filtered = (unsigned char)byte;
+    ptn_stream_apply_filter_chain_in_place(resource->read_filters, &filtered, 1);
+    return (int)filtered;
+}
+
+static size_t ptn_stream_write_filtered(
+    PtnResource *resource,
+    const char *data,
+    size_t len
+) {
+    size_t output_len = 0;
+    char *output = ptn_stream_apply_filter_chain_alloc(resource->write_filters, data, len, &output_len);
+    size_t written = ptn_stream_write_bytes(resource, output, output_len);
+    free(output);
+    return written;
+}
+
+static PtnValue ptn_internal_stream_filter_attach(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int prepend
+) {
+    PtnValue stream_value = ptn_value_deref(args[0]);
+    if (stream_value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($stream) must be of type resource, %s given",
+            function_name,
+            ptn_offset_container_type_name(stream_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (!ptn_stream_resource_is_open(stream_value.as.resource)) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($stream) must be an open stream resource",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, 2, "filter_name", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t mode = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, function_name, 3, "mode", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    if (mode == 0) {
+        mode = PTN_STREAM_FILTER_ALL;
+    }
+    if ((mode & PTN_STREAM_FILTER_ALL) == 0) {
+        ptn_string_operand_free(name);
+        return ptn_bool(0);
+    }
+
+    PtnStreamFilterKind kind;
+    if (!ptn_stream_filter_kind_from_name(name, &kind)) {
+        char *filter_name = ptn_duplicate_string_len(name.data, name.len);
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s(): Unable to create or locate filter \"%s\"",
+            function_name,
+            filter_name
+        );
+        if (needed < 0) {
+            free(filter_name);
+            ptn_string_operand_free(name);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(filter_name);
+            ptn_string_operand_free(name);
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(): Unable to create or locate filter \"%s\"",
+            function_name,
+            filter_name
+        );
+        free(filter_name);
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_string_operand_free(name);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(message);
+        ptn_string_operand_free(name);
+        return ptn_bool(0);
+    }
+
+    PtnResource *stream = stream_value.as.resource;
+    if ((mode & PTN_STREAM_FILTER_READ) != 0) {
+        ptn_stream_filter_chain_insert(
+            &stream->read_filters,
+            ptn_stream_filter_new(kind, name),
+            prepend
+        );
+    }
+    if ((mode & PTN_STREAM_FILTER_WRITE) != 0) {
+        ptn_stream_filter_chain_insert(
+            &stream->write_filters,
+            ptn_stream_filter_new(kind, name),
+            prepend
+        );
+    }
+    ptn_string_operand_free(name);
+    return ptn_resource(ptn_resource_new_named("stream filter"));
+}
+
+static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_stream_filter_attach(runtime, "stream_filter_append", argc, args, line, 0);
+}
+
+static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_stream_filter_attach(runtime, "stream_filter_prepend", argc, args, line, 1);
+}
+
+static void ptn_emit_stream_write_notice(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t requested_len,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Write of %zu bytes failed with errno=%d %s",
+        function_name,
+        requested_len,
+        errno,
+        strerror(errno)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_notice(&runtime->diagnostics, message, line);
+}
+
 static PtnValue ptn_internal_fwrite_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -12443,14 +13137,26 @@ static PtnValue ptn_internal_fwrite_named(
         }
     }
 
-    size_t written = ptn_stream_write_bytes(resource, data.data, length);
+    int64_t append_position = -1;
+    if (ptn_stream_mode_is_append(resource)) {
+        append_position = ptn_stream_tell(resource);
+    }
+    errno = 0;
+    size_t written = ptn_stream_write_filtered(resource, data.data, length);
     ptn_string_operand_free(data);
     if (written != length && ptn_stream_error(resource)) {
+        ptn_emit_stream_write_notice(runtime, function_name, length, line);
         ptn_stream_clear_error(resource);
         return ptn_bool(0);
     }
     if (written > (size_t)INT64_MAX) {
         ptn_abort_out_of_memory();
+    }
+    if (append_position >= 0) {
+        if (append_position > INT64_MAX - (int64_t)written) {
+            ptn_abort_out_of_memory();
+        }
+        (void)ptn_stream_seek(resource, append_position + (int64_t)written, SEEK_SET);
     }
     return ptn_int((int64_t)written);
 }
@@ -12539,7 +13245,7 @@ static PtnValue ptn_internal_fgetc(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_null();
     }
     errno = 0;
-    int byte = ptn_stream_get_byte(resource);
+    int byte = ptn_stream_getc_filtered(resource);
     if (byte == EOF) {
         if (ptn_stream_error(resource)) {
             ptn_emit_stream_read_notice(runtime, "fgetc", 8192, line);
@@ -12601,6 +13307,9 @@ static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnVa
     }
     errno = 0;
     size_t read_len = ptn_stream_read_bytes(resource, buffer, length);
+    if (read_len != 0) {
+        ptn_stream_apply_filter_chain_in_place(resource->read_filters, (unsigned char *)buffer, read_len);
+    }
     if (read_len == 0 && ptn_stream_error(resource)) {
         ptn_emit_stream_read_notice(runtime, "fread", length, line);
         ptn_stream_clear_error(resource);
@@ -12701,7 +13410,7 @@ static int ptn_stream_read_line(
     ptn_string_buffer_init(buffer);
     while (!has_max_len || buffer->len < max_len) {
         errno = 0;
-        int byte = ptn_stream_get_byte(resource);
+        int byte = ptn_stream_getc_filtered(resource);
         if (byte == EOF) {
             if (ptn_stream_error(resource)) {
                 ptn_emit_stream_read_notice(runtime, function_name, has_max_len ? max_len : 8192, line);
@@ -13051,7 +13760,7 @@ static PtnValue ptn_internal_fputcsv(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(eol);
     }
 
-    size_t written = ptn_stream_write_bytes(resource, output.data, output.len);
+    size_t written = ptn_stream_write_filtered(resource, output.data, output.len);
     if (written != output.len && ptn_stream_error(resource)) {
         ptn_stream_clear_error(resource);
         free(output.data);
@@ -13334,6 +14043,7 @@ static PtnValue ptn_internal_fpassthru(PtnRuntime *runtime, size_t argc, const P
     for (;;) {
         size_t read_len = ptn_stream_read_bytes(resource, buffer, sizeof(buffer));
         if (read_len != 0) {
+            ptn_stream_apply_filter_chain_in_place(resource->read_filters, buffer, read_len);
             fwrite(buffer, 1, read_len, stdout);
             if (read_len > (size_t)(INT64_MAX - total)) {
                 ptn_abort_out_of_memory();
@@ -13389,6 +14099,7 @@ static PtnValue ptn_stream_read_remaining(
         errno = 0;
         size_t read_len = ptn_stream_read_bytes(resource, chunk, want);
         if (read_len != 0) {
+            ptn_stream_apply_filter_chain_in_place(resource->read_filters, chunk, read_len);
             ptn_string_buffer_append_len(&buffer, (const char *)chunk, read_len);
         }
         if (read_len < want) {
@@ -13477,7 +14188,8 @@ static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t a
         }
         size_t read_len = ptn_stream_read_bytes(source, buffer, want);
         if (read_len != 0) {
-            size_t written = ptn_stream_write_bytes(dest, buffer, read_len);
+            ptn_stream_apply_filter_chain_in_place(source->read_filters, buffer, read_len);
+            size_t written = ptn_stream_write_filtered(dest, (const char *)buffer, read_len);
             if (written != read_len) {
                 return ptn_bool(0);
             }
@@ -13535,7 +14247,7 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     while (length == 0 || buffer.len < (size_t)length) {
-        int byte = ptn_stream_get_byte(resource);
+        int byte = ptn_stream_getc_filtered(resource);
         if (byte == EOF) {
             if (ptn_stream_error(resource)) {
                 ptn_stream_clear_error(resource);
@@ -19432,6 +20144,7 @@ static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
 static const char *ptn_property_exists_target_type_name(PtnValue value);
+static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_checkdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_compact(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -19483,6 +20196,8 @@ static PtnValue ptn_internal_rewind(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_rewinddir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -19580,6 +20295,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "chop", 1, 2, ptn_internal_chop },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
+        { "class_alias", 2, 3, ptn_internal_class_alias },
         { "class_exists", 1, 2, ptn_internal_class_exists },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "closedir", 1, 1, ptn_internal_closedir },
@@ -19812,6 +20528,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "stream_context_create", 0, 2, ptn_internal_stream_context_create },
         { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
+        { "stream_filter_append", 2, 4, ptn_internal_stream_filter_append },
+        { "stream_filter_prepend", 2, 4, ptn_internal_stream_filter_prepend },
         { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
@@ -19968,6 +20686,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *c
     return ptn_ascii_case_equal(class_name, "IteratorIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplObjectStorage");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Closure");
 }
@@ -19989,11 +20711,85 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_array_iterator(class_name)
         || ptn_internal_class_name_is_array_object(class_name)
         || ptn_internal_class_name_is_iterator_iterator(class_name)
+        || ptn_internal_class_name_is_spl_object_storage(class_name)
         || ptn_internal_class_name_is_closure(class_name)
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
         || ptn_builtin_exception_class_name(class_name) != NULL;
+}
+
+static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *class_name) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    return ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name);
+}
+
+static PTN_UNUSED int ptn_runtime_interface_exists(PtnRuntime *runtime, const char *interface_name) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, interface_name);
+    return ptn_declared_interface_exists(resolved_name) || ptn_internal_interface_exists_name(resolved_name);
+}
+
+static PTN_UNUSED int ptn_runtime_class_or_interface_exists(PtnRuntime *runtime, const char *class_name) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    return ptn_declared_class_exists(resolved_name)
+        || ptn_declared_interface_exists(resolved_name)
+        || ptn_internal_class_exists_name(resolved_name)
+        || ptn_internal_interface_exists_name(resolved_name);
+}
+
+static void ptn_emit_class_alias_warning(
+    PtnRuntime *runtime,
+    const char *format,
+    const char *name,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, format, name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, format, name);
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static PTN_UNUSED int ptn_runtime_register_class_alias(
+    PtnRuntime *runtime,
+    const char *source_name,
+    const char *alias_name,
+    size_t line
+) {
+    const char *source_lookup_name = ptn_symbol_name_without_leading_slash(source_name);
+    const char *source_resolved_name = ptn_runtime_resolve_class_alias(runtime, source_lookup_name);
+    if (!ptn_runtime_class_or_interface_exists(runtime, source_resolved_name)) {
+        ptn_emit_class_alias_warning(runtime, "Class \"%s\" not found", source_lookup_name, line);
+        return 0;
+    }
+
+    const char *alias_lookup_name = ptn_symbol_name_without_leading_slash(alias_name);
+    if (ptn_runtime_class_or_interface_exists(runtime, alias_lookup_name)) {
+        ptn_emit_class_alias_warning(
+            runtime,
+            "Cannot declare class %s, because the name is already in use",
+            alias_lookup_name,
+            line
+        );
+        return 0;
+    }
+
+    PtnSymbolTable *aliases = ptn_runtime_class_alias_table(runtime);
+    if (aliases == NULL) {
+        return 0;
+    }
+    char *key = ptn_class_alias_key(alias_lookup_name);
+    PtnValue value = ptn_owned_string(ptn_duplicate_string(source_resolved_name));
+    ptn_symbols_set(aliases, key, value);
+    ptn_value_destroy(&value);
+    free(key);
+    return 1;
 }
 
 static int ptn_reflection_class_method_exists(const char *method_name) {
@@ -20963,15 +21759,6 @@ typedef struct {
 } PtnReflectionFunctionData;
 
 typedef struct {
-    PtnArray *array;
-    size_t index;
-} PtnArrayIteratorData;
-
-typedef struct {
-    PtnArray *array;
-} PtnArrayObjectData;
-
-typedef struct {
     PtnValue inner;
 } PtnIteratorIteratorData;
 
@@ -21639,24 +22426,32 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
     return value;
 }
 
+static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *source_name = ptn_value_to_string(args[0]);
+    char *alias_name = ptn_value_to_string(args[1]);
+    int registered = ptn_runtime_register_class_alias(runtime, source_name, alias_name, line);
+    free(alias_name);
+    free(source_name);
+    return ptn_bool(registered);
+}
+
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
-    int exists = ptn_declared_class_exists(lookup_name) || ptn_internal_class_exists_name(lookup_name);
+    int exists = ptn_runtime_class_exists(runtime, lookup_name);
     free(name);
     return ptn_bool(exists);
 }
 
 static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
-    int exists = ptn_declared_interface_exists(lookup_name);
+    int exists = ptn_runtime_interface_exists(runtime, lookup_name);
     free(name);
     return ptn_bool(exists);
 }
@@ -21840,7 +22635,7 @@ static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, 
         class_name = ptn_duplicate_string(target.as.object->class_name);
     } else if (target.type == PTN_STRING) {
         class_name = ptn_value_to_string(target);
-        if (!ptn_declared_class_exists(class_name) && !ptn_internal_class_exists_name(class_name)) {
+        if (!ptn_runtime_class_exists(runtime, class_name)) {
             free(class_name);
             ptn_throw_get_parent_class_type_error(runtime, target);
             return ptn_null();
@@ -21850,7 +22645,8 @@ static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, 
         return ptn_null();
     }
 
-    const char *parent_name = ptn_declared_class_parent_name(class_name);
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    const char *parent_name = ptn_declared_class_parent_name(resolved_class_name);
     free(class_name);
     if (parent_name == NULL) {
         return ptn_bool(0);
@@ -21870,7 +22666,6 @@ static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const
 }
 
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     PtnValue target = ptn_value_deref(args[0]);
@@ -21883,7 +22678,8 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
         class_name = ptn_value_to_string(target);
     }
     char *method_name = ptn_value_to_string(args[1]);
-    int exists = ptn_internal_class_method_exists(class_name, method_name);
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    int exists = ptn_internal_class_method_exists(resolved_class_name, method_name);
     free(method_name);
     free(class_name);
     return ptn_bool(exists);
@@ -21944,7 +22740,8 @@ static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, c
             ptn_object_public_property_slot_exists(target.as.object, property_name);
     } else if (target.type == PTN_STRING) {
         char *class_name = ptn_value_to_string(target);
-        exists = ptn_declared_class_property_exists(class_name, property_name);
+        const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+        exists = ptn_declared_class_property_exists(resolved_class_name, property_name);
         free(class_name);
     } else if (target.type == PTN_CLOSURE) {
         exists = ptn_declared_class_property_exists("Closure", property_name);

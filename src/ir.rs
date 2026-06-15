@@ -53,6 +53,7 @@ pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
     pub interfaces: Vec<String>,
+    pub line: usize,
     pub is_abstract: bool,
     pub is_final: bool,
     pub is_interface: bool,
@@ -141,6 +142,7 @@ pub struct FunctionParameter {
 pub enum TypeHint {
     Null,
     Array,
+    Callable,
     Int,
     Float,
     String,
@@ -1028,6 +1030,7 @@ impl<'a> LoweringContext<'a> {
             name: class.name.clone(),
             parent_name: class.parent_name.clone(),
             interfaces: class.interfaces.clone(),
+            line: class.span.line,
             is_abstract: class.is_abstract,
             is_final: class.is_final,
             is_interface: class.is_interface,
@@ -1385,6 +1388,7 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
     match type_hint {
         AstTypeHint::Null => TypeHint::Null,
         AstTypeHint::Array => TypeHint::Array,
+        AstTypeHint::Callable => TypeHint::Callable,
         AstTypeHint::Int => TypeHint::Int,
         AstTypeHint::Float => TypeHint::Float,
         AstTypeHint::String => TypeHint::String,
@@ -2860,6 +2864,7 @@ fn assertion_type_hint_text(type_hint: &AstTypeHint) -> String {
     match type_hint {
         AstTypeHint::Null => "null".to_string(),
         AstTypeHint::Array => "array".to_string(),
+        AstTypeHint::Callable => "callable".to_string(),
         AstTypeHint::Int => "int".to_string(),
         AstTypeHint::Float => "float".to_string(),
         AstTypeHint::String => "string".to_string(),
