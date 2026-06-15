@@ -2293,6 +2293,7 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: 
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)filter_present;\n");
         out.push_str("    (void)filter;\n");
+        out.push_str("    (void)index;\n");
     }
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
@@ -2358,6 +2359,7 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: 
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)filter_present;\n");
         out.push_str("    (void)filter;\n");
+        out.push_str("    (void)index;\n");
     }
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
@@ -2392,12 +2394,14 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: 
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("    int64_t index = 0;\n");
-    if classes.iter().all(|class| {
-        class_interface_lookup_chain(class, classes).is_empty()
-    }) {
+    if classes
+        .iter()
+        .all(|class| class_interface_lookup_chain(class, classes).is_empty())
+    {
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)class_name;\n");
         out.push_str("    (void)objects;\n");
+        out.push_str("    (void)index;\n");
     }
     for class in classes {
         let interfaces = class_interface_lookup_chain(class, classes);
@@ -2409,7 +2413,9 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: 
         out.push_str("\")) {\n");
         for interface in interfaces {
             out.push_str("        if (objects) {\n");
-            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str(
+                "            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"",
+            );
             out.push_str(&c_string(interface));
             out.push_str("\"), ptn_reflection_class_object_from_name(runtime, \"");
             out.push_str(&c_string(interface));

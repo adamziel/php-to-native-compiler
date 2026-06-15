@@ -6,10 +6,16 @@
 ext/reflection/tests/ReflectionClass_CannotClone_basic.phpt
 ext/reflection/tests/ReflectionClass_constructor_001.phpt
 ext/reflection/tests/ReflectionClass_constructor_002.phpt
+ext/reflection/tests/ReflectionClass_getConstructor_basic.phpt
+ext/reflection/tests/ReflectionClass_getInterfaceNames_basic.phpt
+ext/reflection/tests/ReflectionClass_getInterfaces_001.phpt
+ext/reflection/tests/ReflectionClass_getMethod_001.phpt
+ext/reflection/tests/ReflectionClass_getMethods_001.phpt
 ext/reflection/tests/ReflectionClass_getModifiers_basic.phpt
 ext/reflection/tests/ReflectionClass_getName_basic.phpt
 ext/reflection/tests/ReflectionClass_getNamespaceName.phpt
 ext/reflection/tests/ReflectionClass_getParentClass.phpt
+ext/reflection/tests/ReflectionClass_getProperties_001.phpt
 ext/reflection/tests/ReflectionClass_hasConstant_001.phpt
 ext/reflection/tests/ReflectionClass_hasConstant_002.phpt
 ext/reflection/tests/ReflectionClass_hasConstant_basic.phpt
@@ -18,7 +24,6 @@ ext/reflection/tests/ReflectionClass_hasMethod_002.phpt
 ext/reflection/tests/ReflectionClass_hasMethod_basic.phpt
 ext/reflection/tests/ReflectionClass_hasProperty_002.phpt
 ext/reflection/tests/ReflectionClass_hasProperty_basic.phpt
-ext/reflection/tests/ReflectionClass_implementsInterface_001.phpt
 ext/reflection/tests/ReflectionClass_isAbstract_basic.phpt
 ext/reflection/tests/ReflectionClass_isAnonymous.phpt
 ext/reflection/tests/ReflectionClass_isFinal_basic.phpt
