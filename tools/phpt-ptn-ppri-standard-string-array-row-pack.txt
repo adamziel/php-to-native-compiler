@@ -1,0 +1,23 @@
+# ptn-ppri standard string/array row pack.
+# Broad 1k rows exercise string conversion through array keys, callback names,
+# and merge diagnostics; string rows exercise the same helper family directly.
+ext/standard/tests/array/array_column_variant_objects.phpt
+ext/standard/tests/array/array_fill_keys_variation1.phpt
+ext/standard/tests/array/array_intersect_uassoc_variation2.phpt
+ext/standard/tests/array/array_map_variation14.phpt
+ext/standard/tests/array/array_map_variation16.phpt
+ext/standard/tests/array/array_map_variation17.phpt
+ext/standard/tests/array/array_merge_recursive_variation1.phpt
+ext/standard/tests/array/array_merge_recursive_variation2.phpt
+ext/standard/tests/array/array_merge_recursive_variation3.phpt
+ext/standard/tests/array/array_merge_recursive_variation4.phpt
+ext/standard/tests/array/array_merge_recursive_variation5.phpt
+ext/standard/tests/array/array_merge_variation1.phpt
+ext/standard/tests/array/array_merge_variation2.phpt
+ext/standard/tests/array/array_merge_variation3.phpt
+ext/standard/tests/array/array_merge_variation4.phpt
+ext/standard/tests/array/array_merge_variation5.phpt
+ext/standard/tests/strings/addcslashes_001.phpt
+ext/standard/tests/strings/addcslashes_005.phpt
+ext/standard/tests/strings/007.phpt
+Zend/tests/bug66660.phpt

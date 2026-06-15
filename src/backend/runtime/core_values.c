@@ -81,6 +81,11 @@ typedef struct {
 #define PTN_PHP_SAPI_NAME "cli"
 #define PTN_ZEND_VERSION "4.4.0"
 #define PTN_PHP_EXTENSION_DIR "."
+#ifdef PATH_MAX
+#define PTN_PHP_MAXPATHLEN PATH_MAX
+#else
+#define PTN_PHP_MAXPATHLEN 4096
+#endif
 #if defined(_WIN32)
 #define PTN_PHP_OS "WINNT"
 #define PTN_PHP_OS_FAMILY "Windows"

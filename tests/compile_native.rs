@@ -3481,6 +3481,71 @@ echo $box->name;",
 }
 
 #[test]
+fn parser_accepts_braced_scalar_property_names() {
+    let program = parser::parse(
+        "<?php
+$box = new stdClass;
+$box->{0} = 'zero';
+$box->{'name'} = 'ptn';
+echo $box->{0}, $box->{'name'};
+",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 4);
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected braced integer property assignment");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::Property { name, .. },
+            ..
+        } if name == "0"
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[3] else {
+        panic!("expected braced property echo");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::PropertyFetch { name, .. } if name == "0"
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::PropertyFetch { name, .. } if name == "name"
+    ));
+}
+
+#[test]
+fn compile_braced_scalar_property_names_to_native_binary() {
+    let root = temp_dir("ptn-native-braced-scalar-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("braced-scalar-properties.php");
+    let output = root.join("braced-scalar-properties-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$box = new stdClass;\n\
+$box->{0} = 'zero';\n\
+$box->{'name'} = 'ptn';\n\
+$box->{true} = 'truthy';\n\
+var_dump($box->{0}, $box->{'name'}, $box->{1});\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"zero\"\nstring(3) \"ptn\"\nstring(6) \"truthy\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_declared_non_public_instance_properties() {
     let program = parser::parse(
         "<?php
@@ -6667,6 +6732,41 @@ bool(true)\nbool(true)\nbool(false)\n\
 }
 
 #[test]
+fn compile_php_strip_whitespace_and_maxpathlen_to_native_binary() {
+    let root = temp_dir("ptn-native-php-strip-whitespace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-strip-whitespace.php");
+    let output = root.join("php-strip-whitespace-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(defined(\"PHP_MAXPATHLEN\"), PHP_MAXPATHLEN > 0, function_exists(\"php_strip_whitespace\"));\n\
+$filename = __DIR__ . \"/source-strip.php\";\n\
+file_put_contents($filename, \"<?php\\n/* comment */\\necho   'a /* kept */'  ; // tail\\n?>\");\n\
+var_dump(php_strip_whitespace($filename));\n\
+var_dump(php_strip_whitespace(__DIR__ . \"/missing-strip.php\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "bool(true)\nbool(true)\nbool(true)\n\
+string(31) \"<?php\n echo 'a /* kept */' ; ?>\"\n\
+Warning: php_strip_whitespace({}/missing-strip.php): Failed to open stream: No such file or directory in {} on line 6\n\
+string(0) \"\"\n",
+            root.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_getcwd_and_chdir_to_native_binary() {
     let root = temp_dir("ptn-native-getcwd-chdir");
     fs::create_dir_all(&root).unwrap();
@@ -8239,6 +8339,31 @@ bool(true)
             "{function} should not convert direct argument expressions unconditionally"
         );
     }
+}
+
+#[test]
+fn compile_addcslashes_invalid_range_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-addcslashes-invalid-range");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("addcslashes-invalid-range.php");
+    let output = root.join("addcslashes-invalid-range-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo addcslashes(\"zoo['.']\", \"z..A\"), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: addcslashes(): Invalid '..'-range, '..'-range needs to be incrementing in ptn on line 2\n\
+\\zoo['\\.']\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -16402,6 +16527,32 @@ var_dump(function_exists('array_fill_keys'), function_exists('ARRAY_FILL_KEYS'))
 }
 
 #[test]
+fn compile_array_fill_keys_array_key_warning_spacing_to_native_binary() {
+    let root = temp_dir("ptn-native-array-fill-keys-array-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-fill-keys-array-warning.php");
+    let output = root.join("array-fill-keys-array-warning-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"before\\n\";\n\
+var_dump(array_fill_keys([[]], \"value\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "before\n\nWarning: Array to string conversion in ptn on line 3\n\
+array(1) {\n  [\"Array\"]=>\n  string(5) \"value\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_predicate_find_helpers_to_native_binary() {
     let root = temp_dir("ptn-native-array-predicate-find");
     fs::create_dir_all(&root).unwrap();
@@ -16530,6 +16681,9 @@ report(fn() => array_reduce([1], \"missing_reduce\"));
 report(fn() => array_diff_ukey([1], [2], \"missing_key\"));
 report(fn() => array_udiff_uassoc([1], [2], \"missing_value\", \"strcmp\"));
 report(fn() => array_uintersect_uassoc([1], [2], \"strcmp\", \"missing_key2\"));
+report(fn() => array_map(123, [1]));
+report(fn() => array_map([1, \"method\"], [1]));
+report(fn() => array_map([\"CallbackTarget\", []], [1]));
 echo \"done\\n\";
 ",
     )
@@ -16553,6 +16707,9 @@ echo \"done\\n\";
             "array_diff_ukey(): Argument #3 must be a valid callback, function \"missing_key\" not found or invalid function name\n",
             "array_udiff_uassoc(): Argument #3 must be a valid callback, function \"missing_value\" not found or invalid function name\n",
             "array_uintersect_uassoc(): Argument #4 must be a valid callback, function \"missing_key2\" not found or invalid function name\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, first array member is not a valid class name or object\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, second array member is not a valid method\n",
             "done\n",
         )
     );
@@ -18572,6 +18729,69 @@ try { array_merge([], 0); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_merge"));
     assert!(c_source.contains("ptn_array_merge_into"));
+}
+
+#[test]
+fn compile_array_merge_type_errors_without_parameter_names_to_native_binary() {
+    let root = temp_dir("ptn-native-array-merge-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-merge-type-errors.php");
+    let output = root.join("array-merge-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { array_merge(1, []); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_merge([], 1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_merge_recursive(1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_merge_recursive([], 1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array_merge(): Argument #1 must be of type array, int given\n",
+            "array_merge(): Argument #2 must be of type array, int given\n",
+            "array_merge_recursive(): Argument #1 must be of type array, int given\n",
+            "array_merge_recursive(): Argument #2 must be of type array, int given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uncaught_array_merge_type_error_reports_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-array-merge-uncaught-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-merge-uncaught-type-error.php");
+    let output = root.join("array-merge-uncaught-type-error-bin");
+    fs::write(&input, "<?php\narray_merge(1, []);\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            concat!(
+                "\nFatal error: Uncaught TypeError: array_merge(): Argument #1 must be of type array, int given in {}:2\n",
+                "Stack trace:\n",
+                "#0 {}(2): array_merge(1, Array)\n",
+                "#1 {{main}}\n",
+                "  thrown in {} on line 2\n",
+            ),
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
 }
 
 #[test]

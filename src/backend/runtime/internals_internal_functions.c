@@ -1806,12 +1806,14 @@ static const char *ptn_internal_array_arg_type_name(PtnValue value) {
     return ptn_offset_container_type_name(value);
 }
 
-static PtnArray *ptn_internal_expect_array_arg(
+static PtnArray *ptn_internal_expect_array_arg_at(
     PtnRuntime *runtime,
     const char *function_name,
     size_t position,
     const char *argument_name,
-    PtnValue value
+    PtnValue value,
+    const char *path,
+    size_t line
 ) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
@@ -1841,8 +1843,30 @@ static PtnArray *ptn_internal_expect_array_arg(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "TypeError", message);
+    if (path != NULL && line != 0) {
+        ptn_throw_exception_at(runtime, "TypeError", message, path, line);
+    } else {
+        ptn_throw_exception(runtime, "TypeError", message);
+    }
     return NULL;
+}
+
+static PtnArray *ptn_internal_expect_array_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    return ptn_internal_expect_array_arg_at(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        value,
+        NULL,
+        0
+    );
 }
 
 static PtnArray *ptn_internal_expect_mutable_array_variable_arg(
@@ -5970,7 +5994,15 @@ static void ptn_array_merge_into(PtnArray *target, PtnArray *source) {
 static PtnValue ptn_internal_array_merge(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge", i + 1, NULL, args[i]);
+        PtnArray *array = ptn_internal_expect_array_arg_at(
+            runtime,
+            "array_merge",
+            i + 1,
+            NULL,
+            args[i],
+            runtime->source_path,
+            line
+        );
         ptn_array_merge_into(result.as.array, array);
     }
     (void)line;
@@ -6111,7 +6143,15 @@ static PtnValue ptn_internal_array_merge_recursive(PtnRuntime *runtime, size_t a
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     PtnCountSeenArrays seen = {0};
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_merge_recursive", i + 1, NULL, args[i]);
+        PtnArray *array = ptn_internal_expect_array_arg_at(
+            runtime,
+            "array_merge_recursive",
+            i + 1,
+            NULL,
+            args[i],
+            runtime->source_path,
+            line
+        );
         ptn_array_merge_recursive_into(runtime, result.as.array, array, &seen, line);
     }
     free(seen.items);
@@ -11021,6 +11061,267 @@ static PtnValue ptn_internal_highlight_file(PtnRuntime *runtime, size_t argc, co
     return ptn_bool(1);
 }
 
+static void ptn_php_strip_whitespace_append_pending(PtnStringBuffer *buffer, int *has_pending_space) {
+    if (!*has_pending_space) {
+        return;
+    }
+    if (buffer->len == 0 || buffer->data[buffer->len - 1] != ' ') {
+        ptn_string_buffer_append_char(buffer, ' ');
+    }
+    *has_pending_space = 0;
+}
+
+static int ptn_php_strip_identifier_byte(unsigned char byte) {
+    return isalnum(byte) || byte == '_';
+}
+
+static size_t ptn_php_strip_copy_quoted(
+    PtnStringBuffer *buffer,
+    const char *source,
+    size_t len,
+    size_t offset
+) {
+    char quote = source[offset++];
+    ptn_string_buffer_append_char(buffer, quote);
+    while (offset < len) {
+        char byte = source[offset++];
+        ptn_string_buffer_append_char(buffer, byte);
+        if (byte == '\\' && offset < len) {
+            ptn_string_buffer_append_char(buffer, source[offset++]);
+            continue;
+        }
+        if (byte == quote) {
+            break;
+        }
+    }
+    return offset;
+}
+
+static size_t ptn_php_strip_copy_heredoc(
+    PtnStringBuffer *buffer,
+    const char *source,
+    size_t len,
+    size_t offset
+) {
+    size_t start = offset;
+    offset += 3;
+    while (offset < len && (source[offset] == ' ' || source[offset] == '\t')) {
+        offset++;
+    }
+    char quote = '\0';
+    if (offset < len && (source[offset] == '\'' || source[offset] == '"')) {
+        quote = source[offset++];
+    }
+
+    size_t label_start = offset;
+    while (offset < len && ptn_php_strip_identifier_byte((unsigned char)source[offset])) {
+        offset++;
+    }
+    if (label_start == offset) {
+        ptn_string_buffer_append_len(buffer, source + start, 3);
+        return start + 3;
+    }
+    size_t label_len = offset - label_start;
+    if (quote != '\0' && offset < len && source[offset] == quote) {
+        offset++;
+    }
+    while (offset < len && source[offset] != '\n') {
+        offset++;
+    }
+    if (offset < len) {
+        offset++;
+    }
+
+    size_t scan = offset;
+    while (scan < len) {
+        size_t line_start = scan;
+        size_t content_start = line_start;
+        while (content_start < len && (source[content_start] == ' ' || source[content_start] == '\t')) {
+            content_start++;
+        }
+        if (
+            content_start + label_len <= len &&
+            memcmp(source + content_start, source + label_start, label_len) == 0
+        ) {
+            size_t after_label = content_start + label_len;
+            if (
+                after_label >= len ||
+                source[after_label] == ';' ||
+                source[after_label] == '\r' ||
+                source[after_label] == '\n'
+            ) {
+                scan = after_label;
+                if (scan < len && source[scan] == ';') {
+                    scan++;
+                }
+                if (scan < len && source[scan] == '\r') {
+                    scan++;
+                }
+                if (scan < len && source[scan] == '\n') {
+                    scan++;
+                }
+                ptn_string_buffer_append_len(buffer, source + start, scan - start);
+                return scan;
+            }
+        }
+        while (scan < len && source[scan] != '\n') {
+            scan++;
+        }
+        if (scan < len) {
+            scan++;
+        }
+    }
+
+    ptn_string_buffer_append_len(buffer, source + start, len - start);
+    return len;
+}
+
+static char *ptn_php_strip_whitespace_source(const char *source, size_t len, size_t *output_len_out) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    int in_php = 0;
+    int has_pending_space = 0;
+
+    for (size_t i = 0; i < len;) {
+        if (!in_php) {
+            if (
+                i + 5 <= len &&
+                source[i] == '<' &&
+                source[i + 1] == '?' &&
+                source[i + 2] == 'p' &&
+                source[i + 3] == 'h' &&
+                source[i + 4] == 'p'
+            ) {
+                ptn_string_buffer_append_len(&buffer, source + i, 5);
+                i += 5;
+                while (i < len && isspace((unsigned char)source[i])) {
+                    ptn_string_buffer_append_char(&buffer, source[i++]);
+                }
+                in_php = 1;
+                has_pending_space = 0;
+                continue;
+            }
+            if (i + 2 <= len && source[i] == '<' && source[i + 1] == '?') {
+                ptn_string_buffer_append_len(&buffer, source + i, 2);
+                i += 2;
+                in_php = 1;
+                has_pending_space = 0;
+                continue;
+            }
+            ptn_string_buffer_append_char(&buffer, source[i++]);
+            continue;
+        }
+
+        unsigned char byte = (unsigned char)source[i];
+        if (isspace(byte)) {
+            has_pending_space = 1;
+            i++;
+            continue;
+        }
+        if (i + 2 <= len && source[i] == '?' && source[i + 1] == '>') {
+            if (has_pending_space) {
+                ptn_string_buffer_append_char(&buffer, ' ');
+                has_pending_space = 0;
+            }
+            ptn_string_buffer_append_len(&buffer, source + i, 2);
+            i += 2;
+            in_php = 0;
+            continue;
+        }
+        if (i + 2 <= len && source[i] == '/' && source[i + 1] == '/') {
+            has_pending_space = 1;
+            i += 2;
+            while (i < len && source[i] != '\n') {
+                i++;
+            }
+            continue;
+        }
+        if (source[i] == '#') {
+            has_pending_space = 1;
+            i++;
+            while (i < len && source[i] != '\n') {
+                i++;
+            }
+            continue;
+        }
+        if (i + 2 <= len && source[i] == '/' && source[i + 1] == '*') {
+            has_pending_space = 1;
+            i += 2;
+            while (i + 1 < len && !(source[i] == '*' && source[i + 1] == '/')) {
+                i++;
+            }
+            if (i + 1 < len) {
+                i += 2;
+            }
+            continue;
+        }
+
+        ptn_php_strip_whitespace_append_pending(&buffer, &has_pending_space);
+        if (source[i] == '\'' || source[i] == '"') {
+            i = ptn_php_strip_copy_quoted(&buffer, source, len, i);
+            continue;
+        }
+        if (i + 3 <= len && source[i] == '<' && source[i + 1] == '<' && source[i + 2] == '<') {
+            i = ptn_php_strip_copy_heredoc(&buffer, source, len, i);
+            continue;
+        }
+        ptn_string_buffer_append_char(&buffer, source[i++]);
+    }
+
+    *output_len_out = buffer.len;
+    if (buffer.data == NULL) {
+        return ptn_duplicate_string("");
+    }
+    return buffer.data;
+}
+
+static void ptn_emit_php_strip_whitespace_open_warning(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *reason,
+    size_t line
+) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    const char *source_path = runtime->source_path == NULL ? "ptn" : runtime->source_path;
+    printf(
+        "Warning: php_strip_whitespace(%s): Failed to open stream: %s in %s on line %zu\n",
+        path,
+        reason,
+        source_path,
+        line
+    );
+}
+
+static PtnValue ptn_internal_php_strip_whitespace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "php_strip_whitespace", 1, "filename", args[0], line);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "php_strip_whitespace(): Filename contains null byte", line);
+        return ptn_string("");
+    }
+
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    if (read_result <= 0) {
+        const char *reason = read_result == 0 ? strerror(errno) : "Failed to read stream";
+        ptn_emit_php_strip_whitespace_open_warning(runtime, path, reason, line);
+        free(path);
+        free(data);
+        return ptn_string("");
+    }
+    free(path);
+
+    size_t output_len = 0;
+    char *output = ptn_php_strip_whitespace_source((const char *)data, data_len, &output_len);
+    free(data);
+    return ptn_owned_string_len(output, output_len);
+}
+
 static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "dirname", 1, "path", args[0], line);
     int64_t levels = argc >= 2
@@ -11261,7 +11562,14 @@ static int ptn_octal_nibble(unsigned char byte) {
     return -1;
 }
 
-static void ptn_cslashes_charlist_mask(const char *charlist, size_t len, unsigned char mask[256]) {
+static void ptn_cslashes_charlist_mask(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *charlist,
+    size_t len,
+    size_t line,
+    unsigned char mask[256]
+) {
     memset(mask, 0, 256);
     for (size_t i = 0; i < len; i++) {
         unsigned char start = (unsigned char)charlist[i];
@@ -11274,6 +11582,17 @@ static void ptn_cslashes_charlist_mask(const char *charlist, size_t len, unsigne
                 i += 3;
                 continue;
             }
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Invalid '..'-range, '..'-range needs to be incrementing",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_warning(&runtime->diagnostics, message, line);
         }
         mask[start] = 1;
     }
@@ -11342,14 +11661,17 @@ static void ptn_addcslashes_write_escape(char *output, size_t *out, unsigned cha
 }
 
 static char *ptn_addcslashes_string(
+    PtnRuntime *runtime,
+    const char *function_name,
     const char *input,
     size_t input_len,
     const char *charlist,
     size_t charlist_len,
+    size_t line,
     size_t *output_len_out
 ) {
     unsigned char mask[256];
-    ptn_cslashes_charlist_mask(charlist, charlist_len, mask);
+    ptn_cslashes_charlist_mask(runtime, function_name, charlist, charlist_len, line, mask);
 
     size_t output_len = 0;
     for (size_t i = 0; i < input_len; i++) {
@@ -11386,10 +11708,13 @@ static PtnValue ptn_internal_addcslashes(PtnRuntime *runtime, size_t argc, const
     PtnStringOperand charlist = ptn_internal_expect_string_arg(runtime, "addcslashes", 2, "characters", args[1], line);
     size_t output_len = 0;
     char *output = ptn_addcslashes_string(
+        runtime,
+        "addcslashes",
         input.data,
         input.len,
         charlist.data,
         charlist.len,
+        line,
         &output_len
     );
     ptn_string_operand_free(input);
@@ -13707,6 +14032,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pathinfo", 1, 2, ptn_internal_pathinfo },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
+        { "php_strip_whitespace", 1, 1, ptn_internal_php_strip_whitespace },
         { "php_uname", 0, 1, ptn_internal_php_uname },
         { "phpversion", 0, 1, ptn_internal_phpversion },
         { "pi", 0, 0, ptn_internal_pi },

@@ -3341,28 +3341,7 @@ impl Parser {
                 TokenKind::ObjectOperator => {
                     let start_span = expr.span();
                     self.advance();
-                    let member = self.advance().clone();
-                    let (name, member_span) = match member.kind {
-                        TokenKind::Identifier(name) => (name, member.span),
-                        TokenKind::LeftBrace => {
-                            let literal = self.advance().clone();
-                            let name = match literal.kind {
-                                TokenKind::String(value) => value,
-                                TokenKind::Int(value) => value.to_string(),
-                                _ => {
-                                    return Err(Diagnostic::new(
-                                        "expected literal member name",
-                                        Some(literal.span),
-                                    ));
-                                }
-                            };
-                            let right_span = self.expect_right_brace()?;
-                            (name, combine_spans(member.span, right_span))
-                        }
-                        _ => {
-                            return Err(Diagnostic::new("expected member name", Some(member.span)));
-                        }
-                    };
+                    let (name, member_span) = self.parse_object_member_name()?;
                     if !matches!(self.peek().kind, TokenKind::LeftParen) {
                         expr = Expr::PropertyFetch {
                             receiver: Box::new(expr),
@@ -3476,6 +3455,33 @@ impl Parser {
             }
         }
         Ok(expr)
+    }
+
+    fn parse_object_member_name(&mut self) -> Result<(String, SourceSpan)> {
+        let member = self.advance().clone();
+        if let TokenKind::Identifier(name) = member.kind {
+            return Ok((name, member.span));
+        }
+        if !matches!(member.kind, TokenKind::LeftBrace) {
+            return Err(Diagnostic::new("expected member name", Some(member.span)));
+        }
+
+        let property = self.parse_expr()?;
+        let property_name = match property {
+            Expr::String(value, _) => value,
+            Expr::Int(value, _) => value.to_string(),
+            Expr::Float(value, _) => value.to_string(),
+            Expr::Bool(true, _) => "1".to_string(),
+            Expr::Bool(false, _) | Expr::Null(_) => String::new(),
+            other => {
+                return Err(Diagnostic::new(
+                    "unsupported dynamic member name",
+                    Some(other.span()),
+                ))
+            }
+        };
+        let right_span = self.expect_right_brace()?;
+        Ok((property_name, combine_spans(member.span, right_span)))
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr> {
@@ -7453,6 +7459,7 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "PHP_INT_MIN"
             | "PHP_INT_MAX"
             | "PHP_INT_SIZE"
+            | "PHP_MAXPATHLEN"
             | "PHP_VERSION"
             | "PHP_MAJOR_VERSION"
             | "PHP_MINOR_VERSION"
