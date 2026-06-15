@@ -4446,6 +4446,51 @@ class Child extends Base implements Contract {
 }
 
 #[test]
+fn parser_preserves_modeled_builtin_attribute_metadata() {
+    let source = "<?php
+#[\\Deprecated(\"use newer\") ]
+function old_fn() {}
+
+#[\\Deprecated(since: \"1.0\", message: \"use newest\") ]
+function older_fn() {}
+
+#[\\NoDiscard(\"check it\") ]
+function important(): int { return 1; }
+
+#[\\AllowDynamicProperties]
+class Bag {}
+";
+    let program = parser::parse(source).unwrap();
+
+    assert_eq!(
+        program.functions[0]
+            .attributes
+            .deprecated_message
+            .as_deref(),
+        Some("use newer")
+    );
+    assert_eq!(
+        program.functions[1]
+            .attributes
+            .deprecated_message
+            .as_deref(),
+        Some("use newest")
+    );
+    assert_eq!(
+        program.functions[1].attributes.deprecated_since.as_deref(),
+        Some("1.0")
+    );
+    assert_eq!(
+        program.functions[2]
+            .attributes
+            .no_discard_message
+            .as_deref(),
+        Some("check it")
+    );
+    assert!(program.classes[0].attributes.has_allow_dynamic_properties);
+}
+
+#[test]
 fn parser_rejects_unmatched_override_attributes() {
     let cases = [
         (

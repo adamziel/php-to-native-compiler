@@ -132,6 +132,7 @@ pub fn emit_c(module: &Module) -> String {
         emit_method_dispatch(
             &mut out,
             &module.classes,
+            &module.functions,
             runtime_requirements.closure_invoke_method_dispatch,
         );
     }
@@ -632,6 +633,11 @@ fn emit_user_function_prototypes(
         );
         out.push_str(
             "static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);\n",
+        );
+    }
+    if needs_dynamic_function_dispatch {
+        out.push_str(
+            "static PTN_UNUSED void ptn_emit_no_discard_for_callable(PtnRuntime *runtime, PtnValue callable, size_t line);\n",
         );
     }
     for (index, _) in functions.iter().enumerate() {
@@ -2187,6 +2193,13 @@ fn emit_user_function_dispatch(
                 out.push_str("        }\n");
             }
         }
+        emit_deprecated_function_warning(
+            out,
+            "        ",
+            "&runtime->diagnostics",
+            function,
+            "line",
+        );
         out.push_str("        return ");
         out.push_str(&user_function_c_name(index));
         if function.is_static {
@@ -2207,6 +2220,7 @@ fn emit_user_function_dispatch(
             if !method.is_static {
                 continue;
             }
+            let function = &functions[method.function_index];
             out.push_str("    if (ptn_ascii_case_equal(name, \"");
             out.push_str(&c_string(&class.name));
             out.push_str("::");
@@ -2230,6 +2244,13 @@ fn emit_user_function_dispatch(
             out.push_str(c_property_visibility(method.visibility));
             out.push_str(", line);\n");
             out.push_str("        }\n");
+            emit_deprecated_function_warning(
+                out,
+                "        ",
+                "&runtime->diagnostics",
+                function,
+                "line",
+            );
             out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
             out.push_str("        runtime->called_class_name_override = \"");
             out.push_str(&c_string(&class.name));
@@ -4366,6 +4387,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
 fn emit_method_dispatch(
     out: &mut String,
     classes: &[ClassDecl],
+    functions: &[FunctionDecl],
     needs_closure_invoke_dispatch: bool,
 ) {
     out.push_str(
@@ -4433,6 +4455,7 @@ fn emit_method_dispatch(
         out.push_str("        const char *ptn_inaccessible_method = NULL;\n");
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
+            let function = &functions[method.function_index];
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
@@ -4445,6 +4468,13 @@ fn emit_method_dispatch(
                 out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
             }
             out.push_str(") {\n");
+            emit_deprecated_function_warning(
+                out,
+                "            ",
+                "&runtime->diagnostics",
+                function,
+                "line",
+            );
             out.push_str("            return ");
             out.push_str(&user_function_c_name(method.function_index));
             out.push_str("(runtime, resolved, argc, args, line);\n");
@@ -4510,6 +4540,7 @@ fn emit_method_dispatch(
         out.push_str("\")) {\n");
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
+            let function = &functions[method.function_index];
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
@@ -4540,6 +4571,13 @@ fn emit_method_dispatch(
                 out.push_str(
                     "            runtime->called_class_name_override = effective_called_class;\n",
                 );
+                emit_deprecated_function_warning(
+                    out,
+                    "            ",
+                    "&runtime->diagnostics",
+                    function,
+                    "line",
+                );
                 out.push_str("            *result_out = ");
                 out.push_str(&user_function_c_name(method.function_index));
                 out.push_str("(runtime, ptn_null(), argc, args, line);\n");
@@ -4562,6 +4600,13 @@ fn emit_method_dispatch(
                 out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
                 out.push_str(
                     "            runtime->called_class_name_override = effective_called_class;\n",
+                );
+                emit_deprecated_function_warning(
+                    out,
+                    "            ",
+                    "&runtime->diagnostics",
+                    function,
+                    "line",
                 );
                 out.push_str("            *result_out = ");
                 out.push_str(&user_function_c_name(method.function_index));
@@ -4768,6 +4813,8 @@ fn emit_callable_dispatch(
         out.push_str("}\n");
     }
 
+    emit_no_discard_callable_dispatch(out, functions);
+
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
     );
@@ -4896,7 +4943,15 @@ fn emit_callable_dispatch(
         }
         out.push_str("            case ");
         out.push_str(&index.to_string());
-        out.push_str(": return ");
+        out.push_str(":\n");
+        emit_deprecated_function_warning(
+            out,
+            "                ",
+            "&runtime->diagnostics",
+            function,
+            "line",
+        );
+        out.push_str("                return ");
         out.push_str(&user_function_c_name(index));
         out.push_str("(runtime, resolved, argc, args, line);\n");
     }
@@ -4911,6 +4966,78 @@ fn emit_callable_dispatch(
     );
     out.push_str("    free(name);\n");
     out.push_str("    return result;\n");
+    out.push_str("}\n");
+}
+
+fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_emit_no_discard_for_callable(PtnRuntime *runtime, PtnValue callable, size_t line) {\n",
+    );
+    out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
+    out.push_str("        if (resolved.as.closure->has_wrapped_callable) {\n");
+    out.push_str(
+        "            ptn_emit_no_discard_for_callable(runtime, resolved.as.closure->wrapped_callable, line);\n",
+    );
+    out.push_str("            return;\n");
+    out.push_str("        }\n");
+    out.push_str("        switch (resolved.as.closure->function_index) {\n");
+    for (index, function) in functions.iter().enumerate() {
+        if !function.is_anonymous {
+            continue;
+        }
+        let Some(message) = no_discard_warning_message(function) else {
+            continue;
+        };
+        out.push_str("            case ");
+        out.push_str(&index.to_string());
+        out.push_str(":\n");
+        out.push_str("                ptn_emit_warning(&runtime->diagnostics, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", line);\n");
+        out.push_str("                return;\n");
+    }
+    out.push_str("            default:\n");
+    out.push_str("                return;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    let string_targets: Vec<_> = functions
+        .iter()
+        .filter(|function| {
+            !function.is_anonymous && (function.class_name.is_none() || function.is_static)
+        })
+        .filter_map(|function| {
+            no_discard_warning_message(function).map(|message| (function, message))
+        })
+        .collect();
+    if !string_targets.is_empty() {
+        out.push_str("    if (resolved.type == PTN_STRING) {\n");
+        out.push_str("        char *name = ptn_value_to_string(resolved);\n");
+        out.push_str(
+            "        const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n",
+        );
+    }
+    for (function, message) in string_targets {
+        out.push_str("        if (ptn_ascii_case_equal(lookup_name, \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\")) {\n");
+        out.push_str("            ptn_emit_warning(&runtime->diagnostics, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", line);\n");
+        out.push_str("            free(name);\n");
+        out.push_str("            return;\n");
+        out.push_str("        }\n");
+    }
+    if !functions.iter().any(|function| {
+        !function.is_anonymous
+            && (function.class_name.is_none() || function.is_static)
+            && function.no_discard_message.is_some()
+    }) {
+        out.push_str("    (void)line;\n");
+    } else {
+        out.push_str("        free(name);\n");
+        out.push_str("    }\n");
+    }
     out.push_str("}\n");
 }
 
@@ -5072,7 +5199,7 @@ fn emit_instruction(
             emit_value_cleanup(out, "    ", &emitted_value);
         }
         Instruction::Expression(value) => {
-            let emitted_value = values.emit_materialized_value(out, value);
+            let emitted_value = values.emit_discarded_value(out, value);
             out.push_str("    (void)");
             out.push_str(&emitted_value);
             out.push_str(";\n");
@@ -5238,6 +5365,14 @@ fn emit_instruction(
                 argument_unpacks,
                 *line,
             );
+            let value = ValueExpr::InternalCall {
+                name: name.clone(),
+                arguments: arguments.clone(),
+                argument_names: argument_names.clone(),
+                argument_unpacks: argument_unpacks.clone(),
+                line: *line,
+            };
+            values.emit_no_discard_warning(out, &value);
             out.push_str("    (void)");
             out.push_str(&result_temp);
             out.push_str(";\n");
@@ -7916,6 +8051,9 @@ fn bind_named_call_arguments(
     argument_names: &[Option<String>],
 ) -> std::result::Result<Vec<usize>, NamedArgumentBindingError> {
     let mut occupied_parameters = vec![false; parameters.len()];
+    let variadic_index = parameters
+        .iter()
+        .position(|parameter| parameter.is_variadic);
     let mut slots = Vec::with_capacity(argument_names.len());
     for (argument_index, argument_name) in argument_names.iter().enumerate() {
         let slot = if let Some(argument_name) = argument_name {
@@ -7923,6 +8061,10 @@ fn bind_named_call_arguments(
                 .iter()
                 .position(|parameter| parameter.name == *argument_name)
             else {
+                if variadic_index.is_some() {
+                    slots.push(argument_index);
+                    continue;
+                }
                 return Err(NamedArgumentBindingError::Unknown(argument_name.clone()));
             };
             if occupied_parameters[parameter_index] {
@@ -8842,6 +8984,18 @@ struct StaticMethodVisibilityCheck {
     visibility: PropertyVisibility,
 }
 
+struct DirectUserCall {
+    c_name: String,
+    parameters: Vec<FunctionParameter>,
+    receiver_class_name: Option<String>,
+    visibility_check: Option<StaticMethodVisibilityCheck>,
+    deprecated_message: Option<String>,
+    deprecated_since: Option<String>,
+    display_name: String,
+    class_name: Option<String>,
+    method_name: Option<String>,
+}
+
 struct ConcatOperand<'a> {
     value: &'a ValueExpr,
     line: usize,
@@ -9238,6 +9392,91 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
     (line != 0).then_some(line)
 }
 
+fn no_discard_warning_message(function: &FunctionDecl) -> Option<String> {
+    let attribute_message = function.no_discard_message.as_ref()?;
+    let subject = if let Some(class_name) = function.class_name.as_deref() {
+        format!(
+            "method {}::{}()",
+            class_name,
+            function.method_name.as_deref().unwrap_or("")
+        )
+    } else {
+        format!("function {}()", function.display_name)
+    };
+    let mut message = format!(
+        "The return value of {subject} should either be used or intentionally ignored by casting it as (void)"
+    );
+    if !attribute_message.is_empty() {
+        message.push_str(", ");
+        message.push_str(attribute_message);
+    }
+    Some(message)
+}
+
+fn deprecated_warning_message(function: &FunctionDecl) -> Option<String> {
+    deprecated_warning_message_for_parts(
+        &deprecated_call_subject(
+            function.class_name.as_deref(),
+            function.method_name.as_deref(),
+            &function.display_name,
+        ),
+        function.deprecated_message.as_deref(),
+        function.deprecated_since.as_deref(),
+    )
+}
+
+fn deprecated_warning_message_for_parts(
+    subject: &str,
+    message: Option<&str>,
+    since: Option<&str>,
+) -> Option<String> {
+    if message.is_none() && since.is_none() {
+        return None;
+    }
+    let mut warning = format!("{subject} is deprecated");
+    if let Some(since) = since.filter(|since| !since.is_empty()) {
+        warning.push_str(" since ");
+        warning.push_str(since);
+    }
+    if let Some(message) = message.filter(|message| !message.is_empty()) {
+        warning.push_str(", ");
+        warning.push_str(message);
+    }
+    Some(warning)
+}
+
+fn deprecated_call_subject(
+    class_name: Option<&str>,
+    method_name: Option<&str>,
+    display_name: &str,
+) -> String {
+    if let Some(class_name) = class_name {
+        format!("Method {}::{}()", class_name, method_name.unwrap_or(""))
+    } else {
+        format!("Function {}()", display_name)
+    }
+}
+
+fn emit_deprecated_function_warning(
+    out: &mut String,
+    indent: &str,
+    diagnostics_expr: &str,
+    function: &FunctionDecl,
+    line_expr: &str,
+) {
+    let Some(message) = deprecated_warning_message(function) else {
+        return;
+    };
+    out.push_str(indent);
+    out.push_str("ptn_emit_deprecation(");
+    out.push_str(diagnostics_expr);
+    out.push_str(", \"");
+    out.push_str(&c_string(&message));
+    out.push_str("\", ");
+    out.push_str(line_expr);
+    out.push_str(");\n");
+}
+
 fn static_call_receiver_class_name(call_name: &str, function: &FunctionDecl) -> Option<String> {
     if !function.is_static {
         return None;
@@ -9246,6 +9485,17 @@ fn static_call_receiver_class_name(call_name: &str, function: &FunctionDecl) -> 
         .split_once("::")
         .map(|(class_name, _)| class_name.to_string())
         .or_else(|| function.class_name.clone())
+}
+
+fn positional_array_value(elements: &[IrArrayElement], index: usize) -> Option<&ValueExpr> {
+    let element = elements.get(index)?;
+    if element.key.is_some() {
+        return None;
+    }
+    match &element.value {
+        IrArrayElementValue::Value(value) => Some(value),
+        IrArrayElementValue::Reference(_) | IrArrayElementValue::Unpack { .. } => None,
+    }
 }
 
 fn emit_static_call_receiver(out: &mut String, receiver_class_name: Option<&str>) {
@@ -9346,6 +9596,30 @@ impl ValueEmitter {
         let value_temp = self.emit_materialized_value(out, value);
         self.in_const_declaration = previous;
         value_temp
+    }
+
+    fn emit_discarded_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        if let ValueExpr::DynamicCall {
+            callee,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            line,
+        } = value
+        {
+            return self.emit_dynamic_call(
+                out,
+                callee,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+                true,
+            );
+        }
+        let emitted_value = self.emit_materialized_value(out, value);
+        self.emit_no_discard_warning(out, value);
+        emitted_value
     }
 
     fn declared_class_name(&self, class_name: &str) -> Option<&str> {
@@ -9575,6 +9849,117 @@ impl ValueEmitter {
     fn class_scope_allows(&self, access_scope: &str, declaring_class: &str) -> bool {
         self.class_is_same_or_descendant(access_scope, declaring_class)
             || self.class_is_same_or_descendant(declaring_class, access_scope)
+    }
+
+    fn emit_no_discard_warning(&self, out: &mut String, value: &ValueExpr) {
+        let direct_function = match value {
+            ValueExpr::InternalCall {
+                name, arguments, ..
+            } if name.eq_ignore_ascii_case("call_user_func")
+                || name.eq_ignore_ascii_case("call_user_func_array") =>
+            {
+                arguments
+                    .first()
+                    .and_then(|callable| self.no_discard_function_for_callable_expr(callable))
+            }
+            ValueExpr::InternalCall { name, .. } => {
+                let resolved_name = self.resolved_function_call_name(name);
+                self.direct_user_function_by_resolved_name(&resolved_name)
+                    .map(|(_, function)| function)
+            }
+            ValueExpr::MethodCall { name, receiver, .. } => {
+                let receiver_class = match receiver.as_ref() {
+                    ValueExpr::NewObject { class_name, .. } => Some(class_name.as_str()),
+                    _ => None,
+                };
+                self.user_functions.iter().find(|function| {
+                    function
+                        .method_name
+                        .as_deref()
+                        .is_some_and(|method_name| method_name.eq_ignore_ascii_case(name))
+                        && receiver_class.is_none_or(|class_name| {
+                            function
+                                .class_name
+                                .as_deref()
+                                .is_some_and(|function_class| {
+                                    function_class.eq_ignore_ascii_case(class_name)
+                                })
+                        })
+                })
+            }
+            _ => None,
+        };
+        let Some(function) = direct_function else {
+            return;
+        };
+        let Some(message) = no_discard_warning_message(function) else {
+            return;
+        };
+        let line = value_expr_runtime_line(value).unwrap_or(function.line);
+        out.push_str("    ptn_emit_warning(&runtime.diagnostics, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+    }
+
+    fn emit_no_discard_warning_for_callable_temp(
+        &self,
+        out: &mut String,
+        callable_temp: &str,
+        line: usize,
+    ) {
+        out.push_str("    ptn_emit_no_discard_for_callable(&runtime, ");
+        out.push_str(callable_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+    }
+
+    fn no_discard_function_for_callable_expr(&self, callable: &ValueExpr) -> Option<&FunctionDecl> {
+        match callable {
+            ValueExpr::String(name) => {
+                let resolved_name = self.resolved_function_call_name(name);
+                self.direct_user_function_by_resolved_name(&resolved_name)
+                    .map(|(_, function)| function)
+            }
+            ValueExpr::Closure { function_index, .. } => self.user_functions.get(*function_index),
+            ValueExpr::Array(elements) => {
+                let receiver = positional_array_value(elements, 0)?;
+                let method = positional_array_value(elements, 1)?;
+                let ValueExpr::String(method_name) = method else {
+                    return None;
+                };
+                self.no_discard_method_function_for_receiver(receiver, method_name)
+            }
+            _ => None,
+        }
+    }
+
+    fn no_discard_method_function_for_receiver(
+        &self,
+        receiver: &ValueExpr,
+        method_name: &str,
+    ) -> Option<&FunctionDecl> {
+        let receiver_class = match receiver {
+            ValueExpr::String(class_name) => Some(self.static_call_target_class_name(class_name)),
+            ValueExpr::NewObject { class_name, .. } => Some(self.class_name_fetch_name(class_name)),
+            _ => None,
+        };
+        self.user_functions.iter().find(|function| {
+            function
+                .method_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case(method_name))
+                && receiver_class.as_deref().is_none_or(|class_name| {
+                    function
+                        .class_name
+                        .as_deref()
+                        .is_some_and(|function_class| {
+                            function_class.eq_ignore_ascii_case(class_name)
+                        })
+                })
+        })
     }
 
     fn method_visibility_allows(
@@ -11420,6 +11805,9 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 match kind {
+                    CastKind::Void => {
+                        out.push_str("ptn_null();\n");
+                    }
                     CastKind::Int
                     | CastKind::Float
                     | CastKind::String
@@ -11454,7 +11842,8 @@ impl ValueEmitter {
                                 | CastKind::Integer
                                 | CastKind::Double
                                 | CastKind::Binary
-                                | CastKind::Boolean => {
+                                | CastKind::Boolean
+                                | CastKind::Void => {
                                     unreachable!(
                                         "only int/float/bool canonical casts use this branch"
                                     )
@@ -11467,7 +11856,8 @@ impl ValueEmitter {
                         CastKind::Integer
                         | CastKind::Double
                         | CastKind::Binary
-                        | CastKind::Boolean => {
+                        | CastKind::Boolean
+                        | CastKind::Void => {
                             unreachable!("non-canonical casts are handled separately")
                         }
                     },
@@ -11482,7 +11872,8 @@ impl ValueEmitter {
                             | CastKind::String
                             | CastKind::Bool
                             | CastKind::Array
-                            | CastKind::Object => {
+                            | CastKind::Object
+                            | CastKind::Void => {
                                 unreachable!("canonical casts are handled separately")
                             }
                         };
@@ -11731,6 +12122,7 @@ impl ValueEmitter {
                 argument_names,
                 argument_unpacks,
                 *line,
+                false,
             ),
             ValueExpr::MethodCall {
                 receiver,
@@ -15412,13 +15804,16 @@ impl ValueEmitter {
         let called_class_override = self.called_class_override_for_function_call(name);
         let direct_user = self
             .direct_user_function_by_resolved_name(&resolved_name)
-            .map(|(index, function)| {
-                (
-                    user_function_c_name(index),
-                    function.parameters.clone(),
-                    static_call_receiver_class_name(&resolved_name, function),
-                    self.static_method_visibility_check(&resolved_name, function),
-                )
+            .map(|(index, function)| DirectUserCall {
+                c_name: user_function_c_name(index),
+                parameters: function.parameters.clone(),
+                receiver_class_name: static_call_receiver_class_name(&resolved_name, function),
+                visibility_check: self.static_method_visibility_check(&resolved_name, function),
+                deprecated_message: function.deprecated_message.clone(),
+                deprecated_since: function.deprecated_since.clone(),
+                display_name: function.display_name.clone(),
+                class_name: function.class_name.clone(),
+                method_name: function.method_name.clone(),
             });
         if direct_user.is_none() {
             if let Some((visibility, declaring_class, method_name)) =
@@ -15446,7 +15841,7 @@ impl ValueEmitter {
             }
             let direct_parameters = direct_user
                 .as_ref()
-                .map(|(_, parameters, _, _)| parameters.as_slice());
+                .map(|direct_user| direct_user.parameters.as_slice());
             let args_temp = self.emit_call_arguments_builder(
                 out,
                 name,
@@ -15456,17 +15851,15 @@ impl ValueEmitter {
                 false,
                 direct_parameters,
             );
-            if let Some((c_name, _, receiver_class_name, visibility_check)) = &direct_user {
+            if let Some(direct_user) = &direct_user {
                 self.emit_direct_user_function_call(
                     out,
                     &result_temp,
-                    c_name,
+                    direct_user,
                     &format!("{args_temp}.len"),
                     &format!("{args_temp}.values"),
                     line,
                     called_class_override.as_ref(),
-                    receiver_class_name.as_deref(),
-                    visibility_check.as_ref(),
                 );
             } else {
                 out.push_str("    PtnValue ");
@@ -15510,20 +15903,16 @@ impl ValueEmitter {
                     };
                 }
             }
-            if let Some((c_name, parameters, receiver_class_name, visibility_check)) = &direct_user
-            {
+            if let Some(direct_user) = &direct_user {
                 return self.emit_named_user_call(
                     out,
                     &result_temp,
                     name,
-                    c_name,
-                    parameters,
-                    receiver_class_name.as_deref(),
+                    direct_user,
                     arguments,
                     argument_names,
                     line,
                     called_class_override.as_ref(),
-                    visibility_check.as_ref(),
                 );
             }
             self.emit_fatal_value(
@@ -15534,17 +15923,15 @@ impl ValueEmitter {
             return result_temp;
         }
         if arguments.is_empty() {
-            if let Some((c_name, _, receiver_class_name, visibility_check)) = &direct_user {
+            if let Some(direct_user) = &direct_user {
                 self.emit_direct_user_function_call(
                     out,
                     &result_temp,
-                    c_name,
+                    direct_user,
                     "0",
                     "NULL",
                     line,
                     called_class_override.as_ref(),
-                    receiver_class_name.as_deref(),
-                    visibility_check.as_ref(),
                 );
             } else if let Some((target_class_name, method_name)) =
                 self.relative_scoped_call_parts(name)
@@ -15575,8 +15962,8 @@ impl ValueEmitter {
         let mut temps = Vec::with_capacity(arguments.len());
         let mut unwrap_append_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
-            let by_ref_parameter = direct_user.as_ref().and_then(|(_, parameters, _, _)| {
-                by_ref_parameter_for_argument(parameters, argument_index)
+            let by_ref_parameter = direct_user.as_ref().and_then(|direct_user| {
+                by_ref_parameter_for_argument(&direct_user.parameters, argument_index)
             });
             if let Some(parameter) = by_ref_parameter {
                 let parameter_name = if parameter.is_variadic {
@@ -15635,17 +16022,15 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
-        if let Some((c_name, _, receiver_class_name, visibility_check)) = &direct_user {
+        if let Some(direct_user) = &direct_user {
             self.emit_direct_user_function_call(
                 out,
                 &result_temp,
-                c_name,
+                direct_user,
                 &arguments.len().to_string(),
                 &args_temp,
                 line,
                 called_class_override.as_ref(),
-                receiver_class_name.as_deref(),
-                visibility_check.as_ref(),
             );
         } else if let Some((target_class_name, method_name)) = self.relative_scoped_call_parts(name)
         {
@@ -15689,14 +16074,15 @@ impl ValueEmitter {
         &mut self,
         out: &mut String,
         result_temp: &str,
-        c_name: &str,
+        direct_user: &DirectUserCall,
         argc_expr: &str,
         args_expr: &str,
         line: usize,
         called_class_override: Option<&CalledClassOverride>,
-        receiver_class_name: Option<&str>,
-        visibility_check: Option<&StaticMethodVisibilityCheck>,
     ) {
+        if direct_user.deprecated_message.is_some() || direct_user.deprecated_since.is_some() {
+            self.emit_deprecated_call_warning(out, direct_user, line);
+        }
         let previous_override_temp = called_class_override.map(|override_| {
             let previous_override_temp = self.next_temp();
             out.push_str("    const char *");
@@ -15708,7 +16094,7 @@ impl ValueEmitter {
             previous_override_temp
         });
 
-        if let Some(visibility_check) = visibility_check {
+        if let Some(visibility_check) = direct_user.visibility_check.as_ref() {
             out.push_str("    PtnValue ");
             out.push_str(result_temp);
             out.push_str(";\n");
@@ -15746,9 +16132,9 @@ impl ValueEmitter {
             out.push_str(result_temp);
             out.push_str(" = ");
         }
-        out.push_str(c_name);
+        out.push_str(&direct_user.c_name);
         out.push_str("(&runtime, ");
-        emit_static_call_receiver(out, receiver_class_name);
+        emit_static_call_receiver(out, direct_user.receiver_class_name.as_deref());
         out.push_str(", ");
         out.push_str(argc_expr);
         out.push_str(", ");
@@ -15757,7 +16143,7 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        if visibility_check.is_some() {
+        if direct_user.visibility_check.is_some() {
             out.push_str("    }\n");
         }
 
@@ -15766,6 +16152,31 @@ impl ValueEmitter {
             out.push_str(&previous_override_temp);
             out.push_str(";\n");
         }
+    }
+
+    fn emit_deprecated_call_warning(
+        &mut self,
+        out: &mut String,
+        direct_user: &DirectUserCall,
+        line: usize,
+    ) {
+        let subject = deprecated_call_subject(
+            direct_user.class_name.as_deref(),
+            direct_user.method_name.as_deref(),
+            &direct_user.display_name,
+        );
+        let Some(message) = deprecated_warning_message_for_parts(
+            &subject,
+            direct_user.deprecated_message.as_deref(),
+            direct_user.deprecated_since.as_deref(),
+        ) else {
+            return;
+        };
+        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
     }
 
     fn emit_relative_scoped_method_call_or_function_fallback(
@@ -15815,22 +16226,20 @@ impl ValueEmitter {
         out: &mut String,
         result_temp: &str,
         name: &str,
-        c_name: &str,
-        parameters: &[crate::ir::FunctionParameter],
-        receiver_class_name: Option<&str>,
+        direct_user: &DirectUserCall,
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
         line: usize,
         called_class_override: Option<&CalledClassOverride>,
-        visibility_check: Option<&StaticMethodVisibilityCheck>,
     ) -> String {
-        let argument_slots = match bind_named_call_arguments(parameters, argument_names) {
-            Ok(argument_slots) => argument_slots,
-            Err(error) => {
-                self.emit_fatal_value(out, result_temp, &error.message());
-                return result_temp.to_string();
-            }
-        };
+        let argument_slots =
+            match bind_named_call_arguments(&direct_user.parameters, argument_names) {
+                Ok(argument_slots) => argument_slots,
+                Err(error) => {
+                    self.emit_fatal_value(out, result_temp, &error.message());
+                    return result_temp.to_string();
+                }
+            };
 
         let frame_len = argument_slots
             .iter()
@@ -15844,7 +16253,8 @@ impl ValueEmitter {
         let mut unwrap_append_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
             let slot_index = argument_slots[argument_index];
-            let by_ref_parameter = parameters
+            let by_ref_parameter = direct_user
+                .parameters
                 .get(slot_index)
                 .filter(|parameter| parameter.by_ref);
             let temp = if let Some(parameter) = by_ref_parameter {
@@ -15893,13 +16303,11 @@ impl ValueEmitter {
         self.emit_direct_user_function_call(
             out,
             result_temp,
-            c_name,
+            direct_user,
             &arguments.len().to_string(),
             &args_temp,
             line,
             called_class_override,
-            receiver_class_name,
-            visibility_check,
         );
         for temp in &unwrap_append_reference_temps {
             emit_unwrap_append_reference_call_argument(out, "    ", temp);
@@ -15931,6 +16339,7 @@ impl ValueEmitter {
         argument_names: &[Option<String>],
         argument_unpacks: &[bool],
         line: usize,
+        discarded: bool,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
             let result_temp = self.next_temp();
@@ -15964,6 +16373,9 @@ impl ValueEmitter {
             out.push_str(".values, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            if discarded {
+                self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
+            }
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -15978,6 +16390,9 @@ impl ValueEmitter {
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            if discarded {
+                self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
+            }
             emit_value_cleanup(out, "    ", &callee_temp);
             return result_temp;
         }
@@ -16016,6 +16431,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        if discarded {
+            self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
+        }
         for temp in &unwrap_append_reference_temps {
             emit_unwrap_append_reference_call_argument(out, "    ", temp);
         }

@@ -142,6 +142,9 @@ pub struct FunctionDecl {
     pub class_name: Option<String>,
     pub trait_name: Option<String>,
     pub method_name: Option<String>,
+    pub deprecated_message: Option<String>,
+    pub deprecated_since: Option<String>,
+    pub no_discard_message: Option<String>,
     pub is_static: bool,
     pub line: usize,
     pub parameters: Vec<FunctionParameter>,
@@ -701,6 +704,7 @@ pub enum CastKind {
     Boolean,
     Array,
     Object,
+    Void,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -909,6 +913,9 @@ impl<'a> LoweringContext<'a> {
             class_name: None,
             trait_name: None,
             method_name: None,
+            deprecated_message: function.attributes.deprecated_message.clone(),
+            deprecated_since: function.attributes.deprecated_since.clone(),
+            no_discard_message: function.attributes.no_discard_message.clone(),
             is_static: false,
             line: function.span.line,
             parameters,
@@ -958,6 +965,9 @@ impl<'a> LoweringContext<'a> {
             class_name: self.current_class_name.clone(),
             trait_name: self.current_trait_name.clone(),
             method_name: None,
+            deprecated_message: function.attributes.deprecated_message.clone(),
+            deprecated_since: function.attributes.deprecated_since.clone(),
+            no_discard_message: function.attributes.no_discard_message.clone(),
             is_static: function.is_static,
             line: function.span.line,
             parameters,
@@ -1031,6 +1041,9 @@ impl<'a> LoweringContext<'a> {
                     class_name: Some(class.name.clone()),
                     trait_name: method.trait_name.clone(),
                     method_name: Some(method.name.clone()),
+                    deprecated_message: method.attributes.deprecated_message.clone(),
+                    deprecated_since: method.attributes.deprecated_since.clone(),
+                    no_discard_message: method.attributes.no_discard_message.clone(),
                     is_static: method.is_static,
                     line: method.span.line,
                     parameters,
@@ -3195,6 +3208,7 @@ fn assertion_cast_kind_text(kind: AstCastKind) -> &'static str {
         AstCastKind::Boolean => "boolean",
         AstCastKind::Array => "array",
         AstCastKind::Object => "object",
+        AstCastKind::Void => "void",
     }
 }
 
@@ -3272,6 +3286,7 @@ fn lower_cast_kind(kind: AstCastKind) -> CastKind {
         AstCastKind::Boolean => CastKind::Boolean,
         AstCastKind::Array => CastKind::Array,
         AstCastKind::Object => CastKind::Object,
+        AstCastKind::Void => CastKind::Void,
     }
 }
 
