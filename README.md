@@ -239,7 +239,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Full-corpus PHPT telemetry uses `tools/run-phpt-baseline.sh --scope full` to
   inventory every local php-src `.phpt` row and write deterministic
   1k/5k/10k/20k/all manifests bucketed across the full extension/SAPI/core
-  corpus. `tools/check-phpt-campaign-reports.sh` gates PHPT campaign progress
+  corpus. `tools/check-phpt-campaign-reports.sh` gates PHPT campaign status
   reports so they are table-only and contain only ported-test and passed-test
   counts.
 - Focused string/scalar alias telemetry covers quiet string-offset
@@ -252,7 +252,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 
 ## Status
 
-- `PROGRESS.md`: compact test/porting dashboard.
+- `STATUS.md`: canonical generated PTN status dashboard.
+- `STATUS.html`: generated HTML dashboard published through GitHub Pages.
+- `tools/status-dashboard-features.tsv`: checked-in evidence source for the
+  feature and hourly dashboard tables.
 - `docs/PHPT_BROAD_1K_ARRAY_FRONTIER_2026-06-13.md`: current broad 1k
   runnable array-frontier blocker map.
 - `docs/PHPT_BROAD_1K_DIFF_INTERSECT_FRONTIER_2026-06-14.md`: current broad
@@ -519,10 +522,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `docs/PHPT_BROAD_1K_CLUSTER_SLICE_PTN_666N_2026-06-14.md`: refreshed broad
   1k cluster blocker map with 424 runnable rows fully covered by committed
   focused manifests and 576 classified rows split by semantic owner.
-- `STATUS.md` and generated mirrors: current operating status.
-- After changing `PROGRESS.md`, run `tools/update-progress-mirrors.sh` and
-  commit the regenerated `progress.md`, `progress.html`, `STATUS.md`, and
-  `STATUS.html` files.
+- After changing status evidence, run `tools/update-status-dashboard.sh` and
+  commit the regenerated `STATUS.md` and `STATUS.html` files. Implementation
+  lanes should record evidence in their bead or merge request instead of
+  editing these generated dashboards directly.
 
 ## Commands
 
@@ -531,7 +534,7 @@ cargo test
 tools/run-native-smoke-matrix.sh
 tools/run-post-merge-cow-gate.sh
 cargo build --bin phpc
-tools/update-progress-mirrors.sh
+tools/update-status-dashboard.sh
 tools/run-phpt-manifest.sh tools/phpt-manifest-200.txt
 tools/run-phpt-manifest.sh tools/phpt-include-manifest.txt
 tools/run-phpt-manifest.sh tools/phpt-filesystem-path-process-manifest.txt

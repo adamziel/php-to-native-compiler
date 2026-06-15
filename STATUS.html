@@ -1,113 +1,103 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PTN Status</title>
+<style>
+:root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body { margin: 0; padding: 24px; line-height: 1.35; }
+main { max-width: 1180px; margin: 0 auto; }
+h1, h2 { margin: 0 0 12px; }
+h2 { margin-top: 28px; }
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
+th, td { border: 1px solid #8a8f982e; padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: #8a8f981f; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+@media (max-width: 760px) { body { padding: 12px; } table { font-size: 12px; } th, td { padding: 6px; } }
+</style>
+<main>
 <h1>PTN Status</h1>
-<p><strong>Last refresh:</strong> 2026-06-15T20:12Z.<br>
-<strong>Measured:</strong> <code>not recorded</code></p>
-<p>Hold the RC line to generic PHP semantics while expanding toward broad php-src PHPT coverage.</p>
-<table>
-  <thead><tr><th>Bucket</th><th>Count</th></tr></thead>
+<table aria-label="status metadata">
+  <thead><tr><th>field</th><th>value</th></tr></thead>
   <tbody>
-    <tr><td>Units</td><td>3/3</td></tr>
-    <tr><td>Native</td><td>733/733</td></tr>
-    <tr><td>Bounded</td><td>479/486</td></tr>
-    <tr><td>Zend</td><td>119/119</td></tr>
-    <tr><td>ext/standard-PHPT</td><td>274/281</td></tr>
-    <tr><td>Array-key/cb</td><td>38/75</td></tr>
-    <tr><td>Array-cb-valid</td><td>66/66</td></tr>
-    <tr><td>Array-diff</td><td>59/61</td></tr>
-    <tr><td>Diff-cmp</td><td>67/76</td></tr>
-    <tr><td>Array-setops</td><td>67/119</td></tr>
-    <tr><td>Fill/pad</td><td>12/12</td></tr>
-    <tr><td>Array-set/cb</td><td>86/106</td></tr>
-    <tr><td>Array-cb-slice</td><td>28/38</td></tr>
-    <tr><td>FS/process</td><td>13/46</td></tr>
-    <tr><td>First-class-callable</td><td>10/12</td></tr>
-    <tr><td>basic+func+lang</td><td>78/78</td></tr>
-    <tr><td>COW-manifest</td><td>54/54</td></tr>
-    <tr><td>Nested-foreach</td><td>2/3</td></tr>
-    <tr><td>Array-COW</td><td>17/72</td></tr>
-    <tr><td>COW-foreach</td><td>69/103</td></tr>
-    <tr><td>Foreach-list</td><td>4/4</td></tr>
-    <tr><td>Ref-call</td><td>10/12</td></tr>
-    <tr><td>CUF-edges</td><td>8/12</td></tr>
-    <tr><td>Zend-assign</td><td>23/32</td></tr>
-    <tr><td>Recursive-dump</td><td>2/4</td></tr>
-    <tr><td>Classes</td><td>1/78</td></tr>
-    <tr><td>Zend-bugs</td><td>18/37</td></tr>
-    <tr><td>Class-name</td><td>9/10</td></tr>
-    <tr><td>Asym-vis</td><td>22/23</td></tr>
-    <tr><td>Dynamic-type</td><td>0/44</td></tr>
-    <tr><td>Diagnostics</td><td>0/47</td></tr>
-    <tr><td>Non-array-meta</td><td>0/74</td></tr>
-    <tr><td>Class/object-meta</td><td>0/221</td></tr>
-    <tr><td>Class/object-prop-pack</td><td>12/19</td></tr>
-    <tr><td>Class/object-c5ar</td><td>20/20</td></tr>
-    <tr><td>Class/object-meta-granular</td><td>0/135</td></tr>
-    <tr><td>Class-metadata-split</td><td>0/143</td></tr>
-    <tr><td>Core/basic-op</td><td>18/34</td></tr>
-    <tr><td>Runtime-INI</td><td>0/73</td></tr>
-    <tr><td>Resource-limit</td><td>0/1</td></tr>
-    <tr><td>Magic/object</td><td>20/69</td></tr>
-    <tr><td>Magic-object-texo</td><td>4/6</td></tr>
-    <tr><td>Magic-methods</td><td>0/8</td></tr>
-    <tr><td>Method-visibility-iuhj</td><td>6/9</td></tr>
-    <tr><td>Object-string-meta</td><td>53/61</td></tr>
-    <tr><td>Object-string-array-pack</td><td>34/34</td></tr>
-    <tr><td>Object-string-wxno</td><td>25/25</td></tr>
-    <tr><td>Object-callback-merge-zhup</td><td>17/20</td></tr>
-    <tr><td>Object-method-29k0</td><td>32/35</td></tr>
-    <tr><td>Object-method-hgfn</td><td>11/20</td></tr>
-    <tr><td>Static-property-ck7w</td><td>2/24</td></tr>
-    <tr><td>Std-array-map</td><td>0/297</td></tr>
-    <tr><td>Std-arrays</td><td>263/296</td></tr>
-    <tr><td>Map/filter</td><td>25/30</td></tr>
-    <tr><td>Request/SAPI</td><td>1/41</td></tr>
-    <tr><td>Anon-class</td><td>0/15</td></tr>
-    <tr><td>Interface-decl</td><td>0/23</td></tr>
-    <tr><td>Interface-impl</td><td>0/15</td></tr>
-    <tr><td>Trait-decl</td><td>0/25</td></tr>
-    <tr><td>Call-unpack</td><td>13/20</td></tr>
-    <tr><td>By-ref-call-unpack-dkyr</td><td>2/3</td></tr>
-    <tr><td>Array-unpack</td><td>10/14</td></tr>
-    <tr><td>Type-hint</td><td>0/14</td></tr>
-    <tr><td>Function-state</td><td>0/11</td></tr>
-    <tr><td>Dynamic-symbol</td><td>3/8</td></tr>
-    <tr><td>Generator-runtime</td><td>0/1</td></tr>
-    <tr><td>Internal-call-bind</td><td>1/1</td></tr>
-    <tr><td>Attribute-syntax</td><td>0/141</td></tr>
-    <tr><td>Attribute-internal</td><td>0/8</td></tr>
-    <tr><td>Attribute-meta</td><td>0/204</td></tr>
-    <tr><td>Heredoc-array</td><td>20/70</td></tr>
-    <tr><td>Anon-class-pack</td><td>10/21</td></tr>
-    <tr><td>Std-array-row-pack</td><td>10/10</td></tr>
-    <tr><td>Std-array-s80e</td><td>20/20</td></tr>
-    <tr><td>Std-array-tdei</td><td>61/71</td></tr>
-    <tr><td>Std-array-lxw1</td><td>19/20</td></tr>
-    <tr><td>Std-string-array-ppri</td><td>18/20</td></tr>
-    <tr><td>User-comparator-sort-vq7w</td><td>20/26</td></tr>
-    <tr><td>Std-strings-m8pk</td><td>21/21</td></tr>
-    <tr><td>Std-strings-almd</td><td>12/13</td></tr>
-    <tr><td>Sort-flags-w17z2</td><td>72/78</td></tr>
-    <tr><td>array_rand</td><td>6/7</td></tr>
-    <tr><td>Zend-op/control</td><td>21/26</td></tr>
-    <tr><td>Zend-lit/op-3ijs</td><td>27/30</td></tr>
-    <tr><td>Parser-cfny</td><td>31/34</td></tr>
-    <tr><td>Parser-control-psbp</td><td>28/28</td></tr>
-    <tr><td>Binary-key</td><td>1/1</td></tr>
-    <tr><td>Runtime-config</td><td>10/54</td></tr>
-    <tr><td>COW-gate</td><td>26/26</td></tr>
-    <tr><td>COW-reference-tiqh</td><td>21/21</td></tr>
-    <tr><td>COW-reference-mqvk</td><td>27/28</td></tr>
-    <tr><td>COW-reference-vq7w</td><td>24/24</td></tr>
-    <tr><td>COW-reference-25s0</td><td>26/27</td></tr>
-    <tr><td>COW-reference-dgj9</td><td>8/22</td></tr>
-    <tr><td>COW-reference-d0lg</td><td>23/48</td></tr>
-    <tr><td>Broad-25s0-runnable</td><td>527/591</td></tr>
-    <tr><td>Broad-ppri-runnable</td><td>528/591</td></tr>
-    <tr><td>1k-baseline</td><td>573/1000</td></tr>
-    <tr><td>Full-PHPT inventory</td><td>21867/21867</td></tr>
-    <tr><td>Full-PHPT 1k runnable</td><td>383/1000</td></tr>
+    <tr><td>last refresh</td><td>2026-06-15T20:41:00Z</td></tr>
+    <tr><td>source commit</td><td><code>8da347897a9e</code></td></tr>
+    <tr><td>php-src revision</td><td><code>8c63ec400ce8e07c57a8d9499317b96a8beafb8b</code></td></tr>
+    <tr><td>evidence source</td><td><code>tools/status-dashboard-features.tsv</code></td></tr>
+    <tr><td>generator</td><td><code>tools/update-status-dashboard.sh</code></td></tr>
   </tbody>
 </table>
-<p>Canonical text status lives in <code>STATUS.md</code>.</p>
+<h2>Feature Table</h2>
+<table aria-label="feature table">
+  <thead><tr><th>feature</th><th class="num">ported tests</th><th class="num">passed tests</th><th class="num">upstream tests</th></tr></thead>
+  <tbody>
+    <tr><td>ptn-snt7 object/class metadata row pack</td><td class="num">8</td><td class="num">8</td><td class="num">8</td></tr>
+    <tr><td>ptn-456b ext-standard strings row pack</td><td class="num">27</td><td class="num">27</td><td class="num">47</td></tr>
+    <tr><td>ptn-y4f1 COW/reference sort/object walk row pack</td><td class="num">72</td><td class="num">59</td><td class="num">72</td></tr>
+    <tr><td>ptn-w17z.31 iterable/DNF type row pack</td><td class="num">27</td><td class="num">27</td><td class="num">27</td></tr>
+    <tr><td>ptn-w17z.29 SPL iterator wrapper row pack</td><td class="num">7</td><td class="num">7</td><td class="num">7</td></tr>
+    <tr><td>ptn-50g7 COW/reference array-walk and sort row pack</td><td class="num">10</td><td class="num">10</td><td class="num">103</td></tr>
+    <tr><td>ptn-jrzu CSV stream parity row pack</td><td class="num">22</td><td class="num">22</td><td class="num">57</td></tr>
+    <tr><td>ptn-w17z.16.1 ErrorException severity row pack</td><td class="num">2</td><td class="num">2</td><td class="num">2</td></tr>
+    <tr><td>ptn-w17z.16.2 nested try/finally row pack</td><td class="num">9</td><td class="num">9</td><td class="num">9</td></tr>
+    <tr><td>ptn-90cm compare64bit object/number diagnostics</td><td class="num">6</td><td class="num">6</td><td class="num">6</td></tr>
+    <tr><td>ptn-vvpn class_alias metadata slice</td><td class="num">38</td><td class="num">13</td><td class="num">38</td></tr>
+    <tr><td>ptn-w17z.36 extract typed references</td><td class="num">1</td><td class="num">1</td><td class="num">1</td></tr>
+    <tr><td>ptn-2cij ENV/CLEAN SKIPIF preconditions</td><td class="num">33</td><td class="num">0</td><td class="num">2086</td></tr>
+    <tr><td>ptn-vj4r class_alias namespace metadata</td><td class="num">5</td><td class="num">5</td><td class="num">5</td></tr>
+    <tr><td>ptn-144g parser residual row pack</td><td class="num">2</td><td class="num">2</td><td class="num">2</td></tr>
+    <tr><td>ptn-evvk stream mode diagnostics</td><td class="num">8</td><td class="num">8</td><td class="num">8</td></tr>
+    <tr><td>ptn-w17z.26 Serializable/SPL unserialize row pack</td><td class="num">5</td><td class="num">5</td><td class="num">5</td></tr>
+    <tr><td>ptn-w17z.23 union type declaration parser row</td><td class="num">1</td><td class="num">1</td><td class="num">1</td></tr>
+    <tr><td>ptn-utht filtered stream copy row pack</td><td class="num">4</td><td class="num">4</td><td class="num">4</td></tr>
+    <tr><td>ptn-vqg1 temp stream wrappers row pack</td><td class="num">3</td><td class="num">3</td><td class="num">3</td></tr>
+    <tr><td>ptn-w17z.30 foreach mutation visibility row pack</td><td class="num">11</td><td class="num">7</td><td class="num">11</td></tr>
+    <tr><td>ptn-w17z.2 sort flags row pack</td><td class="num">78</td><td class="num">72</td><td class="num">78</td></tr>
+    <tr><td>ptn-w17z.22 compile-time include path variables</td><td class="num">1</td><td class="num">1</td><td class="num">1</td></tr>
+    <tr><td>ptn-w17z.28 collected Generator runtime row pack</td><td class="num">6</td><td class="num">6</td><td class="num">6</td></tr>
+    <tr><td>ptn-w17z.34 output-buffer compact row</td><td class="num">1</td><td class="num">1</td><td class="num">1</td></tr>
+    <tr><td>ptn-w17z.35 compact closure this row pack</td><td class="num">2</td><td class="num">2</td><td class="num">2</td></tr>
+    <tr><td>ptn-w17z.33 extract globals refs row pack</td><td class="num">3</td><td class="num">3</td><td class="num">3</td></tr>
+    <tr><td>ptn-w17z.25 serialize/unserialize reference identity row pack</td><td class="num">6</td><td class="num">6</td><td class="num">6</td></tr>
+    <tr><td>ptn-w17z.12 magic methods/lifecycle row pack</td><td class="num">49</td><td class="num">49</td><td class="num">49</td></tr>
+    <tr><td>ptn-w17z.10 SKIPIF harness row pack</td><td class="num">185</td><td class="num">3</td><td class="num">185</td></tr>
+    <tr><td>ptn-w17z.14 Override attribute row pack</td><td class="num">34</td><td class="num">34</td><td class="num">50</td></tr>
+    <tr><td>ptn-w17z.16 exception/backtrace/lifecycle row pack</td><td class="num">41</td><td class="num">41</td><td class="num">41</td></tr>
+    <tr><td>ptn-w17z.18 numeric/math/conversions row pack</td><td class="num">35</td><td class="num">35</td><td class="num">35</td></tr>
+    <tr><td>ptn-w17z.16.3 exception formatting row pack</td><td class="num">12</td><td class="num">12</td><td class="num">13</td></tr>
+    <tr><td>ptn-kia6 by-ref/reference-boundary row pack</td><td class="num">107</td><td class="num">75</td><td class="num">126</td></tr>
+  </tbody>
+</table>
+<h2>Last 24 Hours</h2>
+<table aria-label="last 24 hours">
+  <thead><tr><th>hour (UTC)</th><th class="num">newly passed tests</th></tr></thead>
+  <tbody>
+    <tr><td>2026-06-14T21:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-14T22:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-14T23:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T00:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T01:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T02:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T03:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T04:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T05:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T06:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T07:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T08:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T09:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T10:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T11:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T12:00Z</td><td class="num">0</td></tr>
+    <tr><td>2026-06-15T13:00Z</td><td class="num">64</td></tr>
+    <tr><td>2026-06-15T14:00Z</td><td class="num">84</td></tr>
+    <tr><td>2026-06-15T15:00Z</td><td class="num">27</td></tr>
+    <tr><td>2026-06-15T16:00Z</td><td class="num">94</td></tr>
+    <tr><td>2026-06-15T17:00Z</td><td class="num">17</td></tr>
+    <tr><td>2026-06-15T18:00Z</td><td class="num">15</td></tr>
+    <tr><td>2026-06-15T19:00Z</td><td class="num">61</td></tr>
+    <tr><td>2026-06-15T20:00Z</td><td class="num">73</td></tr>
+  </tbody>
+</table>
+</main>
+</html>

@@ -156,7 +156,7 @@ The next credible implementation slices are:
 The `array_chunk` basename group is the largest single runnable family at
 31 rows, with one additional suffix-specific `array_chunk2` row. It is not a
 good implementation target for this slice: the bounded manifest already
-contains the broad `array_chunk*` rows and the current progress dashboard
+contains the broad `array_chunk*` rows and the current status dashboard
 records the bounded manifest as 485/485 passing. A focused run can still be
 used as regression evidence, but it is unlikely to move the broad frontier.
 
