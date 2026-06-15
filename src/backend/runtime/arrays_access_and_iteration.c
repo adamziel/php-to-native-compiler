@@ -66,6 +66,7 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
     size_t line
 );
 static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
+static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value);
 static PTN_UNUSED int ptn_float_to_int_loses_precision(double value);
 static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
     PtnDiagnosticSink *diagnostics,
@@ -4669,8 +4670,86 @@ static int ptn_array_value_compare_ascending(PtnValue left, PtnValue right) {
     return 0;
 }
 
-static int ptn_array_value_compare_descending(PtnValue left, PtnValue right) {
+static PTN_UNUSED int ptn_array_value_compare_descending(PtnValue left, PtnValue right) {
     return -ptn_array_value_compare_ascending(left, right);
+}
+
+static int ptn_array_value_compare_numeric(PtnValue left, PtnValue right) {
+    PtnNumber left_number = ptn_to_number(left);
+    PtnNumber right_number = ptn_to_number(right);
+    if (left_number.type == PTN_NUMBER_INT && right_number.type == PTN_NUMBER_INT) {
+        if (left_number.integer < right_number.integer) {
+            return -1;
+        }
+        if (left_number.integer > right_number.integer) {
+            return 1;
+        }
+        return 0;
+    }
+    if (left_number.floating < right_number.floating) {
+        return -1;
+    }
+    if (left_number.floating > right_number.floating) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_array_value_compare_string(PtnValue left, PtnValue right) {
+    PtnStringOperand left_string = ptn_value_to_string_operand(left);
+    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+    int compared = ptn_compare_string_bytes(
+        (const unsigned char *)left_string.data,
+        left_string.len,
+        (const unsigned char *)right_string.data,
+        right_string.len
+    );
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    if (compared == PTN_COMPARE_LESS) {
+        return -1;
+    }
+    if (compared == PTN_COMPARE_GREATER) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_array_value_compare_string_case(PtnValue left, PtnValue right) {
+    PtnStringOperand left_string = ptn_value_to_string_operand(left);
+    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+    const unsigned char *left_bytes = (const unsigned char *)left_string.data;
+    const unsigned char *right_bytes = (const unsigned char *)right_string.data;
+    size_t shared_len = left_string.len < right_string.len ? left_string.len : right_string.len;
+    int compared = 0;
+    for (size_t i = 0; i < shared_len; i++) {
+        unsigned char left_byte = left_bytes[i];
+        unsigned char right_byte = right_bytes[i];
+        if (left_byte >= (unsigned char)'A' && left_byte <= (unsigned char)'Z') {
+            left_byte = (unsigned char)(left_byte + ((unsigned char)'a' - (unsigned char)'A'));
+        }
+        if (right_byte >= (unsigned char)'A' && right_byte <= (unsigned char)'Z') {
+            right_byte = (unsigned char)(right_byte + ((unsigned char)'a' - (unsigned char)'A'));
+        }
+        if (left_byte < right_byte) {
+            compared = -1;
+            break;
+        }
+        if (left_byte > right_byte) {
+            compared = 1;
+            break;
+        }
+    }
+    if (compared == 0) {
+        if (left_string.len < right_string.len) {
+            compared = -1;
+        } else if (left_string.len > right_string.len) {
+            compared = 1;
+        }
+    }
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
+    return compared;
 }
 
 static int ptn_ascii_is_natural_digit(unsigned char byte) {
@@ -4842,16 +4921,50 @@ static int ptn_array_value_compare_natural_case(PtnValue left, PtnValue right) {
     return compared;
 }
 
-static PTN_UNUSED void ptn_array_sort_values(PtnArray *array) {
-    for (size_t i = 1; i < array->len; i++) {
-        PtnArrayEntry moving = array->entries[i];
-        size_t j = i;
-        while (j > 0 && ptn_array_value_compare_ascending(array->entries[j - 1].value, moving.value) > 0) {
-            array->entries[j] = array->entries[j - 1];
-            j--;
-        }
-        array->entries[j] = moving;
+static int ptn_array_sort_flags_case_insensitive(int64_t flags) {
+    return flags == (PTN_SORT_STRING | PTN_SORT_FLAG_CASE) ||
+        flags == (PTN_SORT_NATURAL | PTN_SORT_FLAG_CASE);
+}
+
+static int64_t ptn_array_sort_flags_base(int64_t flags) {
+    return ptn_array_sort_flags_case_insensitive(flags)
+        ? (flags & ~PTN_SORT_FLAG_CASE)
+        : flags;
+}
+
+static int ptn_array_value_compare_by_sort_flags(PtnValue left, PtnValue right, int64_t flags) {
+    int case_insensitive = ptn_array_sort_flags_case_insensitive(flags);
+    switch (ptn_array_sort_flags_base(flags)) {
+        case PTN_SORT_NUMERIC:
+            return ptn_array_value_compare_numeric(left, right);
+        case PTN_SORT_STRING:
+        case PTN_SORT_LOCALE_STRING:
+            return case_insensitive
+                ? ptn_array_value_compare_string_case(left, right)
+                : ptn_array_value_compare_string(left, right);
+        case PTN_SORT_NATURAL:
+            return case_insensitive
+                ? ptn_array_value_compare_natural_case(left, right)
+                : ptn_array_value_compare_natural(left, right);
+        case PTN_SORT_REGULAR:
+        default:
+            return ptn_array_value_compare_ascending(left, right);
     }
+}
+
+static int ptn_array_key_compare_by_sort_flags(PtnArrayKey left, PtnArrayKey right, int64_t flags) {
+    if (ptn_array_sort_flags_base(flags) == PTN_SORT_REGULAR) {
+        return ptn_array_key_compare_ascending(left, right);
+    }
+    PtnValue left_value = ptn_array_key_value(left);
+    PtnValue right_value = ptn_array_key_value(right);
+    int compared = ptn_array_value_compare_by_sort_flags(left_value, right_value, flags);
+    ptn_value_destroy(&left_value);
+    ptn_value_destroy(&right_value);
+    return compared;
+}
+
+static void ptn_array_reindex_after_sort(PtnArray *array) {
     for (size_t i = 0; i < array->len; i++) {
         if (i > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
@@ -4859,59 +4972,73 @@ static PTN_UNUSED void ptn_array_sort_values(PtnArray *array) {
         ptn_array_key_free(array->entries[i].key);
         array->entries[i].key = ptn_array_int_key((int64_t)i);
     }
-    array->current_index = 0;
     ptn_array_recompute_next_auto_key(array);
+}
+
+static void ptn_array_sort_entries_by_flags(PtnArray *array, int compare_keys, int descending, int reindex, int64_t flags) {
+    for (size_t i = 1; i < array->len; i++) {
+        PtnArrayEntry moving = array->entries[i];
+        size_t j = i;
+        while (j > 0) {
+            int compared = compare_keys
+                ? ptn_array_key_compare_by_sort_flags(array->entries[j - 1].key, moving.key, flags)
+                : ptn_array_value_compare_by_sort_flags(array->entries[j - 1].value, moving.value, flags);
+            if (descending) {
+                compared = -compared;
+            }
+            if (compared <= 0) {
+                break;
+            }
+            array->entries[j] = array->entries[j - 1];
+            j--;
+        }
+        array->entries[j] = moving;
+    }
+    if (reindex) {
+        ptn_array_reindex_after_sort(array);
+    }
+    array->current_index = 0;
     ptn_array_rebuild_index(array);
+}
+
+static PTN_UNUSED void ptn_array_sort_values_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_flags(array, 0, 0, 1, flags);
+}
+
+static PTN_UNUSED void ptn_array_rsort_values_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_flags(array, 0, 1, 1, flags);
+}
+
+static PTN_UNUSED void ptn_array_asort_values_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_flags(array, 0, 0, 0, flags);
+}
+
+static PTN_UNUSED void ptn_array_arsort_values_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_flags(array, 0, 1, 0, flags);
+}
+
+static PTN_UNUSED void ptn_array_ksort_entries_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_flags(array, 1, 0, 0, flags);
+}
+
+static PTN_UNUSED void ptn_array_krsort_entries_with_flags(PtnArray *array, int64_t flags) {
+    ptn_array_sort_entries_by_flags(array, 1, 1, 0, flags);
+}
+
+static PTN_UNUSED void ptn_array_sort_values(PtnArray *array) {
+    ptn_array_sort_values_with_flags(array, PTN_SORT_REGULAR);
 }
 
 static PTN_UNUSED void ptn_array_rsort_values(PtnArray *array) {
-    for (size_t i = 1; i < array->len; i++) {
-        PtnArrayEntry moving = array->entries[i];
-        size_t j = i;
-        while (j > 0 && ptn_array_value_compare_descending(array->entries[j - 1].value, moving.value) > 0) {
-            array->entries[j] = array->entries[j - 1];
-            j--;
-        }
-        array->entries[j] = moving;
-    }
-    for (size_t i = 0; i < array->len; i++) {
-        if (i > (size_t)INT64_MAX) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_array_key_free(array->entries[i].key);
-        array->entries[i].key = ptn_array_int_key((int64_t)i);
-    }
-    array->current_index = 0;
-    ptn_array_recompute_next_auto_key(array);
-    ptn_array_rebuild_index(array);
+    ptn_array_rsort_values_with_flags(array, PTN_SORT_REGULAR);
 }
 
 static PTN_UNUSED void ptn_array_asort_values(PtnArray *array) {
-    for (size_t i = 1; i < array->len; i++) {
-        PtnArrayEntry moving = array->entries[i];
-        size_t j = i;
-        while (j > 0 && ptn_array_value_compare_ascending(array->entries[j - 1].value, moving.value) > 0) {
-            array->entries[j] = array->entries[j - 1];
-            j--;
-        }
-        array->entries[j] = moving;
-    }
-    array->current_index = 0;
-    ptn_array_rebuild_index(array);
+    ptn_array_asort_values_with_flags(array, PTN_SORT_REGULAR);
 }
 
 static PTN_UNUSED void ptn_array_arsort_values(PtnArray *array) {
-    for (size_t i = 1; i < array->len; i++) {
-        PtnArrayEntry moving = array->entries[i];
-        size_t j = i;
-        while (j > 0 && ptn_array_value_compare_descending(array->entries[j - 1].value, moving.value) > 0) {
-            array->entries[j] = array->entries[j - 1];
-            j--;
-        }
-        array->entries[j] = moving;
-    }
-    array->current_index = 0;
-    ptn_array_rebuild_index(array);
+    ptn_array_arsort_values_with_flags(array, PTN_SORT_REGULAR);
 }
 
 static PTN_UNUSED void ptn_array_natsort_values(PtnArray *array) {

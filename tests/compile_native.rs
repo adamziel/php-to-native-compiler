@@ -18392,16 +18392,25 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
 }
 
 #[test]
-fn parser_rejects_unsupported_sort_family_array_mutators() {
+fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_targets() {
     for source in [
         "<?php $items = [3, 2, 1]; sort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; sort($items, SORT_STRING);",
+        "<?php $items = [3, 2, 1]; sort($items, SORT_STRING | SORT_FLAG_CASE);",
+        "<?php $items = [3, 2, 1]; sort($items, SORT_NATURAL);",
         "<?php $items = [3, 2, 1]; arsort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; arsort($items, SORT_STRING);",
         "<?php $items = [3, 2, 1]; asort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; asort($items, SORT_NUMERIC);",
         "<?php $items = [3, 2, 1]; ksort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; ksort($items, SORT_NATURAL | SORT_FLAG_CASE);",
         "<?php $items = [3, 2, 1]; krsort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; krsort($items, SORT_STRING);",
         "<?php $items = [3, 2, 1]; rsort($items, SORT_REGULAR);",
+        "<?php $items = [3, 2, 1]; rsort($items, SORT_NUMERIC);",
         "<?php $items = [3, 2, 1]; sort($items, 0);",
         "<?php $items = [3, 2, 1]; sort($items, (SORT_REGULAR));",
+        "<?php $items = [3, 2, 1]; sort($items, 999);",
     ] {
         parser::parse(source).unwrap();
     }
@@ -18444,31 +18453,6 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
             "unexpected diagnostic for {function}: {}",
             error.message
         );
-    }
-
-    for (source, function) in [
-        (
-            "<?php $items = [3, 2, 1]; sort($items, SORT_STRING);",
-            "sort",
-        ),
-        (
-            "<?php $items = [3, 2, 1]; sort($items, sort_regular);",
-            "sort",
-        ),
-        (
-            "<?php $items = [3, 2, 1]; rsort($items, SORT_STRING);",
-            "rsort",
-        ),
-        (
-            "<?php $items = [3, 2, 1]; arsort($items, SORT_STRING);",
-            "arsort",
-        ),
-    ] {
-        let error = parser::parse(source).unwrap_err();
-        assert!(error.message.contains(&format!(
-            "{function}() currently supports default SORT_REGULAR"
-        )));
-        assert!(error.message.contains("sort flags are unsupported"));
     }
 
     parser::parse("<?php $items = [3, 2, 1]; array_multisort($items);").unwrap();
@@ -19253,6 +19237,86 @@ var_dump(function_exists(\"rsort\"));",
 }
 
 #[test]
+fn compile_sort_flags_mutate_direct_variables_and_detach_cow_to_native_binary() {
+    let root = temp_dir("ptn-native-sort-flags-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sort-flags-cow.php");
+    let output = root.join("sort-flags-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$numbers = [\"10\", \"2\", \"1\"];\n\
+sort($numbers, SORT_NUMERIC);\n\
+echo implode(\",\", $numbers), \"\\n\";\n\
+$natural = [\"img10\", \"img2\", \"img1\"];\n\
+sort($natural, SORT_NATURAL);\n\
+echo implode(\",\", $natural), \"\\n\";\n\
+$strings = [\"b10\", \"A2\", \"a1\", \"B1\"];\n\
+sort($strings, SORT_STRING | SORT_FLAG_CASE);\n\
+echo implode(\",\", $strings), \"\\n\";\n\
+$assoc = [\"b\" => \"2\", \"a\" => \"10\", \"c\" => \"1\"];\n\
+asort($assoc, SORT_NUMERIC);\n\
+foreach ($assoc as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+arsort($assoc, SORT_NUMERIC);\n\
+foreach ($assoc as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+$keys = [\"img10\" => 1, \"img2\" => 2, \"img1\" => 3];\n\
+ksort($keys, SORT_NATURAL);\n\
+foreach ($keys as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+$letters = [\"b\" => 2, \"a\" => 1, \"c\" => 3];\n\
+krsort($letters, SORT_STRING);\n\
+foreach ($letters as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
+$source = [\"10\", \"2\", \"1\"];\n\
+$copy = $source;\n\
+sort($copy, SORT_NUMERIC);\n\
+echo implode(\",\", $source), \"\\n\";\n\
+echo implode(\",\", $copy), \"\\n\";\n\
+try { sort($copy, 999); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"sort\"), defined(\"SORT_NATURAL\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "1,2,10\n",
+            "img1,img2,img10\n",
+            "a1,A2,B1,b10\n",
+            "c=1\n",
+            "b=2\n",
+            "a=10\n",
+            "a=10\n",
+            "b=2\n",
+            "c=1\n",
+            "img1=3\n",
+            "img2=2\n",
+            "img10=1\n",
+            "c=3\n",
+            "b=2\n",
+            "a=1\n",
+            "10,2,1\n",
+            "1,2,10\n",
+            "sort(): Argument #2 ($flags) must be a valid sort flag\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_sort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_asort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_arsort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_ksort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_krsort_variable"));
+    assert!(c_source.contains("ptn_array_sort_values_with_flags"));
+    assert!(c_source.contains("ptn_array_key_compare_by_sort_flags"));
+}
+
+#[test]
 fn compile_dynamic_sort_flags_report_boundary_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-sort-flags");
     fs::create_dir_all(&root).unwrap();
@@ -19309,17 +19373,11 @@ var_dump($sortItems, $asortItems, $arsortItems, $rsortItems, $ksortItems, $krsor
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "\nWarning: sort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 4\n",
-            "sort() flags are unsupported; default regular value sorting is supported\n",
             "\nWarning: asort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 10\n",
-            "asort() flags are unsupported; default regular value sorting is supported\n",
             "\nWarning: arsort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 16\n",
-            "arsort() flags are unsupported; default regular value sorting is supported\n",
             "\nWarning: rsort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 22\n",
-            "rsort() flags are unsupported; default regular value sorting is supported\n",
             "\nWarning: ksort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 28\n",
-            "ksort() flags are unsupported; default regular value sorting is supported\n",
             "\nWarning: krsort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 34\n",
-            "krsort() flags are unsupported; default regular value sorting is supported\n",
             "array(3) {\n",
             "  [0]=>\n",
             "  int(3)\n",

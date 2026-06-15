@@ -2342,7 +2342,56 @@ static PTN_UNUSED PtnValue ptn_runtime_array_uksort_variable(
     );
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_ksort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+);
+
+static int ptn_internal_sort_flags_are_valid(int64_t flags) {
+    return flags == PTN_SORT_REGULAR ||
+        flags == PTN_SORT_NUMERIC ||
+        flags == PTN_SORT_STRING ||
+        flags == PTN_SORT_LOCALE_STRING ||
+        flags == PTN_SORT_NATURAL ||
+        flags == (PTN_SORT_STRING | PTN_SORT_FLAG_CASE) ||
+        flags == (PTN_SORT_NATURAL | PTN_SORT_FLAG_CASE);
+}
+
+static int64_t ptn_internal_sort_flags_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue flags_value,
+    size_t line
+) {
+    int64_t flags = ptn_internal_expect_integer_arg(runtime, function_name, 2, "flags", flags_value, line);
+    if (!ptn_internal_sort_flags_are_valid(flags)) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($flags) must be a valid sort flag",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return PTN_SORT_REGULAR;
+    }
+    return flags;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_ksort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue flags_value,
+    size_t line
+) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "ksort",
@@ -2351,11 +2400,18 @@ static PTN_UNUSED PtnValue ptn_runtime_array_ksort_variable(PtnRuntime *runtime,
         name,
         value
     );
-    ptn_array_ksort_entries(array);
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "ksort", flags_value, line);
+    ptn_array_ksort_entries_with_flags(array, flags);
     return ptn_bool(1);
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_krsort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_krsort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue flags_value,
+    size_t line
+) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "krsort",
@@ -2364,11 +2420,18 @@ static PTN_UNUSED PtnValue ptn_runtime_array_krsort_variable(PtnRuntime *runtime
         name,
         value
     );
-    ptn_array_krsort_entries(array);
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "krsort", flags_value, line);
+    ptn_array_krsort_entries_with_flags(array, flags);
     return ptn_bool(1);
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_asort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_asort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue flags_value,
+    size_t line
+) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "asort",
@@ -2377,11 +2440,18 @@ static PTN_UNUSED PtnValue ptn_runtime_array_asort_variable(PtnRuntime *runtime,
         name,
         value
     );
-    ptn_array_asort_values(array);
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "asort", flags_value, line);
+    ptn_array_asort_values_with_flags(array, flags);
     return ptn_bool(1);
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_arsort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_arsort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue flags_value,
+    size_t line
+) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "arsort",
@@ -2390,7 +2460,8 @@ static PTN_UNUSED PtnValue ptn_runtime_array_arsort_variable(PtnRuntime *runtime
         name,
         value
     );
-    ptn_array_arsort_values(array);
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "arsort", flags_value, line);
+    ptn_array_arsort_values_with_flags(array, flags);
     return ptn_bool(1);
 }
 
@@ -2420,7 +2491,13 @@ static PTN_UNUSED PtnValue ptn_runtime_array_natcasesort_variable(PtnRuntime *ru
     return ptn_bool(1);
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_sort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_sort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue flags_value,
+    size_t line
+) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "sort",
@@ -2429,11 +2506,18 @@ static PTN_UNUSED PtnValue ptn_runtime_array_sort_variable(PtnRuntime *runtime, 
         name,
         value
     );
-    ptn_array_sort_values(array);
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "sort", flags_value, line);
+    ptn_array_sort_values_with_flags(array, flags);
     return ptn_bool(1);
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_rsort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_rsort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    PtnValue flags_value,
+    size_t line
+) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "rsort",
@@ -2442,7 +2526,8 @@ static PTN_UNUSED PtnValue ptn_runtime_array_rsort_variable(PtnRuntime *runtime,
         name,
         value
     );
-    ptn_array_rsort_values(array);
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "rsort", flags_value, line);
+    ptn_array_rsort_values_with_flags(array, flags);
     return ptn_bool(1);
 }
 
@@ -3036,62 +3121,39 @@ static PtnValue ptn_internal_array_shift(PtnRuntime *runtime, size_t argc, const
     return ptn_array_shift_value(array);
 }
 
-static void ptn_internal_throw_sort_flags_unsupported(PtnRuntime *runtime, const char *name) {
-    char message[128];
-    int written = snprintf(
-        message,
-        sizeof(message),
-        "%s() flags are unsupported; default regular value sorting is supported",
-        name
-    );
-    if (written < 0 || (size_t)written >= sizeof(message)) {
-        ptn_throw_exception(runtime, "Error", "sort flags are unsupported; default regular value sorting is supported");
-        return;
-    }
-    ptn_throw_exception(runtime, "Error", message);
-}
-
 static PtnValue ptn_internal_ksort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    if (argc >= 2) {
-        ptn_internal_throw_sort_flags_unsupported(runtime, "ksort");
-        return ptn_null();
-    }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "ksort", 1, "array", args[0]);
-    ptn_array_ksort_entries(array);
+    int64_t flags = argc >= 2
+        ? ptn_internal_sort_flags_arg(runtime, "ksort", args[1], line)
+        : PTN_SORT_REGULAR;
+    ptn_array_ksort_entries_with_flags(array, flags);
     return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_krsort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    if (argc >= 2) {
-        ptn_internal_throw_sort_flags_unsupported(runtime, "krsort");
-        return ptn_null();
-    }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "krsort", 1, "array", args[0]);
-    ptn_array_krsort_entries(array);
+    int64_t flags = argc >= 2
+        ? ptn_internal_sort_flags_arg(runtime, "krsort", args[1], line)
+        : PTN_SORT_REGULAR;
+    ptn_array_krsort_entries_with_flags(array, flags);
     return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_asort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    if (argc >= 2) {
-        ptn_internal_throw_sort_flags_unsupported(runtime, "asort");
-        return ptn_null();
-    }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "asort", 1, "array", args[0]);
-    ptn_array_asort_values(array);
+    int64_t flags = argc >= 2
+        ? ptn_internal_sort_flags_arg(runtime, "asort", args[1], line)
+        : PTN_SORT_REGULAR;
+    ptn_array_asort_values_with_flags(array, flags);
     return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_arsort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    if (argc >= 2) {
-        ptn_internal_throw_sort_flags_unsupported(runtime, "arsort");
-        return ptn_null();
-    }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "arsort", 1, "array", args[0]);
-    ptn_array_arsort_values(array);
+    int64_t flags = argc >= 2
+        ? ptn_internal_sort_flags_arg(runtime, "arsort", args[1], line)
+        : PTN_SORT_REGULAR;
+    ptn_array_arsort_values_with_flags(array, flags);
     return ptn_bool(1);
 }
 
@@ -3120,24 +3182,20 @@ static PtnValue ptn_internal_natcasesort(PtnRuntime *runtime, size_t argc, const
 }
 
 static PtnValue ptn_internal_sort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    if (argc >= 2) {
-        ptn_internal_throw_sort_flags_unsupported(runtime, "sort");
-        return ptn_null();
-    }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "sort", 1, "array", args[0]);
-    ptn_array_sort_values(array);
+    int64_t flags = argc >= 2
+        ? ptn_internal_sort_flags_arg(runtime, "sort", args[1], line)
+        : PTN_SORT_REGULAR;
+    ptn_array_sort_values_with_flags(array, flags);
     return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_rsort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    if (argc >= 2) {
-        ptn_internal_throw_sort_flags_unsupported(runtime, "rsort");
-        return ptn_null();
-    }
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "rsort", 1, "array", args[0]);
-    ptn_array_rsort_values(array);
+    int64_t flags = argc >= 2
+        ? ptn_internal_sort_flags_arg(runtime, "rsort", args[1], line)
+        : PTN_SORT_REGULAR;
+    ptn_array_rsort_values_with_flags(array, flags);
     return ptn_bool(1);
 }
 

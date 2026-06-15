@@ -8455,22 +8455,6 @@ fn is_array_multisort_argument(expr: &Expr) -> bool {
     }
 }
 
-fn is_regular_sort_flag_mutation_name(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "arsort" | "asort" | "krsort" | "ksort" | "rsort" | "sort"
-    )
-}
-
-fn is_sort_regular_flag_expr(expr: &Expr) -> bool {
-    match expr {
-        Expr::Int(0, _) => true,
-        Expr::Constant(name, _) => name == "SORT_REGULAR",
-        Expr::Grouped { expr, .. } => is_sort_regular_flag_expr(expr),
-        _ => false,
-    }
-}
-
 fn is_direct_variable_argument(expr: &Expr) -> bool {
     match expr {
         Expr::Variable(_, _) => true,
@@ -8506,24 +8490,6 @@ fn validate_mutating_array_internal_call(
     arguments: &[Expr],
     call_span: SourceSpan,
 ) -> Result<()> {
-    if matches!(
-        name.to_ascii_lowercase().as_str(),
-        "arsort" | "asort" | "krsort" | "ksort" | "rsort" | "sort"
-    ) && arguments.len() > 1
-    {
-        if !(arguments.len() == 2
-            && is_regular_sort_flag_mutation_name(name)
-            && is_sort_regular_flag_expr(&arguments[1]))
-        {
-            let normalized = name.to_ascii_lowercase();
-            return Err(Diagnostic::new(
-                format!(
-                    "{normalized}() currently supports default SORT_REGULAR semantics only; sort flags are unsupported"
-                ),
-                Some(arguments.get(1).map_or(call_span, Expr::span)),
-            ));
-        }
-    }
     if (name.eq_ignore_ascii_case("natsort") || name.eq_ignore_ascii_case("natcasesort"))
         && arguments.len() > 1
     {

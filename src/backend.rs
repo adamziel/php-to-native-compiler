@@ -3314,20 +3314,46 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic void ptn_dynamic_call_detach_first_reference_argument(const char *name, size_t argc, const PtnValue *args) {\n",
+        "\nstatic PtnValue *ptn_dynamic_call_prepare_first_array_argument(const char *name, size_t argc, const PtnValue *args, const PtnValue **call_args_out) {\n",
     );
+    out.push_str("    *call_args_out = args;\n");
     out.push_str(
         "    if (argc == 0 || args == NULL || !ptn_dynamic_call_mutates_first_array_argument(name)) {\n",
     );
-    out.push_str("        return;\n");
+    out.push_str("        return NULL;\n");
     out.push_str("    }\n");
     out.push_str("    if (args[0].type != PTN_REFERENCE) {\n");
-    out.push_str("        return;\n");
+    out.push_str("        PtnValue first = ptn_value_deref(args[0]);\n");
+    out.push_str("        if (first.type != PTN_ARRAY) {\n");
+    out.push_str("            return NULL;\n");
+    out.push_str("        }\n");
+    out.push_str("        PtnValue *prepared_args = malloc(sizeof(PtnValue) * argc);\n");
+    out.push_str("        if (prepared_args == NULL) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        for (size_t i = 0; i < argc; i++) {\n");
+    out.push_str("            prepared_args[i] = args[i];\n");
+    out.push_str("        }\n");
+    out.push_str("        prepared_args[0] = ptn_value_clone(first);\n");
+    out.push_str("        (void)ptn_value_detach_array(&prepared_args[0]);\n");
+    out.push_str("        *call_args_out = prepared_args;\n");
+    out.push_str("        return prepared_args;\n");
     out.push_str("    }\n");
     out.push_str("    PtnValue *value = &args[0].as.reference->value;\n");
     out.push_str("    if (value->type == PTN_ARRAY) {\n");
     out.push_str("        (void)ptn_value_detach_array(value);\n");
     out.push_str("    }\n");
+    out.push_str("    return NULL;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic void ptn_dynamic_call_free_prepared_first_array_argument(PtnValue *prepared_args) {\n",
+    );
+    out.push_str("    if (prepared_args == NULL) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_value_destroy(&prepared_args[0]);\n");
+    out.push_str("    free(prepared_args);\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -3348,8 +3374,13 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "\nstatic PTN_UNUSED PtnValue ptn_call_dynamic_function_name(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, name, argc, args, line);\n");
-    out.push_str("    ptn_dynamic_call_detach_first_reference_argument(name, argc, args);\n");
-    out.push_str("    return ptn_call_function(runtime, name, argc, args, line);\n");
+    out.push_str("    const PtnValue *call_args = args;\n");
+    out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(name, argc, args, &call_args);\n");
+    out.push_str(
+        "    PtnValue result = ptn_call_function(runtime, name, argc, call_args, line);\n",
+    );
+    out.push_str("    ptn_dynamic_call_free_prepared_first_array_argument(prepared_args);\n");
+    out.push_str("    return result;\n");
     out.push_str("}\n");
 }
 
@@ -13302,12 +13333,12 @@ impl ValueEmitter {
             return Some(result_temp);
         }
 
-        let sort_regular_flag_argument = arguments.len() == 2
-            && matches!(
-                name.to_ascii_lowercase().as_str(),
-                "arsort" | "asort" | "krsort" | "ksort" | "rsort" | "sort"
-            );
-        let helper = if arguments.len() == 1 || sort_regular_flag_argument {
+        let sort_mutator_with_flags = matches!(
+            name.to_ascii_lowercase().as_str(),
+            "arsort" | "asort" | "krsort" | "ksort" | "rsort" | "sort"
+        );
+        let sort_flag_argument = arguments.len() == 2 && sort_mutator_with_flags;
+        let helper = if arguments.len() == 1 || sort_flag_argument {
             if name.eq_ignore_ascii_case("array_pop") {
                 Some("ptn_runtime_array_pop_variable")
             } else if name.eq_ignore_ascii_case("array_shift") {
@@ -13350,6 +13381,11 @@ impl ValueEmitter {
         if let Some(helper) = helper {
             if let Some(variable_name) = variable_name {
                 let array_temp = self.emit_materialized_value(out, &arguments[0]);
+                let flag_temp = if sort_flag_argument {
+                    Some(self.emit_materialized_value(out, &arguments[1]))
+                } else {
+                    None
+                };
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
@@ -13359,7 +13395,20 @@ impl ValueEmitter {
                 out.push_str(&c_string(variable_name));
                 out.push_str("\", ");
                 out.push_str(&array_temp);
+                if sort_mutator_with_flags {
+                    out.push_str(", ");
+                    if let Some(flag_temp) = &flag_temp {
+                        out.push_str(flag_temp);
+                    } else {
+                        out.push_str("ptn_int(PTN_SORT_REGULAR)");
+                    }
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                }
                 out.push_str(");\n");
+                if let Some(flag_temp) = &flag_temp {
+                    emit_value_cleanup(out, "    ", flag_temp);
+                }
                 emit_value_cleanup(out, "    ", &array_temp);
                 return Some(result_temp);
             }
