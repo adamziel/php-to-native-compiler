@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.31 iterable/DNF type row pack | 27 | 27 |
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
 | ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
@@ -20,14 +21,29 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:15Z.
-Measured latest: `ptn-vqg1` temp stream wrappers row pack selected 3 rows, kept 3 runnable, and passed 3/3 in the focused run.
-Latest: `ptn-vqg1` completed the checked-in temp stream wrappers row pack. Previous: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack.
+Refresh: 2026-06-15T18:40Z.
+Measured latest: `ptn-w17z.31` iterable/DNF type row pack selected 27 rows, kept 27 runnable, and passed 27/27 in the focused run.
+Latest: `ptn-w17z.31` completed the checked-in iterable/DNF type row pack. Previous: `ptn-vqg1` completed the checked-in temp stream wrappers row pack.
 
-Current hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
+Current hook: `ptn-w17z.31` iterable/DNF type row pack passed 27/27 at
+`.runtime/ptn-w17z31-final-focused-27-pass/run-20260615T183817Z-manifest.log`.
+Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
 `.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
-Previous hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
-`.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`.
+
+## 2026-06-15 ptn-w17z.31 Iterable/DNF Type Row Pack
+
+Final manifest: `tools/phpt-ptn-w17z31-iterable-dnf-row-pack.txt`.
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-w17z31-before/run-20260615T175811Z-manifest.log`) | 27 selected / 27 runnable | 1 |
+| Final focused run (`.runtime/ptn-w17z31-final-focused-27-pass/run-20260615T183817Z-manifest.log`) | 27 selected / 27 runnable | 27 |
+
+Implemented behavior: parser/IR/runtime support for `object`, `iterable`,
+union, intersection, and DNF user type hints; method signature compatibility
+for iterable, object, and DNF variance; iterable union/intersection redundancy
+diagnostics; declaration-time default diagnostics for iterable defaults; and
+runtime checks/errors for composite parameter and return type boundaries.
 
 ## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
 
