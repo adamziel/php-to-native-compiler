@@ -70,6 +70,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override =
         caller_runtime->by_ref_argument_function_name_override;
+    runtime->by_ref_argument_notice_pending = caller_runtime->by_ref_argument_notice_pending;
+    runtime->by_ref_argument_notice_emitted = caller_runtime->by_ref_argument_notice_emitted;
+    runtime->by_ref_argument_notice_line = caller_runtime->by_ref_argument_notice_line;
     runtime->include_path = NULL;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
@@ -360,6 +363,17 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
     const char *parameter_name,
     size_t line
 ) {
+    if (
+        runtime != NULL &&
+        runtime->by_ref_argument_notice_pending &&
+        !runtime->by_ref_argument_notice_emitted
+    ) {
+        size_t notice_line = runtime->by_ref_argument_notice_line == 0
+            ? line
+            : runtime->by_ref_argument_notice_line;
+        ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, notice_line);
+        runtime->by_ref_argument_notice_emitted = 1;
+    }
     int needed = snprintf(
         NULL,
         0,
@@ -383,7 +397,11 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
         position,
         parameter_name
     );
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+    if (
+        ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING) &&
+        !runtime->diagnostics.emitted_deprecation &&
+        !runtime->diagnostics.emitted_warning
+    ) {
         fputc('\n', stdout);
     }
     ptn_emit_warning(&runtime->diagnostics, message, line);
