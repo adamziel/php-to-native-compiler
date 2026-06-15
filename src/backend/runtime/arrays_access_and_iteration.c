@@ -5041,14 +5041,29 @@ static int ptn_array_key_compare_ascending(PtnArrayKey left, PtnArrayKey right) 
         return 0;
     }
     if (left.type == PTN_ARRAY_KEY_STRING && right.type == PTN_ARRAY_KEY_STRING) {
-        return ptn_compare_string_bytes(
-            (const unsigned char *)left.as.string,
-            left.string_len,
-            (const unsigned char *)right.as.string,
-            right.string_len
-        );
+        PtnString left_string = { (unsigned char *)left.as.string, left.string_len, 0 };
+        PtnString right_string = { (unsigned char *)right.as.string, right.string_len, 0 };
+        int compared = ptn_compare_strings_loose(left_string, right_string);
+        if (compared == PTN_COMPARE_LESS) {
+            return -1;
+        }
+        if (compared == PTN_COMPARE_GREATER) {
+            return 1;
+        }
+        return 0;
     }
-    return left.type == PTN_ARRAY_KEY_INT ? -1 : 1;
+    PtnValue left_value = ptn_array_key_value(left);
+    PtnValue right_value = ptn_array_key_value(right);
+    int compared = ptn_compare_order(left_value, right_value);
+    ptn_value_destroy(&left_value);
+    ptn_value_destroy(&right_value);
+    if (compared == PTN_COMPARE_LESS) {
+        return -1;
+    }
+    if (compared == PTN_COMPARE_GREATER) {
+        return 1;
+    }
+    return compared == PTN_COMPARE_UNORDERED ? 1 : 0;
 }
 
 static PTN_UNUSED void ptn_array_ksort_entries(PtnArray *array) {
@@ -5091,7 +5106,7 @@ static int ptn_array_value_compare_ascending(PtnValue left, PtnValue right) {
     if (compared == PTN_COMPARE_GREATER) {
         return 1;
     }
-    return 0;
+    return compared == PTN_COMPARE_UNORDERED ? 1 : 0;
 }
 
 static PTN_UNUSED int ptn_array_value_compare_descending(PtnValue left, PtnValue right) {

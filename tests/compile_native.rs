@@ -19757,7 +19757,18 @@ foreach ($krsort as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
 $rsort = [1, 3, 2];\n\
 var_dump(rsort($rsort, 0));\n\
 echo implode(\",\", $rsort), \"\\n\";\n\
-var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));",
+var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));\n\
+$mixedKeys = [\"\" => \"empty\", -2 => \"minus\", \"-.9\" => \"fraction\", 0 => \"zero\", 4 => \"four\", 5 => \"five\", \"True\" => \"true\", \"ab\" => \"ab\", \"array1\" => \"array1\", \"array2\" => \"array2\", \"b\" => \"b\"];\n\
+ksort($mixedKeys, SORT_REGULAR);\n\
+foreach ($mixedKeys as $key => $value) { var_dump($key); }\n\
+krsort($mixedKeys, SORT_REGULAR);\n\
+foreach ($mixedKeys as $key => $value) { var_dump($key); }\n\
+$arrayValues = [[\"a\" => \"orange\", \"b\" => \"banana\", \"c\" => \"apple\"], [1, 2, 3, 4, 5, 6], [\"first\", 5 => \"second\", \"third\"]];\n\
+sort($arrayValues, SORT_REGULAR);\n\
+foreach ($arrayValues as $value) { echo count($value), \":\"; foreach ($value as $key => $_) { var_dump($key); break; } }\n\
+$nanValues = [NAN, 0, 1, -1, \"a\", []];\n\
+sort($nanValues, SORT_REGULAR);\n\
+foreach ($nanValues as $value) { if (is_float($value) && is_nan($value)) { echo \"NAN\\n\"; } elseif (is_array($value)) { echo \"array\\n\"; } else { var_dump($value); } }",
     )
     .unwrap();
 
@@ -19786,7 +19797,38 @@ var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));",
             "3,2,1\n",
             "int(0)\n",
             "bool(true)\n",
-            "int(0)\n"
+            "int(0)\n",
+            "string(0) \"\"\n",
+            "int(-2)\n",
+            "string(3) \"-.9\"\n",
+            "int(0)\n",
+            "int(4)\n",
+            "int(5)\n",
+            "string(4) \"True\"\n",
+            "string(2) \"ab\"\n",
+            "string(6) \"array1\"\n",
+            "string(6) \"array2\"\n",
+            "string(1) \"b\"\n",
+            "string(1) \"b\"\n",
+            "string(6) \"array2\"\n",
+            "string(6) \"array1\"\n",
+            "string(2) \"ab\"\n",
+            "string(4) \"True\"\n",
+            "int(5)\n",
+            "int(4)\n",
+            "int(0)\n",
+            "string(3) \"-.9\"\n",
+            "int(-2)\n",
+            "string(0) \"\"\n",
+            "3:int(0)\n",
+            "3:string(1) \"a\"\n",
+            "6:int(0)\n",
+            "int(-1)\n",
+            "int(0)\n",
+            "int(1)\n",
+            "string(1) \"a\"\n",
+            "NAN\n",
+            "array\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
