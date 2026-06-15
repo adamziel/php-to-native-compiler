@@ -827,6 +827,32 @@ fn parser_accepts_include_expression_contexts() {
 }
 
 #[test]
+fn compile_interpolated_include_path_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-interpolated-include-path-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let include = root.join("file.inc");
+    let output = root.join("interpolated-include-bin");
+    fs::write(
+        &input,
+        "<?php $file_path = __DIR__; require \"$file_path/file.inc\"; echo included_value(), \"\\n\";",
+    )
+    .unwrap();
+    fs::write(
+        &include,
+        "<?php function included_value() { return \"included\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "included\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_direct_variable_increment_and_decrement_expression_contexts() {
     let program =
         parser::parse("<?php echo ++$value, $value--; $after = --$value + $value++;").unwrap();

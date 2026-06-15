@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     ArrayDimTarget, ArrayElementValue, AssignmentTarget, BinaryOp, CatchClause, Expr,
     ListAssignmentElementTarget, MagicConstantKind, Program, ReferenceTarget, Statement,
-    SwitchCase, UnsetTarget,
+    StringPart, SwitchCase, UnsetTarget,
 };
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
@@ -62,6 +62,7 @@ struct IncludeCollector {
     sources: Vec<IncludeSource>,
     by_path: HashMap<PathBuf, usize>,
     resolutions: IncludeResolutionMap,
+    path_variables: HashMap<String, Vec<String>>,
 }
 
 impl IncludeCollector {
@@ -70,6 +71,7 @@ impl IncludeCollector {
             sources: Vec::new(),
             by_path: HashMap::new(),
             resolutions: IncludeResolutionMap::new(),
+            path_variables: HashMap::new(),
         }
     }
 
@@ -106,10 +108,38 @@ impl IncludeCollector {
         source_file: &str,
         source_dir: &str,
     ) -> Result<()> {
+        let saved_path_variables = self.path_variables.clone();
         for statement in statements {
             self.collect_statement(statement, source_file, source_dir)?;
+            self.update_path_variable_from_statement(statement, source_file, source_dir);
         }
+        self.path_variables = saved_path_variables;
         Ok(())
+    }
+
+    fn update_path_variable_from_statement(
+        &mut self,
+        statement: &Statement,
+        source_file: &str,
+        source_dir: &str,
+    ) {
+        let Statement::Assign {
+            name, op, value, ..
+        } = statement
+        else {
+            return;
+        };
+        if *op != crate::ast::AssignmentOp::Assign {
+            self.path_variables.remove(name);
+            return;
+        }
+        if let Some(paths) =
+            bounded_include_paths(value, source_file, source_dir, &self.path_variables)
+        {
+            self.path_variables.insert(name.clone(), paths);
+        } else {
+            self.path_variables.remove(name);
+        }
     }
 
     fn collect_statement(
@@ -591,12 +621,15 @@ impl IncludeCollector {
         source_file: &str,
         source_dir: &str,
     ) -> Result<Vec<usize>> {
-        let include_paths = bounded_include_paths(path, source_file, source_dir).ok_or_else(|| {
-            Diagnostic::new(
-                "dynamic include paths are unsupported; use a compile-time string path or bounded conditional of compile-time string paths",
-                Some(path.span()),
-            )
-        })?;
+        let include_paths =
+            bounded_include_paths(path, source_file, source_dir, &self.path_variables).ok_or_else(
+                || {
+                    Diagnostic::new(
+                        "dynamic include paths are unsupported; use a compile-time string path or bounded conditional of compile-time string paths",
+                        Some(path.span()),
+                    )
+                },
+            )?;
         let mut candidates = Vec::new();
         for include_path in include_paths {
             let index = self.resolve_include_candidate(&include_path, span, source_dir)?;
@@ -667,10 +700,19 @@ impl IncludeCollector {
     }
 }
 
-fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Option<Vec<String>> {
+fn bounded_include_paths(
+    expr: &Expr,
+    source_file: &str,
+    source_dir: &str,
+    path_variables: &HashMap<String, Vec<String>>,
+) -> Option<Vec<String>> {
     match expr {
         Expr::String(value, _) => Some(vec![value.clone()]),
+        Expr::InterpolatedString(parts, _) => {
+            bounded_interpolated_string_paths(parts, path_variables)
+        }
         Expr::ShellExec { .. } => None,
+        Expr::Variable(name, _) => path_variables.get(name).cloned(),
         Expr::MagicConstant(MagicConstantKind::File, _) => Some(vec![source_file.to_string()]),
         Expr::MagicConstant(MagicConstantKind::Dir, _) => Some(vec![source_dir.to_string()]),
         Expr::Constant(name, _) if name == "DIRECTORY_SEPARATOR" => {
@@ -684,7 +726,8 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         } if name.eq_ignore_ascii_case("dirname")
             && (arguments.len() == 1 || arguments.len() == 2) =>
         {
-            let paths = bounded_include_paths(&arguments[0], source_file, source_dir)?;
+            let paths =
+                bounded_include_paths(&arguments[0], source_file, source_dir, path_variables)?;
             let levels = if arguments.len() == 2 {
                 match &arguments[1] {
                     Expr::Int(levels, _) if *levels >= 1 => usize::try_from(*levels).ok()?,
@@ -702,7 +745,8 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         Expr::Call {
             name, arguments, ..
         } if name.eq_ignore_ascii_case("realpath") && arguments.len() == 1 => {
-            let paths = bounded_include_paths(&arguments[0], source_file, source_dir)?;
+            let paths =
+                bounded_include_paths(&arguments[0], source_file, source_dir, path_variables)?;
             let mut resolved = Vec::new();
             for path in paths {
                 let canonical = fs::canonicalize(PathBuf::from(path)).ok()?;
@@ -716,8 +760,9 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
             right,
             ..
         } => {
-            let left_paths = bounded_include_paths(left, source_file, source_dir)?;
-            let right_paths = bounded_include_paths(right, source_file, source_dir)?;
+            let left_paths = bounded_include_paths(left, source_file, source_dir, path_variables)?;
+            let right_paths =
+                bounded_include_paths(right, source_file, source_dir, path_variables)?;
             if left_paths.len().saturating_mul(right_paths.len()) > MAX_BOUNDED_INCLUDE_CANDIDATES {
                 return None;
             }
@@ -739,10 +784,10 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         } => {
             let mut paths = Vec::new();
             let true_expr = if_true.as_deref().unwrap_or(condition);
-            for path in bounded_include_paths(true_expr, source_file, source_dir)? {
+            for path in bounded_include_paths(true_expr, source_file, source_dir, path_variables)? {
                 push_unique_string(&mut paths, path);
             }
-            for path in bounded_include_paths(if_false, source_file, source_dir)? {
+            for path in bounded_include_paths(if_false, source_file, source_dir, path_variables)? {
                 push_unique_string(&mut paths, path);
             }
             if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
@@ -753,7 +798,9 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         Expr::Match { arms, .. } => {
             let mut paths = Vec::new();
             for arm in arms {
-                for path in bounded_include_paths(&arm.value, source_file, source_dir)? {
+                for path in
+                    bounded_include_paths(&arm.value, source_file, source_dir, path_variables)?
+                {
                     push_unique_string(&mut paths, path);
                 }
                 if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
@@ -762,9 +809,44 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
             }
             Some(paths)
         }
-        Expr::Grouped { expr, .. } => bounded_include_paths(expr, source_file, source_dir),
+        Expr::Grouped { expr, .. } => {
+            bounded_include_paths(expr, source_file, source_dir, path_variables)
+        }
         _ => None,
     }
+}
+
+fn bounded_interpolated_string_paths(
+    parts: &[StringPart],
+    path_variables: &HashMap<String, Vec<String>>,
+) -> Option<Vec<String>> {
+    let mut paths = vec![String::new()];
+    for part in parts {
+        match part {
+            StringPart::Literal(value) => {
+                for path in &mut paths {
+                    path.push_str(value);
+                }
+            }
+            StringPart::Variable(name) | StringPart::LegacyDollarBraceVariable(name) => {
+                let values = path_variables.get(name)?;
+                if paths.len().saturating_mul(values.len()) > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                    return None;
+                }
+                let mut expanded = Vec::new();
+                for path in &paths {
+                    for value in values {
+                        let mut expanded_path = path.clone();
+                        expanded_path.push_str(value);
+                        push_unique_string(&mut expanded, expanded_path);
+                    }
+                }
+                paths = expanded;
+            }
+            StringPart::PropertyFetch { .. } | StringPart::ArrayAccess { .. } => return None,
+        }
+    }
+    Some(paths)
 }
 
 fn compile_time_dirname(path: &str, levels: usize) -> String {
