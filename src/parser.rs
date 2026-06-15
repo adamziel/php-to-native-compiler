@@ -7139,6 +7139,17 @@ fn validate_method_signature_pair(
             ));
         };
         if !type_hint_is_subtype(return_type, parent_return_type, classes) {
+            if let Some(unavailable_name) =
+                unresolved_compatibility_class(return_type, parent_return_type, classes)
+            {
+                return Err(method_signature_unresolved_compatibility_error(
+                    class,
+                    method,
+                    parent_class,
+                    parent_method,
+                    &unavailable_name,
+                ));
+            }
             return Err(method_signature_compatibility_error(
                 class,
                 method,
@@ -7149,6 +7160,81 @@ fn validate_method_signature_pair(
     }
 
     Ok(())
+}
+
+fn unresolved_compatibility_class(
+    candidate: &TypeHint,
+    target: &TypeHint,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    if !type_hint_mentions_iterable_or_traversable(target) {
+        return None;
+    }
+    first_unavailable_intersection_class(candidate, classes)
+}
+
+fn type_hint_mentions_iterable_or_traversable(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Iterable => true,
+        TypeHint::Class(name) => name.eq_ignore_ascii_case("Traversable"),
+        TypeHint::Nullable(inner) => type_hint_mentions_iterable_or_traversable(inner),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            types.iter().any(type_hint_mentions_iterable_or_traversable)
+        }
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::Object
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never => false,
+    }
+}
+
+fn first_unavailable_intersection_class(
+    type_hint: &TypeHint,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    match type_hint {
+        TypeHint::Intersection(types) => types.iter().find_map(|member| {
+            if let TypeHint::Class(name) = member {
+                if !class_type_name_is_available(name, classes) {
+                    return Some(name.clone());
+                }
+            }
+            None
+        }),
+        TypeHint::Nullable(inner) => first_unavailable_intersection_class(inner, classes),
+        TypeHint::Union(types) => types
+            .iter()
+            .find_map(|member| first_unavailable_intersection_class(member, classes)),
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Class(_) => None,
+    }
+}
+
+fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
+    is_modeled_builtin_interface_name(name)
+        || name.eq_ignore_ascii_case("stdClass")
+        || name.eq_ignore_ascii_case("ArrayIterator")
+        || name.eq_ignore_ascii_case("IteratorIterator")
+        || name.eq_ignore_ascii_case("ArrayObject")
+        || name.eq_ignore_ascii_case("Generator")
+        || is_modeled_builtin_exception_class_name(name)
+        || find_class(classes, name).is_some()
 }
 
 fn parameter_type_is_contravariant(
@@ -7183,7 +7269,38 @@ fn method_signature_compatibility_error(
     )
 }
 
+fn method_signature_unresolved_compatibility_error(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    parent_class: &ClassDecl,
+    parent_method: &MethodDecl,
+    unavailable_name: &str,
+) -> Diagnostic {
+    Diagnostic::new(
+        format!(
+            "Could not check compatibility between {}::{} and {}::{}, because class {} is not available",
+            class.name,
+            method_signature_display_canonical(method),
+            parent_class.name,
+            method_signature_display_canonical(parent_method),
+            unavailable_name
+        ),
+        Some(method.span),
+    )
+}
+
 fn method_signature_display(method: &MethodDecl) -> String {
+    method_signature_display_with(method, type_hint_display)
+}
+
+fn method_signature_display_canonical(method: &MethodDecl) -> String {
+    method_signature_display_with(method, type_hint_display_canonical)
+}
+
+fn method_signature_display_with(
+    method: &MethodDecl,
+    display_type: fn(&TypeHint) -> String,
+) -> String {
     let mut signature = String::new();
     if method.return_by_ref {
         signature.push('&');
@@ -7194,20 +7311,23 @@ fn method_signature_display(method: &MethodDecl) -> String {
         if index > 0 {
             signature.push_str(", ");
         }
-        signature.push_str(&parameter_signature_display(parameter));
+        signature.push_str(&parameter_signature_display_with(parameter, display_type));
     }
     signature.push(')');
     if let Some(return_type) = &method.return_type {
         signature.push_str(": ");
-        signature.push_str(&type_hint_display(return_type));
+        signature.push_str(&display_type(return_type));
     }
     signature
 }
 
-fn parameter_signature_display(parameter: &FunctionParameter) -> String {
+fn parameter_signature_display_with(
+    parameter: &FunctionParameter,
+    display_type: fn(&TypeHint) -> String,
+) -> String {
     let mut display = String::new();
     if let Some(type_hint) = &parameter.type_hint {
-        display.push_str(&type_hint_display(type_hint));
+        display.push_str(&display_type(type_hint));
         display.push(' ');
     }
     if parameter.by_ref {
@@ -7475,6 +7595,38 @@ fn type_hint_display(type_hint: &TypeHint) -> String {
             .collect::<Vec<_>>()
             .join("&"),
         TypeHint::Class(class_name) => class_name.clone(),
+    }
+}
+
+fn type_hint_display_canonical(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Union(types) => {
+            let mut members = types.iter().collect::<Vec<_>>();
+            members.sort_by_key(|member| !matches!(member, TypeHint::Intersection(_)));
+            members
+                .into_iter()
+                .map(|member| match member {
+                    TypeHint::Intersection(_) => {
+                        format!("({})", type_hint_display_canonical(member))
+                    }
+                    _ => type_hint_display_canonical(member),
+                })
+                .collect::<Vec<_>>()
+                .join("|")
+        }
+        TypeHint::Intersection(types) => types
+            .iter()
+            .map(type_hint_display_canonical)
+            .collect::<Vec<_>>()
+            .join("&"),
+        TypeHint::Nullable(inner) => match inner.as_ref() {
+            TypeHint::Iterable => "Traversable|array|null".to_string(),
+            TypeHint::Union(_) | TypeHint::Intersection(_) => {
+                format!("{}|null", type_hint_display_canonical(inner))
+            }
+            _ => format!("?{}", type_hint_display_canonical(inner)),
+        },
+        _ => type_hint_display(type_hint),
     }
 }
 

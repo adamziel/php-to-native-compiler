@@ -1939,6 +1939,23 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     PtnValue object = ptn_object_new_shell(runtime, "Generator");
     object.as.object->native_data = generator;
     object.as.object->native_data_free = ptn_generator_data_free;
+    const char *function_name = runtime == NULL || runtime->current_function_name == NULL
+        ? "{unknown}"
+        : runtime->current_function_name;
+    PtnValue function_value = ptn_string(function_name);
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "function",
+        "Generator",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        1,
+        function_value,
+        0
+    );
+    ptn_value_destroy(&assigned);
     return object;
 }
 

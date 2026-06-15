@@ -21218,6 +21218,22 @@ static PTN_UNUSED PtnValue ptn_array_iterator_new(
     PtnValue object = ptn_object_new_shell(runtime, "ArrayIterator");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_array_iterator_data_free;
+    ptn_array_retain(array);
+    PtnValue storage_value = ptn_array(array);
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "storage",
+        "ArrayIterator",
+        PTN_PROPERTY_PRIVATE,
+        PTN_PROPERTY_PRIVATE,
+        0,
+        1,
+        storage_value,
+        line
+    );
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&storage_value);
     return object;
 }
 
