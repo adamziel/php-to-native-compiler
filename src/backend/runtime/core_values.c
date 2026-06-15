@@ -690,6 +690,10 @@ struct PtnRuntime {
     int warn_by_ref_argument_mismatch;
     int throw_argument_count_errors;
     void *active_unserialize_state;
+    char *strtok_string;
+    size_t strtok_len;
+    size_t strtok_offset;
+    int strtok_has_state;
 };
 
 typedef struct {

@@ -688,4 +688,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->warn_by_ref_argument_mismatch = 0;
     runtime->throw_argument_count_errors = 0;
     runtime->active_unserialize_state = NULL;
+    runtime->strtok_string = NULL;
+    runtime->strtok_len = 0;
+    runtime->strtok_offset = 0;
+    runtime->strtok_has_state = 0;
 }

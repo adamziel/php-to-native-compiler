@@ -85,6 +85,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
     runtime->active_unserialize_state = caller_runtime->active_unserialize_state;
+    runtime->strtok_string = NULL;
+    runtime->strtok_len = 0;
+    runtime->strtok_offset = 0;
+    runtime->strtok_has_state = 0;
 }
 
 static PTN_UNUSED void ptn_runtime_set_call_frame(
@@ -164,6 +168,11 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_buffers_len = 0;
         runtime->output_buffers_capacity = 0;
         runtime->output_buffer_callback_depth = 0;
+        free(runtime->strtok_string);
+        runtime->strtok_string = NULL;
+        runtime->strtok_len = 0;
+        runtime->strtok_offset = 0;
+        runtime->strtok_has_state = 0;
     }
 }
 

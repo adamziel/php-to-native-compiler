@@ -6941,6 +6941,135 @@ bool(true)\nbool(true)\nbool(true)\n"
 }
 
 #[test]
+fn compile_string_span_natural_compare_and_csv_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-string-span-natural-csv");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-span-natural-csv.php");
+    let output = root.join("string-span-natural-csv-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(strspn(\"this is the test string\", \"htes \", 8, 12));\n\
+var_dump(strcspn(\"this is the test string\", \"es\", 15, 3));\n\
+var_dump(strspn(\"hello\" . chr(0) . \"world\", \"helowrd\" . chr(0)));\n\
+var_dump(strcspn(\"hello\" . chr(0) . \"world\", chr(0)));\n\
+var_dump(strnatcmp(\"abc2\", \"abc10\"));\n\
+var_dump(strnatcmp(\" 00\", \" 0\"));\n\
+var_dump(strnatcasecmp(\"Rfc822.txt\", \"rfc822.TXT\"));\n\
+var_dump(strnatcasecmp(\"acc \", \"acc\"));\n\
+var_dump(strnatcasecmp(\"Hello\" . chr(0) . \"world\", \"Helloworld\"));\n\
+var_dump(str_getcsv(\"\\\"f\\\", \\\"o\\\", \\\"\\\"\", escape: \"\"));\n\
+var_dump(str_getcsv(\".foo..bar.\", \".\", \".\", \".\"));\n\
+var_dump(str_getcsv(\"foo||bar\", \"|\", \"\\\"\", \"\"));\n\
+var_dump(str_getcsv(\"\", escape: \"\"));\n\
+try { str_getcsv(\"csv\", \"separator\", \"\\\"\", \"\"); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { str_getcsv(\"csv\", \",\", \"\\\"\", \"escape\"); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists(\"strspn\"), function_exists(\"STR_GETCSV\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(11)\n\
+int(2)\n\
+int(11)\n\
+int(5)\n\
+int(-1)\n\
+int(1)\n\
+int(0)\n\
+int(1)\n\
+int(-1)\n\
+array(3) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(1) \"f\"\n\
+\x20\x20[1]=>\n\
+\x20\x20string(1) \"o\"\n\
+\x20\x20[2]=>\n\
+\x20\x20string(0) \"\"\n\
+}\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(7) \"foo.bar\"\n\
+}\n\
+array(3) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(3) \"foo\"\n\
+\x20\x20[1]=>\n\
+\x20\x20string(0) \"\"\n\
+\x20\x20[2]=>\n\
+\x20\x20string(3) \"bar\"\n\
+}\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20NULL\n\
+}\n\
+str_getcsv(): Argument #2 ($separator) must be a single character\n\
+str_getcsv(): Argument #4 ($escape) must be empty or a single character\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_string_token_compare_and_similarity_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-string-token-compare-similarity");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-token-compare-similarity.php");
+    let output = root.join("string-token-compare-similarity-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$string = \"This testcase test strtok() function.\";\n\
+$token = \" ().\";\n\
+var_dump(strtok($string, $token));\n\
+for ($i = 0; $i < 5; $i++) { var_dump(strtok($token)); }\n\
+function ptn_next_token($token) { return strtok($token); }\n\
+var_dump(strtok(\"a,b,c\", \",\"));\n\
+var_dump(ptn_next_token(\",\"));\n\
+var_dump(substr_compare(\"abcde\", \"df\", -2) < 0);\n\
+var_dump(substr_compare(\"abcde\", \"bcg\", 1, 2));\n\
+var_dump(substr_compare(\"abcde\", \"BC\", 1, 2, true));\n\
+try { substr_compare(\"abcde\", \"abc\", 0, -1); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$percent = 0;\n\
+var_dump(similar_text(\"abcdefgh\", \"efg\", $percent));\n\
+var_dump($percent);\n\
+var_dump(function_exists(\"strtok\"), function_exists(\"SUBSTR_COMPARE\"), function_exists(\"similar_text\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"This\"\n\
+string(8) \"testcase\"\n\
+string(4) \"test\"\n\
+string(6) \"strtok\"\n\
+string(8) \"function\"\n\
+bool(false)\n\
+string(1) \"a\"\n\
+string(1) \"b\"\n\
+bool(true)\n\
+int(0)\n\
+int(0)\n\
+substr_compare(): Argument #4 ($length) must be greater than or equal to 0\n\
+int(3)\n\
+float(54.54545454545455)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_trim_ltrim_rtrim_phpt_shapes_to_native_binary() {
     let root = temp_dir("ptn-native-trim-ltrim-rtrim-phpt-shapes");
     fs::create_dir_all(&root).unwrap();
