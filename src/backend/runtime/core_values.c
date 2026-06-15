@@ -158,6 +158,12 @@ typedef struct {
 #define PTN_PATHINFO_EXTENSION 4
 #define PTN_PATHINFO_FILENAME 8
 #define PTN_PATHINFO_ALL 15
+#define PTN_FILE_USE_INCLUDE_PATH 1
+#define PTN_FILE_IGNORE_NEW_LINES 2
+#define PTN_FILE_SKIP_EMPTY_LINES 4
+#define PTN_SEEK_SET SEEK_SET
+#define PTN_SEEK_CUR SEEK_CUR
+#define PTN_SEEK_END SEEK_END
 #define PTN_LC_CTYPE 0
 #define PTN_LC_NUMERIC 1
 #define PTN_LC_TIME 2
@@ -1055,6 +1061,25 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->directory = directory;
     resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
     resource->stream_mode = ptn_duplicate_string("r");
+    resource->persistent = 0;
+    return resource;
+}
+
+static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
+    PtnResource *resource = malloc(sizeof(PtnResource));
+    if (resource == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_next_resource_id == INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    resource->refcount = 1;
+    resource->id = ptn_next_resource_id++;
+    resource->type_name = type_name;
+    resource->stream = NULL;
+    resource->directory = NULL;
+    resource->stream_uri = NULL;
+    resource->stream_mode = NULL;
     resource->persistent = 0;
     return resource;
 }
