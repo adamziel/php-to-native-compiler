@@ -287,13 +287,19 @@ fn phpt_classifier_models_static_skipif_preconditions() {
 }
 
 #[test]
-fn phpt_classifier_cleanup_harness_is_default_blocker() {
+fn phpt_classifier_models_env_and_cleanup_harness_sections() {
+    let env = "--TEST--\nenv\n--ENV--\nPTN_ENV_FROM_PHPT=present\n--FILE--\n<?php echo getenv('PTN_ENV_FROM_PHPT'), \"\\n\"; ?>\n--EXPECT--\npresent\n";
+    let env_classification = classify(env);
+    assert_eq!(
+        env_classification.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let cleanup = "--TEST--\ncleanup\n--FILE--\n<?php echo 1; ?>\n--CLEAN--\n<?php unlink(__DIR__ . '/case.tmp'); ?>\n--EXPECT--\n1\n";
     let classification = classify(cleanup);
-
-    assert!(
-        classification.starts_with("harness-cleanup\t"),
-        "{classification:?}"
+    assert_eq!(
+        classification.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
     );
 }
 
