@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
-    AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassConstantDecl, ClassDecl,
-    ClosureUseCapture, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
-    IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElement,
+    AssignmentTarget, AttributeMetadata, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
+    ClassDecl, ClosureUseCapture, ConstDeclaration, Expr, FunctionDecl, FunctionParameter,
+    IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElement,
     ListAssignmentElementTarget, ListAssignmentTarget, ListExpr, ListExprElement,
     ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program, PromotedProperty,
     PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility, ReferenceTarget,
@@ -146,10 +146,7 @@ impl TypeHintContext {
     }
 }
 
-#[derive(Default, Clone, Copy)]
-struct ParsedAttributes {
-    has_override: bool,
-}
+type ParsedAttributes = AttributeMetadata;
 
 #[derive(Clone, Copy)]
 struct ClassModifiers {
@@ -234,6 +231,7 @@ impl Parser<'_> {
         compose_class_traits(&mut classes, &traits)?;
         validate_class_names(&classes, &traits)?;
         validate_trait_names(&traits)?;
+        validate_builtin_attribute_targets(&classes, &traits, &functions)?;
         validate_parent_class_names(&classes)?;
         validate_interface_references(&classes)?;
         validate_override_attributes(&classes, &traits)?;
@@ -302,7 +300,7 @@ impl Parser<'_> {
             {
                 break;
             }
-            let _ = self.parse_attribute_groups()?;
+            let attributes = self.parse_attribute_groups()?;
             if token_is_identifier_named(self.peek(), "declare") {
                 let statement = self.parse_declare_statement()?;
                 if !matches!(statement, Statement::Empty { .. }) {
@@ -330,13 +328,13 @@ impl Parser<'_> {
                 self.parse_use_declarations()?;
             } else if self.peek_starts_function_decl() {
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                functions.push(self.parse_function_decl()?);
+                functions.push(self.parse_function_decl(attributes)?);
             } else if token_is_identifier_named(self.peek(), "trait") {
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                traits.push(self.parse_trait_decl()?);
+                traits.push(self.parse_trait_decl(attributes)?);
             } else if self.peek_starts_class_decl() {
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                classes.push(self.parse_class_decl()?);
+                classes.push(self.parse_class_decl(attributes)?);
             } else {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 let statement = self.parse_statement()?;
@@ -943,7 +941,7 @@ impl Parser<'_> {
         resolved
     }
 
-    fn parse_class_decl(&mut self) -> Result<ClassDecl> {
+    fn parse_class_decl(&mut self, attributes: ParsedAttributes) -> Result<ClassDecl> {
         let mut is_abstract = false;
         let mut abstract_span = None;
         let mut is_final = false;
@@ -1083,6 +1081,7 @@ impl Parser<'_> {
             parent_name,
             interfaces,
             trait_uses,
+            attributes,
             is_abstract: is_abstract || is_interface,
             is_final,
             is_interface,
@@ -1095,7 +1094,7 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_trait_decl(&mut self) -> Result<TraitDecl> {
+    fn parse_trait_decl(&mut self, attributes: ParsedAttributes) -> Result<TraitDecl> {
         let trait_token = self.advance().clone();
         if !token_is_identifier_named(&trait_token, "trait") {
             return Err(Diagnostic::new("expected trait", Some(trait_token.span)));
@@ -1132,6 +1131,7 @@ impl Parser<'_> {
         Ok(TraitDecl {
             name: trait_name,
             trait_uses,
+            attributes,
             properties,
             static_properties,
             constants,
@@ -1500,7 +1500,7 @@ impl Parser<'_> {
             visibility,
             set_visibility,
             type_hint.clone(),
-            attributes,
+            attributes.clone(),
             class_name,
         )?];
         while matches!(self.peek().kind, TokenKind::Comma) {
@@ -1509,7 +1509,7 @@ impl Parser<'_> {
                 visibility,
                 set_visibility,
                 type_hint.clone(),
-                attributes,
+                attributes.clone(),
                 class_name,
             )?);
         }
@@ -1606,7 +1606,7 @@ impl Parser<'_> {
             set_visibility,
             is_readonly,
             type_hint.clone(),
-            attributes,
+            attributes.clone(),
             allow_property_hooks,
             class_name,
         )?;
@@ -1626,7 +1626,7 @@ impl Parser<'_> {
                 set_visibility,
                 is_readonly,
                 type_hint.clone(),
-                attributes,
+                attributes.clone(),
                 allow_property_hooks,
                 class_name,
             )?;
@@ -2061,6 +2061,7 @@ impl Parser<'_> {
             name,
             visibility: modifiers.visibility,
             trait_name: None,
+            attributes: attributes.clone(),
             has_override_attribute: attributes.has_override,
             parameters,
             return_type,
@@ -2073,7 +2074,7 @@ impl Parser<'_> {
     }
 
     fn parse_statement(&mut self) -> Result<Statement> {
-        let _ = self.parse_attribute_groups()?;
+        let attributes = self.parse_attribute_groups()?;
         match self.peek().kind {
             TokenKind::Semicolon => self.parse_empty_statement(),
             TokenKind::Echo => self.parse_echo(),
@@ -2093,7 +2094,7 @@ impl Parser<'_> {
             TokenKind::Const => self.parse_const(),
             TokenKind::Global => self.parse_global(),
             TokenKind::Function if matches!(self.peek_next().kind, TokenKind::Identifier(_)) => {
-                self.parse_nested_function_decl_statement()
+                self.parse_nested_function_decl_statement(attributes)
             }
             TokenKind::Identifier(ref name)
                 if name.eq_ignore_ascii_case("static")
@@ -2109,7 +2110,7 @@ impl Parser<'_> {
             }
             TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
-            _ if self.peek_starts_class_decl() => self.parse_local_class_decl_statement(),
+            _ if self.peek_starts_class_decl() => self.parse_local_class_decl_statement(attributes),
             TokenKind::Identifier(ref name) if is_unsupported_class_like_declaration(name) => {
                 self.reject_unsupported_class_like_declaration()
             }
@@ -2158,8 +2159,11 @@ impl Parser<'_> {
         Ok(Statement::Empty { span: token.span })
     }
 
-    fn parse_local_class_decl_statement(&mut self) -> Result<Statement> {
-        let class = self.parse_class_decl()?;
+    fn parse_local_class_decl_statement(
+        &mut self,
+        attributes: ParsedAttributes,
+    ) -> Result<Statement> {
+        let class = self.parse_class_decl(attributes)?;
         let span = class.span;
         let source = self
             .source
@@ -2170,8 +2174,11 @@ impl Parser<'_> {
         Ok(Statement::ClassDeclaration { source, span })
     }
 
-    fn parse_nested_function_decl_statement(&mut self) -> Result<Statement> {
-        let mut function = self.parse_function_decl()?;
+    fn parse_nested_function_decl_statement(
+        &mut self,
+        attributes: ParsedAttributes,
+    ) -> Result<Statement> {
+        let mut function = self.parse_function_decl(attributes)?;
         function.is_conditionally_declared = true;
         let name = function.name.clone();
         let span = function.span;
@@ -2179,7 +2186,7 @@ impl Parser<'_> {
         Ok(Statement::FunctionDeclaration { name, span })
     }
 
-    fn parse_function_decl(&mut self) -> Result<FunctionDecl> {
+    fn parse_function_decl(&mut self, attributes: ParsedAttributes) -> Result<FunctionDecl> {
         let span = self.expect_function()?;
         let mut return_by_ref_span = None;
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
@@ -2206,6 +2213,7 @@ impl Parser<'_> {
         let body = body?;
         Ok(FunctionDecl {
             name,
+            attributes,
             parameters,
             return_type,
             return_by_ref,
@@ -2215,7 +2223,12 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_anonymous_function_expr(&mut self, span: SourceSpan, is_static: bool) -> Result<Expr> {
+    fn parse_anonymous_function_expr(
+        &mut self,
+        span: SourceSpan,
+        is_static: bool,
+        attributes: ParsedAttributes,
+    ) -> Result<Expr> {
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             true
@@ -2238,6 +2251,7 @@ impl Parser<'_> {
         self.return_by_ref_stack.pop();
         let body = body?;
         Ok(Expr::AnonymousFunction(AnonymousFunction {
+            attributes,
             parameters,
             captures,
             return_type,
@@ -2905,6 +2919,11 @@ impl Parser<'_> {
         if let Some(void_span) = self.try_parse_void_cast_statement_prefix() {
             let expression = self.parse_expr()?;
             let span = combine_spans(void_span, expression.span());
+            let expression = Expr::Cast {
+                kind: CastKind::Void,
+                expr: Box::new(expression),
+                span,
+            };
             if matches!(self.peek().kind, TokenKind::Question) {
                 return self.reject_unsupported_ternary_expression();
             }
@@ -3685,7 +3704,7 @@ impl Parser<'_> {
         let mut attributes = ParsedAttributes::default();
         while matches!(self.peek().kind, TokenKind::AttributeStart) {
             let group = self.parse_attribute_group()?;
-            attributes.has_override |= group.has_override;
+            merge_parsed_attributes(&mut attributes, group);
         }
         Ok(attributes)
     }
@@ -3695,6 +3714,8 @@ impl Parser<'_> {
         let mut bracket_depth = 1usize;
         let mut paren_depth = 0usize;
         let mut name_segments = Vec::new();
+        let mut arguments = ParsedAttributeArguments::default();
+        let mut pending_argument_name = None;
         let mut collecting_name = true;
         let mut attributes = ParsedAttributes::default();
         while bracket_depth > 0 {
@@ -3708,22 +3729,39 @@ impl Parser<'_> {
                 TokenKind::Backslash
                     if bracket_depth == 1 && paren_depth == 0 && collecting_name => {}
                 TokenKind::LeftParen if bracket_depth == 1 => {
-                    attributes.has_override |= attribute_name_is_override(&name_segments);
                     collecting_name = false;
                     paren_depth += 1;
                 }
+                TokenKind::Identifier(name)
+                    if bracket_depth == 1
+                        && paren_depth == 1
+                        && matches!(self.peek().kind, TokenKind::Colon) =>
+                {
+                    pending_argument_name = Some(name);
+                }
+                TokenKind::String(value) if bracket_depth == 1 && paren_depth == 1 => {
+                    arguments.record(pending_argument_name.take(), value);
+                }
                 TokenKind::RightParen if bracket_depth == 1 && paren_depth > 0 => {
                     paren_depth -= 1;
+                    if paren_depth == 0 {
+                        pending_argument_name = None;
+                    }
+                }
+                TokenKind::Comma if bracket_depth == 1 && paren_depth == 1 => {
+                    pending_argument_name = None;
                 }
                 TokenKind::Comma if bracket_depth == 1 && paren_depth == 0 => {
-                    attributes.has_override |= attribute_name_is_override(&name_segments);
+                    apply_parsed_attribute(&mut attributes, &name_segments, &arguments);
                     name_segments.clear();
+                    arguments = ParsedAttributeArguments::default();
+                    pending_argument_name = None;
                     collecting_name = true;
                 }
                 TokenKind::LeftBracket => bracket_depth += 1,
                 TokenKind::RightBracket => {
                     if bracket_depth == 1 && paren_depth == 0 {
-                        attributes.has_override |= attribute_name_is_override(&name_segments);
+                        apply_parsed_attribute(&mut attributes, &name_segments, &arguments);
                     }
                     bracket_depth -= 1;
                 }
@@ -4342,7 +4380,7 @@ impl Parser<'_> {
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr> {
-        let _ = self.parse_attribute_groups()?;
+        let attributes = self.parse_attribute_groups()?;
         let token = self.advance().clone();
         match token.kind {
             TokenKind::String(value) => Ok(Expr::String(value, token.span)),
@@ -4361,17 +4399,22 @@ impl Parser<'_> {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Dollar => self.parse_dynamic_variable_expr(token.span),
-            TokenKind::Function => self.parse_anonymous_function_expr(token.span, false),
+            TokenKind::Function => {
+                self.parse_anonymous_function_expr(token.span, false, attributes)
+            }
             TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Yield => self.parse_yield_expr(token.span),
             TokenKind::Identifier(name) => {
                 if name.eq_ignore_ascii_case("fn") {
-                    return self.parse_arrow_function_expr(token.span, false);
+                    return self.parse_arrow_function_expr(token.span, false, attributes);
                 }
                 if name.eq_ignore_ascii_case("static") && self.peek_is_identifier("fn") {
                     let fn_span = self.advance().span;
-                    return self
-                        .parse_arrow_function_expr(combine_spans(token.span, fn_span), true);
+                    return self.parse_arrow_function_expr(
+                        combine_spans(token.span, fn_span),
+                        true,
+                        attributes,
+                    );
                 }
                 if name.eq_ignore_ascii_case("static")
                     && matches!(self.peek().kind, TokenKind::Function)
@@ -4380,6 +4423,7 @@ impl Parser<'_> {
                     return self.parse_anonymous_function_expr(
                         combine_spans(token.span, function_span),
                         true,
+                        attributes,
                     );
                 }
                 if name.eq_ignore_ascii_case("match") {
@@ -4635,6 +4679,7 @@ impl Parser<'_> {
         &mut self,
         start_span: SourceSpan,
         is_static: bool,
+        attributes: ParsedAttributes,
     ) -> Result<Expr> {
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
@@ -4665,6 +4710,7 @@ impl Parser<'_> {
         let expression_span = expression.span();
         let span = combine_spans(start_span, expression_span);
         Ok(Expr::AnonymousFunction(AnonymousFunction {
+            attributes,
             parameters,
             captures,
             return_type,
@@ -4940,6 +4986,7 @@ impl Parser<'_> {
             parent_name,
             interfaces,
             trait_uses,
+            attributes: AttributeMetadata::default(),
             is_abstract: false,
             is_final: false,
             is_interface: false,
@@ -6905,8 +6952,68 @@ fn escape_token_text(value: &str) -> String {
         .collect()
 }
 
-fn attribute_name_is_override(name_segments: &[String]) -> bool {
-    name_segments.len() == 1 && name_segments[0].eq_ignore_ascii_case("Override")
+#[derive(Default)]
+struct ParsedAttributeArguments {
+    positional: Vec<String>,
+    message: Option<String>,
+    since: Option<String>,
+}
+
+impl ParsedAttributeArguments {
+    fn record(&mut self, name: Option<String>, value: String) {
+        match name.as_deref() {
+            Some(name) if name.eq_ignore_ascii_case("message") => {
+                self.message = Some(value);
+            }
+            Some(name) if name.eq_ignore_ascii_case("since") => {
+                self.since = Some(value);
+            }
+            Some(_) => {}
+            None => self.positional.push(value),
+        }
+    }
+
+    fn message(&self) -> Option<String> {
+        self.message
+            .clone()
+            .or_else(|| self.positional.first().cloned())
+    }
+}
+
+fn apply_parsed_attribute(
+    attributes: &mut AttributeMetadata,
+    name_segments: &[String],
+    arguments: &ParsedAttributeArguments,
+) {
+    if name_segments.len() != 1 {
+        return;
+    }
+    let name = &name_segments[0];
+    if name.eq_ignore_ascii_case("Override") {
+        attributes.has_override = true;
+    } else if name.eq_ignore_ascii_case("Attribute") {
+        attributes.has_attribute = true;
+    } else if name.eq_ignore_ascii_case("AllowDynamicProperties") {
+        attributes.has_allow_dynamic_properties = true;
+    } else if name.eq_ignore_ascii_case("Deprecated") {
+        attributes.deprecated_message = Some(arguments.message().unwrap_or_default());
+        attributes.deprecated_since = arguments.since.clone();
+    } else if name.eq_ignore_ascii_case("NoDiscard") {
+        attributes.no_discard_message = Some(arguments.message().unwrap_or_default());
+    }
+}
+
+fn merge_parsed_attributes(attributes: &mut AttributeMetadata, group: AttributeMetadata) {
+    attributes.has_override |= group.has_override;
+    attributes.has_attribute |= group.has_attribute;
+    attributes.has_allow_dynamic_properties |= group.has_allow_dynamic_properties;
+    if group.deprecated_message.is_some() {
+        attributes.deprecated_message = group.deprecated_message;
+        attributes.deprecated_since = group.deprecated_since;
+    }
+    if group.no_discard_message.is_some() {
+        attributes.no_discard_message = group.no_discard_message;
+    }
 }
 
 fn is_unsupported_class_like_declaration(name: &str) -> bool {
@@ -8483,6 +8590,133 @@ fn find_trait<'a>(traits: &'a [TraitDecl], name: &str) -> Option<&'a TraitDecl> 
     traits
         .iter()
         .find(|trait_decl| trait_decl.name.eq_ignore_ascii_case(name))
+}
+
+fn validate_builtin_attribute_targets(
+    classes: &[ClassDecl],
+    traits: &[TraitDecl],
+    functions: &[FunctionDecl],
+) -> Result<()> {
+    for function in functions {
+        if function.attributes.has_attribute {
+            return Err(Diagnostic::new(
+                "Attribute \"Attribute\" cannot target function (allowed targets: class)",
+                Some(function.span),
+            ));
+        }
+        validate_no_discard_function_target(
+            function.attributes.no_discard_message.is_some(),
+            function.return_type.as_ref(),
+            &format!("Function {}", function.name),
+            function.span,
+        )?;
+    }
+    for class in classes {
+        if class.attributes.has_attribute {
+            if class.is_interface {
+                return Err(Diagnostic::new(
+                    format!("Cannot apply #[\\Attribute] to interface {}", class.name),
+                    Some(class.span),
+                ));
+            }
+            if class.is_abstract {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot apply #[\\Attribute] to abstract class {}",
+                        class.name
+                    ),
+                    Some(class.span),
+                ));
+            }
+        }
+        if class.attributes.has_allow_dynamic_properties && class.is_interface {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot apply #[\\AllowDynamicProperties] to interface {}",
+                    class.name
+                ),
+                Some(class.span),
+            ));
+        }
+        if class.attributes.deprecated_message.is_some() && class.is_interface {
+            return Err(Diagnostic::new(
+                format!("Cannot apply #[\\Deprecated] to interface {}", class.name),
+                Some(class.span),
+            ));
+        }
+        if class.attributes.deprecated_message.is_some() && !class.is_interface {
+            return Err(Diagnostic::new(
+                format!("Cannot apply #[\\Deprecated] to class {}", class.name),
+                Some(class.span),
+            ));
+        }
+        for method in &class.methods {
+            if method.attributes.has_attribute {
+                return Err(Diagnostic::new(
+                    "Attribute \"Attribute\" cannot target method (allowed targets: class)",
+                    Some(method.span),
+                ));
+            }
+            if method.attributes.no_discard_message.is_some()
+                && (method.name.eq_ignore_ascii_case("__construct")
+                    || method.name.eq_ignore_ascii_case("__clone"))
+            {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Method {}::{} cannot be #[\\NoDiscard]",
+                        class.name, method.name
+                    ),
+                    Some(method.span),
+                ));
+            }
+            validate_no_discard_function_target(
+                method.attributes.no_discard_message.is_some(),
+                method.return_type.as_ref(),
+                &format!("Method {}::{}", class.name, method.name),
+                method.span,
+            )?;
+        }
+    }
+    for trait_decl in traits {
+        if trait_decl.attributes.has_attribute {
+            return Err(Diagnostic::new(
+                format!("Cannot apply #[\\Attribute] to trait {}", trait_decl.name),
+                Some(trait_decl.span),
+            ));
+        }
+        if trait_decl.attributes.has_allow_dynamic_properties {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot apply #[\\AllowDynamicProperties] to trait {}",
+                    trait_decl.name
+                ),
+                Some(trait_decl.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_no_discard_function_target(
+    has_no_discard: bool,
+    return_type: Option<&TypeHint>,
+    _display_name: &str,
+    span: SourceSpan,
+) -> Result<()> {
+    if !has_no_discard {
+        return Ok(());
+    }
+    match return_type {
+        Some(TypeHint::Void) => Err(Diagnostic::new(
+            "A void function does not return a value, but #[\\NoDiscard] requires a return value",
+            Some(span),
+        )),
+        Some(TypeHint::Never) => Err(Diagnostic::new(
+            "A never returning function does not return a value, but #[\\NoDiscard] requires a return value",
+            Some(span),
+        )),
+        _ => Ok(()),
+    }
 }
 
 fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {

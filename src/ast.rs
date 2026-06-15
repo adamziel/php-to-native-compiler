@@ -15,6 +15,7 @@ pub struct ClassDecl {
     pub parent_name: Option<String>,
     pub interfaces: Vec<String>,
     pub trait_uses: Vec<TraitUseDecl>,
+    pub attributes: AttributeMetadata,
     pub is_abstract: bool,
     pub is_final: bool,
     pub is_interface: bool,
@@ -30,6 +31,7 @@ pub struct ClassDecl {
 pub struct TraitDecl {
     pub name: String,
     pub trait_uses: Vec<TraitUseDecl>,
+    pub attributes: AttributeMetadata,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
@@ -113,6 +115,7 @@ pub struct MethodDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub trait_name: Option<String>,
+    pub attributes: AttributeMetadata,
     pub has_override_attribute: bool,
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
@@ -126,6 +129,7 @@ pub struct MethodDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
     pub name: String,
+    pub attributes: AttributeMetadata,
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
@@ -156,6 +160,7 @@ pub struct PromotedProperty {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnonymousFunction {
+    pub attributes: AttributeMetadata,
     pub parameters: Vec<FunctionParameter>,
     pub captures: Vec<ClosureUseCapture>,
     pub return_type: Option<TypeHint>,
@@ -164,6 +169,16 @@ pub struct AnonymousFunction {
     pub is_arrow: bool,
     pub body: Vec<Statement>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AttributeMetadata {
+    pub has_override: bool,
+    pub has_attribute: bool,
+    pub has_allow_dynamic_properties: bool,
+    pub deprecated_message: Option<String>,
+    pub deprecated_since: Option<String>,
+    pub no_discard_message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -871,6 +886,7 @@ pub enum CastKind {
     Boolean,
     Array,
     Object,
+    Void,
 }
 
 impl Expr {
