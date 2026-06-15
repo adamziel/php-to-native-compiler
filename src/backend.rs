@@ -2326,6 +2326,15 @@ fn emit_user_function_dispatch(
     out.push_str("    if (found) {\n");
     out.push_str("        return result;\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_find_internal_function(lookup_name) != NULL) {\n");
+    out.push_str("        return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *namespace_separator = strrchr(lookup_name, '\\\\');\n");
+    out.push_str("    if (namespace_separator != NULL && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
+    out.push_str(
+        "        return ptn_call_internal(runtime, namespace_separator + 1, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
     out.push_str("}\n");
 }
@@ -2540,14 +2549,18 @@ fn emit_class_metadata_helpers(
         if class.is_interface {
             continue;
         }
-        out.push_str("    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+        out.push_str(
+            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+        );
         out.push_str(&c_string(&class.name));
         out.push_str("\"));\n");
     }
     out.push_str("    return result;\n");
     out.push_str("}\n");
 
-    out.push_str("\nstatic PTN_UNUSED PtnValue ptn_declared_interface_names(PtnRuntime *runtime) {\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_interface_names(PtnRuntime *runtime) {\n",
+    );
     out.push_str("    (void)runtime;\n");
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("    int64_t index = 0;\n");
@@ -2567,7 +2580,9 @@ fn emit_class_metadata_helpers(
         "Countable",
         "Serializable",
     ] {
-        out.push_str("    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+        out.push_str(
+            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+        );
         out.push_str(builtin);
         out.push_str("\"));\n");
     }
@@ -2575,7 +2590,9 @@ fn emit_class_metadata_helpers(
         if !class.is_interface {
             continue;
         }
-        out.push_str("    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+        out.push_str(
+            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+        );
         out.push_str(&c_string(&class.name));
         out.push_str("\"));\n");
     }
@@ -2587,7 +2604,9 @@ fn emit_class_metadata_helpers(
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("    int64_t index = 0;\n");
     for trait_decl in traits {
-        out.push_str("    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+        out.push_str(
+            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+        );
         out.push_str(&c_string(&trait_decl.name));
         out.push_str("\"));\n");
     }
@@ -2819,9 +2838,7 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (access_scope == NULL || declaring_class == NULL) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
-    out.push_str(
-        "    return ptn_declared_class_is_same_or_descendant(access_scope, declaring_class) ||\n",
-    );
+    out.push_str("    return ptn_declared_class_scope_allows(access_scope, declaring_class) ||\n");
     out.push_str(
         "        ptn_declared_class_is_same_or_descendant(declaring_class, access_scope);\n",
     );
@@ -2855,7 +2872,7 @@ fn emit_class_metadata_helpers(
         if !has_protected_static {
             continue;
         }
-        out.push_str("    if (ptn_declared_class_is_same_or_descendant(access_scope, \"");
+        out.push_str("    if (ptn_declared_class_scope_allows(access_scope, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\") && ptn_declared_class_is_same_or_descendant(target_class, \"");
         out.push_str(&c_string(&class.name));
@@ -2966,7 +2983,9 @@ fn emit_class_metadata_helpers(
             out.push_str("\", ");
             out.push_str(c_property_visibility(property.visibility));
             out.push_str(")) {\n");
-            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str(
+                "            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"",
+            );
             out.push_str(&c_string(property.name));
             out.push_str("\"), ");
             out.push_str(&c_property_default_value(property.value));
@@ -4082,25 +4101,24 @@ fn class_property_vars_chain<'a>(
                 }
             }));
         } else {
-            properties.extend(class.properties.iter().map(|property| ClassPropertyVarsEntry {
-                declaring_class: class.name.as_str(),
-                name: property.name.as_str(),
-                visibility: property.visibility,
-                value: property.value.as_ref(),
-            }));
+            properties.extend(
+                class
+                    .properties
+                    .iter()
+                    .map(|property| ClassPropertyVarsEntry {
+                        declaring_class: class.name.as_str(),
+                        name: property.name.as_str(),
+                        visibility: property.visibility,
+                        value: property.value.as_ref(),
+                    }),
+            );
         }
 
         let Some(parent_name) = &class.parent_name else {
             return;
         };
         if let Some(parent) = class_by_name(classes, parent_name) {
-            collect(
-                parent,
-                classes,
-                static_properties,
-                seen_classes,
-                properties,
-            );
+            collect(parent, classes, static_properties, seen_classes, properties);
         }
     }
 
@@ -18200,8 +18218,40 @@ fn c_property_default_value(value: Option<&ValueExpr>) -> String {
         Some(ValueExpr::Float(value)) => format!("ptn_float({:?})", value),
         Some(ValueExpr::Bool(value)) => format!("ptn_bool({})", if *value { "1" } else { "0" }),
         Some(ValueExpr::Null) | None => "ptn_null()".to_string(),
+        Some(ValueExpr::Array(elements)) => {
+            c_property_default_array_value(elements).unwrap_or_else(|| "ptn_null()".to_string())
+        }
         _ => "ptn_null()".to_string(),
     }
+}
+
+fn c_property_default_array_value(elements: &[IrArrayElement]) -> Option<String> {
+    if elements.is_empty() {
+        return Some("ptn_array_from_literal_entries(0, NULL)".to_string());
+    }
+    let mut entries = Vec::with_capacity(elements.len());
+    for element in elements {
+        let (has_key, key) = match &element.key {
+            Some(ValueExpr::String(value)) => ("1", format!("ptn_string(\"{}\")", c_string(value))),
+            Some(ValueExpr::Int(value)) => ("1", format!("ptn_int({})", c_i64_literal(*value))),
+            Some(_) => return None,
+            None => ("0", "ptn_null()".to_string()),
+        };
+        let IrArrayElementValue::Value(value) = &element.value else {
+            return None;
+        };
+        entries.push(format!(
+            "{{ {}, {}, {} }}",
+            has_key,
+            key,
+            c_property_default_value(Some(value))
+        ));
+    }
+    Some(format!(
+        "ptn_array_from_literal_entries({}, (PtnArrayLiteralEntry[]){{ {} }})",
+        entries.len(),
+        entries.join(", ")
+    ))
 }
 
 fn c_property_visibility(visibility: PropertyVisibility) -> &'static str {

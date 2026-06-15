@@ -24525,7 +24525,9 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new(
         int written = snprintf(
             message,
             sizeof(message),
-            "ReflectionMethod::__construct() expects exactly 2 arguments, %zu given",
+            argc < 1
+                ? "ReflectionMethod::__construct() expects at least 1 argument, %zu given"
+                : "ReflectionMethod::__construct() expects at most 2 arguments, %zu given",
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
