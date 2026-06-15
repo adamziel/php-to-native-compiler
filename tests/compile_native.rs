@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
     IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElementTarget, MagicConstantKind,
-    PropertyVisibility, ReferenceTarget, Statement, StringInterpolationIndex, StringPart, TypeHint,
-    UnaryOp, UnsetTarget,
+    PropertyTypeKind, PropertyVisibility, ReferenceTarget, Statement, StringInterpolationIndex,
+    StringPart, TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -4070,6 +4070,10 @@ class Book {
     .unwrap();
 
     assert!(program.classes[0].properties[0].is_readonly);
+    let title_type = program.classes[0].properties[0].type_hint.as_ref().unwrap();
+    assert_eq!(title_type.text, "string");
+    assert!(matches!(&title_type.kind, PropertyTypeKind::String));
+    assert!(!title_type.allows_null);
     assert_eq!(
         program.classes[0].properties[0].visibility,
         PropertyVisibility::Public
@@ -4079,6 +4083,10 @@ class Book {
         PropertyVisibility::Protected
     );
     assert!(program.classes[0].properties[1].is_readonly);
+    let year_type = program.classes[0].properties[1].type_hint.as_ref().unwrap();
+    assert_eq!(year_type.text, "int");
+    assert!(matches!(&year_type.kind, PropertyTypeKind::Int));
+    assert!(!year_type.allows_null);
     assert_eq!(
         program.classes[0].properties[1].visibility,
         PropertyVisibility::Private
@@ -4088,6 +4096,10 @@ class Book {
         PropertyVisibility::Private
     );
     assert!(program.classes[0].properties[2].is_readonly);
+    let id_type = program.classes[0].properties[2].type_hint.as_ref().unwrap();
+    assert_eq!(id_type.text, "int");
+    assert!(matches!(&id_type.kind, PropertyTypeKind::Int));
+    assert!(!id_type.allows_null);
     assert_eq!(
         program.classes[0].properties[2].set_visibility,
         PropertyVisibility::Private
@@ -18691,6 +18703,65 @@ var_dump(EXTR_REFS, EXTR_OVERWRITE, function_exists(\"extract\"), function_exist
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_extract"));
     assert!(c_source.contains("ptn_internal_extract_globals"));
+}
+
+#[test]
+fn compile_extract_into_typed_property_references_to_native_binary() {
+    let root = temp_dir("ptn-native-extract-typed-property-refs");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("extract-typed-property-refs.php");
+    let output = root.join("extract-typed-property-refs-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    public int $i = 0;
+    public string $s = \"\";
+}
+
+$test = new Test;
+$i =& $test->i;
+$s =& $test->s;
+
+try {
+    extract(['i' => 'foo', 's' => 42]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+var_dump($test->i, $test->s);
+$i = '12';
+$s = 42;
+var_dump($test->i, $test->s);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot assign string to reference held by property Test::$i of type int\n",
+            "int(0)\n",
+            "string(0) \"\"\n",
+            "int(12)\n",
+            "string(2) \"42\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_PROPERTY_TYPE_INT"));
+    assert!(c_source.contains("PTN_PROPERTY_TYPE_STRING"));
+    assert!(c_source.contains("reference held by property"));
 }
 
 #[test]

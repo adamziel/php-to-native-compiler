@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.36 extract typed references | 1 | 1 |
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
 | ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
@@ -20,14 +21,20 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:15Z.
-Measured latest: `ptn-vqg1` temp stream wrappers row pack selected 3 rows, kept 3 runnable, and passed 3/3 in the focused run.
-Latest: `ptn-vqg1` completed the checked-in temp stream wrappers row pack. Previous: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack.
+Refresh: 2026-06-15T17:26Z.
+Measured latest: `ptn-w17z.36` extract typed references selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
+Latest: `ptn-w17z.36` enforces typed-property references when `extract()` writes into existing aliases. Previous: `ptn-vqg1` completed the checked-in temp stream wrappers row pack.
 
-Current hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
+Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
+`.runtime/ptn-w17z36-extract-typed-ref/run-20260615T172529Z-manifest.log`.
+Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
 `.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
-Previous hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
-`.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`.
+
+## 2026-06-15 ptn-w17z.36 Extract Typed References
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Focused acceptance row (`.runtime/ptn-w17z36-extract-typed-ref/run-20260615T172529Z-manifest.log`) | 1 selected / 1 runnable | 1 |
 
 ## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
 

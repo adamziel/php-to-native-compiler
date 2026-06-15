@@ -6991,6 +6991,10 @@ static PtnValue ptn_extract_from_array(
             } else {
                 ptn_extract_store_value(runtime, target, array->entries[i].value, 0);
             }
+            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+                free(target);
+                break;
+            }
         }
         free(target);
     }
@@ -7045,6 +7049,12 @@ static PTN_UNUSED PtnValue ptn_internal_extract_globals(PtnRuntime *runtime, siz
                 ptn_value_destroy(&global_reference);
             } else {
                 ptn_extract_store_value(runtime, target, global_value, 0);
+            }
+            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+                free(target);
+                ptn_value_destroy(&global_value);
+                free(global_name);
+                break;
             }
         }
         free(target);

@@ -1832,6 +1832,28 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         );
         return;
     }
+    if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {
+        PtnValue coerced = ptn_null();
+        if (!ptn_property_type_coerce_assignment(
+            runtime,
+            metadata->type_kind,
+            metadata->type_class_name,
+            metadata->type_text,
+            metadata->type_allows_null,
+            metadata->declaring_class,
+            metadata->display_name,
+            reference,
+            0,
+            &coerced
+        )) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            return;
+        }
+        ptn_value_destroy(&reference.as.reference->value);
+        reference.as.reference->value = coerced;
+        ptn_reference_adopt_property_type(reference.as.reference, metadata);
+    }
     ptn_array_set_entry(receiver.as.object->properties, key, ptn_value_clone(reference));
     PtnObjectPropertyMetadata *mutable_metadata =
         ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
@@ -1932,6 +1954,9 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     }
     if (entry == NULL) {
         PtnValue reference = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        if (metadata != NULL) {
+            ptn_reference_adopt_property_type(reference.as.reference, metadata);
+        }
         ptn_array_set_entry(receiver.as.object->properties, key, ptn_value_clone(reference));
         PtnObjectPropertyMetadata *mutable_metadata =
             ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
@@ -1947,6 +1972,9 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+    if (metadata != NULL) {
+        ptn_reference_adopt_property_type(entry->value.as.reference, metadata);
     }
     return ptn_value_clone(entry->value);
 }

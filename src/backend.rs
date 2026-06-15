@@ -11509,11 +11509,13 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
             out.push_str(", ");
-            out.push_str(if property.type_hint.is_some() && property.value.is_none() {
-                "0"
-            } else {
-                "1"
-            });
+            out.push_str(
+                if property.type_hint.is_some() && property.value.is_none() {
+                    "0"
+                } else {
+                    "1"
+                },
+            );
             out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(", ");

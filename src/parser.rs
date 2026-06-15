@@ -8,8 +8,8 @@ use crate::ast::{
     ListAssignmentTarget, ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind,
     MatchArm, MethodDecl, Program, PromotedProperty, PropertyDecl, PropertyTypeHint,
     PropertyTypeKind, PropertyVisibility, ReferenceTarget, Statement, StaticLocalDeclaration,
-    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TraitDecl,
-    TraitUseDecl, TypeHint, UnaryOp, UnsetTarget,
+    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TraitDecl, TraitUseDecl,
+    TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -1867,12 +1867,10 @@ impl Parser<'_> {
                     allows_null,
                 })
             }
-            _ => {
-                Err(Diagnostic::new(
-                    "expected property type",
-                    Some(self.peek().span),
-                ))
-            }
+            _ => Err(Diagnostic::new(
+                "expected property type",
+                Some(self.peek().span),
+            )),
         }
     }
 
