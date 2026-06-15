@@ -6261,6 +6261,7 @@ fn bind_named_call_arguments(
 enum InternalParameterDefault {
     Null,
     Int(i64),
+    String(&'static str),
 }
 
 #[derive(Clone, Copy)]
@@ -6284,9 +6285,61 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static FGETCSV_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "stream",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "separator",
+            default: Some(InternalParameterDefault::String(",")),
+        },
+        InternalParameterSpec {
+            name: "enclosure",
+            default: Some(InternalParameterDefault::String("\"")),
+        },
+        InternalParameterSpec {
+            name: "escape",
+            default: Some(InternalParameterDefault::String("\\")),
+        },
+    ];
+    static FPUTCSV_PARAMETERS: [InternalParameterSpec; 6] = [
+        InternalParameterSpec {
+            name: "stream",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "fields",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "separator",
+            default: Some(InternalParameterDefault::String(",")),
+        },
+        InternalParameterSpec {
+            name: "enclosure",
+            default: Some(InternalParameterDefault::String("\"")),
+        },
+        InternalParameterSpec {
+            name: "escape",
+            default: Some(InternalParameterDefault::String("\\")),
+        },
+        InternalParameterSpec {
+            name: "eol",
+            default: Some(InternalParameterDefault::String("\n")),
+        },
+    ];
 
     if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("fgetcsv") {
+        Some(&FGETCSV_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("fputcsv") {
+        Some(&FPUTCSV_PARAMETERS)
     } else {
         None
     }
@@ -6296,6 +6349,7 @@ fn internal_parameter_default_expr(default: InternalParameterDefault) -> ValueEx
     match default {
         InternalParameterDefault::Null => ValueExpr::Null,
         InternalParameterDefault::Int(value) => ValueExpr::Int(value),
+        InternalParameterDefault::String(value) => ValueExpr::String(value.to_string()),
     }
 }
 

@@ -1090,6 +1090,30 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PATHINFO_ALL);
         return 1;
     }
+    if (strcmp(name, "FILE_USE_INCLUDE_PATH") == 0) {
+        *out = ptn_int(PTN_FILE_USE_INCLUDE_PATH);
+        return 1;
+    }
+    if (strcmp(name, "FILE_IGNORE_NEW_LINES") == 0) {
+        *out = ptn_int(PTN_FILE_IGNORE_NEW_LINES);
+        return 1;
+    }
+    if (strcmp(name, "FILE_SKIP_EMPTY_LINES") == 0) {
+        *out = ptn_int(PTN_FILE_SKIP_EMPTY_LINES);
+        return 1;
+    }
+    if (strcmp(name, "SEEK_SET") == 0) {
+        *out = ptn_int(PTN_SEEK_SET);
+        return 1;
+    }
+    if (strcmp(name, "SEEK_CUR") == 0) {
+        *out = ptn_int(PTN_SEEK_CUR);
+        return 1;
+    }
+    if (strcmp(name, "SEEK_END") == 0) {
+        *out = ptn_int(PTN_SEEK_END);
+        return 1;
+    }
     if (strcmp(name, "STDIN") == 0) {
         *out = ptn_standard_stream_resource_value(1);
         return 1;
