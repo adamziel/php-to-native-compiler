@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-evvk stream mode diagnostics | 8 | 8 |
 | ptn-w17z.22 compile-time include path variables | 1 | 1 |
 | ptn-w17z.28 collected Generator runtime row pack | 6 | 6 |
 | ptn-w17z.34 output-buffer compact row | 1 | 1 |
@@ -17,14 +18,39 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T16:15Z.
-Measured latest: `ptn-w17z.22` compile-time include path variable acceptance selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path. Previous: `ptn-w17z.28` completed the collected Generator runtime row pack at 6/6.
+Refresh: 2026-06-15T16:47Z.
+Measured latest: `ptn-evvk` stream mode diagnostics selected 8 rows, kept 8 runnable, and passed 8/8 in the focused run.
+Latest: `ptn-evvk` fixed append-mode stream logical positions and shared write-failure notices. Previous: `ptn-w17z.22` supports compile-time include path variables at 1/1.
 
-Current hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
+Current hook: `ptn-evvk` stream mode diagnostics passed 8/8 at
+`.runtime/ptn-evvk-stream-mode-rebased/summary-20260615T164445Z.txt`.
+Previous hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
 `.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
-Previous hook: `ptn-w17z.28` collected Generator runtime row pack passed 6/6 at
-`.runtime/merge-ptn-w17z28-generator-runtime/summary-20260615T163051Z.txt`.
+
+## 2026-06-15 ptn-evvk Stream Mode Diagnostics
+
+Final checked-in focused manifest:
+`tools/phpt-ptn-evvk-stream-mode-diagnostics.txt`.
+
+Implemented behavior: append-mode streams (`a`, `ab`, `at`, and `a+` variants)
+now preserve PHP logical stream positions for `ftell()`, `fseek()`, and
+subsequent writes while still appending written bytes to end-of-file. The
+shared `fwrite()`/`fputs()` path now emits PHP-style write-failure notices for
+mode-invalid streams, matching the existing read-failure notice path.
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current master focused baseline (`.runtime/ptn-evvk-stream-mode-before/summary-20260615T163232Z.txt`) | 8 selected / 8 runnable | 7 |
+| Final rebased focused run (`.runtime/ptn-evvk-stream-mode-rebased/summary-20260615T164445Z.txt`) | 8 selected / 8 runnable | 8 |
+
+Newly passing row:
+
+- `ext/standard/tests/file/fwrite_variation3.phpt`
+
+Native verification:
+
+- `cargo fmt --check`
+- `cargo test stream_append_modes --test compile_native -- --nocapture`
 
 ## 2026-06-15 ptn-w17z.22 Compile-Time Include Path Variables
 

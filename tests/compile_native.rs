@@ -30745,6 +30745,72 @@ stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
 }
 
 #[test]
+fn compile_stream_append_modes_track_php_logical_position_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-append-mode-position");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-append-mode-position.php");
+    let output = root.join("stream-append-mode-position-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/append.txt';\n\
+file_put_contents($path, 'base');\n\
+foreach (['a', 'a+'] as $mode) {\n\
+    $fp = fopen($path, $mode);\n\
+    var_dump(stream_get_meta_data($fp)['mode']);\n\
+    var_dump(ftell($fp));\n\
+    var_dump(fwrite($fp, 'XY'));\n\
+    var_dump(ftell($fp));\n\
+    var_dump(fseek($fp, 0));\n\
+    var_dump(ftell($fp));\n\
+    var_dump(fwrite($fp, 'Z'));\n\
+    var_dump(ftell($fp));\n\
+    fclose($fp);\n\
+    var_dump(file_get_contents($path));\n\
+    file_put_contents($path, 'base');\n\
+}\n\
+$read = fopen($path, 'r');\n\
+var_dump(fwrite($read, 'no'));\n\
+fclose($read);\n\
+@unlink($path);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"a\"\n\
+int(0)\n\
+int(2)\n\
+int(2)\n\
+int(0)\n\
+int(0)\n\
+int(1)\n\
+int(1)\n\
+string(7) \"baseXYZ\"\n\
+string(2) \"a+\"\n\
+int(0)\n\
+int(2)\n\
+int(2)\n\
+int(0)\n\
+int(0)\n\
+int(1)\n\
+int(1)\n\
+string(7) \"baseXYZ\"\n\
+Notice: fwrite(): Write of 2 bytes failed with errno=9 Bad file descriptor in ptn on line 19\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_mode_is_append"));
+    assert!(c_source.contains("ptn_emit_stream_write_notice"));
+}
+
+#[test]
 fn compile_namespaced_class_aliases_to_native_binary() {
     let root = temp_dir("ptn-native-namespace-class-aliases");
     fs::create_dir_all(&root).unwrap();

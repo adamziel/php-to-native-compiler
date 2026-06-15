@@ -176,7 +176,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `ftruncate()`, `tmpfile()`, `stream_get_contents()`, `stream_get_line()`,
   and plain `stream_copy_to_stream()` paths; `file()`/`readfile()` support
   bounded include-path lookup; directory resources cover `readdir()` and
-  `rewinddir()`; `fwrite()`/`fputs()` write stream bytes; and filesystem
+  `rewinddir()`; `fwrite()`/`fputs()` write stream bytes with PHP append-mode
+  logical positions and read/write mode diagnostics; and filesystem
   metadata helpers cover `stat()`/`lstat()`, scalar `file*` metadata,
   `filetype()`, `chmod()`/`touch()`, `clearstatcache()`, and
   readable/writable/executable/link path predicates.
