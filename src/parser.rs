@@ -2285,7 +2285,9 @@ impl Parser<'_> {
         let first = self.parse_type_hint_atom(context)?;
         let mut span = first.span;
         let mut types = vec![first.type_hint];
-        while matches!(self.peek().kind, TokenKind::Ampersand) {
+        while matches!(self.peek().kind, TokenKind::Ampersand)
+            && token_starts_type_hint_atom(self.peek_next())
+        {
             self.advance();
             let next = self.parse_type_hint_atom(context)?;
             span = combine_spans(span, next.span);
@@ -6625,6 +6627,24 @@ fn default_set_visibility(
 
 fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
+}
+
+fn token_starts_type_hint_atom(token: &Token) -> bool {
+    matches!(
+        token.kind,
+        TokenKind::LeftParen
+            | TokenKind::Backslash
+            | TokenKind::Null
+            | TokenKind::IntType
+            | TokenKind::IntegerType
+            | TokenKind::FloatType
+            | TokenKind::DoubleType
+            | TokenKind::StringType
+            | TokenKind::BinaryType
+            | TokenKind::BoolType
+            | TokenKind::BooleanType
+            | TokenKind::Identifier(_)
+    )
 }
 
 fn literal_member_name_from_expr(expr: &Expr) -> Option<String> {

@@ -1582,10 +1582,14 @@ fn emit_parameter_default_diagnostics(
     let Some(fatal) = &diagnostics.fatal else {
         return;
     };
+    out.push_str("    fflush(stdout);\n");
     out.push_str("    if (runtime.diagnostics.display_errors) {\n");
     out.push_str(
         "        FILE *ptn_parameter_default_fatal_stream = runtime.diagnostics.stream == NULL ? stderr : runtime.diagnostics.stream;\n",
     );
+    if !diagnostics.deprecations.is_empty() {
+        out.push_str("        fputc('\\n', ptn_parameter_default_fatal_stream);\n");
+    }
     out.push_str("        fputs(\"Fatal error: Cannot use ");
     out.push_str(&c_string(&fatal.default_type_name));
     out.push_str(" as default value for parameter $");
@@ -1922,6 +1926,10 @@ fn non_nullable_type_hint(type_hint: Option<&TypeHint>) -> Option<&TypeHint> {
 
 fn type_hint_allows_null(type_hint: Option<&TypeHint>) -> bool {
     matches!(type_hint, Some(TypeHint::Nullable(_)))
+}
+
+fn parameter_default_value_is_null(parameter: &FunctionParameter) -> bool {
+    matches!(parameter.default_value.as_ref(), Some(ValueExpr::Null))
 }
 
 fn emit_user_function_dispatch(

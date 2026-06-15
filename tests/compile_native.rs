@@ -12169,7 +12169,7 @@ echo \"unreachable\\n\";
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "Fatal error: Cannot use int as default value for parameter $iterable of type Traversable|array in {} on line 4\n",
+            "\nFatal error: Cannot use int as default value for parameter $iterable of type Traversable|array in {} on line 4\n",
             input.display()
         )
     );
