@@ -13719,6 +13719,90 @@ static void ptn_preg_match_assign_matches(
     ptn_value_destroy(&result);
 }
 
+static PtnValue ptn_preg_match_array_value(
+    const char *subject,
+    regmatch_t *matches,
+    size_t *capture_map,
+    size_t capture_count
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i <= capture_count; i++) {
+        size_t match_index = i == 0 ? 0 : capture_map[i - 1];
+        PtnValue value;
+        if (matches[match_index].rm_so < 0 || matches[match_index].rm_eo < matches[match_index].rm_so) {
+            value = ptn_string("");
+        } else {
+            size_t start = (size_t)matches[match_index].rm_so;
+            size_t len = (size_t)(matches[match_index].rm_eo - matches[match_index].rm_so);
+            value = ptn_owned_string_len(ptn_duplicate_string_len(subject + start, len), len);
+        }
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), value);
+    }
+    return result;
+}
+
+static int ptn_preg_compile_posix(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand pattern,
+    regex_t *regex,
+    size_t **capture_map,
+    size_t *capture_count,
+    size_t *match_count,
+    size_t line
+) {
+    int regex_flags = 0;
+    char *posix_pattern = ptn_pcre_pattern_to_posix(pattern, &regex_flags, capture_map, capture_count);
+    if (posix_pattern == NULL) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "%s(): Compilation failed", function_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return 0;
+    }
+
+#if defined(_WIN32)
+    free(posix_pattern);
+    free(*capture_map);
+    *capture_map = NULL;
+    *capture_count = 0;
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): regex matching is unsupported on this platform",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    return 0;
+#else
+    int compile_result = regcomp(regex, posix_pattern, regex_flags);
+    free(posix_pattern);
+    if (compile_result != 0) {
+        free(*capture_map);
+        *capture_map = NULL;
+        *capture_count = 0;
+        char message[128];
+        int written = snprintf(message, sizeof(message), "%s(): Compilation failed", function_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return 0;
+    }
+    *match_count = regex->re_nsub + 1;
+    return 1;
+#endif
+}
+
 static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand pattern = ptn_value_to_string_operand(args[0]);
     PtnStringOperand subject = ptn_value_to_string_operand(args[1]);
