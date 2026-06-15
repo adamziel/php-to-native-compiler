@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.23 union type declaration parser row | 1 | 1 |
 | ptn-utht filtered stream copy row pack | 4 | 4 |
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
 | ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
@@ -21,14 +22,21 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:52Z.
-Measured latest: `ptn-utht` filtered stream copy row pack selected 4 rows, kept 4 runnable, and passed 4/4 in the focused run.
-Latest: `ptn-utht` completed the checked-in filtered stream copy row pack. Previous: `ptn-vqg1` completed the checked-in temp stream wrappers row pack.
+Refresh: 2026-06-15T18:00Z.
+Measured latest: `ptn-w17z.23` union type declaration parser row selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
+Latest: `ptn-w17z.23` completed the checked-in union type declaration parser row. Previous: `ptn-utht` completed the checked-in filtered stream copy row pack.
 
-Current hook: `ptn-utht` filtered stream copy row pack passed 4/4 at
+Current hook: `ptn-w17z.23` union type declaration parser row passed 1/1 at
+`.runtime/merge-ptn-w17z23-union-type-fpow/summary-20260615T180055Z.txt`.
+Previous hook: `ptn-utht` filtered stream copy row pack passed 4/4 at
 `.runtime/merge-ptn-utht-filtered-stream-copy/summary-20260615T175250Z.txt`.
-Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
-`.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
+
+## 2026-06-15 ptn-w17z.23 Union Type Declaration Parser Row
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Focused `fpow.phpt` run (`.runtime/ptn-w17z23-fpow/summary-20260615T164026Z.txt`) | 1 selected / 1 runnable | 1 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z23-union-type-fpow/summary-20260615T180055Z.txt`) | 1 selected / 1 runnable | 1 |
 
 ## 2026-06-15 ptn-utht Filtered Stream Copy Row Pack
 

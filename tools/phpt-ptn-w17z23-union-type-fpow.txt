@@ -1,0 +1,2 @@
+# ptn-w17z.23 union type declaration parser row.
+ext/standard/tests/math/fpow.phpt

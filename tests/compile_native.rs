@@ -1520,6 +1520,52 @@ fn parser_accepts_class_name_parameter_and_return_type_hints() {
 }
 
 #[test]
+fn parser_accepts_union_parameter_and_return_type_hints() {
+    let program = parser::parse(
+        "<?php namespace App; use Vendor\\Type as Imported; \
+         function test(int|float $number, null|Imported $maybe): string|\\Vendor\\Type { return $maybe; } \
+         $callback = fn(int|float ...$values): int|float => $values[0];",
+    )
+    .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(
+        function.parameters[0].type_hint,
+        Some(TypeHint::Union(vec![TypeHint::Int, TypeHint::Float]))
+    );
+    assert_eq!(
+        function.parameters[1].type_hint,
+        Some(TypeHint::Union(vec![
+            TypeHint::Null,
+            TypeHint::Class("Vendor\\Type".to_string())
+        ]))
+    );
+    assert_eq!(
+        function.return_type,
+        Some(TypeHint::Union(vec![
+            TypeHint::String,
+            TypeHint::Class("Vendor\\Type".to_string())
+        ]))
+    );
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert_eq!(
+        closure.parameters[0].type_hint,
+        Some(TypeHint::Union(vec![TypeHint::Int, TypeHint::Float]))
+    );
+    assert!(closure.parameters[0].is_variadic);
+    assert_eq!(
+        closure.return_type,
+        Some(TypeHint::Union(vec![TypeHint::Int, TypeHint::Float]))
+    );
+}
+
+#[test]
 fn parser_validates_closure_use_lists() {
     let program = parser::parse("<?php $b = 'test'; $fn = function () use ($b, &$a,) {};").unwrap();
     let Statement::Assign { value, .. } = &program.statements[1] else {
@@ -12139,6 +12185,59 @@ fn compile_array_type_errors_to_native_binary() {
     assert_eq!(
         String::from_utf8(return_execution.stderr).unwrap(),
         "Fatal error: returns_array() return value must be of type array\n"
+    );
+}
+
+#[test]
+fn compile_union_typed_user_function_parameters_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-union-type");
+    fs::create_dir_all(&root).unwrap();
+
+    let input = root.join("user-function-union-type.php");
+    let output = root.join("user-function-union-type-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function safe_to_string(int|float $number): string { return (string)$number; }\n\
+function choose_number(bool $float): int|float { return $float ? 1.5 : 2; }\n\
+function collect(int|float ...$numbers): array { return $numbers; }\n\
+echo safe_to_string(2), \"\\n\";\n\
+echo safe_to_string(3.5), \"\\n\";\n\
+var_dump(choose_number(false));\n\
+var_dump(choose_number(true));\n\
+var_dump(collect(1, 2.5));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2\n3.5\nint(2)\nfloat(1.5)\narray(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  float(2.5)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let error_input = root.join("user-function-union-type-error.php");
+    let error_output = root.join("user-function-union-type-error-bin");
+    fs::write(
+        &error_input,
+        "<?php function safe_to_string(int|float $number): string { return (string)$number; } safe_to_string([]);",
+    )
+    .unwrap();
+    compile_file(
+        &error_input,
+        &error_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let error_execution = Command::new(&error_output).output().unwrap();
+    assert!(!error_execution.status.success());
+    assert_eq!(error_execution.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8(error_execution.stderr).unwrap(),
+        "Fatal error: safe_to_string() argument $number must be of type int|float\n"
     );
 }
 
