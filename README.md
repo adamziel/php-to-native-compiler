@@ -62,6 +62,12 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - `var_export()` covers scalars, arrays, declared objects through
   `__set_state(array(...))`, `stdClass` through `(object) array(...)`, and
   embedded-NUL string and string-key escaping.
+- `serialize()`/`unserialize()` cover current boxed scalars, arrays, resources,
+  `stdClass`, unknown-object incomplete-class shells, uppercase `S` byte escapes
+  with deprecation output, extra-data warnings, malformed offset diagnostics,
+  bounded large-count/custom-payload rejection, and basic reference tokens; full
+  `Serializable` hooks, SPL storage serialization, and exact cyclic/reference
+  identity remain bounded.
 - `pow()` uses the boxed exponentiation helper, `min()`/`max()` use the shared
   loose ordering helper, `flush()` flushes native stdout, `call_user_func_array()`
   expands ordered arrays through callable dispatch, `call_user_func()` and
@@ -94,6 +100,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   metadata, bounded class/interface/trait/property/method existence checks
   including `trait_exists()`, abstract/final class metadata, interface
   constants, and duplicate/non-interface implementation diagnostics.
+- Runtime housekeeping includes deterministic `memory_get_usage()` and
+  `gc_collect_cycles()` stubs for bounded PHPT rows.
 - Simple trait declarations compose into using classes, including imported
   methods, instance/static properties, and constants. `__TRAIT__` reports the
   source trait for imported methods. Trait adaptations/aliases, precedence
@@ -146,12 +154,13 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `constant()`/`defined()` lookup; typed/non-public/inherited constants remain
   bounded.
 - Stream resources from `STDIN`/`STDOUT`/`STDERR` and `fopen()`/`fclose()` are
-  boxed with type, dump, and array-key cast behavior; `file_get_contents()`
-  reads filesystem paths into binary-safe strings with bounded offset/length
-  handling, `fwrite()`/`fputs()` write stream bytes, and filesystem metadata
-  helpers cover `stat()`/`lstat()`, scalar `file*` metadata, `filetype()`,
-  `chmod()`/`touch()`, `clearstatcache()`, and readable/writable/executable/link
-  path predicates.
+  boxed with stable IDs, `get_resource_id()`/`get_resource_type()` metadata,
+  closed-resource display behavior, dump output, and array-key cast warnings;
+  `file_get_contents()` reads filesystem paths into binary-safe strings with
+  bounded offset/length handling, `fwrite()`/`fputs()` write stream bytes, and
+  filesystem metadata helpers cover `stat()`/`lstat()`, scalar `file*`
+  metadata, `filetype()`, `chmod()`/`touch()`, `clearstatcache()`, and
+  readable/writable/executable/link path predicates.
 - Environment and include-path helpers cover `getenv()` snapshots/lookups,
   `putenv()` set/unset plus embedded-NUL/invalid-assignment diagnostics, and
   bounded `get_include_path()`/`set_include_path()`/`ini_set()`/

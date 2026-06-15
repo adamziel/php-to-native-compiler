@@ -5465,6 +5465,55 @@ fn compile_var_dump_recursive_object_to_native_binary() {
 }
 
 #[test]
+fn compile_unserialize_current_boxed_values_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-current-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-current-values.php");
+    let output = root.join("unserialize-current-values-bin");
+    fs::write(
+        &input,
+        r#"<?php var_dump(function_exists("serialize"), function_exists("unserialize")); $value = unserialize('a:4:{i:0;i:1;s:1:"x";b:1;i:2;N;i:3;a:1:{s:1:"n";s:3:"yes";}}'); var_dump($value); $object = unserialize('O:8:"stdClass":1:{s:4:"name";s:3:"Ada";}'); var_dump($object); var_dump(serialize(unserialize('a:2:{i:0;s:1:"a";i:1;i:2;}'))); var_dump(unserialize('S:3:"A\00B";')); var_dump(unserialize('bad'));"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [\"x\"]=>\n",
+            "  bool(true)\n",
+            "  [2]=>\n",
+            "  NULL\n",
+            "  [3]=>\n",
+            "  array(1) {\n",
+            "    [\"n\"]=>\n",
+            "    string(3) \"yes\"\n",
+            "  }\n",
+            "}\n",
+            "object(stdClass)#1 (1) {\n",
+            "  [\"name\"]=>\n",
+            "  string(3) \"Ada\"\n",
+            "}\n",
+            "string(26) \"a:2:{i:0;s:1:\"a\";i:1;i:2;}\"\n",
+            "Deprecated: unserialize(): Unserializing the 'S' format is deprecated in ptn on line 1\n",
+            "string(3) \"A\0B\"\n",
+            "\n",
+            "Warning: unserialize(): Error at offset 1 of 3 bytes in ptn on line 1\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_print_expression_contexts_to_native_binary() {
     let root = temp_dir("ptn-native-print-expression-contexts");
     fs::create_dir_all(&root).unwrap();
@@ -29407,6 +29456,45 @@ bool(false)\n\
 bool(true)\n\
 bool(false)\n\
 string(17) \"resource (closed)\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_resource_id_and_type_to_native_binary() {
+    let root = temp_dir("ptn-native-resource-id-type");
+    fs::create_dir_all(&root).unwrap();
+    let data = root.join("payload.txt");
+    fs::write(&data, "payload").unwrap();
+    let input = root.join("resource-id-type.php");
+    let output = root.join("resource-id-type-bin");
+    let data_path = data.to_string_lossy();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$fp = fopen(\"{}\", \"r\");\n\
+var_dump(function_exists(\"get_resource_id\"), function_exists(\"get_resource_type\"));\n\
+var_dump(get_resource_id($fp), get_resource_type($fp));\n\
+fclose($fp);\n\
+var_dump(get_resource_type($fp), is_resource($fp));",
+            data_path
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+int(5)\n\
+string(6) \"stream\"\n\
+string(7) \"Unknown\"\n\
+bool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

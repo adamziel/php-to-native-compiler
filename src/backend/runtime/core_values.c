@@ -1067,6 +1067,13 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
 #endif
 }
 
+static PTN_UNUSED const char *ptn_resource_display_type_name(PtnResource *resource) {
+    if (resource == NULL || (resource->stream == NULL && resource->directory == NULL)) {
+        return "Unknown";
+    }
+    return resource->type_name;
+}
+
 static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
     if (resource == NULL) {
         return;
