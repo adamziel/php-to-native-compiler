@@ -148,10 +148,15 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Stream resources from `STDIN`/`STDOUT`/`STDERR` and `fopen()`/`fclose()` are
   boxed with type, dump, and array-key cast behavior; `file_get_contents()`
   reads filesystem paths into binary-safe strings with bounded offset/length
-  handling, `fwrite()`/`fputs()` write stream bytes, and filesystem metadata
-  helpers cover `stat()`/`lstat()`, scalar `file*` metadata, `filetype()`,
-  `chmod()`/`touch()`, `clearstatcache()`, and readable/writable/executable/link
-  path predicates.
+  handling; stream internals cover `feof()`, `fflush()`, `fgetc()`, `fgets()`,
+  `fread()`, `fpassthru()`, `fseek()`/`ftell()`/`rewind()`, `fstat()`,
+  `ftruncate()`, `tmpfile()`, `stream_get_contents()`, `stream_get_line()`,
+  and plain `stream_copy_to_stream()` paths; `file()`/`readfile()` support
+  bounded include-path lookup; directory resources cover `readdir()` and
+  `rewinddir()`; `fwrite()`/`fputs()` write stream bytes; and filesystem
+  metadata helpers cover `stat()`/`lstat()`, scalar `file*` metadata,
+  `filetype()`, `chmod()`/`touch()`, `clearstatcache()`, and
+  readable/writable/executable/link path predicates.
 - Environment and include-path helpers cover `getenv()` snapshots/lookups,
   `putenv()` set/unset plus embedded-NUL/invalid-assignment diagnostics, and
   bounded `get_include_path()`/`set_include_path()`/`ini_set()`/
