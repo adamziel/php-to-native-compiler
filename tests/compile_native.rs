@@ -31704,12 +31704,16 @@ class Child extends Alias implements AliasContract {
 
 $child = new Child;
 $child->run();
+call_user_func(['Alias', 'msg']);
 var_dump(get_parent_class('Child'));
 var_dump($child instanceof Original);
 var_dump($child instanceof Alias);
 var_dump($child instanceof Base);
 var_dump($child instanceof Contract);
 var_dump($child instanceof AliasContract);
+var_dump(is_subclass_of(new Child, 'Original'));
+var_dump(is_subclass_of(new Child, 'Alias'));
+var_dump(is_subclass_of(new Alias, 'Alias'));
 "#,
     )
     .unwrap();
@@ -31721,14 +31725,34 @@ var_dump($child instanceof AliasContract);
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "hello\n\
+hello\n\
 string(8) \"Original\"\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
-bool(true)\n"
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_rejects_duplicate_interface_references_through_class_alias() {
+    let error = parser::parse(
+        r#"<?php
+interface Original {}
+class_alias('Original', 'Alias');
+interface Duplicate extends Original, Alias {}
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert!(error.message.contains(
+        "Interface Duplicate cannot implement previously implemented interface Original"
+    ));
 }
 
 #[test]

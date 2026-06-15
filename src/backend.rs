@@ -4466,7 +4466,9 @@ fn emit_callable_dispatch(
             "        return ptn_duplicate_string(parent != NULL ? parent : scope_name);\n",
         );
         out.push_str("    }\n");
-        out.push_str("    return ptn_duplicate_string(scope_name);\n");
+        out.push_str(
+            "    return ptn_duplicate_string(ptn_runtime_resolve_class_alias(runtime, scope_name));\n",
+        );
         out.push_str("}\n");
 
         out.push_str(

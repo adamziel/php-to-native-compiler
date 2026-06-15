@@ -6914,7 +6914,22 @@ fn validate_interface_references(classes: &[ClassDecl]) -> Result<()> {
         .map(|class| class.name.to_ascii_lowercase())
         .collect::<HashSet<_>>();
     for class in classes {
+        let mut seen_interfaces = HashSet::new();
         for interface_name in &class.interfaces {
+            if !seen_interfaces.insert(interface_name.to_ascii_lowercase()) {
+                let declaration_kind = if class.is_interface {
+                    "Interface"
+                } else {
+                    "Class"
+                };
+                return Err(Diagnostic::new(
+                    format!(
+                        "{declaration_kind} {} cannot implement previously implemented interface {interface_name}",
+                        class.name
+                    ),
+                    Some(class.span),
+                ));
+            }
             if class.is_interface && class.name.eq_ignore_ascii_case(interface_name) {
                 return Err(Diagnostic::new(
                     format!("Interface \"{interface_name}\" not found"),
@@ -9166,6 +9181,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "class_exists"
             | "debug_zval_dump"
             | "is_callable"
+            | "is_subclass_of"
             | "method_exists"
             | "property_exists"
             | "spl_object_hash"

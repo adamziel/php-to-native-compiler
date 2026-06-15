@@ -20164,6 +20164,7 @@ static PtnValue ptn_internal_gmmktime(PtnRuntime *runtime, size_t argc, const Pt
 static PtnValue ptn_internal_idate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_is_subclass_of(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -20428,6 +20429,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_resource", 1, 1, ptn_internal_is_resource },
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
         { "is_string", 1, 1, ptn_internal_is_string },
+        { "is_subclass_of", 2, 3, ptn_internal_is_subclass_of },
         { "is_writable", 1, 1, ptn_internal_is_writable },
         { "is_writeable", 1, 1, ptn_internal_is_writeable },
         { "join", 1, 2, ptn_internal_join },
@@ -22647,6 +22649,47 @@ static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const
         ptn_value_destroy(&callable_name);
     }
     return ptn_bool(ptn_callable_is_valid(runtime, args[0], syntax_only));
+}
+
+static PtnValue ptn_internal_is_subclass_of(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnValue subject = ptn_value_deref(args[0]);
+    int allow_string = argc < 3 || ptn_is_truthy(args[2]);
+    char *subject_class_name = NULL;
+    if (subject.type == PTN_OBJECT) {
+        subject_class_name = ptn_duplicate_string(subject.as.object->class_name);
+    } else if (subject.type == PTN_EXCEPTION) {
+        subject_class_name = ptn_duplicate_string(subject.as.exception->class_name);
+    } else if (subject.type == PTN_CLOSURE) {
+        subject_class_name = ptn_duplicate_string("Closure");
+    } else if (subject.type == PTN_STRING) {
+        if (!allow_string) {
+            return ptn_bool(0);
+        }
+        subject_class_name = ptn_value_to_string(subject);
+    } else {
+        return ptn_bool(0);
+    }
+
+    char *parent_class_name = ptn_value_to_string(args[1]);
+    const char *resolved_subject_class_name = ptn_runtime_resolve_class_alias(
+        runtime,
+        ptn_symbol_name_without_leading_slash(subject_class_name)
+    );
+    const char *resolved_parent_class_name = ptn_runtime_resolve_class_alias(
+        runtime,
+        ptn_symbol_name_without_leading_slash(parent_class_name)
+    );
+    int result = 0;
+    if (!ptn_ascii_case_equal(resolved_subject_class_name, resolved_parent_class_name)) {
+        result =
+            ptn_declared_class_is_same_or_descendant(resolved_subject_class_name, resolved_parent_class_name) ||
+            ptn_declared_class_implements_interface(resolved_subject_class_name, resolved_parent_class_name) ||
+            ptn_builtin_class_implements_interface(resolved_subject_class_name, resolved_parent_class_name);
+    }
+    free(parent_class_name);
+    free(subject_class_name);
+    return ptn_bool(result);
 }
 
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
