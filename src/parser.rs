@@ -9509,7 +9509,7 @@ fn is_array_path_mutation_name(name: &str) -> bool {
 
 fn is_array_multisort_argument(expr: &Expr) -> bool {
     match expr {
-        Expr::Variable(_, _) => true,
+        Expr::Variable(_, _) | Expr::Array { .. } => true,
         Expr::Grouped { expr, .. } => is_array_multisort_argument(expr),
         Expr::Int(_, _) => true,
         Expr::Constant(name, _) => matches!(
@@ -9613,6 +9613,13 @@ fn validate_mutating_array_internal_call(
     }
 
     if is_direct_variable_argument(&arguments[0]) {
+        return Ok(());
+    }
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
+        "uasort" | "uksort" | "usort"
+    ) && is_variable_array_access_argument(&arguments[0])
+    {
         return Ok(());
     }
     if is_array_path_mutation_name(name) && is_variable_array_access_argument(&arguments[0]) {

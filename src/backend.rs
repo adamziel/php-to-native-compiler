@@ -15463,32 +15463,65 @@ impl ValueEmitter {
             "uasort" | "uksort" | "usort"
         ) && arguments.len() == 2
         {
-            let variable_name = variable_name?;
-            let array_temp = self.emit_materialized_value(out, &arguments[0]);
             let callback_temp = self.emit_materialized_value(out, &arguments[1]);
             let result_temp = self.next_temp();
-            let helper = if name.eq_ignore_ascii_case("uasort") {
+            let variable_helper = if name.eq_ignore_ascii_case("uasort") {
                 "ptn_runtime_array_uasort_variable"
             } else if name.eq_ignore_ascii_case("uksort") {
                 "ptn_runtime_array_uksort_variable"
             } else {
                 "ptn_runtime_array_usort_variable"
             };
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ");
-            out.push_str(helper);
-            out.push_str("(&runtime, \"");
-            out.push_str(&c_string(variable_name));
-            out.push_str("\", ");
-            out.push_str(&array_temp);
-            out.push_str(", ");
-            out.push_str(&callback_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
+            if let Some(variable_name) = variable_name {
+                let array_temp = self.emit_materialized_value(out, &arguments[0]);
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(variable_helper);
+                out.push_str("(&runtime, \"");
+                out.push_str(&c_string(variable_name));
+                out.push_str("\", ");
+                out.push_str(&array_temp);
+                out.push_str(", ");
+                out.push_str(&callback_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &array_temp);
+            } else if let Some(ReferenceTarget::ArrayDim(target)) =
+                reference_array_dim_target_from_value(first_argument)
+            {
+                let path_helper = if name.eq_ignore_ascii_case("uasort") {
+                    "ptn_runtime_array_uasort_path"
+                } else if name.eq_ignore_ascii_case("uksort") {
+                    "ptn_runtime_array_uksort_path"
+                } else {
+                    "ptn_runtime_array_usort_path"
+                };
+                let path = emit_array_path_segments(out, self, &target.dimensions);
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(path_helper);
+                out.push_str("(&runtime, \"");
+                out.push_str(&c_string(&target.array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&callback_temp);
+                out.push_str(", ");
+                out.push_str(&target.line.to_string());
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+            } else {
+                emit_value_cleanup(out, "    ", &callback_temp);
+                return None;
+            }
             emit_value_cleanup(out, "    ", &callback_temp);
-            emit_value_cleanup(out, "    ", &array_temp);
             return Some(result_temp);
         }
 

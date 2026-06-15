@@ -19981,11 +19981,6 @@ fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_target
             "natcasesort",
             "extra arguments are unsupported",
         ),
-        (
-            "<?php $items = [[3, 2, 1]]; usort($items[0], \"cmp\");",
-            "usort",
-            "non-variable array mutation targets are unsupported",
-        ),
     ] {
         let error = parser::parse(source).unwrap_err();
         assert!(
@@ -20005,9 +20000,14 @@ fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_target
         "<?php $left = [2, 1]; $right = [\"b\", \"a\"]; array_multisort($left, SORT_ASC, SORT_REGULAR, $right, SORT_DESC, SORT_STRING);",
     )
     .unwrap();
+    parser::parse("<?php var_dump(array_multisort(array(1, 3, 2, 4)));").unwrap();
     parser::parse("<?php $items = [3, 2, 1]; usort($items, \"cmp\");").unwrap();
+    parser::parse("<?php $items = [[3, 2, 1]]; usort($items[0], \"cmp\");").unwrap();
     parser::parse("<?php $items = [3, 2, 1]; uasort($items, \"cmp\");").unwrap();
+    parser::parse("<?php $items = [[3, 2, 1]]; uasort($items[0], \"cmp\");").unwrap();
     parser::parse("<?php $items = [3 => \"c\", 1 => \"a\"]; uksort($items, \"cmp\");").unwrap();
+    parser::parse("<?php $items = [[3 => \"c\", 1 => \"a\"]]; uksort($items[0], \"cmp\");")
+        .unwrap();
 }
 
 #[test]
@@ -20771,6 +20771,66 @@ var_dump(function_exists(\"usort\"), function_exists(\"uasort\"), function_exist
     assert!(c_source.contains("ptn_runtime_array_uasort_variable"));
     assert!(c_source.contains("ptn_runtime_array_uksort_variable"));
     assert!(c_source.contains("ptn_array_user_sort_entries"));
+}
+
+#[test]
+fn compile_user_comparator_sort_paths_and_bool_deprecations_to_native_binary() {
+    let root = temp_dir("ptn-native-user-comparator-sort-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-comparator-sort-paths.php");
+    let output = root.join("user-comparator-sort-paths-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function cmp($left, $right) {\n\
+    if ($left == $right) { return 0; }\n\
+    return $left < $right ? -1 : 1;\n\
+}\n\
+function bool_cmp($left, $right) { return $left > $right; }\n\
+$items = [[3, 1, 2], [\"b\" => 2, \"a\" => 1], [3 => \"c\", 1 => \"a\", 2 => \"b\"]];\n\
+var_dump(usort($items[0], \"cmp\"));\n\
+foreach ($items[0] as $key => $value) { echo \"u\", $key, \"=\", $value, \"\\n\"; }\n\
+var_dump(uasort($items[1], \"cmp\"));\n\
+foreach ($items[1] as $key => $value) { echo \"a\", $key, \"=\", $value, \"\\n\"; }\n\
+var_dump(uksort($items[2], \"cmp\"));\n\
+foreach ($items[2] as $key => $value) { echo \"k\", $key, \"=\", $value, \"\\n\"; }\n\
+$bools = [2, 0, 1];\n\
+var_dump(usort($bools, \"bool_cmp\"));\n\
+foreach ($bools as $value) { echo \"b\", $value, \"\\n\"; }",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "u0=1\n",
+            "u1=2\n",
+            "u2=3\n",
+            "bool(true)\n",
+            "aa=1\n",
+            "ab=2\n",
+            "bool(true)\n",
+            "k1=a\n",
+            "k2=b\n",
+            "k3=c\n",
+            "\nDeprecated: usort(): Returning bool from comparison function is deprecated, return an integer less than, equal to, or greater than zero in ptn on line 15\n",
+            "bool(true)\n",
+            "b0\n",
+            "b1\n",
+            "b2\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_usort_path"));
+    assert!(c_source.contains("ptn_runtime_array_uasort_path"));
+    assert!(c_source.contains("ptn_runtime_array_uksort_path"));
 }
 
 #[test]
@@ -22576,6 +22636,45 @@ var_dump($result, $data, $copy, function_exists(\"array_walk_recursive\"));",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_walk_recursive"));
     assert!(c_source.contains("ptn_runtime_array_walk_recursive_variable"));
+}
+
+#[test]
+fn compile_array_walk_recursive_object_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-recursive-object");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-recursive-object.php");
+    let output = root.join("array-walk-recursive-object-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_walk_key($value, $key, $tag) { echo bin2hex($key), \"=\", $value, \":\", $tag, \"\\n\"; }\n\
+class WalkBox {\n\
+    private $pri = 10;\n\
+    public $pub = 20;\n\
+    protected $pro = 30;\n\
+}\n\
+$box = new WalkBox();\n\
+var_dump(array_walk_recursive($box, \"dump_walk_key\", \"u\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "0057616c6b426f7800707269=10:u\n",
+            "707562=20:u\n",
+            "002a0070726f=30:u\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_walk_recursive_object"));
+    assert!(c_source.contains("ptn_array_walk_object_key"));
 }
 
 #[test]

@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-y4f1 COW/reference sort/object walk row pack | 72 | 59 |
 | ptn-w17z.16.2 nested try/finally row pack | 9 | 9 |
 | ptn-90cm compare64bit object/number diagnostics | 6 | 6 |
 | ptn-vvpn class_alias metadata slice | 38 | 13 |
@@ -31,14 +32,38 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:54Z.
-Measured latest: `ptn-w17z.36` extract typed references selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.36` completed the checked-in extract typed references row pack. Previous: `ptn-vj4r` completed the checked-in class_alias namespace metadata row pack.
+Refresh: 2026-06-15T19:46Z.
+Measured latest: `ptn-y4f1` COW/reference sort/object walk row pack selected 72 rows, kept 61 runnable after 11 classifications, and passed 59/61 in the focused run.
+Latest: `ptn-y4f1` moved seven array-internal COW/reference rows to green and leaves two mixed-type `array_multisort` loose-ordering rows. Previous: `ptn-w17z.36` completed the checked-in extract typed references row pack.
 
-Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
+Current hook: `ptn-y4f1` COW/reference sort/object walk row pack passed 59/61 runnable rows at
+`.runtime/ptn-y4f1-postrebase-array-internal/summary-20260615T192945Z.txt`.
+Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
-Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
-`.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
+
+## 2026-06-15 ptn-y4f1 COW/Reference Sort/Object Walk Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Broad COW/reference frontier baseline (`.runtime/ptn-y4f1-before-cow-frontier/summary-20260615T181430Z.txt`) | 46 selected / 39 runnable / 7 classified | 37 |
+| Hook-start array-internal COW baseline (`.runtime/ptn-y4f1-before-array-internal/summary-20260615T182512Z.txt`) | 72 selected / 61 runnable / 11 classified | 52 |
+| Final rebased array-internal COW run (`.runtime/ptn-y4f1-postrebase-array-internal/summary-20260615T192945Z.txt`) | 72 selected / 61 runnable / 11 classified | 59 |
+
+Rows moved to green in the array-internal pack:
+
+- `ext/standard/tests/array/array_walk/array_walk_recursive_object1.phpt`
+- `ext/standard/tests/array/sort/array_multisort_variation10.phpt`
+- `ext/standard/tests/array/sort/array_multisort_variation11.phpt`
+- `ext/standard/tests/array/sort/uasort_variation7.phpt`
+- `ext/standard/tests/array/sort/usort_variation11.phpt`
+- `ext/standard/tests/array/sort/usort_variation6.phpt`
+- `ext/standard/tests/array/sort/usort_variation7.phpt`
+
+Remaining runnable failures are
+`ext/standard/tests/array/sort/array_multisort_variation7.phpt` and
+`ext/standard/tests/array/sort/array_multisort_variation9.phpt`; both are
+mixed-type loose-ordering rows and are left for the dedicated loose comparison
+slice.
 
 ## 2026-06-15 ptn-w17z.16.2 Nested Try/Finally Row Pack
 
