@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-15T01:45Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; `ptn-g7ta` object-string array row pack +24 broad 1k rows and focused 23/23; `ptn-mqvk` broad 1k classify-only 546/454 before -> 532/468 after and broad COW/reference row pack 22/28 -> 27/27 runnable plus 1 classified; COW 69/103 passed; `ptn-601n` anonymous-class/object metadata row pack 0/21 raw focused baseline -> 10/10 runnable after split and final broad 1k classify-only 558/442; `ptn-c5ar` object/class metadata runtime diagnostics row pack 9 passed / 7 failed / 4 classified -> 20/20 passed and current-target broad 1k classify-only 532/468 -> 563/437; `ptn-zhup` object/callback/merge row pack 13/18 -> 17/18 runnable plus 2 classified, merge slice 21/25 -> 24/25, and final broad 1k classify-only 558/442 on submitted base; `ptn-buig` break/continue diagnostics moved the broad 1k Zend bucket 137/198 -> 141/198 and focused Zend operator/control frontier 21/26; `ptn-u4el` string runtime row pack 1/10 -> 10/10 and broad 1k 477/558 -> 479/558; `ptn-jlzj` control-flow/call-unpack broad 1k 453 -> 482 passing; `ptn-wxno` object-string array-helper classifier unblock moved broad 1k classify-only 563/437 -> 588/412 and focused 25/25 passed; `ptn-iuhj` parser/method-visibility row pack 43 selected / 41 runnable / 22 passed / 2 classified and final broad 1k classify-only 566/434; `ptn-29k0` method metadata scope row pack added 4 newly passing broad rows over `ptn-wxno`, with the integrated hook-start broad classify-only moving 563/437 -> 591/409; `ptn-3ijs` literal/operator row pack 27/30 focused and broad Zend bucket 145/201 -> 151/201; `ptn-ck7w` static-property row pack selected 24 / 2 runnable / 2 passed / 22 classified, with broad 1k classify-only 591/409 -> 592/408; `ptn-vq7w` broad COW/reference row pack 24/24 and user-comparator sort pack 20/26; `ptn-25s0` method-scope warning lock measured hook-start full broad 1k at 390/591 -> 527/591 passed, with 138 newly passing rows and one broad-run pass-to-fail splice row that reran green on the rebased branch.
+Refresh: 2026-06-15T02:24Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; `ptn-g7ta` object-string array row pack +24 broad 1k rows and focused 23/23; `ptn-mqvk` broad 1k classify-only 546/454 before -> 532/468 after and broad COW/reference row pack 22/28 -> 27/27 runnable plus 1 classified; COW 69/103 passed; `ptn-601n` anonymous-class/object metadata row pack 0/21 raw focused baseline -> 10/10 runnable after split and final broad 1k classify-only 558/442; `ptn-c5ar` object/class metadata runtime diagnostics row pack 9 passed / 7 failed / 4 classified -> 20/20 passed and current-target broad 1k classify-only 532/468 -> 563/437; `ptn-zhup` object/callback/merge row pack 13/18 -> 17/18 runnable plus 2 classified, merge slice 21/25 -> 24/25, and final broad 1k classify-only 558/442 on submitted base; `ptn-buig` break/continue diagnostics moved the broad 1k Zend bucket 137/198 -> 141/198 and focused Zend operator/control frontier 21/26; `ptn-u4el` string runtime row pack 1/10 -> 10/10 and broad 1k 477/558 -> 479/558; `ptn-jlzj` control-flow/call-unpack broad 1k 453 -> 482 passing; `ptn-wxno` object-string array-helper classifier unblock moved broad 1k classify-only 563/437 -> 588/412 and focused 25/25 passed; `ptn-iuhj` parser/method-visibility row pack 43 selected / 41 runnable / 22 passed / 2 classified and final broad 1k classify-only 566/434; `ptn-29k0` method metadata scope row pack added 4 newly passing broad rows over `ptn-wxno`, with the integrated hook-start broad classify-only moving 563/437 -> 591/409; `ptn-3ijs` literal/operator row pack 27/30 focused and broad Zend bucket 145/201 -> 151/201; `ptn-ck7w` static-property row pack selected 24 / 2 runnable / 2 passed / 22 classified, with broad 1k classify-only 591/409 -> 592/408; `ptn-vq7w` broad COW/reference row pack 24/24 and user-comparator sort pack 20/26; `ptn-25s0` method-scope warning lock measured hook-start full broad 1k at 390/591 -> 527/591 passed, with 138 newly passing rows and one broad-run pass-to-fail splice row that reran green on the rebased branch; `ptn-ppri` standard string/array row pack 20 selected / 18 runnable / 18 passed / 2 classified on the final rebased branch, with hook-start broad 1k 414/591 -> 528/591 passed (+114, no pass-set regressions).
 
 ## Dashboard
 
@@ -80,6 +80,7 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |Std-array-s80e|20|20|0|
 |Std-array-tdei|71|61|10|
 |Std-array-lxw1|20|19|1|
+|Std-string-array-ppri|20|18|2|
 |User-comparator-sort-vq7w|26|20|6|
 |array_rand|7|6|1|
 |Zend-op/control|26|21|5|
@@ -92,7 +93,161 @@ Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30
 |COW-reference-vq7w|24|24|0|
 |COW-reference-25s0|27|26|1|
 |Broad-25s0-runnable|591|527|64|
-|1k-baseline|1000|480|520|
+|Broad-ppri-runnable|591|528|63|
+|1k-baseline|1000|528|472|
+
+## 2026-06-15 ptn-ppri Broad Standard String/Array Row Pack
+
+Final checked-in focused manifest:
+`tools/phpt-ptn-ppri-standard-string-array-row-pack.txt`.
+
+Focused verification on the final rebased branch `97e806bdffa0`:
+`PHPT_PROGRESS_DIR=.runtime/ptn-ppri-focused-final-rebased tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-ppri-standard-string-array-row-pack.txt`.
+Artifact `.runtime/ptn-ppri-focused-final-rebased/summary-20260615T021843Z.txt`
+selected 20 rows: 18 runnable, 18 passed, 0 failed, 2 classified
+(`harness-skipif` 1, `sapi-behavior` 1).
+
+Broad 1k controlling-manifest evidence used the deterministic tier-1000
+manifest for PHP corpus revision `8c63ec400ce8e07c57a8d9499317b96a8beafb8b`:
+
+- Before on hook-start current base `0ab08a8fe20b`:
+  `.runtime/ptn-ppri-broad-before-current-progress/summary-20260615T002207Z.txt`
+  selected 1,000 rows, with 591 runnable, 409 classified, 414 passed, and
+  177 failed.
+- After on implementation commit `011964bcfc57`:
+  `.runtime/ptn-ppri-broad-after-current-progress/summary-20260615T002851Z.txt`
+  selected the same 1,000 rows, with 591 runnable, 409 classified, 528 passed,
+  and 63 failed. The pass-set comparison found 114 newly passing rows and 0
+  pass-set regressions.
+
+`origin/master` advanced while the broad runs were executing. The final branch
+was rebased cleanly to `97e806bdffa0` and reran the focused pack above; a full
+post-rebase broad rerun was not repeated.
+
+Newly passing broad rows:
+
+- `Zend/tests/add_002.phpt`
+- `Zend/tests/add_003.phpt`
+- `Zend/tests/add_004.phpt`
+- `Zend/tests/add_006.phpt`
+- `Zend/tests/add_007.phpt`
+- `Zend/tests/arg_unpack/dynamic.phpt`
+- `Zend/tests/arg_unpack/internal.phpt`
+- `Zend/tests/arg_unpack/invalid_type.phpt`
+- `Zend/tests/array_unpack/already_occupied.phpt`
+- `Zend/tests/arrow_functions/001.phpt`
+- `Zend/tests/arrow_functions/002.phpt`
+- `Zend/tests/arrow_functions/003.phpt`
+- `Zend/tests/arrow_functions/004.phpt`
+- `Zend/tests/assert/expect_003.phpt`
+- `Zend/tests/assert/expect_004.phpt`
+- `Zend/tests/assert/expect_005.phpt`
+- `Zend/tests/assert/expect_016.phpt`
+- `Zend/tests/assert/expect_empty_stmt_bug.phpt`
+- `Zend/tests/assign_ref_error_var_handling.phpt`
+- `Zend/tests/ast/zend-pow-assign.phpt`
+- `Zend/tests/asymmetric_visibility/reference_2.phpt`
+- `Zend/tests/bug31720.phpt`
+- `Zend/tests/bug38808.phpt`
+- `ext/standard/tests/array/001.phpt`
+- `ext/standard/tests/array/array_change_key_case_flag_error.phpt`
+- `ext/standard/tests/array/array_chunk2.phpt`
+- `ext/standard/tests/array/array_chunk_variation5.phpt`
+- `ext/standard/tests/array/array_column_scalar_index_strict_types.phpt`
+- `ext/standard/tests/array/array_column_scalar_index_weak_types.phpt`
+- `ext/standard/tests/array/array_combine_error2.phpt`
+- `ext/standard/tests/array/array_diff_1.phpt`
+- `ext/standard/tests/array/array_diff_key.phpt`
+- `ext/standard/tests/array/array_diff_leak_custom_type_checks.phpt`
+- `ext/standard/tests/array/array_diff_single_array.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_basic.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_error.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_variation11.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_variation13.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_variation5.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_variation6.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_variation7.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_variation8.phpt`
+- `ext/standard/tests/array/array_diff_uassoc_variation9.phpt`
+- `ext/standard/tests/array/array_diff_ukey_basic.phpt`
+- `ext/standard/tests/array/array_diff_ukey_variation10.phpt`
+- `ext/standard/tests/array/array_diff_ukey_variation5.phpt`
+- `ext/standard/tests/array/array_diff_ukey_variation6.phpt`
+- `ext/standard/tests/array/array_diff_ukey_variation8.phpt`
+- `ext/standard/tests/array/array_fill_error.phpt`
+- `ext/standard/tests/array/array_fill_variation6.phpt`
+- `ext/standard/tests/array/array_filter.phpt`
+- `ext/standard/tests/array/array_filter_basic.phpt`
+- `ext/standard/tests/array/array_filter_invalid_mode.phpt`
+- `ext/standard/tests/array/array_filter_variation10.phpt`
+- `ext/standard/tests/array/array_filter_variation3.phpt`
+- `ext/standard/tests/array/array_filter_variation4.phpt`
+- `ext/standard/tests/array/array_filter_variation5.phpt`
+- `ext/standard/tests/array/array_filter_variation6.phpt`
+- `ext/standard/tests/array/array_filter_variation7.phpt`
+- `ext/standard/tests/array/array_filter_variation8.phpt`
+- `ext/standard/tests/array/array_filter_variation9.phpt`
+- `ext/standard/tests/array/array_find_types.phpt`
+- `ext/standard/tests/array/array_intersect_key.phpt`
+- `ext/standard/tests/array/array_intersect_uassoc_basic.phpt`
+- `ext/standard/tests/array/array_intersect_uassoc_variation5.phpt`
+- `ext/standard/tests/array/array_intersect_uassoc_variation6.phpt`
+- `ext/standard/tests/array/array_intersect_uassoc_variation7.phpt`
+- `ext/standard/tests/array/array_intersect_uassoc_variation8.phpt`
+- `ext/standard/tests/array/array_intersect_ukey_basic.phpt`
+- `ext/standard/tests/array/array_intersect_ukey_variation5.phpt`
+- `ext/standard/tests/array/array_intersect_ukey_variation6.phpt`
+- `ext/standard/tests/array/array_intersect_ukey_variation7.phpt`
+- `ext/standard/tests/array/array_intersect_ukey_variation8.phpt`
+- `ext/standard/tests/array/array_key_exists.phpt`
+- `ext/standard/tests/array/array_key_exists_variation3.phpt`
+- `ext/standard/tests/array/array_map_001.phpt`
+- `ext/standard/tests/array/array_map_basic.phpt`
+- `ext/standard/tests/array/array_map_error.phpt`
+- `ext/standard/tests/array/array_map_variation1.phpt`
+- `ext/standard/tests/array/array_map_variation10.phpt`
+- `ext/standard/tests/array/array_map_variation11.phpt`
+- `ext/standard/tests/array/array_map_variation12.phpt`
+- `ext/standard/tests/array/array_map_variation13.phpt`
+- `ext/standard/tests/array/array_map_variation14.phpt`
+- `ext/standard/tests/array/array_map_variation15.phpt`
+- `ext/standard/tests/array/array_map_variation16.phpt`
+- `ext/standard/tests/array/array_map_variation19.phpt`
+- `ext/standard/tests/array/array_map_variation2.phpt`
+- `ext/standard/tests/array/array_map_variation3.phpt`
+- `ext/standard/tests/array/array_map_variation6.phpt`
+- `ext/standard/tests/array/array_map_variation7.phpt`
+- `ext/standard/tests/array/array_map_variation8.phpt`
+- `ext/standard/tests/array/array_map_variation9.phpt`
+- `ext/standard/tests/array/array_pad_too_large_padding.phpt`
+- `ext/standard/tests/array/array_product_empty_array.phpt`
+- `ext/standard/tests/array/array_product_variation5.phpt`
+- `ext/standard/tests/array/array_push_error2.phpt`
+- `ext/standard/tests/array/array_rand.phpt`
+- `ext/standard/tests/array/array_rand_variation5.phpt`
+- `ext/standard/tests/array/array_reduce.phpt`
+- `ext/standard/tests/array/array_reduce_accumulator_refcount.phpt`
+- `ext/standard/tests/array/array_reduce_return_by_ref.phpt`
+- `ext/standard/tests/array/array_reduce_variation1.phpt`
+- `ext/standard/tests/array/array_replace.phpt`
+- `ext/standard/tests/array/array_slice_variation1.phpt`
+- `ext/standard/tests/array/array_sum_empty_array.phpt`
+- `ext/standard/tests/array/array_sum_variation8.phpt`
+- `ext/standard/tests/array/array_udiff_assoc_variation.phpt`
+- `ext/standard/tests/array/array_udiff_assoc_variation5.phpt`
+- `ext/standard/tests/array/array_udiff_uassoc_variation6.phpt`
+- `ext/standard/tests/array/array_udiff_variation5.phpt`
+- `ext/standard/tests/array/array_uintersect_assoc_basic2.phpt`
+- `ext/standard/tests/array/array_uintersect_assoc_variation5.phpt`
+- `ext/standard/tests/array/array_uintersect_uassoc_variation6.phpt`
+
+Implemented behavior: the runtime now exposes `PHP_MAXPATHLEN`, implements
+`php_strip_whitespace()`, preserves `addcslashes()` invalid range warnings,
+accepts braced scalar object member names in the parser, and tightens standard
+array helper diagnostics for invalid callbacks, array key conversion warning
+spacing, and `array_merge()` / `array_merge_recursive()` non-array operands.
+The generated C backend also inherits the current method-scope helper warning
+cleanup from upstream.
 
 ## 2026-06-15 ptn-vq7w Broad COW/Reference Row Pack
 
