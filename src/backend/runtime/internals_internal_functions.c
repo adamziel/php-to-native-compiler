@@ -5744,6 +5744,339 @@ static PtnValue ptn_internal_array_filter(PtnRuntime *runtime, size_t argc, cons
     return result;
 }
 
+static int ptn_extract_identifier_start(unsigned char byte) {
+    return byte == '_' || isalpha(byte) || byte >= 0x80;
+}
+
+static int ptn_extract_identifier_char(unsigned char byte) {
+    return byte == '_' || isalnum(byte) || byte >= 0x80;
+}
+
+static int ptn_extract_is_valid_identifier_len(const char *name, size_t len) {
+    if (name == NULL || len == 0 || memchr(name, '\0', len) != NULL) {
+        return 0;
+    }
+    if (!ptn_extract_identifier_start((unsigned char)name[0])) {
+        return 0;
+    }
+    for (size_t i = 1; i < len; i++) {
+        if (!ptn_extract_identifier_char((unsigned char)name[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_extract_is_valid_identifier(const char *name) {
+    return ptn_extract_is_valid_identifier_len(name, strlen(name));
+}
+
+static char *ptn_extract_key_name(PtnArrayKey key, size_t *len_out) {
+    if (key.type == PTN_ARRAY_KEY_STRING) {
+        char *name = ptn_duplicate_string_len(key.as.string, key.string_len);
+        *len_out = key.string_len;
+        return name;
+    }
+
+    int needed = snprintf(NULL, 0, "%lld", (long long)key.as.integer);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *name = malloc((size_t)needed + 1);
+    if (name == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(name, (size_t)needed + 1, "%lld", (long long)key.as.integer);
+    *len_out = (size_t)needed;
+    return name;
+}
+
+static char *ptn_extract_prefixed_name(const char *prefix, const char *name, size_t name_len, size_t *len_out) {
+    size_t prefix_len = strlen(prefix);
+    if (prefix_len > SIZE_MAX - name_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t len = prefix_len + 1 + name_len;
+    char *target = malloc(len + 1);
+    if (target == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(target, prefix, prefix_len);
+    target[prefix_len] = '_';
+    memcpy(target + prefix_len + 1, name, name_len);
+    target[len] = '\0';
+    *len_out = len;
+    return target;
+}
+
+static int ptn_extract_local_symbol_exists(PtnRuntime *runtime, const char *name) {
+    PtnValue value;
+    return ptn_symbols_get(&runtime->symbols, name, &value);
+}
+
+static int ptn_extract_mode_needs_prefix(int64_t mode) {
+    return mode == PTN_EXTR_PREFIX_SAME ||
+        mode == PTN_EXTR_PREFIX_ALL ||
+        mode == PTN_EXTR_PREFIX_INVALID ||
+        mode == PTN_EXTR_PREFIX_IF_EXISTS;
+}
+
+static int ptn_extract_parse_flags(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    int64_t *mode_out,
+    int *refs_out
+) {
+    int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_EXTR_OVERWRITE;
+    int refs = (flags & PTN_EXTR_REFS) != 0;
+    int64_t mode = flags & ~PTN_EXTR_REFS;
+    if (flags < 0 ||
+        mode < PTN_EXTR_OVERWRITE ||
+        mode > PTN_EXTR_IF_EXISTS ||
+        (flags & ~(PTN_EXTR_REFS | PTN_EXTR_IF_EXISTS)) != 0) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "extract(): Argument #2 ($flags) must be a valid extract type"
+        );
+        return 0;
+    }
+    *mode_out = mode;
+    *refs_out = refs;
+    return 1;
+}
+
+static char *ptn_extract_prefix_arg(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    int64_t mode
+) {
+    if (!ptn_extract_mode_needs_prefix(mode)) {
+        return argc >= 3 ? ptn_value_to_string(args[2]) : NULL;
+    }
+    if (argc < 3) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "extract(): Argument #3 ($prefix) is required when using this extract type"
+        );
+        return NULL;
+    }
+
+    char *prefix = ptn_value_to_string(args[2]);
+    if (!ptn_extract_is_valid_identifier(prefix)) {
+        free(prefix);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "extract(): Argument #3 ($prefix) must be a valid identifier"
+        );
+        return NULL;
+    }
+    return prefix;
+}
+
+static char *ptn_extract_target_name(
+    PtnRuntime *runtime,
+    PtnArrayKey key,
+    int64_t mode,
+    const char *prefix,
+    int *count_only
+) {
+    size_t raw_len = 0;
+    char *raw = ptn_extract_key_name(key, &raw_len);
+    int raw_valid = ptn_extract_is_valid_identifier_len(raw, raw_len);
+    char *target = NULL;
+    size_t target_len = 0;
+    *count_only = 0;
+
+    if (mode == PTN_EXTR_PREFIX_ALL) {
+        target = ptn_extract_prefixed_name(prefix, raw, raw_len, &target_len);
+        if (!ptn_extract_is_valid_identifier_len(target, target_len)) {
+            free(raw);
+            free(target);
+            return NULL;
+        }
+    } else if (mode == PTN_EXTR_PREFIX_INVALID && !raw_valid) {
+        target = ptn_extract_prefixed_name(prefix, raw, raw_len, &target_len);
+        if (!ptn_extract_is_valid_identifier_len(target, target_len)) {
+            free(raw);
+            free(target);
+            return NULL;
+        }
+    } else {
+        if (!raw_valid) {
+            free(raw);
+            return NULL;
+        }
+        if ((mode == PTN_EXTR_PREFIX_SAME || mode == PTN_EXTR_PREFIX_IF_EXISTS) &&
+            ptn_extract_local_symbol_exists(runtime, raw)) {
+            target = ptn_extract_prefixed_name(prefix, raw, raw_len, &target_len);
+            if (!ptn_extract_is_valid_identifier_len(target, target_len)) {
+                free(raw);
+                free(target);
+                return NULL;
+            }
+        } else {
+            target = ptn_duplicate_string_len(raw, raw_len);
+            target_len = raw_len;
+        }
+    }
+
+    free(raw);
+    if (mode == PTN_EXTR_SKIP && ptn_extract_local_symbol_exists(runtime, target)) {
+        free(target);
+        return NULL;
+    }
+    if (mode == PTN_EXTR_IF_EXISTS && !ptn_extract_local_symbol_exists(runtime, target)) {
+        free(target);
+        return NULL;
+    }
+    if (strcmp(target, "GLOBALS") == 0) {
+        *count_only = 1;
+    }
+    return target;
+}
+
+static PtnValue ptn_extract_entry_reference(PtnArray *array, size_t index) {
+    PtnValue *slot = &array->entries[index].value;
+    if (slot->type != PTN_REFERENCE) {
+        PtnValue current = *slot;
+        PtnReference *reference = ptn_reference_new_owned(current);
+        *slot = ptn_reference_value(reference);
+    }
+    return ptn_value_clone(*slot);
+}
+
+static void ptn_extract_store_value(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    int replace_existing_reference
+) {
+    if (strcmp(name, "GLOBALS") == 0) {
+        return;
+    }
+    if (replace_existing_reference) {
+        ptn_symbols_set(&runtime->symbols, name, ptn_value_deref(value));
+    } else {
+        ptn_runtime_write_variable(runtime, name, value);
+    }
+}
+
+static PtnValue ptn_extract_from_array(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    int64_t mode = PTN_EXTR_OVERWRITE;
+    int refs = 0;
+    if (!ptn_extract_parse_flags(runtime, argc, args, &mode, &refs)) {
+        return ptn_null();
+    }
+    char *prefix = ptn_extract_prefix_arg(runtime, argc, args, mode);
+    if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "extract", 1, "array", source);
+    if (array == NULL) {
+        free(prefix);
+        return ptn_null();
+    }
+    if (refs && source.type == PTN_REFERENCE && source.as.reference->value.type == PTN_ARRAY) {
+        array = ptn_array_detach_value(&source.as.reference->value);
+    }
+
+    int64_t extracted = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        int count_only = 0;
+        char *target = ptn_extract_target_name(runtime, array->entries[i].key, mode, prefix, &count_only);
+        if (target == NULL) {
+            continue;
+        }
+        extracted++;
+        if (!count_only) {
+            if (refs) {
+                PtnValue reference = ptn_extract_entry_reference(array, i);
+                ptn_symbols_bind_reference(&runtime->symbols, target, reference);
+                ptn_value_destroy(&reference);
+            } else {
+                ptn_extract_store_value(runtime, target, array->entries[i].value, 0);
+            }
+        }
+        free(target);
+    }
+    free(prefix);
+    return ptn_int(extracted);
+}
+
+static PTN_UNUSED PtnValue ptn_internal_extract_globals(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    int64_t mode = PTN_EXTR_OVERWRITE;
+    int refs = 0;
+    if (!ptn_extract_parse_flags(runtime, argc, args, &mode, &refs)) {
+        return ptn_null();
+    }
+    char *prefix = ptn_extract_prefix_arg(runtime, argc, args, mode);
+    if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnSymbolTable *globals = ptn_runtime_global_symbol_table(runtime);
+    size_t global_count = globals->len;
+    int64_t extracted = 0;
+    for (size_t i = 0; i < global_count; i++) {
+        char *global_name = ptn_duplicate_string(globals->items[i].name);
+        PtnValue global_value = ptn_value_clone(globals->items[i].value);
+        if (strcmp(global_name, "GLOBALS") == 0) {
+            ptn_value_destroy(&global_value);
+            free(global_name);
+            continue;
+        }
+        PtnArrayKey key = ptn_array_string_key(global_name);
+        int count_only = 0;
+        char *target = ptn_extract_target_name(runtime, key, mode, prefix, &count_only);
+        ptn_array_key_free(key);
+        if (target == NULL) {
+            ptn_value_destroy(&global_value);
+            free(global_name);
+            continue;
+        }
+        extracted++;
+        if (!count_only) {
+            if (refs) {
+                PtnValue current;
+                PtnValue global_reference = ptn_symbols_reference_for_variable(globals, global_name);
+                if (ptn_symbols_get(&runtime->symbols, target, &current) &&
+                    current.type == PTN_REFERENCE &&
+                    current.as.reference == global_reference.as.reference) {
+                    ptn_symbols_bind_reference(&runtime->symbols, target, global_reference);
+                } else {
+                    ptn_symbols_set(&runtime->symbols, target, ptn_value_deref(global_reference));
+                }
+                ptn_value_destroy(&global_reference);
+            } else {
+                ptn_extract_store_value(runtime, target, global_value, 0);
+            }
+        }
+        free(target);
+        ptn_value_destroy(&global_value);
+        free(global_name);
+    }
+    free(prefix);
+    return ptn_int(extracted);
+}
+
+static PtnValue ptn_internal_extract(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_extract_from_array(runtime, args[0], argc, args, line);
+}
+
 static PtnValue ptn_internal_array_unshift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unshift", 1, "array", args[0]);
@@ -18005,6 +18338,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "exp", 1, 1, ptn_internal_exp },
         { "expm1", 1, 1, ptn_internal_expm1 },
         { "extension_loaded", 1, 1, ptn_internal_extension_loaded },
+        { "extract", 1, 3, ptn_internal_extract },
         { "fclose", 1, 1, ptn_internal_fclose },
         { "fdiv", 2, 2, ptn_internal_fdiv },
         { "feof", 1, 1, ptn_internal_feof },
