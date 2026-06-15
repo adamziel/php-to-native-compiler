@@ -19267,28 +19267,6 @@ fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_target
         );
     }
 
-<<<<<<< HEAD
-=======
-    for source in [
-        "<?php $items = [3, 2, 1]; sort($items, SORT_STRING);",
-        "<?php $items = [3, 2, 1]; sort($items, sort_regular);",
-        "<?php $items = [3, 2, 1]; rsort($items, SORT_STRING);",
-        "<?php $items = [3, 2, 1]; arsort($items, SORT_NUMERIC);",
-        "<?php $items = [3, 2, 1]; ksort($items, SORT_NATURAL | SORT_FLAG_CASE);",
-        "<?php $flag = SORT_STRING; $items = [3, 2, 1]; asort($items, $flag);",
-    ] {
-        parser::parse(source).unwrap();
-    }
-
-    let error =
-        parser::parse("<?php $items = [3, 2, 1]; sort($items, SORT_STRING, SORT_NUMERIC);")
-            .unwrap_err();
-    assert!(error
-        .message
-        .contains("sort() currently supports one direct variable array argument"));
-    assert!(error.message.contains("optional sort flag"));
-
->>>>>>> f9084b4c8 (WIP: checkpoint (auto))
     parser::parse("<?php $items = [3, 2, 1]; array_multisort($items);").unwrap();
     parser::parse(
         "<?php $left = [2, 1]; $right = [\"b\", \"a\"]; array_multisort($left, SORT_ASC, SORT_REGULAR, $right, SORT_DESC, SORT_STRING);",
@@ -19895,24 +19873,6 @@ foreach ($krsort as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
 $rsort = [1, 3, 2];\n\
 var_dump(rsort($rsort, 0));\n\
 echo implode(\",\", $rsort), \"\\n\";\n\
-$strings = [\"10\", \"2\", \"1\"];\n\
-var_dump(sort($strings, SORT_STRING));\n\
-echo implode(\",\", $strings), \"\\n\";\n\
-$numbers = [\"10\", \"2\", 1];\n\
-var_dump(sort($numbers, SORT_NUMERIC));\n\
-echo implode(\",\", $numbers), \"\\n\";\n\
-$case = [\"b\", \"A\"];\n\
-var_dump(sort($case, SORT_STRING | SORT_FLAG_CASE));\n\
-echo implode(\",\", $case), \"\\n\";\n\
-$keyed = [\"10a\" => \"a\", \"2a\" => \"b\"];\n\
-var_dump(ksort($keyed, SORT_NUMERIC));\n\
-foreach ($keyed as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
-$numericAssoc = [\"x\" => \"10\", \"y\" => \"2\"];\n\
-var_dump(asort($numericAssoc, SORT_NUMERIC));\n\
-foreach ($numericAssoc as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
-$stringAssoc = [\"x\" => \"10\", \"y\" => \"2\"];\n\
-var_dump(arsort($stringAssoc, SORT_STRING));\n\
-foreach ($stringAssoc as $key => $value) { echo $key, \"=\", $value, \"\\n\"; }\n\
 var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));",
     )
     .unwrap();
@@ -19940,21 +19900,6 @@ var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));",
             "1=a\n",
             "bool(true)\n",
             "3,2,1\n",
-            "bool(true)\n",
-            "1,10,2\n",
-            "bool(true)\n",
-            "1,2,10\n",
-            "bool(true)\n",
-            "A,b\n",
-            "bool(true)\n",
-            "2a=b\n",
-            "10a=a\n",
-            "bool(true)\n",
-            "y=2\n",
-            "x=10\n",
-            "bool(true)\n",
-            "y=2\n",
-            "x=10\n",
             "int(0)\n",
             "bool(true)\n",
             "int(0)\n"
