@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-2cij ENV/CLEAN SKIPIF preconditions | 33 | 0 |
 | ptn-vj4r class_alias namespace metadata | 5 | 5 |
 | ptn-144g parser residual row pack | 2 | 2 |
 | ptn-evvk stream mode diagnostics | 8 | 8 |
@@ -34,6 +35,13 @@ Current hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
 `.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
 Previous hook: `ptn-144g` parser residual row pack passed 2/2 at
 `.runtime/merge-ptn-144g-parser-residuals/summary-20260615T182723Z.txt`.
+
+## 2026-06-15 ptn-2cij ENV/CLEAN SKIPIF Preconditions
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current `origin/master` classify-only (`.runtime/ptn-2cij/origin-baseline-rebased/summary-20260615T172331Z.txt`) | 2,086 selected / 255 runnable / 50 `harness-skipif` | 0 |
+| Final rebased classify-only (`.runtime/ptn-2cij/env-clean-rebased/summary-20260615T171427Z.txt`) | 2,086 selected / 288 runnable / 17 `harness-skipif` | 0 |
 
 ## 2026-06-15 ptn-vj4r Class Alias Namespace Metadata
 

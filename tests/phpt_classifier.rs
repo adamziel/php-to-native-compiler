@@ -105,6 +105,8 @@ fn classify_with_options(
         "PTN_PHPT_PHP_OS",
         "PTN_PHPT_PHP_DEBUG",
         "PTN_PHPT_PHP_ZTS",
+        "PTN_PHPT_EFFECTIVE_UID",
+        "PTN_PHPT_DEFINED_CONSTANTS",
         "SKIP_ASAN",
         "SKIP_MSAN",
         "SKIP_UBSAN",
@@ -116,6 +118,7 @@ fn classify_with_options(
         "USE_TRACKED_ALLOC",
         "RUN_RESOURCE_HEAVY_TESTS",
         "STACK_LIMIT_DEFAULTS_CHECK",
+        "CIRRUS_CI",
     ] {
         command.env_remove(key);
     }
@@ -399,6 +402,120 @@ fn phpt_classifier_models_common_environment_skipif_preconditions() {
     let classification = classify_with_harness_programs(assigned, true);
     assert!(
         classification.starts_with("runnable\t") && classification.contains("environment"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_models_root_helper_skipif_preconditions() {
+    let non_root_helper = "--TEST--\nroot helper\n--SKIPIF--\n<?php require __DIR__ . '/../skipif_root.inc'; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs_and_env(
+        non_root_helper,
+        true,
+        &[("PTN_PHPT_EFFECTIVE_UID", "1000")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("root-helper"),
+        "{classification:?}"
+    );
+    let classification = classify_with_harness_programs_and_env(
+        non_root_helper,
+        true,
+        &[("PTN_PHPT_EFFECTIVE_UID", "0")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("rejects root"),
+        "{classification:?}"
+    );
+
+    let root_helper = "--TEST--\nno root helper\n--SKIPIF--\n<?php require __DIR__ . '/../skipif_no_root.inc'; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs_and_env(
+        root_helper,
+        true,
+        &[("PTN_PHPT_EFFECTIVE_UID", "1000")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("requires root"),
+        "{classification:?}"
+    );
+    let classification = classify_with_harness_programs_and_env(
+        root_helper,
+        true,
+        &[("PTN_PHPT_EFFECTIVE_UID", "0")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("root-helper"),
+        "{classification:?}"
+    );
+
+    let arbitrary_include = "--TEST--\narbitrary include\n--SKIPIF--\n<?php require __DIR__ . '/../custom_skipif.inc'; if (getenv('SKIP_ASAN')) die('skip asan'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(arbitrary_include, true);
+    assert!(
+        classification.starts_with("harness-skipif\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_models_constant_and_ci_skipif_preconditions() {
+    let glob_brace = "--TEST--\nglob brace\n--SKIPIF--\n<?php if (!defined('GLOB_BRACE')) die('skip this test requires GLOB_BRACE support'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs_and_env(
+        glob_brace,
+        true,
+        &[("PTN_PHPT_DEFINED_CONSTANTS", "GLOB_BRACE")],
+    );
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("constant-defined"),
+        "{classification:?}"
+    );
+    let classification = classify_with_harness_programs_and_env(
+        glob_brace,
+        true,
+        &[("PTN_PHPT_DEFINED_CONSTANTS", "OTHER_CONSTANT")],
+    );
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("GLOB_BRACE defined"),
+        "{classification:?}"
+    );
+
+    let ci = "--TEST--\nci gate\n--SKIPIF--\n<?php if (getenv('CIRRUS_CI')) die('skip Inaccurate on Cirrus'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(ci, true);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("environment"),
+        "{classification:?}"
+    );
+    let classification = classify_with_harness_programs_and_env(ci, true, &[("CIRRUS_CI", "1")]);
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("CIRRUS_CI unset"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_models_inactive_windows_symlink_helper_blocks() {
+    let windows_helper = "--TEST--\nwindows helper\n--SKIPIF--\n<?php\nif (PHP_OS_FAMILY === 'Windows') {\n    include __DIR__ . '/windows_links/common.inc';\n    skipIfSeCreateSymbolicLinkPrivilegeIsDisabled(__FILE__);\n}\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs_and_env(
+        windows_helper,
+        true,
+        &[("PTN_PHPT_PHP_OS_FAMILY", "Linux")],
+    );
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("inactive-windows-helper"),
+        "{classification:?}"
+    );
+
+    let classification = classify_with_harness_programs_and_env(
+        windows_helper,
+        true,
+        &[("PTN_PHPT_PHP_OS_FAMILY", "Windows")],
+    );
+    assert!(
+        classification.starts_with("harness-skipif\t"),
         "{classification:?}"
     );
 }

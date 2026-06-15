@@ -451,9 +451,39 @@ ptn_phpt_php_zts() {
     printf '%s\n' "${PTN_PHPT_PHP_ZTS:-0}"
 }
 
+ptn_phpt_effective_uid() {
+    if [[ -n "${PTN_PHPT_EFFECTIVE_UID:-}" ]]; then
+        printf '%s\n' "$PTN_PHPT_EFFECTIVE_UID"
+        return 0
+    fi
+
+    id -u 2>/dev/null || printf '1\n'
+}
+
 ptn_phpt_php_truthy() {
     local value=$1
     [[ -n "$value" && "$value" != "0" ]]
+}
+
+ptn_phpt_php_constant_defined() {
+    local constant=$1
+
+    if [[ -n "${PTN_PHPT_DEFINED_CONSTANTS:-}" ]]; then
+        ptn_phpt_csv_contains_ci "$constant" "$PTN_PHPT_DEFINED_CONSTANTS"
+        return
+    fi
+
+    case "$constant" in
+        GLOB_BRACE)
+            if command -v php >/dev/null 2>&1; then
+                [[ "$(php -r "echo defined('$constant') ? '1' : '0';" 2>/dev/null)" == "1" ]]
+                return
+            fi
+            return 1
+            ;;
+    esac
+
+    return 1
 }
 
 ptn_phpt_eval_string_condition() {
@@ -523,6 +553,15 @@ ptn_phpt_modeled_skipif_precondition() {
     code=$(ptn_phpt_skipif_code "$path")
     [[ -n "$code" ]] || return 1
 
+    local inactive_windows_helper_count=0
+    if [[ "$(ptn_phpt_php_os_family)" != "Windows" ]] \
+        && printf '%s\n' "$code" | grep -Eq "if[[:space:]]*\\([[:space:]]*PHP_OS_FAMILY[[:space:]]*(===|==)[[:space:]]*['\"]Windows['\"][[:space:]]*\\)[[:space:]]*\\{[^{}]*skipIfSeCreateSymbolicLinkPrivilegeIsDisabled[^{}]*\\}"; then
+        inactive_windows_helper_count=$(ptn_phpt_count_matches 'skipIfSeCreateSymbolicLinkPrivilegeIsDisabled[[:space:]]*\(' "$code")
+        code=$(printf '%s\n' "$code" \
+            | sed -E "s/if[[:space:]]*\\([[:space:]]*PHP_OS_FAMILY[[:space:]]*(===|==)[[:space:]]*['\"]Windows['\"][[:space:]]*\\)[[:space:]]*\\{[^{}]*skipIfSeCreateSymbolicLinkPrivilegeIsDisabled[^{}]*\\}/ /g" \
+            | ptn_phpt_squash_ws)
+    fi
+
     code_without_strings=$(printf '%s\n' "$code" | ptn_phpt_strip_php_strings | ptn_phpt_squash_ws)
     code_for_identifiers=$(printf '%s\n' "$code_without_strings" | sed -E 's/\$[A-Za-z_][A-Za-z0-9_]*/ /g')
 
@@ -530,7 +569,7 @@ ptn_phpt_modeled_skipif_precondition() {
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
+            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
                 ;;
             *)
                 return 1
@@ -548,6 +587,8 @@ ptn_phpt_modeled_skipif_precondition() {
     local php_debug_count
     local php_zts_count
     local setlocale_count
+    local defined_count
+    local include_count
     if_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])if[[:space:]]*\(' "$code_without_strings")
     output_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(die|exit|echo|print)([[:space:]]*\(|[[:space:]])' "$code_without_strings")
     getenv_count=$(ptn_phpt_count_matches 'getenv[[:space:]]*\(' "$code_without_strings")
@@ -558,6 +599,8 @@ ptn_phpt_modeled_skipif_precondition() {
     php_debug_count=$(ptn_phpt_count_matches 'PHP_DEBUG' "$code_without_strings")
     php_zts_count=$(ptn_phpt_count_matches 'PHP_ZTS' "$code_without_strings")
     setlocale_count=$(ptn_phpt_count_matches 'setlocale[[:space:]]*\(' "$code_without_strings")
+    defined_count=$(ptn_phpt_count_matches 'defined[[:space:]]*\(' "$code_without_strings")
+    include_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(require|include)(_once)?[[:space:]]+' "$code_without_strings")
 
     local env_probe_lines
     local parsed_env_count=0
@@ -573,7 +616,7 @@ ptn_phpt_modeled_skipif_precondition() {
             case "$env_var" in
                 SKIP_ASAN|SKIP_MSAN|SKIP_UBSAN|SKIP_PERF_SENSITIVE)
                     ;;
-                SKIP_*|USE_ZEND_ALLOC|USE_TRACKED_ALLOC|RUN_RESOURCE_HEAVY_TESTS|STACK_LIMIT_DEFAULTS_CHECK)
+                SKIP_*|USE_ZEND_ALLOC|USE_TRACKED_ALLOC|RUN_RESOURCE_HEAVY_TESTS|STACK_LIMIT_DEFAULTS_CHECK|CIRRUS_CI)
                     env_family="environment"
                     ;;
                 *)
@@ -769,10 +812,69 @@ ptn_phpt_modeled_skipif_precondition() {
     fi
     [[ "$setlocale_count" -eq "$parsed_locale_count" ]] || return 1
 
-    local recognized_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count))
+    local defined_condition_lines
+    local parsed_defined_count=0
+    defined_condition_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "!?[[:space:]]*defined[[:space:]]*\\([[:space:]]*['\"][A-Za-z_][A-Za-z0-9_]*['\"][[:space:]]*\\)" \
+        || true)
+    if [[ -n "$defined_condition_lines" ]]; then
+        while IFS= read -r condition; do
+            local constant
+            constant=$(printf '%s\n' "$condition" | sed -E "s/.*['\"]([^'\"]+)['\"].*/\\1/")
+            case "$constant" in
+                GLOB_BRACE)
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+            parsed_defined_count=$((parsed_defined_count + 1))
+            if printf '%s\n' "$condition" | grep -Eq '^[[:space:]]*!'; then
+                if ! ptn_phpt_php_constant_defined "$constant"; then
+                    printf 'skipif-precondition\tmodeled static --SKIPIF-- constant guard requires %s defined; modeled PHP constants leave it undefined\n' "$constant"
+                    return 0
+                fi
+            elif ptn_phpt_php_constant_defined "$constant"; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- constant guard requires %s undefined; modeled PHP constants define it\n' "$constant"
+                return 0
+            fi
+        done <<< "$defined_condition_lines"
+        modeled_families+=("constant-defined")
+    fi
+    [[ "$defined_count" -eq "$parsed_defined_count" ]] || return 1
+
+    local root_helper_lines
+    local parsed_include_count=0
+    root_helper_lines=$(printf '%s\n' "$code" \
+        | grep -Eo "(require|include)(_once)?[[:space:]]+[^;]*['\"][^'\"]*skipif_(no_)?root\\.inc['\"][^;]*;?" \
+        || true)
+    if [[ -n "$root_helper_lines" ]]; then
+        local effective_uid
+        effective_uid=$(ptn_phpt_effective_uid)
+        while IFS= read -r condition; do
+            parsed_include_count=$((parsed_include_count + 1))
+            if printf '%s\n' "$condition" | grep -Eq 'skipif_no_root\.inc'; then
+                if [[ "$effective_uid" -ne 0 ]]; then
+                    printf 'skipif-precondition\tmodeled static --SKIPIF-- root helper requires root; modeled effective uid=%s\n' "$effective_uid"
+                    return 0
+                fi
+            elif [[ "$effective_uid" -eq 0 ]]; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- non-root helper rejects root; modeled effective uid=0\n'
+                return 0
+            fi
+        done <<< "$root_helper_lines"
+        modeled_families+=("root-helper")
+    fi
+    [[ "$include_count" -eq "$parsed_include_count" ]] || return 1
+    if [[ "$inactive_windows_helper_count" -gt 0 ]]; then
+        modeled_families+=("inactive-windows-helper")
+    fi
+
+    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count))
+    local recognized_count=$((guard_count + parsed_include_count + inactive_windows_helper_count))
     [[ "$recognized_count" -gt 0 ]] || return 1
-    [[ "$if_count" -eq "$recognized_count" ]] || return 1
-    [[ "$output_count" -eq "$recognized_count" ]] || return 1
+    [[ "$if_count" -eq "$guard_count" ]] || return 1
+    [[ "$output_count" -eq "$guard_count" ]] || return 1
 
     local old_ifs=$IFS
     IFS=,
