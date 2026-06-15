@@ -1600,7 +1600,7 @@ fn emit_return_type_boundary(
             out.push_str("        exit(255);\n");
             out.push_str("    }\n");
         }
-        TypeHint::Mixed | TypeHint::Void => {}
+        TypeHint::Callable | TypeHint::Mixed | TypeHint::Void => {}
     }
 }
 
@@ -1652,6 +1652,7 @@ fn type_hint_condition(value_expr: &str, type_hint: &TypeHint) -> String {
         TypeHint::Float => format!("ptn_value_deref({value_expr}).type == PTN_FLOAT"),
         TypeHint::String => format!("ptn_value_deref({value_expr}).type == PTN_STRING"),
         TypeHint::Bool => format!("ptn_value_deref({value_expr}).type == PTN_BOOL"),
+        TypeHint::Callable => "1".to_string(),
         TypeHint::Mixed => "1".to_string(),
         TypeHint::Void | TypeHint::Never => "0".to_string(),
         TypeHint::Nullable(inner) => format!(
@@ -1678,6 +1679,7 @@ fn type_hint_label(type_hint: &TypeHint) -> String {
         TypeHint::Float => "float".to_string(),
         TypeHint::String => "string".to_string(),
         TypeHint::Bool => "bool".to_string(),
+        TypeHint::Callable => "callable".to_string(),
         TypeHint::Mixed => "mixed".to_string(),
         TypeHint::Void => "void".to_string(),
         TypeHint::Never => "never".to_string(),
@@ -1751,6 +1753,7 @@ fn emit_nullable_return_type_boundary(
             out.push_str("    }\n");
         }
         TypeHint::Null
+        | TypeHint::Callable
         | TypeHint::Mixed
         | TypeHint::Void
         | TypeHint::Never
@@ -1768,6 +1771,7 @@ fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static
         Some(
             TypeHint::Null
             | TypeHint::Array
+            | TypeHint::Callable
             | TypeHint::Mixed
             | TypeHint::Void
             | TypeHint::Never
@@ -10586,7 +10590,7 @@ impl ValueEmitter {
                     php_string_byte_len(value)
                 )
             }
-            ValueExpr::Int(value) => format!("ptn_int({value})"),
+            ValueExpr::Int(value) => format!("ptn_int({})", c_i64_literal(*value)),
             ValueExpr::Float(value) => format!("ptn_float({value:?})"),
             ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
             ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
@@ -15751,6 +15755,14 @@ fn c_string(value: &str) -> String {
         }
     }
     out
+}
+
+fn c_i64_literal(value: i64) -> String {
+    if value == i64::MIN {
+        "(-9223372036854775807LL - 1LL)".to_string()
+    } else {
+        format!("{value}LL")
+    }
 }
 
 fn c_optional_string(value: Option<&str>) -> String {

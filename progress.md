@@ -1,6 +1,6 @@
 # PTN Progress Mirror
 
-Last refresh: 2026-06-15T16:43Z.
+Last refresh: 2026-06-15T17:06Z.
 Source: `PROGRESS.md`
 Measured: not recorded
 
@@ -88,6 +88,7 @@ Compact signal: Units 3/3; Native 733/733; Bounded 479/486; Zend 119/119; ext/st
 | User-comparator-sort-vq7w | 20/26 |
 | Std-strings-m8pk | 21/21 |
 | Std-strings-almd | 12/13 |
+| Sort-flags-w17z2 | 72/78 |
 | array_rand | 6/7 |
 | Zend-op/control | 21/26 |
 | Zend-lit/op-3ijs | 27/30 |

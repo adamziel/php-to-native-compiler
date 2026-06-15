@@ -1500,6 +1500,22 @@ fn parser_accepts_array_parameter_return_hints_for_functions_and_closures() {
 }
 
 #[test]
+fn parser_accepts_callable_parameter_and_return_type_hints() {
+    let program = parser::parse(
+        "<?php interface One { public function callback(callable $value): callable; }",
+    )
+    .unwrap();
+
+    let interface = &program.classes[0];
+    assert!(interface.is_interface);
+    assert_eq!(interface.methods[0].return_type, Some(TypeHint::Callable));
+    assert_eq!(
+        interface.methods[0].parameters[0].type_hint,
+        Some(TypeHint::Callable)
+    );
+}
+
+#[test]
 fn parser_accepts_class_name_parameter_and_return_type_hints() {
     let program = parser::parse(
         "<?php namespace App; use Vendor\\Type as Imported; \
@@ -25320,6 +25336,60 @@ echo \"item=$items[$key] bare=$items[name] legacy=${name}!\\n\";",
 item=compiler bare=Ada legacy=legacy!\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_preserves_unbraced_interpolation_numeric_key_shapes() {
+    let program = parser::parse(
+        "<?php echo \"$a[0] $a[-0] $a[1] $a[-1] $a[0x0] $a[-0x0] $a[00] $a[-00] $a[9223372036854775808]\";",
+    )
+    .unwrap();
+
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+
+    let indices = parts
+        .iter()
+        .filter_map(|part| match part {
+            StringPart::ArrayAccess { array, indices } if array == "a" => Some(indices.as_slice()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(indices.len(), 9);
+    assert_eq!(indices[0], &[StringInterpolationIndex::Int(0)]);
+    assert_eq!(
+        indices[1],
+        &[StringInterpolationIndex::String("-0".to_string())]
+    );
+    assert_eq!(indices[2], &[StringInterpolationIndex::Int(1)]);
+    assert_eq!(indices[3], &[StringInterpolationIndex::Int(-1)]);
+    assert_eq!(
+        indices[4],
+        &[StringInterpolationIndex::String("0x0".to_string())]
+    );
+    assert_eq!(
+        indices[5],
+        &[StringInterpolationIndex::String("-0x0".to_string())]
+    );
+    assert_eq!(
+        indices[6],
+        &[StringInterpolationIndex::String("00".to_string())]
+    );
+    assert_eq!(
+        indices[7],
+        &[StringInterpolationIndex::String("-00".to_string())]
+    );
+    assert_eq!(
+        indices[8],
+        &[StringInterpolationIndex::String(
+            "9223372036854775808".to_string()
+        )]
+    );
 }
 
 #[test]

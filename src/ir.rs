@@ -141,6 +141,7 @@ pub struct FunctionParameter {
 pub enum TypeHint {
     Null,
     Array,
+    Callable,
     Int,
     Float,
     String,
@@ -1380,6 +1381,7 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
     match type_hint {
         AstTypeHint::Null => TypeHint::Null,
         AstTypeHint::Array => TypeHint::Array,
+        AstTypeHint::Callable => TypeHint::Callable,
         AstTypeHint::Int => TypeHint::Int,
         AstTypeHint::Float => TypeHint::Float,
         AstTypeHint::String => TypeHint::String,
@@ -2850,6 +2852,7 @@ fn assertion_type_hint_text(type_hint: &AstTypeHint) -> String {
     match type_hint {
         AstTypeHint::Null => "null".to_string(),
         AstTypeHint::Array => "array".to_string(),
+        AstTypeHint::Callable => "callable".to_string(),
         AstTypeHint::Int => "int".to_string(),
         AstTypeHint::Float => "float".to_string(),
         AstTypeHint::String => "string".to_string(),
