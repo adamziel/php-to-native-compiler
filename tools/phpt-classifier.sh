@@ -1038,6 +1038,33 @@ ptn_phpt_first_unsupported_language_surface() {
                 next
             }
             line = ptn_php_code_line($0)
+            tmp = line
+            ptn_line_open_braces = gsub(/\{/, "", tmp)
+            tmp = line
+            ptn_line_close_braces = gsub(/\}/, "", tmp)
+            ptn_class_declaration_line = line ~ /(^|[^[:alnum:]_$])(class|interface|trait)[[:space:]]+[a-z_\\][a-z0-9_\\]*/ &&
+                line !~ /(^|[^[:alnum:]_$])new[[:space:]]+class([^[:alnum:]_]|$)/
+            if (ptn_class_declaration_line) {
+                ptn_class_body_pending = 1
+            }
+            ptn_function_declaration_line = line ~ /(^|[^[:alnum:]_$])function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\(/
+            if (ptn_function_declaration_line) {
+                ptn_function_body_pending = 1
+            }
+            if (ptn_class_body_pending && ptn_line_open_braces > 0) {
+                ptn_class_body_depth += ptn_line_open_braces
+                ptn_class_body_pending = 0
+            } else if (ptn_class_body_pending && ptn_line_open_braces == 0 && line ~ /;/) {
+                ptn_class_body_pending = 0
+            }
+            ptn_static_local_context = ptn_function_body_depth > 0
+            if (ptn_function_body_pending && ptn_line_open_braces > 0) {
+                ptn_function_body_depth += ptn_line_open_braces
+                ptn_function_body_pending = 0
+                ptn_static_local_context = 1
+            } else if (ptn_function_body_pending && ptn_line_open_braces == 0 && line ~ /;/) {
+                ptn_function_body_pending = 0
+            }
             if (line ~ /(^|[^[:alnum:]_$])interface[[:space:]]+[a-z_\\][a-z0-9_\\]*/) {
                 saw_interface = 1
             }
@@ -1066,6 +1093,11 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/) {
                 print "unsupported-generator-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(spl_autoload_[a-z0-9_]*|__autoload)[[:space:]]*\(/) {
+                print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
                 found = 1
                 exit
             }
@@ -1174,10 +1206,23 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+\$[a-z_]/) {
+            if ((ptn_static_local_context || ptn_class_body_depth == 0) &&
+                line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+\$[a-z_]/) {
                 print "unsupported-function-state\trequires static local variables, outside PTN function-local static storage model"
                 found = 1
                 exit
+            }
+            if (ptn_function_body_depth > 0 && ptn_line_close_braces > 0) {
+                ptn_function_body_depth -= ptn_line_close_braces
+                if (ptn_function_body_depth < 0) {
+                    ptn_function_body_depth = 0
+                }
+            }
+            if (ptn_class_body_depth > 0 && ptn_line_close_braces > 0) {
+                ptn_class_body_depth -= ptn_line_close_braces
+                if (ptn_class_body_depth < 0) {
+                    ptn_class_body_depth = 0
+                }
             }
             if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*\$[a-z_][a-z0-9_]*[[:space:]]*\[[[:space:]]*\][^)]*as([^[:alnum:]_]|$)/) {
                 print "unsupported-expression-diagnostics\trequires array-append read diagnostics (`[]` in read context), outside PTN expression diagnostics"
@@ -1321,8 +1366,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /->[[:space:]]*\$/ ||
-                line ~ /::[[:space:]]*\$/) {
+            if (line ~ /->[[:space:]]*[$]/ ||
+                line ~ /::[[:space:]]*[$]([$]|[{])/ ||
+                line ~ /::[[:space:]]*[$][a-z_][a-z0-9_]*[[:space:]]*[(]/) {
                 print "unsupported-dynamic-member-dispatch\trequires dynamic property/method/member-name dispatch, outside PTN modeled member access"
                 found = 1
                 exit
@@ -1394,6 +1440,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (!readonly_class_context &&
                 line !~ /(^|[[:space:]])(public|protected|private)[[:space:]]+readonly[[:space:]]+/ &&
                 line !~ /(^|[[:space:]])readonly[[:space:]]+(public|protected|private)[[:space:]]+/ &&
+                line !~ /(^|[[:space:]])(public|protected|private|var)[[:space:]]+static[[:space:]]+[$][a-z_]/ &&
+                line !~ /(^|[[:space:]])static[[:space:]]+(public|protected|private|var)?[[:space:]]*[$][a-z_]/ &&
                 line ~ /(^|[[:space:]])(public|protected|private|var|static|readonly)[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
                 print "unsupported-typed-property-metadata\trequires typed property metadata, outside PTN modeled property declarations"
                 found = 1
@@ -1401,6 +1449,13 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
                 print "unsupported-typed-property-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
+                found = 1
+                exit
+            }
+            if (line ~ /[.][.][.]/ &&
+                (line ~ /(^|[[:space:]])(public|protected|private)?[[:space:]]*const[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]*=/ ||
+                 line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*static[[:space:]]+\$[a-z_][a-z0-9_]*[[:space:]]*=/)) {
+                print "unsupported-class-constant-metadata\trequires class-scope constant/static-property default unpack evaluation, outside PTN modeled class metadata"
                 found = 1
                 exit
             }

@@ -24840,6 +24840,92 @@ echo Counter::$value, \"\\n\";
 }
 
 #[test]
+fn compile_inherited_static_property_slots_to_native_binary() {
+    let root = temp_dir("ptn-native-inherited-static-property-slots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inherited-static-property-slots.php");
+    let output = root.join("inherited-static-property-slots-bin");
+    fs::write(
+        &input,
+        "<?php
+class SharedBase {
+    public static $test1 = true;
+    public static $test2 = array();
+    public static $test3 = \"str\";
+}
+
+class SharedChild extends SharedBase {
+}
+
+SharedBase::$test1 = \"x\";
+SharedBase::$test2 = \"y\";
+SharedBase::$test3 = \"z\";
+var_dump(SharedBase::$test1);
+var_dump(SharedChild::$test1);
+var_dump(SharedChild::$test2);
+var_dump(SharedChild::$test3);
+
+class ClassA {
+    public static $prop;
+}
+
+class ClassB extends ClassA {
+    public static $prop;
+}
+
+class ClassC extends ClassB {
+}
+
+ClassA::$prop = 'A';
+ClassB::$prop = 'B';
+ClassC::$prop = 'C';
+var_dump(ClassA::$prop);
+var_dump(ClassB::$prop);
+var_dump(ClassC::$prop);
+
+ClassA::$prop = 'A2';
+var_dump(ClassA::$prop);
+var_dump(ClassB::$prop);
+var_dump(ClassC::$prop);
+
+ClassB::$prop = 'B2';
+var_dump(ClassA::$prop);
+var_dump(ClassB::$prop);
+var_dump(ClassC::$prop);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"x\"\n",
+            "string(1) \"x\"\n",
+            "string(1) \"y\"\n",
+            "string(1) \"z\"\n",
+            "string(1) \"A\"\n",
+            "string(1) \"C\"\n",
+            "string(1) \"C\"\n",
+            "string(2) \"A2\"\n",
+            "string(1) \"C\"\n",
+            "string(1) \"C\"\n",
+            "string(2) \"A2\"\n",
+            "string(2) \"B2\"\n",
+            "string(2) \"B2\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_resolve_static_property_key"));
+    assert!(c_source.contains("ptn_declared_class_parent_name"));
+}
+
+#[test]
 fn compile_asymmetric_static_property_visibility_to_native_binary() {
     let root = temp_dir("ptn-native-asymmetric-static-property");
     fs::create_dir_all(&root).unwrap();
