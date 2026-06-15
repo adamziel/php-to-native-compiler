@@ -19267,6 +19267,27 @@ fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_target
         );
     }
 
+<<<<<<< HEAD
+=======
+    for source in [
+        "<?php $items = [3, 2, 1]; sort($items, SORT_STRING);",
+        "<?php $items = [3, 2, 1]; sort($items, sort_regular);",
+        "<?php $items = [3, 2, 1]; rsort($items, SORT_STRING);",
+        "<?php $items = [3, 2, 1]; arsort($items, SORT_NUMERIC);",
+        "<?php $items = [3, 2, 1]; ksort($items, SORT_NATURAL | SORT_FLAG_CASE);",
+        "<?php $flag = SORT_STRING; $items = [3, 2, 1]; asort($items, $flag);",
+    ] {
+        parser::parse(source).unwrap();
+    }
+
+    let error = parser::parse("<?php $items = [3, 2, 1]; sort($items, SORT_STRING, SORT_NUMERIC);")
+        .unwrap_err();
+    assert!(error
+        .message
+        .contains("sort() currently supports one direct variable array argument"));
+    assert!(error.message.contains("optional sort flag"));
+
+>>>>>>> fe70460a4 (WIP: checkpoint (auto))
     parser::parse("<?php $items = [3, 2, 1]; array_multisort($items);").unwrap();
     parser::parse(
         "<?php $left = [2, 1]; $right = [\"b\", \"a\"]; array_multisort($left, SORT_ASC, SORT_REGULAR, $right, SORT_DESC, SORT_STRING);",
