@@ -3373,13 +3373,15 @@ impl Parser<'_> {
         while matches!(self.peek().kind, TokenKind::Catch) {
             catches.push(self.parse_catch_clause()?);
         }
+        let mut has_finally = false;
         let finally_body = if token_is_identifier_named(self.peek(), "finally") {
+            has_finally = true;
             self.advance();
             self.parse_block()?
         } else {
             Vec::new()
         };
-        if catches.is_empty() && finally_body.is_empty() {
+        if catches.is_empty() && !has_finally {
             return Err(Diagnostic::new(
                 "try without catch or finally is unsupported",
                 Some(span),
@@ -7694,13 +7696,20 @@ fn validate_class_constant_names(class: &ClassDecl) -> Result<()> {
 #[derive(Debug, Clone)]
 struct LabelInfo {
     control_path: Vec<usize>,
+    finally_path: Vec<usize>,
 }
 
 fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
     let mut labels = HashMap::new();
     let mut control_path = Vec::new();
-    collect_labels(statements, &mut labels, &mut control_path)?;
-    validate_gotos(statements, &labels, &mut control_path)
+    let mut finally_path = Vec::new();
+    collect_labels(
+        statements,
+        &mut labels,
+        &mut control_path,
+        &mut finally_path,
+    )?;
+    validate_gotos(statements, &labels, &mut control_path, &mut finally_path)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -9628,6 +9637,7 @@ fn collect_labels(
     statements: &[Statement],
     labels: &mut HashMap<String, LabelInfo>,
     control_path: &mut Vec<usize>,
+    finally_path: &mut Vec<usize>,
 ) -> Result<()> {
     for statement in statements {
         match statement {
@@ -9636,14 +9646,14 @@ fn collect_labels(
                 else_body,
                 ..
             } => {
-                collect_labels(then_body, labels, control_path)?;
-                collect_labels(else_body, labels, control_path)?;
+                collect_labels(then_body, labels, control_path, finally_path)?;
+                collect_labels(else_body, labels, control_path, finally_path)?;
             }
             Statement::Block { statements, .. } => {
-                collect_labels(statements, labels, control_path)?;
+                collect_labels(statements, labels, control_path, finally_path)?;
             }
             Statement::While { body, span, .. } | Statement::DoWhile { body, span, .. } => {
-                collect_control_labels(*span, body, labels, control_path)?;
+                collect_control_labels(*span, body, labels, control_path, finally_path)?;
             }
             Statement::For {
                 initializers,
@@ -9652,29 +9662,33 @@ fn collect_labels(
                 span,
                 ..
             } => {
-                collect_labels(initializers, labels, control_path)?;
-                collect_labels(updates, labels, control_path)?;
-                collect_control_labels(*span, body, labels, control_path)?;
+                collect_labels(initializers, labels, control_path, finally_path)?;
+                collect_labels(updates, labels, control_path, finally_path)?;
+                collect_control_labels(*span, body, labels, control_path, finally_path)?;
             }
             Statement::Foreach { body, span, .. } => {
-                collect_control_labels(*span, body, labels, control_path)?;
+                collect_control_labels(*span, body, labels, control_path, finally_path)?;
             }
             Statement::Try {
                 body,
                 catches,
                 finally_body,
-                ..
+                span,
             } => {
-                collect_labels(body, labels, control_path)?;
+                collect_labels(body, labels, control_path, finally_path)?;
                 for catch in catches {
-                    collect_labels(&catch.body, labels, control_path)?;
+                    collect_labels(&catch.body, labels, control_path, finally_path)?;
                 }
-                collect_labels(finally_body, labels, control_path)?;
+                control_path.push(span.byte_start);
+                finally_path.push(span.byte_start);
+                collect_labels(finally_body, labels, control_path, finally_path)?;
+                finally_path.pop();
+                control_path.pop();
             }
             Statement::Switch { cases, span, .. } => {
                 control_path.push(span.byte_start);
                 for case in cases {
-                    collect_labels(&case.body, labels, control_path)?;
+                    collect_labels(&case.body, labels, control_path, finally_path)?;
                 }
                 control_path.pop();
             }
@@ -9683,6 +9697,7 @@ fn collect_labels(
                     name.clone(),
                     LabelInfo {
                         control_path: control_path.clone(),
+                        finally_path: finally_path.clone(),
                     },
                 );
                 if previous.is_some() {
@@ -9703,9 +9718,10 @@ fn collect_control_labels(
     body: &[Statement],
     labels: &mut HashMap<String, LabelInfo>,
     control_path: &mut Vec<usize>,
+    finally_path: &mut Vec<usize>,
 ) -> Result<()> {
     control_path.push(span.byte_start);
-    let result = collect_labels(body, labels, control_path);
+    let result = collect_labels(body, labels, control_path, finally_path);
     control_path.pop();
     result
 }
@@ -9714,6 +9730,7 @@ fn validate_gotos(
     statements: &[Statement],
     labels: &HashMap<String, LabelInfo>,
     control_path: &mut Vec<usize>,
+    finally_path: &mut Vec<usize>,
 ) -> Result<()> {
     for statement in statements {
         match statement {
@@ -9722,14 +9739,14 @@ fn validate_gotos(
                 else_body,
                 ..
             } => {
-                validate_gotos(then_body, labels, control_path)?;
-                validate_gotos(else_body, labels, control_path)?;
+                validate_gotos(then_body, labels, control_path, finally_path)?;
+                validate_gotos(else_body, labels, control_path, finally_path)?;
             }
             Statement::Block { statements, .. } => {
-                validate_gotos(statements, labels, control_path)?;
+                validate_gotos(statements, labels, control_path, finally_path)?;
             }
             Statement::While { body, span, .. } | Statement::DoWhile { body, span, .. } => {
-                validate_control_gotos(*span, body, labels, control_path)?;
+                validate_control_gotos(*span, body, labels, control_path, finally_path)?;
             }
             Statement::For {
                 initializers,
@@ -9738,29 +9755,33 @@ fn validate_gotos(
                 span,
                 ..
             } => {
-                validate_gotos(initializers, labels, control_path)?;
-                validate_gotos(updates, labels, control_path)?;
-                validate_control_gotos(*span, body, labels, control_path)?;
+                validate_gotos(initializers, labels, control_path, finally_path)?;
+                validate_gotos(updates, labels, control_path, finally_path)?;
+                validate_control_gotos(*span, body, labels, control_path, finally_path)?;
             }
             Statement::Foreach { body, span, .. } => {
-                validate_control_gotos(*span, body, labels, control_path)?;
+                validate_control_gotos(*span, body, labels, control_path, finally_path)?;
             }
             Statement::Try {
                 body,
                 catches,
                 finally_body,
-                ..
+                span,
             } => {
-                validate_gotos(body, labels, control_path)?;
+                validate_gotos(body, labels, control_path, finally_path)?;
                 for catch in catches {
-                    validate_gotos(&catch.body, labels, control_path)?;
+                    validate_gotos(&catch.body, labels, control_path, finally_path)?;
                 }
-                validate_gotos(finally_body, labels, control_path)?;
+                control_path.push(span.byte_start);
+                finally_path.push(span.byte_start);
+                validate_gotos(finally_body, labels, control_path, finally_path)?;
+                finally_path.pop();
+                control_path.pop();
             }
             Statement::Switch { cases, span, .. } => {
                 control_path.push(span.byte_start);
                 for case in cases {
-                    validate_gotos(&case.body, labels, control_path)?;
+                    validate_gotos(&case.body, labels, control_path, finally_path)?;
                 }
                 control_path.pop();
             }
@@ -9772,6 +9793,12 @@ fn validate_gotos(
                     ));
                 };
                 if !target_control_path_is_reachable(&target.control_path, control_path) {
+                    if !target_control_path_is_reachable(&target.finally_path, finally_path) {
+                        return Err(Diagnostic::new(
+                            "jump into a finally block is disallowed",
+                            Some(*span),
+                        ));
+                    }
                     return Err(Diagnostic::new(
                         "'goto' into loop or switch statement is disallowed",
                         Some(*span),
@@ -9789,9 +9816,10 @@ fn validate_control_gotos(
     body: &[Statement],
     labels: &HashMap<String, LabelInfo>,
     control_path: &mut Vec<usize>,
+    finally_path: &mut Vec<usize>,
 ) -> Result<()> {
     control_path.push(span.byte_start);
-    let result = validate_gotos(body, labels, control_path);
+    let result = validate_gotos(body, labels, control_path, finally_path);
     control_path.pop();
     result
 }

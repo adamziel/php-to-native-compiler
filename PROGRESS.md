@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.16.2 nested try/finally row pack | 9 | 9 |
 | ptn-90cm compare64bit object/number diagnostics | 6 | 6 |
 | ptn-vvpn class_alias metadata slice | 38 | 13 |
 | ptn-w17z.36 extract typed references | 1 | 1 |
@@ -38,6 +39,15 @@ Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
 Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
 `.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
+
+## 2026-06-15 ptn-w17z.16.2 Nested Try/Finally Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current master focused baseline without known hang (`/tmp/ptn-w17z16-2-before.ysWAWZ/.runtime/ptn-w17z16-2-nested-try-finally-before-nohang/summary-20260615T173343Z.txt`) | 8 selected / 8 runnable | 0 |
+| Current master direct timeout for `finally_goto_005.phpt` (`/tmp/ptn-w17z16-2-before.ysWAWZ/.runtime/ptn-w17z16-2-nested-try-finally-before/finally_goto_005-direct-timeout.status`) | 1 selected / 1 runnable | 0 |
+| Final rebased focused row pack (`.runtime/ptn-w17z16-2-nested-try-finally-rebased/summary-20260615T173807Z.txt`) | 9 selected / 9 runnable | 9 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z16-2-nested-try-finally/summary-20260615T192312Z.txt`) | 9 selected / 9 runnable | 9 |
 
 ## 2026-06-15 ptn-90cm Compare64bit Object/Number Diagnostics
 

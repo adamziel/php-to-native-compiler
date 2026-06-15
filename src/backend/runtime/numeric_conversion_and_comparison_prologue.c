@@ -906,6 +906,17 @@ static PTN_UNUSED PtnException *ptn_exception_new(
     );
 }
 
+static PTN_UNUSED PtnValue ptn_exception_previous_or_active(
+    PtnRuntime *runtime,
+    PtnValue previous
+) {
+    PtnValue resolved = ptn_value_deref(previous);
+    if (resolved.type != PTN_NULL || runtime->exceptions->active_exception == NULL) {
+        return previous;
+    }
+    return ptn_exception_borrow(runtime->exceptions->active_exception);
+}
+
 static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *right);
 
 static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name) {
@@ -1175,8 +1186,20 @@ static PTN_UNUSED void ptn_throw_exception_at(
     const char *path,
     size_t line
 ) {
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        ptn_duplicate_string(message),
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        path,
+        line
+    );
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = ptn_exception_new(runtime, class_name, message, path, line);
+    runtime->exceptions->active_exception = exception;
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -1193,9 +1216,20 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
     const char *class_name,
     char *message
 ) {
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        NULL,
+        0
+    );
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception =
-        ptn_exception_new_owned_cstr(runtime, class_name, message, NULL, 0);
+    runtime->exceptions->active_exception = exception;
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -1210,9 +1244,20 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at(
     const char *path,
     size_t line
 ) {
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        path,
+        line
+    );
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception =
-        ptn_exception_new_owned_cstr(runtime, class_name, message, path, line);
+    runtime->exceptions->active_exception = exception;
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -1571,6 +1616,7 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         int64_t code = ptn_throwable_int_property(runtime, resolved, "code", 0, line);
         int64_t severity = ptn_throwable_int_property(runtime, resolved, "severity", PTN_E_ERROR, line);
         PtnValue previous = ptn_throwable_previous_value(runtime, resolved, line);
+        PtnValue chained_previous = ptn_exception_previous_or_active(runtime, previous);
         PtnValue file_value = ptn_throwable_file_value(runtime, resolved, line);
         char *exception_path = ptn_value_to_string(file_value);
         ptn_value_destroy(&file_value);
@@ -1582,7 +1628,7 @@ static PTN_UNUSED PtnValue ptn_throw_value(
             message.owned,
             message.len,
             code,
-            previous,
+            chained_previous,
             severity,
             exception_path,
             stored_line < 0 ? line : (size_t)stored_line
@@ -1598,6 +1644,18 @@ static PTN_UNUSED PtnValue ptn_throw_value(
     if (resolved.type != PTN_EXCEPTION) {
         ptn_throw_exception_at(runtime, "Error", "Can only throw objects", path, line);
         return ptn_null();
+    }
+    PtnValue chained_previous = ptn_exception_previous_or_active(
+        runtime,
+        resolved.as.exception->previous
+    );
+    if (
+        resolved.as.exception != runtime->exceptions->active_exception &&
+        resolved.as.exception->previous.type == PTN_NULL &&
+        ptn_value_deref(chained_previous).type == PTN_EXCEPTION
+    ) {
+        ptn_value_destroy(&resolved.as.exception->previous);
+        resolved.as.exception->previous = ptn_value_clone_deref(chained_previous);
     }
     ptn_exception_free(runtime->exceptions->active_exception);
     runtime->exceptions->active_exception = resolved.as.exception;
