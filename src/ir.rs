@@ -241,6 +241,7 @@ pub enum Instruction {
     Try {
         body: Vec<Instruction>,
         catches: Vec<CatchClause>,
+        finally_body: Vec<Instruction>,
     },
     Branch {
         condition: ValueExpr,
@@ -291,7 +292,7 @@ pub enum Instruction {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CatchClause {
-    pub type_name: String,
+    pub type_names: Vec<String>,
     pub variable: Option<String>,
     pub body: Vec<Instruction>,
 }
@@ -490,6 +491,7 @@ pub struct MatchArm {
     pub conditions: Vec<ValueExpr>,
     pub value: ValueExpr,
     pub is_default: bool,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -713,12 +715,16 @@ pub fn lower_with_source_and_includes(
     for (include, start_index) in include_sources.iter().zip(include_function_ranges.iter()) {
         context.lower_include_functions(include, *start_index);
     }
-    let classes = program
+    let mut classes: Vec<_> = program
         .classes
         .iter()
         .map(|class| context.lower_class(class))
         .collect();
-    let traits = program.traits.iter().map(lower_trait).collect();
+    let mut traits: Vec<_> = program.traits.iter().map(lower_trait).collect();
+    for include in &include_sources {
+        classes.extend(context.lower_include_classes(include));
+        traits.extend(include.program.traits.iter().map(lower_trait));
+    }
     let includes = include_sources
         .iter()
         .map(|include| context.lower_include_source(include))
@@ -826,6 +832,22 @@ impl<'a> LoweringContext<'a> {
         }
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
+    }
+
+    fn lower_include_classes(&mut self, include: &IncludeSource) -> Vec<ClassDecl> {
+        let previous_source_file =
+            std::mem::replace(&mut self.source_file, include.source_file.clone());
+        let previous_source_dir =
+            std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+        let classes = include
+            .program
+            .classes
+            .iter()
+            .map(|class| self.lower_class(class))
+            .collect();
+        self.source_file = previous_source_file;
+        self.source_dir = previous_source_dir;
+        classes
     }
 
     fn declare_function(&mut self, function: &AstFunctionDecl) {
@@ -1235,13 +1257,19 @@ impl<'a> LoweringContext<'a> {
                         line: span.line,
                     });
                 }
-                Statement::Try { body, catches, .. } => {
+                Statement::Try {
+                    body,
+                    catches,
+                    finally_body,
+                    ..
+                } => {
                     instructions.push(Instruction::Try {
                         body: self.lower_statements(body),
                         catches: catches
                             .iter()
                             .map(|catch| self.lower_catch_clause(catch))
                             .collect(),
+                        finally_body: self.lower_statements(finally_body),
                     });
                 }
                 Statement::Label { name, .. } => {
@@ -1661,7 +1689,7 @@ fn assignment_op_binary_op(op: AssignmentOp) -> Option<BinaryOp> {
 impl<'a> LoweringContext<'a> {
     fn lower_catch_clause(&mut self, catch: &AstCatchClause) -> CatchClause {
         CatchClause {
-            type_name: catch.type_name.clone(),
+            type_names: catch.type_names.clone(),
             variable: catch.variable.clone(),
             body: self.lower_statements(&catch.body),
         }
@@ -2080,6 +2108,7 @@ impl<'a> LoweringContext<'a> {
                 .collect(),
             value: self.lower_expr(&arm.value),
             is_default: arm.is_default,
+            line: arm.span.line,
         }
     }
 

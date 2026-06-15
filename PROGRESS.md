@@ -1,11 +1,16 @@
 # PTN Progress
 
-Refresh: 2026-06-15T10:25Z.
-Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; `ptn-g7ta` object-string array row pack +24 broad 1k rows and focused 23/23; `ptn-mqvk` broad 1k classify-only 546/454 before -> 532/468 after and broad COW/reference row pack 22/28 -> 27/27 runnable plus 1 classified; COW 69/103 passed; `ptn-601n` anonymous-class/object metadata row pack 0/21 raw focused baseline -> 10/10 runnable after split and final broad 1k classify-only 558/442; `ptn-c5ar` object/class metadata runtime diagnostics row pack 9 passed / 7 failed / 4 classified -> 20/20 passed and current-target broad 1k classify-only 532/468 -> 563/437; `ptn-zhup` object/callback/merge row pack 13/18 -> 17/18 runnable plus 2 classified, merge slice 21/25 -> 24/25, and final broad 1k classify-only 558/442 on submitted base; `ptn-buig` break/continue diagnostics moved the broad 1k Zend bucket 137/198 -> 141/198 and focused Zend operator/control frontier 21/26; `ptn-u4el` string runtime row pack 1/10 -> 10/10 and broad 1k 477/558 -> 479/558; `ptn-jlzj` control-flow/call-unpack broad 1k 453 -> 482 passing; `ptn-wxno` object-string array-helper classifier unblock moved broad 1k classify-only 563/437 -> 588/412 and focused 25/25 passed; `ptn-iuhj` parser/method-visibility row pack 43 selected / 41 runnable / 22 passed / 2 classified and final broad 1k classify-only 566/434; `ptn-29k0` method metadata scope row pack added 4 newly passing broad rows over `ptn-wxno`, with the integrated hook-start broad classify-only moving 563/437 -> 591/409; `ptn-3ijs` literal/operator row pack 27/30 focused and broad Zend bucket 145/201 -> 151/201; `ptn-ck7w` static-property row pack selected 24 / 2 runnable / 2 passed / 22 classified, with broad 1k classify-only 591/409 -> 592/408; `ptn-vq7w` broad COW/reference row pack 24/24 and user-comparator sort pack 20/26; `ptn-d0lg` broad 1k COW/reference row pack 536/592 -> 546/592 runnable passed with standard stable at 371/371; `ptn-25s0` method-scope warning lock measured hook-start full broad 1k at 390/591 -> 527/591 passed, with 138 newly passing rows and one broad-run pass-to-fail splice row that reran green on the rebased branch; `ptn-ppri` standard string/array row pack 20 selected / 18 runnable / 18 passed / 2 classified on the final rebased branch, with hook-start broad 1k 414/591 -> 528/591 passed (+114, no pass-set regressions); `ptn-m8pk` ext-standard strings row pack 0/21 -> 21/21 focused, with deterministic tier-1000 containing 0 ext/standard string rows; `ptn-dgj9` reference-lvalue array path row pack broad 414/591 -> 418/591 passed (+4, no pass-set regressions), with final focused 22 selected / 21 runnable / 8 passed / 1 classified; `ptn-cfny` parser/control-flow row pack 34 selected / 34 runnable / 31 passed, with 10 confirmed newly passing broad Zend rows; `ptn-hgfn` object/class metadata trace row pack 20 selected / 11 runnable / 11 passed / 9 classified, with completed full broad 1k 499/563 -> 535/591 passed before later master fast-forwards and no pass-set regressions; `ptn-texo` magic object/class metadata row pack 0/6 raw -> 4/6 final focused, with 2 typed-property dump failures; `ptn-psbp` parser/control row pack 28/28 focused and broad 1k 563/609 -> 573/609 passed with 10 newly passing rows; `ptn-mucw` full-corpus match expression row pack 0/30 -> 26/30 runnable; `ptn-7wxg` simple trait row pack 1/50 raw -> 50/50 focused and full-corpus trait source bucket 21/349 -> 212/349 runnable.
-Latest: `ptn-7wxg` simple trait composition row pack moved the focused 50-row
-manifest from 1/50 raw baseline passing to 50/50 passing, and moved the
+Refresh: 2026-06-15T10:40Z.
+Measured: `ptn-c284`; `ptn-xymv`; `ptn-j8b8/b35n/18tp/gkvr`; `ptn-gt7b`; `ptn-30ji`; `ptn-h0qa` broad 1k classify-only 424 runnable / 576 classified; `ptn-dkcs` call-unpacking 34 selected / 0 runnable / 34 classified; `ptn-ei36` unpacking split 20 call / 14 array classified; `ptn-550s.12` broad 1k array-helper row pack 0/10 -> 10/10; `ptn-qsmv.14` class/interface row pack; `ptn-qsmv.16` array callback/map-filter row pack; `ptn-qsmv.17` assertion/runtime-config +10 broad rows and broad 1k classify-only 440/560; `ptn-s80e` broad 1k array/reference row pack 10/20 -> 20/20; `ptn-j6gv` broad 1k string/runtime row pack 15/25 -> 25/25; `ptn-55u0` broad 1k unpack row pack 2/34 raw baseline -> 10/10 runnable after split; `ptn-tiqh` COW/reference row pack 21/21 on submitted base; `ptn-ouhx` object-string array-helper row pack 0/34 -> 34/34, object-string source bucket 19/61 -> 53/61, broad 1k 285 -> 419 passing (501 runnable / 499 classified after, stitched from timed broad run plus remaining slice); `ptn-lxw1` array COW/reference row pack 9/9 focused, 2/2 candidates, 19/20 mixed control; `ptn-xcmz` broad 1k property/object metadata row pack 0/19 current-base focused baseline -> 12/12 runnable; `ptn-s8cn` call-unpacking row pack 0/20 classified -> 11/11 runnable passed and broad 1k classify-only 472/528 -> 545/455; `ptn-1d60` array_map null-reference row 65/66 -> 66/66 and broad 1k classify-only 558/442 with 370 current standard-array runnable rows and 0 standard-strings rows; `ptn-qg7b` asymmetric-visibility row pack 4/23 current-base focused baseline -> 14/23 final branch, with completed broad 1k run 463/533 before final master fast-forward; `ptn-g7ta` object-string array row pack +24 broad 1k rows and focused 23/23; `ptn-mqvk` broad 1k classify-only 546/454 before -> 532/468 after and broad COW/reference row pack 22/28 -> 27/27 runnable plus 1 classified; COW 69/103 passed; `ptn-601n` anonymous-class/object metadata row pack 0/21 raw focused baseline -> 10/10 runnable after split and final broad 1k classify-only 558/442; `ptn-c5ar` object/class metadata runtime diagnostics row pack 9 passed / 7 failed / 4 classified -> 20/20 passed and current-target broad 1k classify-only 532/468 -> 563/437; `ptn-zhup` object/callback/merge row pack 13/18 -> 17/18 runnable plus 2 classified, merge slice 21/25 -> 24/25, and final broad 1k classify-only 558/442 on submitted base; `ptn-buig` break/continue diagnostics moved the broad 1k Zend bucket 137/198 -> 141/198 and focused Zend operator/control frontier 21/26; `ptn-u4el` string runtime row pack 1/10 -> 10/10 and broad 1k 477/558 -> 479/558; `ptn-jlzj` control-flow/call-unpack broad 1k 453 -> 482 passing; `ptn-wxno` object-string array-helper classifier unblock moved broad 1k classify-only 563/437 -> 588/412 and focused 25/25 passed; `ptn-iuhj` parser/method-visibility row pack 43 selected / 41 runnable / 22 passed / 2 classified and final broad 1k classify-only 566/434; `ptn-29k0` method metadata scope row pack added 4 newly passing broad rows over `ptn-wxno`, with the integrated hook-start broad classify-only moving 563/437 -> 591/409; `ptn-3ijs` literal/operator row pack 27/30 focused and broad Zend bucket 145/201 -> 151/201; `ptn-ck7w` static-property row pack selected 24 / 2 runnable / 2 passed / 22 classified, with broad 1k classify-only 591/409 -> 592/408; `ptn-vq7w` broad COW/reference row pack 24/24 and user-comparator sort pack 20/26; `ptn-d0lg` broad 1k COW/reference row pack 536/592 -> 546/592 runnable passed with standard stable at 371/371; `ptn-25s0` method-scope warning lock measured hook-start full broad 1k at 390/591 -> 527/591 passed, with 138 newly passing rows and one broad-run pass-to-fail splice row that reran green on the rebased branch; `ptn-ppri` standard string/array row pack 20 selected / 18 runnable / 18 passed / 2 classified on the final rebased branch, with hook-start broad 1k 414/591 -> 528/591 passed (+114, no pass-set regressions); `ptn-m8pk` ext-standard strings row pack 0/21 -> 21/21 focused, with deterministic tier-1000 containing 0 ext/standard string rows; `ptn-dgj9` reference-lvalue array path row pack broad 414/591 -> 418/591 passed (+4, no pass-set regressions), with final focused 22 selected / 21 runnable / 8 passed / 1 classified; `ptn-cfny` parser/control-flow row pack 34 selected / 34 runnable / 31 passed, with 10 confirmed newly passing broad Zend rows; `ptn-hgfn` object/class metadata trace row pack 20 selected / 11 runnable / 11 passed / 9 classified, with completed full broad 1k 499/563 -> 535/591 passed before later master fast-forwards and no pass-set regressions; `ptn-texo` magic object/class metadata row pack 0/6 raw -> 4/6 final focused, with 2 typed-property dump failures; `ptn-psbp` parser/control row pack 28/28 focused and broad 1k 563/609 -> 573/609 passed with 10 newly passing rows; `ptn-mucw` full-corpus match expression row pack 0/30 -> 26/30 runnable; `ptn-7wxg` simple trait row pack 1/50 raw -> 50/50 focused and full-corpus trait source bucket 21/349 -> 212/349 runnable; `ptn-w17z.4` parser/control row pack 56 selected / 39 runnable / 36 passed / 17 classified.
+Measured latest: `ptn-w17z.4` parser/control-flow row pack selected 56 rows:
+39 runnable, 36 passed, 3 failed, and 17 classified.
+Latest: `ptn-w17z.4` parser/control-flow row pack selected 56
+full-corpus/20k-family rows, 39 runnable, and 36 passed after hook-start split
+baselines had 0/30 Zend match rows and 0/10 catch-union rows passing.
+Previous: `ptn-7wxg` simple trait composition row pack moved the focused
+50-row manifest from 1/50 raw baseline passing to 50/50 passing, and moved the
 full-corpus trait source bucket classifier from 21/349 runnable on the saved
-base to 212/349 runnable on this branch. Previous: `ptn-mucw` added PHP
+base to 212/349 runnable on this branch. Earlier: `ptn-mucw` added PHP
 `match` expression lexing, parsing, lowering, and native emission with strict
 arm comparison, default-arm validation, `UnhandledMatchError` runtime messages,
 and by-reference temporary handling for method calls; its full-corpus
@@ -121,6 +126,83 @@ Newly passing checked-in focused rows:
 The remaining checked-in focused row,
 `Zend/tests/grammar/semi_reserved_004.phpt`, was already passing in the raw
 saved-base run and is retained as an adjacent control row.
+
+## 2026-06-15 ptn-w17z.4 Parser/Control-Flow Row Pack
+
+Final checked-in focused manifest:
+`tools/phpt-parser-control-current-ptn-w17z4-manifest.txt`.
+
+Implemented behavior: parser/IR/backend support for PHP `match` expressions,
+including standalone match expression statements, default arms, trailing comma
+condition lists, strict arm matching, catchable `UnhandledMatchError` messages,
+and match results as ordinary non-reference temporaries. Catch clauses now
+accept multi-catch type lists. Try/catch lowering carries a `finally` body for
+normal completion, handled catches, and uncaught rethrow paths. Include files
+with class declarations now contribute class metadata so simple class helper
+includes can participate in exception control-flow rows. Runtime exception
+metadata now includes `RuntimeException` and `UnhandledMatchError` in the
+builtin hierarchy, and exception string casts produce PHP-style exception text.
+
+Full-corpus/20k-family evidence: the hook generated
+`.runtime/ptn-w17z4-full-before/20260615Tmanual/phpt-baseline-all.txt` with
+21,867 PHPT rows and
+`.runtime/ptn-w17z4-full-before/20260615Tmanual/phpt-baseline-20000.txt` with
+20,000 rows. All 56 checked-in row-pack paths are present in that 20k manifest
+(`manifest_rows=56`, `in_20k=56`).
+
+Before evidence on corpus revision `8c63ec400ce8e07c57a8d9499317b96a8beafb8b`:
+Zend match rows
+`.runtime/ptn-w17z4-zend-match-before/summary-20260615T090823Z.txt` selected
+35 rows: 30 runnable, 0 passed, 30 failed, 5 classified. Catch-union rows
+`.runtime/ptn-w17z4-catch-union-before/summary-20260615T090927Z.txt` selected
+22 rows: 10 runnable, 0 passed, 10 failed, 12 classified.
+
+Final focused evidence after rebasing onto current `origin/master`:
+`PHPT_PROGRESS_DIR=.runtime/ptn-w17z4-row-pack-rebased-final2 timeout 1200 tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-parser-control-current-ptn-w17z4-manifest.txt`.
+Artifact `.runtime/ptn-w17z4-row-pack-rebased-final2/summary-20260615T103334Z.txt`
+selected 56 rows: 39 runnable, 36 passed, 3 failed, and 17 classified.
+Residual failed rows are `Zend/tests/match/009_ast_export.phpt`,
+`Zend/tests/match/045.phpt`, and
+`Zend/tests/match/match_scdf_cleanup.phpt`.
+
+Newly passing full-corpus/20k-family rows:
+
+- `Zend/tests/match/001.phpt`
+- `Zend/tests/match/002.phpt`
+- `Zend/tests/match/003.phpt`
+- `Zend/tests/match/004.phpt`
+- `Zend/tests/match/005.phpt`
+- `Zend/tests/match/006.phpt`
+- `Zend/tests/match/007.phpt`
+- `Zend/tests/match/008.phpt`
+- `Zend/tests/match/011.phpt`
+- `Zend/tests/match/012.phpt`
+- `Zend/tests/match/017.phpt`
+- `Zend/tests/match/023.phpt`
+- `Zend/tests/match/024.phpt`
+- `Zend/tests/match/027.phpt`
+- `Zend/tests/match/028.phpt`
+- `Zend/tests/match/037.phpt`
+- `Zend/tests/match/038.phpt`
+- `Zend/tests/match/039.phpt`
+- `Zend/tests/match/040.phpt`
+- `Zend/tests/match/041.phpt`
+- `Zend/tests/match/042.phpt`
+- `Zend/tests/match/043.phpt`
+- `Zend/tests/match/044.phpt`
+- `Zend/tests/match/046.phpt`
+- `Zend/tests/match/047.phpt`
+- `Zend/tests/match/gh11134.phpt`
+- `Zend/tests/match/match_of_phi_optimization.phpt`
+- `Zend/tests/try/bug74444.phpt`
+- `Zend/tests/try/catch_novar_1.phpt`
+- `Zend/tests/try/try_multicatch_001.phpt`
+- `Zend/tests/try/try_multicatch_002.phpt`
+- `Zend/tests/try/try_multicatch_003.phpt`
+- `Zend/tests/try/try_multicatch_004.phpt`
+- `Zend/tests/try/try_multicatch_005.phpt`
+- `Zend/tests/try/try_multicatch_006.phpt`
+- `Zend/tests/try/try_multicatch_007.phpt`
 
 Current hook: `ptn-mucw` match expression row pack selected the full-corpus
 `Zend/tests/match` bucket, 35 rows total with 30 runnable and 5 classified,

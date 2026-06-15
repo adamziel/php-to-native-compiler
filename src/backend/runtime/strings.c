@@ -162,8 +162,36 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
         case PTN_OBJECT:
         case PTN_CLOSURE:
             return ptn_duplicate_string("Object");
-        case PTN_EXCEPTION:
-            return ptn_duplicate_string("Object");
+        case PTN_EXCEPTION: {
+            PtnException *exception = value.as.exception;
+            const char *path = exception->path != NULL ? exception->path : "ptn";
+            int needed = snprintf(
+                NULL,
+                0,
+                "%s: %s in %s:%zu\nStack trace:\n#0 {main}",
+                exception->class_name,
+                exception->message,
+                path,
+                exception->line
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *result = malloc((size_t)needed + 1);
+            if (result == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                result,
+                (size_t)needed + 1,
+                "%s: %s in %s:%zu\nStack trace:\n#0 {main}",
+                exception->class_name,
+                exception->message,
+                path,
+                exception->line
+            );
+            return result;
+        }
         case PTN_RESOURCE:
             written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource->id);
             break;
@@ -466,7 +494,7 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
         case PTN_CLOSURE:
             return ptn_string_operand_borrowed("Object");
         case PTN_EXCEPTION:
-            return ptn_string_operand_borrowed("Object");
+            return ptn_string_operand_owned(ptn_value_to_string(value));
         case PTN_RESOURCE:
             written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource->id);
             break;
@@ -596,7 +624,7 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
     } else if (resolved.type == PTN_CLOSURE) {
         class_name = "Closure";
     } else if (resolved.type == PTN_EXCEPTION) {
-        class_name = resolved.as.exception->class_name;
+        return ptn_value_to_string_operand(value);
     }
     if (class_name != NULL && runtime != NULL) {
         int needed = snprintf(NULL, 0, "Object of class %s could not be converted to string", class_name);
@@ -673,6 +701,10 @@ static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnVal
 static PTN_UNUSED PtnValue ptn_cast_string_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_OBJECT || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
+        if (value.type == PTN_EXCEPTION) {
+            char *exception_string = ptn_value_to_string(value);
+            return ptn_owned_string(exception_string);
+        }
         PtnStringOperand object_string;
         if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
             char *copy = ptn_duplicate_string_len(object_string.data, object_string.len);

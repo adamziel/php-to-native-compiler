@@ -295,6 +295,7 @@ pub enum Statement {
     Try {
         body: Vec<Statement>,
         catches: Vec<CatchClause>,
+        finally_body: Vec<Statement>,
         span: SourceSpan,
     },
     Label {
@@ -313,7 +314,7 @@ pub enum Statement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CatchClause {
-    pub type_name: String,
+    pub type_names: Vec<String>,
     pub variable: Option<String>,
     pub body: Vec<Statement>,
     pub span: SourceSpan,

@@ -570,8 +570,14 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "ReflectionException")) {
         return "ReflectionException";
     }
+    if (ptn_exception_name_equal(class_name, "RuntimeException")) {
+        return "RuntimeException";
+    }
     if (ptn_exception_name_equal(class_name, "Error")) {
         return "Error";
+    }
+    if (ptn_exception_name_equal(class_name, "UnhandledMatchError")) {
+        return "UnhandledMatchError";
     }
     if (ptn_exception_name_equal(class_name, "TypeError")) {
         return "TypeError";
@@ -627,6 +633,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "ValueError") ||
             ptn_exception_name_equal(class_name, "ArithmeticError") ||
             ptn_exception_name_equal(class_name, "DivisionByZeroError") ||
+            ptn_exception_name_equal(class_name, "UnhandledMatchError") ||
             ptn_exception_name_equal(class_name, "AssertionError") ||
             ptn_exception_name_equal(class_name, "ParseError") ||
             ptn_exception_name_equal(class_name, "UnhandledMatchError");
@@ -638,7 +645,8 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
         return ptn_exception_name_equal(class_name, "DivisionByZeroError");
     }
     if (ptn_exception_name_equal(type_name, "Exception")) {
-        return ptn_exception_name_equal(class_name, "ReflectionException");
+        return ptn_exception_name_equal(class_name, "ReflectionException") ||
+            ptn_exception_name_equal(class_name, "RuntimeException");
     }
     if (ptn_exception_name_equal(type_name, "Throwable")) {
         return 1;

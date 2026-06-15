@@ -260,12 +260,17 @@ impl IncludeCollector {
                 }
                 Ok(())
             }
-            Statement::Try { body, catches, .. } => {
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
                 self.collect_statements(body, source_file, source_dir)?;
                 for catch in catches {
                     self.collect_catch(catch, source_file, source_dir)?;
                 }
-                Ok(())
+                self.collect_statements(finally_body, source_file, source_dir)
             }
             Statement::Increment { .. }
             | Statement::Empty { .. }
@@ -634,12 +639,6 @@ impl IncludeCollector {
             )
         })?;
         let program = parse(&source)?;
-        if !program.classes.is_empty() {
-            return Err(Diagnostic::new(
-                "include files with class declarations are unsupported",
-                Some(span),
-            ));
-        }
 
         let index = self.sources.len();
         self.by_path.insert(canonical_path.clone(), index);
@@ -711,6 +710,18 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
             }
             if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
                 return None;
+            }
+            Some(paths)
+        }
+        Expr::Match { arms, .. } => {
+            let mut paths = Vec::new();
+            for arm in arms {
+                for path in bounded_include_paths(&arm.value, source_file, source_dir)? {
+                    push_unique_string(&mut paths, path);
+                }
+                if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                    return None;
+                }
             }
             Some(paths)
         }

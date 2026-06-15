@@ -3911,12 +3911,17 @@ fn emit_instruction(
             out.push_str(&line.to_string());
             out.push_str(");\n");
         }
-        Instruction::Try { body, catches } => {
+        Instruction::Try {
+            body,
+            catches,
+            finally_body,
+        } => {
             emit_try(
                 out,
                 values,
                 body,
                 catches,
+                finally_body,
                 control_targets,
                 source_path,
                 return_target,
@@ -4324,6 +4329,7 @@ fn emit_try(
     values: &mut ValueEmitter,
     body: &[Instruction],
     catches: &[IrCatchClause],
+    finally_body: &[Instruction],
     control_targets: &mut Vec<ControlTarget>,
     source_path: &str,
     return_target: Option<&str>,
@@ -4358,6 +4364,16 @@ fn emit_try(
     out.push_str("            ptn_try_frame_pop(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
+    for finally_instruction in finally_body {
+        emit_instruction(
+            out,
+            values,
+            finally_instruction,
+            control_targets,
+            source_path,
+            return_target,
+        );
+    }
     out.push_str("        } else {\n");
     out.push_str("            ptn_try_frame_pop(&runtime, &");
     out.push_str(&frame_temp);
@@ -4373,9 +4389,16 @@ fn emit_try(
     for catch in catches {
         out.push_str("            if (!");
         out.push_str(&caught_temp);
-        out.push_str(" && ptn_exception_matches(&runtime, \"");
-        out.push_str(&c_string(&catch.type_name));
-        out.push_str("\")) {\n");
+        out.push_str(" && (");
+        for (index, type_name) in catch.type_names.iter().enumerate() {
+            if index > 0 {
+                out.push_str(" || ");
+            }
+            out.push_str("ptn_exception_matches(&runtime, \"");
+            out.push_str(&c_string(type_name));
+            out.push_str("\")");
+        }
+        out.push_str(")) {\n");
         out.push_str("                ");
         out.push_str(&caught_temp);
         out.push_str(" = 1;\n");
@@ -4400,8 +4423,34 @@ fn emit_try(
     out.push_str("            if (!");
     out.push_str(&caught_temp);
     out.push_str(") {\n");
+    for finally_instruction in finally_body {
+        emit_instruction(
+            out,
+            values,
+            finally_instruction,
+            control_targets,
+            source_path,
+            return_target,
+        );
+    }
     out.push_str("                ptn_rethrow_exception(&runtime);\n");
     out.push_str("            }\n");
+    if !finally_body.is_empty() {
+        out.push_str("            if (");
+        out.push_str(&caught_temp);
+        out.push_str(") {\n");
+        for finally_instruction in finally_body {
+            emit_instruction(
+                out,
+                values,
+                finally_instruction,
+                control_targets,
+                source_path,
+                return_target,
+            );
+        }
+        out.push_str("            }\n");
+    }
     out.push_str("        }\n");
     out.push_str("        goto ");
     out.push_str(&end_label);
@@ -4710,11 +4759,16 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         Instruction::Throw { value, .. } => {
             collect_value_legacy_dollar_brace_deprecations(value, deprecations);
         }
-        Instruction::Try { body, catches } => {
+        Instruction::Try {
+            body,
+            catches,
+            finally_body,
+        } => {
             collect_instructions_legacy_dollar_brace_deprecations(body, deprecations);
             for catch in catches {
                 collect_instructions_legacy_dollar_brace_deprecations(&catch.body, deprecations);
             }
+            collect_instructions_legacy_dollar_brace_deprecations(finally_body, deprecations);
         }
         Instruction::Branch {
             condition,
@@ -5237,11 +5291,16 @@ fn collect_instruction_runtime_requirements(
         Instruction::Throw { value, .. } => {
             collect_value_runtime_requirements(value, functions, requirements);
         }
-        Instruction::Try { body, catches } => {
+        Instruction::Try {
+            body,
+            catches,
+            finally_body,
+        } => {
             collect_instructions_runtime_requirements(body, functions, requirements);
             for catch in catches {
                 collect_instructions_runtime_requirements(&catch.body, functions, requirements);
             }
+            collect_instructions_runtime_requirements(finally_body, functions, requirements);
         }
         Instruction::Branch {
             condition,
@@ -5866,11 +5925,16 @@ fn collect_control_warnings_in(
                 collect_control_warnings_in(then_body, contexts, warnings);
                 collect_control_warnings_in(else_body, contexts, warnings);
             }
-            Instruction::Try { body, catches } => {
+            Instruction::Try {
+                body,
+                catches,
+                finally_body,
+            } => {
                 collect_control_warnings_in(body, contexts, warnings);
                 for catch in catches {
                     collect_control_warnings_in(&catch.body, contexts, warnings);
                 }
+                collect_control_warnings_in(finally_body, contexts, warnings);
             }
             Instruction::While { body, .. } | Instruction::DoWhile { body, .. } => {
                 contexts.push(ControlTargetKind::Loop);
@@ -10119,7 +10183,7 @@ impl ValueEmitter {
                             &parameter.name,
                             line,
                             true,
-                            false,
+                            true,
                         );
                         if value_is_append_reference_target(argument) {
                             unwrap_append_reference_temps.push(temp.clone());
@@ -10763,7 +10827,7 @@ impl ValueEmitter {
         let matched_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(";\n");
+        out.push_str(" = ptn_null();\n");
         out.push_str("    int ");
         out.push_str(&matched_temp);
         out.push_str(" = 0;\n");
@@ -12332,7 +12396,7 @@ impl ValueEmitter {
                         &parameter.name,
                         line,
                         true,
-                        false,
+                        true,
                     )
                 } else if dynamic_argument_materialization {
                     self.emit_dynamic_call_argument(out, argument)

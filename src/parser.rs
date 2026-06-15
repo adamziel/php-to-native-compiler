@@ -1820,6 +1820,12 @@ impl Parser<'_> {
             {
                 self.parse_expression_statement()
             }
+            TokenKind::Identifier(ref name)
+                if name.eq_ignore_ascii_case("match")
+                    && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
+            {
+                self.parse_expression_statement()
+            }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::DoubleColon) => {
                 self.parse_expression_statement()
             }
@@ -3097,7 +3103,13 @@ impl Parser<'_> {
         while matches!(self.peek().kind, TokenKind::Catch) {
             catches.push(self.parse_catch_clause()?);
         }
-        if catches.is_empty() {
+        let finally_body = if token_is_identifier_named(self.peek(), "finally") {
+            self.advance();
+            self.parse_block()?
+        } else {
+            Vec::new()
+        };
+        if catches.is_empty() && finally_body.is_empty() {
             return Err(Diagnostic::new(
                 "try without catch or finally is unsupported",
                 Some(span),
@@ -3106,6 +3118,7 @@ impl Parser<'_> {
         Ok(Statement::Try {
             body,
             catches,
+            finally_body,
             span,
         })
     }
@@ -3113,7 +3126,7 @@ impl Parser<'_> {
     fn parse_catch_clause(&mut self) -> Result<CatchClause> {
         let span = self.expect_catch()?;
         self.expect_left_paren()?;
-        let type_name = self.parse_catch_type_name()?;
+        let type_names = self.parse_catch_type_names()?;
         let variable = if matches!(self.peek().kind, TokenKind::Variable(_)) {
             let token = self.advance().clone();
             let TokenKind::Variable(name) = token.kind else {
@@ -3126,17 +3139,26 @@ impl Parser<'_> {
         self.expect_right_paren()?;
         let body = self.parse_block()?;
         Ok(CatchClause {
-            type_name,
+            type_names,
             variable,
             body,
             span,
         })
     }
 
-    fn parse_catch_type_name(&mut self) -> Result<String> {
-        Ok(self
-            .parse_resolved_class_name("expected catch type name")?
-            .0)
+    fn parse_catch_type_names(&mut self) -> Result<Vec<String>> {
+        let mut names = vec![
+            self.parse_resolved_class_name("expected catch type name")?
+                .0,
+        ];
+        while matches!(self.peek().kind, TokenKind::Pipe) {
+            self.advance();
+            names.push(
+                self.parse_resolved_class_name("expected catch type name")?
+                    .0,
+            );
+        }
+        Ok(names)
     }
 
     fn parse_goto(&mut self) -> Result<Statement> {
@@ -3552,7 +3574,10 @@ impl Parser<'_> {
             TokenKind::Require => self.parse_include_expr(IncludeKind::Require),
             TokenKind::RequireOnce => self.parse_include_expr(IncludeKind::RequireOnce),
             TokenKind::Throw => self.parse_throw_expr(),
-            TokenKind::Match => self.parse_match_expr(),
+            TokenKind::Match => {
+                let token = self.advance().clone();
+                self.parse_match_expr(token.span)
+            }
             TokenKind::Clone => self.parse_clone_expr(),
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
@@ -3588,67 +3613,6 @@ impl Parser<'_> {
         Ok(Expr::Throw {
             value: Box::new(value),
             span,
-        })
-    }
-
-    fn parse_match_expr(&mut self) -> Result<Expr> {
-        let match_token = self.advance().clone();
-        self.expect_left_paren()?;
-        let subject = self.parse_expr()?;
-        self.expect_right_paren()?;
-        self.expect_left_brace()?;
-
-        let mut arms = Vec::new();
-        let mut saw_default = false;
-        while !matches!(self.peek().kind, TokenKind::RightBrace) {
-            let arm_start = self.peek().span;
-            let (conditions, is_default) = if matches!(self.peek().kind, TokenKind::Default) {
-                let default_span = self.advance().span;
-                if saw_default {
-                    return Err(Diagnostic::new(
-                        "Match expressions may only contain one default arm",
-                        Some(default_span),
-                    ));
-                }
-                saw_default = true;
-                if matches!(self.peek().kind, TokenKind::Comma) {
-                    self.advance();
-                }
-                (Vec::new(), true)
-            } else {
-                let mut conditions = vec![self.parse_expr()?];
-                while matches!(self.peek().kind, TokenKind::Comma) {
-                    self.advance();
-                    if matches!(self.peek().kind, TokenKind::DoubleArrow) {
-                        break;
-                    }
-                    conditions.push(self.parse_expr()?);
-                }
-                (conditions, false)
-            };
-
-            self.expect_double_arrow()?;
-            let value = self.parse_assignment_expr()?;
-            let arm_end = value.span();
-            arms.push(MatchArm {
-                conditions,
-                value,
-                is_default,
-                span: combine_spans(arm_start, arm_end),
-            });
-
-            if matches!(self.peek().kind, TokenKind::Comma) {
-                self.advance();
-            } else if !matches!(self.peek().kind, TokenKind::RightBrace) {
-                return Err(syntax_error_unexpected(self.peek(), Some("\",\" or \"}\"")));
-            }
-        }
-
-        let right_span = self.expect_right_brace()?;
-        Ok(Expr::Match {
-            subject: Box::new(subject),
-            arms,
-            span: combine_spans(match_token.span, right_span),
         })
     }
 
@@ -3920,6 +3884,9 @@ impl Parser<'_> {
                     return self
                         .parse_arrow_function_expr(combine_spans(token.span, fn_span), true);
                 }
+                if name.eq_ignore_ascii_case("match") {
+                    return self.parse_match_expr(token.span);
+                }
                 let parsed_name =
                     self.parse_name_from_first(name, token.span, None, "expected name")?;
                 let unqualified = matches!(parsed_name.resolution, NameResolution::Unqualified);
@@ -4055,6 +4022,72 @@ impl Parser<'_> {
             TokenKind::LeftBracket => self.parse_array_literal(token.span),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
+    }
+
+    fn parse_match_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        self.expect_left_paren()?;
+        let subject = self.parse_expr()?;
+        self.expect_right_paren()?;
+        self.expect_left_brace()?;
+
+        let mut arms = Vec::new();
+        let mut seen_default = false;
+        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            let arm_start = self.peek().span;
+            let (conditions, is_default) = if matches!(self.peek().kind, TokenKind::Default) {
+                if seen_default {
+                    return Err(Diagnostic::new(
+                        "Match expressions may only contain one default arm",
+                        Some(self.peek().span),
+                    ));
+                }
+                seen_default = true;
+                self.advance();
+                if matches!(self.peek().kind, TokenKind::Comma)
+                    && matches!(self.peek_next().kind, TokenKind::DoubleArrow)
+                {
+                    self.advance();
+                }
+                (Vec::new(), true)
+            } else {
+                (self.parse_match_arm_conditions()?, false)
+            };
+            self.expect_double_arrow()?;
+            let value = self.parse_expr()?;
+            let arm_span = combine_spans(arm_start, value.span());
+            arms.push(MatchArm {
+                conditions,
+                value,
+                is_default,
+                span: arm_span,
+            });
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                continue;
+            }
+            if !matches!(self.peek().kind, TokenKind::RightBrace) {
+                return Err(syntax_error_unexpected(self.peek(), Some(",")));
+            }
+        }
+
+        let right_span = self.expect_right_brace()?;
+        Ok(Expr::Match {
+            subject: Box::new(subject),
+            arms,
+            span: combine_spans(start_span, right_span),
+        })
+    }
+
+    fn parse_match_arm_conditions(&mut self) -> Result<Vec<Expr>> {
+        let mut conditions = vec![self.parse_expr()?];
+        while matches!(self.peek().kind, TokenKind::Comma) {
+            self.advance();
+            if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+                break;
+            }
+            conditions.push(self.parse_expr()?);
+        }
+        Ok(conditions)
     }
 
     fn parse_arrow_function_expr(
@@ -5738,6 +5771,15 @@ fn collect_arrow_captures_from_expr(
             }
             collect_arrow_captures_from_expr(if_false, exclusions, seen, captures);
         }
+        Expr::Match { subject, arms, .. } => {
+            collect_arrow_captures_from_expr(subject, exclusions, seen, captures);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_arrow_captures_from_expr(condition, exclusions, seen, captures);
+                }
+                collect_arrow_captures_from_expr(&arm.value, exclusions, seen, captures);
+            }
+        }
         Expr::InterpolatedString(parts, _) => {
             for part in parts {
                 collect_arrow_captures_from_string_part(part, exclusions, seen, captures);
@@ -5748,15 +5790,6 @@ fn collect_arrow_captures_from_expr(
         }
         Expr::InstanceOf { expr, .. } => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
-        }
-        Expr::Match { subject, arms, .. } => {
-            collect_arrow_captures_from_expr(subject, exclusions, seen, captures);
-            for arm in arms {
-                for condition in &arm.conditions {
-                    collect_arrow_captures_from_expr(condition, exclusions, seen, captures);
-                }
-                collect_arrow_captures_from_expr(&arm.value, exclusions, seen, captures);
-            }
         }
         Expr::String(_, _)
         | Expr::ShellExec { .. }
@@ -6783,11 +6816,17 @@ fn validate_control_transfers_in_statements(
                 *span,
                 control_depth,
             )?,
-            Statement::Try { body, catches, .. } => {
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
                 validate_control_transfers_in_statements(body, control_depth)?;
                 for catch in catches {
                     validate_control_transfers_in_statements(&catch.body, control_depth)?;
                 }
+                validate_control_transfers_in_statements(finally_body, control_depth)?;
             }
             Statement::Increment { target, .. } => {
                 validate_control_transfers_in_inc_dec_target(target)?;
@@ -7453,11 +7492,17 @@ fn validate_void_returns_in_statements(statements: &[Statement]) -> Result<()> {
                 validate_void_returns_in_statements(updates)?;
                 validate_void_returns_in_statements(body)?;
             }
-            Statement::Try { body, catches, .. } => {
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
                 validate_void_returns_in_statements(body)?;
                 for catch in catches {
                     validate_void_returns_in_statements(&catch.body)?;
                 }
+                validate_void_returns_in_statements(finally_body)?;
             }
             Statement::Switch { cases, .. } => {
                 for case in cases {
@@ -7564,11 +7609,17 @@ fn validate_anonymous_functions_in_statements(
                     validate_anonymous_functions_in_statements(&case.body, functions)?;
                 }
             }
-            Statement::Try { body, catches, .. } => {
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
                 validate_anonymous_functions_in_statements(body, functions)?;
                 for catch in catches {
                     validate_anonymous_functions_in_statements(&catch.body, functions)?;
                 }
+                validate_anonymous_functions_in_statements(finally_body, functions)?;
             }
             Statement::Return { value: None, .. }
             | Statement::Empty { .. }
@@ -7821,11 +7872,17 @@ fn validate_by_reference_returns_in_statements(
                 validate_by_reference_returns_in_statements(updates, function_name)?;
                 validate_by_reference_returns_in_statements(body, function_name)?;
             }
-            Statement::Try { body, catches, .. } => {
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
                 validate_by_reference_returns_in_statements(body, function_name)?;
                 for catch in catches {
                     validate_by_reference_returns_in_statements(&catch.body, function_name)?;
                 }
+                validate_by_reference_returns_in_statements(finally_body, function_name)?;
             }
             Statement::Switch { cases, .. } => {
                 for case in cases {
@@ -7873,11 +7930,17 @@ fn validate_reference_assignment_sources(
                 validate_reference_assignment_sources(updates, functions)?;
                 validate_reference_assignment_sources(body, functions)?;
             }
-            Statement::Try { body, catches, .. } => {
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
                 validate_reference_assignment_sources(body, functions)?;
                 for catch in catches {
                     validate_reference_assignment_sources(&catch.body, functions)?;
                 }
+                validate_reference_assignment_sources(finally_body, functions)?;
             }
             Statement::Switch { cases, .. } => {
                 for case in cases {
@@ -8527,11 +8590,17 @@ fn collect_labels(
             Statement::Foreach { body, span, .. } => {
                 collect_control_labels(*span, body, labels, control_path)?;
             }
-            Statement::Try { body, catches, .. } => {
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
                 collect_labels(body, labels, control_path)?;
                 for catch in catches {
                     collect_labels(&catch.body, labels, control_path)?;
                 }
+                collect_labels(finally_body, labels, control_path)?;
             }
             Statement::Switch { cases, span, .. } => {
                 control_path.push(span.byte_start);
@@ -8607,11 +8676,17 @@ fn validate_gotos(
             Statement::Foreach { body, span, .. } => {
                 validate_control_gotos(*span, body, labels, control_path)?;
             }
-            Statement::Try { body, catches, .. } => {
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
                 validate_gotos(body, labels, control_path)?;
                 for catch in catches {
                     validate_gotos(&catch.body, labels, control_path)?;
                 }
+                validate_gotos(finally_body, labels, control_path)?;
             }
             Statement::Switch { cases, span, .. } => {
                 control_path.push(span.byte_start);
@@ -9697,9 +9772,6 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
             }
             validate_class_scoped_constant_expr(if_false, parent_name)
         }
-        Expr::FirstClassCallable { callable, .. } => {
-            validate_class_scoped_constant_expr(callable, parent_name)
-        }
         Expr::Match { subject, arms, .. } => {
             validate_class_scoped_constant_expr(subject, parent_name)?;
             for arm in arms {
@@ -9709,6 +9781,9 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
                 validate_class_scoped_constant_expr(&arm.value, parent_name)?;
             }
             Ok(())
+        }
+        Expr::FirstClassCallable { callable, .. } => {
+            validate_class_scoped_constant_expr(callable, parent_name)
         }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)

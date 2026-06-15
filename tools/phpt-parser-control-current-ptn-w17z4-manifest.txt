@@ -1,0 +1,64 @@
+# Full-corpus parser/control-flow frontier rows for ptn-w17z.4.
+#
+# Source: 2026-06-15 full php-src PHPT corpus scan plus focused pre/post
+# classification runs under .runtime/ptn-w17z4-*.
+#
+# Selected features:
+#   - Zend match expression parsing/runtime dispatch.
+#   - Multi-catch type lists in catch clauses.
+Zend/tests/match/001.phpt
+Zend/tests/match/002.phpt
+Zend/tests/match/003.phpt
+Zend/tests/match/004.phpt
+Zend/tests/match/005.phpt
+Zend/tests/match/006.phpt
+Zend/tests/match/007.phpt
+Zend/tests/match/008.phpt
+Zend/tests/match/009_ast_export.phpt
+Zend/tests/match/011.phpt
+Zend/tests/match/012.phpt
+Zend/tests/match/017.phpt
+Zend/tests/match/023.phpt
+Zend/tests/match/024.phpt
+Zend/tests/match/027.phpt
+Zend/tests/match/028.phpt
+Zend/tests/match/029.phpt
+Zend/tests/match/030.phpt
+Zend/tests/match/037.phpt
+Zend/tests/match/038.phpt
+Zend/tests/match/039.phpt
+Zend/tests/match/040.phpt
+Zend/tests/match/041.phpt
+Zend/tests/match/042.phpt
+Zend/tests/match/043.phpt
+Zend/tests/match/044.phpt
+Zend/tests/match/045.phpt
+Zend/tests/match/046.phpt
+Zend/tests/match/047.phpt
+Zend/tests/match/048.phpt
+Zend/tests/match/049.phpt
+Zend/tests/match/gh11134.phpt
+Zend/tests/match/match_of_phi_optimization.phpt
+Zend/tests/match/match_scdf_cleanup.phpt
+Zend/tests/match/unmatched_enum.phpt
+Zend/tests/try/bug74444.phpt
+Zend/tests/try/catch_novar_1.phpt
+Zend/tests/try/try_multicatch_001.phpt
+Zend/tests/try/try_multicatch_002.phpt
+Zend/tests/try/try_multicatch_003.phpt
+Zend/tests/try/try_multicatch_004.phpt
+Zend/tests/try/try_multicatch_005.phpt
+Zend/tests/try/try_multicatch_006.phpt
+Zend/tests/try/try_multicatch_007.phpt
+ext/standard/tests/array/sort/array_multisort_variation1.phpt
+ext/standard/tests/array/sort/array_multisort_variation2.phpt
+ext/standard/tests/array/sort/array_multisort_variation3.phpt
+ext/standard/tests/file/file_get_contents_variation8-win32.phpt
+ext/standard/tests/file/file_get_contents_variation8.phpt
+ext/standard/tests/file/file_put_contents_variation8-win32.phpt
+ext/standard/tests/file/file_put_contents_variation8.phpt
+ext/standard/tests/file/flock_error.phpt
+ext/standard/tests/file/readfile_variation10-win32.phpt
+ext/standard/tests/file/readfile_variation10.phpt
+ext/standard/tests/file/userstreams_002.phpt
+ext/standard/tests/mail/mail_basic7.phpt
