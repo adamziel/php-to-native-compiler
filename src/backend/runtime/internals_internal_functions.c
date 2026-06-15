@@ -15118,6 +15118,158 @@ static PtnValue ptn_internal_sqrt(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_float(sqrt(ptn_internal_expect_float_arg(runtime, "sqrt", 1, "num", args[0], line)));
 }
 
+typedef double (*PtnUnaryMathFunction)(double);
+
+static PtnValue ptn_internal_unary_math(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnUnaryMathFunction math_function,
+    const PtnValue *args,
+    size_t line
+) {
+    double value = ptn_internal_expect_float_arg(runtime, function_name, 1, "num", args[0], line);
+    return ptn_float(math_function(value));
+}
+
+typedef double (*PtnBinaryMathFunction)(double, double);
+
+static PtnValue ptn_internal_binary_math(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnBinaryMathFunction math_function,
+    const PtnValue *args,
+    size_t line
+) {
+    double left = ptn_internal_expect_float_arg(runtime, function_name, 1, "num1", args[0], line);
+    double right = ptn_internal_expect_float_arg(runtime, function_name, 2, "num2", args[1], line);
+    return ptn_float(math_function(left, right));
+}
+
+static PtnValue ptn_internal_acos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "acos", acos, args, line);
+}
+
+static PtnValue ptn_internal_acosh(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "acosh", acosh, args, line);
+}
+
+static PtnValue ptn_internal_asin(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "asin", asin, args, line);
+}
+
+static PtnValue ptn_internal_asinh(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "asinh", asinh, args, line);
+}
+
+static PtnValue ptn_internal_atan(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "atan", atan, args, line);
+}
+
+static PtnValue ptn_internal_atan2(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_binary_math(runtime, "atan2", atan2, args, line);
+}
+
+static PtnValue ptn_internal_atanh(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "atanh", atanh, args, line);
+}
+
+static PtnValue ptn_internal_cos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "cos", cos, args, line);
+}
+
+static PtnValue ptn_internal_cosh(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "cosh", cosh, args, line);
+}
+
+static PtnValue ptn_internal_deg2rad(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    double value = ptn_internal_expect_float_arg(runtime, "deg2rad", 1, "num", args[0], line);
+    return ptn_float(value * (3.14159265358979323846264338327950288 / 180.0));
+}
+
+static PtnValue ptn_internal_exp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "exp", exp, args, line);
+}
+
+static PtnValue ptn_internal_expm1(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "expm1", expm1, args, line);
+}
+
+static PtnValue ptn_internal_fmod(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_binary_math(runtime, "fmod", fmod, args, line);
+}
+
+static PtnValue ptn_internal_fpow(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_binary_math(runtime, "fpow", pow, args, line);
+}
+
+static PtnValue ptn_internal_hypot(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_binary_math(runtime, "hypot", hypot, args, line);
+}
+
+static PtnValue ptn_internal_log(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    double value = ptn_internal_expect_float_arg(runtime, "log", 1, "num", args[0], line);
+    if (argc == 1) {
+        return ptn_float(log(value));
+    }
+    double base = ptn_internal_expect_float_arg(runtime, "log", 2, "base", args[1], line);
+    if (base == 1.0) {
+        ptn_throw_exception(runtime, "ValueError", "log(): Argument #2 ($base) must not be 1");
+        return ptn_null();
+    }
+    return ptn_float(log(value) / log(base));
+}
+
+static PtnValue ptn_internal_log10(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "log10", log10, args, line);
+}
+
+static PtnValue ptn_internal_log1p(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "log1p", log1p, args, line);
+}
+
+static PtnValue ptn_internal_rad2deg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    double value = ptn_internal_expect_float_arg(runtime, "rad2deg", 1, "num", args[0], line);
+    return ptn_float(value * (180.0 / 3.14159265358979323846264338327950288));
+}
+
+static PtnValue ptn_internal_sin(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "sin", sin, args, line);
+}
+
+static PtnValue ptn_internal_sinh(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "sinh", sinh, args, line);
+}
+
+static PtnValue ptn_internal_tan(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "tan", tan, args, line);
+}
+
+static PtnValue ptn_internal_tanh(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_unary_math(runtime, "tanh", tanh, args, line);
+}
+
 static PtnValue ptn_internal_minmax(
     PtnRuntime *runtime,
     const char *function_name,
@@ -16276,6 +16428,18 @@ static PtnValue ptn_internal_decbin(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_unsigned_integer_to_base_string((uint64_t)value, 2);
 }
 
+static PtnValue ptn_internal_dechex(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t value = ptn_internal_expect_integer_arg(runtime, "dechex", 1, "num", args[0], line);
+    return ptn_unsigned_integer_to_base_string((uint64_t)value, 16);
+}
+
+static PtnValue ptn_internal_decoct(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t value = ptn_internal_expect_integer_arg(runtime, "decoct", 1, "num", args[0], line);
+    return ptn_unsigned_integer_to_base_string((uint64_t)value, 8);
+}
+
 static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_value_to_string_operand(args[0]);
@@ -17340,6 +17504,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
         { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
+        { "acos", 1, 1, ptn_internal_acos },
+        { "acosh", 1, 1, ptn_internal_acosh },
         { "addcslashes", 2, 2, ptn_internal_addcslashes },
         { "addslashes", 1, 1, ptn_internal_addslashes },
         { "array_all", 2, 2, ptn_internal_array_all },
@@ -17402,8 +17568,13 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_walk", 2, 3, ptn_internal_array_walk },
         { "array_walk_recursive", 2, 3, ptn_internal_array_walk_recursive },
         { "arsort", 1, 2, ptn_internal_arsort },
+        { "asin", 1, 1, ptn_internal_asin },
+        { "asinh", 1, 1, ptn_internal_asinh },
         { "asort", 1, 2, ptn_internal_asort },
         { "assert", 1, 2, ptn_internal_assert },
+        { "atan", 1, 1, ptn_internal_atan },
+        { "atan2", 2, 2, ptn_internal_atan2 },
+        { "atanh", 1, 1, ptn_internal_atanh },
         { "basename", 1, 2, ptn_internal_basename },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
@@ -17424,6 +17595,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "constant", 1, 1, ptn_internal_constant },
         { "convert_uudecode", 1, 1, ptn_internal_convert_uudecode },
         { "convert_uuencode", 1, 1, ptn_internal_convert_uuencode },
+        { "cos", 1, 1, ptn_internal_cos },
+        { "cosh", 1, 1, ptn_internal_cosh },
         { "count", 1, 2, ptn_internal_count },
         { "count_chars", 1, 2, ptn_internal_count_chars },
         { "crc32", 1, 1, ptn_internal_crc32 },
@@ -17433,13 +17606,18 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "date_default_timezone_set", 1, 1, ptn_internal_date_default_timezone_set },
         { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
         { "decbin", 1, 1, ptn_internal_decbin },
+        { "dechex", 1, 1, ptn_internal_dechex },
+        { "decoct", 1, 1, ptn_internal_decoct },
         { "define", 2, 3, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
+        { "deg2rad", 1, 1, ptn_internal_deg2rad },
         { "dirname", 1, 2, ptn_internal_dirname },
         { "doubleval", 1, 1, ptn_internal_floatval },
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "explode", 2, 3, ptn_internal_explode },
+        { "exp", 1, 1, ptn_internal_exp },
+        { "expm1", 1, 1, ptn_internal_expm1 },
         { "extension_loaded", 1, 1, ptn_internal_extension_loaded },
         { "fclose", 1, 1, ptn_internal_fclose },
         { "fdiv", 2, 2, ptn_internal_fdiv },
@@ -17464,8 +17642,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "floatval", 1, 1, ptn_internal_floatval },
         { "floor", 1, 1, ptn_internal_floor },
         { "flush", 0, 0, ptn_internal_flush },
+        { "fmod", 2, 2, ptn_internal_fmod },
         { "fopen", 2, 4, ptn_internal_fopen },
         { "fpassthru", 1, 1, ptn_internal_fpassthru },
+        { "fpow", 2, 2, ptn_internal_fpow },
         { "fprintf", 2, PTN_VARIADIC_ARGS, ptn_internal_fprintf },
         { "fputcsv", 2, 6, ptn_internal_fputcsv },
         { "fputs", 2, 3, ptn_internal_fputs },
@@ -17500,6 +17680,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "highlight_string", 1, 2, ptn_internal_highlight_string },
         { "htmlspecialchars", 1, 4, ptn_internal_htmlspecialchars },
         { "htmlspecialchars_decode", 1, 2, ptn_internal_htmlspecialchars_decode },
+        { "hypot", 2, 2, ptn_internal_hypot },
         { "idate", 1, 2, ptn_internal_idate },
         { "implode", 1, 2, ptn_internal_implode },
         { "in_array", 2, 3, ptn_internal_in_array },
@@ -17545,6 +17726,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "levenshtein", 2, 5, ptn_internal_levenshtein },
         { "localeconv", 0, 0, ptn_internal_localeconv },
         { "localtime", 0, 2, ptn_internal_localtime },
+        { "log", 1, 2, ptn_internal_log },
+        { "log10", 1, 1, ptn_internal_log10 },
+        { "log1p", 1, 1, ptn_internal_log1p },
         { "lstat", 1, 1, ptn_internal_lstat },
         { "ltrim", 1, 2, ptn_internal_ltrim },
         { "max", 1, PTN_VARIADIC_ARGS, ptn_internal_max },
@@ -17579,6 +17763,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quoted_printable_encode", 1, 1, ptn_internal_quoted_printable_encode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
+        { "rad2deg", 1, 1, ptn_internal_rad2deg },
         { "rand", 0, 2, ptn_internal_rand },
         { "range", 2, 3, ptn_internal_range },
         { "readdir", 1, 1, ptn_internal_readdir },
@@ -17597,6 +17782,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shuffle", 1, 1, ptn_internal_shuffle },
+        { "sin", 1, 1, ptn_internal_sin },
+        { "sinh", 1, 1, ptn_internal_sinh },
         { "sizeof", 1, 2, ptn_internal_sizeof },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
@@ -17644,6 +17831,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "substr", 2, 3, ptn_internal_substr },
         { "substr_count", 2, 4, ptn_internal_substr_count },
         { "substr_replace", 3, 4, ptn_internal_substr_replace },
+        { "tan", 1, 1, ptn_internal_tan },
+        { "tanh", 1, 1, ptn_internal_tanh },
         { "time", 0, 0, ptn_internal_time },
         { "tmpfile", 0, 0, ptn_internal_tmpfile },
         { "touch", 1, 3, ptn_internal_touch },
