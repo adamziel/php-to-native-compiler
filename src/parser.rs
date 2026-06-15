@@ -6282,6 +6282,7 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
         "exception"
+            | "errorexception"
             | "reflectionexception"
             | "error"
             | "typeerror"

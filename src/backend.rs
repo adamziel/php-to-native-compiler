@@ -22,6 +22,7 @@ const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
     "Using ${var} in strings is deprecated, use {$var} instead";
 const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
+    ("ErrorException", "Exception"),
     ("ReflectionException", "Exception"),
     ("TypeError", "Error"),
     ("ArgumentCountError", "TypeError"),
@@ -466,13 +467,32 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return;\n");
     out.push_str("    }\n");
     out.push_str("    PtnValue message = argc >= 1 ? ptn_owned_string(ptn_value_to_string(args[0])) : ptn_owned_string(ptn_duplicate_string(\"\"));\n");
+    out.push_str("    PtnValue code = argc >= 2 ? ptn_int(ptn_value_deref(args[1]).type == PTN_INT ? ptn_value_deref(args[1]).as.integer : 0) : ptn_int(0);\n");
+    out.push_str(
+        "    PtnValue previous = argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_null();\n",
+    );
     out.push_str("    PtnValue resolved = ptn_value_deref(object);\n");
     out.push_str("    const char *declaring_class = \"Exception\";\n");
-    out.push_str("    if (resolved.type == PTN_OBJECT && runtime->class_scope_allows != NULL && runtime->class_scope_allows(resolved.as.object->class_name, \"Error\")) {\n");
+    out.push_str("    if (resolved.type == PTN_OBJECT && runtime->class_scope_allows != NULL && runtime->class_scope_allows(resolved.as.object->class_name, \"ErrorException\")) {\n");
+    out.push_str("        declaring_class = \"ErrorException\";\n");
+    out.push_str("    } else if (resolved.type == PTN_OBJECT && runtime->class_scope_allows != NULL && runtime->class_scope_allows(resolved.as.object->class_name, \"Error\")) {\n");
     out.push_str("        declaring_class = \"Error\";\n");
     out.push_str("    }\n");
     out.push_str("    PtnValue assigned = ptn_object_declare_property(runtime, object, \"message\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, message, line);\n");
     out.push_str("    ptn_value_destroy(&assigned);\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"code\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, code, line);\n");
+    out.push_str("    ptn_value_destroy(&assigned);\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"file\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, ptn_owned_string(ptn_duplicate_string(runtime->source_path != NULL ? runtime->source_path : \"\")), line);\n");
+    out.push_str("    ptn_value_destroy(&assigned);\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"line\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, ptn_int((int64_t)line), line);\n");
+    out.push_str("    ptn_value_destroy(&assigned);\n");
+    out.push_str("    assigned = ptn_object_declare_property(runtime, object, \"previous\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, previous, line);\n");
+    out.push_str("    ptn_value_destroy(&assigned);\n");
+    out.push_str("    if (ptn_exception_name_equal(declaring_class, \"ErrorException\")) {\n");
+    out.push_str("        assigned = ptn_object_declare_property(runtime, object, \"severity\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, 1, ptn_int(PTN_E_ERROR), line);\n");
+    out.push_str("        ptn_value_destroy(&assigned);\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_value_destroy(&previous);\n");
     out.push_str("    ptn_value_destroy(&message);\n");
     out.push_str("}\n");
 }
@@ -3799,7 +3819,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
-    out.push_str("        int valid = ptn_exception_name_equal(method_name, \"getMessage\") || ptn_exception_name_equal(method_name, \"getTrace\");\n");
+    out.push_str("        int valid = ptn_exception_name_equal(method_name, \"getMessage\") || ptn_exception_name_equal(method_name, \"getCode\") || ptn_exception_name_equal(method_name, \"getFile\") || ptn_exception_name_equal(method_name, \"getLine\") || ptn_exception_name_equal(method_name, \"getPrevious\") || ptn_exception_name_equal(method_name, \"getTrace\") || ptn_exception_name_equal(method_name, \"getTraceAsString\") || ptn_exception_name_equal(method_name, \"getSeverity\") || ptn_exception_name_equal(method_name, \"__toString\");\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        return valid;\n");
     out.push_str("    }\n");
@@ -5164,16 +5184,42 @@ fn emit_try(
     let caught_temp = values.next_temp();
     let saved_trace_temp = values.next_temp();
     let end_label = values.next_label("ptn_try_end");
+    let try_or_catch_can_return = instructions_contain_return(body)
+        || catches
+            .iter()
+            .any(|catch| instructions_contain_return(&catch.body));
+    let return_label =
+        if return_target.is_some() && !finally_body.is_empty() && try_or_catch_can_return {
+            Some(values.next_label("ptn_try_return"))
+        } else {
+            None
+        };
+    let body_return_target = return_label.as_deref().or(return_target);
+    let frame_active_temp = if return_label.is_some() {
+        Some(values.next_temp())
+    } else {
+        None
+    };
     out.push_str("    {\n");
     out.push_str("        PtnTryFrame ");
     out.push_str(&frame_temp);
     out.push_str(";\n");
+    if let Some(frame_active_temp) = &frame_active_temp {
+        out.push_str("        int ");
+        out.push_str(frame_active_temp);
+        out.push_str(" = 0;\n");
+    }
     out.push_str("        PtnTraceFrame *");
     out.push_str(&saved_trace_temp);
     out.push_str(" = runtime.trace_frame;\n");
     out.push_str("        ptn_try_frame_push(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
+    if let Some(frame_active_temp) = &frame_active_temp {
+        out.push_str("        ");
+        out.push_str(frame_active_temp);
+        out.push_str(" = 1;\n");
+    }
     out.push_str("        if (setjmp(");
     out.push_str(&frame_temp);
     out.push_str(".jump) == 0) {\n");
@@ -5184,12 +5230,17 @@ fn emit_try(
             body_instruction,
             control_targets,
             source_path,
-            return_target,
+            body_return_target,
         );
     }
     out.push_str("            ptn_try_frame_pop(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
+    if let Some(frame_active_temp) = &frame_active_temp {
+        out.push_str("            ");
+        out.push_str(frame_active_temp);
+        out.push_str(" = 0;\n");
+    }
     for finally_instruction in finally_body {
         emit_instruction(
             out,
@@ -5204,6 +5255,11 @@ fn emit_try(
     out.push_str("            ptn_try_frame_pop(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
+    if let Some(frame_active_temp) = &frame_active_temp {
+        out.push_str("            ");
+        out.push_str(frame_active_temp);
+        out.push_str(" = 0;\n");
+    }
     out.push_str("            runtime.trace_frame = ");
     out.push_str(&saved_trace_temp);
     out.push_str(";\n");
@@ -5241,7 +5297,7 @@ fn emit_try(
                 body_instruction,
                 control_targets,
                 source_path,
-                return_target,
+                body_return_target,
             );
         }
         out.push_str("            }\n");
@@ -5281,11 +5337,85 @@ fn emit_try(
     out.push_str("        goto ");
     out.push_str(&end_label);
     out.push_str(";\n");
+    if let (Some(return_label), Some(return_target)) = (&return_label, return_target) {
+        out.push_str("        ");
+        out.push_str(return_label);
+        out.push_str(":\n");
+        out.push_str("        ;\n");
+        if let Some(frame_active_temp) = &frame_active_temp {
+            out.push_str("        if (");
+            out.push_str(frame_active_temp);
+            out.push_str(") {\n");
+            out.push_str("            ptn_try_frame_pop(&runtime, &");
+            out.push_str(&frame_temp);
+            out.push_str(");\n");
+            out.push_str("            ");
+            out.push_str(frame_active_temp);
+            out.push_str(" = 0;\n");
+            out.push_str("        }\n");
+        }
+        for finally_instruction in finally_body {
+            emit_instruction(
+                out,
+                values,
+                finally_instruction,
+                control_targets,
+                source_path,
+                Some(return_target),
+            );
+        }
+        out.push_str("        goto ");
+        out.push_str(return_target);
+        out.push_str(";\n");
+    }
     out.push_str("    }\n");
     out.push_str("    ");
     out.push_str(&end_label);
     out.push_str(":\n");
     out.push_str("    ;\n");
+}
+
+fn instructions_contain_return(instructions: &[Instruction]) -> bool {
+    instructions.iter().any(instruction_contains_return)
+}
+
+fn instruction_contains_return(instruction: &Instruction) -> bool {
+    match instruction {
+        Instruction::Return { .. } => true,
+        Instruction::Try {
+            body,
+            catches,
+            finally_body,
+        } => {
+            instructions_contain_return(body)
+                || catches
+                    .iter()
+                    .any(|catch| instructions_contain_return(&catch.body))
+                || instructions_contain_return(finally_body)
+        }
+        Instruction::Branch {
+            then_body,
+            else_body,
+            ..
+        } => instructions_contain_return(then_body) || instructions_contain_return(else_body),
+        Instruction::While { body, .. }
+        | Instruction::DoWhile { body, .. }
+        | Instruction::Foreach { body, .. } => instructions_contain_return(body),
+        Instruction::For {
+            initializers,
+            updates,
+            body,
+            ..
+        } => {
+            instructions_contain_return(initializers)
+                || instructions_contain_return(updates)
+                || instructions_contain_return(body)
+        }
+        Instruction::Switch { cases, .. } => cases
+            .iter()
+            .any(|case| instructions_contain_return(&case.body)),
+        _ => false,
+    }
 }
 
 fn user_function_c_name(index: usize) -> String {
@@ -6090,6 +6220,14 @@ fn collect_value_legacy_dollar_brace_deprecations(
 
 fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
     let mut requirements = RuntimeRequirements::default();
+    if module.classes.iter().any(|class| {
+        !class.methods.is_empty()
+            || !class.properties.is_empty()
+            || !class.static_properties.is_empty()
+            || !class.interfaces.is_empty()
+    }) {
+        requirements.internal_function_dispatch = true;
+    }
     collect_instructions_runtime_requirements(
         &module.instructions,
         &module.functions,

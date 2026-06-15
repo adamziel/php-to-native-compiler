@@ -413,9 +413,12 @@ struct PtnException {
     PtnRuntime *lifecycle_runtime;
     const char *class_name;
     char *message;
+    int64_t code;
     const char *path;
     size_t line;
     PtnValue trace;
+    PtnValue previous;
+    int64_t severity;
 };
 
 struct PtnResource {

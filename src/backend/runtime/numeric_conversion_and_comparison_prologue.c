@@ -554,6 +554,9 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     PtnRuntime *runtime,
     const char *class_name,
     char *message,
+    int64_t code,
+    PtnValue previous,
+    int64_t severity,
     const char *path,
     size_t line
 ) {
@@ -566,9 +569,12 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->lifecycle_runtime = ptn_runtime_root(runtime);
     exception->class_name = class_name;
     exception->message = message;
+    exception->code = code;
     exception->path = path;
     exception->line = line;
     exception->trace = ptn_exception_capture_trace(runtime);
+    exception->previous = ptn_value_clone_deref(previous);
+    exception->severity = severity;
     return exception;
 }
 
@@ -579,7 +585,16 @@ static PTN_UNUSED PtnException *ptn_exception_new(
     const char *path,
     size_t line
 ) {
-    return ptn_exception_new_owned(runtime, class_name, ptn_duplicate_string(message), path, line);
+    return ptn_exception_new_owned(
+        runtime,
+        class_name,
+        ptn_duplicate_string(message),
+        0,
+        ptn_null(),
+        PTN_E_ERROR,
+        path,
+        line
+    );
 }
 
 static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *right);
@@ -590,6 +605,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     }
     if (ptn_exception_name_equal(class_name, "Exception")) {
         return "Exception";
+    }
+    if (ptn_exception_name_equal(class_name, "ErrorException")) {
+        return "ErrorException";
     }
     if (ptn_exception_name_equal(class_name, "ReflectionException")) {
         return "ReflectionException";
@@ -669,7 +687,8 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
         return ptn_exception_name_equal(class_name, "DivisionByZeroError");
     }
     if (ptn_exception_name_equal(type_name, "Exception")) {
-        return ptn_exception_name_equal(class_name, "ReflectionException") ||
+        return ptn_exception_name_equal(class_name, "ErrorException") ||
+            ptn_exception_name_equal(class_name, "ReflectionException") ||
             ptn_exception_name_equal(class_name, "RuntimeException");
     }
     if (ptn_exception_name_equal(type_name, "Throwable")) {
@@ -787,9 +806,49 @@ static int ptn_emit_uncaught_internal_trace(PtnRuntime *runtime) {
     return 1;
 }
 
+static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
+    PtnException *exception,
+    int *first
+) {
+    if (exception->previous.type == PTN_EXCEPTION) {
+        ptn_emit_uncaught_exception_chain_entry(exception->previous.as.exception, first);
+    }
+    const char *display_path = exception->path != NULL ? exception->path : "[no active file]";
+    size_t display_line = exception->line;
+    if (*first) {
+        fputc('\n', stderr);
+        fprintf(
+            stderr,
+            "Fatal error: Uncaught %s: %s in %s:%zu\n",
+            exception->class_name,
+            exception->message,
+            display_path,
+            display_line
+        );
+        *first = 0;
+    } else {
+        fprintf(
+            stderr,
+            "\nNext %s: %s in %s:%zu\n",
+            exception->class_name,
+            exception->message,
+            display_path,
+            display_line
+        );
+    }
+    fputs("Stack trace:\n#0 {main}\n", stderr);
+}
+
 static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
     fflush(stdout);
     if (!runtime->diagnostics.display_errors) {
+        return;
+    }
+    if (exception->previous.type == PTN_EXCEPTION) {
+        int first = 1;
+        ptn_emit_uncaught_exception_chain_entry(exception, &first);
+        const char *display_path = exception->path != NULL ? exception->path : "[no active file]";
+        fprintf(stderr, "  thrown in %s on line %zu\n", display_path, exception->line);
         return;
     }
     const char *display_path = exception->path;
@@ -865,7 +924,16 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
     char *message
 ) {
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = ptn_exception_new_owned(runtime, class_name, message, NULL, 0);
+    runtime->exceptions->active_exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        0,
+        ptn_null(),
+        PTN_E_ERROR,
+        NULL,
+        0
+    );
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -881,7 +949,16 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at(
     size_t line
 ) {
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = ptn_exception_new_owned(runtime, class_name, message, path, line);
+    runtime->exceptions->active_exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        0,
+        ptn_null(),
+        PTN_E_ERROR,
+        path,
+        line
+    );
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
@@ -916,6 +993,168 @@ static PTN_UNUSED char *ptn_object_exception_message(
     return message;
 }
 
+static PTN_UNUSED PtnLookupResult ptn_throwable_object_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *property,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(object);
+    if (resolved.type != PTN_OBJECT) {
+        return ptn_lookup_missing();
+    }
+    return ptn_object_property_lookup_quiet(
+        runtime,
+        resolved,
+        property,
+        resolved.as.object->class_name,
+        line
+    );
+}
+
+static PTN_UNUSED char *ptn_throwable_message_string(PtnRuntime *runtime, PtnValue receiver, size_t line) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        return ptn_duplicate_string(receiver.as.exception->message);
+    }
+    PtnLookupResult lookup = ptn_throwable_object_property(runtime, receiver, "message", line);
+    if (!lookup.exists) {
+        return ptn_duplicate_string("");
+    }
+    char *message = ptn_value_to_string(lookup.value);
+    ptn_value_destroy(&lookup.value);
+    return message;
+}
+
+static PTN_UNUSED int64_t ptn_throwable_int_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    int64_t fallback,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        if (ptn_exception_name_equal(property, "code")) {
+            return receiver.as.exception->code;
+        }
+        if (ptn_exception_name_equal(property, "line")) {
+            return receiver.as.exception->line > (size_t)INT64_MAX
+                ? INT64_MAX
+                : (int64_t)receiver.as.exception->line;
+        }
+        if (ptn_exception_name_equal(property, "severity")) {
+            return receiver.as.exception->severity;
+        }
+        return fallback;
+    }
+    PtnLookupResult lookup = ptn_throwable_object_property(runtime, receiver, property, line);
+    if (!lookup.exists) {
+        return fallback;
+    }
+    PtnValue value = ptn_value_deref(lookup.value);
+    int64_t result = fallback;
+    if (value.type == PTN_INT) {
+        result = value.as.integer;
+    } else if (value.type == PTN_BOOL) {
+        result = value.as.boolean ? 1 : 0;
+    } else if (value.type == PTN_FLOAT) {
+        result = (int64_t)value.as.floating;
+    }
+    ptn_value_destroy(&lookup.value);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_throwable_file_value(PtnRuntime *runtime, PtnValue receiver, size_t line) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        return ptn_owned_string(ptn_duplicate_string(receiver.as.exception->path != NULL ? receiver.as.exception->path : ""));
+    }
+    PtnLookupResult lookup = ptn_throwable_object_property(runtime, receiver, "file", line);
+    if (!lookup.exists) {
+        return ptn_owned_string(ptn_duplicate_string(runtime->source_path != NULL ? runtime->source_path : ""));
+    }
+    char *file = ptn_value_to_string(lookup.value);
+    ptn_value_destroy(&lookup.value);
+    return ptn_owned_string(file);
+}
+
+static PTN_UNUSED PtnValue ptn_throwable_previous_value(PtnRuntime *runtime, PtnValue receiver, size_t line) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        return ptn_value_clone_deref(receiver.as.exception->previous);
+    }
+    PtnLookupResult lookup = ptn_throwable_object_property(runtime, receiver, "previous", line);
+    if (!lookup.exists) {
+        return ptn_null();
+    }
+    PtnValue previous = ptn_value_clone_deref(lookup.value);
+    ptn_value_destroy(&lookup.value);
+    return previous;
+}
+
+static PTN_UNUSED PtnValue ptn_throwable_trace_value(PtnRuntime *runtime, PtnValue receiver, size_t line) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        return ptn_value_clone(receiver.as.exception->trace);
+    }
+    (void)runtime;
+    (void)line;
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
+static PTN_UNUSED PtnValue ptn_throwable_trace_string(PtnRuntime *runtime, PtnValue receiver, size_t line) {
+    (void)runtime;
+    (void)receiver;
+    (void)line;
+    return ptn_owned_string(ptn_duplicate_string("#0 {main}"));
+}
+
+static PTN_UNUSED PtnValue ptn_throwable_to_string(PtnRuntime *runtime, PtnValue receiver, size_t line) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        return ptn_owned_string(ptn_value_to_string(receiver));
+    }
+    const char *class_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : "Exception";
+    char *message = ptn_throwable_message_string(runtime, receiver, line);
+    PtnValue file_value = ptn_throwable_file_value(runtime, receiver, line);
+    char *file = ptn_value_to_string(file_value);
+    ptn_value_destroy(&file_value);
+    int64_t throwable_line = ptn_throwable_int_property(runtime, receiver, "line", 0, line);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s: %s in %s:%lld\nStack trace:\n#0 {main}",
+        class_name,
+        message,
+        file,
+        (long long)throwable_line
+    );
+    if (needed < 0) {
+        free(file);
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    char *result = malloc((size_t)needed + 1);
+    if (result == NULL) {
+        free(file);
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        result,
+        (size_t)needed + 1,
+        "%s: %s in %s:%lld\nStack trace:\n#0 {main}",
+        class_name,
+        message,
+        file,
+        (long long)throwable_line
+    );
+    free(file);
+    free(message);
+    return ptn_owned_string(result);
+}
+
 static PTN_UNUSED PtnValue ptn_throw_value(
     PtnRuntime *runtime,
     PtnValue value,
@@ -924,15 +1163,26 @@ static PTN_UNUSED PtnValue ptn_throw_value(
 ) {
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, resolved.as.object)) {
-        char *message = ptn_object_exception_message(runtime, resolved, line);
+        char *message = ptn_throwable_message_string(runtime, resolved, line);
+        int64_t code = ptn_throwable_int_property(runtime, resolved, "code", 0, line);
+        int64_t severity = ptn_throwable_int_property(runtime, resolved, "severity", PTN_E_ERROR, line);
+        PtnValue previous = ptn_throwable_previous_value(runtime, resolved, line);
+        PtnValue file_value = ptn_throwable_file_value(runtime, resolved, line);
+        char *exception_path = ptn_value_to_string(file_value);
+        ptn_value_destroy(&file_value);
+        int64_t stored_line = ptn_throwable_int_property(runtime, resolved, "line", (int64_t)line, line);
         ptn_exception_free(runtime->exceptions->active_exception);
         runtime->exceptions->active_exception = ptn_exception_new_owned(
             runtime,
             resolved.as.object->class_name,
             message,
-            path,
-            line
+            code,
+            previous,
+            severity,
+            exception_path,
+            stored_line < 0 ? line : (size_t)stored_line
         );
+        ptn_value_destroy(&previous);
         if (runtime->exceptions->try_frame != NULL) {
             longjmp(runtime->exceptions->try_frame->jump, 1);
         }
@@ -1663,25 +1913,53 @@ static PTN_UNUSED PtnValue ptn_call_method(
     (void)args;
     (void)line;
     receiver = ptn_value_deref(receiver);
-    if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "getMessage")) {
+    int is_throwable_receiver = receiver.type == PTN_EXCEPTION ||
+        (receiver.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, receiver.as.object));
+    if (is_throwable_receiver && (
+        ptn_exception_name_equal(name, "getMessage") ||
+        ptn_exception_name_equal(name, "getCode") ||
+        ptn_exception_name_equal(name, "getFile") ||
+        ptn_exception_name_equal(name, "getLine") ||
+        ptn_exception_name_equal(name, "getPrevious") ||
+        ptn_exception_name_equal(name, "getTrace") ||
+        ptn_exception_name_equal(name, "getTraceAsString") ||
+        ptn_exception_name_equal(name, "getSeverity") ||
+        ptn_exception_name_equal(name, "__toString")
+    )) {
         if (argc != 0) {
             ptn_throw_exception(
                 runtime,
                 "ArgumentCountError",
-                "Too many arguments to exception method getMessage()"
+                "Too many arguments to exception method"
             );
         }
-        return ptn_owned_string(ptn_duplicate_string(receiver.as.exception->message));
-    }
-    if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "getTrace")) {
-        if (argc != 0) {
-            ptn_throw_exception(
-                runtime,
-                "ArgumentCountError",
-                "Too many arguments to exception method getTrace()"
-            );
+        if (ptn_exception_name_equal(name, "getMessage")) {
+            return ptn_owned_string(ptn_throwable_message_string(runtime, receiver, line));
         }
-        return ptn_value_clone(receiver.as.exception->trace);
+        if (ptn_exception_name_equal(name, "getCode")) {
+            return ptn_int(ptn_throwable_int_property(runtime, receiver, "code", 0, line));
+        }
+        if (ptn_exception_name_equal(name, "getFile")) {
+            return ptn_throwable_file_value(runtime, receiver, line);
+        }
+        if (ptn_exception_name_equal(name, "getLine")) {
+            return ptn_int(ptn_throwable_int_property(runtime, receiver, "line", 0, line));
+        }
+        if (ptn_exception_name_equal(name, "getPrevious")) {
+            return ptn_throwable_previous_value(runtime, receiver, line);
+        }
+        if (ptn_exception_name_equal(name, "getTrace")) {
+            return ptn_throwable_trace_value(runtime, receiver, line);
+        }
+        if (ptn_exception_name_equal(name, "getTraceAsString")) {
+            return ptn_throwable_trace_string(runtime, receiver, line);
+        }
+        if (ptn_exception_name_equal(name, "getSeverity")) {
+            return ptn_int(ptn_throwable_int_property(runtime, receiver, "severity", PTN_E_ERROR, line));
+        }
+        if (ptn_exception_name_equal(name, "__toString")) {
+            return ptn_throwable_to_string(runtime, receiver, line);
+        }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (
