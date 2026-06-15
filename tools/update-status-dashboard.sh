@@ -128,6 +128,7 @@ if (( corpus_count == 0 )); then
   echo "$corpus_dir: no PHPT tests found" >&2
   exit 1
 fi
+corpus_identity="php-src@${php_src_revision} (${corpus_count} PHPT tests)"
 
 declare -a features=()
 declare -a ported_tests=()
@@ -277,7 +278,7 @@ chart_last_hour="${history_hours[$((window_hours - 1))]}"
   printf '| last refresh | %s |\n' "$(md_cell "$refresh")"
   printf '| source commit | `%s` |\n' "$(md_cell "$source_commit")"
   printf '| php-src revision | `%s` |\n' "$(md_cell "$php_src_revision")"
-  printf '| upstream PHPT corpus | `%s` |\n' "$(md_cell "$corpus_dir")"
+  printf '| upstream PHPT corpus | `%s` |\n' "$(md_cell "$corpus_identity")"
   printf '| evidence source | `%s` |\n' "$features_file"
   printf '| generator | `%s` |\n' "tools/update-status-dashboard.sh"
   echo
@@ -356,7 +357,7 @@ chart_last_hour="${history_hours[$((window_hours - 1))]}"
   printf '    <tr><td>last refresh</td><td>%s</td></tr>\n' "$(html_escape "$refresh")"
   printf '    <tr><td>source commit</td><td><code>%s</code></td></tr>\n' "$(html_escape "$source_commit")"
   printf '    <tr><td>php-src revision</td><td><code>%s</code></td></tr>\n' "$(html_escape "$php_src_revision")"
-  printf '    <tr><td>upstream PHPT corpus</td><td><code>%s</code></td></tr>\n' "$(html_escape "$corpus_dir")"
+  printf '    <tr><td>upstream PHPT corpus</td><td><code>%s</code></td></tr>\n' "$(html_escape "$corpus_identity")"
   printf '    <tr><td>evidence source</td><td><code>%s</code></td></tr>\n' "$(html_escape "$features_file")"
   echo '    <tr><td>generator</td><td><code>tools/update-status-dashboard.sh</code></td></tr>'
   echo '  </tbody>'
