@@ -28,6 +28,10 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ErrorException", "Exception"),
     ("ReflectionException", "Exception"),
     ("RuntimeException", "Exception"),
+    ("InvalidArgumentException", "RuntimeException"),
+    ("UnexpectedValueException", "RuntimeException"),
+    ("OutOfBoundsException", "RuntimeException"),
+    ("OutOfRangeException", "RuntimeException"),
     ("UnhandledMatchError", "Error"),
     ("TypeError", "Error"),
     ("ArgumentCountError", "TypeError"),
@@ -382,16 +386,33 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
-    out.push_str("    if (ptn_ascii_case_equal(class_name, \"IteratorIterator\")) {\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"RecursiveArrayIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"IteratorIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"FilterIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"CallbackFilterIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"InfiniteIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"LimitIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"OuterIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"ArrayObject\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"IteratorAggregate\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    return 0;\n");
@@ -2206,6 +2227,9 @@ fn emit_class_metadata_helpers(
         "ArrayAccess",
         "Iterator",
         "IteratorAggregate",
+        "OuterIterator",
+        "RecursiveIterator",
+        "SeekableIterator",
         "SplObserver",
         "SplSubject",
         "Traversable",
@@ -2351,6 +2375,21 @@ fn emit_class_metadata_helpers(
         out.push_str("    (void)name;\n");
     }
     for (class_name, parent_name) in BUILTIN_EXCEPTION_PARENT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return \"");
+        out.push_str(parent_name);
+        out.push_str("\";\n");
+        out.push_str("    }\n");
+    }
+    for (class_name, parent_name) in [
+        ("CallbackFilterIterator", "FilterIterator"),
+        ("FilterIterator", "IteratorIterator"),
+        ("InfiniteIterator", "IteratorIterator"),
+        ("LimitIterator", "IteratorIterator"),
+        ("RecursiveArrayIterator", "ArrayIterator"),
+    ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
         out.push_str("\")) {\n");
@@ -3381,6 +3420,20 @@ fn class_method_lookup_chain<'a>(
 }
 
 fn class_transitive_interfaces<'a>(class: &'a ClassDecl, classes: &'a [ClassDecl]) -> Vec<&'a str> {
+    fn builtin_parent_interfaces(interface_name: &str) -> &'static [&'static str] {
+        match interface_name
+            .trim_start_matches('\\')
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "iterator" | "iteratoraggregate" => &["Traversable"],
+            "outeriterator" | "recursiveiterator" | "seekableiterator" => {
+                &["Iterator", "Traversable"]
+            }
+            _ => &[],
+        }
+    }
+
     fn collect<'a>(
         interface_name: &'a str,
         classes: &'a [ClassDecl],
@@ -3392,6 +3445,9 @@ fn class_transitive_interfaces<'a>(class: &'a ClassDecl, classes: &'a [ClassDecl
             return;
         }
         interfaces.push(interface_name);
+        for parent_interface in builtin_parent_interfaces(interface_name) {
+            collect(parent_interface, classes, seen, interfaces);
+        }
         if let Some(interface) = class_by_name(classes, interface_name) {
             for parent_interface in &interface.interfaces {
                 collect(parent_interface, classes, seen, interfaces);
@@ -3595,6 +3651,34 @@ fn class_constructor_method<'a>(
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
         .map(|method| method.method)
+}
+
+fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
+    match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+        "arrayiterator" => Some("ArrayIterator"),
+        "arrayobject" => Some("ArrayObject"),
+        "callbackfilteriterator" => Some("CallbackFilterIterator"),
+        "filteriterator" => Some("FilterIterator"),
+        "infiniteiterator" => Some("InfiniteIterator"),
+        "iteratoriterator" => Some("IteratorIterator"),
+        "limititerator" => Some("LimitIterator"),
+        "recursivearrayiterator" => Some("RecursiveArrayIterator"),
+        _ => None,
+    }
+}
+
+fn inherited_modeled_spl_internal_class_name(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Option<&'static str> {
+    let mut parent_name = class.parent_name.as_deref();
+    while let Some(name) = parent_name {
+        if let Some(internal_name) = modeled_spl_internal_class_name(name) {
+            return Some(internal_name);
+        }
+        parent_name = class_by_name(classes, name).and_then(|parent| parent.parent_name.as_deref());
+    }
+    None
 }
 
 fn class_magic_call_method<'a>(
@@ -4323,6 +4407,14 @@ fn emit_method_dispatch(
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (resolved_receiver.type == PTN_OBJECT && ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_method_exists(target_class_name, method_name) && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
+    out.push_str(
+        "        *result_out = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n",
+    );
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 }
@@ -5343,6 +5435,18 @@ fn emit_instruction(
                     values.emit_store_assignment_target_from_temp(out, key, &key_temp);
                 emit_value_cleanup(out, "        ", &key_result_temp);
                 emit_value_cleanup(out, "        ", &key_temp);
+            } else {
+                let key_temp = values.next_temp();
+                out.push_str("        if (");
+                out.push_str(&iterator_temp);
+                out.push_str(".protocol_iterator) {\n");
+                out.push_str("            PtnValue ");
+                out.push_str(&key_temp);
+                out.push_str(" = ptn_array_iterator_current_key(&");
+                out.push_str(&iterator_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "            ", &key_temp);
+                out.push_str("        }\n");
             }
             if *value_by_ref {
                 values.emit_bind_assignment_target_reference(out, value, &value_temp);
@@ -6837,6 +6941,14 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
     }) {
         requirements.internal_function_dispatch = true;
     }
+    if module
+        .classes
+        .iter()
+        .any(|class| inherited_modeled_spl_internal_class_name(class, &module.classes).is_some())
+    {
+        requirements.internal_function_dispatch = true;
+        requirements.method_dispatch = true;
+    }
     collect_instructions_runtime_requirements(
         &module.instructions,
         &module.functions,
@@ -7342,10 +7454,18 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("ReflectionMethod")
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")
+                || class_name.eq_ignore_ascii_case("CallbackFilterIterator")
+                || class_name.eq_ignore_ascii_case("FilterIterator")
+                || class_name.eq_ignore_ascii_case("InfiniteIterator")
                 || class_name.eq_ignore_ascii_case("IteratorIterator")
+                || class_name.eq_ignore_ascii_case("LimitIterator")
+                || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
+            }
+            if class_name.eq_ignore_ascii_case("CallbackFilterIterator") {
+                requirements.dynamic_function_dispatch = true;
             }
         }
         ValueExpr::DynamicNewObject {
@@ -12224,7 +12344,18 @@ impl ValueEmitter {
             }
             emit_value_cleanup(out, "    ", &constructor_result);
         } else {
-            if class_extends_builtin_throwable(declared_class, &self.classes) {
+            if let Some(parent_class_name) =
+                inherited_modeled_spl_internal_class_name(declared_class, &self.classes)
+            {
+                self.emit_declared_internal_parent_constructor(
+                    out,
+                    result_temp,
+                    parent_class_name,
+                    arguments,
+                    argument_unpacks,
+                    line,
+                );
+            } else if class_extends_builtin_throwable(declared_class, &self.classes) {
                 if argument_unpacks.iter().any(|unpack| *unpack) {
                     let args_temp = self.emit_call_arguments_builder(
                         out,
@@ -12299,6 +12430,109 @@ impl ValueEmitter {
                 }
             }
         }
+    }
+
+    fn emit_declared_internal_parent_constructor(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        parent_class_name: &str,
+        arguments: &[ValueExpr],
+        argument_unpacks: &[bool],
+        line: usize,
+    ) {
+        let parent_temp = self.next_temp();
+        if argument_unpacks.iter().any(|unpack| *unpack) {
+            let args_temp = self.emit_call_arguments_builder(
+                out,
+                "__construct",
+                arguments,
+                argument_unpacks,
+                line,
+                true,
+                None,
+            );
+            out.push_str("    PtnValue ");
+            out.push_str(&parent_temp);
+            out.push_str(" = ptn_new_object(&runtime, \"");
+            out.push_str(&c_string(parent_class_name));
+            out.push_str("\", ");
+            out.push_str(&args_temp);
+            out.push_str(".len, ");
+            out.push_str(&args_temp);
+            out.push_str(".values, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+        } else {
+            let mut argument_temps = Vec::with_capacity(arguments.len());
+            for argument in arguments {
+                argument_temps.push(self.emit_materialized_value(out, argument));
+            }
+            if argument_temps.is_empty() {
+                out.push_str("    PtnValue ");
+                out.push_str(&parent_temp);
+                out.push_str(" = ptn_new_object(&runtime, \"");
+                out.push_str(&c_string(parent_class_name));
+                out.push_str("\", 0, NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            } else {
+                let args_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&args_temp);
+                out.push_str("[] = { ");
+                for (index, temp) in argument_temps.iter().enumerate() {
+                    if index > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str("ptn_value_share(");
+                    out.push_str(temp);
+                    out.push(')');
+                }
+                out.push_str(" };\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&parent_temp);
+                out.push_str(" = ptn_new_object(&runtime, \"");
+                out.push_str(&c_string(parent_class_name));
+                out.push_str("\", ");
+                out.push_str(&argument_temps.len().to_string());
+                out.push_str(", ");
+                out.push_str(&args_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                for index in 0..argument_temps.len() {
+                    emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+                }
+            }
+            for temp in argument_temps {
+                emit_value_cleanup(out, "    ", &temp);
+            }
+        }
+        out.push_str("    if (runtime.exceptions->active_exception == NULL && ");
+        out.push_str(&parent_temp);
+        out.push_str(".type == PTN_OBJECT) {\n");
+        out.push_str("        ");
+        out.push_str(result_temp);
+        out.push_str(".as.object->native_data = ");
+        out.push_str(&parent_temp);
+        out.push_str(".as.object->native_data;\n");
+        out.push_str("        ");
+        out.push_str(result_temp);
+        out.push_str(".as.object->native_data_free = ");
+        out.push_str(&parent_temp);
+        out.push_str(".as.object->native_data_free;\n");
+        out.push_str("        ");
+        out.push_str(&parent_temp);
+        out.push_str(".as.object->native_data = NULL;\n");
+        out.push_str("        ");
+        out.push_str(&parent_temp);
+        out.push_str(".as.object->native_data_free = NULL;\n");
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &parent_temp);
     }
 
     fn emit_runtime_new_object(

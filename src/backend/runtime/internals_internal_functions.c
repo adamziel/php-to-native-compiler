@@ -21589,8 +21589,24 @@ static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *clas
     return ptn_ascii_case_equal(class_name, "ArrayIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "RecursiveArrayIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ArrayObject");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_callback_filter_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "CallbackFilterIterator");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_filter_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "FilterIterator");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_infinite_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "InfiniteIterator");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *class_name) {
@@ -21601,6 +21617,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *
     return ptn_ascii_case_equal(class_name, "SplObjectStorage");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "LimitIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Closure");
 }
@@ -21609,6 +21629,9 @@ static int ptn_internal_interface_exists_name(const char *name) {
     return ptn_ascii_case_equal(name, "ArrayAccess")
         || ptn_ascii_case_equal(name, "Iterator")
         || ptn_ascii_case_equal(name, "IteratorAggregate")
+        || ptn_ascii_case_equal(name, "OuterIterator")
+        || ptn_ascii_case_equal(name, "RecursiveIterator")
+        || ptn_ascii_case_equal(name, "SeekableIterator")
         || ptn_ascii_case_equal(name, "Traversable")
         || ptn_ascii_case_equal(name, "Stringable")
         || ptn_ascii_case_equal(name, "Throwable")
@@ -21620,9 +21643,14 @@ static int ptn_internal_class_exists_name(const char *class_name) {
     return ptn_internal_reflection_metadata_class_exists(class_name)
         || ptn_internal_class_name_is_stdclass_name(class_name)
         || ptn_internal_class_name_is_array_iterator(class_name)
+        || ptn_internal_class_name_is_recursive_array_iterator(class_name)
         || ptn_internal_class_name_is_array_object(class_name)
+        || ptn_internal_class_name_is_callback_filter_iterator(class_name)
+        || ptn_internal_class_name_is_filter_iterator(class_name)
+        || ptn_internal_class_name_is_infinite_iterator(class_name)
         || ptn_internal_class_name_is_iterator_iterator(class_name)
         || ptn_internal_class_name_is_spl_object_storage(class_name)
+        || ptn_internal_class_name_is_limit_iterator(class_name)
         || ptn_internal_class_name_is_closure(class_name)
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
@@ -21756,6 +21784,9 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
 static int ptn_array_iterator_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "count")
         || ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "getArrayCopy")
+        || ptn_ascii_case_equal(method_name, "getChildren")
+        || ptn_ascii_case_equal(method_name, "hasChildren")
         || ptn_ascii_case_equal(method_name, "key")
         || ptn_ascii_case_equal(method_name, "next")
         || ptn_ascii_case_equal(method_name, "offsetExists")
@@ -21763,6 +21794,7 @@ static int ptn_array_iterator_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "offsetSet")
         || ptn_ascii_case_equal(method_name, "offsetUnset")
         || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "seek")
         || ptn_ascii_case_equal(method_name, "valid");
 }
 
@@ -21777,11 +21809,18 @@ static int ptn_array_object_method_exists(const char *method_name) {
 
 static int ptn_iterator_iterator_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "getInnerIterator")
         || ptn_ascii_case_equal(method_name, "key")
         || ptn_ascii_case_equal(method_name, "next")
         || ptn_ascii_case_equal(method_name, "offsetGet")
         || ptn_ascii_case_equal(method_name, "rewind")
         || ptn_ascii_case_equal(method_name, "valid");
+}
+
+static int ptn_limit_iterator_method_exists(const char *method_name) {
+    return ptn_iterator_iterator_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "getPosition")
+        || ptn_ascii_case_equal(method_name, "seek");
 }
 
 static int ptn_closure_method_exists(const char *method_name) {
@@ -21816,14 +21855,24 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_reflection_method(class_name)) {
         return ptn_reflection_method_method_exists(method_name);
     }
-    if (ptn_internal_class_name_is_array_iterator(class_name)) {
+    if (ptn_internal_class_name_is_array_iterator(class_name) ||
+        ptn_internal_class_name_is_recursive_array_iterator(class_name)) {
         return ptn_array_iterator_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_array_object(class_name)) {
         return ptn_array_object_method_exists(method_name);
     }
-    if (ptn_internal_class_name_is_iterator_iterator(class_name)) {
+    if (ptn_internal_class_name_is_callback_filter_iterator(class_name)) {
+        return ptn_iterator_iterator_method_exists(method_name)
+            || ptn_ascii_case_equal(method_name, "accept");
+    }
+    if (ptn_internal_class_name_is_filter_iterator(class_name) ||
+        ptn_internal_class_name_is_infinite_iterator(class_name) ||
+        ptn_internal_class_name_is_iterator_iterator(class_name)) {
         return ptn_iterator_iterator_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_limit_iterator(class_name)) {
+        return ptn_limit_iterator_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_closure_method_exists(method_name);
@@ -22109,6 +22158,13 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
     if (ptn_reflection_class_is_internal_name(class_name)) {
         return ptn_internal_class_name_is_reflection_class(class_name)
             || ptn_internal_class_name_is_reflection_function(class_name)
+            || ptn_internal_class_name_is_array_iterator(class_name)
+            || ptn_internal_class_name_is_recursive_array_iterator(class_name)
+            || ptn_internal_class_name_is_array_object(class_name)
+            || ptn_internal_class_name_is_callback_filter_iterator(class_name)
+            || ptn_internal_class_name_is_infinite_iterator(class_name)
+            || ptn_internal_class_name_is_iterator_iterator(class_name)
+            || ptn_internal_class_name_is_limit_iterator(class_name)
             || ptn_builtin_exception_class_name(class_name) != NULL;
     }
     return ptn_declared_class_exists(class_name);
@@ -22396,6 +22452,16 @@ static PtnValue ptn_reflection_class_extension_name(const char *class_name) {
     if (ptn_ascii_case_equal(class_name, "DateTime") || ptn_ascii_case_equal(class_name, "DateTimeInterface")) {
         return ptn_string("date");
     }
+    if (ptn_internal_class_name_is_array_iterator(class_name) ||
+        ptn_internal_class_name_is_recursive_array_iterator(class_name) ||
+        ptn_internal_class_name_is_array_object(class_name) ||
+        ptn_internal_class_name_is_callback_filter_iterator(class_name) ||
+        ptn_internal_class_name_is_filter_iterator(class_name) ||
+        ptn_internal_class_name_is_infinite_iterator(class_name) ||
+        ptn_internal_class_name_is_iterator_iterator(class_name) ||
+        ptn_internal_class_name_is_limit_iterator(class_name)) {
+        return ptn_string("SPL");
+    }
     return ptn_string("Core");
 }
 
@@ -22656,6 +22722,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             return ptn_null();
         }
         int result = ptn_ascii_case_equal(class_name, interface_name)
+            || ptn_builtin_class_implements_interface(class_name, interface_name)
             || ptn_declared_class_implements_interface(class_name, interface_name);
         free(interface_name);
         return ptn_bool(result);
@@ -22671,7 +22738,33 @@ typedef struct {
 
 typedef struct {
     PtnValue inner;
+    int has_cached_valid;
+    int cached_valid;
 } PtnIteratorIteratorData;
+
+typedef struct {
+    PtnValue inner;
+    PtnValue callback;
+} PtnCallbackFilterIteratorData;
+
+typedef struct {
+    PtnValue inner;
+    int64_t offset;
+    int64_t limit;
+    int64_t position;
+    PtnValue cached_key;
+    int has_cached_key;
+    int64_t cached_key_position;
+} PtnLimitIteratorData;
+
+static void ptn_limit_iterator_clear_cached_key(PtnLimitIteratorData *data) {
+    if (data == NULL || !data->has_cached_key) {
+        return;
+    }
+    ptn_value_destroy(&data->cached_key);
+    data->cached_key = ptn_null();
+    data->has_cached_key = 0;
+}
 
 static void ptn_reflection_function_data_free(void *data) {
     free(data);
@@ -22704,6 +22797,26 @@ static void ptn_iterator_iterator_data_free(void *data) {
     free(iterator_data);
 }
 
+static void ptn_callback_filter_iterator_data_free(void *data) {
+    PtnCallbackFilterIteratorData *iterator_data = (PtnCallbackFilterIteratorData *)data;
+    if (iterator_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&iterator_data->inner);
+    ptn_value_destroy(&iterator_data->callback);
+    free(iterator_data);
+}
+
+static void ptn_limit_iterator_data_free(void *data) {
+    PtnLimitIteratorData *iterator_data = (PtnLimitIteratorData *)data;
+    if (iterator_data == NULL) {
+        return;
+    }
+    ptn_limit_iterator_clear_cached_key(iterator_data);
+    ptn_value_destroy(&iterator_data->inner);
+    free(iterator_data);
+}
+
 static PtnReflectionFunctionData *ptn_reflection_function_data(PtnRuntime *runtime, PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (
@@ -22721,7 +22834,8 @@ static PtnArrayIteratorData *ptn_array_iterator_data(PtnRuntime *runtime, PtnVal
     receiver = ptn_value_deref(receiver);
     if (
         receiver.type != PTN_OBJECT
-        || !ptn_internal_class_name_is_array_iterator(receiver.as.object->class_name)
+        || !(ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "ArrayIterator") ||
+             ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "RecursiveArrayIterator"))
         || receiver.as.object->native_data == NULL
     ) {
         ptn_throw_exception(runtime, "Error", "Invalid ArrayIterator object");
@@ -22734,7 +22848,7 @@ static PtnArrayObjectData *ptn_array_object_data(PtnRuntime *runtime, PtnValue r
     receiver = ptn_value_deref(receiver);
     if (
         receiver.type != PTN_OBJECT
-        || !ptn_internal_class_name_is_array_object(receiver.as.object->class_name)
+        || !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "ArrayObject")
         || receiver.as.object->native_data == NULL
     ) {
         ptn_throw_exception(runtime, "Error", "Invalid ArrayObject object");
@@ -22747,13 +22861,41 @@ static PtnIteratorIteratorData *ptn_iterator_iterator_data(PtnRuntime *runtime, 
     receiver = ptn_value_deref(receiver);
     if (
         receiver.type != PTN_OBJECT
-        || !ptn_internal_class_name_is_iterator_iterator(receiver.as.object->class_name)
+        || !(ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "IteratorIterator") ||
+             ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "FilterIterator") ||
+             ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "InfiniteIterator"))
         || receiver.as.object->native_data == NULL
     ) {
         ptn_throw_exception(runtime, "Error", "Invalid IteratorIterator object");
         return NULL;
     }
     return (PtnIteratorIteratorData *)receiver.as.object->native_data;
+}
+
+static PtnCallbackFilterIteratorData *ptn_callback_filter_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "CallbackFilterIterator")
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid CallbackFilterIterator object");
+        return NULL;
+    }
+    return (PtnCallbackFilterIteratorData *)receiver.as.object->native_data;
+}
+
+static PtnLimitIteratorData *ptn_limit_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "LimitIterator")
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid LimitIterator object");
+        return NULL;
+    }
+    return (PtnLimitIteratorData *)receiver.as.object->native_data;
 }
 
 static PtnValue ptn_reflection_function_string_before_last_namespace_separator(const char *name) {
@@ -22862,8 +23004,9 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     return object;
 }
 
-static PTN_UNUSED PtnValue ptn_array_iterator_new(
+static PTN_UNUSED PtnValue ptn_array_iterator_new_for_class(
     PtnRuntime *runtime,
+    const char *class_name,
     size_t argc,
     const PtnValue *args,
     size_t line
@@ -22873,7 +23016,8 @@ static PTN_UNUSED PtnValue ptn_array_iterator_new(
         int written = snprintf(
             message,
             sizeof(message),
-            "ArrayIterator::__construct() expects at most 1 argument, %zu given",
+            "%s::__construct() expects at most 1 argument, %zu given",
+            class_name,
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -22891,13 +23035,17 @@ static PTN_UNUSED PtnValue ptn_array_iterator_new(
     } else {
         PtnValue source = ptn_value_deref(args[0]);
         if (source.type != PTN_ARRAY) {
-            ptn_throw_exception_at(
-                runtime,
-                "TypeError",
-                "ArrayIterator::__construct(): Argument #1 ($array) must be of type array",
-                runtime->source_path,
-                line
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s::__construct(): Argument #1 ($array) must be of type array",
+                class_name
             );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
             return ptn_null();
         }
         array = source.as.array;
@@ -22913,10 +23061,28 @@ static PTN_UNUSED PtnValue ptn_array_iterator_new(
     data->array = array;
     data->index = 0;
 
-    PtnValue object = ptn_object_new_shell(runtime, "ArrayIterator");
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_array_iterator_data_free;
     return object;
+}
+
+static PTN_UNUSED PtnValue ptn_array_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_array_iterator_new_for_class(runtime, "ArrayIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_recursive_array_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_array_iterator_new_for_class(runtime, "RecursiveArrayIterator", argc, args, line);
 }
 
 static PTN_UNUSED PtnValue ptn_array_object_new(
@@ -22975,19 +23141,74 @@ static PTN_UNUSED PtnValue ptn_array_object_new(
     return object;
 }
 
-static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
+static int ptn_value_object_implements_interface(PtnValue value, const char *interface_name) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        (ptn_builtin_class_implements_interface(value.as.object->class_name, interface_name) ||
+         ptn_declared_class_implements_interface(value.as.object->class_name, interface_name));
+}
+
+static int ptn_value_is_iterator_object(PtnValue value) {
+    return ptn_value_object_implements_interface(value, "Iterator");
+}
+
+static int ptn_value_is_iterator_aggregate_object(PtnValue value) {
+    return ptn_value_object_implements_interface(value, "IteratorAggregate");
+}
+
+static int ptn_value_is_seekable_iterator_object(PtnValue value) {
+    return ptn_value_object_implements_interface(value, "SeekableIterator");
+}
+
+static PtnValue ptn_iterator_iterator_resolve_inner(
     PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue candidate,
+    size_t line
+) {
+    candidate = ptn_value_deref(candidate);
+    if (ptn_value_is_iterator_object(candidate)) {
+        return ptn_value_clone_deref(candidate);
+    }
+    if (ptn_value_is_iterator_aggregate_object(candidate) && runtime->method_dispatch != NULL) {
+        PtnValue iterator = runtime->method_dispatch(runtime, candidate, "getIterator", 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&iterator);
+            return ptn_null();
+        }
+        if (ptn_value_is_iterator_object(iterator)) {
+            return iterator;
+        }
+        ptn_value_destroy(&iterator);
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s::__construct(): Argument #1 ($iterator) must be of type Traversable",
+        class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return ptn_null();
+}
+
+static PtnValue ptn_iterator_iterator_new_for_class(
+    PtnRuntime *runtime,
+    const char *class_name,
     size_t argc,
     const PtnValue *args,
     size_t line
 ) {
-    (void)line;
-    if (argc != 1) {
+    if (argc < 1) {
         char message[160];
         int written = snprintf(
             message,
             sizeof(message),
-            "IteratorIterator::__construct() expects exactly 1 argument, %zu given",
+            "%s::__construct() expects at least 1 argument, %zu given",
+            class_name,
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -22996,28 +23217,192 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
+    if (argc > 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects at most 2 arguments, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
 
-    PtnValue inner = ptn_value_deref(args[0]);
-    if (
-        inner.type != PTN_OBJECT ||
-        !(
-            ptn_builtin_class_implements_interface(inner.as.object->class_name, "Iterator") ||
-            ptn_declared_class_implements_interface(inner.as.object->class_name, "Iterator")
-        )
-    ) {
-        ptn_throw_exception(runtime, "TypeError", "IteratorIterator::__construct(): Argument #1 ($iterator) must be of type Traversable");
+    PtnValue inner = ptn_iterator_iterator_resolve_inner(runtime, class_name, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
 
     PtnIteratorIteratorData *data = malloc(sizeof(PtnIteratorIteratorData));
     if (data == NULL) {
+        ptn_value_destroy(&inner);
         ptn_abort_out_of_memory();
     }
-    data->inner = ptn_value_clone_deref(inner);
+    data->inner = inner;
+    data->has_cached_valid = 0;
+    data->cached_valid = 0;
 
-    PtnValue object = ptn_object_new_shell(runtime, "IteratorIterator");
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_iterator_iterator_data_free;
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_iterator_iterator_new_for_class(runtime, "IteratorIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_filter_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "FilterIterator::__construct() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    return ptn_iterator_iterator_new_for_class(runtime, "FilterIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_infinite_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "InfiniteIterator::__construct() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    return ptn_iterator_iterator_new_for_class(runtime, "InfiniteIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_limit_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "LimitIterator::__construct() expects at least 1 argument");
+        return ptn_null();
+    }
+    if (argc > 3) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "LimitIterator::__construct() expects at most 3 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    PtnValue inner = ptn_iterator_iterator_resolve_inner(runtime, "LimitIterator", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnLimitIteratorData *data = malloc(sizeof(PtnLimitIteratorData));
+    if (data == NULL) {
+        ptn_value_destroy(&inner);
+        ptn_abort_out_of_memory();
+    }
+    data->inner = inner;
+    data->offset = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    data->limit = argc >= 3 ? ptn_value_to_integer(args[2]) : -1;
+    data->position = 0;
+    data->cached_key = ptn_null();
+    data->has_cached_key = 0;
+    data->cached_key_position = 0;
+
+    PtnValue object = ptn_object_new_shell(runtime, "LimitIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_limit_iterator_data_free;
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_callback_filter_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc != 2) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "CallbackFilterIterator::__construct() expects exactly 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (!ptn_value_is_iterator_object(args[0])) {
+        ptn_throw_exception(runtime, "TypeError", "CallbackFilterIterator::__construct(): Argument #1 ($iterator) must be of type Iterator");
+        return ptn_null();
+    }
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "CallbackFilterIterator::__construct",
+        2,
+        "callback",
+        args[1]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnCallbackFilterIteratorData *data = malloc(sizeof(PtnCallbackFilterIteratorData));
+    if (data == NULL) {
+        ptn_value_destroy(&callback);
+        ptn_abort_out_of_memory();
+    }
+    data->inner = ptn_value_clone_deref(args[0]);
+    data->callback = callback;
+
+    PtnValue object = ptn_object_new_shell(runtime, "CallbackFilterIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_callback_filter_iterator_data_free;
     return object;
 }
 
@@ -23094,6 +23479,13 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
         }
         return ptn_int((int64_t)data->array->len);
     }
+    if (ptn_ascii_case_equal(name, "getArrayCopy")) {
+        ptn_reflection_check_no_arguments(runtime, "ArrayIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_array(ptn_array_clone(data->array));
+    }
     if (ptn_ascii_case_equal(name, "offsetGet")) {
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetGet() expects exactly 1 argument");
@@ -23138,6 +23530,29 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
         (void)ptn_array_unset_entry(data->array, key);
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(name, "seek")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::seek() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t position = ptn_value_to_integer(args[0]);
+        if (position < 0 || data->array == NULL || (size_t)position >= data->array->len) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Seek position %lld is out of range",
+                (long long)position
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "OutOfBoundsException", message);
+            return ptn_null();
+        }
+        data->index = (size_t)position;
+        return ptn_null();
+    }
     ptn_reflection_check_no_arguments(runtime, "ArrayIterator", name, argc);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
@@ -23166,6 +23581,27 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             data->index++;
         }
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "hasChildren")) {
+        if (data->array == NULL || data->index >= data->array->len) {
+            return ptn_bool(0);
+        }
+        PtnValue current = ptn_value_deref(data->array->entries[data->index].value);
+        return ptn_bool(current.type == PTN_ARRAY);
+    }
+    if (ptn_ascii_case_equal(name, "getChildren")) {
+        if (data->array == NULL || data->index >= data->array->len) {
+            return ptn_null();
+        }
+        PtnValue current = ptn_value_deref(data->array->entries[data->index].value);
+        if (current.type != PTN_ARRAY) {
+            return ptn_null();
+        }
+        PtnValue child_arg = ptn_array(current.as.array);
+        ptn_array_retain(current.as.array);
+        PtnValue child = ptn_recursive_array_iterator_new(runtime, 1, &child_arg, line);
+        ptn_value_drop(&child_arg);
+        return child;
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -23252,6 +23688,104 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
     return ptn_null();
 }
 
+static PtnValue ptn_iterator_inner_call(
+    PtnRuntime *runtime,
+    PtnValue inner,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (runtime->method_dispatch == NULL) {
+        ptn_throw_exception(runtime, "Error", "Iterator method dispatch is unavailable");
+        return ptn_null();
+    }
+    return runtime->method_dispatch(runtime, inner, name, argc, args, line);
+}
+
+static PtnValue ptn_iterator_inner_call_no_args(
+    PtnRuntime *runtime,
+    PtnValue inner,
+    const char *name,
+    size_t line
+) {
+    return ptn_iterator_inner_call(runtime, inner, name, 0, NULL, line);
+}
+
+static int ptn_iterator_inner_valid(PtnRuntime *runtime, PtnValue inner, size_t line) {
+    PtnValue valid = ptn_iterator_inner_call_no_args(runtime, inner, "valid", line);
+    int result = runtime->exceptions->active_exception == NULL && ptn_is_truthy(valid);
+    ptn_value_destroy(&valid);
+    return result;
+}
+
+static void ptn_limit_iterator_seek_inner(
+    PtnRuntime *runtime,
+    PtnLimitIteratorData *data,
+    int64_t position,
+    size_t line
+) {
+    ptn_limit_iterator_clear_cached_key(data);
+    if (ptn_value_is_seekable_iterator_object(data->inner)) {
+        PtnValue seek_arg = ptn_int(position);
+        PtnValue seek = ptn_iterator_inner_call(runtime, data->inner, "seek", 1, &seek_arg, line);
+        ptn_value_destroy(&seek);
+        data->position = position;
+        return;
+    }
+    PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, data->inner, "rewind", line);
+    ptn_value_destroy(&rewind);
+    data->position = 0;
+    while (runtime->exceptions->active_exception == NULL && data->position < position) {
+        if (!ptn_iterator_inner_valid(runtime, data->inner, line)) {
+            break;
+        }
+        PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
+        ptn_value_destroy(&next);
+        data->position++;
+    }
+}
+
+static int ptn_limit_iterator_position_inside_window(PtnLimitIteratorData *data) {
+    if (data->position < data->offset) {
+        return 0;
+    }
+    if (data->limit >= 0 && data->position - data->offset >= data->limit) {
+        return 0;
+    }
+    return 1;
+}
+
+static void ptn_callback_filter_iterator_skip_rejected(
+    PtnRuntime *runtime,
+    PtnCallbackFilterIteratorData *data,
+    size_t line
+) {
+    while (runtime->exceptions->active_exception == NULL &&
+        ptn_iterator_inner_valid(runtime, data->inner, line)) {
+        PtnValue current = ptn_iterator_inner_call_no_args(runtime, data->inner, "current", line);
+        PtnValue key = ptn_iterator_inner_call_no_args(runtime, data->inner, "key", line);
+        PtnValue callback_args[3] = {
+            ptn_value_share(current),
+            ptn_value_share(key),
+            ptn_value_share(data->inner)
+        };
+        PtnValue accepted = ptn_internal_call_callback(runtime, data->callback, 3, callback_args, line);
+        int keep = runtime->exceptions->active_exception == NULL && ptn_is_truthy(accepted);
+        ptn_value_destroy(&accepted);
+        ptn_value_destroy(&callback_args[0]);
+        ptn_value_destroy(&callback_args[1]);
+        ptn_value_destroy(&callback_args[2]);
+        ptn_value_destroy(&current);
+        ptn_value_destroy(&key);
+        if (keep || runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+        PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
+        ptn_value_destroy(&next);
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -23264,6 +23798,46 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     if (data == NULL) {
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(name, "getInnerIterator")) {
+        ptn_reflection_check_no_arguments(runtime, "IteratorIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_value_clone_deref(data->inner);
+    }
+    if (ptn_internal_class_name_is_infinite_iterator(ptn_value_deref(receiver).as.object->class_name) &&
+        ptn_ascii_case_equal(name, "valid") &&
+        data->has_cached_valid) {
+        ptn_reflection_check_no_arguments(runtime, "InfiniteIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        data->has_cached_valid = 0;
+        return ptn_bool(data->cached_valid);
+    }
+    if (ptn_internal_class_name_is_infinite_iterator(ptn_value_deref(receiver).as.object->class_name) &&
+        ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "InfiniteIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
+        ptn_value_destroy(&next);
+        data->has_cached_valid = 0;
+        if (runtime->exceptions->active_exception == NULL) {
+            PtnValue valid = ptn_iterator_inner_call_no_args(runtime, data->inner, "valid", line);
+            int still_valid = runtime->exceptions->active_exception == NULL && ptn_is_truthy(valid);
+            ptn_value_destroy(&valid);
+            if (still_valid) {
+                data->cached_valid = 1;
+                data->has_cached_valid = 1;
+            } else if (runtime->exceptions->active_exception == NULL) {
+                PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, data->inner, "rewind", line);
+                ptn_value_destroy(&rewind);
+            }
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        data->has_cached_valid = 0;
+    }
     if (
         ptn_ascii_case_equal(name, "rewind") ||
         ptn_ascii_case_equal(name, "valid") ||
@@ -23272,7 +23846,211 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         ptn_ascii_case_equal(name, "next") ||
         ptn_ascii_case_equal(name, "offsetGet")
     ) {
-        return runtime->method_dispatch(runtime, data->inner, name, argc, args, line);
+        return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_limit_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnLimitIteratorData *data = ptn_limit_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getInnerIterator")) {
+        ptn_reflection_check_no_arguments(runtime, "LimitIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_value_clone_deref(data->inner);
+    }
+    if (ptn_ascii_case_equal(name, "getPosition")) {
+        ptn_reflection_check_no_arguments(runtime, "LimitIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->position);
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, "LimitIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (ptn_value_is_seekable_iterator_object(data->inner)) {
+            ptn_limit_iterator_clear_cached_key(data);
+            PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, data->inner, "rewind", line);
+            ptn_value_destroy(&rewind);
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_limit_iterator_seek_inner(runtime, data, data->offset, line);
+            }
+        } else {
+            ptn_limit_iterator_seek_inner(runtime, data, data->offset, line);
+        }
+        if (runtime->exceptions->active_exception == NULL &&
+            !ptn_value_is_seekable_iterator_object(data->inner)) {
+            PtnValue valid = ptn_iterator_inner_call_no_args(runtime, data->inner, "valid", line);
+            ptn_value_destroy(&valid);
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_reflection_check_no_arguments(runtime, "LimitIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL ||
+            !ptn_limit_iterator_position_inside_window(data)) {
+            return ptn_bool(0);
+        }
+        return ptn_bool(ptn_iterator_inner_valid(runtime, data->inner, line));
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "LimitIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
+        ptn_value_destroy(&next);
+        ptn_limit_iterator_clear_cached_key(data);
+        data->position++;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "seek")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "LimitIterator::seek() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t target = ptn_value_to_integer(args[0]);
+        if (target < data->offset) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot seek to %lld which is below the offset %lld",
+                (long long)target,
+                (long long)data->offset
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "OutOfBoundsException", message);
+            return ptn_null();
+        }
+        if (data->limit >= 0 && target - data->offset >= data->limit) {
+            char message[224];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot seek to %lld which is behind offset %lld plus count %lld",
+                (long long)target,
+                (long long)data->offset,
+                (long long)data->limit
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "OutOfBoundsException", message);
+            return ptn_null();
+        }
+        ptn_limit_iterator_seek_inner(runtime, data, target, line);
+        if (runtime->exceptions->active_exception == NULL) {
+            PtnValue valid = ptn_iterator_inner_call_no_args(runtime, data->inner, "valid", line);
+            ptn_value_destroy(&valid);
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        ptn_reflection_check_no_arguments(runtime, "LimitIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue current = ptn_iterator_inner_call_no_args(runtime, data->inner, "current", line);
+        if (runtime->exceptions->active_exception == NULL) {
+            ptn_limit_iterator_clear_cached_key(data);
+            PtnValue key = ptn_iterator_inner_call_no_args(runtime, data->inner, "key", line);
+            if (runtime->exceptions->active_exception == NULL) {
+                data->cached_key = key;
+                data->has_cached_key = 1;
+                data->cached_key_position = data->position;
+            } else {
+                ptn_value_destroy(&key);
+            }
+        }
+        return current;
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        ptn_reflection_check_no_arguments(runtime, "LimitIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->has_cached_key && data->cached_key_position == data->position) {
+            return ptn_value_clone_deref(data->cached_key);
+        }
+        return ptn_iterator_inner_call_no_args(runtime, data->inner, "key", line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_callback_filter_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    PtnCallbackFilterIteratorData *data = ptn_callback_filter_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getInnerIterator")) {
+        ptn_reflection_check_no_arguments(runtime, "CallbackFilterIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_value_clone_deref(data->inner);
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, "CallbackFilterIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, data->inner, "rewind", line);
+        ptn_value_destroy(&rewind);
+        ptn_callback_filter_iterator_skip_rejected(runtime, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "CallbackFilterIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
+        ptn_value_destroy(&next);
+        ptn_callback_filter_iterator_skip_rejected(runtime, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "accept")) {
+        ptn_reflection_check_no_arguments(runtime, "CallbackFilterIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue current = ptn_iterator_inner_call_no_args(runtime, data->inner, "current", line);
+        PtnValue key = ptn_iterator_inner_call_no_args(runtime, data->inner, "key", line);
+        PtnValue callback_args[3] = {
+            ptn_value_share(current),
+            ptn_value_share(key),
+            ptn_value_share(data->inner)
+        };
+        PtnValue result = ptn_internal_call_callback(runtime, data->callback, 3, callback_args, line);
+        ptn_value_destroy(&callback_args[0]);
+        ptn_value_destroy(&callback_args[1]);
+        ptn_value_destroy(&callback_args[2]);
+        ptn_value_destroy(&current);
+        ptn_value_destroy(&key);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "valid") ||
+        ptn_ascii_case_equal(name, "current") ||
+        ptn_ascii_case_equal(name, "key")) {
+        return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();

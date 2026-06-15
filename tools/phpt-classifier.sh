@@ -10,7 +10,7 @@
 # runtime diagnostic APIs, and upstream XFAILs. Generic PHP semantic gaps
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
-PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard,Reflection"
+PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,SPL,standard,Reflection"
 PTN_PHPT_SUPPORTED_INI_DEFAULT="assert.exception,date.timezone,display_errors,error_reporting,extension_dir,include_path,max_memory_limit,memory_limit,pcre.backtrack_limit,precision,zend.assertions,zend.exception_string_param_max_len"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CAPTURE_STDIO,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,GET,HEADERS,PHPDBG,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
@@ -1285,7 +1285,14 @@ ptn_phpt_first_unsupported_language_surface() {
             return line ~ /(^|[^[:alnum:]_$])function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\(/
         }
         function ptn_has_spl_iterator_object(line) {
-            return line ~ /(^|[^[:alnum:]_$])new[[:space:]]+(arrayiterator|arrayobject|splfixedarray|limititerator|iteratoriterator|regexiterator|callbackfilteriterator)([^[:alnum:]_]|$)/
+            return line ~ /(^|[^[:alnum:]_$])new[[:space:]]+(arrayiterator|arrayobject|recursivearrayiterator|limititerator|iteratoriterator|infiniteiterator|filteriterator|callbackfilteriterator)([^[:alnum:]_]|$)/
+        }
+        function ptn_has_unmodeled_spl_symbol(line) {
+            return line ~ /(^|[^[:alnum:]_$\\])(appenditerator|cachingiterator|directoryiterator|emptyiterator|filesystemiterator|globiterator|multipleiterator|norewinditerator|parentiterator|recursivecachingiterator|recursivecallbackfilteriterator|recursivefilteriterator|recursiveiteratoriterator|recursiveregexiterator|recursivetreeiterator|regexiterator|spldoublylinkedlist|splfileinfo|splfileobject|splfixedarray|splheap|splmaxheap|splminheap|splobjectstorage|splpriorityqueue|splqueue|splstack|spltempfileobject)([^[:alnum:]_]|$)/
+        }
+        function ptn_has_unmodeled_spl_function(line) {
+            return line ~ /(^|[^[:alnum:]_$\\])(iterator_apply|iterator_count|iterator_to_array|spl_classes|class_implements|class_parents|class_uses)[[:space:]]*\(/ ||
+                line ~ /(^|[^[:alnum:]_$\\])spl_(autoload|classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
         }
         function ptn_spread_context(line,    i, ch, triple, prefix, stack_depth, stack) {
             stack_depth = 0
@@ -1372,6 +1379,11 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])(spl_autoload_[a-z0-9_]*|__autoload)[[:space:]]*\(/) {
                 print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
+                found = 1
+                exit
+            }
+            if (ptn_has_unmodeled_spl_symbol(line) || ptn_has_unmodeled_spl_function(line)) {
+                print "unsupported-spl-surface\trequires SPL data structures, filesystem iterators, recursive iterator stacks, or SPL helper functions outside PTN bounded array-backed iterator wrapper surface"
                 found = 1
                 exit
             }

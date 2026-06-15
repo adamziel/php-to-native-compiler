@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.29 SPL iterator wrapper row pack | 7 | 7 |
 | ptn-50g7 COW/reference array-walk and sort row pack | 10 | 10 |
 | ptn-jrzu CSV stream parity row pack | 22 | 22 |
 | ptn-w17z.16.1 ErrorException severity row pack | 2 | 2 |
@@ -43,6 +44,14 @@ Current hook: `ptn-50g7` final focused runs:
 `.runtime/ptn-50g7-final-cow-foreach/summary-20260615T183512Z.txt`.
 Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
+
+## 2026-06-15 ptn-w17z.29 SPL Iterator Wrapper Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-w17z29-before/summary-20260615T180119Z.txt`) | 7 selected / 2 runnable / 5 classified | 2 |
+| Final rebased checked-in focused run (`.runtime/ptn-w17z29-final-submit-row-pack/summary-20260615T190455Z.txt`) | 7 selected / 7 runnable / 0 classified | 7 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z29-spl-iterator-wrapper/summary-20260615T200046Z.txt`) | 7 selected / 7 runnable | 7 |
 
 ## 2026-06-15 ptn-50g7 COW/Reference Array-Walk and Sort Row Pack
 

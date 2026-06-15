@@ -6648,6 +6648,10 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
             | "errorexception"
             | "reflectionexception"
             | "runtimeexception"
+            | "invalidargumentexception"
+            | "unexpectedvalueexception"
+            | "outofboundsexception"
+            | "outofrangeexception"
             | "error"
             | "typeerror"
             | "argumentcounterror"
@@ -6666,6 +6670,9 @@ fn is_modeled_builtin_interface_name(name: &str) -> bool {
         "arrayaccess"
             | "iterator"
             | "iteratoraggregate"
+            | "outeriterator"
+            | "recursiveiterator"
+            | "seekableiterator"
             | "splobserver"
             | "splsubject"
             | "traversable"
@@ -6674,6 +6681,39 @@ fn is_modeled_builtin_interface_name(name: &str) -> bool {
             | "datetimeinterface"
             | "countable"
             | "serializable"
+    )
+}
+
+fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
+    matches!(
+        name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+        "arrayiterator"
+            | "arrayobject"
+            | "callbackfilteriterator"
+            | "filteriterator"
+            | "infiniteiterator"
+            | "iteratoriterator"
+            | "limititerator"
+            | "recursivearrayiterator"
+    )
+}
+
+fn modeled_builtin_interface_extends(interface_name: &str, target_name: &str) -> bool {
+    let interface_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    let target_name = target_name.trim_start_matches('\\').to_ascii_lowercase();
+    if interface_name == target_name {
+        return true;
+    }
+    matches!(
+        (interface_name.as_str(), target_name.as_str()),
+        ("iterator", "traversable")
+            | ("iteratoraggregate", "traversable")
+            | ("outeriterator", "iterator")
+            | ("outeriterator", "traversable")
+            | ("recursiveiterator", "iterator")
+            | ("recursiveiterator", "traversable")
+            | ("seekableiterator", "iterator")
+            | ("seekableiterator", "traversable")
     )
 }
 
@@ -7056,7 +7096,7 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
             continue;
         };
         if parent_name.eq_ignore_ascii_case("stdClass")
-            || parent_name.eq_ignore_ascii_case("ArrayIterator")
+            || is_modeled_spl_iterator_class_name(parent_name)
             || is_modeled_builtin_exception_class_name(parent_name)
             || parent_name.eq_ignore_ascii_case("Generator")
         {
@@ -7123,7 +7163,7 @@ fn class_hierarchy_implements_interface(
     if class
         .interfaces
         .iter()
-        .any(|interface| interface.eq_ignore_ascii_case(interface_name))
+        .any(|interface| modeled_builtin_interface_extends(interface, interface_name))
     {
         return true;
     }
@@ -7343,7 +7383,11 @@ fn modeled_builtin_interface_method_exists(interface_name: &str, method_name: &s
             | ("iterator", "rewind")
             | ("iterator", "valid")
             | ("iteratoraggregate", "getiterator")
+            | ("outeriterator", "getinneriterator")
+            | ("recursiveiterator", "getchildren")
+            | ("recursiveiterator", "haschildren")
             | ("serializable", "serialize")
+            | ("seekableiterator", "seek")
             | ("serializable", "unserialize")
             | ("stringable", "__tostring")
     )

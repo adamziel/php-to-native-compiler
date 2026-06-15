@@ -327,8 +327,23 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_array_object(lookup_class_name)) {
         return ptn_array_object_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_callback_filter_iterator(lookup_class_name)) {
+        return ptn_callback_filter_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_filter_iterator(lookup_class_name)) {
+        return ptn_filter_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_infinite_iterator(lookup_class_name)) {
+        return ptn_infinite_iterator_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_iterator_iterator(lookup_class_name)) {
         return ptn_iterator_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_limit_iterator(lookup_class_name)) {
+        return ptn_limit_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_recursive_array_iterator(lookup_class_name)) {
+        return ptn_recursive_array_iterator_new(runtime, argc, args, line);
     }
 #endif
     const char *exception_class_name = ptn_builtin_exception_class_name(lookup_class_name);
