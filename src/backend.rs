@@ -211,12 +211,14 @@ pub fn emit_c(module: &Module) -> String {
         );
     }
     let mut control_targets = Vec::new();
+    let mut finally_stack = Vec::new();
     for instruction in &module.instructions {
         emit_instruction(
             &mut out,
             &mut values,
             instruction,
             &mut control_targets,
+            &mut finally_stack,
             &module.source_file,
             None,
         );
@@ -935,6 +937,7 @@ fn emit_user_functions(
             }
         }
         let mut break_targets = Vec::new();
+        let mut finally_stack = Vec::new();
         let return_label = values.next_label("ptn_function_return");
         for instruction in &function.body {
             emit_instruction(
@@ -942,6 +945,7 @@ fn emit_user_functions(
                 &mut values,
                 instruction,
                 &mut break_targets,
+                &mut finally_stack,
                 source_file,
                 Some(&return_label),
             );
@@ -1337,6 +1341,7 @@ fn emit_include_helpers(
             includes,
         );
         let mut control_targets = Vec::new();
+        let mut finally_stack = Vec::new();
         let return_label = values.next_label("ptn_include_return");
         for instruction in &include.instructions {
             emit_instruction(
@@ -1344,6 +1349,7 @@ fn emit_include_helpers(
                 &mut values,
                 instruction,
                 &mut control_targets,
+                &mut finally_stack,
                 &include.source_file,
                 Some(&return_label),
             );
@@ -4456,6 +4462,7 @@ fn emit_instruction(
     values: &mut ValueEmitter,
     instruction: &Instruction,
     control_targets: &mut Vec<ControlTarget>,
+    finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
 ) {
@@ -4852,6 +4859,7 @@ fn emit_instruction(
                 catches,
                 finally_body,
                 control_targets,
+                finally_stack,
                 source_path,
                 return_target,
             );
@@ -4871,6 +4879,7 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
+                    finally_stack,
                     source_path,
                     return_target,
                 );
@@ -4883,6 +4892,7 @@ fn emit_instruction(
                         values,
                         body_instruction,
                         control_targets,
+                        finally_stack,
                         source_path,
                         return_target,
                     );
@@ -4918,6 +4928,7 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
+                    finally_stack,
                     source_path,
                     return_target,
                 );
@@ -4944,6 +4955,7 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
+                    finally_stack,
                     source_path,
                     return_target,
                 );
@@ -4980,6 +4992,7 @@ fn emit_instruction(
                     values,
                     initializer,
                     control_targets,
+                    finally_stack,
                     source_path,
                     return_target,
                 );
@@ -5008,6 +5021,7 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
+                    finally_stack,
                     source_path,
                     return_target,
                 );
@@ -5024,6 +5038,7 @@ fn emit_instruction(
                     values,
                     update,
                     control_targets,
+                    finally_stack,
                     source_path,
                     return_target,
                 );
@@ -5161,6 +5176,7 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
+                    finally_stack,
                     source_path,
                     return_target,
                 );
@@ -5197,6 +5213,7 @@ fn emit_instruction(
                 expression,
                 cases,
                 control_targets,
+                finally_stack,
                 source_path,
                 return_target,
             );
@@ -5208,16 +5225,22 @@ fn emit_instruction(
             out.push_str("    ;\n");
         }
         Instruction::Goto { label } => {
-            out.push_str("    goto ");
-            out.push_str(&c_label(label));
-            out.push_str(";\n");
+            let target = c_label(label);
+            let context_indices: Vec<usize> = (0..finally_stack.len()).collect();
+            emit_jump_through_finally_contexts(out, finally_stack, &context_indices, &target);
         }
         Instruction::Break { level, line } => {
             if *level > 0 && *level <= control_targets.len() {
-                let target = &control_targets[control_targets.len() - *level].break_label;
-                out.push_str("    goto ");
-                out.push_str(target);
-                out.push_str(";\n");
+                let target_index = control_targets.len() - *level;
+                let target = control_targets[target_index].break_label.clone();
+                let context_indices: Vec<usize> = finally_stack
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, context)| {
+                        (target_index < context.control_depth).then_some(index)
+                    })
+                    .collect();
+                emit_jump_through_finally_contexts(out, finally_stack, &context_indices, &target);
             } else {
                 let suffix = if *level == 1 { "level" } else { "levels" };
                 out.push_str("    ptn_abort_control_error(\"Cannot 'break' ");
@@ -5233,10 +5256,16 @@ fn emit_instruction(
         }
         Instruction::Continue { level, line } => {
             if *level > 0 && *level <= control_targets.len() {
-                let target = &control_targets[control_targets.len() - *level].continue_label;
-                out.push_str("    goto ");
-                out.push_str(target);
-                out.push_str(";\n");
+                let target_index = control_targets.len() - *level;
+                let target = control_targets[target_index].continue_label.clone();
+                let context_indices: Vec<usize> = finally_stack
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, context)| {
+                        (target_index < context.control_depth).then_some(index)
+                    })
+                    .collect();
+                emit_jump_through_finally_contexts(out, finally_stack, &context_indices, &target);
             } else {
                 let suffix = if *level == 1 { "level" } else { "levels" };
                 out.push_str("    ptn_abort_control_error(\"Cannot 'continue' ");
@@ -5260,6 +5289,7 @@ fn emit_try(
     catches: &[IrCatchClause],
     finally_body: &[Instruction],
     control_targets: &mut Vec<ControlTarget>,
+    finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
 ) {
@@ -5267,6 +5297,9 @@ fn emit_try(
     let caught_temp = values.next_temp();
     let saved_trace_temp = values.next_temp();
     let end_label = values.next_label("ptn_try_end");
+    let control_dispatch_label =
+        (!finally_body.is_empty()).then(|| values.next_label("ptn_try_finally_dispatch"));
+    let control_target_temp = control_dispatch_label.as_ref().map(|_| values.next_temp());
     let try_or_catch_can_return = instructions_contain_return(body)
         || catches
             .iter()
@@ -5278,11 +5311,13 @@ fn emit_try(
             None
         };
     let body_return_target = return_label.as_deref().or(return_target);
-    let frame_active_temp = if return_label.is_some() {
+    let frame_active_temp = if !finally_body.is_empty() {
         Some(values.next_temp())
     } else {
         None
     };
+    let catch_active_temp =
+        (!finally_body.is_empty() && !catches.is_empty()).then(|| values.next_temp());
     out.push_str("    {\n");
     out.push_str("        PtnTryFrame ");
     out.push_str(&frame_temp);
@@ -5290,6 +5325,22 @@ fn emit_try(
     if let Some(frame_active_temp) = &frame_active_temp {
         out.push_str("        int ");
         out.push_str(frame_active_temp);
+        out.push_str(" = 0;\n");
+        out.push_str("        (void)");
+        out.push_str(frame_active_temp);
+        out.push_str(";\n");
+    }
+    if let Some(control_target_temp) = &control_target_temp {
+        out.push_str("        int ");
+        out.push_str(control_target_temp);
+        out.push_str(" = 0;\n");
+        out.push_str("        (void)");
+        out.push_str(control_target_temp);
+        out.push_str(";\n");
+    }
+    if let Some(catch_active_temp) = &catch_active_temp {
+        out.push_str("        volatile int ");
+        out.push_str(catch_active_temp);
         out.push_str(" = 0;\n");
     }
     out.push_str("        PtnTraceFrame *");
@@ -5303,6 +5354,15 @@ fn emit_try(
         out.push_str(frame_active_temp);
         out.push_str(" = 1;\n");
     }
+    if let (Some(dispatch_label), Some(target_temp)) =
+        (&control_dispatch_label, &control_target_temp)
+    {
+        finally_stack.push(FinallyContext::new(
+            control_targets.len(),
+            dispatch_label.clone(),
+            target_temp.clone(),
+        ));
+    }
     out.push_str("        if (setjmp(");
     out.push_str(&frame_temp);
     out.push_str(".jump) == 0) {\n");
@@ -5312,6 +5372,7 @@ fn emit_try(
             values,
             body_instruction,
             control_targets,
+            finally_stack,
             source_path,
             body_return_target,
         );
@@ -5324,24 +5385,46 @@ fn emit_try(
         out.push_str(frame_active_temp);
         out.push_str(" = 0;\n");
     }
-    for finally_instruction in finally_body {
-        emit_instruction(
+    emit_finally_instructions_excluding_current(
+        out,
+        values,
+        finally_body,
+        control_targets,
+        finally_stack,
+        source_path,
+        return_target,
+        control_dispatch_label.is_some(),
+    );
+    out.push_str("        } else {\n");
+    if let Some(catch_active_temp) = &catch_active_temp {
+        out.push_str("            if (");
+        out.push_str(catch_active_temp);
+        out.push_str(") {\n");
+        out.push_str("                ptn_try_frame_pop(&runtime, &");
+        out.push_str(&frame_temp);
+        out.push_str(");\n");
+        if let Some(frame_active_temp) = &frame_active_temp {
+            out.push_str("                ");
+            out.push_str(frame_active_temp);
+            out.push_str(" = 0;\n");
+        }
+        out.push_str("                runtime.trace_frame = ");
+        out.push_str(&saved_trace_temp);
+        out.push_str(";\n");
+        out.push_str("                runtime.warn_by_ref_argument_mismatch = 0;\n");
+        out.push_str("                runtime.throw_argument_count_errors = 0;\n");
+        emit_exceptional_finally_and_rethrow(
             out,
             values,
-            finally_instruction,
+            finally_body,
             control_targets,
+            finally_stack,
             source_path,
             return_target,
+            control_dispatch_label.is_some(),
+            "                ",
         );
-    }
-    out.push_str("        } else {\n");
-    out.push_str("            ptn_try_frame_pop(&runtime, &");
-    out.push_str(&frame_temp);
-    out.push_str(");\n");
-    if let Some(frame_active_temp) = &frame_active_temp {
-        out.push_str("            ");
-        out.push_str(frame_active_temp);
-        out.push_str(" = 0;\n");
+        out.push_str("            } else {\n");
     }
     out.push_str("            runtime.trace_frame = ");
     out.push_str(&saved_trace_temp);
@@ -5373,53 +5456,118 @@ fn emit_try(
             out.push_str("\", ptn_current_exception_value(&runtime));\n");
         }
         out.push_str("                ptn_clear_exception(&runtime);\n");
+        if let Some(catch_active_temp) = &catch_active_temp {
+            out.push_str("                ");
+            out.push_str(catch_active_temp);
+            out.push_str(" = 1;\n");
+        }
         for body_instruction in &catch.body {
             emit_instruction(
                 out,
                 values,
                 body_instruction,
                 control_targets,
+                finally_stack,
                 source_path,
                 body_return_target,
             );
         }
+        if let Some(catch_active_temp) = &catch_active_temp {
+            out.push_str("                ");
+            out.push_str(catch_active_temp);
+            out.push_str(" = 0;\n");
+        }
         out.push_str("            }\n");
+    }
+    out.push_str("            ptn_try_frame_pop(&runtime, &");
+    out.push_str(&frame_temp);
+    out.push_str(");\n");
+    if let Some(frame_active_temp) = &frame_active_temp {
+        out.push_str("            ");
+        out.push_str(frame_active_temp);
+        out.push_str(" = 0;\n");
     }
     out.push_str("            if (!");
     out.push_str(&caught_temp);
     out.push_str(") {\n");
-    for finally_instruction in finally_body {
-        emit_instruction(
-            out,
-            values,
-            finally_instruction,
-            control_targets,
-            source_path,
-            return_target,
-        );
-    }
-    out.push_str("                ptn_rethrow_exception(&runtime);\n");
+    emit_exceptional_finally_and_rethrow(
+        out,
+        values,
+        finally_body,
+        control_targets,
+        finally_stack,
+        source_path,
+        return_target,
+        control_dispatch_label.is_some(),
+        "                ",
+    );
     out.push_str("            }\n");
     if !finally_body.is_empty() {
         out.push_str("            if (");
         out.push_str(&caught_temp);
         out.push_str(") {\n");
-        for finally_instruction in finally_body {
-            emit_instruction(
-                out,
-                values,
-                finally_instruction,
-                control_targets,
-                source_path,
-                return_target,
-            );
-        }
+        emit_finally_instructions_excluding_current(
+            out,
+            values,
+            finally_body,
+            control_targets,
+            finally_stack,
+            source_path,
+            return_target,
+            control_dispatch_label.is_some(),
+        );
+        out.push_str("            }\n");
+    }
+    if catch_active_temp.is_some() {
         out.push_str("            }\n");
     }
     out.push_str("        }\n");
     out.push_str("        goto ");
     out.push_str(&end_label);
     out.push_str(";\n");
+    let finally_context = control_dispatch_label
+        .as_ref()
+        .map(|_| finally_stack.pop().expect("try finally context is active"));
+    if let Some(context) = &finally_context {
+        if !context.targets.is_empty() {
+            out.push_str("        ");
+            out.push_str(&context.dispatch_label);
+            out.push_str(":\n");
+            out.push_str("        ;\n");
+            if let Some(frame_active_temp) = &frame_active_temp {
+                out.push_str("        if (");
+                out.push_str(frame_active_temp);
+                out.push_str(") {\n");
+                out.push_str("            ptn_try_frame_pop(&runtime, &");
+                out.push_str(&frame_temp);
+                out.push_str(");\n");
+                out.push_str("            ");
+                out.push_str(frame_active_temp);
+                out.push_str(" = 0;\n");
+                out.push_str("        }\n");
+            }
+            emit_finally_instructions(
+                out,
+                values,
+                finally_body,
+                control_targets,
+                finally_stack,
+                source_path,
+                return_target,
+            );
+            out.push_str("        switch (");
+            out.push_str(&context.target_temp);
+            out.push_str(") {\n");
+            for (index, target) in context.targets.iter().enumerate() {
+                out.push_str("            case ");
+                out.push_str(&(index + 1).to_string());
+                out.push_str(": goto ");
+                out.push_str(target);
+                out.push_str(";\n");
+            }
+            out.push_str("        }\n");
+        }
+    }
     if let (Some(return_label), Some(return_target)) = (&return_label, return_target) {
         out.push_str("        ");
         out.push_str(return_label);
@@ -5437,16 +5585,15 @@ fn emit_try(
             out.push_str(" = 0;\n");
             out.push_str("        }\n");
         }
-        for finally_instruction in finally_body {
-            emit_instruction(
-                out,
-                values,
-                finally_instruction,
-                control_targets,
-                source_path,
-                Some(return_target),
-            );
-        }
+        emit_finally_instructions(
+            out,
+            values,
+            finally_body,
+            control_targets,
+            finally_stack,
+            source_path,
+            Some(return_target),
+        );
         out.push_str("        goto ");
         out.push_str(return_target);
         out.push_str(";\n");
@@ -5456,6 +5603,110 @@ fn emit_try(
     out.push_str(&end_label);
     out.push_str(":\n");
     out.push_str("    ;\n");
+}
+
+fn emit_finally_instructions_excluding_current(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    finally_body: &[Instruction],
+    control_targets: &mut Vec<ControlTarget>,
+    finally_stack: &mut Vec<FinallyContext>,
+    source_path: &str,
+    return_target: Option<&str>,
+    has_current_context: bool,
+) {
+    let current_context =
+        has_current_context.then(|| finally_stack.pop().expect("try finally context is active"));
+    emit_finally_instructions(
+        out,
+        values,
+        finally_body,
+        control_targets,
+        finally_stack,
+        source_path,
+        return_target,
+    );
+    if let Some(context) = current_context {
+        finally_stack.push(context);
+    }
+}
+
+fn emit_exceptional_finally_and_rethrow(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    finally_body: &[Instruction],
+    control_targets: &mut Vec<ControlTarget>,
+    finally_stack: &mut Vec<FinallyContext>,
+    source_path: &str,
+    return_target: Option<&str>,
+    has_current_context: bool,
+    indent: &str,
+) {
+    let saved_exception_temp = values.next_temp();
+    out.push_str(indent);
+    out.push_str("PtnException *");
+    out.push_str(&saved_exception_temp);
+    out.push_str(" = runtime.exceptions->active_exception;\n");
+    out.push_str(indent);
+    out.push_str("if (");
+    out.push_str(&saved_exception_temp);
+    out.push_str(" != NULL) {\n");
+    out.push_str(indent);
+    out.push_str("    ptn_exception_retain(");
+    out.push_str(&saved_exception_temp);
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("}\n");
+    emit_finally_instructions_excluding_current(
+        out,
+        values,
+        finally_body,
+        control_targets,
+        finally_stack,
+        source_path,
+        return_target,
+        has_current_context,
+    );
+    out.push_str(indent);
+    out.push_str("if (runtime.exceptions->active_exception == NULL && ");
+    out.push_str(&saved_exception_temp);
+    out.push_str(" != NULL) {\n");
+    out.push_str(indent);
+    out.push_str("    runtime.exceptions->active_exception = ");
+    out.push_str(&saved_exception_temp);
+    out.push_str(";\n");
+    out.push_str(indent);
+    out.push_str("} else {\n");
+    out.push_str(indent);
+    out.push_str("    ptn_exception_free(");
+    out.push_str(&saved_exception_temp);
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("}\n");
+    out.push_str(indent);
+    out.push_str("ptn_rethrow_exception(&runtime);\n");
+}
+
+fn emit_finally_instructions(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    finally_body: &[Instruction],
+    control_targets: &mut Vec<ControlTarget>,
+    finally_stack: &mut Vec<FinallyContext>,
+    source_path: &str,
+    return_target: Option<&str>,
+) {
+    for finally_instruction in finally_body {
+        emit_instruction(
+            out,
+            values,
+            finally_instruction,
+            control_targets,
+            finally_stack,
+            source_path,
+            return_target,
+        );
+    }
 }
 
 fn instructions_contain_return(instructions: &[Instruction]) -> bool {
@@ -5545,6 +5796,67 @@ impl ControlTarget {
             continue_label: end_label,
         }
     }
+}
+
+struct FinallyContext {
+    control_depth: usize,
+    dispatch_label: String,
+    target_temp: String,
+    targets: Vec<String>,
+}
+
+impl FinallyContext {
+    fn new(control_depth: usize, dispatch_label: String, target_temp: String) -> Self {
+        Self {
+            control_depth,
+            dispatch_label,
+            target_temp,
+            targets: Vec::new(),
+        }
+    }
+
+    fn register_target(&mut self, label: &str) -> usize {
+        if let Some(index) = self.targets.iter().position(|target| target == label) {
+            return index + 1;
+        }
+        self.targets.push(label.to_string());
+        self.targets.len()
+    }
+}
+
+fn emit_jump_through_finally_contexts(
+    out: &mut String,
+    finally_stack: &mut [FinallyContext],
+    context_indices: &[usize],
+    target_label: &str,
+) {
+    if context_indices.is_empty() {
+        out.push_str("    goto ");
+        out.push_str(target_label);
+        out.push_str(";\n");
+        return;
+    }
+
+    for (position, context_index) in context_indices.iter().enumerate() {
+        let target = if position == 0 {
+            target_label.to_string()
+        } else {
+            finally_stack[context_indices[position - 1]]
+                .dispatch_label
+                .clone()
+        };
+        let target_id = finally_stack[*context_index].register_target(&target);
+        out.push_str("    ");
+        out.push_str(&finally_stack[*context_index].target_temp);
+        out.push_str(" = ");
+        out.push_str(&target_id.to_string());
+        out.push_str(";\n");
+    }
+
+    let innermost_index = context_indices[context_indices.len() - 1];
+    out.push_str("    goto ");
+    out.push_str(&finally_stack[innermost_index].dispatch_label);
+    out.push_str(";\n");
 }
 
 struct EmittedArrayPath {
@@ -7454,6 +7766,7 @@ fn emit_switch(
     expression: &ValueExpr,
     cases: &[crate::ir::SwitchCase],
     control_targets: &mut Vec<ControlTarget>,
+    finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
 ) {
@@ -7515,6 +7828,7 @@ fn emit_switch(
                 values,
                 body_instruction,
                 control_targets,
+                finally_stack,
                 source_path,
                 return_target,
             );

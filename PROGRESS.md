@@ -16,18 +16,27 @@
 | ptn-w17z.10 SKIPIF harness row pack | 185 | 3 |
 | ptn-w17z.14 Override attribute row pack | 34 | 34 |
 | ptn-w17z.16 exception/backtrace/lifecycle row pack | 41 | 41 |
+| ptn-w17z.16.2 nested try/finally row pack | 9 | 9 |
 | ptn-w17z.18 numeric/math/conversions row pack | 35 | 35 |
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:15Z.
-Measured latest: `ptn-vqg1` temp stream wrappers row pack selected 3 rows, kept 3 runnable, and passed 3/3 in the focused run.
-Latest: `ptn-vqg1` completed the checked-in temp stream wrappers row pack. Previous: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack.
+Refresh: 2026-06-15T17:40Z.
+Measured latest: `ptn-w17z.16.2` nested try/finally row pack selected 9 rows, kept 9 runnable, and passed 9/9 in the focused run.
+Latest: `ptn-w17z.16.2` advances nested exception chaining, goto-into-finally validation, and break/continue/goto through `finally`. Previous: `ptn-vqg1` completed the checked-in temp stream wrappers row pack.
 
-Current hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
+Current hook: `ptn-w17z.16.2` nested try/finally row pack passed 9/9 at
+`.runtime/ptn-w17z16-2-nested-try-finally-rebased/summary-20260615T173807Z.txt`.
+Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
 `.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
-Previous hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
-`.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`.
+
+## 2026-06-15 ptn-w17z.16.2 Nested Try/Finally Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current master focused baseline without known hang (`/tmp/ptn-w17z16-2-before.ysWAWZ/.runtime/ptn-w17z16-2-nested-try-finally-before-nohang/summary-20260615T173343Z.txt`) | 8 selected / 8 runnable | 0 |
+| Current master direct timeout for `finally_goto_005.phpt` (`/tmp/ptn-w17z16-2-before.ysWAWZ/.runtime/ptn-w17z16-2-nested-try-finally-before/finally_goto_005-direct-timeout.status`) | 1 selected / 1 runnable | 0 |
+| Final rebased focused row pack (`.runtime/ptn-w17z16-2-nested-try-finally-rebased/summary-20260615T173807Z.txt`) | 9 selected / 9 runnable | 9 |
 
 ## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
 

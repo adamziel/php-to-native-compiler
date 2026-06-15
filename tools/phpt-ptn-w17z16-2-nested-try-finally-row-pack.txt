@@ -1,0 +1,9 @@
+Zend/tests/try/bug72213.phpt
+Zend/tests/try/catch_finally_004.phpt
+Zend/tests/try/catch_finally_006.phpt
+Zend/tests/try/finally_goto_001.phpt
+Zend/tests/try/finally_goto_002.phpt
+Zend/tests/try/finally_goto_004.phpt
+Zend/tests/try/finally_goto_005.phpt
+Zend/tests/try/try_catch_finally_005.phpt
+Zend/tests/try/try_catch_finally_006.phpt
