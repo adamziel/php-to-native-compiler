@@ -1702,6 +1702,27 @@ static PTN_UNUSED PtnValue ptn_call_method(
     ) {
         return ptn_reflection_method_call_method(runtime, receiver, name, argc, args, line);
     }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_array_iterator(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_array_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_array_object(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_array_object_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_iterator_iterator(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_iterator_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
 #endif
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();

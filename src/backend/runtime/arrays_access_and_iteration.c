@@ -192,6 +192,18 @@ static PTN_UNUSED int ptn_class_name_is_datetime(const char *class_name) {
     return *class_name == '\0' && *datetime == '\0';
 }
 
+static PTN_UNUSED int ptn_class_name_is_generator(const char *class_name) {
+    const char *generator = "Generator";
+    while (*class_name != '\0' && *generator != '\0') {
+        if (tolower((unsigned char)*class_name) != tolower((unsigned char)*generator)) {
+            return 0;
+        }
+        class_name++;
+        generator++;
+    }
+    return *class_name == '\0' && *generator == '\0';
+}
+
 static PTN_UNUSED PtnValue ptn_new_exception_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -228,6 +240,18 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_reflection_function(lookup_class_name)) {
         return ptn_reflection_function_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_reflection_class(lookup_class_name)) {
+        return ptn_reflection_class_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_array_iterator(lookup_class_name)) {
+        return ptn_array_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_array_object(lookup_class_name)) {
+        return ptn_array_object_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_iterator_iterator(lookup_class_name)) {
+        return ptn_iterator_iterator_new(runtime, argc, args, line);
+    }
 #endif
     const char *exception_class_name = ptn_builtin_exception_class_name(lookup_class_name);
     if (exception_class_name != NULL) {
@@ -239,6 +263,16 @@ static PTN_UNUSED PtnValue ptn_new_object(
             return ptn_null();
         }
         return ptn_object_new_shell(runtime, "DateTime");
+    }
+    if (ptn_class_name_is_generator(lookup_class_name)) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "The \"Generator\" class is reserved for internal use and cannot be manually instantiated",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
     }
     if (!ptn_class_name_is_stdclass(lookup_class_name)) {
         char message[192];
@@ -2268,11 +2302,15 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
     iterator.object = NULL;
     iterator.runtime = NULL;
     iterator.access_scope = NULL;
+    iterator.iterator_object = ptn_null();
     iterator.index = 0;
     iterator.length = 0;
     iterator.current_key = ptn_array_int_key(0);
     iterator.watched_slot = NULL;
+    iterator.line = 0;
     iterator.has_current_key = 0;
+    iterator.has_iterator_object = 0;
+    iterator.protocol_iterator = 0;
     iterator.valid = 0;
     iterator.live = 0;
     return iterator;
@@ -2300,6 +2338,103 @@ static PTN_UNUSED void ptn_array_iterator_remember_current_key(PtnArrayIterator 
     iterator->has_current_key = 1;
 }
 
+static PTN_UNUSED int ptn_object_implements_builtin_interface(PtnObject *object, const char *interface_name) {
+    return object != NULL &&
+        (ptn_declared_class_implements_interface(object->class_name, interface_name) ||
+         ptn_builtin_class_implements_interface(object->class_name, interface_name));
+}
+
+static PTN_UNUSED int ptn_object_has_iterator_method(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *method_name
+) {
+    if (runtime == NULL || runtime->method_dispatch == NULL || object == NULL) {
+        return 0;
+    }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (
+        ptn_internal_class_exists_name(object->class_name) &&
+        ptn_internal_class_method_exists(object->class_name, method_name)
+    ) {
+        return 1;
+    }
+#endif
+    return runtime->declared_method_exists != NULL &&
+        runtime->declared_method_exists(object->class_name, method_name);
+}
+
+static PTN_UNUSED PtnValue ptn_protocol_iterator_call(
+    PtnArrayIterator *iterator,
+    const char *method_name
+) {
+    if (
+        iterator->runtime == NULL ||
+        iterator->runtime->method_dispatch == NULL ||
+        !iterator->has_iterator_object
+    ) {
+        return ptn_null();
+    }
+    return iterator->runtime->method_dispatch(
+        iterator->runtime,
+        iterator->iterator_object,
+        method_name,
+        0,
+        NULL,
+        iterator->line
+    );
+}
+
+static PTN_UNUSED void ptn_protocol_iterator_refresh_valid(PtnArrayIterator *iterator) {
+    PtnValue valid = ptn_protocol_iterator_call(iterator, "valid");
+    iterator->valid = ptn_is_truthy(valid);
+    ptn_value_destroy(&valid);
+}
+
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_array_snapshot(PtnArray *array) {
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    if (array == NULL) {
+        return iterator;
+    }
+    iterator.array = array;
+    iterator.length = array->len;
+    ptn_array_retain(array);
+    iterator.valid = iterator.length != 0;
+    ptn_array_iterator_remember_current_key(&iterator);
+    return iterator;
+}
+
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
+    PtnRuntime *runtime,
+    PtnValue iterator_value,
+    const char *access_scope,
+    size_t line
+) {
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    iterator.runtime = runtime;
+    iterator.access_scope = access_scope;
+    iterator.iterator_object = ptn_value_clone_deref(iterator_value);
+    iterator.has_iterator_object = 1;
+    iterator.protocol_iterator = 1;
+    iterator.line = line;
+
+    if (ptn_object_has_iterator_method(runtime, iterator.iterator_object.as.object, "rewind")) {
+        PtnValue rewind = ptn_protocol_iterator_call(&iterator, "rewind");
+        ptn_value_destroy(&rewind);
+    }
+    ptn_protocol_iterator_refresh_valid(&iterator);
+    return iterator;
+}
+
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *access_scope,
+    const char *path,
+    size_t line,
+    size_t depth
+);
+
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -2321,6 +2456,66 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
     return iterator;
 }
 
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *access_scope,
+    const char *path,
+    size_t line,
+    size_t depth
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT) {
+        return ptn_array_iterator_empty();
+    }
+
+    if (
+        ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate") &&
+        ptn_object_has_iterator_method(runtime, value.as.object, "getIterator")
+    ) {
+        if (depth > 16) {
+            ptn_throw_exception(runtime, "Exception", "IteratorAggregate recursion limit exceeded");
+            return ptn_array_iterator_empty();
+        }
+        PtnValue result = runtime->method_dispatch(runtime, value, "getIterator", 0, NULL, line);
+        PtnValue resolved = ptn_value_deref(result);
+        PtnArrayIterator iterator = ptn_array_iterator_empty();
+        if (resolved.type == PTN_ARRAY) {
+            iterator = ptn_array_iterator_from_array_snapshot(resolved.as.array);
+        } else if (
+            resolved.type == PTN_OBJECT &&
+            (
+                ptn_object_implements_builtin_interface(resolved.as.object, "Iterator") ||
+                ptn_object_implements_builtin_interface(resolved.as.object, "IteratorAggregate")
+            )
+        ) {
+            iterator = ptn_array_iterator_from_traversable_object(
+                runtime,
+                resolved,
+                access_scope,
+                path,
+                line,
+                depth + 1
+            );
+        } else {
+            ptn_emit_foreach_non_array_warning(resolved, path, line);
+        }
+        ptn_value_destroy(&result);
+        return iterator;
+    }
+
+    if (
+        ptn_object_implements_builtin_interface(value.as.object, "Iterator") &&
+        ptn_object_has_iterator_method(runtime, value.as.object, "valid") &&
+        ptn_object_has_iterator_method(runtime, value.as.object, "current") &&
+        ptn_object_has_iterator_method(runtime, value.as.object, "next")
+    ) {
+        return ptn_array_iterator_from_protocol_iterator(runtime, value, access_scope, line);
+    }
+
+    return ptn_array_iterator_from_object_properties(runtime, value.as.object, access_scope);
+}
+
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     PtnRuntime *runtime,
     PtnValue value,
@@ -2328,22 +2523,16 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     const char *path,
     size_t line
 ) {
-    (void)runtime;
     value = ptn_value_deref(value);
     PtnArrayIterator iterator = ptn_array_iterator_empty();
     if (value.type != PTN_ARRAY) {
         if (value.type == PTN_OBJECT) {
-            return ptn_array_iterator_from_object_properties(runtime, value.as.object, access_scope);
+            return ptn_array_iterator_from_traversable_object(runtime, value, access_scope, path, line, 0);
         }
         ptn_emit_foreach_non_array_warning(value, path, line);
         return iterator;
     }
-    iterator.array = value.as.array;
-    iterator.length = iterator.array->len;
-    ptn_array_retain(iterator.array);
-    iterator.valid = iterator.length != 0;
-    ptn_array_iterator_remember_current_key(&iterator);
-    return iterator;
+    return ptn_array_iterator_from_array_snapshot(value.as.array);
 }
 
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
@@ -2362,7 +2551,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
 
     PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
     if (value->type == PTN_OBJECT) {
-        return ptn_array_iterator_from_object_properties(runtime, value->as.object, access_scope);
+        return ptn_array_iterator_from_traversable_object(runtime, *value, access_scope, path, line, 0);
     }
     if (value->type != PTN_ARRAY) {
         ptn_emit_foreach_non_array_warning(ptn_value_deref(*value), path, line);
@@ -2429,6 +2618,9 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_value(
 }
 
 static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iterator) {
+    if (iterator->protocol_iterator) {
+        return ptn_protocol_iterator_call(iterator, "key");
+    }
     PtnArrayKey key = iterator->array->entries[iterator->index].key;
     if (iterator->object != NULL) {
         return ptn_object_foreach_key_value(iterator->object, key);
@@ -2440,10 +2632,20 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
 }
 
 static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *iterator) {
+    if (iterator->protocol_iterator) {
+        return ptn_protocol_iterator_call(iterator, "current");
+    }
     return ptn_value_borrow(iterator->array->entries[iterator->index].value);
 }
 
 static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator *iterator) {
+    if (iterator->protocol_iterator) {
+        PtnValue current = ptn_protocol_iterator_call(iterator, "current");
+        if (current.type == PTN_REFERENCE) {
+            return current;
+        }
+        return ptn_reference_value(ptn_reference_new_owned(current));
+    }
     PtnArrayEntry *entry = &iterator->array->entries[iterator->index];
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
@@ -2484,6 +2686,12 @@ static PTN_UNUSED void ptn_array_iterator_refresh_watched_array(PtnArrayIterator
 }
 
 static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
+    if (iterator->protocol_iterator) {
+        PtnValue next = ptn_protocol_iterator_call(iterator, "next");
+        ptn_value_destroy(&next);
+        ptn_protocol_iterator_refresh_valid(iterator);
+        return;
+    }
     if (iterator->array == NULL) {
         iterator->valid = 0;
         ptn_array_iterator_clear_current_key(iterator);
@@ -2538,10 +2746,17 @@ static PTN_UNUSED void ptn_array_iterator_destroy(PtnArrayIterator *iterator) {
     iterator->object = NULL;
     iterator->runtime = NULL;
     iterator->access_scope = NULL;
+    if (iterator->has_iterator_object) {
+        ptn_value_destroy(&iterator->iterator_object);
+        iterator->iterator_object = ptn_null();
+        iterator->has_iterator_object = 0;
+    }
     iterator->watched_slot = NULL;
     iterator->index = 0;
     iterator->length = 0;
+    iterator->line = 0;
     iterator->valid = 0;
+    iterator->protocol_iterator = 0;
     iterator->live = 0;
 }
 
@@ -2906,9 +3121,18 @@ static PTN_UNUSED int ptn_arrayaccess_can_dispatch(
     const char *method_name
 ) {
     container = ptn_value_deref(container);
-    return container.type == PTN_OBJECT &&
-        runtime->method_dispatch != NULL &&
-        runtime->declared_method_exists != NULL &&
+    if (container.type != PTN_OBJECT || runtime->method_dispatch == NULL) {
+        return 0;
+    }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (
+        ptn_internal_class_exists_name(container.as.object->class_name) &&
+        ptn_internal_class_method_exists(container.as.object->class_name, method_name)
+    ) {
+        return 1;
+    }
+#endif
+    return runtime->declared_method_exists != NULL &&
         runtime->declared_method_exists(container.as.object->class_name, method_name);
 }
 

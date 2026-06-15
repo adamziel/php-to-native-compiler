@@ -183,6 +183,8 @@ typedef struct PtnResource PtnResource;
 typedef struct PtnTraceFrame PtnTraceFrame;
 typedef struct PtnTryFrame PtnTryFrame;
 
+static int ptn_builtin_class_implements_interface(const char *class_name, const char *interface_name);
+
 typedef enum {
     PTN_NULL,
     PTN_BOOL,
@@ -331,11 +333,15 @@ typedef struct {
     PtnObject *object;
     PtnRuntime *runtime;
     const char *access_scope;
+    PtnValue iterator_object;
     size_t index;
     size_t length;
     PtnArrayKey current_key;
     PtnValue *watched_slot;
+    size_t line;
     int has_current_key;
+    int has_iterator_object;
+    int protocol_iterator;
     int valid;
     int live;
 } PtnArrayIterator;
@@ -703,6 +709,10 @@ static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *class_name);
+static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED PtnValue ptn_reflection_class_new(
     PtnRuntime *runtime,
@@ -733,6 +743,62 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_class_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_array_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_array_object_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_array_object_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

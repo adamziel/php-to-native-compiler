@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.15 iterator/generator row pack | 36 | 36 |
 | ptn-w17z.18 numeric/math/conversions row pack | 35 | 35 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
@@ -16,9 +17,7 @@ by-reference return, argument, assignment, `$GLOBALS`, `$this`, and nested
 list-reference semantics across a 126-row full-corpus source pack, moving
 45/107 -> 75/107 runnable rows passing.
 
-Current hook: `ptn-w17z.18` numeric/math/conversions row pack selected 35
-focused full-corpus rows and passed all 35 after merge conflict resolution at
-`.runtime/merge-ptn-w17z18-numeric-math-conversions/summary-20260615T140841Z.txt`.
+Current hook: `ptn-w17z.15`.
 
 ## 2026-06-15 ptn-kia6 By-Reference Boundary Row Pack
 
