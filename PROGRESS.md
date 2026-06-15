@@ -29,12 +29,12 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T19:02Z.
+Refresh: 2026-06-15T19:10Z.
 Measured latest: `ptn-w17z.31` iterable/DNF type row pack selected 27 rows, kept 27 runnable, and passed 27/27 in the merged focused run.
 Latest: `ptn-w17z.31` completed the checked-in iterable/DNF type row pack. Previous: `ptn-w17z.36` completed the checked-in extract typed references row pack.
 
 Current hook: `ptn-w17z.31` iterable/DNF type row pack passed 27/27 at
-`.runtime/ptn-w17z31-merged-focused/run-20260615T185932Z-manifest.log`.
+`.runtime/ptn-w17z31-final-integrated/run-20260615T190737Z-manifest.log`.
 Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
 
@@ -47,6 +47,7 @@ Final manifest: `tools/phpt-ptn-w17z31-iterable-dnf-row-pack.txt`.
 | Hook-start focused baseline (`.runtime/ptn-w17z31-before/run-20260615T175811Z-manifest.log`) | 27 selected / 27 runnable | 1 |
 | Final focused run (`.runtime/ptn-w17z31-final-focused-27-pass/run-20260615T183817Z-manifest.log`) | 27 selected / 27 runnable | 27 |
 | Merged focused run (`.runtime/ptn-w17z31-merged-focused/run-20260615T185932Z-manifest.log`) | 27 selected / 27 runnable | 27 |
+| Final integrated focused run (`.runtime/ptn-w17z31-final-integrated/run-20260615T190737Z-manifest.log`) | 27 selected / 27 runnable | 27 |
 
 Implemented behavior: parser/IR/runtime support for `object`, `iterable`,
 union, intersection, and DNF user type hints; method signature compatibility
