@@ -329,6 +329,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_reflection_function(lookup_class_name)) {
         return ptn_reflection_function_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_reflection_method(lookup_class_name)) {
+        return ptn_reflection_method_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_array_iterator(lookup_class_name)) {
         return ptn_array_iterator_new(runtime, argc, args, line);
     }

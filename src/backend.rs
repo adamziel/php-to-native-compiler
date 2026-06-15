@@ -3598,6 +3598,48 @@ fn emit_class_reflection_metadata_helpers(out: &mut String, classes: &[ClassDecl
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)method_name;\n");
+        out.push_str("    (void)is_static;\n");
+        out.push_str("    (void)visibility;\n");
+        out.push_str("    (void)is_abstract;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            *is_static = ");
+            out.push_str(if method.is_static { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            *visibility = ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(";\n");
+            out.push_str("            *is_abstract = ");
+            out.push_str(if method.is_abstract { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");

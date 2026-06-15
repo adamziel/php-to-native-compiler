@@ -12819,6 +12819,87 @@ try {
 }
 
 #[test]
+fn compile_reflection_method_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-method-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-method-metadata.php");
+    let output = root.join("reflection-method-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectBaseMethod {
+    protected function inherited() {}
+}
+
+class ReflectMethodSubject extends ReflectBaseMethod {
+    public static function stat() {}
+    private function hidden() {}
+    public function __construct() {}
+}
+
+$inherited = new ReflectionMethod(\"ReflectMethodSubject\", \"inherited\");
+var_dump($inherited->getName());
+var_dump($inherited->getDeclaringClass()->getName());
+var_dump($inherited->isProtected());
+var_dump($inherited->isStatic());
+var_dump($inherited->isUserDefined());
+
+$static = ReflectionMethod::createFromMethodName(\"ReflectMethodSubject::stat\");
+var_dump($static->getName());
+var_dump($static->isPublic());
+var_dump($static->isStatic());
+var_dump($static->isConstructor());
+
+$private = new ReflectionMethod(\"ReflectMethodSubject\", \"hidden\");
+var_dump($private->isPrivate());
+var_dump($private->getModifiers());
+
+$ctor = new ReflectionMethod(\"ReflectMethodSubject\", \"__construct\");
+var_dump($ctor->isConstructor());
+var_dump($ctor->isDestructor());
+
+$internal = new ReflectionMethod(\"ReflectionProperty\", \"__construct\");
+var_dump($internal->isInternal());
+var_dump($internal->isUserDefined());
+var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(9) \"inherited\"\n",
+            "string(17) \"ReflectBaseMethod\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(4) \"stat\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "int(4)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_method_new"));
+    assert!(c_source.contains("ptn_declared_class_reflection_method_metadata"));
+    assert!(c_source.contains("ptn_internal_reflection_method_create_from_method_name"));
+}
+
+#[test]
 fn compile_inherited_public_instance_methods_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-public-instance-methods");
     fs::create_dir_all(&root).unwrap();
