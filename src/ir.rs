@@ -144,10 +144,14 @@ pub enum TypeHint {
     Float,
     String,
     Bool,
+    Object,
+    Iterable,
     Mixed,
     Void,
     Never,
     Nullable(Box<TypeHint>),
+    Union(Vec<TypeHint>),
+    Intersection(Vec<TypeHint>),
     Class(String),
 }
 
@@ -1381,10 +1385,18 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::Float => TypeHint::Float,
         AstTypeHint::String => TypeHint::String,
         AstTypeHint::Bool => TypeHint::Bool,
+        AstTypeHint::Object => TypeHint::Object,
+        AstTypeHint::Iterable => TypeHint::Iterable,
         AstTypeHint::Mixed => TypeHint::Mixed,
         AstTypeHint::Void => TypeHint::Void,
         AstTypeHint::Never => TypeHint::Never,
         AstTypeHint::Nullable(inner) => TypeHint::Nullable(Box::new(lower_type_hint(*inner))),
+        AstTypeHint::Union(types) => {
+            TypeHint::Union(types.into_iter().map(lower_type_hint).collect())
+        }
+        AstTypeHint::Intersection(types) => {
+            TypeHint::Intersection(types.into_iter().map(lower_type_hint).collect())
+        }
         AstTypeHint::Class(name) => TypeHint::Class(name),
     }
 }
@@ -2848,10 +2860,22 @@ fn assertion_type_hint_text(type_hint: &AstTypeHint) -> String {
         AstTypeHint::Float => "float".to_string(),
         AstTypeHint::String => "string".to_string(),
         AstTypeHint::Bool => "bool".to_string(),
+        AstTypeHint::Object => "object".to_string(),
+        AstTypeHint::Iterable => "Traversable|array".to_string(),
         AstTypeHint::Mixed => "mixed".to_string(),
         AstTypeHint::Void => "void".to_string(),
         AstTypeHint::Never => "never".to_string(),
         AstTypeHint::Nullable(inner) => format!("?{}", assertion_type_hint_text(inner)),
+        AstTypeHint::Union(types) => types
+            .iter()
+            .map(assertion_type_hint_text)
+            .collect::<Vec<_>>()
+            .join("|"),
+        AstTypeHint::Intersection(types) => types
+            .iter()
+            .map(assertion_type_hint_text)
+            .collect::<Vec<_>>()
+            .join("&"),
         AstTypeHint::Class(name) => name.clone(),
     }
 }
