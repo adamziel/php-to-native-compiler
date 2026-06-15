@@ -7890,6 +7890,39 @@ fn compile_fdiv_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_math_wrapper_and_base_output_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-math-wrapper-and-base-output-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("math-wrappers.php");
+    let output = root.join("math-wrappers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists(\"acos\"), function_exists(\"DECOCT\"), function_exists(\"fpow\"), function_exists(\"base_convert\"));\n\
+printf(\"%.3f\\n\", rad2deg(acos(0.5)));\n\
+printf(\"%.3f\\n\", deg2rad(180));\n\
+printf(\"%.3f\\n\", atan2(1, 1));\n\
+printf(\"%.3f\\n\", log(8, 2));\n\
+var_dump(is_nan(acos(2)));\n\
+var_dump(is_infinite(fpow(0, -1)));\n\
+var_dump(dechex(255), decoct(64), decbin(\"10\"), base_convert(\"0xFF\", 16, 10), base_convert(\"0b1010\", 2, 10), base_convert(str_repeat(\"1\", 70), 2, 16), fmod(5.5, 2), hypot(3, 4));\n\
+try { log(36, -4); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { base_convert(\"10\", 1, 10); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\n60.000\n3.142\n0.785\n3.000\nbool(true)\nbool(true)\nstring(2) \"ff\"\nstring(3) \"100\"\nstring(4) \"1010\"\nstring(3) \"255\"\nstring(2) \"10\"\nstring(18) \"3fffffffffffffffff\"\nfloat(1.5)\nfloat(5)\nlog(): Argument #2 ($base) must be greater than 0\nbase_convert(): Argument #2 ($from_base) must be between 2 and 36 (inclusive)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_numeric_internals_reject_unsupported_operands_to_native_binary() {
     let root = temp_dir("ptn-native-numeric-internal-operand-diagnostics");
     fs::create_dir_all(&root).unwrap();

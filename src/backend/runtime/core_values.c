@@ -751,7 +751,7 @@ static PTN_UNUSED int ptn_float_precision(void) {
             char *end = NULL;
             errno = 0;
             long parsed = strtol(configured, &end, 10);
-            if (errno == 0 && end != configured && *end == '\0' && parsed >= 0 && parsed <= 53) {
+            if (errno == 0 && end != configured && *end == '\0' && parsed >= -1 && parsed <= 53) {
                 precision = (int)parsed;
             }
         }
@@ -791,12 +791,46 @@ static PTN_UNUSED void ptn_scalar_float_ensure_exponent_decimal(char *buffer) {
     }
 }
 
+static PTN_UNUSED int ptn_same_scalar_double(double left, double right) {
+    return memcmp(&left, &right, sizeof(double)) == 0;
+}
+
+static PTN_UNUSED void ptn_format_scalar_shortest_float(double value, char *buffer, size_t buffer_size) {
+    for (int precision = 1; precision <= 17; precision++) {
+        char candidate[64];
+        char *end = NULL;
+        double reparsed;
+        snprintf(candidate, sizeof(candidate), "%.*g", precision, value);
+        ptn_normalize_scalar_float_exponent(candidate);
+        ptn_scalar_float_ensure_exponent_decimal(candidate);
+        errno = 0;
+        reparsed = strtod(candidate, &end);
+        if (errno == 0 && end != NULL && *end == '\0' && ptn_same_scalar_double(reparsed, value)) {
+            int written = snprintf(buffer, buffer_size, "%s", candidate);
+            if (written < 0 || (size_t)written >= buffer_size) {
+                ptn_abort_out_of_memory();
+            }
+            return;
+        }
+    }
+
+    int written = snprintf(buffer, buffer_size, "%.17g", value);
+    if (written < 0 || (size_t)written >= buffer_size) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_normalize_scalar_float_exponent(buffer);
+    ptn_scalar_float_ensure_exponent_decimal(buffer);
+}
+
 static PTN_UNUSED void ptn_format_scalar_float(double value, char *buffer, size_t buffer_size) {
     int written;
     if (isnan(value)) {
         written = snprintf(buffer, buffer_size, "NAN");
     } else if (isinf(value)) {
         written = snprintf(buffer, buffer_size, signbit(value) ? "-INF" : "INF");
+    } else if (ptn_float_precision() < 0) {
+        ptn_format_scalar_shortest_float(value, buffer, buffer_size);
+        return;
     } else {
         written = snprintf(buffer, buffer_size, "%.*g", ptn_float_precision(), value);
     }
