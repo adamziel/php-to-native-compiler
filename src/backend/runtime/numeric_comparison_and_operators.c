@@ -87,6 +87,16 @@ static PTN_UNUSED int ptn_compare_arrays_order(PtnArray *left, PtnArray *right) 
     return PTN_COMPARE_EQUAL;
 }
 
+static PTN_UNUSED int ptn_compare_objects_order(PtnObject *left, PtnObject *right) {
+    if (left == right) {
+        return PTN_COMPARE_EQUAL;
+    }
+    if (strcmp(left->class_name, right->class_name) != 0) {
+        return PTN_COMPARE_GREATER;
+    }
+    return ptn_compare_arrays_order(left->properties, right->properties);
+}
+
 static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
@@ -266,7 +276,7 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
             case PTN_ARRAY:
                 return ptn_compare_arrays_order(left.as.array, right.as.array);
             case PTN_OBJECT:
-                return left.as.object == right.as.object ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
+                return ptn_compare_objects_order(left.as.object, right.as.object);
             case PTN_CLOSURE:
                 return left.as.closure == right.as.closure ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
             case PTN_EXCEPTION:

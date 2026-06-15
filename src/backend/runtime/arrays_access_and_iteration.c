@@ -5303,10 +5303,6 @@ static int ptn_array_value_compare_ascending(PtnValue left, PtnValue right) {
     return 0;
 }
 
-static PTN_UNUSED int ptn_array_value_compare_descending(PtnValue left, PtnValue right) {
-    return -ptn_array_value_compare_ascending(left, right);
-}
-
 static int ptn_array_value_compare_numeric(PtnValue left, PtnValue right) {
     PtnNumber left_number = ptn_to_number(left);
     PtnNumber right_number = ptn_to_number(right);

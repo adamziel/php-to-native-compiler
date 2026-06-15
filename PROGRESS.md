@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.2 sort flags row pack | 78 | 72 |
 | ptn-w17z.22 compile-time include path variables | 1 | 1 |
 | ptn-w17z.28 collected Generator runtime row pack | 6 | 6 |
 | ptn-w17z.34 output-buffer compact row | 1 | 1 |
@@ -17,14 +18,20 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T16:15Z.
-Measured latest: `ptn-w17z.22` compile-time include path variable acceptance selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path. Previous: `ptn-w17z.28` completed the collected Generator runtime row pack at 6/6.
+Refresh: 2026-06-15T17:00Z.
+Measured latest: `ptn-w17z.2` sort flags row pack selected 78 rows, kept 78 runnable, and passed 72/78 in the focused run.
+Latest: `ptn-w17z.2` advances single-array sort flag rows to 72/78. Previous: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path.
 
-Current hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
+Current hook: `ptn-w17z.2` sort flags row pack passed 72/78 at
+`.runtime/merge-ptn-w17z2-sort-flags/summary-20260615T164329Z.txt`.
+Previous hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
 `.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
-Previous hook: `ptn-w17z.28` collected Generator runtime row pack passed 6/6 at
-`.runtime/merge-ptn-w17z28-generator-runtime/summary-20260615T163051Z.txt`.
+
+## 2026-06-15 ptn-w17z.2 Sort Flags Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Integrated focused row pack (`.runtime/merge-ptn-w17z2-sort-flags/summary-20260615T164329Z.txt`) | 78 selected / 78 runnable | 72 |
 
 ## 2026-06-15 ptn-w17z.22 Compile-Time Include Path Variables
 
@@ -1159,6 +1166,7 @@ visibility metadata limits.
 |User-comparator-sort-vq7w|26|20|6|
 |Std-strings-m8pk|21|21|0|
 |Std-strings-almd|13|12|1|
+|Sort-flags-w17z2|78|72|6|
 |array_rand|7|6|1|
 |Zend-op/control|26|21|5|
 |Zend-lit/op-3ijs|30|27|3|

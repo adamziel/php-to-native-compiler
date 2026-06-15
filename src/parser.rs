@@ -9224,6 +9224,19 @@ fn validate_mutating_array_internal_call(
     arguments: &[Expr],
     call_span: SourceSpan,
 ) -> Result<()> {
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
+        "arsort" | "asort" | "krsort" | "ksort" | "rsort" | "sort"
+    ) && arguments.len() > 2
+    {
+        let normalized = name.to_ascii_lowercase();
+        return Err(Diagnostic::new(
+            format!(
+                "{normalized}() currently supports one direct variable array argument and an optional sort flag"
+            ),
+            Some(arguments.get(2).map_or(call_span, Expr::span)),
+        ));
+    }
     if (name.eq_ignore_ascii_case("natsort") || name.eq_ignore_ascii_case("natcasesort"))
         && arguments.len() > 1
     {
