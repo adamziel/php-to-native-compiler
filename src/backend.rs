@@ -11,9 +11,9 @@ use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
     FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, Instruction,
-    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    MatchArm as IrMatchArm, Module, PropertyVisibility, ReferenceTarget, TraitDecl, TypeHint,
-    UnaryOp, ValueExpr,
+    InstanceOfTarget, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
+    MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyVisibility, ReferenceTarget,
+    TraitDecl, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -788,6 +788,7 @@ fn emit_user_functions(
                 }
             }
             let type_hint = parameter.type_hint.as_ref();
+<<<<<<< HEAD
             let parameter_cast_temp = if let Some(TypeHint::Union(_)) = type_hint {
                 emit_user_parameter_type_check(
                     out,
@@ -798,6 +799,57 @@ fn emit_user_functions(
                     &function.display_name,
                     &parameter.name,
                     None,
+=======
+            let effective_type_hint = non_nullable_type_hint(type_hint);
+            let allows_null = type_hint_allows_null(type_hint);
+            if matches!(effective_type_hint, Some(TypeHint::Null)) {
+                out.push_str("    if (ptn_value_deref(");
+                out.push_str(&parameter_source);
+                out.push_str(").type != PTN_NULL) {\n");
+                out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+                out.push_str(&c_string(&function.display_name));
+                out.push_str("() argument $");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str(" must be of type null\");\n");
+                out.push_str("        ptn_runtime_free(&runtime);\n");
+                out.push_str("        exit(255);\n");
+                out.push_str("    }\n");
+            }
+            if matches!(effective_type_hint, Some(TypeHint::Array)) {
+                out.push_str("    if (ptn_value_deref(");
+                out.push_str(&parameter_source);
+                out.push_str(").type != PTN_ARRAY");
+                if allows_null {
+                    out.push_str(" && ptn_value_deref(");
+                    out.push_str(&parameter_source);
+                    out.push_str(").type != PTN_NULL");
+                }
+                out.push_str(") {\n");
+                out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+                out.push_str(&c_string(&function.display_name));
+                out.push_str("() argument $");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str(" must be of type array\");\n");
+                out.push_str("        ptn_runtime_free(&runtime);\n");
+                out.push_str("        exit(255);\n");
+                out.push_str("    }\n");
+            }
+            if let Some(TypeHint::Class(class_name)) = effective_type_hint {
+                out.push_str("    if (");
+                if allows_null {
+                    out.push_str("ptn_value_deref(");
+                    out.push_str(&parameter_source);
+                    out.push_str(").type != PTN_NULL && ");
+                }
+                out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, ");
+                out.push_str(&parameter_source);
+                out.push_str(", \"");
+                out.push_str(&c_string(class_name));
+                out.push_str("\")) {\n");
+                out.push_str("        ptn_runtime_free(&runtime);\n");
+                out.push_str(
+                    "        ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
+>>>>>>> 09d1faabe (WIP: checkpoint (auto))
                 );
                 None
             } else {
@@ -1170,6 +1222,7 @@ fn emit_variadic_parameter_binding(
             out.push_str("            exit(255);\n");
             out.push_str("        }\n");
         }
+<<<<<<< HEAD
         if let Some(TypeHint::Class(class_name)) = effective_type_hint {
             out.push_str("        if (");
             if allows_null {
@@ -1204,6 +1257,31 @@ fn emit_variadic_parameter_binding(
         }
         (effective_type_hint, allows_null)
     };
+=======
+        out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, args[");
+        out.push_str(&index_temp);
+        out.push_str("], \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\")) {\n");
+        out.push_str("            ptn_value_drop(&");
+        out.push_str(&array_temp);
+        out.push_str(");\n");
+        out.push_str("            ptn_runtime_free(&runtime);\n");
+        out.push_str("            ptn_throw_user_parameter_class_type_error(caller_runtime, \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\", ");
+        out.push_str(&index_temp);
+        out.push_str(" + 1, \"");
+        out.push_str(&c_string(&parameter.name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\", args[");
+        out.push_str(&index_temp);
+        out.push_str("], line);\n");
+        out.push_str("            return ptn_null();\n");
+        out.push_str("        }\n");
+    }
+>>>>>>> 09d1faabe (WIP: checkpoint (auto))
 
     let value_expr = if let Some(cast_helper) = type_hint_scalar_cast_helper(effective_type_hint) {
         let value_temp = format!("ptn_variadic_value_{}", parameter_index);

@@ -4,12 +4,12 @@ use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
     AssignmentTarget, BinaryOp, CastKind, CatchClause, ClassConstantDecl, ClassDecl,
     ClosureUseCapture, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
-    IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElement, ListAssignmentElementTarget,
-    ListAssignmentTarget, ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind,
-    MatchArm, MethodDecl, Program, PromotedProperty, PropertyDecl, PropertyVisibility,
-    ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
-    StringInterpolationIndex, StringPart, SwitchCase, TraitDecl, TraitUseDecl, TypeHint, UnaryOp,
-    UnsetTarget,
+    IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElement,
+    ListAssignmentElementTarget, ListAssignmentTarget, ListExpr, ListExprElement,
+    ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program, PromotedProperty,
+    PropertyDecl, PropertyVisibility, ReferenceTarget, Statement, StaticLocalDeclaration,
+    StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TraitDecl, TraitUseDecl,
+    TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -2327,6 +2327,10 @@ impl Parser<'_> {
         }
     }
 
+    fn peek_starts_class_name(&self) -> bool {
+        matches!(self.peek().kind, TokenKind::Backslash | TokenKind::Identifier(_))
+    }
+
     fn peek_starts_property_type_hint(&self) -> bool {
         match &self.peek().kind {
             TokenKind::Question
@@ -3619,12 +3623,16 @@ impl Parser<'_> {
                     break;
                 }
                 self.advance();
-                let (class_name, class_span) =
-                    self.parse_resolved_class_name("expected class name")?;
-                let span = combine_spans(left.span(), class_span);
+                let target = if self.peek_starts_class_name() {
+                    let (name, span) = self.parse_resolved_class_name("expected class name")?;
+                    InstanceOfTarget::ClassName { name, span }
+                } else {
+                    InstanceOfTarget::Expr(Box::new(self.parse_unary_expr()?))
+                };
+                let span = combine_spans(left.span(), target.span());
                 left = Expr::InstanceOf {
                     expr: Box::new(left),
-                    class_name,
+                    target,
                     span,
                 };
                 continue;
@@ -6101,8 +6109,11 @@ fn collect_arrow_captures_from_expr(
         Expr::DynamicClassNameFetch { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
-        Expr::InstanceOf { expr, .. } => {
+        Expr::InstanceOf { expr, target, .. } => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
+            if let InstanceOfTarget::Expr(target) = target {
+                collect_arrow_captures_from_expr(target, exclusions, seen, captures);
+            }
         }
         Expr::String(_, _)
         | Expr::ShellExec { .. }
@@ -7669,10 +7680,15 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
             validate_control_transfers_in_expr(class_name)?;
             validate_control_transfers_in_exprs(arguments)?;
         }
+        Expr::InstanceOf { expr, target, .. } => {
+            validate_control_transfers_in_expr(expr)?;
+            if let InstanceOfTarget::Expr(target) = target {
+                validate_control_transfers_in_expr(target)?;
+            }
+        }
         Expr::Clone { expr, .. }
         | Expr::PropertyFetch { receiver: expr, .. }
         | Expr::DynamicClassNameFetch { receiver: expr, .. }
-        | Expr::InstanceOf { expr, .. }
         | Expr::Empty { target: expr, .. }
         | Expr::Print {
             expression: expr, ..
@@ -8486,8 +8502,11 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         Expr::DynamicClassNameFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
         }
-        Expr::InstanceOf { expr, .. } => {
+        Expr::InstanceOf { expr, target, .. } => {
             validate_anonymous_functions_in_expr(expr, functions)?;
+            if let InstanceOfTarget::Expr(target) = target {
+                validate_anonymous_functions_in_expr(target, functions)?;
+            }
         }
         Expr::Clone { expr, .. } => {
             validate_anonymous_functions_in_expr(expr, functions)?;
@@ -10100,8 +10119,11 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::DynamicClassNameFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
-        Expr::InstanceOf { expr, .. } => {
+        Expr::InstanceOf { expr, target, .. } => {
             reject_append_array_read(expr)?;
+            if let InstanceOfTarget::Expr(target) = target {
+                reject_append_array_read(target)?;
+            }
         }
         Expr::Clone { expr, .. } => reject_append_array_read(expr)?,
         Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
@@ -10535,7 +10557,13 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
             validate_class_scoped_constant_expr(left, parent_name)?;
             validate_class_scoped_constant_expr(right, parent_name)
         }
-        Expr::InstanceOf { expr, .. } => validate_class_scoped_constant_expr(expr, parent_name),
+        Expr::InstanceOf { expr, target, .. } => {
+            validate_class_scoped_constant_expr(expr, parent_name)?;
+            if let InstanceOfTarget::Expr(target) = target {
+                validate_class_scoped_constant_expr(target, parent_name)?;
+            }
+            Ok(())
+        }
         Expr::Ternary {
             condition,
             if_true,

@@ -8,7 +8,8 @@ use crate::ast::{
     ClosureUseCapture as AstClosureUseCapture, Expr, FunctionDecl as AstFunctionDecl,
     FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
     IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
-    IncludeKind as AstIncludeKind, ListAssignmentElement as AstListAssignmentElement,
+    IncludeKind as AstIncludeKind, InstanceOfTarget as AstInstanceOfTarget,
+    ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget,
     ListExprElementTarget as AstListExprElementTarget, MagicConstantKind as AstMagicConstantKind,
@@ -466,7 +467,7 @@ pub enum ValueExpr {
     },
     InstanceOf {
         expr: Box<ValueExpr>,
-        class_name: String,
+        target: InstanceOfTarget,
         line: usize,
     },
     Unary {
@@ -496,6 +497,12 @@ pub enum ValueExpr {
         arms: Vec<MatchArm>,
         line: usize,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InstanceOfTarget {
+    ClassName(String),
+    Expr(Box<ValueExpr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1538,8 +1545,11 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::NewObject { arguments, .. }
         | Expr::DynamicNewObject { arguments, .. } => arguments.iter().any(expr_contains_yield),
         Expr::PropertyFetch { receiver, .. }
-        | Expr::DynamicClassNameFetch { receiver, .. }
-        | Expr::InstanceOf { expr: receiver, .. } => expr_contains_yield(receiver),
+        | Expr::DynamicClassNameFetch { receiver, .. } => expr_contains_yield(receiver),
+        Expr::InstanceOf { expr, target, .. } => {
+            expr_contains_yield(expr)
+                || matches!(target, AstInstanceOfTarget::Expr(target) if expr_contains_yield(target))
+        }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             expr_contains_yield(receiver) || expr_contains_yield(name)
         }
@@ -2057,6 +2067,13 @@ fn lower_compound_assignment(name: &str, line: usize, op: BinaryOp, right: Value
 }
 
 impl<'a> LoweringContext<'a> {
+    fn lower_instanceof_target(&mut self, target: &AstInstanceOfTarget) -> InstanceOfTarget {
+        match target {
+            AstInstanceOfTarget::ClassName { name, .. } => InstanceOfTarget::ClassName(name.clone()),
+            AstInstanceOfTarget::Expr(expr) => InstanceOfTarget::Expr(Box::new(self.lower_expr(expr))),
+        }
+    }
+
     fn lower_expr(&mut self, expr: &Expr) -> ValueExpr {
         match expr {
             Expr::String(value, _) => ValueExpr::String(value.clone()),
@@ -2314,11 +2331,11 @@ impl<'a> LoweringContext<'a> {
             },
             Expr::InstanceOf {
                 expr,
-                class_name,
+                target,
                 span,
             } => ValueExpr::InstanceOf {
                 expr: Box::new(self.lower_expr(expr)),
-                class_name: class_name.clone(),
+                target: self.lower_instanceof_target(target),
                 line: span.line,
             },
             Expr::Unary { op, expr, span } => ValueExpr::Unary {
@@ -2597,9 +2614,13 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::DynamicClassNameFetch { receiver, .. } => {
             format!("{}::class", assertion_expr_text(receiver))
         }
-        Expr::InstanceOf {
-            expr, class_name, ..
-        } => format!("{} instanceof {class_name}", assertion_expr_text(expr)),
+        Expr::InstanceOf { expr, target, .. } => {
+            let target_text = match target {
+                AstInstanceOfTarget::ClassName { name, .. } => name.clone(),
+                AstInstanceOfTarget::Expr(target) => assertion_expr_text(target),
+            };
+            format!("{} instanceof {target_text}", assertion_expr_text(expr))
+        }
         Expr::Array { elements, .. } => format!(
             "[{}]",
             elements
