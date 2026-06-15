@@ -40,6 +40,7 @@ pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let runtime_requirements = module_runtime_requirements(module);
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
+    let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let magic_declaration_fatals = collect_module_magic_declaration_fatals(module);
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
     let needs_callable_dispatch = runtime_requirements.internal_function_dispatch
@@ -198,6 +199,11 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
     );
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
+    emit_parameter_default_diagnostics(
+        &mut out,
+        &parameter_default_diagnostics,
+        &module.source_file,
+    );
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
     emit_class_constant_initializers(&mut out, &mut values, &module.classes);
@@ -808,7 +814,8 @@ fn emit_user_functions(
             }
             let type_hint = parameter.type_hint.as_ref();
             let effective_type_hint = non_nullable_type_hint(type_hint);
-            let allows_null = type_hint_allows_null(type_hint);
+            let allows_null =
+                type_hint_allows_null(type_hint) || parameter_default_value_is_null(parameter);
             if matches!(effective_type_hint, Some(TypeHint::Null)) {
                 out.push_str("    if (ptn_value_deref(");
                 out.push_str(&parameter_source);
@@ -873,7 +880,15 @@ fn emit_user_functions(
             if let Some(type_hint) = type_hint {
                 if type_hint_uses_generic_runtime_check(type_hint) {
                     out.push_str("    if (!");
+                    if allows_null {
+                        out.push_str("(ptn_value_deref(");
+                        out.push_str(&parameter_source);
+                        out.push_str(").type == PTN_NULL || ");
+                    }
                     out.push_str(&type_hint_runtime_condition(&parameter_source, type_hint));
+                    if allows_null {
+                        out.push(')');
+                    }
                     out.push_str(") {\n");
                     out.push_str("        ptn_runtime_free(&runtime);\n");
                     out.push_str(
@@ -1227,7 +1242,9 @@ fn emit_variadic_parameter_binding(
             out.push_str(&array_temp);
             out.push_str(");\n");
             out.push_str("            ptn_runtime_free(&runtime);\n");
-            out.push_str("            ptn_throw_user_parameter_class_type_error(caller_runtime, \"");
+            out.push_str(
+                "            ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
+            );
             out.push_str(&c_string(&function.name));
             out.push_str("\", ");
             out.push_str(&index_temp);
@@ -1513,6 +1530,27 @@ struct MagicDeclarationFatal {
     line: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParameterDefaultDiagnostics {
+    deprecations: Vec<ParameterDefaultDeprecation>,
+    fatal: Option<ParameterDefaultFatal>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParameterDefaultDeprecation {
+    function_name: String,
+    parameter_name: String,
+    line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParameterDefaultFatal {
+    parameter_name: String,
+    default_type_name: String,
+    expected_type_name: String,
+    line: usize,
+}
+
 fn emit_legacy_dollar_brace_deprecations(
     out: &mut String,
     deprecations: &[LegacyDollarBraceDeprecation],
@@ -1524,6 +1562,44 @@ fn emit_legacy_dollar_brace_deprecations(
         out.push_str(&deprecation.line.to_string());
         out.push_str(");\n");
     }
+}
+
+fn emit_parameter_default_diagnostics(
+    out: &mut String,
+    diagnostics: &ParameterDefaultDiagnostics,
+    source_file: &str,
+) {
+    for deprecation in &diagnostics.deprecations {
+        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(&format!(
+            "{}(): Implicitly marking parameter ${} as nullable is deprecated, the explicit nullable type must be used instead",
+            deprecation.function_name, deprecation.parameter_name
+        )));
+        out.push_str("\", ");
+        out.push_str(&deprecation.line.to_string());
+        out.push_str(");\n");
+    }
+    let Some(fatal) = &diagnostics.fatal else {
+        return;
+    };
+    out.push_str("    if (runtime.diagnostics.display_errors) {\n");
+    out.push_str(
+        "        FILE *ptn_parameter_default_fatal_stream = runtime.diagnostics.stream == NULL ? stderr : runtime.diagnostics.stream;\n",
+    );
+    out.push_str("        fputs(\"Fatal error: Cannot use ");
+    out.push_str(&c_string(&fatal.default_type_name));
+    out.push_str(" as default value for parameter $");
+    out.push_str(&c_string(&fatal.parameter_name));
+    out.push_str(" of type ");
+    out.push_str(&c_string(&fatal.expected_type_name));
+    out.push_str(" in ");
+    out.push_str(&c_string(source_file));
+    out.push_str(" on line ");
+    out.push_str(&fatal.line.to_string());
+    out.push_str("\\n\", ptn_parameter_default_fatal_stream);\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_runtime_free(&runtime);\n");
+    out.push_str("    exit(255);\n");
 }
 
 fn emit_magic_visibility_warnings(out: &mut String, warnings: &[MagicVisibilityWarning]) {
@@ -1630,7 +1706,10 @@ fn emit_generic_return_type_boundary(
     function_name: &str,
 ) {
     out.push_str("    if (!");
-    out.push_str(&type_hint_runtime_condition("ptn_return_value", return_type));
+    out.push_str(&type_hint_runtime_condition(
+        "ptn_return_value",
+        return_type,
+    ));
     out.push_str(") {\n");
     out.push_str("        ptn_throw_user_return_type_error(caller_runtime, \"");
     out.push_str(&c_string(function_name));
@@ -5895,6 +5974,144 @@ fn collect_module_magic_visibility_warnings(module: &Module) -> Vec<MagicVisibil
         }
     }
     warnings
+}
+
+fn collect_module_parameter_default_diagnostics(module: &Module) -> ParameterDefaultDiagnostics {
+    let mut diagnostics = ParameterDefaultDiagnostics {
+        deprecations: Vec::new(),
+        fatal: None,
+    };
+    for function in &module.functions {
+        if !function.initially_declared {
+            continue;
+        }
+        collect_function_parameter_default_diagnostics(function, &mut diagnostics);
+        if diagnostics.fatal.is_some() {
+            break;
+        }
+    }
+    diagnostics
+}
+
+fn collect_function_parameter_default_diagnostics(
+    function: &FunctionDecl,
+    diagnostics: &mut ParameterDefaultDiagnostics,
+) {
+    for parameter in &function.parameters {
+        let Some(type_hint) = parameter.type_hint.as_ref() else {
+            continue;
+        };
+        let Some(default_value) = parameter.default_value.as_ref() else {
+            continue;
+        };
+        if type_hint_accepts_default_value(type_hint, default_value) {
+            continue;
+        }
+        if matches!(default_value, ValueExpr::Null)
+            && type_hint_allows_implicit_nullable_default(type_hint)
+        {
+            diagnostics.deprecations.push(ParameterDefaultDeprecation {
+                function_name: function.display_name.clone(),
+                parameter_name: parameter.name.clone(),
+                line: function.line,
+            });
+            continue;
+        }
+        let Some(default_type_name) = default_value_type_name(default_value) else {
+            continue;
+        };
+        diagnostics.fatal = Some(ParameterDefaultFatal {
+            parameter_name: parameter.name.clone(),
+            default_type_name: default_type_name.to_string(),
+            expected_type_name: type_hint_display(type_hint),
+            line: function.line,
+        });
+        break;
+    }
+}
+
+fn type_hint_accepts_default_value(type_hint: &TypeHint, value: &ValueExpr) -> bool {
+    match type_hint {
+        TypeHint::Null => matches!(value, ValueExpr::Null),
+        TypeHint::Array => matches!(value, ValueExpr::Array(_)),
+        TypeHint::Int => matches!(value, ValueExpr::Int(_)),
+        TypeHint::Float => matches!(value, ValueExpr::Float(_)),
+        TypeHint::String => matches!(value, ValueExpr::String(_)),
+        TypeHint::Bool => matches!(value, ValueExpr::Bool(_)),
+        TypeHint::Object | TypeHint::Intersection(_) | TypeHint::Class(_) => false,
+        TypeHint::Iterable => matches!(value, ValueExpr::Array(_)),
+        TypeHint::Mixed => true,
+        TypeHint::Void | TypeHint::Never => false,
+        TypeHint::Nullable(inner) => {
+            matches!(value, ValueExpr::Null) || type_hint_accepts_default_value(inner, value)
+        }
+        TypeHint::Union(types) => types
+            .iter()
+            .any(|member| type_hint_accepts_default_value(member, value)),
+    }
+}
+
+fn type_hint_allows_implicit_nullable_default(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Mixed | TypeHint::Null | TypeHint::Nullable(_) => false,
+        TypeHint::Union(types) => !types.iter().any(|member| matches!(member, TypeHint::Null)),
+        TypeHint::Void | TypeHint::Never => false,
+        TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Intersection(_)
+        | TypeHint::Class(_) => true,
+    }
+}
+
+fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
+    match value {
+        ValueExpr::String(_) => Some("string"),
+        ValueExpr::Int(_) => Some("int"),
+        ValueExpr::Float(_) => Some("float"),
+        ValueExpr::Bool(_) => Some("bool"),
+        ValueExpr::Null => Some("null"),
+        ValueExpr::Array(_) => Some("array"),
+        ValueExpr::Constant { .. } | ValueExpr::MagicConstant { .. } => None,
+        ValueExpr::Closure { .. }
+        | ValueExpr::Load { .. }
+        | ValueExpr::LegacyDollarBraceStringVariable { .. }
+        | ValueExpr::DynamicVariable { .. }
+        | ValueExpr::IncDec { .. }
+        | ValueExpr::Assign { .. }
+        | ValueExpr::AssignRef { .. }
+        | ValueExpr::ArrayAccess { .. }
+        | ValueExpr::ArrayAppendAccess { .. }
+        | ValueExpr::Isset { .. }
+        | ValueExpr::Empty { .. }
+        | ValueExpr::Print { .. }
+        | ValueExpr::Include { .. }
+        | ValueExpr::Throw { .. }
+        | ValueExpr::Yield { .. }
+        | ValueExpr::InternalCall { .. }
+        | ValueExpr::FirstClassCallable { .. }
+        | ValueExpr::DynamicCall { .. }
+        | ValueExpr::MethodCall { .. }
+        | ValueExpr::DynamicMethodCall { .. }
+        | ValueExpr::NewObject { .. }
+        | ValueExpr::DynamicNewObject { .. }
+        | ValueExpr::Clone { .. }
+        | ValueExpr::PropertyFetch { .. }
+        | ValueExpr::DynamicPropertyFetch { .. }
+        | ValueExpr::StaticPropertyFetch { .. }
+        | ValueExpr::ClassConstantFetch { .. }
+        | ValueExpr::DynamicClassNameFetch { .. }
+        | ValueExpr::InstanceOf { .. }
+        | ValueExpr::Unary { .. }
+        | ValueExpr::Cast { .. }
+        | ValueExpr::Binary { .. }
+        | ValueExpr::Ternary { .. }
+        | ValueExpr::Match { .. } => None,
+    }
 }
 
 fn collect_module_magic_declaration_fatals(module: &Module) -> Vec<MagicDeclarationFatal> {

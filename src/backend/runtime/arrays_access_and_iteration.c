@@ -1942,7 +1942,56 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     const char *function_name = runtime == NULL || runtime->current_function_name == NULL
         ? "{unknown}"
         : runtime->current_function_name;
-    PtnValue function_value = ptn_string(function_name);
+    char *owned_function_name = NULL;
+    const char *prefix = "{closure:";
+    size_t prefix_len = strlen(prefix);
+    size_t function_name_len = strlen(function_name);
+    if (
+        runtime != NULL &&
+        runtime->trace_frame != NULL &&
+        runtime->trace_frame->previous != NULL &&
+        runtime->trace_frame->previous->function_name != NULL &&
+        function_name_len > prefix_len + 1 &&
+        strncmp(function_name, prefix, prefix_len) == 0 &&
+        function_name[function_name_len - 1] == '}'
+    ) {
+        const char *body_start = function_name + prefix_len;
+        const char *body_end = function_name + function_name_len - 1;
+        const char *line_start = body_end;
+        while (line_start > body_start && line_start[-1] != ':') {
+            line_start--;
+        }
+        size_t line = 0;
+        int parsed_line = line_start > body_start;
+        for (const char *cursor = line_start; parsed_line && cursor < body_end; cursor++) {
+            if (*cursor < '0' || *cursor > '9') {
+                parsed_line = 0;
+                break;
+            }
+            size_t digit = (size_t)(*cursor - '0');
+            if (line > (SIZE_MAX - digit) / 10) {
+                parsed_line = 0;
+                break;
+            }
+            line = line * 10 + digit;
+        }
+        if (parsed_line) {
+            const char *caller_name = runtime->trace_frame->previous->function_name;
+            int needed = snprintf(NULL, 0, "{closure:%s():%zu}", caller_name, line);
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            owned_function_name = malloc((size_t)needed + 1);
+            if (owned_function_name == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            snprintf(owned_function_name, (size_t)needed + 1, "{closure:%s():%zu}", caller_name, line);
+            function_name = owned_function_name;
+        }
+    }
+    PtnValue function_value = owned_function_name == NULL
+        ? ptn_string(function_name)
+        : ptn_owned_string(owned_function_name);
     PtnValue assigned = ptn_object_declare_property(
         runtime,
         object,
@@ -1956,6 +2005,7 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
         0
     );
     ptn_value_destroy(&assigned);
+    ptn_value_destroy(&function_value);
     return object;
 }
 

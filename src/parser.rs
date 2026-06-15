@@ -2281,10 +2281,7 @@ impl Parser<'_> {
         Ok(ParsedTypeHint { type_hint, span })
     }
 
-    fn parse_intersection_type_hint(
-        &mut self,
-        context: TypeHintContext,
-    ) -> Result<ParsedTypeHint> {
+    fn parse_intersection_type_hint(&mut self, context: TypeHintContext) -> Result<ParsedTypeHint> {
         let first = self.parse_type_hint_atom(context)?;
         let mut span = first.span;
         let mut types = vec![first.type_hint];
@@ -5811,7 +5808,10 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
         .filter(|type_hint| matches!(type_hint, TypeHint::Iterable))
         .count();
     if iterable_count > 1 || (iterable_count == 1 && types.iter().any(type_hint_is_array)) {
-        return Err(Diagnostic::new("Duplicate type array is redundant", Some(span)));
+        return Err(Diagnostic::new(
+            "Duplicate type array is redundant",
+            Some(span),
+        ));
     }
     if iterable_count == 1
         && types
@@ -7012,7 +7012,13 @@ fn validate_method_signature_compatibility(classes: &[ClassDecl]) -> Result<()> 
             if let Some((parent_class, parent_method)) =
                 find_visible_parent_method(class, &method.name, classes)
             {
-                validate_method_signature_pair(class, method, parent_class, parent_method, classes)?;
+                validate_method_signature_pair(
+                    class,
+                    method,
+                    parent_class,
+                    parent_method,
+                    classes,
+                )?;
             }
 
             let mut seen_interfaces = HashSet::new();
@@ -7027,7 +7033,13 @@ fn validate_method_signature_compatibility(classes: &[ClassDecl]) -> Result<()> 
                 );
             }
             for (interface, interface_method) in interface_methods {
-                validate_method_signature_pair(class, method, interface, interface_method, classes)?;
+                validate_method_signature_pair(
+                    class,
+                    method,
+                    interface,
+                    interface_method,
+                    classes,
+                )?;
             }
         }
     }
@@ -7482,7 +7494,11 @@ fn type_atom_is_subtype(candidate: &TypeAtom, target: &TypeAtom, classes: &[Clas
     }
 }
 
-fn class_type_name_is_subtype(candidate_name: &str, target_name: &str, classes: &[ClassDecl]) -> bool {
+fn class_type_name_is_subtype(
+    candidate_name: &str,
+    target_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
     if candidate_name.eq_ignore_ascii_case(target_name) {
         return true;
     }
@@ -7510,7 +7526,12 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
     } else if candidate_name.eq_ignore_ascii_case("IteratorIterator") {
         &["Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("ArrayObject") {
-        &["ArrayAccess", "Countable", "IteratorAggregate", "Traversable"][..]
+        &[
+            "ArrayAccess",
+            "Countable",
+            "IteratorAggregate",
+            "Traversable",
+        ][..]
     } else if candidate_name.eq_ignore_ascii_case("Generator") {
         &["Iterator", "Traversable"][..]
     } else {
@@ -7541,12 +7562,15 @@ fn class_type_extends_or_implements(
     {
         return true;
     }
-    find_class(classes, parent_name).is_some_and(|parent| {
-        class_type_extends_or_implements(parent, target_name, classes)
-    })
+    find_class(classes, parent_name)
+        .is_some_and(|parent| class_type_extends_or_implements(parent, target_name, classes))
 }
 
-fn interface_name_is_subtype(interface_name: &str, target_name: &str, classes: &[ClassDecl]) -> bool {
+fn interface_name_is_subtype(
+    interface_name: &str,
+    target_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
     if interface_name.eq_ignore_ascii_case(target_name)
         || builtin_class_type_is_subtype(interface_name, target_name)
     {
