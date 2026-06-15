@@ -3379,7 +3379,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_asort_variable(
         value
     );
     int64_t flags = ptn_internal_sort_flags_arg(runtime, "asort", flags_value, line);
-    ptn_array_asort_values_with_flags(array, flags);
+    ptn_array_asort_values_with_flags_context(runtime, array, flags, line);
     return ptn_bool(1);
 }
 
@@ -3399,7 +3399,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_arsort_variable(
         value
     );
     int64_t flags = ptn_internal_sort_flags_arg(runtime, "arsort", flags_value, line);
-    ptn_array_arsort_values_with_flags(array, flags);
+    ptn_array_arsort_values_with_flags_context(runtime, array, flags, line);
     return ptn_bool(1);
 }
 
@@ -3445,7 +3445,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_sort_variable(
         value
     );
     int64_t flags = ptn_internal_sort_flags_arg(runtime, "sort", flags_value, line);
-    ptn_array_sort_values_with_flags(array, flags);
+    ptn_array_sort_values_with_flags_context(runtime, array, flags, line);
     return ptn_bool(1);
 }
 
@@ -3465,7 +3465,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_rsort_variable(
         value
     );
     int64_t flags = ptn_internal_sort_flags_arg(runtime, "rsort", flags_value, line);
-    ptn_array_rsort_values_with_flags(array, flags);
+    ptn_array_rsort_values_with_flags_context(runtime, array, flags, line);
     return ptn_bool(1);
 }
 
@@ -4212,7 +4212,7 @@ static PtnValue ptn_internal_asort(PtnRuntime *runtime, size_t argc, const PtnVa
     int64_t flags = argc >= 2
         ? ptn_internal_sort_flags_arg(runtime, "asort", args[1], line)
         : PTN_SORT_REGULAR;
-    ptn_array_asort_values_with_flags(array, flags);
+    ptn_array_asort_values_with_flags_context(runtime, array, flags, line);
     return ptn_bool(1);
 }
 
@@ -4221,7 +4221,7 @@ static PtnValue ptn_internal_arsort(PtnRuntime *runtime, size_t argc, const PtnV
     int64_t flags = argc >= 2
         ? ptn_internal_sort_flags_arg(runtime, "arsort", args[1], line)
         : PTN_SORT_REGULAR;
-    ptn_array_arsort_values_with_flags(array, flags);
+    ptn_array_arsort_values_with_flags_context(runtime, array, flags, line);
     return ptn_bool(1);
 }
 
@@ -4254,7 +4254,7 @@ static PtnValue ptn_internal_sort(PtnRuntime *runtime, size_t argc, const PtnVal
     int64_t flags = argc >= 2
         ? ptn_internal_sort_flags_arg(runtime, "sort", args[1], line)
         : PTN_SORT_REGULAR;
-    ptn_array_sort_values_with_flags(array, flags);
+    ptn_array_sort_values_with_flags_context(runtime, array, flags, line);
     return ptn_bool(1);
 }
 
@@ -4263,7 +4263,7 @@ static PtnValue ptn_internal_rsort(PtnRuntime *runtime, size_t argc, const PtnVa
     int64_t flags = argc >= 2
         ? ptn_internal_sort_flags_arg(runtime, "rsort", args[1], line)
         : PTN_SORT_REGULAR;
-    ptn_array_rsort_values_with_flags(array, flags);
+    ptn_array_rsort_values_with_flags_context(runtime, array, flags, line);
     return ptn_bool(1);
 }
 
@@ -4461,8 +4461,8 @@ static int ptn_array_multisort_compare_operand(
             break;
         case PTN_SORT_NATURAL:
             compared = operand->case_insensitive
-                ? ptn_array_value_compare_natural_case(left, right)
-                : ptn_array_value_compare_natural(left, right);
+                ? ptn_array_value_compare_natural_case(left, right, NULL, 0)
+                : ptn_array_value_compare_natural(left, right, NULL, 0);
             break;
         case PTN_SORT_REGULAR:
         default:

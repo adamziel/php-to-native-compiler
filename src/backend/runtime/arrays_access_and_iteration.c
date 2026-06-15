@@ -5134,9 +5134,19 @@ static int ptn_array_value_compare_numeric(PtnValue left, PtnValue right) {
     return 0;
 }
 
-static int ptn_array_value_compare_string(PtnValue left, PtnValue right) {
-    PtnStringOperand left_string = ptn_value_to_string_operand(left);
-    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+static PtnStringOperand ptn_array_sort_string_operand(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnValue deref = ptn_value_deref(value);
+    if (runtime != NULL && deref.type == PTN_ARRAY) {
+        ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+    return runtime != NULL
+        ? ptn_value_to_string_operand_with_runtime(runtime, value, line)
+        : ptn_value_to_string_operand(value);
+}
+
+static int ptn_array_value_compare_string(PtnValue left, PtnValue right, PtnRuntime *runtime, size_t line) {
+    PtnStringOperand left_string = ptn_array_sort_string_operand(runtime, left, line);
+    PtnStringOperand right_string = ptn_array_sort_string_operand(runtime, right, line);
     int compared = ptn_compare_string_bytes(
         (const unsigned char *)left_string.data,
         left_string.len,
@@ -5154,9 +5164,9 @@ static int ptn_array_value_compare_string(PtnValue left, PtnValue right) {
     return 0;
 }
 
-static int ptn_array_value_compare_string_case(PtnValue left, PtnValue right) {
-    PtnStringOperand left_string = ptn_value_to_string_operand(left);
-    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+static int ptn_array_value_compare_string_case(PtnValue left, PtnValue right, PtnRuntime *runtime, size_t line) {
+    PtnStringOperand left_string = ptn_array_sort_string_operand(runtime, left, line);
+    PtnStringOperand right_string = ptn_array_sort_string_operand(runtime, right, line);
     const unsigned char *left_bytes = (const unsigned char *)left_string.data;
     const unsigned char *right_bytes = (const unsigned char *)right_string.data;
     size_t shared_len = left_string.len < right_string.len ? left_string.len : right_string.len;
@@ -5342,18 +5352,18 @@ static int ptn_compare_natural_string_operands(PtnStringOperand left_operand, Pt
     }
 }
 
-static int ptn_array_value_compare_natural(PtnValue left, PtnValue right) {
-    PtnStringOperand left_string = ptn_value_to_string_operand(left);
-    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+static int ptn_array_value_compare_natural(PtnValue left, PtnValue right, PtnRuntime *runtime, size_t line) {
+    PtnStringOperand left_string = ptn_array_sort_string_operand(runtime, left, line);
+    PtnStringOperand right_string = ptn_array_sort_string_operand(runtime, right, line);
     int compared = ptn_compare_natural_string_operands(left_string, right_string, 0);
     ptn_string_operand_free(left_string);
     ptn_string_operand_free(right_string);
     return compared;
 }
 
-static int ptn_array_value_compare_natural_case(PtnValue left, PtnValue right) {
-    PtnStringOperand left_string = ptn_value_to_string_operand(left);
-    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+static int ptn_array_value_compare_natural_case(PtnValue left, PtnValue right, PtnRuntime *runtime, size_t line) {
+    PtnStringOperand left_string = ptn_array_sort_string_operand(runtime, left, line);
+    PtnStringOperand right_string = ptn_array_sort_string_operand(runtime, right, line);
     int compared = ptn_compare_natural_string_operands(left_string, right_string, 1);
     ptn_string_operand_free(left_string);
     ptn_string_operand_free(right_string);
@@ -5371,7 +5381,13 @@ static int64_t ptn_array_sort_flags_base(int64_t flags) {
         : flags;
 }
 
-static int ptn_array_value_compare_by_sort_flags(PtnValue left, PtnValue right, int64_t flags) {
+static int ptn_array_value_compare_by_sort_flags(
+    PtnValue left,
+    PtnValue right,
+    int64_t flags,
+    PtnRuntime *runtime,
+    size_t line
+) {
     int case_insensitive = ptn_array_sort_flags_case_insensitive(flags);
     switch (ptn_array_sort_flags_base(flags)) {
         case PTN_SORT_NUMERIC:
@@ -5379,12 +5395,12 @@ static int ptn_array_value_compare_by_sort_flags(PtnValue left, PtnValue right, 
         case PTN_SORT_STRING:
         case PTN_SORT_LOCALE_STRING:
             return case_insensitive
-                ? ptn_array_value_compare_string_case(left, right)
-                : ptn_array_value_compare_string(left, right);
+                ? ptn_array_value_compare_string_case(left, right, runtime, line)
+                : ptn_array_value_compare_string(left, right, runtime, line);
         case PTN_SORT_NATURAL:
             return case_insensitive
-                ? ptn_array_value_compare_natural_case(left, right)
-                : ptn_array_value_compare_natural(left, right);
+                ? ptn_array_value_compare_natural_case(left, right, runtime, line)
+                : ptn_array_value_compare_natural(left, right, runtime, line);
         case PTN_SORT_REGULAR:
         default:
             return ptn_array_value_compare_ascending(left, right);
@@ -5397,7 +5413,7 @@ static int ptn_array_key_compare_by_sort_flags(PtnArrayKey left, PtnArrayKey rig
     }
     PtnValue left_value = ptn_array_key_value(left);
     PtnValue right_value = ptn_array_key_value(right);
-    int compared = ptn_array_value_compare_by_sort_flags(left_value, right_value, flags);
+    int compared = ptn_array_value_compare_by_sort_flags(left_value, right_value, flags, NULL, 0);
     ptn_value_destroy(&left_value);
     ptn_value_destroy(&right_value);
     return compared;
@@ -5423,6 +5439,8 @@ typedef struct {
     int compare_keys;
     int descending;
     int64_t flags;
+    PtnRuntime *runtime;
+    size_t line;
 } PtnArraySortContext;
 
 static int ptn_array_sort_item_compare(
@@ -5432,7 +5450,13 @@ static int ptn_array_sort_item_compare(
 ) {
     int compared = context->compare_keys
         ? ptn_array_key_compare_by_sort_flags(left->entry.key, right->entry.key, context->flags)
-        : ptn_array_value_compare_by_sort_flags(left->entry.value, right->entry.value, context->flags);
+        : ptn_array_value_compare_by_sort_flags(
+            left->entry.value,
+            right->entry.value,
+            context->flags,
+            context->runtime,
+            context->line
+        );
     if (context->descending) {
         compared = -compared;
     }
@@ -5672,7 +5696,15 @@ done:
     }
 }
 
-static void ptn_array_sort_entries_by_flags(PtnArray *array, int compare_keys, int descending, int reindex, int64_t flags) {
+static void ptn_array_sort_entries_by_flags_with_context(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    int compare_keys,
+    int descending,
+    int reindex,
+    int64_t flags,
+    size_t line
+) {
     if (array->len > 1) {
         PtnArraySortItem *items = malloc(sizeof(PtnArraySortItem) * array->len);
         if (items == NULL) {
@@ -5682,7 +5714,7 @@ static void ptn_array_sort_entries_by_flags(PtnArray *array, int compare_keys, i
             items[i].entry = array->entries[i];
             items[i].original_index = i;
         }
-        PtnArraySortContext context = { compare_keys, descending, flags };
+        PtnArraySortContext context = { compare_keys, descending, flags, runtime, line };
         ptn_array_zend_sort_items(items, array->len, &context);
         for (size_t i = 0; i < array->len; i++) {
             array->entries[i] = items[i].entry;
@@ -5694,6 +5726,46 @@ static void ptn_array_sort_entries_by_flags(PtnArray *array, int compare_keys, i
     }
     array->current_index = 0;
     ptn_array_rebuild_index(array);
+}
+
+static void ptn_array_sort_entries_by_flags(PtnArray *array, int compare_keys, int descending, int reindex, int64_t flags) {
+    ptn_array_sort_entries_by_flags_with_context(NULL, array, compare_keys, descending, reindex, flags, 0);
+}
+
+static PTN_UNUSED void ptn_array_sort_values_with_flags_context(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    int64_t flags,
+    size_t line
+) {
+    ptn_array_sort_entries_by_flags_with_context(runtime, array, 0, 0, 1, flags, line);
+}
+
+static PTN_UNUSED void ptn_array_rsort_values_with_flags_context(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    int64_t flags,
+    size_t line
+) {
+    ptn_array_sort_entries_by_flags_with_context(runtime, array, 0, 1, 1, flags, line);
+}
+
+static PTN_UNUSED void ptn_array_asort_values_with_flags_context(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    int64_t flags,
+    size_t line
+) {
+    ptn_array_sort_entries_by_flags_with_context(runtime, array, 0, 0, 0, flags, line);
+}
+
+static PTN_UNUSED void ptn_array_arsort_values_with_flags_context(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    int64_t flags,
+    size_t line
+) {
+    ptn_array_sort_entries_by_flags_with_context(runtime, array, 0, 1, 0, flags, line);
 }
 
 static PTN_UNUSED void ptn_array_sort_values_with_flags(PtnArray *array, int64_t flags) {
@@ -5740,7 +5812,7 @@ static PTN_UNUSED void ptn_array_natsort_values(PtnArray *array) {
     for (size_t i = 1; i < array->len; i++) {
         PtnArrayEntry moving = array->entries[i];
         size_t j = i;
-        while (j > 0 && ptn_array_value_compare_natural(array->entries[j - 1].value, moving.value) > 0) {
+        while (j > 0 && ptn_array_value_compare_natural(array->entries[j - 1].value, moving.value, NULL, 0) > 0) {
             array->entries[j] = array->entries[j - 1];
             j--;
         }
@@ -5754,7 +5826,7 @@ static PTN_UNUSED void ptn_array_natcasesort_values(PtnArray *array) {
     for (size_t i = 1; i < array->len; i++) {
         PtnArrayEntry moving = array->entries[i];
         size_t j = i;
-        while (j > 0 && ptn_array_value_compare_natural_case(array->entries[j - 1].value, moving.value) > 0) {
+        while (j > 0 && ptn_array_value_compare_natural_case(array->entries[j - 1].value, moving.value, NULL, 0) > 0) {
             array->entries[j] = array->entries[j - 1];
             j--;
         }
