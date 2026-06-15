@@ -11101,6 +11101,176 @@ static PtnValue ptn_internal_strcasecmp(PtnRuntime *runtime, size_t argc, const 
     return ptn_int(0);
 }
 
+static int ptn_natcompare_number(
+    const unsigned char *left,
+    size_t left_len,
+    size_t *left_index,
+    const unsigned char *right,
+    size_t right_len,
+    size_t *right_index
+) {
+    size_t left_start = *left_index;
+    size_t right_start = *right_index;
+    int left_fractional = left_start < left_len && left[left_start] == '0';
+    int right_fractional = right_start < right_len && right[right_start] == '0';
+
+    size_t left_end = left_start;
+    while (left_end < left_len && isdigit(left[left_end])) {
+        left_end++;
+    }
+    size_t right_end = right_start;
+    while (right_end < right_len && isdigit(right[right_end])) {
+        right_end++;
+    }
+
+    int result = 0;
+    if (left_fractional || right_fractional) {
+        size_t left_cursor = left_start;
+        size_t right_cursor = right_start;
+        while (left_cursor < left_end && right_cursor < right_end) {
+            if (left[left_cursor] < right[right_cursor]) {
+                result = -1;
+                break;
+            }
+            if (left[left_cursor] > right[right_cursor]) {
+                result = 1;
+                break;
+            }
+            left_cursor++;
+            right_cursor++;
+        }
+        if (result == 0) {
+            if (left_cursor < left_end) {
+                result = 1;
+            } else if (right_cursor < right_end) {
+                result = -1;
+            }
+        }
+    } else {
+        size_t left_digits = left_end - left_start;
+        size_t right_digits = right_end - right_start;
+        if (left_digits < right_digits) {
+            result = -1;
+        } else if (left_digits > right_digits) {
+            result = 1;
+        } else {
+            for (size_t i = 0; i < left_digits; i++) {
+                unsigned char left_digit = left[left_start + i];
+                unsigned char right_digit = right[right_start + i];
+                if (left_digit < right_digit) {
+                    result = -1;
+                    break;
+                }
+                if (left_digit > right_digit) {
+                    result = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    *left_index = left_end;
+    *right_index = right_end;
+    return result;
+}
+
+static int ptn_natcompare_bytes(
+    const unsigned char *left,
+    size_t left_len,
+    const unsigned char *right,
+    size_t right_len,
+    int fold_case
+) {
+    size_t left_index = 0;
+    size_t right_index = 0;
+    while (left_index < left_len || right_index < right_len) {
+        while (left_index < left_len && isspace(left[left_index])) {
+            left_index++;
+        }
+        while (right_index < right_len && isspace(right[right_index])) {
+            right_index++;
+        }
+
+        if (left_index >= left_len || right_index >= right_len) {
+            break;
+        }
+
+        if (isdigit(left[left_index]) && isdigit(right[right_index])) {
+            int number_result = ptn_natcompare_number(
+                left,
+                left_len,
+                &left_index,
+                right,
+                right_len,
+                &right_index
+            );
+            if (number_result != 0) {
+                return number_result;
+            }
+            continue;
+        }
+
+        int left_byte = left[left_index++];
+        int right_byte = right[right_index++];
+        if (fold_case) {
+            left_byte = ptn_ascii_lower_byte(left_byte);
+            right_byte = ptn_ascii_lower_byte(right_byte);
+        }
+        if (left_byte < right_byte) {
+            return -1;
+        }
+        if (left_byte > right_byte) {
+            return 1;
+        }
+    }
+
+    while (left_index < left_len && isspace(left[left_index])) {
+        left_index++;
+    }
+    while (right_index < right_len && isspace(right[right_index])) {
+        right_index++;
+    }
+    if (left_index < left_len) {
+        return 1;
+    }
+    if (right_index < right_len) {
+        return -1;
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_strnatcmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "strnatcmp", 1, "string1", args[0], line);
+    PtnStringOperand right = ptn_internal_expect_string_arg(runtime, "strnatcmp", 2, "string2", args[1], line);
+    int compared = ptn_natcompare_bytes(
+        (const unsigned char *)left.data,
+        left.len,
+        (const unsigned char *)right.data,
+        right.len,
+        0
+    );
+    ptn_string_operand_free(left);
+    ptn_string_operand_free(right);
+    return ptn_int(compared < 0 ? -1 : (compared > 0 ? 1 : 0));
+}
+
+static PtnValue ptn_internal_strnatcasecmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "strnatcasecmp", 1, "string1", args[0], line);
+    PtnStringOperand right = ptn_internal_expect_string_arg(runtime, "strnatcasecmp", 2, "string2", args[1], line);
+    int compared = ptn_natcompare_bytes(
+        (const unsigned char *)left.data,
+        left.len,
+        (const unsigned char *)right.data,
+        right.len,
+        1
+    );
+    ptn_string_operand_free(left);
+    ptn_string_operand_free(right);
+    return ptn_int(compared < 0 ? -1 : (compared > 0 ? 1 : 0));
+}
+
 static int ptn_compare_string_prefix_bytes(
     const unsigned char *left,
     size_t left_len,
@@ -14490,6 +14660,43 @@ static PtnValue ptn_internal_fgetcsv(PtnRuntime *runtime, size_t argc, const Ptn
     return parsed;
 }
 
+static PtnValue ptn_internal_str_getcsv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string =
+        ptn_internal_expect_string_arg(runtime, "str_getcsv", 1, "string", args[0], line);
+    char delimiter = argc >= 2
+        ? (char)ptn_csv_char_arg(runtime, "str_getcsv", 2, "separator", args[1], line, ',', 0, NULL)
+        : ',';
+    char enclosure = argc >= 3
+        ? (char)ptn_csv_char_arg(runtime, "str_getcsv", 3, "enclosure", args[2], line, '"', 0, NULL)
+        : '"';
+    int escape_enabled = 1;
+    char escape = argc >= 4
+        ? (char)ptn_csv_char_arg(runtime, "str_getcsv", 4, "escape", args[3], line, '\\', 1, &escape_enabled)
+        : '\\';
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+
+    if (string.len == 0) {
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_null());
+        ptn_string_operand_free(string);
+        return result;
+    }
+
+    PtnValue parsed = ptn_parse_csv_record(
+        string.data,
+        string.len,
+        delimiter,
+        enclosure,
+        escape_enabled,
+        escape
+    );
+    ptn_string_operand_free(string);
+    return parsed;
+}
+
 static int ptn_csv_field_needs_enclosure(
     PtnStringOperand field,
     char delimiter,
@@ -16495,6 +16702,71 @@ static char *ptn_substr_copy(const char *string, size_t start, size_t len) {
     memcpy(result, string + start, len);
     result[len] = '\0';
     return result;
+}
+
+static size_t ptn_string_span_slice_end(size_t string_len, size_t start, int has_length, int64_t length) {
+    if (!has_length) {
+        return string_len;
+    }
+    if (length >= 0) {
+        size_t requested_len = ptn_substr_clamped_positive(length, string_len);
+        size_t available_len = string_len - start;
+        if (requested_len > available_len) {
+            requested_len = available_len;
+        }
+        return start + requested_len;
+    }
+    size_t truncate_len = ptn_substr_clamped_negative_distance(length, string_len);
+    size_t end = string_len - truncate_len;
+    return end < start ? start : end;
+}
+
+static PtnValue ptn_internal_string_span(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int accept_mask_bytes
+) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, function_name, 1, "string", args[0], line);
+    PtnStringOperand mask = ptn_internal_expect_string_arg(runtime, function_name, 2, "characters", args[1], line);
+    int64_t start_value = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, function_name, 3, "offset", args[2], line)
+        : 0;
+    int has_length = argc >= 4 && ptn_value_deref(args[3]).type != PTN_NULL;
+    int64_t length_value = has_length
+        ? ptn_internal_expect_integer_arg(runtime, function_name, 4, "length", args[3], line)
+        : 0;
+
+    unsigned char table[256];
+    memset(table, 0, sizeof(table));
+    for (size_t i = 0; i < mask.len; i++) {
+        table[(unsigned char)mask.data[i]] = 1;
+    }
+
+    size_t start = ptn_substr_start_offset(string.len, start_value);
+    size_t end = ptn_string_span_slice_end(string.len, start, has_length, length_value);
+    size_t count = 0;
+    for (size_t i = start; i < end; i++) {
+        int in_mask = table[(unsigned char)string.data[i]] != 0;
+        if ((accept_mask_bytes && !in_mask) || (!accept_mask_bytes && in_mask)) {
+            break;
+        }
+        count++;
+    }
+
+    ptn_string_operand_free(string);
+    ptn_string_operand_free(mask);
+    return ptn_int((int64_t)count);
+}
+
+static PtnValue ptn_internal_strspn(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_string_span(runtime, "strspn", argc, args, line, 1);
+}
+
+static PtnValue ptn_internal_strcspn(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_string_span(runtime, "strcspn", argc, args, line, 0);
 }
 
 static PtnValue ptn_internal_substr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -21426,6 +21698,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "stat", 1, 1, ptn_internal_stat },
         { "str_contains", 2, 2, ptn_internal_str_contains },
+        { "str_getcsv", 1, 4, ptn_internal_str_getcsv },
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
         { "str_pad", 2, 4, ptn_internal_str_pad },
         { "str_repeat", 2, 2, ptn_internal_str_repeat },
@@ -21437,6 +21710,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_word_count", 1, 3, ptn_internal_str_word_count },
         { "strcasecmp", 2, 2, ptn_internal_strcasecmp },
         { "strcmp", 2, 2, ptn_internal_strcmp },
+        { "strcspn", 2, 4, ptn_internal_strcspn },
         { "stream_context_create", 0, 2, ptn_internal_stream_context_create },
         { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
         { "stream_filter_append", 2, 4, ptn_internal_stream_filter_append },
@@ -21450,9 +21724,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stripslashes", 1, 1, ptn_internal_stripslashes },
         { "stristr", 2, 3, ptn_internal_stristr },
         { "strlen", 1, 1, ptn_internal_strlen },
+        { "strnatcasecmp", 2, 2, ptn_internal_strnatcasecmp },
+        { "strnatcmp", 2, 2, ptn_internal_strnatcmp },
         { "strncasecmp", 3, 3, ptn_internal_strncasecmp },
         { "strncmp", 3, 3, ptn_internal_strncmp },
         { "strpbrk", 2, 2, ptn_internal_strpbrk },
+        { "strspn", 2, 4, ptn_internal_strspn },
         { "strpos", 2, 3, ptn_internal_strpos },
         { "strrchr", 2, 3, ptn_internal_strrchr },
         { "strrev", 1, 1, ptn_internal_strrev },

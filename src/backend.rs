@@ -8031,6 +8031,24 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::String("\n")),
         },
     ];
+    static STR_GETCSV_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "separator",
+            default: Some(InternalParameterDefault::String(",")),
+        },
+        InternalParameterSpec {
+            name: "enclosure",
+            default: Some(InternalParameterDefault::String("\"")),
+        },
+        InternalParameterSpec {
+            name: "escape",
+            default: Some(InternalParameterDefault::String("\\")),
+        },
+    ];
 
     if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
@@ -8040,6 +8058,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&FGETCSV_PARAMETERS)
     } else if name.eq_ignore_ascii_case("fputcsv") {
         Some(&FPUTCSV_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("str_getcsv") {
+        Some(&STR_GETCSV_PARAMETERS)
     } else {
         None
     }
