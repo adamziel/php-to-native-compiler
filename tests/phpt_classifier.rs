@@ -1490,71 +1490,64 @@ fn phpt_baseline_full_scope_generates_all_family_manifests() {
 }
 
 #[test]
-fn phpt_campaign_report_gate_rejects_short_and_duplicate_reports() {
+fn phpt_campaign_report_gate_accepts_only_ported_passed_table() {
     let root = temp_dir("ptn-campaign-report-gate");
-    let report_a = root.join("report-a.md");
-    let report_b = root.join("report-b.md");
-    let short_report = root.join("short.md");
-    let duplicate_report = root.join("duplicate.md");
+    let valid_report = root.join("valid.md");
+    let prose_report = root.join("prose.md");
+    let extra_column_report = root.join("extra-column.md");
 
     fs::write(
-        &report_a,
-        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron",
+        &valid_report,
+        "| Ported Tests | Passed Tests |\n| --- | ---: |\n| 21867 | 383 |\n",
     )
-    .expect("write report a");
+    .expect("write valid report");
     fs::write(
-        &report_b,
-        "red blue green yellow violet orange silver copper bronze steel quartz granite marble slate",
+        &prose_report,
+        "# PHPT campaign\n\n| Ported Tests | Passed Tests |\n| --- | --- |\n| 1000 | 383 |\n",
     )
-    .expect("write report b");
-    fs::write(&short_report, "alpha beta gamma").expect("write short report");
+    .expect("write prose report");
     fs::write(
-        &duplicate_report,
-        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron",
+        &extra_column_report,
+        "| Ported Tests | Passed Tests | Notes |\n| --- | --- | --- |\n| 1000 | 383 | classified |\n",
     )
-    .expect("write duplicate report");
+    .expect("write extra-column report");
 
     let ok = Command::new("bash")
         .arg("tools/check-phpt-campaign-reports.sh")
-        .arg(&report_a)
-        .arg(&report_b)
-        .env("PTN_CAMPAIGN_REPORT_MIN_WORDS", "10")
+        .arg(&valid_report)
         .output()
         .expect("run report gate success case");
     assert!(
         ok.status.success(),
-        "report gate should accept distinct reports: stdout={}\nstderr={}",
+        "report gate should accept table-only reports: stdout={}\nstderr={}",
         String::from_utf8_lossy(&ok.stdout),
         String::from_utf8_lossy(&ok.stderr)
     );
 
-    let short = Command::new("bash")
+    let prose = Command::new("bash")
         .arg("tools/check-phpt-campaign-reports.sh")
-        .arg(&short_report)
-        .env("PTN_CAMPAIGN_REPORT_MIN_WORDS", "10")
+        .arg(&prose_report)
         .output()
-        .expect("run report gate short case");
+        .expect("run report gate prose case");
     assert!(
-        !short.status.success()
-            && String::from_utf8_lossy(&short.stderr).contains("report too short"),
-        "report gate should reject short reports: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&short.stdout),
-        String::from_utf8_lossy(&short.stderr)
+        !prose.status.success()
+            && String::from_utf8_lossy(&prose.stderr).contains("report must be table-only"),
+        "report gate should reject prose reports: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&prose.stdout),
+        String::from_utf8_lossy(&prose.stderr)
     );
 
-    let duplicate = Command::new("bash")
+    let extra_column = Command::new("bash")
         .arg("tools/check-phpt-campaign-reports.sh")
-        .arg(&report_a)
-        .arg(&duplicate_report)
-        .env("PTN_CAMPAIGN_REPORT_MIN_WORDS", "10")
+        .arg(&extra_column_report)
         .output()
-        .expect("run report gate duplicate case");
+        .expect("run report gate extra-column case");
     assert!(
-        !duplicate.status.success()
-            && String::from_utf8_lossy(&duplicate.stderr)
-                .contains("reports are identical after normalization"),
-        "report gate should reject duplicate reports: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&duplicate.stdout),
-        String::from_utf8_lossy(&duplicate.stderr)
+        !extra_column.status.success()
+            && String::from_utf8_lossy(&extra_column.stderr)
+                .contains("only Ported Tests and Passed Tests columns"),
+        "report gate should reject extra columns: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&extra_column.stdout),
+        String::from_utf8_lossy(&extra_column.stderr)
     );
 }

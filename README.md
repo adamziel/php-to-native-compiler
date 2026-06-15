@@ -192,9 +192,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Full-corpus PHPT telemetry uses `tools/run-phpt-baseline.sh --scope full` to
   inventory every local php-src `.phpt` row and write deterministic
   1k/5k/10k/20k/all manifests bucketed across the full extension/SAPI/core
-  corpus. `tools/check-phpt-campaign-reports.sh` gates campaign report
-  documents so generated evidence reports are long-form, distinct, and not
-  left as templates.
+  corpus. `tools/check-phpt-campaign-reports.sh` gates PHPT campaign progress
+  reports so they are table-only and contain only ported-test and passed-test
+  counts.
 - Focused string/scalar alias telemetry covers quiet string-offset
   `isset()`/`empty()` diagnostics, numeric string offsets, string-offset COW,
   concat-assignment aliasing, and classified blocker rows for unsupported

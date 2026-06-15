@@ -37,8 +37,8 @@ and other top-level roots), and writes deterministic
 `phpt-full-corpus-all.txt` manifests. The existing broad mode remains the
 default and continues to generate the legacy Zend/ext-standard/core 1k/5k/10k
 family. `tools/check-phpt-campaign-reports.sh` adds the campaign report gate:
-reports must exist, meet the 1,000-word default minimum, avoid obvious draft or
-template markers, and be distinct from other reports in the same gate run.
+reports must be markdown-table-only and contain only ported-test and
+passed-test counts.
 
 Before this task, `tools/run-phpt-baseline.sh` only generated the broad family
 from 10,074 selected-source rows (`Zend/tests`, `ext/standard/tests`, and
