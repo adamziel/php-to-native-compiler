@@ -1,0 +1,34 @@
+# Broad 1k user-comparator sort rows for ptn-vq7w.
+#
+# These rows share the usort()/uasort()/uksort() by-reference array mutation
+# and user-callback comparison surface. Paths are relative to PHP_SRC_PHPT.
+#
+# Run:
+#   tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-vq7w-user-comparator-sort-row-pack.txt
+
+ext/standard/tests/array/sort/uasort_basic1.phpt
+ext/standard/tests/array/sort/uasort_basic2.phpt
+ext/standard/tests/array/sort/uasort_object1.phpt
+ext/standard/tests/array/sort/uasort_object2.phpt
+ext/standard/tests/array/sort/uasort_variation10.phpt
+ext/standard/tests/array/sort/uasort_variation11.phpt
+ext/standard/tests/array/sort/uasort_variation3.phpt
+ext/standard/tests/array/sort/uasort_variation4.phpt
+ext/standard/tests/array/sort/uasort_variation5.phpt
+ext/standard/tests/array/sort/uasort_variation6.phpt
+ext/standard/tests/array/sort/uasort_variation7.phpt
+ext/standard/tests/array/sort/uasort_variation8.phpt
+ext/standard/tests/array/sort/uksort_basic.phpt
+ext/standard/tests/array/sort/usort_basic.phpt
+ext/standard/tests/array/sort/usort_object1.phpt
+ext/standard/tests/array/sort/usort_object2.phpt
+ext/standard/tests/array/sort/usort_stability.phpt
+ext/standard/tests/array/sort/usort_variation10.phpt
+ext/standard/tests/array/sort/usort_variation11.phpt
+ext/standard/tests/array/sort/usort_variation3.phpt
+ext/standard/tests/array/sort/usort_variation4.phpt
+ext/standard/tests/array/sort/usort_variation5.phpt
+ext/standard/tests/array/sort/usort_variation6.phpt
+ext/standard/tests/array/sort/usort_variation7.phpt
+ext/standard/tests/array/sort/usort_variation8.phpt
+ext/standard/tests/array/sort/usort_variation9.phpt

@@ -17182,7 +17182,10 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php shuffle([1, 2, 3]);", "shuffle"),
         ("<?php sort([3, 2, 1]);", "sort"),
         ("<?php uasort([3, 2, 1], \"strcmp\");", "uasort"),
-        ("<?php uksort([3 => \"c\", 1 => \"a\"], \"strcmp\");", "uksort"),
+        (
+            "<?php uksort([3 => \"c\", 1 => \"a\"], \"strcmp\");",
+            "uksort",
+        ),
         ("<?php usort([3, 2, 1], \"strcmp\");", "usort"),
         ("<?php rsort([3, 2, 1]);", "rsort"),
     ] {
@@ -17950,6 +17953,88 @@ var_dump(SORT_REGULAR, defined(\"SORT_REGULAR\"), constant(\"SORT_REGULAR\"));",
     assert!(c_source.contains("ptn_runtime_array_ksort_variable"));
     assert!(c_source.contains("ptn_runtime_array_krsort_variable"));
     assert!(c_source.contains("ptn_runtime_array_rsort_variable"));
+}
+
+#[test]
+fn compile_user_comparator_sort_mutators_to_native_binary() {
+    let root = temp_dir("ptn-native-user-comparator-sort-mutators");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-comparator-sort-mutators.php");
+    let output = root.join("user-comparator-sort-mutators-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function cmp($left, $right) {\n\
+    if ($left == $right) {\n\
+        return 0;\n\
+    }\n\
+    return $left < $right ? -1 : 1;\n\
+}\n\
+$source = [\"b\" => 3, \"a\" => 1, \"c\" => 2];\n\
+$copy = $source;\n\
+var_dump(usort($copy, \"cmp\"));\n\
+foreach ($copy as $key => $value) { echo \"u\", $key, \"=\", $value, \"\\n\"; }\n\
+foreach ($source as $key => $value) { echo \"s\", $key, \"=\", $value, \"\\n\"; }\n\
+$assoc = [\"b\" => 3, \"a\" => 1, \"c\" => 2];\n\
+var_dump(uasort($assoc, \"cmp\"));\n\
+foreach ($assoc as $key => $value) { echo \"a\", $key, \"=\", $value, \"\\n\"; }\n\
+$keys = [3 => \"c\", 1 => \"a\", 2 => \"b\"];\n\
+var_dump(uksort($keys, \"cmp\"));\n\
+foreach ($keys as $key => $value) { echo \"k\", $key, \"=\", $value, \"\\n\"; }\n\
+$dynamic = \"usort\";\n\
+$dynamic_source = [2, 1];\n\
+$dynamic_copy = $dynamic_source;\n\
+var_dump($dynamic($dynamic_copy, \"cmp\"));\n\
+foreach ($dynamic_copy as $key => $value) { echo \"d\", $key, \"=\", $value, \"\\n\"; }\n\
+foreach ($dynamic_source as $key => $value) { echo \"o\", $key, \"=\", $value, \"\\n\"; }\n\
+$referenced = [\"z\" => 3, \"y\" => 2];\n\
+call_user_func_array(\"uasort\", [&$referenced, \"cmp\"]);\n\
+foreach ($referenced as $key => $value) { echo \"r\", $key, \"=\", $value, \"\\n\"; }\n\
+var_dump(function_exists(\"usort\"), function_exists(\"uasort\"), function_exists(\"uksort\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "u0=1\n",
+            "u1=2\n",
+            "u2=3\n",
+            "sb=3\n",
+            "sa=1\n",
+            "sc=2\n",
+            "bool(true)\n",
+            "aa=1\n",
+            "ac=2\n",
+            "ab=3\n",
+            "bool(true)\n",
+            "k1=a\n",
+            "k2=b\n",
+            "k3=c\n",
+            "bool(true)\n",
+            "d0=1\n",
+            "d1=2\n",
+            "o0=2\n",
+            "o1=1\n",
+            "ry=2\n",
+            "rz=3\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_usort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_uasort_variable"));
+    assert!(c_source.contains("ptn_runtime_array_uksort_variable"));
+    assert!(c_source.contains("ptn_array_user_sort_entries"));
 }
 
 #[test]
