@@ -2959,3 +2959,12 @@ downgrading to that stale broad count.
 | --- | ---: | ---: |
 | Final rebased class_alias bucket (`.runtime/ptn-vvpn-class-alias-after-rebased-final/summary-20260615T184412Z.txt`) | 38 selected / 33 runnable | 13 |
 | Integrated focused merge run (`.runtime/merge-ptn-vvpn-class-alias/summary-20260615T190216Z.txt`) | 38 selected / 33 runnable | 13 |
+
+## 2026-06-15 ptn-snt7 Object/Class Metadata Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Baseline focused pack on `origin/master` (`.runtime/ptn-snt7-final-before/summary-20260615T201932Z.txt`) | 8 selected / 8 runnable | 0 |
+| Final focused pack after rebase (`.runtime/ptn-snt7-final-after-rebased2/summary-20260615T202458Z.txt`) | 8 selected / 8 runnable | 8 |
+| Candidate object/class pack (`.runtime/ptn-snt7-candidate-current/summary-20260615T200757Z.txt`) | 111 selected / 105 runnable | 105 |
+| Legacy `var` full-corpus pack (`.runtime/ptn-snt7-legacy-var-current/summary-20260615T200757Z.txt`) | 86 selected / 30 runnable | 18 |

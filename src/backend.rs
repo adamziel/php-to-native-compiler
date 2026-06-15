@@ -9141,6 +9141,68 @@ fn const_array_unpack_operand_short_circuits(value: &ValueExpr) -> bool {
     )
 }
 
+fn array_element_runtime_line(element: &IrArrayElement) -> usize {
+    element
+        .key
+        .as_ref()
+        .and_then(value_expr_runtime_line)
+        .unwrap_or(element.line)
+}
+
+fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
+    let line = match value {
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null => 0,
+        ValueExpr::Closure { line, .. }
+        | ValueExpr::Load { line, .. }
+        | ValueExpr::LegacyDollarBraceStringVariable { line, .. }
+        | ValueExpr::DynamicVariable { line, .. }
+        | ValueExpr::IncDec { line, .. }
+        | ValueExpr::Constant { line, .. }
+        | ValueExpr::MagicConstant { line, .. }
+        | ValueExpr::ArrayAccess { line, .. }
+        | ValueExpr::ArrayAppendAccess { line, .. }
+        | ValueExpr::Include { line, .. }
+        | ValueExpr::Throw { line, .. }
+        | ValueExpr::Yield { line, .. }
+        | ValueExpr::InternalCall { line, .. }
+        | ValueExpr::FirstClassCallable { line, .. }
+        | ValueExpr::DynamicCall { line, .. }
+        | ValueExpr::MethodCall { line, .. }
+        | ValueExpr::DynamicMethodCall { line, .. }
+        | ValueExpr::NewObject { line, .. }
+        | ValueExpr::DynamicNewObject { line, .. }
+        | ValueExpr::Clone { line, .. }
+        | ValueExpr::PropertyFetch { line, .. }
+        | ValueExpr::DynamicPropertyFetch { line, .. }
+        | ValueExpr::StaticPropertyFetch { line, .. }
+        | ValueExpr::ClassConstantFetch { line, .. }
+        | ValueExpr::DynamicClassNameFetch { line, .. }
+        | ValueExpr::InstanceOf { line, .. }
+        | ValueExpr::Unary { line, .. }
+        | ValueExpr::Cast { line, .. }
+        | ValueExpr::Binary { line, .. }
+        | ValueExpr::Ternary { line, .. }
+        | ValueExpr::Match { line, .. } => *line,
+        ValueExpr::Assign { target, .. } | ValueExpr::AssignRef { target, .. } => target.line(),
+        ValueExpr::Array(elements) => elements
+            .iter()
+            .map(array_element_runtime_line)
+            .find(|line| *line != 0)
+            .unwrap_or(0),
+        ValueExpr::Isset { targets } => targets
+            .iter()
+            .find_map(value_expr_runtime_line)
+            .unwrap_or(0),
+        ValueExpr::Empty { target } => value_expr_runtime_line(target).unwrap_or(0),
+        ValueExpr::Print { expression } => value_expr_runtime_line(expression).unwrap_or(0),
+    };
+    (line != 0).then_some(line)
+}
+
 fn static_call_receiver_class_name(call_name: &str, function: &FunctionDecl) -> Option<String> {
     if !function.is_static {
         return None;
@@ -14548,10 +14610,22 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        if elements
+        let first_runtime_line = elements
+            .iter()
+            .map(array_element_runtime_line)
+            .find(|line| *line != 0)
+            .unwrap_or(0);
+        let has_split_runtime_lines = first_runtime_line != 0
+            && elements
+                .iter()
+                .map(array_element_runtime_line)
+                .any(|line| line != 0 && line != first_runtime_line);
+        let requires_incremental_literal = elements
             .iter()
             .any(|element| matches!(element.value, IrArrayElementValue::Unpack { .. }))
-        {
+            || has_split_runtime_lines;
+
+        if requires_incremental_literal {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
@@ -14575,7 +14649,9 @@ impl ValueEmitter {
                         };
                         out.push_str("    ptn_array_literal_append_entry(&runtime, ");
                         out.push_str(&result_temp);
-                        out.push_str(".as.array, runtime.call_site_line, ");
+                        out.push_str(".as.array, ");
+                        out.push_str(&array_element_runtime_line(element).to_string());
+                        out.push_str(", ");
                         out.push_str(has_key);
                         out.push_str(", ");
                         out.push_str(&key_temp);
@@ -14640,6 +14716,11 @@ impl ValueEmitter {
         }
 
         let entries_temp = self.next_temp();
+        let array_line = elements
+            .iter()
+            .map(array_element_runtime_line)
+            .find(|line| *line != 0)
+            .unwrap_or(0);
         out.push_str("    PtnArrayLiteralEntry ");
         out.push_str(&entries_temp);
         out.push_str("[] = { ");
@@ -14647,7 +14728,9 @@ impl ValueEmitter {
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_array_from_literal_entries_at(&runtime, runtime.call_site_line, ");
+        out.push_str(" = ptn_array_from_literal_entries_at(&runtime, ");
+        out.push_str(&array_line.to_string());
+        out.push_str(", ");
         out.push_str(&elements.len().to_string());
         out.push_str(", ");
         out.push_str(&entries_temp);

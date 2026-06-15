@@ -4102,6 +4102,142 @@ class Box {
 }
 
 #[test]
+fn compile_legacy_var_property_modifier_to_native_binary() {
+    let program = parser::parse(
+        "<?php
+class Box {
+    var $member;
+}
+",
+    )
+    .unwrap();
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].properties.len(), 1);
+    assert_eq!(
+        program.classes[0].properties[0].visibility,
+        PropertyVisibility::Public
+    );
+    assert!(program.classes[0].properties[0].type_hint.is_none());
+
+    let root = temp_dir("ptn-native-legacy-var-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("legacy-var-property.php");
+    let output = root.join("legacy-var-property-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ParentClass {}
+class ChildClass extends ParentClass {
+    var $parent_obj;
+    public function __construct() {
+        $this->parent_obj = new ParentClass();
+    }
+    public function label() {
+        return get_class($this->parent_obj);
+    }
+}
+echo (new ChildClass())->label(), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ParentClass\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_keyword_object_property_names_to_native_binary() {
+    let root = temp_dir("ptn-native-keyword-property-names");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("keyword-property-names.php");
+    let output = root.join("keyword-property-names-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Box {
+    var $const = "const";
+    var $function = "function";
+    var $and = "and";
+    var $int = "int";
+}
+$box = new Box();
+echo $box->const, "|", $box->function, "|", $box->and, "|", $box->int, "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "const|function|and|int\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_rejects_duplicate_class_property_names() {
+    let error = parser::parse("<?php class Test { var $value; public $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare Test::$value");
+
+    let error =
+        parser::parse("<?php class Test { public static $value; public $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare Test::$value");
+}
+
+#[test]
+fn compile_resource_array_key_warning_uses_source_path_to_native_binary() {
+    let root = temp_dir("ptn-native-resource-key-source-path");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("resource-key-source-path.php");
+    let output = root.join("resource-key-source-path-bin");
+    fs::write(
+        &input,
+        "<?php\n$items = [STDERR => 'resource'];\nvar_dump($items);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(&format!(
+            "Warning: Resource ID#3 used as offset, casting to integer (3) in {} on line 2",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[3]=>\n  string(8) \"resource\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_asymmetric_property_visibility_metadata() {
     let program = parser::parse(
         "<?php
@@ -4675,6 +4811,40 @@ class Worker {
     assert_eq!(
         program.classes[0].methods[0].trait_name.as_deref(),
         Some("SharedBehavior")
+    );
+}
+
+#[test]
+fn parser_allows_trait_imported_abstract_methods_in_concrete_class() {
+    let program = parser::parse(
+        "<?php
+trait TraitWithAbstract {
+    abstract public function fromTrait();
+}
+class TraitWorks {
+    use TraitWithAbstract;
+}
+abstract class Base {
+    abstract public function directAbstract();
+}",
+    )
+    .unwrap();
+
+    assert_eq!(
+        program.classes[0].methods[0].trait_name.as_deref(),
+        Some("TraitWithAbstract")
+    );
+
+    let error = parser::parse(
+        "<?php
+class NotAbstract {
+    abstract public function directAbstract();
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Class NotAbstract declares abstract method directAbstract() and must therefore be declared abstract"
     );
 }
 
