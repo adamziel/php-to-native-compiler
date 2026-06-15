@@ -443,6 +443,17 @@ static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const ch
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_notice(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
+        return;
+    }
+    fputs("Notice: ", stdout);
+    fputs(message, stdout);
+    fputs(" in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static PTN_UNUSED void ptn_emit_runtime_warning(PtnRuntime *runtime, const char *message, size_t line) {
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
