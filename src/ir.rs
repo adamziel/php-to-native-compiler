@@ -115,6 +115,7 @@ pub struct FunctionDecl {
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
     pub is_anonymous: bool,
+    pub initially_declared: bool,
     pub body: Vec<Instruction>,
 }
 
@@ -176,6 +177,9 @@ pub enum Instruction {
     },
     BindGlobal {
         name: String,
+    },
+    DeclareFunction {
+        function_index: usize,
     },
     UnsetArrayDim {
         array: String,
@@ -378,6 +382,14 @@ pub enum ValueExpr {
     MethodCall {
         receiver: Box<ValueExpr>,
         name: String,
+        arguments: Vec<ValueExpr>,
+        argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
+        line: usize,
+    },
+    DynamicMethodCall {
+        receiver: Box<ValueExpr>,
+        name: Box<ValueExpr>,
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
@@ -792,8 +804,17 @@ impl<'a> LoweringContext<'a> {
             return_type: function.return_type.clone().map(lower_type_hint),
             return_by_ref: function.return_by_ref,
             is_anonymous: false,
+            initially_declared: !function.is_conditionally_declared,
             body: Vec::new(),
         });
+    }
+
+    fn function_index_by_name(&self, name: &str) -> Option<usize> {
+        self.functions.iter().position(|function| {
+            function.class_name.is_none()
+                && !function.is_anonymous
+                && function.name.eq_ignore_ascii_case(name)
+        })
     }
 
     fn lower_include_source(&mut self, include: &IncludeSource) -> IncludeFile {
@@ -829,6 +850,7 @@ impl<'a> LoweringContext<'a> {
             return_type: function.return_type.clone().map(lower_type_hint),
             return_by_ref: function.return_by_ref,
             is_anonymous: true,
+            initially_declared: true,
             body: Vec::new(),
         });
         let body = self.lower_statements(&function.body);
@@ -896,6 +918,7 @@ impl<'a> LoweringContext<'a> {
                     return_type: method.return_type.clone().map(lower_type_hint),
                     return_by_ref: method.return_by_ref,
                     is_anonymous: false,
+                    initially_declared: true,
                     body: Vec::new(),
                 });
                 let previous_class_name =
@@ -932,7 +955,12 @@ impl<'a> LoweringContext<'a> {
         let mut instructions = Vec::new();
         for statement in statements {
             match statement {
-                Statement::Empty { .. } => {}
+                Statement::Empty { .. } | Statement::ClassDeclaration { .. } => {}
+                Statement::FunctionDeclaration { name, .. } => {
+                    if let Some(function_index) = self.function_index_by_name(name) {
+                        instructions.push(Instruction::DeclareFunction { function_index });
+                    }
+                }
                 Statement::Assign {
                     name,
                     op,
@@ -1817,6 +1845,24 @@ impl<'a> LoweringContext<'a> {
                 argument_unpacks: argument_unpacks.clone(),
                 line: span.line,
             },
+            Expr::DynamicMethodCall {
+                receiver,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                span,
+            } => ValueExpr::DynamicMethodCall {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: Box::new(self.lower_expr(name)),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.lower_expr(argument))
+                    .collect(),
+                argument_names: argument_names.clone(),
+                argument_unpacks: argument_unpacks.clone(),
+                line: span.line,
+            },
             Expr::NewObject {
                 class_name,
                 arguments,
@@ -2092,6 +2138,17 @@ fn assertion_expr_text(expr: &Expr) -> String {
             name,
             assertion_argument_list_text(arguments)
         ),
+        Expr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => format!(
+            "{}->{{{}}}({})",
+            assertion_expr_text(receiver),
+            assertion_expr_text(name),
+            assertion_argument_list_text(arguments)
+        ),
         Expr::NewObject {
             class_name,
             arguments,
@@ -2205,8 +2262,47 @@ fn assertion_expr_text(expr: &Expr) -> String {
             }
         }
         Expr::Grouped { expr, .. } => format!("({})", assertion_expr_text(expr)),
-        Expr::AnonymousFunction(_) => "function()".to_string(),
+        Expr::AnonymousFunction(function) => assertion_anonymous_function_text(function),
     }
+}
+
+fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String {
+    let body = function
+        .body
+        .iter()
+        .filter_map(|statement| assertion_statement_text(statement, "    "))
+        .collect::<Vec<_>>();
+    if body.is_empty() {
+        return "function()".to_string();
+    }
+    format!("function () {{\n{}\n\n}}", body.join("\n"))
+}
+
+fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<String> {
+    match statement {
+        Statement::ClassDeclaration { source, span } => {
+            Some(assertion_source_block_text(source, span.column, indent))
+        }
+        Statement::Empty { .. } => None,
+        _ => None,
+    }
+}
+
+fn assertion_source_block_text(source: &str, source_column: usize, indent: &str) -> String {
+    let source_indent = source_column.saturating_sub(1);
+    source
+        .lines()
+        .enumerate()
+        .map(|(index, line)| {
+            let line = if index == 0 {
+                line
+            } else {
+                line.get(source_indent..).unwrap_or(line)
+            };
+            format!("{indent}{line}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn assertion_float_text(value: f64) -> String {

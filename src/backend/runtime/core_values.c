@@ -505,6 +505,7 @@ struct PtnRuntime {
     PtnClassScopeAllowsHandler class_scope_allows;
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
     PtnMagicPropertyReadHandler magic_property_read;
+    int *declared_user_functions;
     const char *source_path;
     const char *current_function_name;
     const char *current_class_name;

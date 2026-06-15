@@ -88,6 +88,23 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    if !module.functions.is_empty() {
+        out.push_str("    static int ptn_declared_user_functions[");
+        out.push_str(&module.functions.len().to_string());
+        out.push_str("] = { ");
+        for (index, function) in module.functions.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(if function.initially_declared {
+                "1"
+            } else {
+                "0"
+            });
+        }
+        out.push_str(" };\n");
+        out.push_str("    runtime.declared_user_functions = ptn_declared_user_functions;\n");
+    }
     if module.strict_types {
         out.push_str("    runtime.strict_types = 1;\n");
     }
@@ -1236,21 +1253,26 @@ fn emit_user_function_dispatch(
     functions: &[FunctionDecl],
     classes: &[ClassDecl],
 ) {
-    out.push_str("\nstatic int ptn_user_function_exists(const char *name) {\n");
+    out.push_str(
+        "\nstatic int ptn_user_function_exists(PtnRuntime *runtime, const char *name) {\n",
+    );
     if functions
         .iter()
         .all(|function| function.is_anonymous || function.class_name.is_some())
     {
+        out.push_str("    (void)runtime;\n");
         out.push_str("    (void)name;\n");
     }
-    for function in functions {
+    for (index, function) in functions.iter().enumerate() {
         if function.is_anonymous || function.class_name.is_some() {
             continue;
         }
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&function.name));
         out.push_str("\")) {\n");
-        out.push_str("        return 1;\n");
+        out.push_str("        return runtime->declared_user_functions == NULL || runtime->declared_user_functions[");
+        out.push_str(&index.to_string());
+        out.push_str("];\n");
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
@@ -1360,6 +1382,11 @@ fn emit_user_function_dispatch(
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&function.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (runtime->declared_user_functions != NULL && !runtime->declared_user_functions[");
+        out.push_str(&index.to_string());
+        out.push_str("]) {\n");
+        out.push_str("            return ptn_null();\n");
+        out.push_str("        }\n");
         out.push_str("        *found = 1;\n");
         if function.is_static {
             if let Some((declaring_class, method_name, visibility)) =
@@ -2450,7 +2477,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
     out.push_str("        if (!valid) {\n");
-    out.push_str("            valid = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;\n");
+    out.push_str("            valid = ptn_user_function_exists(runtime, name) || ptn_find_internal_function(name) != NULL;\n");
     out.push_str("        }\n");
     out.push_str("        free(name);\n");
     out.push_str("        return valid;\n");
@@ -3147,6 +3174,13 @@ fn emit_instruction(
             out.push_str(&c_string(name));
             out.push_str("\");\n");
         }
+        Instruction::DeclareFunction { function_index } => {
+            out.push_str("    if (runtime.declared_user_functions != NULL) {\n");
+            out.push_str("        runtime.declared_user_functions[");
+            out.push_str(&function_index.to_string());
+            out.push_str("] = 1;\n");
+            out.push_str("    }\n");
+        }
         Instruction::UnsetArrayDim {
             array,
             dimensions,
@@ -3221,7 +3255,7 @@ fn emit_instruction(
             let assigned_temp = values.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&assigned_temp);
-            out.push_str(" = ptn_object_write_property(&runtime, ");
+            out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", \"");
             out.push_str(&c_string(name));
@@ -4174,6 +4208,7 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         }
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
+        | Instruction::DeclareFunction { .. }
         | Instruction::Break { .. }
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
@@ -4417,6 +4452,18 @@ fn collect_value_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
             }
         }
+        ValueExpr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+            for argument in arguments {
+                collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
+            }
+        }
         ValueExpr::PropertyFetch { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
@@ -4551,7 +4598,9 @@ fn collect_instruction_runtime_requirements(
         Instruction::Increment { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
         }
-        Instruction::UnsetVariable { .. } | Instruction::BindGlobal { .. } => {}
+        Instruction::UnsetVariable { .. }
+        | Instruction::BindGlobal { .. }
+        | Instruction::DeclareFunction { .. } => {}
         Instruction::UnsetDynamicVariable { name, .. } => {
             collect_value_runtime_requirements(name, functions, requirements);
         }
@@ -4917,6 +4966,19 @@ fn collect_value_runtime_requirements(
                 requirements.internal_function_dispatch = true;
                 requirements.dynamic_function_dispatch = true;
             }
+        }
+        ValueExpr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            collect_value_runtime_requirements(name, functions, requirements);
+            for argument in arguments {
+                collect_value_runtime_requirements(argument, functions, requirements);
+            }
+            requirements.method_dispatch = true;
         }
         ValueExpr::NewObject {
             class_name,
@@ -6048,6 +6110,18 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .iter()
                     .any(|argument| value_mentions_variable(argument, name))
         }
+        ValueExpr::DynamicMethodCall {
+            receiver,
+            name: method_name,
+            arguments,
+            ..
+        } => {
+            value_mentions_variable(receiver, name)
+                || value_mentions_variable(method_name, name)
+                || arguments
+                    .iter()
+                    .any(|argument| value_mentions_variable(argument, name))
+        }
         ValueExpr::PropertyFetch { receiver, .. }
         | ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             value_mentions_variable(receiver, name)
@@ -7073,7 +7147,7 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
-        out.push_str(" = ptn_object_write_property(&runtime, ");
+        out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -7158,7 +7232,7 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
-        out.push_str(" = ptn_object_write_property(&runtime, ");
+        out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -8367,6 +8441,22 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
             } => self.emit_method_call(
+                out,
+                receiver,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            ),
+            ValueExpr::DynamicMethodCall {
+                receiver,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                line,
+            } => self.emit_dynamic_method_call(
                 out,
                 receiver,
                 name,
@@ -10995,6 +11085,7 @@ impl ValueEmitter {
                 | ValueExpr::Empty { .. }
                 | ValueExpr::Ternary { .. }
                 | ValueExpr::MethodCall { .. }
+                | ValueExpr::DynamicMethodCall { .. }
                 | ValueExpr::Clone { .. }
                 | ValueExpr::StaticPropertyFetch { .. }
                 | ValueExpr::ClassConstantFetch { .. }
@@ -12542,6 +12633,136 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
+    }
+
+    fn emit_dynamic_method_call(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &ValueExpr,
+        arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
+        line: usize,
+    ) -> String {
+        if argument_names.iter().any(Option::is_some) {
+            let result_temp = self.next_temp();
+            self.emit_fatal_value(
+                out,
+                &result_temp,
+                "named arguments currently support user-defined functions",
+            );
+            return result_temp;
+        }
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let name_temp = self.emit_materialized_value(out, name);
+        let method_name_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&method_name_temp);
+        out.push_str(" = ptn_value_to_string(ptn_value_deref(");
+        out.push_str(&name_temp);
+        out.push_str("));\n");
+        let result_temp = self.next_temp();
+        if argument_unpacks.iter().any(|unpack| *unpack) {
+            let args_temp = self.emit_call_arguments_builder(
+                out,
+                "dynamic method call",
+                arguments,
+                argument_unpacks,
+                line,
+                true,
+            );
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", ");
+            out.push_str(&method_name_temp);
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(".len, ");
+            out.push_str(&args_temp);
+            out.push_str(".values, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+            out.push_str("    free(");
+            out.push_str(&method_name_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &name_temp);
+            emit_value_cleanup(out, "    ", &receiver_temp);
+            return result_temp;
+        }
+        if arguments.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", ");
+            out.push_str(&method_name_temp);
+            out.push_str(", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    free(");
+            out.push_str(&method_name_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &name_temp);
+            emit_value_cleanup(out, "    ", &receiver_temp);
+            return result_temp;
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len());
+        let mut unwrap_append_reference_temps = Vec::new();
+        for argument in arguments {
+            let temp = self.emit_dynamic_call_argument(out, argument);
+            if value_is_append_reference_target(argument) {
+                unwrap_append_reference_temps.push(temp.clone());
+            }
+            temps.push(temp);
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_call_declared_method(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", ");
+        out.push_str(&method_name_temp);
+        out.push_str(", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for temp in &unwrap_append_reference_temps {
+            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        }
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        out.push_str("    free(");
+        out.push_str(&method_name_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &name_temp);
         emit_value_cleanup(out, "    ", &receiver_temp);
         result_temp
     }

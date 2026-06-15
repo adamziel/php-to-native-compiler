@@ -38,6 +38,7 @@ const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
 pub fn parse(source: &str) -> Result<Program> {
     let tokens = lex(source)?;
     Parser {
+        source,
         tokens,
         index: 0,
         block_depth: 0,
@@ -49,6 +50,7 @@ pub fn parse(source: &str) -> Result<Program> {
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
         anonymous_classes: Vec::new(),
+        nested_functions: Vec::new(),
         anonymous_class_name_counts: HashMap::new(),
         allow_append_array_read: false,
         return_by_ref_stack: Vec::new(),
@@ -57,7 +59,8 @@ pub fn parse(source: &str) -> Result<Program> {
     .parse_program()
 }
 
-struct Parser {
+struct Parser<'a> {
+    source: &'a str,
     tokens: Vec<Token>,
     index: usize,
     block_depth: usize,
@@ -69,6 +72,7 @@ struct Parser {
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
     anonymous_classes: Vec<ClassDecl>,
+    nested_functions: Vec<FunctionDecl>,
     anonymous_class_name_counts: HashMap<String, usize>,
     allow_append_array_read: bool,
     return_by_ref_stack: Vec<bool>,
@@ -163,7 +167,7 @@ enum ParsedClassMember {
     Constants(Vec<ClassConstantDecl>),
 }
 
-impl Parser {
+impl Parser<'_> {
     fn parse_program(&mut self) -> Result<Program> {
         if matches!(self.peek().kind, TokenKind::OpenTag) {
             self.expect_open_tag()?;
@@ -182,6 +186,7 @@ impl Parser {
             &mut statements,
             TopLevelScope::Program,
         )?;
+        functions.append(&mut self.nested_functions);
         classes.append(&mut self.anonymous_classes);
         validate_class_names(&classes)?;
         validate_parent_class_names(&classes)?;
@@ -901,7 +906,11 @@ impl Parser {
                 }
             }
         }
-        self.expect_right_brace()?;
+        let right_span = self.expect_right_brace()?;
+        let span = combine_spans(
+            abstract_span.or(readonly_span).unwrap_or(class_token.span),
+            right_span,
+        );
         Ok(ClassDecl {
             name: class_name,
             parent_name,
@@ -914,7 +923,7 @@ impl Parser {
             static_properties,
             constants,
             methods,
-            span: abstract_span.or(readonly_span).unwrap_or(class_token.span),
+            span,
         })
     }
 
@@ -1335,6 +1344,37 @@ impl Parser {
             set_visibility,
             token.span,
         )?;
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            if set_visibility != visibility {
+                let hook_kind = self
+                    .tokens
+                    .get(self.index + 1)
+                    .and_then(|token| match &token.kind {
+                        TokenKind::Identifier(identifier)
+                            if identifier.eq_ignore_ascii_case("get") =>
+                        {
+                            Some("get-only")
+                        }
+                        TokenKind::Identifier(identifier)
+                            if identifier.eq_ignore_ascii_case("set") =>
+                        {
+                            Some("set-only")
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or("virtual");
+                return Err(Diagnostic::new(
+                    format!(
+                        "{hook_kind} virtual property {class_name}::${name} must not specify asymmetric visibility"
+                    ),
+                    Some(self.peek().span),
+                ));
+            }
+            return Err(Diagnostic::new(
+                "property hooks are unsupported",
+                Some(self.peek().span),
+            ));
+        }
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
@@ -1547,6 +1587,9 @@ impl Parser {
             TokenKind::Goto => self.parse_goto(),
             TokenKind::Const => self.parse_const(),
             TokenKind::Global => self.parse_global(),
+            TokenKind::Function if matches!(self.peek_next().kind, TokenKind::Identifier(_)) => {
+                self.parse_nested_function_decl_statement()
+            }
             TokenKind::Identifier(ref name)
                 if name.eq_ignore_ascii_case("declare")
                     && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
@@ -1555,6 +1598,7 @@ impl Parser {
             }
             TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
+            _ if self.peek_starts_class_decl() => self.parse_local_class_decl_statement(),
             TokenKind::Identifier(ref name) if is_unsupported_class_like_declaration(name) => {
                 self.reject_unsupported_class_like_declaration()
             }
@@ -1597,6 +1641,27 @@ impl Parser {
         Ok(Statement::Empty { span: token.span })
     }
 
+    fn parse_local_class_decl_statement(&mut self) -> Result<Statement> {
+        let class = self.parse_class_decl()?;
+        let span = class.span;
+        let source = self
+            .source
+            .get(span.byte_start..span.byte_end)
+            .unwrap_or("")
+            .to_string();
+        self.anonymous_classes.push(class);
+        Ok(Statement::ClassDeclaration { source, span })
+    }
+
+    fn parse_nested_function_decl_statement(&mut self) -> Result<Statement> {
+        let mut function = self.parse_function_decl()?;
+        function.is_conditionally_declared = true;
+        let name = function.name.clone();
+        let span = function.span;
+        self.nested_functions.push(function);
+        Ok(Statement::FunctionDeclaration { name, span })
+    }
+
     fn parse_function_decl(&mut self) -> Result<FunctionDecl> {
         let span = self.expect_function()?;
         let mut return_by_ref_span = None;
@@ -1626,6 +1691,7 @@ impl Parser {
             parameters,
             return_type,
             return_by_ref,
+            is_conditionally_declared: false,
             body,
             span,
         })
@@ -3349,8 +3415,29 @@ impl Parser {
                 TokenKind::ObjectOperator => {
                     let start_span = expr.span();
                     self.advance();
-                    let (name, member_span) = self.parse_object_member_name()?;
+                    let member = self.advance().clone();
+                    let (literal_name, dynamic_name, member_span) = match member.kind {
+                        TokenKind::Identifier(name) => (Some(name), None, member.span),
+                        TokenKind::LeftBrace => {
+                            let name_expr = self.parse_expr()?;
+                            let right_span = self.expect_right_brace()?;
+                            let member_span = combine_spans(member.span, right_span);
+                            match literal_member_name_from_expr(&name_expr) {
+                                Some(name) => (Some(name), None, member_span),
+                                None => (None, Some(name_expr), member_span),
+                            }
+                        }
+                        _ => {
+                            return Err(Diagnostic::new("expected member name", Some(member.span)));
+                        }
+                    };
                     if !matches!(self.peek().kind, TokenKind::LeftParen) {
+                        let Some(name) = literal_name else {
+                            return Err(Diagnostic::new(
+                                "dynamic property fetches are unsupported",
+                                Some(member_span),
+                            ));
+                        };
                         expr = Expr::PropertyFetch {
                             receiver: Box::new(expr),
                             name,
@@ -3359,6 +3446,12 @@ impl Parser {
                         continue;
                     }
                     if self.peek_is_first_class_callable_arguments() {
+                        let Some(name) = literal_name else {
+                            return Err(Diagnostic::new(
+                                "dynamic first-class method callables are unsupported",
+                                Some(member_span),
+                            ));
+                        };
                         let right_span = self.parse_first_class_callable_arguments()?;
                         let callable_span = combine_spans(start_span, member_span);
                         let callable = Expr::Array {
@@ -3385,13 +3478,24 @@ impl Parser {
                     }
                     let (arguments, argument_names, argument_unpacks, right_span) =
                         self.parse_call_arguments()?;
-                    expr = Expr::MethodCall {
-                        receiver: Box::new(expr),
-                        name: name.to_ascii_lowercase(),
-                        arguments,
-                        argument_names,
-                        argument_unpacks,
-                        span: combine_spans(start_span, right_span),
+                    expr = if let Some(name) = literal_name {
+                        Expr::MethodCall {
+                            receiver: Box::new(expr),
+                            name: name.to_ascii_lowercase(),
+                            arguments,
+                            argument_names,
+                            argument_unpacks,
+                            span: combine_spans(start_span, right_span),
+                        }
+                    } else {
+                        Expr::DynamicMethodCall {
+                            receiver: Box::new(expr),
+                            name: Box::new(dynamic_name.expect("dynamic member expression")),
+                            arguments,
+                            argument_names,
+                            argument_unpacks,
+                            span: combine_spans(start_span, right_span),
+                        }
                     };
                 }
                 TokenKind::LeftParen => {
@@ -3463,33 +3567,6 @@ impl Parser {
             }
         }
         Ok(expr)
-    }
-
-    fn parse_object_member_name(&mut self) -> Result<(String, SourceSpan)> {
-        let member = self.advance().clone();
-        if let TokenKind::Identifier(name) = member.kind {
-            return Ok((name, member.span));
-        }
-        if !matches!(member.kind, TokenKind::LeftBrace) {
-            return Err(Diagnostic::new("expected member name", Some(member.span)));
-        }
-
-        let property = self.parse_expr()?;
-        let property_name = match property {
-            Expr::String(value, _) => value,
-            Expr::Int(value, _) => value.to_string(),
-            Expr::Float(value, _) => value.to_string(),
-            Expr::Bool(true, _) => "1".to_string(),
-            Expr::Bool(false, _) | Expr::Null(_) => String::new(),
-            other => {
-                return Err(Diagnostic::new(
-                    "unsupported dynamic member name",
-                    Some(other.span()),
-                ))
-            }
-        };
-        let right_span = self.expect_right_brace()?;
-        Ok((property_name, combine_spans(member.span, right_span)))
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr> {
@@ -3742,6 +3819,44 @@ impl Parser {
                 class_name,
                 name: member_name,
                 span: combine_spans(class_span, member.span),
+            });
+        }
+        if let TokenKind::LeftBrace = member.kind {
+            let name = self.parse_expr()?;
+            let right_brace_span = self.expect_right_brace()?;
+            let member_span = combine_spans(member.span, right_brace_span);
+            if !matches!(self.peek().kind, TokenKind::LeftParen) {
+                return Err(Diagnostic::new(
+                    CLASS_CONSTANT_FETCH_UNSUPPORTED,
+                    Some(scope_span),
+                ));
+            }
+            if self.peek_is_first_class_callable_arguments() {
+                return Err(Diagnostic::new(
+                    "dynamic first-class static method callables are unsupported",
+                    Some(member_span),
+                ));
+            }
+            let (arguments, argument_names, argument_unpacks, right_span) =
+                self.parse_call_arguments()?;
+            return Ok(Expr::DynamicCall {
+                callee: Box::new(Expr::Array {
+                    elements: vec![
+                        ArrayElement {
+                            key: None,
+                            value: ArrayElementValue::Value(Expr::String(class_name, class_span)),
+                        },
+                        ArrayElement {
+                            key: None,
+                            value: ArrayElementValue::Value(name),
+                        },
+                    ],
+                    span: combine_spans(class_span, member_span),
+                }),
+                arguments,
+                argument_names,
+                argument_unpacks,
+                span: combine_spans(class_span, right_span),
             });
         }
         let TokenKind::Identifier(member_name) = member.kind else {
@@ -5166,6 +5281,18 @@ fn collect_arrow_captures_from_expr(
                 collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
             }
         }
+        Expr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+            for argument in arguments {
+                collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
+            }
+        }
         Expr::PropertyFetch { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
@@ -5648,6 +5775,14 @@ fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
 }
 
+fn literal_member_name_from_expr(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::String(value, _) => Some(value.clone()),
+        Expr::Int(value, _) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
 fn reject_named_language_construct_arguments(
     argument_names: &[Option<String>],
     span: SourceSpan,
@@ -6075,6 +6210,8 @@ fn validate_control_transfers_in_statements(
             }
             Statement::Return { value: None, .. }
             | Statement::Empty { .. }
+            | Statement::ClassDeclaration { .. }
+            | Statement::FunctionDeclaration { .. }
             | Statement::Global { .. }
             | Statement::Label { .. }
             | Statement::Goto { .. }
@@ -6153,6 +6290,16 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
             ..
         } => {
             validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_exprs(arguments)?;
+        }
+        Expr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_expr(name)?;
             validate_control_transfers_in_exprs(arguments)?;
         }
         Expr::DynamicNewObject {
@@ -6503,6 +6650,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::PropertyFetch { .. }
@@ -6799,6 +6947,8 @@ fn validate_anonymous_functions_in_statements(
             }
             Statement::Return { value: None, .. }
             | Statement::Empty { .. }
+            | Statement::ClassDeclaration { .. }
+            | Statement::FunctionDeclaration { .. }
             | Statement::Unset { .. }
             | Statement::Global { .. }
             | Statement::Break { .. }
@@ -6874,6 +7024,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         Expr::Call { arguments, .. }
         | Expr::DynamicCall { arguments, .. }
         | Expr::MethodCall { arguments, .. }
+        | Expr::DynamicMethodCall { arguments, .. }
         | Expr::NewObject { arguments, .. } => {
             for argument in arguments {
                 validate_anonymous_functions_in_expr(argument, functions)?;
@@ -6883,6 +7034,10 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             }
             if let Expr::MethodCall { receiver, .. } = expr {
                 validate_anonymous_functions_in_expr(receiver, functions)?;
+            }
+            if let Expr::DynamicMethodCall { receiver, name, .. } = expr {
+                validate_anonymous_functions_in_expr(receiver, functions)?;
+                validate_anonymous_functions_in_expr(name, functions)?;
             }
         }
         Expr::DynamicNewObject {
@@ -8421,6 +8576,10 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
             reject_append_array_read(callee)?;
         }
         Expr::MethodCall { receiver, .. } => reject_append_array_read(receiver)?,
+        Expr::DynamicMethodCall { receiver, name, .. } => {
+            reject_append_array_read(receiver)?;
+            reject_append_array_read(name)?;
+        }
         Expr::NewObject { .. } => {}
         Expr::DynamicNewObject { class_name, .. } => reject_append_array_read(class_name)?,
         Expr::PropertyFetch { receiver, .. } => {
@@ -8665,6 +8824,7 @@ fn is_supported_global_const_expr_with_options(
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
@@ -8756,6 +8916,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
@@ -8874,6 +9035,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. }
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }

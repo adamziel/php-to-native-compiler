@@ -14498,7 +14498,7 @@ static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnVal
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
-static int ptn_user_function_exists(const char *name);
+static int ptn_user_function_exists(PtnRuntime *runtime, const char *name);
 static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
@@ -15152,7 +15152,7 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
-    int exists = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;
+    int exists = ptn_user_function_exists(runtime, name) || ptn_find_internal_function(name) != NULL;
     free(name);
     return ptn_bool(exists);
 }

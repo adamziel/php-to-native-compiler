@@ -611,15 +611,16 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     const char *access_scope,
     int for_write,
     int indirect_write,
+    int for_unset,
     int quiet
 ) {
     const PtnObjectPropertyMetadata *scoped_private =
         ptn_object_private_property_for_scope(object, property, access_scope);
     if (scoped_private != NULL) {
-        PtnPropertyVisibility visibility = for_write
+        PtnPropertyVisibility visibility = (for_write || for_unset)
             ? scoped_private->set_visibility
             : scoped_private->read_visibility;
-        int readonly_initialized = for_write &&
+        int readonly_initialized = (for_write || for_unset) &&
             scoped_private->is_readonly &&
             ptn_object_property_storage_initialized(object, scoped_private->storage_name);
         if (readonly_initialized) {
@@ -659,6 +660,14 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         access_scope
                     );
                 }
+            } else if (for_unset && scoped_private->set_visibility != scoped_private->read_visibility) {
+                ptn_throw_property_unset_visibility_error(
+                    runtime,
+                    scoped_private->set_visibility,
+                    scoped_private->declaring_class,
+                    property,
+                    access_scope
+                );
             } else {
                 ptn_throw_property_visibility_error(
                     runtime,
@@ -674,10 +683,10 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     const PtnObjectPropertyMetadata *shared_property =
         ptn_object_named_shared_property(object, property);
     if (shared_property != NULL) {
-        PtnPropertyVisibility visibility = for_write
+        PtnPropertyVisibility visibility = (for_write || for_unset)
             ? shared_property->set_visibility
             : shared_property->read_visibility;
-        int readonly_initialized = for_write &&
+        int readonly_initialized = (for_write || for_unset) &&
             shared_property->is_readonly &&
             ptn_object_property_storage_initialized(object, shared_property->storage_name);
         if (readonly_initialized) {
@@ -717,6 +726,14 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         access_scope
                     );
                 }
+            } else if (for_unset && shared_property->set_visibility != shared_property->read_visibility) {
+                ptn_throw_property_unset_visibility_error(
+                    runtime,
+                    shared_property->set_visibility,
+                    shared_property->declaring_class,
+                    property,
+                    access_scope
+                );
             } else {
                 ptn_throw_property_visibility_error(
                     runtime,
@@ -786,6 +803,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         access_scope,
         0,
         0,
+        0,
         0
     );
     if (storage_key == NULL) {
@@ -831,6 +849,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         access_scope,
         0,
         0,
+        0,
         1
     );
     if (storage_key == NULL) {
@@ -865,6 +884,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         access_scope,
         0,
         0,
+        0,
         1
     );
     if (storage_key == NULL) {
@@ -880,13 +900,14 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
     return ptn_lookup_found(ptn_value_clone_deref(entry->value));
 }
 
-static PTN_UNUSED PtnValue ptn_object_write_property(
+static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
     const char *access_scope,
     PtnValue value,
-    size_t line
+    size_t line,
+    int indirect_write
 ) {
     (void)line;
     receiver = ptn_value_deref(receiver);
@@ -911,6 +932,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
         property,
         access_scope,
         1,
+        indirect_write,
         0,
         0
     );
@@ -936,6 +958,44 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
     ptn_array_write_entry(receiver.as.object->properties, key, stored);
     free(storage_key);
     return result;
+}
+
+static PTN_UNUSED PtnValue ptn_object_write_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_object_write_property_with_mode(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        value,
+        line,
+        0
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_object_write_property_indirect(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_object_write_property_with_mode(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        value,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_object_bind_property_reference(
@@ -972,6 +1032,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         property,
         access_scope,
         1,
+        0,
         0,
         0
     );
@@ -1027,6 +1088,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         access_scope,
         1,
         1,
+        0,
         1
     );
     if (storage_key == NULL) {
@@ -1035,6 +1097,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             receiver.as.object,
             property,
             access_scope,
+            0,
             0,
             0,
             1
@@ -1061,6 +1124,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             access_scope,
             1,
             1,
+            0,
             0
         );
         if (storage_key == NULL) {
@@ -1113,9 +1177,10 @@ static PTN_UNUSED void ptn_object_unset_property(
         receiver.as.object,
         property,
         access_scope,
-        1,
         0,
-        1
+        0,
+        1,
+        0
     );
     if (storage_key == NULL) {
         return;

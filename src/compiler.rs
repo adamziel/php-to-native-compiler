@@ -261,6 +261,8 @@ impl IncludeCollector {
             }
             Statement::Increment { .. }
             | Statement::Empty { .. }
+            | Statement::ClassDeclaration { .. }
+            | Statement::FunctionDeclaration { .. }
             | Statement::Break { .. }
             | Statement::Continue { .. }
             | Statement::Global { .. }
@@ -345,6 +347,16 @@ impl IncludeCollector {
                 ..
             } => {
                 self.collect_expr(receiver, source_file, source_dir)?;
+                self.collect_exprs(arguments, source_file, source_dir)
+            }
+            Expr::DynamicMethodCall {
+                receiver,
+                name,
+                arguments,
+                ..
+            } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                self.collect_expr(name, source_file, source_dir)?;
                 self.collect_exprs(arguments, source_file, source_dir)
             }
             Expr::PropertyFetch { receiver, .. } => {

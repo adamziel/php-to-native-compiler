@@ -111,11 +111,17 @@ fn lexer_treats_oversized_integer_literals_as_floats() {
         "<?php 9223372036854775808 0x8000000000000000 0b1000000000000000000000000000000000000000000000000000000000000000",
     )
     .unwrap();
-    for token in &tokens[1..4] {
+    for token in &tokens[1..3] {
         assert!(
             matches!(token.kind, TokenKind::Float(value) if value == 9_223_372_036_854_775_808.0)
         );
     }
+
+    let binary_overflow = f64::from_bits(9_223_372_036_854_775_808.0f64.to_bits() - 1);
+    assert!(matches!(
+        tokens[3].kind,
+        TokenKind::Float(value) if value == binary_overflow
+    ));
 }
 
 #[test]
@@ -1540,6 +1546,22 @@ fn parser_accepts_global_variable_statements() {
         panic!("expected global statement");
     };
     assert_eq!(names, &vec!["left".to_string(), "right".to_string()]);
+}
+
+#[test]
+fn parser_accepts_nested_named_function_declarations() {
+    let program = parser::parse(
+        "<?php function outer() { function inner() { return 'ok'; } } outer(); inner();",
+    )
+    .unwrap();
+
+    assert_eq!(program.functions.len(), 2);
+    assert_eq!(program.functions[1].name, "inner");
+    assert!(program.functions[1].is_conditionally_declared);
+    assert!(matches!(
+        &program.functions[0].body[0],
+        Statement::FunctionDeclaration { name, .. } if name == "inner"
+    ));
 }
 
 #[test]
@@ -3868,6 +3890,38 @@ fn parser_rejects_invalid_asymmetric_property_visibility_metadata() {
         error.message,
         "Multiple access type modifiers are not allowed"
     );
+}
+
+#[test]
+fn parser_rejects_asymmetric_virtual_property_hooks() {
+    let error = parser::parse("<?php class Foo { public private(set) int $bar { get => 42; } }")
+        .unwrap_err();
+    assert_eq!(
+        error.message,
+        "get-only virtual property Foo::$bar must not specify asymmetric visibility"
+    );
+
+    let error =
+        parser::parse("<?php class Foo { public private(set) int $bar { set {} } }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "set-only virtual property Foo::$bar must not specify asymmetric visibility"
+    );
+}
+
+#[test]
+fn parser_accepts_local_class_declaration_before_nested_parse_errors() {
+    let error = parser::parse(
+        "<?php
+try {
+    class C {
+        public $p = (unset) C::class;
+    }
+} catch (Error $e) {}
+",
+    )
+    .unwrap_err();
+    assert_eq!(error.message, "The (unset) cast is no longer supported");
 }
 
 #[test]
@@ -8810,6 +8864,41 @@ fn compile_user_function_parameters_and_return_to_native_binary() {
 }
 
 #[test]
+fn compile_nested_function_declaration_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-function-declaration");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-function-declaration.php");
+    let output = root.join("nested-function-declaration-bin");
+    fs::write(
+        &input,
+        "<?php
+function outer() {
+    echo \"outer\\n\";
+    function inner() {
+        echo \"inner\\n\";
+    }
+}
+
+var_dump(function_exists(\"inner\"));
+outer();
+var_dump(function_exists(\"inner\"));
+inner();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nouter\nbool(true)\ninner\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_named_arguments_on_calls() {
     let program = parser::parse(
         "<?php function pair($left, $right) { return $left . $right; } pair(right: 2, left: 1);",
@@ -10391,6 +10480,93 @@ echo $child->same(), \"\\n\";
     assert!(c_source.contains("ptn_call_declared_method(&runtime"));
     assert!(c_source.contains("BaseLabeler::label"));
     assert!(c_source.contains("ChildLabeler::same"));
+}
+
+#[test]
+fn compile_dynamic_instance_method_call_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-instance-method-call");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-instance-method-call.php");
+    let output = root.join("dynamic-instance-method-call-bin");
+    fs::write(
+        &input,
+        "<?php
+class DynamicLabeler {
+    public function label($value) {
+        echo \"label=\" . $value . \"\\n\";
+    }
+
+    public function suffix($value) {
+        echo \"suffix=\" . $value . \"\\n\";
+    }
+}
+
+$object = new DynamicLabeler();
+$method = \"label\";
+$object->{$method}(3);
+$object->{\"suffix\"}(4);
+$object->{\"lab\" . \"el\"}(5);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "label=3\nsuffix=4\nlabel=5\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_to_string"));
+    assert!(c_source.contains("ptn_call_declared_method(&runtime"));
+}
+
+#[test]
+fn compile_dynamic_static_method_call_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-static-method-call");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-static-method-call.php");
+    let output = root.join("dynamic-static-method-call-bin");
+    fs::write(
+        &input,
+        "<?php
+class DynamicStaticLabeler {
+    public static function label($value) {
+        echo \"label=\" . $value . \"\\n\";
+    }
+
+    public static function suffix($value) {
+        echo \"suffix=\" . $value . \"\\n\";
+    }
+}
+
+$methods = [\"label\"];
+$method = \"suffix\";
+DynamicStaticLabeler::{$methods[0]}(3);
+DynamicStaticLabeler::{\"suffix\"}(4);
+DynamicStaticLabeler::{\"lab\" . \"el\"}(5);
+DynamicStaticLabeler::{$method}(6);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "label=3\nsuffix=4\nlabel=5\nsuffix=6\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_callable(&runtime"));
+    assert!(c_source.contains("DynamicStaticLabeler"));
 }
 
 #[test]
@@ -12186,6 +12362,46 @@ try {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\nassert(): assert(false && ($a **= 2)) failed\nassert(0.0)\nassert(): assert(false && `echo -n \"\"`) failed\nshort\ncustom failure\nstring(0) \"\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_assertion_text_keeps_local_class_declaration_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-local-class-text");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-local-class-text.php");
+    let output = root.join("assert-local-class-text-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    assert(function () {
+        class Foo {
+            public private(set) string $bar;
+        }
+    } && false);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "assert(function () {\n",
+            "    class Foo {\n",
+            "        public private(set) string $bar;\n",
+            "    }\n",
+            "\n",
+            "} && false)\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -27567,6 +27783,78 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_throw_property_indirect_set_visibility_error"));
+}
+
+#[test]
+fn compile_asymmetric_property_unset_and_array_dim_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-property-unset-array-dim");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-property-unset-array-dim.php");
+    let output = root.join("asymmetric-property-unset-array-dim-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public private(set) string $name = \"one\";
+    public private(set) array $bars = [];
+
+    public function clearName() {
+        unset($this->name);
+        var_dump(isset($this->name));
+    }
+
+    public function appendBar() {
+        $this->bars[] = \"in\";
+    }
+}
+
+$foo = new Foo();
+
+try {
+    unset($foo->name);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($foo->name);
+
+try {
+    $foo->bars[] = \"out\";
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($foo->bars);
+
+$foo->appendBar();
+var_dump($foo->bars);
+$foo->clearName();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot unset private(set) property Foo::$name from global scope\n",
+            "string(3) \"one\"\n",
+            "Cannot indirectly modify private(set) property Foo::$bars from global scope\n",
+            "array(0) {\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(2) \"in\"\n",
+            "}\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_write_property_indirect"));
+    assert!(c_source.contains("ptn_throw_property_unset_visibility_error"));
 }
 
 #[test]

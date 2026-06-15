@@ -44,6 +44,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->class_scope_allows = caller_runtime->class_scope_allows;
     runtime->declared_class_is_readonly = caller_runtime->declared_class_is_readonly;
     runtime->magic_property_read = caller_runtime->magic_property_read;
+    runtime->declared_user_functions = caller_runtime->declared_user_functions;
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;
@@ -1027,6 +1028,43 @@ static PTN_UNUSED void ptn_throw_property_set_visibility_error(
             message,
             sizeof(message),
             "Cannot modify %s(set) property %s::$%s from scope %s",
+            ptn_property_visibility_name(visibility),
+            declaring_class,
+            property,
+            scope
+        );
+    }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
+static PTN_UNUSED void ptn_throw_property_unset_visibility_error(
+    PtnRuntime *runtime,
+    PtnPropertyVisibility visibility,
+    const char *declaring_class,
+    const char *property,
+    const char *access_scope
+) {
+    char message[320];
+    const char *scope = access_scope == NULL ? "global scope" : access_scope;
+    int written;
+    if (access_scope == NULL) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot unset %s(set) property %s::$%s from %s",
+            ptn_property_visibility_name(visibility),
+            declaring_class,
+            property,
+            scope
+        );
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot unset %s(set) property %s::$%s from scope %s",
             ptn_property_visibility_name(visibility),
             declaring_class,
             property,

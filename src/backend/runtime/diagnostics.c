@@ -567,6 +567,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->class_scope_allows = NULL;
     runtime->declared_class_is_readonly = NULL;
     runtime->magic_property_read = NULL;
+    runtime->declared_user_functions = NULL;
     runtime->source_path = NULL;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;

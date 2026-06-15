@@ -83,6 +83,7 @@ pub struct FunctionDecl {
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
+    pub is_conditionally_declared: bool,
     pub body: Vec<Statement>,
     pub span: SourceSpan,
 }
@@ -140,6 +141,14 @@ pub enum TypeHint {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Empty {
+        span: SourceSpan,
+    },
+    ClassDeclaration {
+        source: String,
+        span: SourceSpan,
+    },
+    FunctionDeclaration {
+        name: String,
         span: SourceSpan,
     },
     Assign {
@@ -554,6 +563,14 @@ pub enum Expr {
         argument_unpacks: Vec<bool>,
         span: SourceSpan,
     },
+    DynamicMethodCall {
+        receiver: Box<Expr>,
+        name: Box<Expr>,
+        arguments: Vec<Expr>,
+        argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
+        span: SourceSpan,
+    },
     NewObject {
         class_name: String,
         arguments: Vec<Expr>,
@@ -763,6 +780,7 @@ impl Expr {
             | Expr::FirstClassCallable { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::MethodCall { span, .. }
+            | Expr::DynamicMethodCall { span, .. }
             | Expr::NewObject { span, .. }
             | Expr::DynamicNewObject { span, .. }
             | Expr::Clone { span, .. }
