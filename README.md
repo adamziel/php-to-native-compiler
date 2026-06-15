@@ -45,8 +45,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   results while expression-context `(void)` remains diagnostic.
 - Direct references and by-reference parameters cover the first COW/reference
   slice; live by-reference `foreach` iterators keep nested unset/rekey mutation
-  parity; dynamic roots support reads/writes, array/string-offset writes,
-  unsets, compounds, null coalescing assignments, and inc/dec targets.
+  parity; object `foreach` covers bounded `Iterator`/`IteratorAggregate`
+  protocol dispatch and array-backed SPL iterators; dynamic roots support
+  reads/writes, array/string-offset writes, unsets, compounds, null coalescing
+  assignments, and inc/dec targets.
 - Arithmetic models non-numeric string/array `TypeError`s while preserving
   leading-numeric warnings; float stringification honors `phpc -d precision=N`
   and PHP-style exponent spelling.
@@ -57,7 +59,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   conversion warnings for set-operation normalization, `array_rand()` key selection,
   sum/product warning and
   overflow parity,
-  `count()`/`sizeof()` modes, `array_splice()` mutation, sort mutators through
+  `count()`/`sizeof()` modes including `Countable` dispatch, `array_splice()`
+  mutation, sort mutators through
   ordered-array/COW paths, a bounded callable `array_multisort()` path with
   prefer-ref argument separation, and recursive/non-recursive `array_walk()`
   callback diagnostics, userdata separation, key snapshots, and mutation
@@ -94,8 +97,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `spl_object_hash()`, `get_class()`/`get_parent_class()` explicit operands
   plus legacy no-argument lexical class scope, `get_called_class()`, Closure
   internal class metadata, Closure-backed `ReflectionFunction` count/name
-  metadata, bounded class/interface/trait/property/method existence checks
-  including `trait_exists()`, abstract/final class metadata, interface
+  metadata, bounded `ReflectionClass::isIterateable()` and class/interface/
+  trait/property/method existence checks including `trait_exists()`,
+  abstract/final class metadata, interface
   constants, and duplicate/non-interface implementation diagnostics.
 - Simple trait declarations compose into using classes, including imported
   methods, instance/static properties, and constants. `__TRAIT__` reports the

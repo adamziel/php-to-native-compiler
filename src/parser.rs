@@ -213,6 +213,7 @@ impl Parser<'_> {
         validate_parent_class_names(&classes)?;
         validate_interface_references(&classes)?;
         validate_override_attributes(&classes, &traits)?;
+        validate_traversable_implementations(&classes)?;
         validate_abstract_methods(&classes)?;
         validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
@@ -2948,6 +2949,7 @@ impl Parser<'_> {
     }
 
     fn parse_variable_clause(&mut self) -> Result<Statement> {
+        let start = self.index;
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new("expected variable", Some(token.span)));
@@ -3005,6 +3007,12 @@ impl Parser<'_> {
                 })
             }
             _ => {
+                if !self.peek_is_assignment_op() {
+                    self.index = start;
+                    let expression = self.parse_expr()?;
+                    let span = expression.span();
+                    return Ok(Statement::Expression { expression, span });
+                }
                 let op = self.expect_assignment_op()?;
                 let value = self.parse_assignment_value_expr()?;
                 Ok(Statement::Assign {
@@ -6299,6 +6307,7 @@ fn is_modeled_builtin_interface_name(name: &str) -> bool {
             | "stringable"
             | "throwable"
             | "datetimeinterface"
+            | "countable"
             | "serializable"
     )
 }
@@ -6670,7 +6679,9 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
             continue;
         };
         if parent_name.eq_ignore_ascii_case("stdClass")
+            || parent_name.eq_ignore_ascii_case("ArrayIterator")
             || is_modeled_builtin_exception_class_name(parent_name)
+            || parent_name.eq_ignore_ascii_case("Generator")
         {
             continue;
         }
@@ -6706,6 +6717,74 @@ fn validate_interface_references(classes: &[ClassDecl]) -> Result<()> {
             return Err(Diagnostic::new(
                 format!("Interface \"{interface_name}\" not found"),
                 Some(class.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn class_hierarchy_implements_interface(
+    classes: &[ClassDecl],
+    class: &ClassDecl,
+    interface_name: &str,
+) -> bool {
+    if class
+        .interfaces
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case(interface_name))
+    {
+        return true;
+    }
+    class
+        .parent_name
+        .as_deref()
+        .and_then(|parent_name| {
+            classes
+                .iter()
+                .find(|candidate| candidate.name.eq_ignore_ascii_case(parent_name))
+        })
+        .is_some_and(|parent| class_hierarchy_implements_interface(classes, parent, interface_name))
+}
+
+fn validate_traversable_implementations(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        if class.is_interface {
+            continue;
+        }
+        if class_hierarchy_implements_interface(classes, class, "Iterator")
+            && class_hierarchy_implements_interface(classes, class, "IteratorAggregate")
+        {
+            return Err(Diagnostic::new(
+                format!(
+                    "Class {} cannot implement both Iterator and IteratorAggregate at the same time",
+                    class.name
+                ),
+                Some(class.span),
+            ));
+        }
+        if class.is_abstract {
+            continue;
+        }
+        if class_hierarchy_implements_interface(classes, class, "Traversable")
+            && !class_hierarchy_implements_interface(classes, class, "Iterator")
+            && !class_hierarchy_implements_interface(classes, class, "IteratorAggregate")
+        {
+            return Err(Diagnostic::new(
+                format!(
+                    "Class {} must implement interface Traversable as part of either Iterator or IteratorAggregate",
+                    class.name
+                ),
+                Some(
+                    if class
+                        .interfaces
+                        .iter()
+                        .any(|interface| interface.eq_ignore_ascii_case("Traversable"))
+                    {
+                        class.span
+                    } else {
+                        SourceSpan::new(0, 0, 0, 0)
+                    },
+                ),
             ));
         }
     }
@@ -7070,6 +7149,12 @@ fn validate_final_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
         let Some(parent_name) = &class.parent_name else {
             continue;
         };
+        if parent_name.eq_ignore_ascii_case("Generator") {
+            return Err(Diagnostic::new(
+                format!("Class {} cannot extend final class Generator", class.name),
+                Some(class.span),
+            ));
+        }
         let Some(parent) = classes
             .iter()
             .find(|candidate| candidate.name.eq_ignore_ascii_case(parent_name))

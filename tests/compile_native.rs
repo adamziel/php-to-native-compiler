@@ -83,6 +83,104 @@ fn compile_dynamic_variable_unset_to_native_binary() {
 }
 
 #[test]
+fn compile_iterator_protocol_and_array_backed_spl_to_native_binary() {
+    let root = temp_dir("ptn-native-iterator-protocol-spl");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iterator-protocol-spl.php");
+    let output = root.join("iterator-protocol-spl-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Numbers implements Iterator {
+    private $items = ["a" => 10, "b" => 20];
+    private $keys = ["a", "b"];
+    private $pos = 0;
+    public function rewind(): void { echo "rewind\n"; $this->pos = 0; }
+    public function valid(): bool { echo "valid\n"; return $this->pos < count($this->keys); }
+    public function current(): mixed { echo "current\n"; return $this->items[$this->keys[$this->pos]]; }
+    public function key(): mixed { echo "key\n"; return $this->keys[$this->pos]; }
+    public function next(): void { echo "next\n"; $this->pos++; }
+}
+foreach (new Numbers as $key => $value) {
+    echo "$key=$value\n";
+}
+$it = new ArrayIterator([4, 5]);
+$it->rewind();
+var_dump($it->current(), $it->key(), count($it));
+$box = new ArrayObject(["x" => "1"]);
+$box["x"] .= "z";
+var_dump($box["x"], count($box));
+$wrap = new IteratorIterator(new ArrayIterator([7, 8]));
+foreach ($wrap as $value) {
+    echo $wrap->offsetGet(0), ":", $value, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "rewind\n",
+            "valid\n",
+            "current\n",
+            "key\n",
+            "a=10\n",
+            "next\n",
+            "valid\n",
+            "current\n",
+            "key\n",
+            "b=20\n",
+            "next\n",
+            "valid\n",
+            "int(4)\n",
+            "int(0)\n",
+            "int(2)\n",
+            "string(2) \"1z\"\n",
+            "int(1)\n",
+            "7:7\n",
+            "7:8\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_validates_traversable_interface_combinations() {
+    let direct = parser::parse("<?php class T implements Traversable {}").unwrap_err();
+    assert_eq!(
+        direct.message,
+        "Class T must implement interface Traversable as part of either Iterator or IteratorAggregate"
+    );
+    assert_eq!(direct.span.unwrap().line, 1);
+
+    let inherited =
+        parser::parse("<?php abstract class A implements Traversable {}\nclass B extends A {}")
+            .unwrap_err();
+    assert_eq!(
+        inherited.message,
+        "Class B must implement interface Traversable as part of either Iterator or IteratorAggregate"
+    );
+    assert_eq!(inherited.span.unwrap().line, 0);
+
+    let both = parser::parse("<?php abstract class A implements Iterator, IteratorAggregate {}")
+        .unwrap_err();
+    assert_eq!(
+        both.message,
+        "Class A cannot implement both Iterator and IteratorAggregate at the same time"
+    );
+}
+
+#[test]
 fn lexer_accepts_numeric_literal_separators_and_radices() {
     let tokens = lexer::lex(
         "<?php 299_792_458 96_485.332_12 6.626_070_15e-34 0xCAFE_F00D 0b0101_1111 0137_041 0_124 0o1_6 0O10",

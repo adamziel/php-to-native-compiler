@@ -76,6 +76,15 @@ static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
     if (value.type == PTN_BOOL) {
         return value.as.boolean ? "true" : "false";
     }
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    if (value.type == PTN_EXCEPTION) {
+        return value.as.exception->class_name;
+    }
     return ptn_offset_container_type_name(value);
 }
 
@@ -192,6 +201,23 @@ static PTN_UNUSED PtnValue ptn_count_value(
         ptn_count_seen_arrays_init(&seen);
         int64_t count = ptn_count_array_recursive(runtime, function_name, value.as.array, &seen, line);
         ptn_count_seen_arrays_free(&seen);
+        return ptn_int(count);
+    }
+
+    if (
+        value.type == PTN_OBJECT &&
+        (
+            ptn_builtin_class_implements_interface(value.as.object->class_name, "Countable") ||
+            ptn_declared_class_implements_interface(value.as.object->class_name, "Countable")
+        ) &&
+        runtime->method_dispatch != NULL
+    ) {
+        PtnValue result = runtime->method_dispatch(runtime, value, "count", 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        int64_t count = ptn_value_to_integer(result);
+        ptn_value_destroy(&result);
         return ptn_int(count);
     }
 
@@ -2783,6 +2809,136 @@ static PTN_UNUSED PtnValue ptn_runtime_array_reset_path(
         line
     );
     return ptn_array_reset_value(array);
+}
+
+static PtnArray *ptn_internal_expect_mutable_array_property_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line,
+    PtnValue *reference
+) {
+    *reference = ptn_object_reference_for_property(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        line
+    );
+    PtnValue *slot = reference->type == PTN_REFERENCE
+        ? &reference->as.reference->value
+        : reference;
+    PtnArray *array = ptn_internal_expect_array_arg(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        *slot
+    );
+    if (slot->type == PTN_ARRAY) {
+        array = ptn_array_detach_value(slot);
+    }
+    return array;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_next_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    PtnValue reference = ptn_null();
+    PtnArray *array = ptn_internal_expect_mutable_array_property_arg(
+        runtime,
+        "next",
+        1,
+        "array",
+        receiver,
+        property,
+        access_scope,
+        line,
+        &reference
+    );
+    PtnValue result = ptn_array_next_value(array);
+    ptn_value_destroy(&reference);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_end_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    PtnValue reference = ptn_null();
+    PtnArray *array = ptn_internal_expect_mutable_array_property_arg(
+        runtime,
+        "end",
+        1,
+        "array",
+        receiver,
+        property,
+        access_scope,
+        line,
+        &reference
+    );
+    PtnValue result = ptn_array_end_value(array);
+    ptn_value_destroy(&reference);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_prev_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    PtnValue reference = ptn_null();
+    PtnArray *array = ptn_internal_expect_mutable_array_property_arg(
+        runtime,
+        "prev",
+        1,
+        "array",
+        receiver,
+        property,
+        access_scope,
+        line,
+        &reference
+    );
+    PtnValue result = ptn_array_prev_value(array);
+    ptn_value_destroy(&reference);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_reset_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    PtnValue reference = ptn_null();
+    PtnArray *array = ptn_internal_expect_mutable_array_property_arg(
+        runtime,
+        "reset",
+        1,
+        "array",
+        receiver,
+        property,
+        access_scope,
+        line,
+        &reference
+    );
+    PtnValue result = ptn_array_reset_value(array);
+    ptn_value_destroy(&reference);
+    return result;
 }
 
 static PtnArray *ptn_array_walk_slot_array_for_write(
@@ -14042,7 +14198,17 @@ static PtnValue ptn_internal_is_countable(PtnRuntime *runtime, size_t argc, cons
     (void)runtime;
     (void)argc;
     (void)line;
-    return ptn_is_type(args[0], PTN_ARRAY);
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type == PTN_ARRAY) {
+        return ptn_bool(1);
+    }
+    if (value.type == PTN_OBJECT) {
+        return ptn_bool(
+            ptn_builtin_class_implements_interface(value.as.object->class_name, "Countable") ||
+            ptn_declared_class_implements_interface(value.as.object->class_name, "Countable")
+        );
+    }
+    return ptn_bool(0);
 }
 
 static PtnValue ptn_internal_is_iterable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -15088,6 +15254,33 @@ static PtnValue ptn_internal_flush(PtnRuntime *runtime, size_t argc, const PtnVa
     (void)line;
     fflush(stdout);
     return ptn_null();
+}
+
+static PtnValue ptn_internal_exit(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    int status = 0;
+    if (argc >= 1) {
+        PtnValue value = ptn_value_deref(args[0]);
+        if (value.type == PTN_STRING) {
+            if (value.as.string.len != 0) {
+                fwrite(value.as.string.data, 1, value.as.string.len, stdout);
+            }
+        } else if (value.type == PTN_INT) {
+            status = (int)value.as.integer;
+        } else if (value.type == PTN_BOOL) {
+            status = value.as.boolean ? 1 : 0;
+        } else if (value.type == PTN_FLOAT) {
+            status = (int)value.as.floating;
+        }
+    }
+    fflush(stdout);
+    exit(status);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_die(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_exit(runtime, argc, args, line);
 }
 
 static PtnValue ptn_internal_abs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -17607,6 +17800,7 @@ static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const P
 }
 
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(PtnRuntime *runtime, const char *name);
@@ -17801,10 +17995,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "define", 2, 3, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
         { "deg2rad", 1, 1, ptn_internal_deg2rad },
+        { "die", 0, 1, ptn_internal_die },
         { "dirname", 1, 2, ptn_internal_dirname },
         { "doubleval", 1, 1, ptn_internal_floatval },
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
+        { "exit", 0, 1, ptn_internal_exit },
         { "explode", 2, 3, ptn_internal_explode },
         { "exp", 1, 1, ptn_internal_exp },
         { "expm1", 1, 1, ptn_internal_expm1 },
@@ -17959,6 +18155,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "readdir", 1, 1, ptn_internal_readdir },
         { "readfile", 1, 3, ptn_internal_readfile },
         { "realpath", 1, 1, ptn_internal_realpath },
+        { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "reset", 1, 1, ptn_internal_reset },
         { "rewind", 1, 1, ptn_internal_rewind },
         { "rewinddir", 1, 1, ptn_internal_rewinddir },
@@ -18148,6 +18345,18 @@ static int ptn_internal_class_name_is_stdclass_name(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "stdClass");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ArrayIterator");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ArrayObject");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IteratorIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Closure");
 }
@@ -18166,6 +18375,9 @@ static int ptn_internal_interface_exists_name(const char *name) {
 static int ptn_internal_class_exists_name(const char *class_name) {
     return ptn_internal_reflection_metadata_class_exists(class_name)
         || ptn_internal_class_name_is_stdclass_name(class_name)
+        || ptn_internal_class_name_is_array_iterator(class_name)
+        || ptn_internal_class_name_is_array_object(class_name)
+        || ptn_internal_class_name_is_iterator_iterator(class_name)
         || ptn_internal_class_name_is_closure(class_name)
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
@@ -18222,6 +18434,37 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "getName");
 }
 
+static int ptn_array_iterator_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "count")
+        || ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "offsetExists")
+        || ptn_ascii_case_equal(method_name, "offsetGet")
+        || ptn_ascii_case_equal(method_name, "offsetSet")
+        || ptn_ascii_case_equal(method_name, "offsetUnset")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "valid");
+}
+
+static int ptn_array_object_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "count")
+        || ptn_ascii_case_equal(method_name, "getIterator")
+        || ptn_ascii_case_equal(method_name, "offsetExists")
+        || ptn_ascii_case_equal(method_name, "offsetGet")
+        || ptn_ascii_case_equal(method_name, "offsetSet")
+        || ptn_ascii_case_equal(method_name, "offsetUnset");
+}
+
+static int ptn_iterator_iterator_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "offsetGet")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "valid");
+}
+
 static int ptn_closure_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__invoke")
         || ptn_ascii_case_equal(method_name, "bindTo")
@@ -18242,6 +18485,15 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_reflection_method(class_name)) {
         return ptn_reflection_method_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_array_iterator(class_name)) {
+        return ptn_array_iterator_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_array_object(class_name)) {
+        return ptn_array_object_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_iterator_iterator(class_name)) {
+        return ptn_iterator_iterator_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_closure_method_exists(method_name);
@@ -18530,13 +18782,11 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
 }
 
 static int ptn_reflection_class_is_iterable(const char *class_name) {
-    if (ptn_ascii_case_equal(class_name, "ArrayObject")) {
-        return 1;
-    }
     if (ptn_reflection_class_is_interface_name(class_name)) {
         return 0;
     }
-    return ptn_declared_class_implements_interface(class_name, "Traversable")
+    return ptn_builtin_class_implements_interface(class_name, "Traversable")
+        || ptn_declared_class_implements_interface(class_name, "Traversable")
         || ptn_declared_class_implements_interface(class_name, "Iterator")
         || ptn_declared_class_implements_interface(class_name, "IteratorAggregate");
 }
@@ -19086,8 +19336,48 @@ typedef struct {
     PtnFunctionMetadata metadata;
 } PtnReflectionFunctionData;
 
+typedef struct {
+    PtnArray *array;
+    size_t index;
+} PtnArrayIteratorData;
+
+typedef struct {
+    PtnArray *array;
+} PtnArrayObjectData;
+
+typedef struct {
+    PtnValue inner;
+} PtnIteratorIteratorData;
+
 static void ptn_reflection_function_data_free(void *data) {
     free(data);
+}
+
+static void ptn_array_iterator_data_free(void *data) {
+    PtnArrayIteratorData *iterator_data = (PtnArrayIteratorData *)data;
+    if (iterator_data == NULL) {
+        return;
+    }
+    ptn_array_free(iterator_data->array);
+    free(iterator_data);
+}
+
+static void ptn_array_object_data_free(void *data) {
+    PtnArrayObjectData *object_data = (PtnArrayObjectData *)data;
+    if (object_data == NULL) {
+        return;
+    }
+    ptn_array_free(object_data->array);
+    free(object_data);
+}
+
+static void ptn_iterator_iterator_data_free(void *data) {
+    PtnIteratorIteratorData *iterator_data = (PtnIteratorIteratorData *)data;
+    if (iterator_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&iterator_data->inner);
+    free(iterator_data);
 }
 
 static PtnReflectionFunctionData *ptn_reflection_function_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -19101,6 +19391,45 @@ static PtnReflectionFunctionData *ptn_reflection_function_data(PtnRuntime *runti
         return NULL;
     }
     return (PtnReflectionFunctionData *)receiver.as.object->native_data;
+}
+
+static PtnArrayIteratorData *ptn_array_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_array_iterator(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ArrayIterator object");
+        return NULL;
+    }
+    return (PtnArrayIteratorData *)receiver.as.object->native_data;
+}
+
+static PtnArrayObjectData *ptn_array_object_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_array_object(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ArrayObject object");
+        return NULL;
+    }
+    return (PtnArrayObjectData *)receiver.as.object->native_data;
+}
+
+static PtnIteratorIteratorData *ptn_iterator_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_iterator_iterator(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid IteratorIterator object");
+        return NULL;
+    }
+    return (PtnIteratorIteratorData *)receiver.as.object->native_data;
 }
 
 static PtnValue ptn_reflection_function_string_before_last_namespace_separator(const char *name) {
@@ -19125,7 +19454,12 @@ static PtnValue ptn_reflection_function_size_result(size_t value) {
     return ptn_int((int64_t)value);
 }
 
-static void ptn_reflection_function_check_no_arguments(PtnRuntime *runtime, const char *method_name, size_t argc) {
+static void ptn_reflection_check_no_arguments(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t argc
+) {
     if (argc == 0) {
         return;
     }
@@ -19133,7 +19467,8 @@ static void ptn_reflection_function_check_no_arguments(PtnRuntime *runtime, cons
     int written = snprintf(
         message,
         sizeof(message),
-        "ReflectionFunction::%s() expects exactly 0 arguments, %zu given",
+        "%s::%s() expects exactly 0 arguments, %zu given",
+        class_name,
         method_name,
         argc
     );
@@ -19203,6 +19538,165 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     return object;
 }
 
+static PTN_UNUSED PtnValue ptn_array_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ArrayIterator::__construct() expects at most 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnArray *array = NULL;
+    PtnValue empty_array = ptn_null();
+    if (argc == 0) {
+        empty_array = ptn_array_from_literal_entries(0, NULL);
+        array = empty_array.as.array;
+    } else {
+        PtnValue source = ptn_value_deref(args[0]);
+        if (source.type != PTN_ARRAY) {
+            ptn_throw_exception_at(
+                runtime,
+                "TypeError",
+                "ArrayIterator::__construct(): Argument #1 ($array) must be of type array",
+                runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
+        array = source.as.array;
+    }
+    ptn_array_retain(array);
+    ptn_value_drop(&empty_array);
+
+    PtnArrayIteratorData *data = malloc(sizeof(PtnArrayIteratorData));
+    if (data == NULL) {
+        ptn_array_free(array);
+        ptn_abort_out_of_memory();
+    }
+    data->array = array;
+    data->index = 0;
+
+    PtnValue object = ptn_object_new_shell(runtime, "ArrayIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_array_iterator_data_free;
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_array_object_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ArrayObject::__construct() expects at most 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnArray *array = NULL;
+    PtnValue empty_array = ptn_null();
+    if (argc == 0) {
+        empty_array = ptn_array_from_literal_entries(0, NULL);
+        array = empty_array.as.array;
+    } else {
+        PtnValue source = ptn_value_deref(args[0]);
+        if (source.type != PTN_ARRAY) {
+            ptn_throw_exception_at(
+                runtime,
+                "TypeError",
+                "ArrayObject::__construct(): Argument #1 ($array) must be of type array",
+                runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
+        array = source.as.array;
+    }
+    ptn_array_retain(array);
+    ptn_value_drop(&empty_array);
+
+    PtnArrayObjectData *data = malloc(sizeof(PtnArrayObjectData));
+    if (data == NULL) {
+        ptn_array_free(array);
+        ptn_abort_out_of_memory();
+    }
+    data->array = array;
+
+    PtnValue object = ptn_object_new_shell(runtime, "ArrayObject");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_array_object_data_free;
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "IteratorIterator::__construct() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnValue inner = ptn_value_deref(args[0]);
+    if (
+        inner.type != PTN_OBJECT ||
+        !(
+            ptn_builtin_class_implements_interface(inner.as.object->class_name, "Iterator") ||
+            ptn_declared_class_implements_interface(inner.as.object->class_name, "Iterator")
+        )
+    ) {
+        ptn_throw_exception(runtime, "TypeError", "IteratorIterator::__construct(): Argument #1 ($iterator) must be of type Traversable");
+        return ptn_null();
+    }
+
+    PtnIteratorIteratorData *data = malloc(sizeof(PtnIteratorIteratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->inner = ptn_value_clone_deref(inner);
+
+    PtnValue object = ptn_object_new_shell(runtime, "IteratorIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_iterator_iterator_data_free;
+    return object;
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -19213,7 +19707,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
 ) {
     (void)args;
     (void)line;
-    ptn_reflection_function_check_no_arguments(runtime, name, argc);
+    ptn_reflection_check_no_arguments(runtime, "ReflectionFunction", name, argc);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
@@ -19250,6 +19744,237 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
         return ptn_bool(metadata.is_variadic);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    PtnArrayIteratorData *data = ptn_array_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "count")) {
+        ptn_reflection_check_no_arguments(runtime, "ArrayIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->array->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_int((int64_t)data->array->len);
+    }
+    if (ptn_ascii_case_equal(name, "offsetGet")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetGet() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
+        PtnArrayEntry *entry = ptn_array_entry_for_key(data->array, key);
+        ptn_array_key_free(key);
+        if (entry == NULL) {
+            return ptn_null();
+        }
+        return ptn_value_clone_deref(entry->value);
+    }
+    if (ptn_ascii_case_equal(name, "offsetSet")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetSet() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        PtnValue offset = ptn_value_deref(args[0]);
+        PtnArrayKey key = offset.type == PTN_NULL
+            ? ptn_array_int_key(data->array->next_auto_key)
+            : ptn_array_key_from_value(offset);
+        ptn_array_set_entry(data->array, key, ptn_value_clone_deref(args[1]));
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "offsetExists")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetExists() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
+        PtnArrayEntry *entry = ptn_array_entry_for_key(data->array, key);
+        ptn_array_key_free(key);
+        return ptn_bool(entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL);
+    }
+    if (ptn_ascii_case_equal(name, "offsetUnset")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetUnset() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
+        (void)ptn_array_unset_entry(data->array, key);
+        return ptn_null();
+    }
+    ptn_reflection_check_no_arguments(runtime, "ArrayIterator", name, argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        data->index = 0;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        return ptn_bool(data->array != NULL && data->index < data->array->len);
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        if (data->array == NULL || data->index >= data->array->len) {
+            return ptn_null();
+        }
+        return ptn_value_clone_deref(data->array->entries[data->index].value);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        if (data->array == NULL || data->index >= data->array->len) {
+            return ptn_null();
+        }
+        return ptn_array_key_value(data->array->entries[data->index].key);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        if (data->array != NULL && data->index < data->array->len) {
+            data->index++;
+        }
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_array_object_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnArrayObjectData *data = ptn_array_object_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "count")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::count() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        if (data->array->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_int((int64_t)data->array->len);
+    }
+    if (ptn_ascii_case_equal(name, "getIterator")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::getIterator() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        PtnValue array_arg = ptn_array(data->array);
+        ptn_array_retain(data->array);
+        PtnValue iterator = ptn_array_iterator_new(runtime, 1, &array_arg, line);
+        ptn_value_drop(&array_arg);
+        return iterator;
+    }
+    if (ptn_ascii_case_equal(name, "offsetGet")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetGet() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
+        PtnArrayEntry *entry = ptn_array_entry_for_key(data->array, key);
+        ptn_array_key_free(key);
+        if (entry == NULL) {
+            return ptn_null();
+        }
+        return ptn_value_clone_deref(entry->value);
+    }
+    if (ptn_ascii_case_equal(name, "offsetSet")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetSet() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        PtnValue offset = ptn_value_deref(args[0]);
+        PtnArrayKey key = offset.type == PTN_NULL
+            ? ptn_array_int_key(data->array->next_auto_key)
+            : ptn_array_key_from_value(offset);
+        ptn_array_set_entry(data->array, key, ptn_value_clone_deref(args[1]));
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "offsetExists")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetExists() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
+        PtnArrayEntry *entry = ptn_array_entry_for_key(data->array, key);
+        ptn_array_key_free(key);
+        return ptn_bool(entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL);
+    }
+    if (ptn_ascii_case_equal(name, "offsetUnset")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetUnset() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
+        (void)ptn_array_unset_entry(data->array, key);
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnIteratorIteratorData *data = ptn_iterator_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (
+        ptn_ascii_case_equal(name, "rewind") ||
+        ptn_ascii_case_equal(name, "valid") ||
+        ptn_ascii_case_equal(name, "current") ||
+        ptn_ascii_case_equal(name, "key") ||
+        ptn_ascii_case_equal(name, "next") ||
+        ptn_ascii_case_equal(name, "offsetGet")
+    ) {
+        return runtime->method_dispatch(runtime, data->inner, name, argc, args, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_reflection_class_is_iterateable_static(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    (void)args;
+    if (
+        runtime->trace_frame != NULL
+        && ptn_ascii_case_equal(runtime->trace_frame->function_name, "ReflectionClass::isIterateable")
+    ) {
+        runtime->trace_frame = runtime->trace_frame->previous;
+    }
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Non-static method ReflectionClass::isIterateable() cannot be called statically",
+        runtime->source_path,
+        line
+    );
     return ptn_null();
 }
 

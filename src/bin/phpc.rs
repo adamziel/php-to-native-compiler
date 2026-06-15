@@ -54,17 +54,24 @@ impl std::fmt::Display for PhpcError {
         match self {
             PhpcError::Message(message) => write!(f, "phpc: {message}"),
             PhpcError::SourceFatal { diagnostic, script } => match diagnostic.span {
-                Some(span) => write!(
-                    f,
-                    "{}: {} in {} on line {}",
-                    match diagnostic.kind {
-                        DiagnosticKind::Fatal => "Fatal error",
-                        DiagnosticKind::ParseError => "Parse error",
-                    },
-                    diagnostic.message,
-                    script.display(),
-                    span.line
-                ),
+                Some(span) => {
+                    let source = if span.line == 0 {
+                        "Unknown".to_string()
+                    } else {
+                        script.display().to_string()
+                    };
+                    write!(
+                        f,
+                        "{}: {} in {} on line {}",
+                        match diagnostic.kind {
+                            DiagnosticKind::Fatal => "Fatal error",
+                            DiagnosticKind::ParseError => "Parse error",
+                        },
+                        diagnostic.message,
+                        source,
+                        span.line
+                    )
+                }
                 None => write!(f, "phpc: {diagnostic}"),
             },
         }

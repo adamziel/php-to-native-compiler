@@ -363,6 +363,30 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
         "static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);\n",
     );
     out.push_str(
+        "\nstatic int ptn_builtin_class_implements_interface(const char *class_name, const char *interface_name) {\n",
+    );
+    out.push_str("    if (class_name == NULL || interface_name == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"ArrayIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"IteratorIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"ArrayObject\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"IteratorAggregate\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+    out.push_str(
         "\nstatic PTN_UNUSED const char *ptn_user_type_hint_given_name(PtnValue value) {\n",
     );
     out.push_str("    value = ptn_value_deref(value);\n");
@@ -392,7 +416,10 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    value = ptn_value_deref(value);\n");
     out.push_str("    if (value.type == PTN_OBJECT) {\n");
     out.push_str("        return ptn_declared_class_is_same_or_descendant(value.as.object->class_name, expected_class_name) ||\n");
-    out.push_str("            ptn_declared_class_implements_interface(value.as.object->class_name, expected_class_name);\n");
+    out.push_str("            ptn_declared_class_implements_interface(value.as.object->class_name, expected_class_name) ||\n");
+    out.push_str(
+        "            ptn_builtin_class_implements_interface(value.as.object->class_name, expected_class_name);\n",
+    );
     out.push_str("    }\n");
     out.push_str("    if (value.type == PTN_EXCEPTION) {\n");
     out.push_str("        return ptn_exception_type_matches_name(value.as.exception->class_name, expected_class_name);\n");
@@ -1837,6 +1864,9 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     );
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
     out.push_str("static int ptn_declared_trait_exists(const char *name);\n");
+    out.push_str(
+        "static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);\n",
+    );
 }
 
 fn emit_method_visibility_prototypes(out: &mut String) {
@@ -1923,6 +1953,7 @@ fn emit_class_metadata_helpers(
         "Stringable",
         "Throwable",
         "DateTimeInterface",
+        "Countable",
         "Serializable",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
@@ -2139,6 +2170,18 @@ fn emit_class_metadata_helpers(
     out.push_str(
         "        if (ptn_declared_class_implements_interface_direct(current, interface_name)) {\n",
     );
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        if (ptn_builtin_class_implements_interface(current, interface_name)) {\n",
+    );
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(interface_name, \"Traversable\") &&\n");
+    out.push_str(
+        "            (ptn_declared_class_implements_interface_direct(current, \"Iterator\") ||\n",
+    );
+    out.push_str("             ptn_declared_class_implements_interface_direct(current, \"IteratorAggregate\"))) {\n");
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        current = ptn_declared_class_parent_name(current);\n");
@@ -4972,18 +5015,6 @@ fn emit_instruction(
             out.push_str("    while (");
             out.push_str(&iterator_temp);
             out.push_str(".valid) {\n");
-            if let Some(key) = key {
-                let key_temp = values.next_temp();
-                out.push_str("        PtnValue ");
-                out.push_str(&key_temp);
-                out.push_str(" = ptn_array_iterator_current_key(&");
-                out.push_str(&iterator_temp);
-                out.push_str(");\n");
-                let key_result_temp =
-                    values.emit_store_assignment_target_from_temp(out, key, &key_temp);
-                emit_value_cleanup(out, "        ", &key_result_temp);
-                emit_value_cleanup(out, "        ", &key_temp);
-            }
             let value_temp = values.next_temp();
             let value_needs_reference = *value_by_ref
                 || matches!(value, AssignmentTarget::List(target) if list_assignment_has_reference(target));
@@ -4997,6 +5028,18 @@ fn emit_instruction(
             }
             out.push_str(&iterator_temp);
             out.push_str(");\n");
+            if let Some(key) = key {
+                let key_temp = values.next_temp();
+                out.push_str("        PtnValue ");
+                out.push_str(&key_temp);
+                out.push_str(" = ptn_array_iterator_current_key(&");
+                out.push_str(&iterator_temp);
+                out.push_str(");\n");
+                let key_result_temp =
+                    values.emit_store_assignment_target_from_temp(out, key, &key_temp);
+                emit_value_cleanup(out, "        ", &key_result_temp);
+                emit_value_cleanup(out, "        ", &key_temp);
+            }
             if *value_by_ref {
                 values.emit_bind_assignment_target_reference(out, value, &value_temp);
             } else {
@@ -6541,6 +6584,10 @@ fn collect_value_runtime_requirements(
             }
             if class_name.eq_ignore_ascii_case("ReflectionClass")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
+                || class_name.eq_ignore_ascii_case("ReflectionMethod")
+                || class_name.eq_ignore_ascii_case("ArrayIterator")
+                || class_name.eq_ignore_ascii_case("ArrayObject")
+                || class_name.eq_ignore_ascii_case("IteratorIterator")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
@@ -6619,6 +6666,9 @@ fn collect_call_runtime_requirements(
     }
     if is_generated_user_function_call(name, functions) {
         return;
+    }
+    if name.eq_ignore_ascii_case("count") || name.eq_ignore_ascii_case("sizeof") {
+        requirements.method_dispatch = true;
     }
     if argument_names.iter().all(Option::is_none)
         && is_direct_internal_helper_call(name, arguments.len())
@@ -14508,6 +14558,44 @@ impl ValueEmitter {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
                 return Some(result_temp);
+            }
+
+            if let ValueExpr::PropertyFetch {
+                receiver,
+                name: property_name,
+                line: property_line,
+            } = first_argument
+            {
+                let property_helper = if name.eq_ignore_ascii_case("next") {
+                    Some("ptn_runtime_array_next_property")
+                } else if name.eq_ignore_ascii_case("end") {
+                    Some("ptn_runtime_array_end_property")
+                } else if name.eq_ignore_ascii_case("prev") {
+                    Some("ptn_runtime_array_prev_property")
+                } else if name.eq_ignore_ascii_case("reset") {
+                    Some("ptn_runtime_array_reset_property")
+                } else {
+                    None
+                };
+                if let Some(property_helper) = property_helper {
+                    let receiver_temp = self.emit_materialized_value(out, receiver);
+                    let result_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ");
+                    out.push_str(property_helper);
+                    out.push_str("(&runtime, ");
+                    out.push_str(&receiver_temp);
+                    out.push_str(", \"");
+                    out.push_str(&c_string(property_name));
+                    out.push_str("\", ");
+                    out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                    out.push_str(", ");
+                    out.push_str(&property_line.to_string());
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "    ", &receiver_temp);
+                    return Some(result_temp);
+                }
             }
 
             if by_ref_temporary_argument_allowed(first_argument) {
