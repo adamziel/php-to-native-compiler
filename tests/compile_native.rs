@@ -32545,6 +32545,36 @@ echo strlen("hello"), "\n";
 }
 
 #[test]
+fn compile_namespace_constant_declaration_precedes_global_fallback() {
+    let root = temp_dir("ptn-native-namespace-constant-before-global");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespace-constant-before-global.php");
+    let output = root.join("namespace-constant-before-global-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace Test\Ns1;
+
+const INI_ALL = 0;
+
+function probe($value = INI_ALL) {
+    var_dump($value);
+}
+
+probe();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(0)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_bracketed_namespace_blocks_to_native_binary() {
     let root = temp_dir("ptn-native-bracketed-namespace-blocks");
     fs::create_dir_all(&root).unwrap();
@@ -32613,6 +32643,82 @@ fn parser_rejects_unsupported_grouped_namespace_import_forms() {
         let error = parser::parse(source).unwrap_err();
         assert_eq!(error.message, expected);
     }
+}
+
+#[test]
+fn parser_enforces_namespace_import_symbol_conflicts() {
+    let cases = [
+        (
+            "<?php namespace App; use Lib\\Thing; class Thing {}",
+            "Cannot redeclare class Thing (previously declared as local import)",
+        ),
+        (
+            "<?php namespace App; class Thing {} use Lib\\Thing;",
+            "Cannot use Lib\\Thing as Thing because the name is already in use",
+        ),
+        (
+            "<?php namespace App; use function Lib\\tool; function TOOL() {}",
+            "Cannot redeclare function tool() (previously declared as local import)",
+        ),
+        (
+            "<?php namespace App; const MARK = 1; use const Lib\\MARK;",
+            "Cannot use const Lib\\MARK as MARK because the name is already in use",
+        ),
+    ];
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{source}");
+        assert_eq!(error.message, expected, "{source}");
+    }
+}
+
+#[test]
+fn parser_records_global_non_compound_use_warning() {
+    let program = parser::parse("<?php use DateTime; echo \"ok\";").unwrap();
+    assert_eq!(program.compile_warnings.len(), 1);
+    assert_eq!(
+        program.compile_warnings[0].message,
+        "The use statement with non-compound name 'DateTime' has no effect"
+    );
+}
+
+#[test]
+fn parser_rejects_reserved_constant_declarations() {
+    for name in ["true", "false", "null"] {
+        let error = parser::parse(&format!("<?php const {name} = 1;")).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
+        assert_eq!(
+            error.message,
+            format!("Cannot redeclare constant '{name}'"),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn parser_handles_namespace_declaration_start_and_name_tokens() {
+    parser::parse("<?php ; namespace App; echo __NAMESPACE__;").unwrap();
+
+    let namespace_name = parser::parse("<?php namespace NAMEspace;").unwrap_err();
+    assert_eq!(namespace_name.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        namespace_name.message,
+        "Cannot use 'NAMEspace' as namespace name"
+    );
+
+    let namespace_relative = parser::parse("<?php namespace NAMEspace\\App;").unwrap_err();
+    assert_eq!(namespace_relative.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        namespace_relative.message,
+        "syntax error, unexpected namespace-relative name \"NAMEspace\\App\", expecting \"{\""
+    );
+}
+
+#[test]
+fn parser_rejects_namespaced_name_separator_whitespace() {
+    let error = parser::parse("<?php namespace App; echo Foo \\ Bar::class;").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.message, "syntax error, unexpected token \"\\\"");
 }
 
 #[test]

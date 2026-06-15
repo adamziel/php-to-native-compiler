@@ -685,13 +685,17 @@ impl Parser<'_> {
                 self.constant_aliases.insert(alias_key.clone(), target_name);
             }
         }
-        self.namespace_symbol_set_mut(kind).insert(alias_key.clone());
+        self.namespace_symbol_set_mut(kind)
+            .insert(alias_key.clone());
         self.namespace_import_symbol_set_mut(kind).insert(alias_key);
         Ok(())
     }
 
     fn global_namespace_import_has_no_effect(&self, target: &ParsedName) -> bool {
-        self.current_namespace.as_deref().unwrap_or_default().is_empty()
+        self.current_namespace
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty()
             && !target.name.contains('\\')
             && matches!(
                 target.resolution,
@@ -2377,11 +2381,7 @@ impl Parser<'_> {
             false
         };
         let (name, name_span) = self.parse_declaration_name("expected function name")?;
-        self.note_namespace_declaration_symbol(
-            UseDeclarationKind::Function,
-            &name,
-            name_span,
-        )?;
+        self.note_namespace_declaration_symbol(UseDeclarationKind::Function, &name, name_span)?;
         self.declared_functions.insert(name.to_ascii_lowercase());
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
@@ -3154,12 +3154,19 @@ impl Parser<'_> {
     }
 
     fn parse_const_declaration(&mut self) -> Result<ConstDeclaration> {
+        if matches!(
+            self.peek().kind,
+            TokenKind::True | TokenKind::False | TokenKind::Null
+        ) {
+            let token = self.advance().clone();
+            let name = self.span_text(token.span);
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare constant '{name}'"),
+                Some(token.span),
+            ));
+        }
         let (name, token_span) = self.parse_declaration_name("expected constant name")?;
-        self.note_namespace_declaration_symbol(
-            UseDeclarationKind::Constant,
-            &name,
-            token_span,
-        )?;
+        self.note_namespace_declaration_symbol(UseDeclarationKind::Constant, &name, token_span)?;
         self.expect_equal()?;
         let value = self.parse_expr()?;
         if !is_supported_const_declaration_expr(&value) {
