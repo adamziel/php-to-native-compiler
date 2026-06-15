@@ -980,6 +980,14 @@ static void ptn_var_dump_closure(PtnClosure *closure, size_t indent) {
     fputs("}\n", stdout);
 }
 
+static size_t ptn_class_name_dump_len(const char *class_name) {
+    const char *anonymous_suffix = strstr(class_name, "@anonymous#");
+    if (anonymous_suffix != NULL) {
+        return (size_t)(anonymous_suffix - class_name) + strlen("@anonymous");
+    }
+    return strlen(class_name);
+}
+
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen) {
     int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
     if (value.type == PTN_REFERENCE) {
@@ -1044,7 +1052,14 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
         case PTN_OBJECT: {
             PtnObject *object = value.as.object;
             PtnArray *properties = object->properties;
-            printf("object(%s)#%zu (%zu) {\n", object->class_name, object->object_id, properties->len);
+            size_t class_name_len = ptn_class_name_dump_len(object->class_name);
+            printf(
+                "object(%.*s)#%zu (%zu) {\n",
+                (int)class_name_len,
+                object->class_name,
+                object->object_id,
+                properties->len
+            );
             ptn_dump_seen_objects_push(seen, object);
             for (size_t i = 0; i < properties->len; i++) {
                 ptn_var_dump_indent(indent + 1);
@@ -1114,7 +1129,14 @@ static int ptn_var_dump_magic_debug_info(
     }
     PtnObject *object = resolved.as.object;
     PtnArray *properties = debug_value.as.array;
-    printf("object(%s)#%zu (%zu) {\n", object->class_name, object->object_id, properties->len);
+    size_t class_name_len = ptn_class_name_dump_len(object->class_name);
+    printf(
+        "object(%.*s)#%zu (%zu) {\n",
+        (int)class_name_len,
+        object->class_name,
+        object->object_id,
+        properties->len
+    );
     ptn_dump_seen_objects_push(seen, object);
     for (size_t i = 0; i < properties->len; i++) {
         ptn_var_dump_indent(1);
@@ -1197,8 +1219,10 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 break;
             }
             PtnArray *properties = object->properties;
+            size_t class_name_len = ptn_class_name_dump_len(object->class_name);
             printf(
-                "object(%s)#%zu (%zu) refcount(%zu){\n",
+                "object(%.*s)#%zu (%zu) refcount(%zu){\n",
+                (int)class_name_len,
                 object->class_name,
                 object->object_id,
                 properties->len,
@@ -17827,6 +17851,7 @@ static int ptn_declared_class_property_exists(const char *class_name, const char
 static const char *ptn_property_exists_target_type_name(PtnValue value);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_checkdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_compact(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_default_timezone_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -17976,6 +18001,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "closedir", 1, 1, ptn_internal_closedir },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
+        { "compact", 1, PTN_VARIADIC_ARGS, ptn_internal_compact },
         { "constant", 1, 1, ptn_internal_constant },
         { "convert_uudecode", 1, 1, ptn_internal_convert_uudecode },
         { "convert_uuencode", 1, 1, ptn_internal_convert_uuencode },
@@ -20303,6 +20329,91 @@ static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, c
     free(property_name);
     ptn_string_operand_free(property_operand);
     return ptn_bool(exists);
+}
+
+static void ptn_compact_emit_invalid_argument_warning(
+    PtnRuntime *runtime,
+    size_t position,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    const char *given = value.type == PTN_OBJECT
+        ? value.as.object->class_name
+        : ptn_offset_container_type_name(value);
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "compact(): Argument #%zu must be string or array of strings, %s given",
+        position,
+        given
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_compact_emit_undefined_variable_warning(
+    PtnRuntime *runtime,
+    PtnStringOperand name,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "compact(): Undefined variable $%.*s", (int)name.len, name.data);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "compact(): Undefined variable $%.*s", (int)name.len, name.data);
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static void ptn_compact_collect(
+    PtnRuntime *runtime,
+    PtnValue result,
+    PtnValue spec,
+    size_t position,
+    size_t line
+) {
+    spec = ptn_value_deref(spec);
+    if (spec.type == PTN_ARRAY) {
+        for (size_t i = 0; i < spec.as.array->len; i++) {
+            ptn_compact_collect(runtime, result, spec.as.array->entries[i].value, position, line);
+        }
+        return;
+    }
+    if (spec.type != PTN_STRING) {
+        ptn_compact_emit_invalid_argument_warning(runtime, position, spec, line);
+        return;
+    }
+
+    PtnStringOperand name = ptn_value_to_string_operand(spec);
+    char *lookup_name = ptn_duplicate_string_len(name.data, name.len);
+    PtnLookupResult lookup = ptn_runtime_read_variable_quiet(runtime, lookup_name);
+    free(lookup_name);
+    if (lookup.exists) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key_len(name.data, name.len),
+            ptn_value_clone(ptn_value_deref(lookup.value))
+        );
+    } else if (!(name.len == 4 && memcmp(name.data, "this", 4) == 0)) {
+        ptn_compact_emit_undefined_variable_warning(runtime, name, line);
+    }
+    ptn_string_operand_free(name);
+}
+
+static PtnValue ptn_internal_compact(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < argc; i++) {
+        ptn_compact_collect(runtime, result, args[i], i + 1, line);
+    }
+    return result;
 }
 
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

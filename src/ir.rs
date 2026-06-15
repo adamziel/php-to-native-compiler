@@ -912,7 +912,7 @@ impl<'a> LoweringContext<'a> {
             class_name: self.current_class_name.clone(),
             trait_name: self.current_trait_name.clone(),
             method_name: None,
-            is_static: false,
+            is_static: function.is_static,
             parameters,
             return_type: function.return_type.clone().map(lower_type_hint),
             return_by_ref: function.return_by_ref,
@@ -2463,7 +2463,8 @@ fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String 
             _ => "null".to_string(),
         };
 
-        return format!("fn{return_by_ref}({parameters}){return_type} => {body}");
+        let static_prefix = if function.is_static { "static " } else { "" };
+        return format!("{static_prefix}fn{return_by_ref}({parameters}){return_type} => {body}");
     }
 
     let body = function
@@ -2474,7 +2475,8 @@ fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String 
     if body.is_empty() {
         return "function()".to_string();
     }
-    format!("function () {{\n{}\n\n}}", body.join("\n"))
+    let static_prefix = if function.is_static { "static " } else { "" };
+    format!("{static_prefix}function () {{\n{}\n\n}}", body.join("\n"))
 }
 
 fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<String> {

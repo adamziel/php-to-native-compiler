@@ -137,6 +137,7 @@ pub struct AnonymousFunction {
     pub captures: Vec<ClosureUseCapture>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
+    pub is_static: bool,
     pub is_arrow: bool,
     pub body: Vec<Statement>,
     pub span: SourceSpan,
