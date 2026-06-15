@@ -12552,6 +12552,9 @@ impl ValueEmitter {
 
         let mut temps = Vec::with_capacity(arguments.len());
         let mut unwrap_append_reference_temps = Vec::new();
+        let direct_user_call_is_method = direct_user
+            .as_ref()
+            .is_some_and(|(_, _, receiver_class_name, _)| receiver_class_name.is_some());
         for (argument_index, argument) in arguments.iter().enumerate() {
             let by_ref_parameter = direct_user.as_ref().and_then(|(_, parameters, _, _)| {
                 by_ref_parameter_for_argument(parameters, argument_index)
@@ -12565,7 +12568,7 @@ impl ValueEmitter {
                     &parameter.name,
                     line,
                     true,
-                    false,
+                    direct_user_call_is_method,
                 );
                 if value_is_append_reference_target(argument) {
                     unwrap_append_reference_temps.push(temp.clone());
@@ -12829,7 +12832,7 @@ impl ValueEmitter {
                     &parameter.name,
                     line,
                     true,
-                    false,
+                    receiver_class_name.is_some(),
                 )
             } else {
                 self.emit_call_argument(out, name, argument_index, argument)
@@ -13594,7 +13597,7 @@ impl ValueEmitter {
                     &parameter.name,
                     line,
                     true,
-                    false,
+                    true,
                 )
             } else if declared_signature.is_some() {
                 self.emit_call_argument(out, name, argument_index, argument)

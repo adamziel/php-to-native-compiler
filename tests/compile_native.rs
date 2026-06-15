@@ -13319,6 +13319,11 @@ fn compile_match_expressions_to_native_binary() {
         &input,
         "<?php
 class Beep {}
+class RefTest {
+    public static function usesRef(&$value) {
+        $value = 'changed';
+    }
+}
 
 function label($value) {
     return match ($value) {
@@ -13360,6 +13365,14 @@ try {
 } catch (Error $e) {
     echo 'caught-object:', $e->getMessage(), \"\\n\";
 }
+
+$byRef = 'same';
+try {
+    RefTest::usesRef(match (true) { true => $byRef });
+} catch (Error $e) {
+    echo 'caught-ref:', $e->getMessage(), \"\\n\";
+}
+echo $byRef, \"\\n\";
 ",
     )
     .unwrap();
@@ -13370,7 +13383,7 @@ try {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "zero\nstring zero\nsmall\nother\ntrue\nB\ncaught-int:Unhandled match case 3\ncaught-object:Unhandled match case of type Beep\n"
+        "zero\nstring zero\nsmall\nother\ntrue\nB\ncaught-int:Unhandled match case 3\ncaught-object:Unhandled match case of type Beep\ncaught-ref:RefTest::usesRef(): Argument #1 ($value) could not be passed by reference\nsame\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
