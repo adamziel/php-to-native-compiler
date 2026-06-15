@@ -30206,6 +30206,23 @@ try {
 } catch (TypeError $e) {
     echo \"TypeError: \", $e->getMessage(), \"\\n\";
 }
+
+class SortBox {
+    public $class_value;
+
+    public function __construct($class_value) {
+        $this->class_value = $class_value;
+    }
+}
+
+var_dump(new SortBox(1) <=> new SortBox(2));
+var_dump(new SortBox(2) <=> new SortBox(1));
+var_dump(new SortBox(1) <=> new SortBox(1));
+$boxes = [new SortBox(2), new SortBox(-1), new SortBox(0)];
+sort($boxes, SORT_REGULAR);
+foreach ($boxes as $box) {
+    echo $box->class_value, \"\\n\";
+}
 ",
     )
     .unwrap();
@@ -30225,6 +30242,12 @@ try {
             "bool(true)\n",
             "bool(false)\n",
             "TypeError: clone(): Argument #1 ($object) must be of type object, array given\n",
+            "int(-1)\n",
+            "int(1)\n",
+            "int(0)\n",
+            "-1\n",
+            "0\n",
+            "2\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
