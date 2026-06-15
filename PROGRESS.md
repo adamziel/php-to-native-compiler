@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.26 Serializable/SPL unserialize row pack | 5 | 5 |
 | ptn-w17z.22 compile-time include path variables | 1 | 1 |
 | ptn-w17z.28 collected Generator runtime row pack | 6 | 6 |
 | ptn-w17z.34 output-buffer compact row | 1 | 1 |
@@ -17,14 +18,37 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T16:15Z.
-Measured latest: `ptn-w17z.22` compile-time include path variable acceptance selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path. Previous: `ptn-w17z.28` completed the collected Generator runtime row pack at 6/6.
+Refresh: 2026-06-15T16:39Z.
+Measured latest: `ptn-w17z.26` Serializable/SPL unserialize row pack selected
+5 rows, kept 5 runnable, and passed 5/5 in the focused run.
+Latest: `ptn-w17z.26` completed the checked-in Serializable/SPL unserialize
+row pack. Previous: `ptn-w17z.22` completed the compile-time include path
+variable acceptance row at 1/1.
 
-Current hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
+Current hook: `ptn-w17z.26` Serializable/SPL unserialize row pack passed 5/5
+at `.runtime/ptn-w17z26-rebased-final/summary-20260615T163557Z.txt`.
+Previous hook: `ptn-w17z.22` compile-time include path variable acceptance
+passed 1/1 at
 `.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
-Previous hook: `ptn-w17z.28` collected Generator runtime row pack passed 6/6 at
-`.runtime/merge-ptn-w17z28-generator-runtime/summary-20260615T163051Z.txt`.
+
+## 2026-06-15 ptn-w17z.26 Serializable/SPL Unserialize Row Pack
+
+Final checked-in focused manifest:
+`tools/phpt-ptn-w17z26-serializable-spl-unserialize-row-pack.txt`.
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-w17z26-before/summary-20260615T155843Z.txt`) | 5 selected / 5 runnable | 0 |
+| Final rebased branch focused (`.runtime/ptn-w17z26-rebased-final/summary-20260615T163557Z.txt`) | 5 selected / 5 runnable | 5 |
+
+Implemented behavior: `Serializable` classes now emit the PHP 8.4
+deprecation, serialize with `C:` custom payloads, and call
+`Serializable::unserialize()` with nested `unserialize()` sharing outer
+reference slots while preserving outer parser state. `unserialize()` now emits
+PHP-style error and extra-data warnings, returns the parsed value for valid
+values with trailing data, creates `__PHP_Incomplete_Class` shells for unknown
+object classes, and models SPL array-backed object serialized slots plus the
+malformed `SplObjectStorage` custom-payload exception path.
 
 ## 2026-06-15 ptn-w17z.22 Compile-Time Include Path Variables
 
