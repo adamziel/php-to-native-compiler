@@ -3059,6 +3059,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
     iterator.current_reference = NULL;
     iterator.watched_slot = NULL;
     iterator.line = 0;
+    iterator.seen_mutation_epoch = 0;
     iterator.has_current_key = 0;
     iterator.has_iterator_object = 0;
     iterator.protocol_iterator = 0;
@@ -3079,6 +3080,9 @@ static PTN_UNUSED void ptn_array_iterator_clear_current_key(PtnArrayIterator *it
 
 static PTN_UNUSED void ptn_array_iterator_remember_current_key(PtnArrayIterator *iterator) {
     ptn_array_iterator_clear_current_key(iterator);
+    if (iterator->array != NULL) {
+        iterator->seen_mutation_epoch = iterator->array->iterator_mutation_epoch;
+    }
     if (
         iterator->array == NULL ||
         !iterator->valid ||
@@ -3091,6 +3095,10 @@ static PTN_UNUSED void ptn_array_iterator_remember_current_key(PtnArrayIterator 
         ? iterator->array->entries[iterator->index].value.as.reference
         : NULL;
     iterator->has_current_key = 1;
+    if (iterator->live) {
+        iterator->array->has_iterator_current_index = 1;
+        iterator->array->iterator_current_index = iterator->index;
+    }
 }
 
 static PTN_UNUSED int ptn_object_implements_builtin_interface(PtnObject *object, const char *interface_name) {
@@ -3517,8 +3525,25 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
             (iterator->current_reference == NULL ||
              (iterator->array->entries[current_index].value.type == PTN_REFERENCE &&
               iterator->array->entries[current_index].value.as.reference == iterator->current_reference));
+        if (!current_identity_matches && iterator->current_reference != NULL) {
+            for (size_t i = 0; i < iterator->array->len; i++) {
+                if (
+                    iterator->array->entries[i].value.type == PTN_REFERENCE &&
+                    iterator->array->entries[i].value.as.reference == iterator->current_reference
+                ) {
+                    current_index = i;
+                    current_identity_matches = 1;
+                    break;
+                }
+            }
+        }
         if (current_identity_matches) {
             next_index = current_index + 1;
+        } else if (
+            iterator->live &&
+            iterator->array->iterator_mutation_epoch != iterator->seen_mutation_epoch
+        ) {
+            next_index = iterator->array->iterator_mutation_resume_index;
         } else {
             next_index = iterator->index;
         }

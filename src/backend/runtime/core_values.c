@@ -393,6 +393,7 @@ typedef struct {
     PtnReference *current_reference;
     PtnValue *watched_slot;
     size_t line;
+    uint64_t seen_mutation_epoch;
     int has_current_key;
     int has_iterator_object;
     int protocol_iterator;
@@ -416,6 +417,10 @@ struct PtnArray {
     size_t index_capacity;
     int64_t next_auto_key;
     size_t current_index;
+    int has_iterator_current_index;
+    size_t iterator_current_index;
+    size_t iterator_mutation_resume_index;
+    uint64_t iterator_mutation_epoch;
 };
 
 struct PtnObject {
@@ -687,6 +692,7 @@ struct PtnRuntime {
     int zend_assertions;
     int assert_exception;
     size_t call_site_line;
+    int suppress_user_call_frame_location;
     int warn_by_ref_argument_mismatch;
     int throw_argument_count_errors;
     void *active_unserialize_state;
