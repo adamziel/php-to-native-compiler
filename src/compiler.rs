@@ -184,6 +184,14 @@ impl IncludeCollector {
                 }
                 Ok(())
             }
+            Statement::Static { declarations, .. } => {
+                for declaration in declarations {
+                    if let Some(value) = &declaration.value {
+                        self.collect_expr(value, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
             Statement::Block { statements, .. } => {
                 self.collect_statements(statements, source_file, source_dir)
             }

@@ -128,6 +128,13 @@ pub struct FunctionParameter {
     pub default_value: Option<ValueExpr>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaticDeclaration {
+    pub name: String,
+    pub value: Option<ValueExpr>,
+    pub line: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeHint {
     Null,
@@ -177,6 +184,9 @@ pub enum Instruction {
     },
     BindGlobal {
         name: String,
+    },
+    BindStatic {
+        declarations: Vec<StaticDeclaration>,
     },
     DeclareFunction {
         function_index: usize,
@@ -1027,6 +1037,21 @@ impl<'a> LoweringContext<'a> {
                     for name in names {
                         instructions.push(Instruction::BindGlobal { name: name.clone() });
                     }
+                }
+                Statement::Static { declarations, .. } => {
+                    instructions.push(Instruction::BindStatic {
+                        declarations: declarations
+                            .iter()
+                            .map(|declaration| StaticDeclaration {
+                                name: declaration.name.clone(),
+                                value: declaration
+                                    .value
+                                    .as_ref()
+                                    .map(|value| self.lower_expr(value)),
+                                line: declaration.span.line,
+                            })
+                            .collect(),
+                    });
                 }
                 Statement::Const { declarations, .. } => {
                     for declaration in declarations {

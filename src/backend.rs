@@ -12,7 +12,7 @@ use crate::ir::{
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
     FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, Instruction,
     ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    Module, PropertyVisibility, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
+    Module, PropertyVisibility, ReferenceTarget, StaticDeclaration, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -1000,6 +1000,40 @@ fn by_ref_parameter_for_argument(
             parameter.is_variadic && parameter.by_ref && argument_index >= *parameter_index
         })
         .map(|(_, parameter)| parameter)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CallUnpackReferenceMetadata {
+    fixed_by_ref: Vec<bool>,
+    variadic_by_ref_start: Option<usize>,
+}
+
+fn call_unpack_reference_metadata(
+    parameters: &[FunctionParameter],
+) -> Option<CallUnpackReferenceMetadata> {
+    let fixed_len = parameters
+        .iter()
+        .position(|parameter| parameter.is_variadic)
+        .unwrap_or(parameters.len());
+    let fixed_by_ref: Vec<bool> = parameters
+        .iter()
+        .take(fixed_len)
+        .map(|parameter| parameter.by_ref)
+        .collect();
+    let variadic_by_ref_start = parameters
+        .iter()
+        .enumerate()
+        .find(|(_, parameter)| parameter.is_variadic && parameter.by_ref)
+        .map(|(index, _)| index);
+
+    if fixed_by_ref.iter().any(|by_ref| *by_ref) || variadic_by_ref_start.is_some() {
+        Some(CallUnpackReferenceMetadata {
+            fixed_by_ref,
+            variadic_by_ref_start,
+        })
+    } else {
+        None
+    }
 }
 
 fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&'static str> {
@@ -2348,7 +2382,7 @@ fn class_constructor_method<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
 ) -> Option<&'a crate::ir::MethodDecl> {
-    class_public_method_lookup_chain(class, classes)
+    class_method_lookup_chain(class, classes)
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
         .map(|method| method.method)
@@ -3187,6 +3221,9 @@ fn emit_instruction(
             out.push_str("    ptn_runtime_bind_global_variable(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\");\n");
+        }
+        Instruction::BindStatic { declarations } => {
+            emit_bind_static_declarations(out, values, declarations);
         }
         Instruction::DeclareFunction { function_index } => {
             out.push_str("    if (runtime.declared_user_functions != NULL) {\n");
@@ -4120,6 +4157,13 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
             collect_array_dim_target_legacy_dollar_brace_deprecations(target, deprecations);
             collect_value_legacy_dollar_brace_deprecations(source, deprecations);
         }
+        Instruction::BindStatic { declarations } => {
+            for declaration in declarations {
+                if let Some(value) = &declaration.value {
+                    collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+                }
+            }
+        }
         Instruction::UnsetArrayDim { dimensions, .. } => {
             for dimension in dimensions {
                 collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
@@ -4227,6 +4271,56 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
         | Instruction::Goto { .. } => {}
+    }
+}
+
+fn emit_bind_static_declarations(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    declarations: &[StaticDeclaration],
+) {
+    for declaration in declarations {
+        let init_flag = values.next_temp();
+        let static_value = values.next_temp();
+        out.push_str("    static int ");
+        out.push_str(&init_flag);
+        out.push_str(" = 0;\n");
+        out.push_str("    static PtnValue ");
+        out.push_str(&static_value);
+        out.push_str(";\n");
+        out.push_str("    if (!");
+        out.push_str(&init_flag);
+        out.push_str(") {\n");
+        let initial_value = match &declaration.value {
+            Some(value) => values.emit_materialized_value(out, value),
+            None => {
+                let temp = values.next_temp();
+                out.push_str("        PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_null();\n");
+                temp
+            }
+        };
+        out.push_str("        if (!");
+        out.push_str(&init_flag);
+        out.push_str(") {\n");
+        out.push_str("            ");
+        out.push_str(&static_value);
+        out.push_str(" = ptn_reference_value(ptn_reference_new_owned(");
+        out.push_str(&initial_value);
+        out.push_str("));\n");
+        out.push_str("            ");
+        out.push_str(&init_flag);
+        out.push_str(" = 1;\n");
+        out.push_str("        } else {\n");
+        emit_value_cleanup(out, "            ", &initial_value);
+        out.push_str("        }\n");
+        out.push_str("    }\n");
+        out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+        out.push_str(&c_string(&declaration.name));
+        out.push_str("\", ");
+        out.push_str(&static_value);
+        out.push_str(");\n");
     }
 }
 
@@ -4608,6 +4702,13 @@ fn collect_instruction_runtime_requirements(
                 }
             }
             collect_value_runtime_requirements(source, functions, requirements);
+        }
+        Instruction::BindStatic { declarations } => {
+            for declaration in declarations {
+                if let Some(value) = &declaration.value {
+                    collect_value_runtime_requirements(value, functions, requirements);
+                }
+            }
         }
         Instruction::Increment { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
@@ -9329,6 +9430,7 @@ impl ValueEmitter {
                     argument_unpacks,
                     line,
                     true,
+                    Some(constructor_parameters.as_slice()),
                 );
                 out.push_str("    PtnValue ");
                 out.push_str(&constructor_result);
@@ -9426,6 +9528,7 @@ impl ValueEmitter {
                     argument_unpacks,
                     line,
                     true,
+                    None,
                 );
                 out.push_str("    ptn_call_arguments_destroy(&");
                 out.push_str(&args_temp);
@@ -9457,6 +9560,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 true,
+                None,
             );
             out.push_str("    ");
             if declare_result {
@@ -11301,7 +11405,10 @@ impl ValueEmitter {
         argument_unpacks: &[bool],
         line: usize,
         dynamic_argument_materialization: bool,
+        direct_user_parameters: Option<&[FunctionParameter]>,
     ) -> String {
+        let unpack_reference_metadata =
+            direct_user_parameters.and_then(call_unpack_reference_metadata);
         let args_temp = self.next_temp();
         out.push_str("    PtnCallArguments ");
         out.push_str(&args_temp);
@@ -11315,17 +11422,73 @@ impl ValueEmitter {
                 .copied()
                 .unwrap_or(false)
             {
-                let value_temp = self.emit_materialized_value(out, argument);
-                out.push_str("    ptn_call_arguments_unpack(&runtime, &");
-                out.push_str(&args_temp);
-                out.push_str(", ");
-                out.push_str(&value_temp);
-                out.push_str(", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
+                let value_temp = if unpack_reference_metadata.is_some() {
+                    match reference_target_from_value(argument) {
+                        Some(target) => self.emit_reference_target(out, &target),
+                        None => self.emit_materialized_value(out, argument),
+                    }
+                } else {
+                    self.emit_materialized_value(out, argument)
+                };
+                if let Some(metadata) = unpack_reference_metadata.as_ref() {
+                    let by_ref_map = if metadata.fixed_by_ref.is_empty() {
+                        None
+                    } else {
+                        let by_ref_map = self.next_temp();
+                        out.push_str("    static const unsigned char ");
+                        out.push_str(&by_ref_map);
+                        out.push_str("[] = { ");
+                        for (index, by_ref) in metadata.fixed_by_ref.iter().enumerate() {
+                            if index > 0 {
+                                out.push_str(", ");
+                            }
+                            out.push_str(if *by_ref { "1" } else { "0" });
+                        }
+                        out.push_str(" };\n");
+                        Some(by_ref_map)
+                    };
+                    out.push_str("    ptn_call_arguments_unpack_with_references(&runtime, &");
+                    out.push_str(&args_temp);
+                    out.push_str(", ");
+                    out.push_str(&value_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(", ");
+                    out.push_str(by_ref_map.as_deref().unwrap_or("NULL"));
+                    out.push_str(", ");
+                    out.push_str(&metadata.fixed_by_ref.len().to_string());
+                    out.push_str(", ");
+                    match metadata.variadic_by_ref_start {
+                        Some(start) => out.push_str(&start.to_string()),
+                        None => out.push_str("SIZE_MAX"),
+                    }
+                    out.push_str(");\n");
+                } else {
+                    out.push_str("    ptn_call_arguments_unpack(&runtime, &");
+                    out.push_str(&args_temp);
+                    out.push_str(", ");
+                    out.push_str(&value_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
                 emit_value_cleanup(out, "    ", &value_temp);
             } else {
-                let value_temp = if dynamic_argument_materialization {
+                let value_temp = if let Some(parameter) =
+                    direct_user_parameters.and_then(|parameters| {
+                        by_ref_parameter_for_argument(parameters, argument_index)
+                    }) {
+                    self.emit_by_ref_call_argument(
+                        out,
+                        argument,
+                        function_name,
+                        argument_index,
+                        &parameter.name,
+                        line,
+                        true,
+                        false,
+                    )
+                } else if dynamic_argument_materialization {
                     self.emit_dynamic_call_argument(out, argument)
                 } else {
                     self.emit_call_argument(out, function_name, argument_index, argument)
@@ -11444,6 +11607,9 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 false,
+                direct_user
+                    .as_ref()
+                    .map(|(_, parameters, _, _)| parameters.as_slice()),
             );
             if let Some((c_name, _, receiver_class_name, visibility_check)) = &direct_user {
                 self.emit_direct_user_function_call(
@@ -11930,6 +12096,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 true,
+                None,
             );
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -12545,6 +12712,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 true,
+                None,
             );
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -12687,6 +12855,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 true,
+                None,
             );
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);

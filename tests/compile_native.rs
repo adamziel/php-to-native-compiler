@@ -1407,6 +1407,10 @@ fn parser_validates_closure_use_lists() {
             "<?php $fn = function($a) use ($a) {};",
             "Cannot use lexical variable $a as a parameter name",
         ),
+        (
+            "<?php $fn = function() use (&$a) { if (true) { static $a; } };",
+            "Duplicate declaration of static variable $a",
+        ),
     ];
 
     for (source, message) in cases {
@@ -1546,6 +1550,28 @@ fn parser_accepts_global_variable_statements() {
         panic!("expected global statement");
     };
     assert_eq!(names, &vec!["left".to_string(), "right".to_string()]);
+}
+
+#[test]
+fn parser_accepts_static_local_variable_statements() {
+    let program = parser::parse(
+        "<?php function next_value() { static $value = 0, $items = ['a' => 1], $name = init(); }",
+    )
+    .unwrap();
+
+    let Statement::Static { declarations, .. } = &program.functions[0].body[0] else {
+        panic!("expected static statement");
+    };
+    assert_eq!(declarations.len(), 3);
+    assert_eq!(declarations[0].name, "value");
+    assert!(matches!(declarations[0].value, Some(Expr::Int(0, _))));
+    assert_eq!(declarations[1].name, "items");
+    assert!(matches!(declarations[1].value, Some(Expr::Array { .. })));
+    assert_eq!(declarations[2].name, "name");
+    assert!(matches!(
+        declarations[2].value,
+        Some(Expr::Call { ref name, .. }) if name == "init"
+    ));
 }
 
 #[test]
@@ -5007,6 +5033,208 @@ fn compile_echo_program_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Hello 42\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_function_static_locals_to_native_binary() {
+    let root = temp_dir("ptn-native-function-static-locals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-static-locals.php");
+    let output = root.join("function-static-locals-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function bump($reset = null) {
+    static $value = 0, $items = array("seed" => 1);
+    if ($reset !== null) {
+        $value = $reset;
+        $items[] = $reset;
+    } else {
+        $value++;
+    }
+    echo $value, "/", count($items), "\n";
+}
+bump(10);
+bump();
+bump(20);
+bump();
+
+class BaseStaticLocal {
+    public function set($value = null) {
+        static $box = null;
+        if ($value !== null) {
+            $box = array($value);
+        }
+        return $box;
+    }
+}
+$base = new BaseStaticLocal;
+$base->set(42);
+$child = new class extends BaseStaticLocal {};
+$result = $child->set();
+echo $result[0], "\n";
+$child->set(24);
+$result = $base->set();
+echo $result[0], "\n";
+
+function ref_static() {
+    static $holder = 1;
+    $alias =& $holder;
+    $alias = $holder + 10;
+    return $holder;
+}
+echo ref_static(), "\n";
+echo ref_static(), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "10/2\n11/2\n20/3\n21/3\n42\n24\n11\n21\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_static_local_initializers_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-static-local-initializers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-static-local-initializers.php");
+    let output = root.join("dynamic-static-local-initializers-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function init_name() {
+    echo "init\n";
+    return "ready";
+}
+
+function dynamic_static() {
+    static $name = init_name();
+    echo $name, "\n";
+}
+dynamic_static();
+dynamic_static();
+
+function recursive_static($i) {
+    static $value = $i <= 3 ? recursive_static($i + 1) : "done";
+    echo $value, "\n";
+    return $i;
+}
+recursive_static(0);
+
+function throwing_static($throw) {
+    static $value = $throw ? (throw new Exception("retry")) : 42;
+    return $value;
+}
+try {
+    var_dump(throwing_static(true));
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(throwing_static(false));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "init\nready\nready\ndone\ndone\ndone\ndone\ndone\nretry\nint(42)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_by_ref_call_unpack_to_native_binary() {
+    let root = temp_dir("ptn-native-by-ref-call-unpack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-ref-call-unpack.php");
+    let output = root.join("by-ref-call-unpack-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function inc_all(&...$args) {
+    foreach ($args as &$arg) {
+        $arg++;
+    }
+}
+
+$items = [1, 2];
+$copy = $items;
+inc_all(...$items);
+echo $items[0], $items[1], ":", $copy[0], $copy[1], "\n";
+
+function touch_pair($value1, &$ref1, $value2, &$ref2) {
+    $ref1 += 10;
+    $ref2 += 20;
+}
+
+$items = [1, 2, 3, 4];
+touch_pair(...$items);
+echo $items[0], ",", $items[1], ",", $items[2], ",", $items[3], "\n";
+
+$a = 0;
+$items = [0, 0, 0, 0];
+touch_pair($a, ...$items);
+echo $a, "/", $items[0], "/", $items[1], "/", $items[2], "/", $items[3], "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "23:12\n1,12,3,24\n0/10/0/20/0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_private_constructor_from_declaring_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-private-constructor-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("private-constructor-scope.php");
+    let output = root.join("private-constructor-scope-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class PrivateCtorScope {
+    private $name = "";
+    private function __construct($name) {
+        echo "new ", $name, "\n";
+        $this->name = $name;
+    }
+    public static function make($name) {
+        return new PrivateCtorScope($name);
+    }
+    public function name() {
+        return $this->name;
+    }
+}
+$value = PrivateCtorScope::make("ok");
+echo $value->name(), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "new ok\nok\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

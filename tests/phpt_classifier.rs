@@ -341,18 +341,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires `never` return type",
         ),
         (
-            "static local variable",
-            "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
-            "unsupported-function-state\t",
-            "requires static local variables",
-        ),
-        (
-            "top-level static binding",
-            "--TEST--\nstatic binding\n--FILE--\n<?php\ntry { static $value; } catch (Throwable $e) {}\n--EXPECT--\n",
-            "unsupported-function-state\t",
-            "requires static local variables",
-        ),
-        (
             "foreach append read",
             "--TEST--\nappend read\n--FILE--\n<?php\nforeach ($items[] as $value) {}\n--EXPECTF--\n",
             "unsupported-expression-diagnostics\t",
@@ -462,9 +450,9 @@ fn phpt_classifier_splits_unpacking_blockers() {
     let by_ref_unpack = classify(
         "--TEST--\nby-ref call unpack\n--FILE--\n<?php\nfunction inc(&$value) { $value++; }\n$items = [1];\ninc(...$items);\n--EXPECT--\n",
     );
-    assert!(
-        by_ref_unpack.starts_with("unsupported-call-unpacking-reference\t"),
-        "{by_ref_unpack:?}"
+    assert_eq!(
+        by_ref_unpack.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
     );
 
     let spl_iterator_unpack = classify(

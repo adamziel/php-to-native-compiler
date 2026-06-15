@@ -1546,6 +1546,77 @@ static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArg
     }
 }
 
+static PTN_UNUSED int ptn_call_unpacked_argument_is_by_ref(
+    size_t argument_index,
+    const unsigned char *by_ref_map,
+    size_t by_ref_map_len,
+    size_t variadic_by_ref_start
+) {
+    if (argument_index < by_ref_map_len && by_ref_map != NULL && by_ref_map[argument_index] != 0) {
+        return 1;
+    }
+    return variadic_by_ref_start != SIZE_MAX && argument_index >= variadic_by_ref_start;
+}
+
+static PTN_UNUSED PtnValue ptn_array_entry_reference_value(PtnArrayEntry *entry) {
+    if (entry->value.type != PTN_REFERENCE) {
+        PtnValue current = entry->value;
+        entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+    return ptn_value_clone(entry->value);
+}
+
+static PTN_UNUSED void ptn_call_arguments_unpack_with_references(
+    PtnRuntime *runtime,
+    PtnCallArguments *arguments,
+    PtnValue value,
+    size_t line,
+    const unsigned char *by_ref_map,
+    size_t by_ref_map_len,
+    size_t variadic_by_ref_start
+) {
+    if (value.type == PTN_REFERENCE && value.as.reference != NULL) {
+        PtnValue *slot = &value.as.reference->value;
+        if (slot->type == PTN_ARRAY) {
+            (void)ptn_value_detach_array(slot);
+        }
+    }
+
+    PtnValue source = ptn_value_deref(value);
+    if (source.type != PTN_ARRAY) {
+        char message[160];
+        ptn_array_unpack_invalid_operand_message(source, message, sizeof(message));
+        ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+        return;
+    }
+
+    ptn_call_arguments_reserve(arguments, source.as.array->len);
+    for (size_t i = 0; i < source.as.array->len; i++) {
+        PtnArrayEntry *entry = &source.as.array->entries[i];
+        if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "Cannot use positional argument after named argument during unpacking",
+                runtime->source_path,
+                line
+            );
+            return;
+        }
+        size_t argument_index = arguments->len;
+        if (ptn_call_unpacked_argument_is_by_ref(
+            argument_index,
+            by_ref_map,
+            by_ref_map_len,
+            variadic_by_ref_start
+        )) {
+            ptn_call_arguments_append_owned(arguments, ptn_array_entry_reference_value(entry));
+        } else {
+            ptn_call_arguments_append_owned(arguments, ptn_value_clone_deref(entry->value));
+        }
+    }
+}
+
 static PTN_UNUSED void ptn_call_arguments_destroy(PtnCallArguments *arguments) {
     for (size_t i = 0; i < arguments->len; i++) {
         ptn_value_destroy(&arguments->values[i]);

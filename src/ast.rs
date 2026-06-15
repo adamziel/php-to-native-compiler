@@ -186,6 +186,10 @@ pub enum Statement {
         names: Vec<String>,
         span: SourceSpan,
     },
+    Static {
+        declarations: Vec<StaticDeclaration>,
+        span: SourceSpan,
+    },
     Call {
         name: String,
         arguments: Vec<Expr>,
@@ -303,6 +307,13 @@ pub struct SwitchCase {
 pub struct ConstDeclaration {
     pub name: String,
     pub value: Expr,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaticDeclaration {
+    pub name: String,
+    pub value: Option<Expr>,
     pub span: SourceSpan,
 }
 

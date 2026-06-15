@@ -7,8 +7,8 @@ use crate::ast::{
     IncDecResult, IncDecTarget, IncludeKind, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind,
     MethodDecl, Program, PromotedProperty, PropertyDecl, PropertyVisibility, ReferenceTarget,
-    Statement, StaticPropertyDecl, StringInterpolationIndex, StringPart, SwitchCase, TypeHint,
-    UnaryOp, UnsetTarget,
+    Statement, StaticDeclaration, StaticPropertyDecl, StringInterpolationIndex, StringPart,
+    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -1587,6 +1587,12 @@ impl Parser<'_> {
             TokenKind::Goto => self.parse_goto(),
             TokenKind::Const => self.parse_const(),
             TokenKind::Global => self.parse_global(),
+            TokenKind::Identifier(ref name)
+                if name.eq_ignore_ascii_case("static")
+                    && matches!(self.peek_next().kind, TokenKind::Variable(_)) =>
+            {
+                self.parse_static_statement()
+            }
             TokenKind::Function if matches!(self.peek_next().kind, TokenKind::Identifier(_)) => {
                 self.parse_nested_function_decl_statement()
             }
@@ -1719,6 +1725,7 @@ impl Parser<'_> {
         self.function_depth -= 1;
         self.return_by_ref_stack.pop();
         let body = body?;
+        validate_closure_use_static_names(&captures, &body)?;
         Ok(Expr::AnonymousFunction(AnonymousFunction {
             parameters,
             captures,
@@ -2396,6 +2403,37 @@ impl Parser<'_> {
         }
         self.expect_statement_terminator()?;
         Ok(Statement::Global { names, span })
+    }
+
+    fn parse_static_statement(&mut self) -> Result<Statement> {
+        let span = self.advance().span;
+        let mut declarations = Vec::new();
+        loop {
+            let token = self.advance().clone();
+            let TokenKind::Variable(name) = token.kind else {
+                return Err(Diagnostic::new(
+                    "expected static local variable",
+                    Some(token.span),
+                ));
+            };
+            let value = if matches!(self.peek().kind, TokenKind::Equal) {
+                self.advance();
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            declarations.push(StaticDeclaration {
+                name,
+                value,
+                span: token.span,
+            });
+            if !matches!(self.peek().kind, TokenKind::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        self.expect_statement_terminator()?;
+        Ok(Statement::Static { declarations, span })
     }
 
     fn parse_const_declaration(&mut self) -> Result<ConstDeclaration> {
@@ -5023,6 +5061,104 @@ fn validate_closure_use_parameter_names(
     Ok(())
 }
 
+fn validate_closure_use_static_names(
+    captures: &[ClosureUseCapture],
+    body: &[Statement],
+) -> Result<()> {
+    let capture_names = captures
+        .iter()
+        .map(|capture| capture.name.as_str())
+        .collect::<HashSet<_>>();
+    if capture_names.is_empty() {
+        return Ok(());
+    }
+    validate_closure_use_static_names_in_statements(&capture_names, body)
+}
+
+fn validate_closure_use_static_names_in_statements(
+    capture_names: &HashSet<&str>,
+    statements: &[Statement],
+) -> Result<()> {
+    for statement in statements {
+        match statement {
+            Statement::Static { declarations, .. } => {
+                for declaration in declarations {
+                    if capture_names.contains(declaration.name.as_str()) {
+                        return Err(Diagnostic::new(
+                            format!(
+                                "Duplicate declaration of static variable ${}",
+                                declaration.name
+                            ),
+                            Some(declaration.span),
+                        ));
+                    }
+                }
+            }
+            Statement::Block { statements, .. } => {
+                validate_closure_use_static_names_in_statements(capture_names, statements)?;
+            }
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                validate_closure_use_static_names_in_statements(capture_names, then_body)?;
+                validate_closure_use_static_names_in_statements(capture_names, else_body)?;
+            }
+            Statement::While { body, .. } | Statement::DoWhile { body, .. } => {
+                validate_closure_use_static_names_in_statements(capture_names, body)?;
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                validate_closure_use_static_names_in_statements(capture_names, initializers)?;
+                validate_closure_use_static_names_in_statements(capture_names, updates)?;
+                validate_closure_use_static_names_in_statements(capture_names, body)?;
+            }
+            Statement::Foreach { body, .. } => {
+                validate_closure_use_static_names_in_statements(capture_names, body)?;
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    validate_closure_use_static_names_in_statements(capture_names, &case.body)?;
+                }
+            }
+            Statement::Try { body, catches, .. } => {
+                validate_closure_use_static_names_in_statements(capture_names, body)?;
+                for catch in catches {
+                    validate_closure_use_static_names_in_statements(capture_names, &catch.body)?;
+                }
+            }
+            Statement::Empty { .. }
+            | Statement::ClassDeclaration { .. }
+            | Statement::FunctionDeclaration { .. }
+            | Statement::Assign { .. }
+            | Statement::AssignRef { .. }
+            | Statement::ArrayAssign { .. }
+            | Statement::ArrayAssignRef { .. }
+            | Statement::Increment { .. }
+            | Statement::Unset { .. }
+            | Statement::Global { .. }
+            | Statement::Call { .. }
+            | Statement::Echo { .. }
+            | Statement::Print { .. }
+            | Statement::Expression { .. }
+            | Statement::Const { .. }
+            | Statement::Break { .. }
+            | Statement::Continue { .. }
+            | Statement::Return { .. }
+            | Statement::Throw { .. }
+            | Statement::Label { .. }
+            | Statement::Goto { .. }
+            | Statement::InlineHtml { .. } => {}
+        }
+    }
+    Ok(())
+}
+
 fn is_auto_global_name(name: &str) -> bool {
     matches!(
         name,
@@ -6118,6 +6254,13 @@ fn validate_control_transfers_in_statements(
                     validate_control_transfers_in_expr(&declaration.value)?;
                 }
             }
+            Statement::Static { declarations, .. } => {
+                for declaration in declarations {
+                    if let Some(value) = &declaration.value {
+                        validate_control_transfers_in_expr(value)?;
+                    }
+                }
+            }
             Statement::Block { statements, .. } => {
                 validate_control_transfers_in_statements(statements, control_depth)?;
             }
@@ -6886,6 +7029,13 @@ fn validate_anonymous_functions_in_statements(
             Statement::Const { declarations, .. } => {
                 for declaration in declarations {
                     validate_anonymous_functions_in_expr(&declaration.value, functions)?;
+                }
+            }
+            Statement::Static { declarations, .. } => {
+                for declaration in declarations {
+                    if let Some(value) = &declaration.value {
+                        validate_anonymous_functions_in_expr(value, functions)?;
+                    }
                 }
             }
             Statement::If {

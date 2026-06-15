@@ -1158,16 +1158,8 @@ ptn_phpt_first_unsupported_language_surface() {
             if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]*&[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\(/) {
                 ptn_by_ref_function_context = 1
             }
-            if (ptn_has_by_reference_parameter(line)) {
-                ptn_call_unpack_by_reference_context = 1
-            }
             if (ptn_has_spl_iterator_object(line) && ptn_spread_context(line) == "call") {
                 print "unsupported-call-unpacking-traversable\trequires Traversable/SPL iterator argument unpacking, outside PTN array-only call unpacking runtime"
-                found = 1
-                exit
-            }
-            if (ptn_call_unpack_by_reference_context && !ptn_is_function_declaration(line) && ptn_spread_context(line) == "call") {
-                print "unsupported-call-unpacking-reference\trequires preserving by-reference parameter binding through spread-expanded arguments, outside PTN call unpacking runtime"
                 found = 1
                 exit
             }
@@ -1203,12 +1195,6 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (line ~ /\)[[:space:]]*:[[:space:]]*never([^[:alnum:]_]|$)/) {
                 print "unsupported-type-hint\trequires `never` return type control-flow validation, outside PTN modeled type hints"
-                found = 1
-                exit
-            }
-            if ((ptn_static_local_context || ptn_class_body_depth == 0) &&
-                line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+\$[a-z_]/) {
-                print "unsupported-function-state\trequires static local variables, outside PTN function-local static storage model"
                 found = 1
                 exit
             }
