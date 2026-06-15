@@ -9038,6 +9038,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "unlink"
             | "call_user_func"
             | "call_user_func_array"
+            | "class_alias"
             | "class_exists"
             | "debug_zval_dump"
             | "is_callable"

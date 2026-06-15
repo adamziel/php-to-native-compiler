@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-vj4r class_alias namespace metadata | 5 | 5 |
 | ptn-144g parser residual row pack | 2 | 2 |
 | ptn-evvk stream mode diagnostics | 8 | 8 |
 | ptn-w17z.26 Serializable/SPL unserialize row pack | 5 | 5 |
@@ -25,14 +26,21 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:27Z.
-Measured latest: `ptn-144g` parser residual row pack selected 2 rows, kept 2 runnable, and passed 2/2 in the focused run.
-Latest: `ptn-144g` completed the checked-in parser residual row pack. Previous: `ptn-evvk` completed the checked-in stream mode diagnostics row pack.
+Refresh: 2026-06-15T18:37Z.
+Measured latest: `ptn-vj4r` class_alias namespace metadata selected 5 rows, kept 5 runnable, and passed 5/5 in the focused run.
+Latest: `ptn-vj4r` completed the checked-in class_alias namespace metadata row pack. Previous: `ptn-144g` completed the checked-in parser residual row pack.
 
-Current hook: `ptn-144g` parser residual row pack passed 2/2 at
+Current hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
+`.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
+Previous hook: `ptn-144g` parser residual row pack passed 2/2 at
 `.runtime/merge-ptn-144g-parser-residuals/summary-20260615T182723Z.txt`.
-Previous hook: `ptn-evvk` stream mode diagnostics passed 8/8 at
-`.runtime/merge-ptn-evvk-stream-mode-diagnostics/summary-20260615T181618Z.txt`.
+
+## 2026-06-15 ptn-vj4r Class Alias Namespace Metadata
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final rebased focused row pack (`.runtime/ptn-vj4r-class-alias-metadata-row-pack-rebased2/summary-20260615T172044Z.txt`) | 5 selected / 5 runnable | 5 |
+| Integrated focused merge run (`.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`) | 5 selected / 5 runnable | 5 |
 
 ## 2026-06-15 ptn-144g Parser Residual Row Pack
 
