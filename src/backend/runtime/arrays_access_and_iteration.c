@@ -1884,6 +1884,118 @@ static PTN_UNUSED void ptn_array_literal_append_entry(
     ptn_array_set_entry(array, key, ptn_value_clone(value));
 }
 
+static PTN_UNUSED void ptn_generator_data_free(void *data) {
+    PtnGenerator *generator = (PtnGenerator *)data;
+    if (generator == NULL) {
+        return;
+    }
+    if (generator->values != NULL) {
+        ptn_array_free(generator->values);
+    }
+    free(generator);
+}
+
+static PTN_UNUSED int ptn_object_is_generator(PtnObject *object) {
+    return object != NULL &&
+        object->native_data != NULL &&
+        ptn_ascii_case_equal(object->class_name, "Generator");
+}
+
+static PTN_UNUSED PtnGenerator *ptn_generator_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT || !ptn_object_is_generator(value.as.object)) {
+        return NULL;
+    }
+    return (PtnGenerator *)value.as.object->native_data;
+}
+
+static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_ref) {
+    PtnGenerator *generator = malloc(sizeof(PtnGenerator));
+    if (generator == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    PtnValue values = ptn_array_from_literal_entries(0, NULL);
+    generator->values = values.as.array;
+    generator->yields_by_ref = yields_by_ref ? 1 : 0;
+
+    PtnValue object = ptn_object_new_shell(runtime, "Generator");
+    object.as.object->native_data = generator;
+    object.as.object->native_data_free = ptn_generator_data_free;
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_generator_yield(
+    PtnRuntime *runtime,
+    int has_key,
+    PtnValue key_value,
+    PtnValue value,
+    size_t line
+) {
+    PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
+    if (generator == NULL || generator->values == NULL) {
+        return ptn_null();
+    }
+
+    PtnValue stored;
+    if (generator->yields_by_ref) {
+        if (value.type == PTN_REFERENCE) {
+            stored = ptn_value_clone(value);
+        } else {
+            ptn_emit_only_variable_references_yielded_by_reference_notice(
+                &runtime->diagnostics,
+                line
+            );
+            stored = ptn_value_clone_deref(value);
+        }
+    } else {
+        stored = ptn_value_clone_deref(value);
+    }
+
+    if (has_key) {
+        PtnArrayKey key = ptn_array_key_from_value(key_value);
+        ptn_array_set_entry(generator->values, key, stored);
+    } else {
+        if (!ptn_array_append_key_available(runtime, generator->values)) {
+            ptn_value_destroy(&stored);
+            return ptn_null();
+        }
+        PtnArrayKey key = ptn_array_int_key(generator->values->next_auto_key);
+        ptn_array_set_entry(generator->values, key, stored);
+    }
+    return ptn_value_clone_deref(value);
+}
+
+static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (generator == NULL || generator->values == NULL || generator->values->len == 0) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(generator->values->entries[0].value);
+}
+
+static PTN_UNUSED void ptn_emit_unpack_traversable_by_ref_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argument_index,
+    size_t line
+) {
+    if (runtime == NULL || !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    fputc('\n', stdout);
+    fputs("Warning: Cannot pass by-reference argument ", stdout);
+    fprintf(stdout, "%zu", argument_index);
+    fputs(" of ", stdout);
+    fputs(function_name != NULL ? function_name : "{closure}", stdout);
+    fputs("() by unpacking a Traversable, passing by-value instead in ", stdout);
+    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
+    fputs(" on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static PTN_UNUSED void ptn_array_unpack_invalid_operand_message(
     PtnValue value,
     char *message,
@@ -2078,16 +2190,25 @@ static PTN_UNUSED int ptn_call_argument_index_is_by_ref(
 
 static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArguments *arguments, PtnValue value, size_t line) {
     PtnValue source = ptn_value_deref(value);
-    if (source.type != PTN_ARRAY) {
+    PtnArray *array = NULL;
+    if (source.type == PTN_ARRAY) {
+        array = source.as.array;
+    } else if (source.type == PTN_OBJECT) {
+        PtnGenerator *generator = ptn_generator_from_value(source);
+        if (generator != NULL) {
+            array = generator->values;
+        }
+    }
+    if (array == NULL) {
         char message[160];
         ptn_array_unpack_invalid_operand_message(source, message, sizeof(message));
         ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
         return;
     }
 
-    ptn_call_arguments_reserve(arguments, source.as.array->len);
-    for (size_t i = 0; i < source.as.array->len; i++) {
-        PtnArrayEntry *entry = &source.as.array->entries[i];
+    ptn_call_arguments_reserve(arguments, array->len);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
         if (entry->key.type == PTN_ARRAY_KEY_STRING) {
             ptn_throw_exception_at(
                 runtime,
@@ -2110,20 +2231,31 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
     size_t by_ref_indices_len,
     int has_by_ref_variadic,
     size_t by_ref_variadic_index,
+    const char *function_name,
     size_t line
 ) {
     PtnValue *storage = source_value != NULL && source_value->type == PTN_REFERENCE
         ? &source_value->as.reference->value
         : source_value;
     PtnValue source = storage != NULL ? ptn_value_deref(*storage) : ptn_null();
-    if (source.type != PTN_ARRAY) {
+    PtnArray *array = NULL;
+    int source_is_traversable = 0;
+    if (source.type == PTN_ARRAY) {
+        array = source.as.array;
+    } else if (source.type == PTN_OBJECT) {
+        PtnGenerator *generator = ptn_generator_from_value(source);
+        if (generator != NULL) {
+            array = generator->values;
+            source_is_traversable = 1;
+        }
+    }
+    if (array == NULL) {
         char message[160];
         ptn_array_unpack_invalid_operand_message(source, message, sizeof(message));
         ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
         return;
     }
 
-    PtnArray *array = source.as.array;
     int needs_by_ref_entry = 0;
     for (size_t i = 0; i < array->len; i++) {
         if (ptn_call_argument_index_is_by_ref(
@@ -2137,7 +2269,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
             break;
         }
     }
-    if (needs_by_ref_entry && storage != NULL) {
+    if (needs_by_ref_entry && storage != NULL && !source_is_traversable) {
         PtnArray *detached = ptn_array_detach_value(storage);
         if (detached != NULL) {
             array = detached;
@@ -2170,6 +2302,19 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
             has_by_ref_variadic,
             by_ref_variadic_index
         )) {
+            if (source_is_traversable) {
+                ptn_emit_unpack_traversable_by_ref_warning(
+                    runtime,
+                    function_name,
+                    arguments->len + 1,
+                    line
+                );
+                ptn_call_arguments_append_owned(
+                    arguments,
+                    ptn_reference_value(ptn_reference_new_owned(ptn_value_clone_deref(entry->value)))
+                );
+                continue;
+            }
             if (entry->value.type != PTN_REFERENCE) {
                 PtnValue current = entry->value;
                 entry->value = ptn_reference_value(ptn_reference_new_owned(current));
@@ -2189,6 +2334,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_value_with_parameter_modes(
     size_t by_ref_indices_len,
     int has_by_ref_variadic,
     size_t by_ref_variadic_index,
+    const char *function_name,
     size_t line
 ) {
     ptn_call_arguments_unpack_array_with_parameter_modes(
@@ -2199,6 +2345,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_value_with_parameter_modes(
         by_ref_indices_len,
         has_by_ref_variadic,
         by_ref_variadic_index,
+        function_name,
         line
     );
 }
@@ -2211,6 +2358,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
     size_t by_ref_indices_len,
     int has_by_ref_variadic,
     size_t by_ref_variadic_index,
+    const char *function_name,
     size_t line
 ) {
     if (strcmp(name, "GLOBALS") == 0) {
@@ -2223,6 +2371,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
             by_ref_indices_len,
             has_by_ref_variadic,
             by_ref_variadic_index,
+            function_name,
             line
         );
         ptn_value_destroy(&globals);
@@ -2241,6 +2390,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
             by_ref_indices_len,
             has_by_ref_variadic,
             by_ref_variadic_index,
+            function_name,
             line
         );
         return;
@@ -2254,6 +2404,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
         by_ref_indices_len,
         has_by_ref_variadic,
         by_ref_variadic_index,
+        function_name,
         line
     );
 }
@@ -2464,6 +2615,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
     PtnArrayIterator iterator;
     iterator.array = NULL;
     iterator.object = NULL;
+    iterator.generator = NULL;
     iterator.runtime = NULL;
     iterator.access_scope = NULL;
     iterator.iterator_object = ptn_null();
@@ -2568,6 +2720,39 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_array_snapshot(PtnArr
     return iterator;
 }
 
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_generator(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    int by_ref,
+    const char *path,
+    size_t line
+) {
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    if (!ptn_object_is_generator(object)) {
+        return iterator;
+    }
+    PtnGenerator *generator = (PtnGenerator *)object->native_data;
+    if (by_ref && !generator->yields_by_ref) {
+        ptn_throw_exception_at(
+            runtime,
+            "Exception",
+            "You can only iterate a generator by-reference if it declared that it yields by-reference",
+            path,
+            line
+        );
+        return iterator;
+    }
+    iterator.array = generator->values;
+    iterator.object = object;
+    iterator.generator = generator;
+    iterator.runtime = runtime;
+    iterator.valid = iterator.array != NULL && iterator.array->len != 0;
+    iterator.live = 1;
+    ptn_array_iterator_retain(iterator.array);
+    ptn_array_iterator_remember_current_key(&iterator);
+    return iterator;
+}
+
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
     PtnRuntime *runtime,
     PtnValue iterator_value,
@@ -2632,6 +2817,9 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
     if (value.type != PTN_OBJECT) {
         return ptn_array_iterator_empty();
     }
+    if (ptn_object_is_generator(value.as.object)) {
+        return ptn_array_iterator_from_generator(runtime, value.as.object, 0, path, line);
+    }
 
     if (
         ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate") &&
@@ -2646,6 +2834,8 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         PtnArrayIterator iterator = ptn_array_iterator_empty();
         if (resolved.type == PTN_ARRAY) {
             iterator = ptn_array_iterator_from_array_snapshot(resolved.as.array);
+        } else if (resolved.type == PTN_OBJECT && ptn_object_is_generator(resolved.as.object)) {
+            iterator = ptn_array_iterator_from_generator(runtime, resolved.as.object, 0, path, line);
         } else if (
             resolved.type == PTN_OBJECT &&
             (
@@ -2691,6 +2881,15 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     PtnArrayIterator iterator = ptn_array_iterator_empty();
     if (value.type != PTN_ARRAY) {
         if (value.type == PTN_OBJECT) {
+            if (ptn_object_is_generator(value.as.object)) {
+                return ptn_array_iterator_from_generator(
+                    runtime,
+                    value.as.object,
+                    0,
+                    path,
+                    line
+                );
+            }
             return ptn_array_iterator_from_traversable_object(runtime, value, access_scope, path, line, 0);
         }
         ptn_emit_foreach_non_array_warning(value, path, line);
@@ -2715,6 +2914,15 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
 
     PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
     if (value->type == PTN_OBJECT) {
+        if (ptn_object_is_generator(value->as.object)) {
+            return ptn_array_iterator_from_generator(
+                runtime,
+                value->as.object,
+                1,
+                path,
+                line
+            );
+        }
         return ptn_array_iterator_from_traversable_object(runtime, *value, access_scope, path, line, 0);
     }
     if (value->type != PTN_ARRAY) {
@@ -2786,7 +2994,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
         return ptn_protocol_iterator_call(iterator, "key");
     }
     PtnArrayKey key = iterator->array->entries[iterator->index].key;
-    if (iterator->object != NULL) {
+    if (iterator->object != NULL && iterator->generator == NULL) {
         return ptn_object_foreach_key_value(iterator->object, key);
     }
     if (key.type == PTN_ARRAY_KEY_INT) {
@@ -2908,6 +3116,7 @@ static PTN_UNUSED void ptn_array_iterator_destroy(PtnArrayIterator *iterator) {
         iterator->array = NULL;
     }
     iterator->object = NULL;
+    iterator->generator = NULL;
     iterator->runtime = NULL;
     iterator->access_scope = NULL;
     if (iterator->has_iterator_object) {

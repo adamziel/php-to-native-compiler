@@ -419,6 +419,13 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     );
     out.push_str("    value = ptn_value_deref(value);\n");
     out.push_str("    if (value.type == PTN_OBJECT) {\n");
+    out.push_str("        if (ptn_object_is_generator(value.as.object)) {\n");
+    out.push_str(
+        "            return ptn_ascii_case_equal(expected_class_name, \"Generator\") ||\n",
+    );
+    out.push_str("                ptn_ascii_case_equal(expected_class_name, \"Iterator\") ||\n");
+    out.push_str("                ptn_ascii_case_equal(expected_class_name, \"Traversable\");\n");
+    out.push_str("        }\n");
     out.push_str("        return ptn_declared_class_is_same_or_descendant(value.as.object->class_name, expected_class_name) ||\n");
     out.push_str("            ptn_declared_class_implements_interface(value.as.object->class_name, expected_class_name) ||\n");
     out.push_str(
@@ -664,7 +671,15 @@ fn emit_user_functions(
             out.push_str("    ptn_runtime_import_closure_captures(&runtime, receiver);\n");
         }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
-        if function.return_by_ref {
+        if function.is_generator {
+            out.push_str("    PtnValue ptn_generator_value = ptn_generator_new(&runtime, ");
+            out.push_str(if function.return_by_ref { "1" } else { "0" });
+            out.push_str(");\n");
+            out.push_str(
+                "    runtime.current_generator = ptn_generator_from_value(ptn_generator_value);\n",
+            );
+        }
+        if function.return_by_ref && !function.is_generator {
             out.push_str("    size_t ptn_return_line = line;\n");
             if matches!(function.return_type.as_ref(), Some(TypeHint::Void)) {
                 out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
@@ -935,6 +950,15 @@ fn emit_user_functions(
         out.push_str("    ");
         out.push_str(&return_label);
         out.push_str(":\n");
+        if function.is_generator {
+            out.push_str("    runtime.current_generator = NULL;\n");
+            out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
+            out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    return ptn_generator_value;\n");
+            out.push_str("}\n");
+            continue;
+        }
         if function.return_by_ref {
             out.push_str("    if (ptn_return_value.type != PTN_REFERENCE) {\n");
             out.push_str("        PtnValue ptn_return_reference = ptn_reference_source_or_value(&runtime, ptn_return_value, ptn_return_line);\n");
@@ -1971,6 +1995,9 @@ fn emit_class_metadata_helpers(
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
     }
+    out.push_str("    if (ptn_ascii_case_equal(name, \"Generator\")) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     for class in classes {
         if class.is_interface {
             continue;
@@ -2177,10 +2204,10 @@ fn emit_class_metadata_helpers(
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_implements_interface_direct(const char *class_name, const char *interface_name) {\n",
     );
-    if classes.iter().all(|class| class.interfaces.is_empty()) {
-        out.push_str("    (void)class_name;\n");
-        out.push_str("    (void)interface_name;\n");
-    }
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"Generator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     for class in classes {
         if class.interfaces.is_empty() {
             continue;
@@ -3927,6 +3954,20 @@ fn emit_method_dispatch(
     out.push_str("        exit(255);\n");
     out.push_str("    }\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("    if (ptn_object_is_generator(resolved.as.object)) {\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"current\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::current() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            (void)args;\n");
+    out.push_str("            return ptn_generator_current(runtime, resolved, line);\n");
+    out.push_str("        }\n");
+    out.push_str("        fputs(\"Fatal error: Call to undefined method Generator::\", stderr);\n");
+    out.push_str("        fputs(method_name, stderr);\n");
+    out.push_str("        fputc('\\n', stderr);\n");
+    out.push_str("        exit(255);\n");
+    out.push_str("    }\n");
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
@@ -4740,6 +4781,19 @@ fn emit_instruction(
         }
         Instruction::Return { value, line } => match return_target {
             Some(target) => {
+                if values.current_function_is_generator {
+                    if let Some(value) = value {
+                        let return_temp = values.emit_materialized_value(out, value);
+                        out.push_str("    (void)");
+                        out.push_str(&return_temp);
+                        out.push_str(";\n");
+                        emit_value_cleanup(out, "    ", &return_temp);
+                    }
+                    out.push_str("    goto ");
+                    out.push_str(target);
+                    out.push_str(";\n");
+                    return;
+                }
                 if values.current_function_return_by_ref {
                     out.push_str("    ptn_return_line = ");
                     out.push_str(&line.to_string());
@@ -6244,6 +6298,14 @@ fn collect_value_legacy_dollar_brace_deprecations(
         | ValueExpr::MagicConstant { .. }
         | ValueExpr::StaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. } => {}
+        ValueExpr::Yield { key, value, .. } => {
+            if let Some(key) = key {
+                collect_value_legacy_dollar_brace_deprecations(key, deprecations);
+            }
+            if let Some(value) = value {
+                collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+            }
+        }
     }
 }
 
@@ -6624,6 +6686,14 @@ fn collect_value_runtime_requirements(
         | ValueExpr::LegacyDollarBraceStringVariable { .. }
         | ValueExpr::Constant { .. }
         | ValueExpr::MagicConstant { .. } => {}
+        ValueExpr::Yield { key, value, .. } => {
+            if let Some(key) = key {
+                collect_value_runtime_requirements(key, functions, requirements);
+            }
+            if let Some(value) = value {
+                collect_value_runtime_requirements(value, functions, requirements);
+            }
+        }
         ValueExpr::IncDec { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
         }
@@ -7758,6 +7828,7 @@ struct ValueEmitter {
     current_class_name: Option<String>,
     current_trait_name: Option<String>,
     current_function_return_by_ref: bool,
+    current_function_is_generator: bool,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
     includes: Vec<IncludeFile>,
@@ -8069,6 +8140,13 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::Closure { .. }
         | ValueExpr::Constant { .. }
         | ValueExpr::MagicConstant { .. } => false,
+        ValueExpr::Yield { key, value, .. } => {
+            key.as_ref()
+                .is_some_and(|key| value_mentions_variable(key, name))
+                || value
+                    .as_ref()
+                    .is_some_and(|value| value_mentions_variable(value, name))
+        }
     }
 }
 
@@ -8129,6 +8207,7 @@ impl ValueEmitter {
             None,
             None,
             false,
+            false,
         )
     }
 
@@ -8155,6 +8234,7 @@ impl ValueEmitter {
             function.class_name.as_deref(),
             function.trait_name.as_deref(),
             function.return_by_ref,
+            function.is_generator,
         )
     }
 
@@ -8169,6 +8249,7 @@ impl ValueEmitter {
         current_class_name: Option<&str>,
         current_trait_name: Option<&str>,
         current_function_return_by_ref: bool,
+        current_function_is_generator: bool,
     ) -> Self {
         Self {
             next_temp: 0,
@@ -8182,6 +8263,7 @@ impl ValueEmitter {
             current_class_name: current_class_name.map(str::to_string),
             current_trait_name: current_trait_name.map(str::to_string),
             current_function_return_by_ref,
+            current_function_is_generator,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
             includes: includes.to_vec(),
@@ -10582,6 +10664,9 @@ impl ValueEmitter {
                 argument_unpacks,
                 *line,
             ),
+            ValueExpr::Yield { key, value, line } => {
+                self.emit_yield(out, key.as_deref(), value.as_deref(), *line)
+            }
         }
     }
 
@@ -13448,6 +13533,7 @@ impl ValueEmitter {
                 | ValueExpr::DynamicClassNameFetch { .. }
                 | ValueExpr::Include { .. }
                 | ValueExpr::Throw { .. }
+                | ValueExpr::Yield { .. }
         ) {
             return self.emit_value(out, value);
         }
@@ -13516,6 +13602,50 @@ impl ValueEmitter {
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &result_temp);
         temp
+    }
+
+    fn emit_yield(
+        &mut self,
+        out: &mut String,
+        key: Option<&ValueExpr>,
+        value: Option<&ValueExpr>,
+        line: usize,
+    ) -> String {
+        let key_temp = key.map(|key| self.emit_materialized_value(out, key));
+        let value_temp = match value {
+            Some(value) if self.current_function_return_by_ref => {
+                if let Some(target) = reference_target_from_value(value) {
+                    self.emit_reference_target(out, &target)
+                } else {
+                    self.emit_materialized_value(out, value)
+                }
+            }
+            Some(value) => self.emit_materialized_value(out, value),
+            None => {
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_null();\n");
+                temp
+            }
+        };
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_generator_yield(&runtime, ");
+        out.push_str(if key_temp.is_some() { "1" } else { "0" });
+        out.push_str(", ");
+        out.push_str(key_temp.as_deref().unwrap_or("ptn_null()"));
+        out.push_str(", ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        if let Some(key_temp) = key_temp {
+            emit_value_cleanup(out, "    ", &key_temp);
+        }
+        emit_value_cleanup(out, "    ", &value_temp);
+        result_temp
     }
 
     fn emit_reference_target(&mut self, out: &mut String, target: &ReferenceTarget) -> String {
@@ -13680,6 +13810,9 @@ impl ValueEmitter {
                         out.push_str(", ");
                         out.push_str(&variadic_index.to_string());
                         out.push_str(", ");
+                        out.push('"');
+                        out.push_str(&c_string(function_name));
+                        out.push_str("\", ");
                         out.push_str(&line.to_string());
                         out.push_str(");\n");
                     } else {
@@ -13699,6 +13832,9 @@ impl ValueEmitter {
                         out.push_str(", ");
                         out.push_str(&variadic_index.to_string());
                         out.push_str(", ");
+                        out.push('"');
+                        out.push_str(&c_string(function_name));
+                        out.push_str("\", ");
                         out.push_str(&line.to_string());
                         out.push_str(");\n");
                         emit_value_cleanup(out, "    ", &value_temp);

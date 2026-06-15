@@ -4080,6 +4080,7 @@ impl Parser<'_> {
             TokenKind::Dollar => self.parse_dynamic_variable_expr(token.span),
             TokenKind::Function => self.parse_anonymous_function_expr(token.span, false),
             TokenKind::New => self.parse_new_object_expr(token.span),
+            TokenKind::Yield => self.parse_yield_expr(token.span),
             TokenKind::Identifier(name) => {
                 if name.eq_ignore_ascii_case("fn") {
                     return self.parse_arrow_function_expr(token.span, false);
@@ -4302,6 +4303,49 @@ impl Parser<'_> {
             conditions.push(self.parse_expr()?);
         }
         Ok(conditions)
+    }
+
+    fn parse_yield_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        if matches!(
+            self.peek().kind,
+            TokenKind::Semicolon
+                | TokenKind::CloseTag
+                | TokenKind::RightParen
+                | TokenKind::RightBracket
+                | TokenKind::RightBrace
+                | TokenKind::Comma
+                | TokenKind::Colon
+        ) {
+            return Ok(Expr::Yield {
+                key: None,
+                value: None,
+                span: start_span,
+            });
+        }
+        if self.peek_is_identifier("from") {
+            return Err(Diagnostic::new(
+                "yield from is unsupported",
+                Some(self.peek().span),
+            ));
+        }
+
+        let first = self.parse_expr()?;
+        if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+            self.advance();
+            let value = self.parse_expr()?;
+            let span = combine_spans(start_span, value.span());
+            return Ok(Expr::Yield {
+                key: Some(Box::new(first)),
+                value: Some(Box::new(value)),
+                span,
+            });
+        }
+        let span = combine_spans(start_span, first.span());
+        Ok(Expr::Yield {
+            key: None,
+            value: Some(Box::new(first)),
+            span,
+        })
     }
 
     fn parse_arrow_function_expr(
@@ -5176,6 +5220,7 @@ impl Parser<'_> {
                 | TokenKind::Function
                 | TokenKind::New
                 | TokenKind::Clone
+                | TokenKind::Yield
                 | TokenKind::Identifier(_)
                 | TokenKind::Plus
                 | TokenKind::Minus
@@ -5724,6 +5769,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Goto => "goto",
         TokenKind::Const => "const",
         TokenKind::Function => "function",
+        TokenKind::Yield => "yield",
         TokenKind::Global => "global",
         TokenKind::New => "new",
         TokenKind::Clone => "clone",
@@ -5984,6 +6030,14 @@ fn collect_arrow_captures_from_expr(
         | Expr::Cast { expr: target, .. }
         | Expr::Grouped { expr: target, .. } => {
             collect_arrow_captures_from_expr(target, exclusions, seen, captures);
+        }
+        Expr::Yield { key, value, .. } => {
+            if let Some(key) = key {
+                collect_arrow_captures_from_expr(key, exclusions, seen, captures);
+            }
+            if let Some(value) = value {
+                collect_arrow_captures_from_expr(value, exclusions, seen, captures);
+            }
         }
         Expr::Binary { left, right, .. } => {
             collect_arrow_captures_from_expr(left, exclusions, seen, captures);
@@ -7599,6 +7653,14 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. } => validate_control_transfers_in_expr(expr)?,
+        Expr::Yield { key, value, .. } => {
+            if let Some(key) = key {
+                validate_control_transfers_in_expr(key)?;
+            }
+            if let Some(value) = value {
+                validate_control_transfers_in_expr(value)?;
+            }
+        }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             validate_control_transfers_in_expr(receiver)?;
             validate_control_transfers_in_expr(name)?;
@@ -7936,6 +7998,14 @@ fn expr_array_literal_reference_to_variable(
         | Expr::Grouped { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
+        Expr::Yield { key, value, .. } => key
+            .as_deref()
+            .and_then(|key| expr_array_literal_reference_to_variable(key, variable))
+            .or_else(|| {
+                value
+                    .as_deref()
+                    .and_then(|value| expr_array_literal_reference_to_variable(value, variable))
+            }),
         Expr::DynamicVariable { name, .. } => {
             expr_array_literal_reference_to_variable(name, variable)
         }
@@ -8440,6 +8510,14 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
+        Expr::Yield { key, value, .. } => {
+            if let Some(key) = key {
+                validate_anonymous_functions_in_expr(key, functions)?;
+            }
+            if let Some(value) = value {
+                validate_anonymous_functions_in_expr(value, functions)?;
+            }
+        }
         Expr::Binary { left, right, .. } => {
             validate_anonymous_functions_in_expr(left, functions)?;
             validate_anonymous_functions_in_expr(right, functions)?;
@@ -10020,6 +10098,14 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::Unary { expr: target, .. }
         | Expr::Cast { expr: target, .. }
         | Expr::Grouped { expr: target, .. } => reject_append_array_read(target)?,
+        Expr::Yield { key, value, .. } => {
+            if let Some(key) = key {
+                reject_append_array_read(key)?;
+            }
+            if let Some(value) = value {
+                reject_append_array_read(value)?;
+            }
+        }
         Expr::Binary { left, right, .. } => {
             reject_append_array_read(left)?;
             reject_append_array_read(right)?;
@@ -10218,6 +10304,7 @@ fn is_supported_global_const_expr_with_options(
         | Expr::Print { .. }
         | Expr::Include { .. }
         | Expr::Throw { .. }
+        | Expr::Yield { .. }
         | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
@@ -10312,6 +10399,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::Print { .. }
         | Expr::Include { .. }
         | Expr::Throw { .. }
+        | Expr::Yield { .. }
         | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
@@ -10461,7 +10549,8 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         | Expr::Empty { .. }
         | Expr::Print { .. }
         | Expr::Include { .. }
-        | Expr::Throw { .. } => Ok(()),
+        | Expr::Throw { .. }
+        | Expr::Yield { .. } => Ok(()),
     }
 }
 

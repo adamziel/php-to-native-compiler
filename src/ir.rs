@@ -121,6 +121,7 @@ pub struct FunctionDecl {
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
+    pub is_generator: bool,
     pub is_anonymous: bool,
     pub initially_declared: bool,
     pub body: Vec<Instruction>,
@@ -377,6 +378,11 @@ pub enum ValueExpr {
     },
     Throw {
         value: Box<ValueExpr>,
+        line: usize,
+    },
+    Yield {
+        key: Option<Box<ValueExpr>>,
+        value: Option<Box<ValueExpr>>,
         line: usize,
     },
     InternalCall {
@@ -869,6 +875,7 @@ impl<'a> LoweringContext<'a> {
             parameters,
             return_type: function.return_type.clone().map(lower_type_hint),
             return_by_ref: function.return_by_ref,
+            is_generator: statements_contain_yield(&function.body),
             is_anonymous: false,
             initially_declared: !function.is_conditionally_declared,
             body: Vec::new(),
@@ -916,6 +923,7 @@ impl<'a> LoweringContext<'a> {
             parameters,
             return_type: function.return_type.clone().map(lower_type_hint),
             return_by_ref: function.return_by_ref,
+            is_generator: statements_contain_yield(&function.body),
             is_anonymous: true,
             initially_declared: true,
             body: Vec::new(),
@@ -985,6 +993,7 @@ impl<'a> LoweringContext<'a> {
                     parameters,
                     return_type: method.return_type.clone().map(lower_type_hint),
                     return_by_ref: method.return_by_ref,
+                    is_generator: statements_contain_yield(&method.body),
                     is_anonymous: false,
                     initially_declared: true,
                     body: Vec::new(),
@@ -1377,6 +1386,247 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::Never => TypeHint::Never,
         AstTypeHint::Nullable(inner) => TypeHint::Nullable(Box::new(lower_type_hint(*inner))),
         AstTypeHint::Class(name) => TypeHint::Class(name),
+    }
+}
+
+fn statements_contain_yield(statements: &[Statement]) -> bool {
+    statements.iter().any(statement_contains_yield)
+}
+
+fn statement_contains_yield(statement: &Statement) -> bool {
+    match statement {
+        Statement::Assign { value, .. }
+        | Statement::AssignRef { source: value, .. }
+        | Statement::ArrayAssign { value, .. }
+        | Statement::ArrayAssignRef { source: value, .. }
+        | Statement::Print {
+            expression: value, ..
+        }
+        | Statement::Expression {
+            expression: value, ..
+        }
+        | Statement::Return {
+            value: Some(value), ..
+        }
+        | Statement::Throw { value, .. } => expr_contains_yield(value),
+        Statement::Call { arguments, .. }
+        | Statement::Echo {
+            expressions: arguments,
+            ..
+        } => arguments.iter().any(expr_contains_yield),
+        Statement::Const { declarations, .. } => declarations
+            .iter()
+            .any(|declaration| expr_contains_yield(&declaration.value)),
+        Statement::Static { declarations, .. } => declarations
+            .iter()
+            .filter_map(|declaration| declaration.value.as_ref())
+            .any(expr_contains_yield),
+        Statement::If {
+            condition,
+            then_body,
+            else_body,
+            ..
+        } => {
+            expr_contains_yield(condition)
+                || statements_contain_yield(then_body)
+                || statements_contain_yield(else_body)
+        }
+        Statement::Block { statements, .. }
+        | Statement::While {
+            body: statements, ..
+        }
+        | Statement::DoWhile {
+            body: statements, ..
+        } => statements_contain_yield(statements),
+        Statement::For {
+            initializers,
+            condition,
+            updates,
+            body,
+            ..
+        } => {
+            statements_contain_yield(initializers)
+                || condition.as_ref().is_some_and(expr_contains_yield)
+                || statements_contain_yield(updates)
+                || statements_contain_yield(body)
+        }
+        Statement::Foreach { iterable, body, .. } => {
+            expr_contains_yield(iterable) || statements_contain_yield(body)
+        }
+        Statement::Switch {
+            expression, cases, ..
+        } => {
+            expr_contains_yield(expression)
+                || cases.iter().any(|case| {
+                    case.condition.as_ref().is_some_and(expr_contains_yield)
+                        || statements_contain_yield(&case.body)
+                })
+        }
+        Statement::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            statements_contain_yield(body)
+                || catches
+                    .iter()
+                    .any(|catch| statements_contain_yield(&catch.body))
+                || statements_contain_yield(finally_body)
+        }
+        Statement::Empty { .. }
+        | Statement::ClassDeclaration { .. }
+        | Statement::FunctionDeclaration { .. }
+        | Statement::Return { value: None, .. }
+        | Statement::Increment { .. }
+        | Statement::Unset { .. }
+        | Statement::Global { .. }
+        | Statement::Break { .. }
+        | Statement::Continue { .. }
+        | Statement::Label { .. }
+        | Statement::Goto { .. }
+        | Statement::InlineHtml { .. } => false,
+    }
+}
+
+fn expr_contains_yield(expr: &Expr) -> bool {
+    match expr {
+        Expr::Yield { .. } => true,
+        Expr::AnonymousFunction(_) => false,
+        Expr::DynamicVariable { name, .. }
+        | Expr::Print {
+            expression: name, ..
+        }
+        | Expr::Include { path: name, .. }
+        | Expr::Throw { value: name, .. }
+        | Expr::Unary { expr: name, .. }
+        | Expr::Cast { expr: name, .. }
+        | Expr::Clone { expr: name, .. }
+        | Expr::FirstClassCallable { callable: name, .. }
+        | Expr::Grouped { expr: name, .. } => expr_contains_yield(name),
+        Expr::String(_, _)
+        | Expr::InterpolatedString(_, _)
+        | Expr::ShellExec { .. }
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::IncDec { .. }
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _)
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. } => false,
+        Expr::Assign { target, value, .. } => {
+            assignment_target_contains_yield(target) || expr_contains_yield(value)
+        }
+        Expr::AssignRef { target, source, .. } => {
+            assignment_target_contains_yield(target) || expr_contains_yield(source)
+        }
+        Expr::Call { arguments, .. }
+        | Expr::DynamicCall { arguments, .. }
+        | Expr::MethodCall { arguments, .. }
+        | Expr::DynamicMethodCall { arguments, .. }
+        | Expr::NewObject { arguments, .. }
+        | Expr::DynamicNewObject { arguments, .. } => arguments.iter().any(expr_contains_yield),
+        Expr::PropertyFetch { receiver, .. }
+        | Expr::DynamicClassNameFetch { receiver, .. }
+        | Expr::InstanceOf { expr: receiver, .. } => expr_contains_yield(receiver),
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
+        Expr::Array { elements, .. } => elements.iter().any(|element| {
+            element.key.as_ref().is_some_and(expr_contains_yield)
+                || match &element.value {
+                    AstArrayElementValue::Value(value) | AstArrayElementValue::Unpack(value) => {
+                        expr_contains_yield(value)
+                    }
+                    AstArrayElementValue::Reference(target) => {
+                        reference_target_contains_yield(target)
+                    }
+                }
+        }),
+        Expr::List(list) => list.elements.iter().any(|element| {
+            element.key.as_ref().is_some_and(expr_contains_yield)
+                || element.target.as_ref().is_some_and(|target| match target {
+                    AstListExprElementTarget::Value(value) => expr_contains_yield(value),
+                    AstListExprElementTarget::Reference(target) => {
+                        reference_target_contains_yield(target)
+                    }
+                })
+        }),
+        Expr::ArrayAccess { array, index, .. } => {
+            expr_contains_yield(array)
+                || index
+                    .as_ref()
+                    .is_some_and(|index| expr_contains_yield(index))
+        }
+        Expr::Isset { targets, .. } => targets.iter().any(expr_contains_yield),
+        Expr::Empty { target, .. } => expr_contains_yield(target),
+        Expr::Binary { left, right, .. } => expr_contains_yield(left) || expr_contains_yield(right),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            expr_contains_yield(condition)
+                || if_true
+                    .as_ref()
+                    .is_some_and(|if_true| expr_contains_yield(if_true))
+                || expr_contains_yield(if_false)
+        }
+        Expr::Match { subject, arms, .. } => {
+            expr_contains_yield(subject)
+                || arms.iter().any(|arm| {
+                    arm.conditions.iter().any(expr_contains_yield)
+                        || expr_contains_yield(&arm.value)
+                })
+        }
+    }
+}
+
+fn assignment_target_contains_yield(target: &AstAssignmentTarget) -> bool {
+    match target {
+        AstAssignmentTarget::Variable { .. }
+        | AstAssignmentTarget::ArrayDim(_)
+        | AstAssignmentTarget::StaticProperty { .. } => false,
+        AstAssignmentTarget::DynamicVariable { name, .. } => expr_contains_yield(name),
+        AstAssignmentTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => expr_contains_yield(name) || dimensions.iter().flatten().any(expr_contains_yield),
+        AstAssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
+        AstAssignmentTarget::Property { receiver, .. } => expr_contains_yield(receiver),
+        AstAssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
+        AstAssignmentTarget::List(list) => list.elements.iter().any(|element| {
+            element.key.as_ref().is_some_and(expr_contains_yield)
+                || match &element.target {
+                    AstListAssignmentElementTarget::Value(target) => {
+                        assignment_target_contains_yield(target)
+                    }
+                    AstListAssignmentElementTarget::Reference(target) => {
+                        reference_target_contains_yield(target)
+                    }
+                }
+        }),
+    }
+}
+
+fn reference_target_contains_yield(target: &AstReferenceTarget) -> bool {
+    match target {
+        AstReferenceTarget::Variable { .. } | AstReferenceTarget::ArrayDim(_) => false,
+        AstReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
+        AstReferenceTarget::Property { receiver, .. } => expr_contains_yield(receiver),
     }
 }
 
@@ -1899,6 +2149,11 @@ impl<'a> LoweringContext<'a> {
                 value: Box::new(self.lower_expr(value)),
                 line: span.line,
             },
+            Expr::Yield { key, value, span } => ValueExpr::Yield {
+                key: key.as_ref().map(|key| Box::new(self.lower_expr(key))),
+                value: value.as_ref().map(|value| Box::new(self.lower_expr(value))),
+                line: span.line,
+            },
             Expr::Call {
                 name,
                 arguments,
@@ -2373,6 +2628,18 @@ fn assertion_expr_text(expr: &Expr) -> String {
             )
         }
         Expr::Throw { value, .. } => format!("throw {}", assertion_expr_text(value)),
+        Expr::Yield { key, value, .. } => match (key, value) {
+            (Some(key), Some(value)) => {
+                format!(
+                    "yield {} => {}",
+                    assertion_expr_text(key),
+                    assertion_expr_text(value)
+                )
+            }
+            (None, Some(value)) => format!("yield {}", assertion_expr_text(value)),
+            (None, None) => "yield".to_string(),
+            (Some(key), None) => format!("yield {} => null", assertion_expr_text(key)),
+        },
         Expr::Unary { op, expr, .. } => {
             format!(
                 "{}{}",

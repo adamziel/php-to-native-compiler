@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.28 collected Generator runtime row pack | 6 | 6 |
 | ptn-w17z.34 output-buffer compact row | 1 | 1 |
 | ptn-w17z.35 compact closure this row pack | 2 | 2 |
 | ptn-w17z.33 extract globals refs row pack | 3 | 3 |
@@ -15,14 +16,22 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T15:48Z.
-Measured latest: `ptn-w17z.34` output-buffer compact row selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.34` completed the checked-in output-buffer compact row. Previous: `ptn-w17z.35` completed the checked-in compact closure this row pack at 2/2.
+Refresh: 2026-06-15T16:01Z.
+Measured latest: `ptn-w17z.28` collected Generator runtime row pack selected 6 rows, ran all 6, and passed 6/6.
+Latest: `ptn-w17z.28` added bounded collected `Generator` runtime objects for eager generator-body execution. Previous: `ptn-w17z.34` completed the output-buffer compact row at 1/1.
 
-Current hook: `ptn-w17z.34` output-buffer compact row passed 1/1 at
+Current hook: `ptn-w17z.28` collected Generator runtime row pack passed 6/6 at
+`.runtime/merge-ptn-w17z28-generator-runtime/summary-20260615T163051Z.txt`.
+Previous hook: `ptn-w17z.34` output-buffer compact row passed 1/1 at
 `.runtime/merge-ptn-w17z34-output-buffer-compact/summary-20260615T162323Z.txt`.
-Previous hook: `ptn-w17z.35` compact closure this row pack passed 2/2 at
-`.runtime/merge-ptn-w17z35-compact-closure-this/summary-20260615T160939Z.txt`.
+
+## 2026-06-15 ptn-w17z.28 Collected Generator Runtime Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final rebased branch focused (`.runtime/ptn-w17z28-generator-row-pack-final-head2/run-20260615T160837Z-manifest.log`) | 6 selected / 6 runnable | 6 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z28-generator-runtime/summary-20260615T163051Z.txt`) | 6 selected / 6 runnable | 6 |
+| Final broad frontier (`.runtime/ptn-w17z28-broad-rebased/run-20260615T155020Z-manifest.log`) | 46 selected / 39 runnable / 7 classified | 37 |
 
 ## 2026-06-15 ptn-w17z.34 Output Buffer Compact Row
 

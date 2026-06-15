@@ -1353,14 +1353,19 @@ ptn_phpt_first_unsupported_language_surface() {
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])yield([[:space:];(),]|$)/) {
-                if (ptn_by_ref_function_context) {
-                    ptn_defer_generator_reason("requires by-reference generator yield boundary, reference identity, and only-variable-yield diagnostics, outside PTN generator runtime")
-                } else if (ptn_generator_foreach_context) {
+                if (ptn_by_ref_function_context && line ~ /yield[^;]*[^=!<>]=([^=>]|$)/) {
+                    ptn_defer_generator_reason("requires generator suspension timing for by-reference yielded assignment expressions, outside PTN collected generator runtime")
+                    next
+                }
+                if (ptn_generator_foreach_context) {
                     ptn_defer_generator_reason("requires generator suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
-                } else {
-                    ptn_defer_generator_reason("requires generator/yield lowering, outside PTN function and iterator runtime")
                 }
                 next
+            }
+            if (ptn_deferred_generator_reason ~ /generator suspension cleanup/ &&
+                ptn_spread_context(line) == "call" &&
+                line ~ /[.][.][.][[:space:]]*[a-z_\\][a-z0-9_\\]*[[:space:]]*[(]/) {
+                ptn_deferred_generator_reason = ""
             }
             if (!ptn_static_local_context && ptn_class_body_depth == 0 &&
                 line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+\$[a-z_]/) {

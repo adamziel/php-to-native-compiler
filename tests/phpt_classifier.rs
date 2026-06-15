@@ -446,10 +446,10 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires trait adaptation aliases",
         ),
         (
-            "generator yield",
-            "--TEST--\nyield\n--FILE--\n<?php\n$fn = fn() => yield 123;\n--EXPECT--\n",
+            "generator yield from",
+            "--TEST--\nyield from\n--FILE--\n<?php\nfunction gen() { yield from []; }\n--EXPECT--\n",
             "unsupported-generator-runtime\t",
-            "requires generator/yield lowering",
+            "requires generator yield-from delegation diagnostics",
         ),
         (
             "top-level static binding",
@@ -764,16 +764,6 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
             "requires Fiber coroutine runtime and by-reference return/getReturn boundary",
         ),
         (
-            "non-ref generator iterated by-ref",
-            "--TEST--\ngenerator foreach by ref\n--FILE--\n<?php\nfunction gen() { yield; }\n$gen = gen();\nforeach ($gen as &$value) {}\n--EXPECTF--\n",
-            "requires generator foreach by-reference iteration boundary",
-        ),
-        (
-            "by-ref generator yielding expression",
-            "--TEST--\nyield const by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield \"foo\";\n}\n--EXPECTF--\n",
-            "requires by-reference generator yield boundary",
-        ),
-        (
             "by-ref generator yield from",
             "--TEST--\nyield from by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield from [];\n}\n--EXPECTF--\n",
             "requires generator yield-from delegation diagnostics",
@@ -784,9 +774,9 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
             "requires generator suspension cleanup for live foreach variables and premature close",
         ),
         (
-            "by-ref function call yielded by ref",
-            "--TEST--\nyield ref function call\n--FILE--\n<?php\nfunction &nop(&$var) { return $var; }\nfunction &gen(&$var) {\n    yield nop($var);\n}\n--EXPECT--\n",
-            "requires by-reference generator yield boundary",
+            "by-ref yielded assignment expression",
+            "--TEST--\nyield assignment by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield $v = 0;\n}\n--EXPECTF--\n",
+            "requires generator suspension timing for by-reference yielded assignment expressions",
         ),
     ];
 
@@ -798,6 +788,36 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
         );
         assert!(
             classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_allows_collected_generator_runtime_subset() {
+    let cases = [
+        (
+            "simple generator yield",
+            "--TEST--\nyield\n--FILE--\n<?php\nfunction gen() { yield 123; }\nforeach (gen() as $value) { var_dump($value); }\n--EXPECT--\n",
+        ),
+        (
+            "non-ref generator iterated by-ref",
+            "--TEST--\ngenerator foreach by ref\n--FILE--\n<?php\nfunction gen() { yield; }\n$gen = gen();\nforeach ($gen as &$value) {}\n--EXPECTF--\n",
+        ),
+        (
+            "by-ref generator yielding expression",
+            "--TEST--\nyield const by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield \"foo\";\n}\n$gen = gen();\nvar_dump($gen->current());\n--EXPECTF--\n",
+        ),
+        (
+            "generator call unpack from foreach body",
+            "--TEST--\ngenerator call unpack\n--FILE--\n<?php\nfunction test($val1, &$ref) {}\nfunction gen($array) {\n    foreach ($array as $element) {\n        yield $element;\n    }\n}\ntest(...gen([1, 2]));\n--EXPECTF--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
             "{name}: {classification:?}"
         );
     }

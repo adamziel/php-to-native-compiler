@@ -19843,6 +19843,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_array_object(class_name)
         || ptn_internal_class_name_is_iterator_iterator(class_name)
         || ptn_internal_class_name_is_closure(class_name)
+        || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
         || ptn_builtin_exception_class_name(class_name) != NULL;
@@ -19947,6 +19948,10 @@ static int ptn_exception_method_exists(const char *method_name) {
         || ptn_exception_name_equal(method_name, "__toString");
 }
 
+static int ptn_generator_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "current");
+}
+
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name) {
     if (ptn_internal_class_name_is_reflection_class(class_name)) {
         return ptn_reflection_class_method_exists(method_name);
@@ -19968,6 +19973,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_closure_method_exists(method_name);
+    }
+    if (ptn_ascii_case_equal(class_name, "Generator")) {
+        return ptn_generator_method_exists(method_name);
     }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
         return ptn_exception_method_exists(method_name);
