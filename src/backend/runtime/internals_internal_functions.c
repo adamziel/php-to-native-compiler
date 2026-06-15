@@ -10604,6 +10604,12 @@ static int64_t ptn_internal_expect_integer_arg(
 );
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
 static const char *ptn_runtime_current_include_path(PtnRuntime *runtime);
+static void ptn_emit_function_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *detail,
+    size_t line
+);
 
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
@@ -14017,7 +14023,11 @@ static PtnValue ptn_internal_is_resource(PtnRuntime *runtime, size_t argc, const
     PtnValue value = ptn_value_deref(args[0]);
     return ptn_bool(
         value.type == PTN_RESOURCE &&
-        (value.as.resource->stream != NULL || value.as.resource->directory != NULL)
+        (
+            value.as.resource->stream != NULL ||
+            value.as.resource->directory != NULL ||
+            strcmp(value.as.resource->type_name, "stream") != 0
+        )
     );
 }
 
@@ -17242,10 +17252,21 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
 static PtnValue ptn_internal_fpassthru(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fputcsv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fstat(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_ftell(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_ftruncate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_readfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_rewind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_rewinddir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_tmpfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     /* Keep sorted by ASCII case-insensitive name for ptn_find_internal_function. */
@@ -17385,7 +17406,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "fputcsv", 2, 6, ptn_internal_fputcsv },
         { "fputs", 2, 3, ptn_internal_fputs },
         { "fread", 2, 2, ptn_internal_fread },
+        { "fseek", 2, 3, ptn_internal_fseek },
+        { "fstat", 1, 1, ptn_internal_fstat },
         { "ftell", 1, 1, ptn_internal_ftell },
+        { "ftruncate", 2, 2, ptn_internal_ftruncate },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
@@ -17493,9 +17517,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "rand", 0, 2, ptn_internal_rand },
         { "range", 2, 3, ptn_internal_range },
+        { "readdir", 1, 1, ptn_internal_readdir },
+        { "readfile", 1, 3, ptn_internal_readfile },
         { "realpath", 1, 1, ptn_internal_realpath },
         { "reset", 1, 1, ptn_internal_reset },
         { "rewind", 1, 1, ptn_internal_rewind },
+        { "rewinddir", 1, 1, ptn_internal_rewinddir },
         { "rmdir", 1, 2, ptn_internal_rmdir },
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
@@ -17526,6 +17553,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_word_count", 1, 3, ptn_internal_str_word_count },
         { "strcasecmp", 2, 2, ptn_internal_strcasecmp },
         { "strcmp", 2, 2, ptn_internal_strcmp },
+        { "stream_context_create", 0, 2, ptn_internal_stream_context_create },
+        { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
+        { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
+        { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
@@ -17550,6 +17581,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "substr_count", 2, 4, ptn_internal_substr_count },
         { "substr_replace", 3, 4, ptn_internal_substr_replace },
         { "time", 0, 0, ptn_internal_time },
+        { "tmpfile", 0, 0, ptn_internal_tmpfile },
         { "touch", 1, 3, ptn_internal_touch },
         { "trait_exists", 1, 2, ptn_internal_trait_exists },
         { "trim", 1, 2, ptn_internal_trim },

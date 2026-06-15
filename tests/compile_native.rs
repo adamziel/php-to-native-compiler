@@ -7548,8 +7548,48 @@ $fp = fopen($out, 'wb');\n\
 var_dump(fputcsv($fp, ['x,y', 'z']));\n\
 fclose($fp);\n\
 var_dump(file($out));\n\
+$fp = fopen($path, 'rb');\n\
+var_dump(fseek($fp, 2));\n\
+var_dump(ftell($fp));\n\
+$stat = fstat($fp);\n\
+var_dump($stat['size']);\n\
+fclose($fp);\n\
+$tmp = tmpfile();\n\
+fwrite($tmp, '12345');\n\
+var_dump(stream_get_contents($tmp, 2, 3));\n\
+var_dump(stream_get_contents($tmp, 2, -1));\n\
+$copy = __DIR__ . '/copy.txt';\n\
+$src = fopen($path, 'rb');\n\
+$dest = fopen($copy, 'wb');\n\
+var_dump(stream_copy_to_stream($src, $dest, 4));\n\
+fclose($src);\n\
+fclose($dest);\n\
+var_dump(file_get_contents($copy));\n\
+var_dump(readfile($copy));\n\
+$truncate = __DIR__ . '/truncate.txt';\n\
+file_put_contents($truncate, 'abcdef');\n\
+$fp = fopen($truncate, 'r+');\n\
+var_dump(ftruncate($fp, 3));\n\
+fclose($fp);\n\
+var_dump(file_get_contents($truncate));\n\
+$line = __DIR__ . '/line.txt';\n\
+file_put_contents($line, 'foo<br>bar');\n\
+$fp = fopen($line, 'rb');\n\
+var_dump(stream_get_line($fp, 0, '<br>'));\n\
+var_dump(stream_get_line($fp, 0, '<br>'));\n\
+fclose($fp);\n\
+$dir = opendir(__DIR__);\n\
+var_dump(is_string(readdir($dir)));\n\
+rewinddir($dir);\n\
+var_dump(is_string(readdir($dir)));\n\
+var_dump(fstat($dir));\n\
+closedir($dir);\n\
+var_dump(is_resource(stream_context_create()));\n\
 @unlink($path);\n\
-@unlink($out);\n",
+@unlink($out);\n\
+@unlink($copy);\n\
+@unlink($truncate);\n\
+@unlink($line);\n",
     )
     .unwrap();
 
@@ -7570,7 +7610,24 @@ bool(false)\n\
 array(2) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n}\n\
 array(2) {\n  [0]=>\n  string(1) \"c\"\n  [1]=>\n  string(1) \"d\"\n}\n\
 int(8)\n\
-array(1) {\n  [0]=>\n  string(8) \"\"x,y\",z\n\"\n}\n"
+array(1) {\n  [0]=>\n  string(8) \"\"x,y\",z\n\"\n}\n\
+int(0)\n\
+int(2)\n\
+int(12)\n\
+string(2) \"45\"\n\
+string(0) \"\"\n\
+int(4)\n\
+string(4) \"a,b\n\"\n\
+a,b\n\
+int(4)\n\
+bool(true)\n\
+string(3) \"abc\"\n\
+string(3) \"foo\"\n\
+string(3) \"bar\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
