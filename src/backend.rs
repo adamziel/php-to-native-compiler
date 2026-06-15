@@ -2838,7 +2838,9 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (access_scope == NULL || declaring_class == NULL) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
-    out.push_str("    return ptn_declared_class_scope_allows(access_scope, declaring_class) ||\n");
+    out.push_str(
+        "    return ptn_declared_class_is_same_or_descendant(access_scope, declaring_class) ||\n",
+    );
     out.push_str(
         "        ptn_declared_class_is_same_or_descendant(declaring_class, access_scope);\n",
     );
