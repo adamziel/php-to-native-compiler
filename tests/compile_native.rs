@@ -12205,6 +12205,118 @@ var_dump(constant(\"\\\\LOOKUP_CONST\"));
 }
 
 #[test]
+fn compile_class_object_metadata_lists_to_native_binary() {
+    let root = temp_dir("ptn-native-class-object-metadata-lists");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-object-metadata-lists.php");
+    let output = root.join("class-object-metadata-lists-bin");
+    fs::write(
+        &input,
+        "<?php
+interface Contract {
+    public function pubI();
+}
+
+trait ListedTrait {
+}
+
+class BaseList {
+    private function privBase() {}
+    protected function protBase() {}
+    public function pubBase() {}
+}
+
+class WorkerList extends BaseList implements Contract {
+    public function pubI() {}
+    private function privWorker() {}
+    protected function protWorker() {}
+    public function pubWorker() {}
+
+    public static function fromWorker() {
+        dump_methods(get_class_methods(\"WorkerList\"));
+        dump_methods(get_class_methods(\"BaseList\"));
+    }
+}
+
+class PeerList {
+    public static function fromPeer() {
+        dump_methods(get_class_methods(\"WorkerList\"));
+    }
+}
+
+function dump_methods($methods) {
+    foreach ($methods as $method) {
+        echo $method, \"|\";
+    }
+    echo \"\\n\";
+}
+
+dump_methods(get_class_methods(\"WorkerList\"));
+WorkerList::fromWorker();
+PeerList::fromPeer();
+var_dump(in_array(\"WorkerList\", get_declared_classes()));
+var_dump(in_array(\"Contract\", get_declared_interfaces()));
+var_dump(in_array(\"ListedTrait\", get_declared_traits()));
+var_dump(in_array(\"Contract\", get_declared_classes()));
+var_dump(in_array(\"WorkerList\", get_declared_interfaces()));
+var_dump(in_array(\"WorkerList\", get_declared_traits()));
+var_dump(is_a(new WorkerList(), \"BaseList\"));
+var_dump(is_a(\"WorkerList\", \"BaseList\"));
+var_dump(is_a(\"WorkerList\", \"BaseList\", true));
+var_dump(is_a(\"WorkerList\", \"Contract\", true));
+var_dump(is_a(\"WorkerList\", \"WorkerList\", true));
+var_dump(is_a(\"Missing\", \"Missing\", true));
+var_dump(method_exists(\"WorkerList\", \"privBase\"));
+var_dump(method_exists(new WorkerList(), \"privBase\"));
+var_dump(method_exists(\"WorkerList\", \"privWorker\"));
+try {
+    get_class_methods(\"MissingList\");
+} catch (TypeError $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "pubI|pubWorker|fromWorker|pubBase|\n",
+            "pubI|privWorker|protWorker|pubWorker|fromWorker|protBase|pubBase|\n",
+            "protBase|pubBase|\n",
+            "pubI|pubWorker|fromWorker|pubBase|\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "TypeError: get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, string given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_method_names"));
+    assert!(c_source.contains("ptn_declared_class_method_exists_from_class_name"));
+    assert!(c_source.contains("ptn_internal_get_declared_classes"));
+    assert!(c_source.contains("ptn_internal_is_a"));
+}
+
+#[test]
 fn compile_simple_trait_composition_to_native_binary() {
     let root = temp_dir("ptn-native-simple-trait-composition");
     fs::create_dir_all(&root).unwrap();
@@ -12533,6 +12645,79 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
     assert!(c_source.contains("ptn_user_function_metadata"));
     assert!(c_source.contains("ptn_reflection_function_new"));
     assert!(c_source.contains("ptn_reflection_function_call_method"));
+}
+
+#[test]
+fn compile_reflection_object_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-object-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-object-metadata.php");
+    let output = root.join("reflection-object-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class BaseReflect {
+}
+
+class ChildReflect extends BaseReflect {
+    public function ping() {}
+}
+
+$object = new ChildReflect();
+$reflection = new ReflectionObject($object);
+var_dump(get_class($reflection));
+var_dump($reflection->getName());
+var_dump($reflection->getParentClass()->getName());
+var_dump($reflection->isInstance($object));
+var_dump($reflection->isSubclassOf(\"BaseReflect\"));
+var_dump($reflection->hasMethod(\"ping\"));
+
+$reflectionOfReflection = new ReflectionObject($reflection);
+var_dump($reflectionOfReflection->getName());
+var_dump($reflectionOfReflection->isSubclassOf(\"ReflectionClass\"));
+var_dump($reflectionOfReflection->isInstantiable());
+var_dump(class_exists(\"ReflectionObject\"));
+var_dump(method_exists(\"ReflectionObject\", \"getName\"));
+var_dump(is_a($reflection, \"ReflectionClass\"));
+var_dump(is_a(\"ReflectionObject\", \"ReflectionClass\", true));
+try {
+    new ReflectionObject(\"ChildReflect\");
+} catch (TypeError $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(16) \"ReflectionObject\"\n",
+            "string(12) \"ChildReflect\"\n",
+            "string(11) \"BaseReflect\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(16) \"ReflectionObject\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "TypeError: ReflectionObject::__construct(): Argument #1 ($object) must be of type object, string given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_object_new"));
+    assert!(c_source.contains("ptn_internal_class_name_is_reflection_object"));
+    assert!(c_source.contains("ptn_reflection_class_call_method"));
 }
 
 #[test]

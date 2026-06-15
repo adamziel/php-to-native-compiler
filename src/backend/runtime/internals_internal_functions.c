@@ -22915,6 +22915,11 @@ static int ptn_declared_class_has_non_public_constructor(const char *name);
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
+static int ptn_declared_class_method_exists_from_class_name(const char *class_name, const char *method_name);
+static PtnValue ptn_declared_class_method_names(PtnRuntime *runtime, const char *class_name, const char *access_scope);
+static PtnValue ptn_declared_class_names(PtnRuntime *runtime, int include_internal);
+static PtnValue ptn_declared_interface_names(PtnRuntime *runtime);
+static PtnValue ptn_declared_trait_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
@@ -22934,7 +22939,11 @@ static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const Ptn
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_class_methods(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_getdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_declared_classes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_declared_interfaces(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_declared_traits(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_defined_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -22943,6 +22952,7 @@ static PtnValue ptn_internal_gmmktime(PtnRuntime *runtime, size_t argc, const Pt
 static PtnValue ptn_internal_idate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_is_a(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_subclass_of(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -23156,6 +23166,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_called_class", 0, 0, ptn_internal_get_called_class },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 0, 1, ptn_internal_get_class },
+        { "get_class_methods", 1, 1, ptn_internal_get_class_methods },
+        { "get_declared_classes", 0, 0, ptn_internal_get_declared_classes },
+        { "get_declared_interfaces", 0, 0, ptn_internal_get_declared_interfaces },
+        { "get_declared_traits", 0, 0, ptn_internal_get_declared_traits },
         { "get_defined_vars", 0, 0, ptn_internal_get_defined_vars },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
@@ -23189,6 +23203,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intval", 1, 2, ptn_internal_intval },
         { "interface_exists", 1, 2, ptn_internal_interface_exists },
         { "is_array", 1, 1, ptn_internal_is_array },
+        { "is_a", 2, 3, ptn_internal_is_a },
         { "is_bool", 1, 1, ptn_internal_is_bool },
         { "is_callable", 1, 3, ptn_internal_is_callable },
         { "is_countable", 1, 1, ptn_internal_is_countable },
@@ -23439,6 +23454,10 @@ static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t a
 
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ReflectionClass");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_object(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionObject");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name) {
@@ -23732,7 +23751,8 @@ static int ptn_generator_method_exists(const char *method_name) {
 }
 
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name) {
-    if (ptn_internal_class_name_is_reflection_class(class_name)) {
+    if (ptn_internal_class_name_is_reflection_class(class_name) ||
+        ptn_internal_class_name_is_reflection_object(class_name)) {
         return ptn_reflection_class_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_reflection_function(class_name)) {
@@ -23769,7 +23789,187 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
         return ptn_exception_method_exists(method_name);
     }
-    return ptn_declared_class_method_exists(class_name, method_name);
+    return ptn_declared_class_method_exists_from_class_name(class_name, method_name);
+}
+
+static void ptn_append_method_name(PtnValue result, int64_t *index, const char *name) {
+    ptn_array_set_entry(result.as.array, ptn_array_int_key((*index)++), ptn_string(name));
+}
+
+static void ptn_append_method_names(
+    PtnValue result,
+    int64_t *index,
+    const char *const *names,
+    size_t count
+) {
+    for (size_t i = 0; i < count; i++) {
+        ptn_append_method_name(result, index, names[i]);
+    }
+}
+
+static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char *class_name) {
+    (void)runtime;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    if (ptn_internal_class_name_is_reflection_class(class_name) ||
+        ptn_internal_class_name_is_reflection_object(class_name)) {
+        static const char *const names[] = {
+            "getConstructor",
+            "getExtension",
+            "getExtensionName",
+            "getInterfaceNames",
+            "getInterfaces",
+            "getMethod",
+            "getMethods",
+            "getModifiers",
+            "getName",
+            "getNamespaceName",
+            "getParentClass",
+            "getProperties",
+            "getShortName",
+            "hasConstant",
+            "hasMethod",
+            "hasProperty",
+            "implementsInterface",
+            "inNamespace",
+            "isAbstract",
+            "isAnonymous",
+            "isCloneable",
+            "isFinal",
+            "isInstance",
+            "isInstantiable",
+            "isInterface",
+            "isInternal",
+            "isIterable",
+            "isIterateable",
+            "isReadOnly",
+            "isSubclassOf",
+            "isUserDefined",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_reflection_function(class_name)) {
+        static const char *const names[] = {
+            "getName",
+            "getNamespaceName",
+            "getNumberOfParameters",
+            "getNumberOfRequiredParameters",
+            "getShortName",
+            "inNamespace",
+            "isInternal",
+            "isUserDefined",
+            "isVariadic",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_reflection_method(class_name)) {
+        ptn_append_method_name(result, &index, "getName");
+        return result;
+    }
+    if (ptn_internal_class_name_is_array_iterator(class_name) ||
+        ptn_internal_class_name_is_recursive_array_iterator(class_name)) {
+        static const char *const names[] = {
+            "count",
+            "current",
+            "getArrayCopy",
+            "getChildren",
+            "hasChildren",
+            "key",
+            "next",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "rewind",
+            "seek",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_array_object(class_name)) {
+        static const char *const names[] = {
+            "count",
+            "getIterator",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_callback_filter_iterator(class_name)) {
+        static const char *const names[] = {
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "offsetGet",
+            "rewind",
+            "valid",
+            "accept",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_filter_iterator(class_name) ||
+        ptn_internal_class_name_is_infinite_iterator(class_name) ||
+        ptn_internal_class_name_is_iterator_iterator(class_name)) {
+        static const char *const names[] = {
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "offsetGet",
+            "rewind",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_limit_iterator(class_name)) {
+        static const char *const names[] = {
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "offsetGet",
+            "rewind",
+            "valid",
+            "getPosition",
+            "seek",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_closure(class_name)) {
+        static const char *const names[] = { "__invoke", "bindTo", "fromCallable" };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_ascii_case_equal(class_name, "Generator")) {
+        ptn_append_method_name(result, &index, "current");
+        return result;
+    }
+    if (ptn_builtin_exception_class_name(class_name) != NULL) {
+        static const char *const names[] = {
+            "getMessage",
+            "getCode",
+            "getFile",
+            "getLine",
+            "getPrevious",
+            "getTrace",
+            "getTraceAsString",
+            "getSeverity",
+            "__toString",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    return result;
 }
 
 typedef struct {
@@ -23808,7 +24008,8 @@ static PtnReflectionClassData *ptn_reflection_class_data(PtnRuntime *runtime, Pt
     receiver = ptn_value_deref(receiver);
     if (
         receiver.type != PTN_OBJECT
-        || !ptn_internal_class_name_is_reflection_class(receiver.as.object->class_name)
+        || (!ptn_internal_class_name_is_reflection_class(receiver.as.object->class_name)
+            && !ptn_internal_class_name_is_reflection_object(receiver.as.object->class_name))
         || receiver.as.object->native_data == NULL
     ) {
         ptn_throw_exception(runtime, "Error", "Invalid ReflectionClass object");
@@ -23893,14 +24094,18 @@ static void ptn_reflection_class_check_exact_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
-static PtnValue ptn_reflection_class_object_from_name(PtnRuntime *runtime, const char *name) {
+static PtnValue ptn_reflection_class_object_from_name_as(
+    PtnRuntime *runtime,
+    const char *reflection_class_name,
+    const char *name
+) {
     PtnReflectionClassData *data = malloc(sizeof(PtnReflectionClassData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
     data->name = ptn_duplicate_string(name);
 
-    PtnValue object = ptn_object_new_shell(runtime, "ReflectionClass");
+    PtnValue object = ptn_object_new_shell(runtime, reflection_class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_class_data_free;
     ptn_array_set_entry(
@@ -23909,6 +24114,10 @@ static PtnValue ptn_reflection_class_object_from_name(PtnRuntime *runtime, const
         ptn_owned_string(ptn_duplicate_string(name))
     );
     return object;
+}
+
+static PtnValue ptn_reflection_class_object_from_name(PtnRuntime *runtime, const char *name) {
+    return ptn_reflection_class_object_from_name_as(runtime, "ReflectionClass", name);
 }
 
 static char *ptn_reflection_class_target_name(
@@ -24014,6 +24223,54 @@ static PTN_UNUSED PtnValue ptn_reflection_class_new(
     return object;
 }
 
+static PTN_UNUSED PtnValue ptn_reflection_object_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionObject::__construct() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnValue target = ptn_value_deref(args[0]);
+    const char *name = NULL;
+    if (target.type == PTN_OBJECT) {
+        name = target.as.object->class_name;
+    } else if (target.type == PTN_CLOSURE) {
+        name = "Closure";
+    } else if (target.type == PTN_EXCEPTION) {
+        name = target.as.exception->class_name;
+    }
+    if (name == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionObject::__construct(): Argument #1 ($object) must be of type object, %s given",
+            ptn_offset_container_type_name(target)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    return ptn_reflection_class_object_from_name_as(runtime, "ReflectionObject", name);
+}
+
 static int ptn_reflection_class_modifiers(const char *class_name) {
     int modifiers = 0;
     if (ptn_declared_class_is_final(class_name)) {
@@ -24043,6 +24300,7 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
     }
     if (ptn_reflection_class_is_internal_name(class_name)) {
         return ptn_internal_class_name_is_reflection_class(class_name)
+            || ptn_internal_class_name_is_reflection_object(class_name)
             || ptn_internal_class_name_is_reflection_function(class_name)
             || ptn_internal_class_name_is_array_iterator(class_name)
             || ptn_internal_class_name_is_recursive_array_iterator(class_name)
@@ -24080,7 +24338,10 @@ static char *ptn_reflection_class_required_class_arg_name(
 ) {
     arg = ptn_value_deref(arg);
     char *name = NULL;
-    if (arg.type == PTN_OBJECT && ptn_internal_class_name_is_reflection_class(arg.as.object->class_name)) {
+    if (arg.type == PTN_OBJECT && (
+        ptn_internal_class_name_is_reflection_class(arg.as.object->class_name) ||
+        ptn_internal_class_name_is_reflection_object(arg.as.object->class_name)
+    )) {
         PtnReflectionClassData *data = ptn_reflection_class_data(runtime, arg);
         name = data == NULL ? NULL : ptn_duplicate_string(data->name);
     } else {
@@ -26119,6 +26380,77 @@ static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const P
     return ptn_null();
 }
 
+static void ptn_throw_get_class_methods_type_error(PtnRuntime *runtime, PtnValue value) {
+    char message[224];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, %s given",
+        ptn_property_exists_target_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PtnValue ptn_internal_get_class_methods(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue target = ptn_value_deref(args[0]);
+    char *owned_class_name = NULL;
+    const char *class_name = NULL;
+    if (target.type == PTN_OBJECT) {
+        class_name = target.as.object->class_name;
+    } else if (target.type == PTN_EXCEPTION) {
+        class_name = target.as.exception->class_name;
+    } else if (target.type == PTN_CLOSURE) {
+        class_name = "Closure";
+    } else if (target.type == PTN_STRING) {
+        owned_class_name = ptn_value_to_string(target);
+        class_name = ptn_symbol_name_without_leading_slash(owned_class_name);
+    } else {
+        ptn_throw_get_class_methods_type_error(runtime, target);
+        return ptn_null();
+    }
+
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    if (!ptn_runtime_class_or_interface_exists(runtime, resolved_class_name)) {
+        ptn_throw_get_class_methods_type_error(runtime, target);
+        free(owned_class_name);
+        return ptn_null();
+    }
+
+    const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
+    PtnValue result = (ptn_declared_class_exists(resolved_class_name) ||
+                       ptn_declared_interface_exists(resolved_class_name))
+        ? ptn_declared_class_method_names(runtime, resolved_class_name, access_scope)
+        : ptn_internal_class_method_names(runtime, resolved_class_name);
+    free(owned_class_name);
+    return result;
+}
+
+static PtnValue ptn_internal_get_declared_classes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_declared_class_names(runtime, 1);
+}
+
+static PtnValue ptn_internal_get_declared_interfaces(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_declared_interface_names(runtime);
+}
+
+static PtnValue ptn_internal_get_declared_traits(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_declared_trait_names(runtime);
+}
+
 static PtnValue ptn_internal_get_defined_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -26244,6 +26576,50 @@ static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const
     return ptn_bool(ptn_callable_is_valid(runtime, args[0], syntax_only));
 }
 
+static PtnValue ptn_internal_is_a(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnValue subject = ptn_value_deref(args[0]);
+    int allow_string = argc >= 3 && ptn_is_truthy(args[2]);
+    char *subject_class_name = NULL;
+    int subject_from_object = 0;
+    if (subject.type == PTN_OBJECT) {
+        subject_class_name = ptn_duplicate_string(subject.as.object->class_name);
+        subject_from_object = 1;
+    } else if (subject.type == PTN_EXCEPTION) {
+        subject_class_name = ptn_duplicate_string(subject.as.exception->class_name);
+        subject_from_object = 1;
+    } else if (subject.type == PTN_CLOSURE) {
+        subject_class_name = ptn_duplicate_string("Closure");
+        subject_from_object = 1;
+    } else if (subject.type == PTN_STRING && allow_string) {
+        subject_class_name = ptn_value_to_string(subject);
+    } else {
+        return ptn_bool(0);
+    }
+
+    char *class_name = ptn_value_to_string(args[1]);
+    const char *resolved_subject_class_name = ptn_runtime_resolve_class_alias(
+        runtime,
+        ptn_symbol_name_without_leading_slash(subject_class_name)
+    );
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(
+        runtime,
+        ptn_symbol_name_without_leading_slash(class_name)
+    );
+    int subject_exists = subject_from_object || ptn_runtime_class_or_interface_exists(runtime, resolved_subject_class_name);
+    int class_exists = ptn_runtime_class_or_interface_exists(runtime, resolved_class_name);
+    int result = 0;
+    if (subject_exists && class_exists) {
+        result = ptn_ascii_case_equal(resolved_subject_class_name, resolved_class_name) ||
+            ptn_declared_class_is_same_or_descendant(resolved_subject_class_name, resolved_class_name) ||
+            ptn_declared_class_implements_interface(resolved_subject_class_name, resolved_class_name) ||
+            ptn_builtin_class_implements_interface(resolved_subject_class_name, resolved_class_name);
+    }
+    free(class_name);
+    free(subject_class_name);
+    return ptn_bool(result);
+}
+
 static PtnValue ptn_internal_is_subclass_of(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnValue subject = ptn_value_deref(args[0]);
@@ -26290,16 +26666,27 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
     (void)line;
     PtnValue target = ptn_value_deref(args[0]);
     char *class_name = NULL;
+    int target_is_object = 0;
     if (target.type == PTN_OBJECT) {
         class_name = ptn_duplicate_string(target.as.object->class_name);
+        target_is_object = 1;
     } else if (target.type == PTN_EXCEPTION) {
         class_name = ptn_duplicate_string(target.as.exception->class_name);
+        target_is_object = 1;
+    } else if (target.type == PTN_CLOSURE) {
+        class_name = ptn_duplicate_string("Closure");
+        target_is_object = 1;
     } else {
         class_name = ptn_value_to_string(target);
     }
     char *method_name = ptn_value_to_string(args[1]);
-    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
-    int exists = ptn_internal_class_method_exists(resolved_class_name, method_name);
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(
+        runtime,
+        ptn_symbol_name_without_leading_slash(class_name)
+    );
+    int exists = target_is_object && ptn_declared_class_exists(resolved_class_name)
+        ? ptn_declared_class_method_exists(resolved_class_name, method_name)
+        : ptn_internal_class_method_exists(resolved_class_name, method_name);
     free(method_name);
     free(class_name);
     return ptn_bool(exists);
