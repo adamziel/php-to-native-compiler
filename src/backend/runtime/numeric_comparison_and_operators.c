@@ -290,7 +290,7 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
         }
         if (ptn_is_number_type(right)) {
             double right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
-            return ptn_compare_numbers(0.0, right_number);
+            return right_number == 0.0 ? PTN_COMPARE_EQUAL : PTN_COMPARE_LESS;
         }
         if (right.type == PTN_STRING) {
             return ptn_compare_string_bytes((const unsigned char *)"", 0, right.as.string.data, right.as.string.len);
@@ -305,7 +305,7 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
         }
         if (ptn_is_number_type(left)) {
             double left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
-            return ptn_compare_numbers(left_number, 0.0);
+            return left_number == 0.0 ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
         }
         if (left.type == PTN_STRING) {
             return ptn_compare_string_bytes(left.as.string.data, left.as.string.len, (const unsigned char *)"", 0);

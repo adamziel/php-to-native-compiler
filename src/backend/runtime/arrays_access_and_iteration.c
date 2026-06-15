@@ -5414,24 +5414,280 @@ static void ptn_array_reindex_after_sort(PtnArray *array) {
     ptn_array_recompute_next_auto_key(array);
 }
 
-static void ptn_array_sort_entries_by_flags(PtnArray *array, int compare_keys, int descending, int reindex, int64_t flags) {
-    for (size_t i = 1; i < array->len; i++) {
-        PtnArrayEntry moving = array->entries[i];
-        size_t j = i;
-        while (j > 0) {
-            int compared = compare_keys
-                ? ptn_array_key_compare_by_sort_flags(array->entries[j - 1].key, moving.key, flags)
-                : ptn_array_value_compare_by_sort_flags(array->entries[j - 1].value, moving.value, flags);
-            if (descending) {
-                compared = -compared;
+typedef struct {
+    PtnArrayEntry entry;
+    size_t original_index;
+} PtnArraySortItem;
+
+typedef struct {
+    int compare_keys;
+    int descending;
+    int64_t flags;
+} PtnArraySortContext;
+
+static int ptn_array_sort_item_compare(
+    const PtnArraySortItem *left,
+    const PtnArraySortItem *right,
+    const PtnArraySortContext *context
+) {
+    int compared = context->compare_keys
+        ? ptn_array_key_compare_by_sort_flags(left->entry.key, right->entry.key, context->flags)
+        : ptn_array_value_compare_by_sort_flags(left->entry.value, right->entry.value, context->flags);
+    if (context->descending) {
+        compared = -compared;
+    }
+    if (compared != 0) {
+        return compared;
+    }
+    if (left->original_index < right->original_index) {
+        return -1;
+    }
+    if (left->original_index > right->original_index) {
+        return 1;
+    }
+    return 0;
+}
+
+static void ptn_array_sort_item_swap(PtnArraySortItem *left, PtnArraySortItem *right) {
+    PtnArraySortItem temporary = *left;
+    *left = *right;
+    *right = temporary;
+}
+
+static void ptn_array_zend_sort_2(
+    PtnArraySortItem *a,
+    PtnArraySortItem *b,
+    const PtnArraySortContext *context
+) {
+    if (ptn_array_sort_item_compare(a, b, context) > 0) {
+        ptn_array_sort_item_swap(a, b);
+    }
+}
+
+static void ptn_array_zend_sort_3(
+    PtnArraySortItem *a,
+    PtnArraySortItem *b,
+    PtnArraySortItem *c,
+    const PtnArraySortContext *context
+) {
+    if (!(ptn_array_sort_item_compare(a, b, context) > 0)) {
+        if (!(ptn_array_sort_item_compare(b, c, context) > 0)) {
+            return;
+        }
+        ptn_array_sort_item_swap(b, c);
+        if (ptn_array_sort_item_compare(a, b, context) > 0) {
+            ptn_array_sort_item_swap(a, b);
+        }
+        return;
+    }
+    if (!(ptn_array_sort_item_compare(c, b, context) > 0)) {
+        ptn_array_sort_item_swap(a, c);
+        return;
+    }
+    ptn_array_sort_item_swap(a, b);
+    if (ptn_array_sort_item_compare(b, c, context) > 0) {
+        ptn_array_sort_item_swap(b, c);
+    }
+}
+
+static void ptn_array_zend_sort_4(
+    PtnArraySortItem *a,
+    PtnArraySortItem *b,
+    PtnArraySortItem *c,
+    PtnArraySortItem *d,
+    const PtnArraySortContext *context
+) {
+    ptn_array_zend_sort_3(a, b, c, context);
+    if (ptn_array_sort_item_compare(c, d, context) > 0) {
+        ptn_array_sort_item_swap(c, d);
+        if (ptn_array_sort_item_compare(b, c, context) > 0) {
+            ptn_array_sort_item_swap(b, c);
+            if (ptn_array_sort_item_compare(a, b, context) > 0) {
+                ptn_array_sort_item_swap(a, b);
             }
-            if (compared <= 0) {
+        }
+    }
+}
+
+static void ptn_array_zend_sort_5(
+    PtnArraySortItem *a,
+    PtnArraySortItem *b,
+    PtnArraySortItem *c,
+    PtnArraySortItem *d,
+    PtnArraySortItem *e,
+    const PtnArraySortContext *context
+) {
+    ptn_array_zend_sort_4(a, b, c, d, context);
+    if (ptn_array_sort_item_compare(d, e, context) > 0) {
+        ptn_array_sort_item_swap(d, e);
+        if (ptn_array_sort_item_compare(c, d, context) > 0) {
+            ptn_array_sort_item_swap(c, d);
+            if (ptn_array_sort_item_compare(b, c, context) > 0) {
+                ptn_array_sort_item_swap(b, c);
+                if (ptn_array_sort_item_compare(a, b, context) > 0) {
+                    ptn_array_sort_item_swap(a, b);
+                }
+            }
+        }
+    }
+}
+
+static void ptn_array_zend_insert_sort(
+    PtnArraySortItem *base,
+    size_t len,
+    const PtnArraySortContext *context
+) {
+    switch (len) {
+        case 0:
+        case 1:
+            return;
+        case 2:
+            ptn_array_zend_sort_2(base, base + 1, context);
+            return;
+        case 3:
+            ptn_array_zend_sort_3(base, base + 1, base + 2, context);
+            return;
+        case 4:
+            ptn_array_zend_sort_4(base, base + 1, base + 2, base + 3, context);
+            return;
+        case 5:
+            ptn_array_zend_sort_5(base, base + 1, base + 2, base + 3, base + 4, context);
+            return;
+        default:
+            break;
+    }
+
+    PtnArraySortItem *start = base;
+    PtnArraySortItem *end = start + len;
+    PtnArraySortItem *sentry = start + 6;
+    for (PtnArraySortItem *i = start + 1; i < sentry; i++) {
+        PtnArraySortItem *j = i - 1;
+        if (!(ptn_array_sort_item_compare(j, i, context) > 0)) {
+            continue;
+        }
+        while (j != start) {
+            j--;
+            if (!(ptn_array_sort_item_compare(j, i, context) > 0)) {
+                j++;
                 break;
             }
-            array->entries[j] = array->entries[j - 1];
-            j--;
         }
-        array->entries[j] = moving;
+        for (PtnArraySortItem *k = i; k > j; k--) {
+            ptn_array_sort_item_swap(k, k - 1);
+        }
+    }
+
+    for (PtnArraySortItem *i = sentry; i < end; i++) {
+        PtnArraySortItem *j = i - 1;
+        if (!(ptn_array_sort_item_compare(j, i, context) > 0)) {
+            continue;
+        }
+        do {
+            j -= 2;
+            if (!(ptn_array_sort_item_compare(j, i, context) > 0)) {
+                j++;
+                if (!(ptn_array_sort_item_compare(j, i, context) > 0)) {
+                    j++;
+                }
+                break;
+            }
+            if (j == start) {
+                break;
+            }
+            if (j == start + 1) {
+                j--;
+                if (ptn_array_sort_item_compare(i, j, context) > 0) {
+                    j++;
+                }
+                break;
+            }
+        } while (1);
+        for (PtnArraySortItem *k = i; k > j; k--) {
+            ptn_array_sort_item_swap(k, k - 1);
+        }
+    }
+}
+
+static void ptn_array_zend_sort_items(
+    PtnArraySortItem *base,
+    size_t len,
+    const PtnArraySortContext *context
+) {
+    while (1) {
+        if (len <= 16) {
+            ptn_array_zend_insert_sort(base, len, context);
+            return;
+        }
+
+        PtnArraySortItem *start = base;
+        PtnArraySortItem *end = start + len;
+        size_t offset = len >> 1;
+        PtnArraySortItem *pivot = start + offset;
+
+        if (len >> 10) {
+            size_t delta = offset >> 1;
+            ptn_array_zend_sort_5(start, start + delta, pivot, pivot + delta, end - 1, context);
+        } else {
+            ptn_array_zend_sort_3(start, pivot, end - 1, context);
+        }
+
+        ptn_array_sort_item_swap(start + 1, pivot);
+        pivot = start + 1;
+        PtnArraySortItem *i = pivot + 1;
+        PtnArraySortItem *j = end - 1;
+        while (1) {
+            while (ptn_array_sort_item_compare(pivot, i, context) > 0) {
+                i++;
+                if (i == j) {
+                    goto done;
+                }
+            }
+            j--;
+            if (j == i) {
+                goto done;
+            }
+            while (ptn_array_sort_item_compare(j, pivot, context) > 0) {
+                j--;
+                if (j == i) {
+                    goto done;
+                }
+            }
+            ptn_array_sort_item_swap(i, j);
+            i++;
+            if (i == j) {
+                goto done;
+            }
+        }
+
+done:
+        ptn_array_sort_item_swap(pivot, i - 1);
+        if ((size_t)((i - 1) - start) < (size_t)(end - i)) {
+            ptn_array_zend_sort_items(start, (size_t)(i - start) - 1, context);
+            base = i;
+            len = (size_t)(end - i);
+        } else {
+            ptn_array_zend_sort_items(i, (size_t)(end - i), context);
+            len = (size_t)(i - start) - 1;
+        }
+    }
+}
+
+static void ptn_array_sort_entries_by_flags(PtnArray *array, int compare_keys, int descending, int reindex, int64_t flags) {
+    if (array->len > 1) {
+        PtnArraySortItem *items = malloc(sizeof(PtnArraySortItem) * array->len);
+        if (items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < array->len; i++) {
+            items[i].entry = array->entries[i];
+            items[i].original_index = i;
+        }
+        PtnArraySortContext context = { compare_keys, descending, flags };
+        ptn_array_zend_sort_items(items, array->len, &context);
+        for (size_t i = 0; i < array->len; i++) {
+            array->entries[i] = items[i].entry;
+        }
+        free(items);
     }
     if (reindex) {
         ptn_array_reindex_after_sort(array);

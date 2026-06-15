@@ -14040,7 +14040,8 @@ fn compile_loose_scalar_comparison_edges_to_native_binary() {
     let output = root.join("comparison-edges-bin");
     fs::write(
         &input,
-        "<?php echo null == 0, null == \"\", null == \"0\", \"|\", 0 == \"foo\", \"|\", 2 < \"a\", \"|\", false == \"0\", true == \"0\", false == \"\", \"\\n\";",
+        "<?php echo null == 0, null == \"\", null == \"0\", \"|\", 0 == \"foo\", \"|\", 2 < \"a\", \"|\", false == \"0\", true == \"0\", false == \"\", \"\\n\";\n\
+var_dump(null < -4, null > -4, null <=> -4, -4 <=> null, null <=> 0, null <=> -INF);",
     )
     .unwrap();
 
@@ -14048,7 +14049,10 @@ fn compile_loose_scalar_comparison_edges_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "11||1|11\n");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "11||1|11\nbool(true)\nbool(false)\nint(-1)\nint(1)\nint(0)\nint(-1)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
