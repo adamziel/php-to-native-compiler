@@ -6162,7 +6162,14 @@ impl ValueEmitter {
     }
 
     fn static_property_class_name(&self, class_name: &str) -> String {
-        if class_name.eq_ignore_ascii_case("self") {
+        if class_name.eq_ignore_ascii_case("parent") {
+            if let Some(current_class_name) = &self.current_class_name {
+                if let Some(parent_name) = self.declared_parent_class_name(current_class_name) {
+                    return parent_name;
+                }
+            }
+        }
+        if class_name.eq_ignore_ascii_case("self") || class_name.eq_ignore_ascii_case("static") {
             if let Some(current_class_name) = &self.current_class_name {
                 return current_class_name.clone();
             }

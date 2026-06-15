@@ -347,6 +347,12 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires static local variables",
         ),
         (
+            "top-level static binding",
+            "--TEST--\nstatic binding\n--FILE--\n<?php\ntry { static $value; } catch (Throwable $e) {}\n--EXPECT--\n",
+            "unsupported-function-state\t",
+            "requires static local variables",
+        ),
+        (
             "foreach append read",
             "--TEST--\nappend read\n--FILE--\n<?php\nforeach ($items[] as $value) {}\n--EXPECTF--\n",
             "unsupported-expression-diagnostics\t",
@@ -777,6 +783,18 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires typed class constant metadata",
         ),
         (
+            "class constant spread default",
+            "--TEST--\nclass constant spread\n--FILE--\n<?php\nclass Bag { public const VALUES = [0, ...self::MORE]; }\n--EXPECT--\n",
+            "unsupported-class-constant-metadata\t",
+            "requires class-scope constant/static-property default unpack evaluation",
+        ),
+        (
+            "static property spread default",
+            "--TEST--\nstatic property spread\n--FILE--\n<?php\nclass Bag { public static $values = [...self::MORE]; }\n--EXPECT--\n",
+            "unsupported-class-constant-metadata\t",
+            "requires class-scope constant/static-property default unpack evaluation",
+        ),
+        (
             "internal attribute reflection metadata",
             "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
             "unsupported-internal-attribute-metadata\t",
@@ -829,6 +847,27 @@ fn phpt_classifier_excludes_dynamic_member_dispatch_rows() {
 
     assert!(classification.starts_with("unsupported-dynamic-member-dispatch\t"));
     assert!(classification.contains("requires dynamic property/method/member-name dispatch"));
+}
+
+#[test]
+fn phpt_classifier_keeps_direct_static_property_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nstatic property\n--FILE--\n<?php\nclass Box { public static $value = 1; }\nBox::$value = 2;\nvar_dump(Box::$value);\n--EXPECT--\nint(2)\n",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_dynamic_static_method_member_rows() {
+    let classification = classify(
+        "--TEST--\ndynamic static member\n--FILE--\n<?php\nclass Box { public static function run() {} }\n$name = 'run';\nBox::$name();\n--EXPECT--\n",
+    );
+
+    assert!(classification.starts_with("unsupported-dynamic-member-dispatch\t"));
 }
 
 #[test]

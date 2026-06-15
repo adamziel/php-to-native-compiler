@@ -1,0 +1,26 @@
+# ptn-ck7w: broad 1k static property/class metadata row pack.
+# Focused from the 20260615T001604Z broad-1k function-state and typed-property buckets.
+Zend/tests/anon/015.phpt
+Zend/tests/anon/016.phpt
+Zend/tests/autoload/bug78868.phpt
+Zend/tests/bind_static_exception.phpt
+Zend/tests/bug26802.phpt
+Zend/tests/bug28072.phpt
+Zend/tests/bug28442.phpt
+Zend/tests/bug32322.phpt
+Zend/tests/bug38287.phpt
+ext/standard/tests/array/array_filter_object.phpt
+ext/standard/tests/array/array_map_object1.phpt
+Zend/tests/array_unpack/classes.phpt
+Zend/tests/assign_obj_to_ref_inference.phpt
+Zend/tests/assign_typed_ref_result.phpt
+Zend/tests/asymmetric_visibility/gh19044.phpt
+Zend/tests/asymmetric_visibility/nested_write.phpt
+Zend/tests/asymmetric_visibility/override_private_public.phpt
+Zend/tests/asymmetric_visibility/override_protected_public.phpt
+Zend/tests/asymmetric_visibility/override_public_private.phpt
+Zend/tests/asymmetric_visibility/override_public_protected.phpt
+Zend/tests/asymmetric_visibility/readonly.phpt
+Zend/tests/asymmetric_visibility/static_props.phpt
+Zend/tests/asymmetric_visibility/variation_nested.phpt
+Zend/tests/bug30140.phpt
