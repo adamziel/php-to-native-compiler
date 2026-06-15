@@ -18,7 +18,7 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T16:39Z.
+Refresh: 2026-06-15T16:43Z.
 Measured latest: `ptn-w17z.26` Serializable/SPL unserialize row pack selected
 5 rows, kept 5 runnable, and passed 5/5 in the focused run.
 Latest: `ptn-w17z.26` completed the checked-in Serializable/SPL unserialize
@@ -26,7 +26,7 @@ row pack. Previous: `ptn-w17z.22` completed the compile-time include path
 variable acceptance row at 1/1.
 
 Current hook: `ptn-w17z.26` Serializable/SPL unserialize row pack passed 5/5
-at `.runtime/ptn-w17z26-rebased-final/summary-20260615T163557Z.txt`.
+at `.runtime/ptn-w17z26-final2/summary-20260615T164138Z.txt`.
 Previous hook: `ptn-w17z.22` compile-time include path variable acceptance
 passed 1/1 at
 `.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
@@ -39,7 +39,7 @@ Final checked-in focused manifest:
 | Evidence | Ported tests | Passed tests |
 | --- | ---: | ---: |
 | Hook-start focused baseline (`.runtime/ptn-w17z26-before/summary-20260615T155843Z.txt`) | 5 selected / 5 runnable | 0 |
-| Final rebased branch focused (`.runtime/ptn-w17z26-rebased-final/summary-20260615T163557Z.txt`) | 5 selected / 5 runnable | 5 |
+| Final rebased branch focused (`.runtime/ptn-w17z26-final2/summary-20260615T164138Z.txt`) | 5 selected / 5 runnable | 5 |
 
 Implemented behavior: `Serializable` classes now emit the PHP 8.4
 deprecation, serialize with `C:` custom payloads, and call
