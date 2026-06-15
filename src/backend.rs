@@ -4176,6 +4176,13 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_dynamic_function_name(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
+    out.push_str(
+        "    const char *dynamic_lookup_name = ptn_symbol_name_without_leading_slash(name);\n",
+    );
+    out.push_str("    if (ptn_ascii_case_equal(dynamic_lookup_name, \"compact\")) {\n");
+    out.push_str("        ptn_throw_exception_at(runtime, \"Error\", \"Cannot call compact() dynamically\", runtime->source_path, line);\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
     out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, name, argc, args, line);\n");
     out.push_str("    const PtnValue *call_args = args;\n");
     out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(name, argc, args, &call_args);\n");

@@ -385,6 +385,12 @@ typedef struct {
     size_t capacity;
 } PtnStringBuffer;
 
+typedef struct {
+    PtnStringBuffer buffer;
+    int has_callback;
+    PtnValue callback;
+} PtnOutputBuffer;
+
 typedef enum {
     PTN_NUMBER_INT,
     PTN_NUMBER_FLOAT
@@ -552,6 +558,10 @@ struct PtnRuntime {
     size_t *free_object_ids;
     size_t free_object_ids_len;
     size_t free_object_ids_capacity;
+    PtnOutputBuffer *output_buffers;
+    size_t output_buffers_len;
+    size_t output_buffers_capacity;
+    size_t output_buffer_callback_depth;
     PtnMethodDispatchHandler method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
     PtnClassScopeAllowsHandler class_scope_allows;
@@ -626,6 +636,7 @@ static PTN_UNUSED void ptn_cow_debug_reset(void);
 static PTN_UNUSED int ptn_cow_debug_counter(const char *name, size_t *out);
 static PTN_UNUSED void ptn_cow_debug_assert_named_counter(const char *name, int64_t expected);
 static PTN_UNUSED void ptn_cow_debug_assert_balanced(void);
+static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime);
 
 typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 

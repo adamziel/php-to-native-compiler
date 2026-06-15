@@ -39,6 +39,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->free_object_ids = NULL;
     runtime->free_object_ids_len = 0;
     runtime->free_object_ids_capacity = 0;
+    runtime->output_buffers = NULL;
+    runtime->output_buffers_len = 0;
+    runtime->output_buffers_capacity = 0;
+    runtime->output_buffer_callback_depth = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
     runtime->class_scope_allows = caller_runtime->class_scope_allows;
@@ -121,6 +125,7 @@ static PTN_UNUSED void ptn_runtime_pop_trace_frame(PtnRuntime *runtime, PtnTrace
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
         ptn_runtime_run_object_destructors(runtime);
+        ptn_output_buffer_flush_all(runtime);
     }
     ptn_symbols_free(&runtime->owned_static_property_set_visibility);
     ptn_symbols_free(&runtime->owned_static_property_read_visibility);
@@ -143,6 +148,11 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->free_object_ids = NULL;
         runtime->free_object_ids_len = 0;
         runtime->free_object_ids_capacity = 0;
+        free(runtime->output_buffers);
+        runtime->output_buffers = NULL;
+        runtime->output_buffers_len = 0;
+        runtime->output_buffers_capacity = 0;
+        runtime->output_buffer_callback_depth = 0;
     }
 }
 

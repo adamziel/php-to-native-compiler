@@ -57,7 +57,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   (`array_all()`, `array_any()`, `array_find()`, and `array_find_key()`), key-aware
   diff/intersect helpers with user comparators and PHP-style array-to-string
   conversion warnings for set-operation normalization, `array_rand()` key selection,
-  sum/product warning and
+  `compact()` current-scope variable collection, sum/product warning and
   overflow parity,
   `count()`/`sizeof()` modes including `Countable` dispatch, `array_splice()`
   mutation, sort mutators through
@@ -137,6 +137,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `vsprintf()`, `vprintf()`, and `vfprintf()` through one ordered-array
   argument expansion and stream-write path; exact PHP parity for some
   formatter flags and error diagnostics remains bounded.
+- Output buffering covers a native buffer stack for `ob_start()` callback
+  handlers, `ob_get_contents()`, `ob_get_length()`, `ob_get_level()`,
+  `ob_list_handlers()`, `ob_end_clean()`, `ob_end_flush()`, `ob_get_clean()`,
+  and `ob_get_flush()`; dynamic `compact()` callback invocation is rejected
+  with PHP-style `Error` behavior.
 - Declared instance properties keep public/protected/private defaults,
   asymmetric private(set)/protected(set) write visibility metadata, readonly
   write-once metadata for properties and readonly classes, readonly

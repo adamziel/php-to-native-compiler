@@ -5306,22 +5306,86 @@ fn compile_scalar_echo_keeps_direct_output_path_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    let echo_start = c_source
-        .find("static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line)")
-        .expect("generated runtime should contain ptn_echo");
-    let echo_tail = &c_source[echo_start..];
-    let echo_end = echo_tail
-        .find("\nint main(void)")
-        .expect("echo-only generated runtime should omit internal-call helpers");
-    let echo_body = &echo_tail[..echo_end];
+    let echo_body = generated_c_static_function_body(
+        &c_source,
+        "static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line)",
+    );
     assert!(!echo_body.contains("ptn_value_to_string"));
     assert!(!c_source.contains("ptn_internal_var_dump"));
     assert!(!c_source.contains("ptn_call_internal"));
+    assert!(echo_body.contains("ptn_output_write"));
     assert!(echo_body.contains("case PTN_NULL:"));
     assert!(echo_body.contains("case PTN_BOOL:"));
     assert!(echo_body.contains("case PTN_INT:"));
     assert!(echo_body.contains("case PTN_FLOAT:"));
     assert!(echo_body.contains("case PTN_STRING:"));
+}
+
+#[test]
+fn compile_output_buffer_captures_echo_printf_and_flushes_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-output-buffer-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-buffer-callback.php");
+    let output = root.join("output-buffer-callback-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_start(function ($output) { return \"wrapped[\" . $output . \"]\"; });\n\
+echo \"A\";\n\
+printf(\"-%s\", \"B\");\n\
+$contents = ob_get_contents();\n\
+echo \"-C\";\n\
+$length = ob_get_length();\n\
+ob_end_flush();\n\
+echo \"|\", $contents, \"|\", $length, \"|\", ob_get_level(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "wrapped[A-B-C]|A-B|5|0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_output_buffer_push"));
+    assert!(c_source.contains("ptn_output_buffer_apply_callback"));
+    assert!(c_source.contains("ptn_output_write(runtime"));
+}
+
+#[test]
+fn compile_ob_start_compact_handler_rejects_dynamic_compact_to_native_binary() {
+    let root = temp_dir("ptn-native-output-buffer-compact-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-buffer-compact-handler.php");
+    let output = root.join("output-buffer-compact-handler-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo function_exists(\"compact\") ? \"exists\\n\" : \"missing\\n\";\n\
+echo is_callable(\"compact\") ? \"callable\\n\" : \"not-callable\\n\";\n\
+ob_start(\"compact\");\n\
+try {\n\
+    ob_end_clean();\n\
+} catch (\\Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "exists\ncallable\nCannot call compact() dynamically\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
