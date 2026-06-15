@@ -124,6 +124,28 @@ struct ForeachVariable {
     span: SourceSpan,
 }
 
+#[derive(Debug, Clone)]
+struct ParsedTypeHint {
+    type_hint: TypeHint,
+    span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TypeHintContext {
+    Parameter,
+    Return,
+}
+
+impl TypeHintContext {
+    fn allows_void(self) -> bool {
+        matches!(self, Self::Return)
+    }
+
+    fn allows_never(self) -> bool {
+        matches!(self, Self::Return)
+    }
+}
+
 #[derive(Default, Clone, Copy)]
 struct ParsedAttributes {
     has_override: bool,
@@ -216,6 +238,7 @@ impl Parser<'_> {
         validate_interface_references(&classes)?;
         validate_override_attributes(&classes, &traits)?;
         validate_traversable_implementations(&classes)?;
+        validate_method_signature_compatibility(&classes)?;
         validate_abstract_methods(&classes)?;
         validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
@@ -2397,94 +2420,161 @@ impl Parser<'_> {
     }
 
     fn parse_type_hint(&mut self) -> Result<TypeHint> {
-        let span = self.peek().span;
-        let mut types = vec![self.parse_type_hint_atom(false)?];
-        while matches!(self.peek().kind, TokenKind::Pipe) {
-            self.advance();
-            types.push(self.parse_type_hint_atom(false)?);
-        }
-        union_type_hint(types, span)
-    }
-
-    fn parse_type_hint_atom(&mut self, allow_return_only_types: bool) -> Result<TypeHint> {
-        if matches!(self.peek().kind, TokenKind::Question) {
-            let span = self.advance().span;
-            let inner = self.parse_type_hint_atom(allow_return_only_types)?;
-            return nullable_type_hint(inner, span);
-        }
-        match &self.peek().kind {
-            TokenKind::Identifier(name)
-                if allow_return_only_types && name.eq_ignore_ascii_case("void") =>
-            {
-                self.advance();
-                Ok(TypeHint::Void)
-            }
-            TokenKind::Identifier(name)
-                if allow_return_only_types && name.eq_ignore_ascii_case("never") =>
-            {
-                self.advance();
-                Ok(TypeHint::Never)
-            }
-            TokenKind::Null => {
-                self.advance();
-                Ok(TypeHint::Null)
-            }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
-                self.advance();
-                Ok(TypeHint::Array)
-            }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("callable") => {
-                self.advance();
-                Ok(TypeHint::Callable)
-            }
-            TokenKind::IntType | TokenKind::IntegerType => {
-                self.advance();
-                Ok(TypeHint::Int)
-            }
-            TokenKind::FloatType | TokenKind::DoubleType => {
-                self.advance();
-                Ok(TypeHint::Float)
-            }
-            TokenKind::StringType | TokenKind::BinaryType => {
-                self.advance();
-                Ok(TypeHint::String)
-            }
-            TokenKind::BoolType | TokenKind::BooleanType => {
-                self.advance();
-                Ok(TypeHint::Bool)
-            }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("mixed") => {
-                self.advance();
-                Ok(TypeHint::Mixed)
-            }
-            TokenKind::Backslash => {
-                let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
-                Ok(TypeHint::Class(class_name))
-            }
-            TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
-                let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
-                Ok(TypeHint::Class(class_name))
-            }
-            _ => {
-                let token = self.advance();
-                Err(Diagnostic::new("expected type hint", Some(token.span)))
-            }
-        }
+        self.parse_type_hint_with_context(TypeHintContext::Parameter)
+            .map(|parsed| parsed.type_hint)
     }
 
     fn parse_return_type_hint(&mut self) -> Result<TypeHint> {
-        let span = self.peek().span;
-        let mut types = vec![self.parse_type_hint_atom(true)?];
+        self.parse_type_hint_with_context(TypeHintContext::Return)
+            .map(|parsed| parsed.type_hint)
+    }
+
+    fn parse_type_hint_with_context(&mut self, context: TypeHintContext) -> Result<ParsedTypeHint> {
+        if matches!(self.peek().kind, TokenKind::Question) {
+            let span = self.advance().span;
+            let inner = self.parse_type_hint_with_context(context)?;
+            let nullable_span = combine_spans(span, inner.span);
+            return Ok(ParsedTypeHint {
+                type_hint: nullable_type_hint(inner.type_hint, span)?,
+                span: nullable_span,
+            });
+        }
+
+        let first = self.parse_intersection_type_hint(context)?;
+        let mut span = first.span;
+        let mut types = vec![first.type_hint];
         while matches!(self.peek().kind, TokenKind::Pipe) {
             self.advance();
-            types.push(self.parse_type_hint_atom(true)?);
+            let next = self.parse_intersection_type_hint(context)?;
+            span = combine_spans(span, next.span);
+            types.push(next.type_hint);
         }
-        union_type_hint(types, span)
+
+        let type_hint = if types.len() == 1 {
+            types.remove(0)
+        } else {
+            validate_union_type_hint(&types, span)?;
+            TypeHint::Union(types)
+        };
+        Ok(ParsedTypeHint { type_hint, span })
+    }
+
+    fn parse_intersection_type_hint(&mut self, context: TypeHintContext) -> Result<ParsedTypeHint> {
+        let first = self.parse_type_hint_atom(context)?;
+        let mut span = first.span;
+        let mut types = vec![first.type_hint];
+        while matches!(self.peek().kind, TokenKind::Ampersand)
+            && token_starts_type_hint_atom(self.peek_next())
+        {
+            self.advance();
+            let next = self.parse_type_hint_atom(context)?;
+            span = combine_spans(span, next.span);
+            types.push(next.type_hint);
+        }
+
+        let type_hint = if types.len() == 1 {
+            types.remove(0)
+        } else {
+            validate_intersection_type_hint(&types, span)?;
+            TypeHint::Intersection(types)
+        };
+        Ok(ParsedTypeHint { type_hint, span })
+    }
+
+    fn parse_type_hint_atom(&mut self, context: TypeHintContext) -> Result<ParsedTypeHint> {
+        if matches!(self.peek().kind, TokenKind::LeftParen) {
+            let open_span = self.advance().span;
+            let inner = self.parse_intersection_type_hint(context)?;
+            let close_span = self.expect_right_paren()?;
+            return Ok(ParsedTypeHint {
+                type_hint: inner.type_hint,
+                span: combine_spans(open_span, close_span),
+            });
+        }
+
+        let token = self.peek().clone();
+        let type_hint = match &token.kind {
+            TokenKind::Null => {
+                self.advance();
+                TypeHint::Null
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
+                self.advance();
+                TypeHint::Array
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("callable") => {
+                self.advance();
+                TypeHint::Callable
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("object") => {
+                self.advance();
+                TypeHint::Object
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("iterable") => {
+                self.advance();
+                TypeHint::Iterable
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("mixed") => {
+                self.advance();
+                TypeHint::Mixed
+            }
+            TokenKind::Identifier(name)
+                if context.allows_void() && name.eq_ignore_ascii_case("void") =>
+            {
+                self.advance();
+                TypeHint::Void
+            }
+            TokenKind::Identifier(name)
+                if context.allows_never() && name.eq_ignore_ascii_case("never") =>
+            {
+                self.advance();
+                TypeHint::Never
+            }
+            TokenKind::IntType | TokenKind::IntegerType => {
+                self.advance();
+                TypeHint::Int
+            }
+            TokenKind::FloatType | TokenKind::DoubleType => {
+                self.advance();
+                TypeHint::Float
+            }
+            TokenKind::StringType | TokenKind::BinaryType => {
+                self.advance();
+                TypeHint::String
+            }
+            TokenKind::BoolType | TokenKind::BooleanType => {
+                self.advance();
+                TypeHint::Bool
+            }
+            TokenKind::Backslash => {
+                let parsed = self.parse_name("expected type hint")?;
+                if is_unqualified_only_builtin_type_hint_name(&parsed.name) {
+                    return Err(Diagnostic::new(
+                        format!("Type declaration '{}' must be unqualified", parsed.name),
+                        Some(parsed.span),
+                    ));
+                }
+                TypeHint::Class(self.resolve_class_name(&parsed))
+            }
+            TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
+                let parsed = self.parse_name("expected type hint")?;
+                TypeHint::Class(self.resolve_class_name(&parsed))
+            }
+            _ => {
+                let token = self.advance();
+                return Err(Diagnostic::new("expected type hint", Some(token.span)));
+            }
+        };
+        Ok(ParsedTypeHint {
+            type_hint,
+            span: token.span,
+        })
     }
 
     fn peek_is_type_hint(&self) -> bool {
         match &self.peek().kind {
             TokenKind::Question
+            | TokenKind::LeftParen
             | TokenKind::Backslash
             | TokenKind::Null
             | TokenKind::IntType
@@ -2499,6 +2589,8 @@ impl Parser<'_> {
                 name.eq_ignore_ascii_case("array")
                     || name.eq_ignore_ascii_case("callable")
                     || name.eq_ignore_ascii_case("mixed")
+                    || name.eq_ignore_ascii_case("object")
+                    || name.eq_ignore_ascii_case("iterable")
                     || !is_unsupported_builtin_type_hint_name(name)
             }
             _ => false,
@@ -5868,7 +5960,29 @@ fn is_auto_global_name(name: &str) -> bool {
 fn is_unsupported_builtin_type_hint_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "callable" | "false" | "iterable" | "never" | "object" | "static" | "true" | "void"
+        "callable" | "false" | "never" | "static" | "true" | "void"
+    )
+}
+
+fn is_unqualified_only_builtin_type_hint_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array"
+            | "callable"
+            | "bool"
+            | "boolean"
+            | "float"
+            | "double"
+            | "int"
+            | "integer"
+            | "iterable"
+            | "mixed"
+            | "null"
+            | "object"
+            | "string"
+            | "binary"
+            | "void"
+            | "never"
     )
 }
 
@@ -5923,7 +6037,15 @@ fn property_type_hint_from_type_hint(type_hint: &TypeHint) -> PropertyTypeHint {
             kind: PropertyTypeKind::Mixed,
             allows_null: false,
         },
-        TypeHint::Callable | TypeHint::Union(_) => PropertyTypeHint {
+        TypeHint::Object => PropertyTypeHint {
+            text: "object".to_string(),
+            kind: PropertyTypeKind::Object,
+            allows_null: false,
+        },
+        TypeHint::Callable
+        | TypeHint::Iterable
+        | TypeHint::Union(_)
+        | TypeHint::Intersection(_) => PropertyTypeHint {
             text: type_hint_key(type_hint),
             kind: PropertyTypeKind::Unsupported,
             allows_null: false,
@@ -5954,18 +6076,37 @@ fn nullable_type_hint(type_hint: TypeHint, span: SourceSpan) -> Result<TypeHint>
         | TypeHint::Void
         | TypeHint::Never
         | TypeHint::Nullable(_)
-        | TypeHint::Union(_) => Err(Diagnostic::new("invalid nullable type hint", Some(span))),
+        | TypeHint::Union(_)
+        | TypeHint::Intersection(_) => {
+            Err(Diagnostic::new("invalid nullable type hint", Some(span)))
+        }
         other => Ok(TypeHint::Nullable(Box::new(other))),
     }
 }
 
-fn union_type_hint(types: Vec<TypeHint>, span: SourceSpan) -> Result<TypeHint> {
-    if types.len() == 1 {
-        return Ok(types.into_iter().next().expect("single type hint"));
+fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> {
+    let iterable_count = types
+        .iter()
+        .filter(|type_hint| matches!(type_hint, TypeHint::Iterable))
+        .count();
+    if iterable_count > 1 || (iterable_count == 1 && types.iter().any(type_hint_is_array)) {
+        return Err(Diagnostic::new(
+            "Duplicate type array is redundant",
+            Some(span),
+        ));
     }
-
+    if iterable_count == 1
+        && types
+            .iter()
+            .any(|type_hint| type_hint_is_class_named(type_hint, "Traversable"))
+    {
+        return Err(Diagnostic::new(
+            "Duplicate type Traversable is redundant",
+            Some(span),
+        ));
+    }
     let mut seen = Vec::new();
-    for type_hint in &types {
+    for type_hint in types {
         match type_hint {
             TypeHint::Mixed | TypeHint::Void | TypeHint::Never | TypeHint::Nullable(_) => {
                 return Err(Diagnostic::new("invalid union type hint", Some(span)));
@@ -5982,8 +6123,39 @@ fn union_type_hint(types: Vec<TypeHint>, span: SourceSpan) -> Result<TypeHint> {
         }
         seen.push(key);
     }
+    Ok(())
+}
 
-    Ok(TypeHint::Union(types))
+fn validate_intersection_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> {
+    for type_hint in types {
+        match type_hint {
+            TypeHint::Class(_) => {}
+            TypeHint::Iterable => {
+                return Err(Diagnostic::new(
+                    "Type Traversable|array cannot be part of an intersection type",
+                    Some(span),
+                ));
+            }
+            other => {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Type {} cannot be part of an intersection type",
+                        type_hint_display(other)
+                    ),
+                    Some(span),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn type_hint_is_array(type_hint: &TypeHint) -> bool {
+    matches!(type_hint, TypeHint::Array)
+}
+
+fn type_hint_is_class_named(type_hint: &TypeHint, name: &str) -> bool {
+    matches!(type_hint, TypeHint::Class(class_name) if class_name.eq_ignore_ascii_case(name))
 }
 
 fn type_hint_key(type_hint: &TypeHint) -> String {
@@ -5995,6 +6167,8 @@ fn type_hint_key(type_hint: &TypeHint) -> String {
         TypeHint::String => "string".to_string(),
         TypeHint::Bool => "bool".to_string(),
         TypeHint::Callable => "callable".to_string(),
+        TypeHint::Object => "object".to_string(),
+        TypeHint::Iterable => "iterable".to_string(),
         TypeHint::Mixed => "mixed".to_string(),
         TypeHint::Void => "void".to_string(),
         TypeHint::Never => "never".to_string(),
@@ -6004,6 +6178,11 @@ fn type_hint_key(type_hint: &TypeHint) -> String {
             .map(type_hint_key)
             .collect::<Vec<_>>()
             .join("|"),
+        TypeHint::Intersection(types) => types
+            .iter()
+            .map(type_hint_key)
+            .collect::<Vec<_>>()
+            .join("&"),
         TypeHint::Class(name) => name.to_ascii_lowercase(),
     }
 }
@@ -6824,6 +7003,24 @@ fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
 }
 
+fn token_starts_type_hint_atom(token: &Token) -> bool {
+    matches!(
+        token.kind,
+        TokenKind::LeftParen
+            | TokenKind::Backslash
+            | TokenKind::Null
+            | TokenKind::IntType
+            | TokenKind::IntegerType
+            | TokenKind::FloatType
+            | TokenKind::DoubleType
+            | TokenKind::StringType
+            | TokenKind::BinaryType
+            | TokenKind::BoolType
+            | TokenKind::BooleanType
+            | TokenKind::Identifier(_)
+    )
+}
+
 fn normalize_runtime_class_alias_key(name: &str) -> String {
     normalize_runtime_class_alias_target(name).to_ascii_lowercase()
 }
@@ -7221,6 +7418,671 @@ fn validate_traversable_implementations(classes: &[ClassDecl]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn validate_method_signature_compatibility(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        for method in &class.methods {
+            if method.visibility == PropertyVisibility::Private {
+                continue;
+            }
+            if let Some((parent_class, parent_method)) =
+                find_visible_parent_method(class, &method.name, classes)
+            {
+                validate_method_signature_pair(
+                    class,
+                    method,
+                    parent_class,
+                    parent_method,
+                    classes,
+                )?;
+            }
+
+            let mut seen_interfaces = HashSet::new();
+            let mut interface_methods = Vec::new();
+            for interface_name in &class.interfaces {
+                collect_interface_methods(
+                    interface_name,
+                    &method.name,
+                    classes,
+                    &mut seen_interfaces,
+                    &mut interface_methods,
+                );
+            }
+            for (interface, interface_method) in interface_methods {
+                validate_method_signature_pair(
+                    class,
+                    method,
+                    interface,
+                    interface_method,
+                    classes,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn find_visible_parent_method<'a>(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a MethodDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let parent = find_class(classes, name)?;
+        if let Some(method) = parent.methods.iter().find(|candidate| {
+            candidate.visibility != PropertyVisibility::Private
+                && candidate.name.eq_ignore_ascii_case(method_name)
+        }) {
+            return Some((parent, method));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn collect_interface_methods<'a>(
+    interface_name: &str,
+    method_name: &str,
+    classes: &'a [ClassDecl],
+    seen: &mut HashSet<String>,
+    methods: &mut Vec<(&'a ClassDecl, &'a MethodDecl)>,
+) {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return;
+    }
+    let Some(interface) = find_class(classes, interface_name) else {
+        return;
+    };
+    if !interface.is_interface {
+        return;
+    }
+    for method in &interface.methods {
+        if method.name.eq_ignore_ascii_case(method_name) {
+            methods.push((interface, method));
+        }
+    }
+    for parent_name in &interface.interfaces {
+        collect_interface_methods(parent_name, method_name, classes, seen, methods);
+    }
+}
+
+fn validate_method_signature_pair(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    parent_class: &ClassDecl,
+    parent_method: &MethodDecl,
+    classes: &[ClassDecl],
+) -> Result<()> {
+    if method.return_by_ref != parent_method.return_by_ref {
+        return Err(method_signature_compatibility_error(
+            class,
+            method,
+            parent_class,
+            parent_method,
+        ));
+    }
+
+    for (index, parent_parameter) in parent_method.parameters.iter().enumerate() {
+        let Some(parameter) = method.parameters.get(index) else {
+            return Err(method_signature_compatibility_error(
+                class,
+                method,
+                parent_class,
+                parent_method,
+            ));
+        };
+        if parameter.by_ref != parent_parameter.by_ref
+            || parameter.is_variadic != parent_parameter.is_variadic
+        {
+            return Err(method_signature_compatibility_error(
+                class,
+                method,
+                parent_class,
+                parent_method,
+            ));
+        }
+        if !parameter_type_is_contravariant(parameter, parent_parameter, classes) {
+            return Err(method_signature_compatibility_error(
+                class,
+                method,
+                parent_class,
+                parent_method,
+            ));
+        }
+    }
+
+    if let Some(parent_return_type) = &parent_method.return_type {
+        let Some(return_type) = &method.return_type else {
+            return Err(method_signature_compatibility_error(
+                class,
+                method,
+                parent_class,
+                parent_method,
+            ));
+        };
+        if !type_hint_is_subtype(return_type, parent_return_type, classes) {
+            if let Some(unavailable_name) =
+                unresolved_compatibility_class(return_type, parent_return_type, classes)
+            {
+                return Err(method_signature_unresolved_compatibility_error(
+                    class,
+                    method,
+                    parent_class,
+                    parent_method,
+                    &unavailable_name,
+                ));
+            }
+            return Err(method_signature_compatibility_error(
+                class,
+                method,
+                parent_class,
+                parent_method,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn unresolved_compatibility_class(
+    candidate: &TypeHint,
+    target: &TypeHint,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    if !type_hint_mentions_iterable_or_traversable(target) {
+        return None;
+    }
+    first_unavailable_intersection_class(candidate, classes)
+}
+
+fn type_hint_mentions_iterable_or_traversable(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Iterable => true,
+        TypeHint::Class(name) => name.eq_ignore_ascii_case("Traversable"),
+        TypeHint::Nullable(inner) => type_hint_mentions_iterable_or_traversable(inner),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            types.iter().any(type_hint_mentions_iterable_or_traversable)
+        }
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never => false,
+    }
+}
+
+fn first_unavailable_intersection_class(
+    type_hint: &TypeHint,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    match type_hint {
+        TypeHint::Intersection(types) => types.iter().find_map(|member| {
+            if let TypeHint::Class(name) = member {
+                if !class_type_name_is_available(name, classes) {
+                    return Some(name.clone());
+                }
+            }
+            None
+        }),
+        TypeHint::Nullable(inner) => first_unavailable_intersection_class(inner, classes),
+        TypeHint::Union(types) => types
+            .iter()
+            .find_map(|member| first_unavailable_intersection_class(member, classes)),
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Class(_) => None,
+    }
+}
+
+fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
+    is_modeled_builtin_interface_name(name)
+        || name.eq_ignore_ascii_case("stdClass")
+        || name.eq_ignore_ascii_case("ArrayIterator")
+        || name.eq_ignore_ascii_case("IteratorIterator")
+        || name.eq_ignore_ascii_case("ArrayObject")
+        || name.eq_ignore_ascii_case("Generator")
+        || is_modeled_builtin_exception_class_name(name)
+        || find_class(classes, name).is_some()
+}
+
+fn parameter_type_is_contravariant(
+    parameter: &FunctionParameter,
+    parent_parameter: &FunctionParameter,
+    classes: &[ClassDecl],
+) -> bool {
+    match (&parameter.type_hint, &parent_parameter.type_hint) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(type_hint), Some(parent_type_hint)) => {
+            type_hint_is_subtype(parent_type_hint, type_hint, classes)
+        }
+    }
+}
+
+fn method_signature_compatibility_error(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    parent_class: &ClassDecl,
+    parent_method: &MethodDecl,
+) -> Diagnostic {
+    Diagnostic::new(
+        format!(
+            "Declaration of {}::{} must be compatible with {}::{}",
+            class.name,
+            method_signature_display(method),
+            parent_class.name,
+            method_signature_display(parent_method)
+        ),
+        Some(method.span),
+    )
+}
+
+fn method_signature_unresolved_compatibility_error(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    parent_class: &ClassDecl,
+    parent_method: &MethodDecl,
+    unavailable_name: &str,
+) -> Diagnostic {
+    Diagnostic::new(
+        format!(
+            "Could not check compatibility between {}::{} and {}::{}, because class {} is not available",
+            class.name,
+            method_signature_display_canonical(method),
+            parent_class.name,
+            method_signature_display_canonical(parent_method),
+            unavailable_name
+        ),
+        Some(method.span),
+    )
+}
+
+fn method_signature_display(method: &MethodDecl) -> String {
+    method_signature_display_with(method, type_hint_display)
+}
+
+fn method_signature_display_canonical(method: &MethodDecl) -> String {
+    method_signature_display_with(method, type_hint_display_canonical)
+}
+
+fn method_signature_display_with(
+    method: &MethodDecl,
+    display_type: fn(&TypeHint) -> String,
+) -> String {
+    let mut signature = String::new();
+    if method.return_by_ref {
+        signature.push('&');
+    }
+    signature.push_str(&method.name);
+    signature.push('(');
+    for (index, parameter) in method.parameters.iter().enumerate() {
+        if index > 0 {
+            signature.push_str(", ");
+        }
+        signature.push_str(&parameter_signature_display_with(parameter, display_type));
+    }
+    signature.push(')');
+    if let Some(return_type) = &method.return_type {
+        signature.push_str(": ");
+        signature.push_str(&display_type(return_type));
+    }
+    signature
+}
+
+fn parameter_signature_display_with(
+    parameter: &FunctionParameter,
+    display_type: fn(&TypeHint) -> String,
+) -> String {
+    let mut display = String::new();
+    if let Some(type_hint) = &parameter.type_hint {
+        display.push_str(&display_type(type_hint));
+        display.push(' ');
+    }
+    if parameter.by_ref {
+        display.push('&');
+    }
+    if parameter.is_variadic {
+        display.push_str("...");
+    }
+    display.push('$');
+    display.push_str(&parameter.name);
+    if let Some(default_value) = &parameter.default_value {
+        display.push_str(" = ");
+        display.push_str(&parameter_default_display(default_value));
+    }
+    display
+}
+
+fn parameter_default_display(default_value: &Expr) -> String {
+    match default_value {
+        Expr::Null(_) => "null".to_string(),
+        Expr::Bool(value, _) => value.to_string(),
+        Expr::Int(value, _) => value.to_string(),
+        Expr::Float(value, _) => value.to_string(),
+        Expr::String(value, _) => format!("'{}'", value.replace('\'', "\\'")),
+        Expr::Array { elements, .. } if elements.is_empty() => "[]".to_string(),
+        _ => "<expression>".to_string(),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TypeAtom {
+    Null,
+    Array,
+    Int,
+    Float,
+    String,
+    Bool,
+    Callable,
+    Object,
+    Mixed,
+    Never,
+    Class(String),
+}
+
+#[derive(Debug, Clone)]
+struct TypeAlternative {
+    atoms: Vec<TypeAtom>,
+}
+
+fn type_hint_is_subtype(candidate: &TypeHint, target: &TypeHint, classes: &[ClassDecl]) -> bool {
+    let candidate_alternatives = type_hint_alternatives(candidate);
+    let target_alternatives = type_hint_alternatives(target);
+    candidate_alternatives.iter().all(|candidate| {
+        target_alternatives
+            .iter()
+            .any(|target| type_alternative_is_subtype(candidate, target, classes))
+    })
+}
+
+fn type_hint_alternatives(type_hint: &TypeHint) -> Vec<TypeAlternative> {
+    match type_hint {
+        TypeHint::Null => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Null],
+        }],
+        TypeHint::Array => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Array],
+        }],
+        TypeHint::Int => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Int],
+        }],
+        TypeHint::Float => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Float],
+        }],
+        TypeHint::String => vec![TypeAlternative {
+            atoms: vec![TypeAtom::String],
+        }],
+        TypeHint::Bool => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Bool],
+        }],
+        TypeHint::Callable => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Callable],
+        }],
+        TypeHint::Object => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Object],
+        }],
+        TypeHint::Iterable => vec![
+            TypeAlternative {
+                atoms: vec![TypeAtom::Array],
+            },
+            TypeAlternative {
+                atoms: vec![TypeAtom::Class("Traversable".to_string())],
+            },
+        ],
+        TypeHint::Mixed | TypeHint::Void => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Mixed],
+        }],
+        TypeHint::Never => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Never],
+        }],
+        TypeHint::Nullable(inner) => {
+            let mut alternatives = type_hint_alternatives(inner);
+            alternatives.push(TypeAlternative {
+                atoms: vec![TypeAtom::Null],
+            });
+            alternatives
+        }
+        TypeHint::Union(types) => types.iter().flat_map(type_hint_alternatives).collect(),
+        TypeHint::Intersection(types) => {
+            let mut alternatives = vec![TypeAlternative { atoms: Vec::new() }];
+            for type_hint in types {
+                let member_alternatives = type_hint_alternatives(type_hint);
+                let mut combined = Vec::new();
+                for current in &alternatives {
+                    for member in &member_alternatives {
+                        let mut atoms = current.atoms.clone();
+                        atoms.extend(member.atoms.clone());
+                        combined.push(TypeAlternative { atoms });
+                    }
+                }
+                alternatives = combined;
+            }
+            alternatives
+        }
+        TypeHint::Class(class_name) => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Class(class_name.clone())],
+        }],
+    }
+}
+
+fn type_alternative_is_subtype(
+    candidate: &TypeAlternative,
+    target: &TypeAlternative,
+    classes: &[ClassDecl],
+) -> bool {
+    target.atoms.iter().all(|target_atom| {
+        candidate
+            .atoms
+            .iter()
+            .any(|candidate_atom| type_atom_is_subtype(candidate_atom, target_atom, classes))
+    })
+}
+
+fn type_atom_is_subtype(candidate: &TypeAtom, target: &TypeAtom, classes: &[ClassDecl]) -> bool {
+    if matches!(candidate, TypeAtom::Never) || matches!(target, TypeAtom::Mixed) {
+        return true;
+    }
+    if candidate == target {
+        return true;
+    }
+    match (candidate, target) {
+        (TypeAtom::Class(_), TypeAtom::Object) => true,
+        (TypeAtom::Class(candidate), TypeAtom::Class(target)) => {
+            class_type_name_is_subtype(candidate, target, classes)
+        }
+        _ => false,
+    }
+}
+
+fn class_type_name_is_subtype(
+    candidate_name: &str,
+    target_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    if candidate_name.eq_ignore_ascii_case(target_name) {
+        return true;
+    }
+    if builtin_class_type_is_subtype(candidate_name, target_name) {
+        return true;
+    }
+    let Some(candidate) = find_class(classes, candidate_name) else {
+        return false;
+    };
+    if candidate.is_interface {
+        return interface_type_extends(candidate, target_name, classes);
+    }
+    class_type_extends_or_implements(candidate, target_name, classes)
+}
+
+fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> bool {
+    if target_name.eq_ignore_ascii_case("Traversable")
+        && (candidate_name.eq_ignore_ascii_case("Iterator")
+            || candidate_name.eq_ignore_ascii_case("IteratorAggregate"))
+    {
+        return true;
+    }
+    let implemented = if candidate_name.eq_ignore_ascii_case("ArrayIterator") {
+        &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("IteratorIterator") {
+        &["Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("ArrayObject") {
+        &[
+            "ArrayAccess",
+            "Countable",
+            "IteratorAggregate",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("Generator") {
+        &["Iterator", "Traversable"][..]
+    } else {
+        &[][..]
+    };
+    implemented
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case(target_name))
+}
+
+fn class_type_extends_or_implements(
+    class: &ClassDecl,
+    target_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    if class
+        .interfaces
+        .iter()
+        .any(|interface| interface_name_is_subtype(interface, target_name, classes))
+    {
+        return true;
+    }
+    let Some(parent_name) = class.parent_name.as_deref() else {
+        return false;
+    };
+    if parent_name.eq_ignore_ascii_case(target_name)
+        || builtin_class_type_is_subtype(parent_name, target_name)
+    {
+        return true;
+    }
+    find_class(classes, parent_name)
+        .is_some_and(|parent| class_type_extends_or_implements(parent, target_name, classes))
+}
+
+fn interface_name_is_subtype(
+    interface_name: &str,
+    target_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    if interface_name.eq_ignore_ascii_case(target_name)
+        || builtin_class_type_is_subtype(interface_name, target_name)
+    {
+        return true;
+    }
+    find_class(classes, interface_name)
+        .filter(|interface| interface.is_interface)
+        .is_some_and(|interface| interface_type_extends(interface, target_name, classes))
+}
+
+fn interface_type_extends(interface: &ClassDecl, target_name: &str, classes: &[ClassDecl]) -> bool {
+    interface
+        .interfaces
+        .iter()
+        .any(|parent_name| interface_name_is_subtype(parent_name, target_name, classes))
+}
+
+fn type_hint_display(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Null => "null".to_string(),
+        TypeHint::Array => "array".to_string(),
+        TypeHint::Int => "int".to_string(),
+        TypeHint::Float => "float".to_string(),
+        TypeHint::String => "string".to_string(),
+        TypeHint::Bool => "bool".to_string(),
+        TypeHint::Callable => "callable".to_string(),
+        TypeHint::Object => "object".to_string(),
+        TypeHint::Iterable => "Traversable|array".to_string(),
+        TypeHint::Mixed => "mixed".to_string(),
+        TypeHint::Void => "void".to_string(),
+        TypeHint::Never => "never".to_string(),
+        TypeHint::Nullable(inner) => match inner.as_ref() {
+            TypeHint::Iterable => "Traversable|array|null".to_string(),
+            TypeHint::Union(_) | TypeHint::Intersection(_) => {
+                format!("{}|null", type_hint_display(inner))
+            }
+            _ => format!("?{}", type_hint_display(inner)),
+        },
+        TypeHint::Union(types) => types
+            .iter()
+            .map(|member| type_hint_union_member_display(member))
+            .collect::<Vec<_>>()
+            .join("|"),
+        TypeHint::Intersection(types) => types
+            .iter()
+            .map(type_hint_display)
+            .collect::<Vec<_>>()
+            .join("&"),
+        TypeHint::Class(class_name) => class_name.clone(),
+    }
+}
+
+fn type_hint_display_canonical(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Union(types) => {
+            let mut members = types.iter().collect::<Vec<_>>();
+            members.sort_by_key(|member| !matches!(member, TypeHint::Intersection(_)));
+            members
+                .into_iter()
+                .map(|member| match member {
+                    TypeHint::Intersection(_) => {
+                        format!("({})", type_hint_display_canonical(member))
+                    }
+                    _ => type_hint_display_canonical(member),
+                })
+                .collect::<Vec<_>>()
+                .join("|")
+        }
+        TypeHint::Intersection(types) => types
+            .iter()
+            .map(type_hint_display_canonical)
+            .collect::<Vec<_>>()
+            .join("&"),
+        TypeHint::Nullable(inner) => match inner.as_ref() {
+            TypeHint::Iterable => "Traversable|array|null".to_string(),
+            TypeHint::Union(_) | TypeHint::Intersection(_) => {
+                format!("{}|null", type_hint_display_canonical(inner))
+            }
+            _ => format!("?{}", type_hint_display_canonical(inner)),
+        },
+        _ => type_hint_display(type_hint),
+    }
+}
+
+fn type_hint_union_member_display(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Intersection(_) => format!("({})", type_hint_display(type_hint)),
+        _ => type_hint_display(type_hint),
+    }
 }
 
 fn validate_override_attributes(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<()> {

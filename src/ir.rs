@@ -143,6 +143,7 @@ pub struct FunctionDecl {
     pub trait_name: Option<String>,
     pub method_name: Option<String>,
     pub is_static: bool,
+    pub line: usize,
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
@@ -170,11 +171,14 @@ pub enum TypeHint {
     Float,
     String,
     Bool,
+    Object,
+    Iterable,
     Mixed,
     Void,
     Never,
     Nullable(Box<TypeHint>),
     Union(Vec<TypeHint>),
+    Intersection(Vec<TypeHint>),
     Class(String),
 }
 
@@ -905,6 +909,7 @@ impl<'a> LoweringContext<'a> {
             trait_name: None,
             method_name: None,
             is_static: false,
+            line: function.span.line,
             parameters,
             return_type: function.return_type.clone().map(lower_type_hint),
             return_by_ref: function.return_by_ref,
@@ -953,6 +958,7 @@ impl<'a> LoweringContext<'a> {
             trait_name: self.current_trait_name.clone(),
             method_name: None,
             is_static: function.is_static,
+            line: function.span.line,
             parameters,
             return_type: function.return_type.clone().map(lower_type_hint),
             return_by_ref: function.return_by_ref,
@@ -1025,6 +1031,7 @@ impl<'a> LoweringContext<'a> {
                     trait_name: method.trait_name.clone(),
                     method_name: Some(method.name.clone()),
                     is_static: method.is_static,
+                    line: method.span.line,
                     parameters,
                     return_type: method.return_type.clone().map(lower_type_hint),
                     return_by_ref: method.return_by_ref,
@@ -1437,12 +1444,17 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::Float => TypeHint::Float,
         AstTypeHint::String => TypeHint::String,
         AstTypeHint::Bool => TypeHint::Bool,
+        AstTypeHint::Object => TypeHint::Object,
+        AstTypeHint::Iterable => TypeHint::Iterable,
         AstTypeHint::Mixed => TypeHint::Mixed,
         AstTypeHint::Void => TypeHint::Void,
         AstTypeHint::Never => TypeHint::Never,
         AstTypeHint::Nullable(inner) => TypeHint::Nullable(Box::new(lower_type_hint(*inner))),
         AstTypeHint::Union(types) => {
             TypeHint::Union(types.into_iter().map(lower_type_hint).collect())
+        }
+        AstTypeHint::Intersection(types) => {
+            TypeHint::Intersection(types.into_iter().map(lower_type_hint).collect())
         }
         AstTypeHint::Class(name) => TypeHint::Class(name),
     }
@@ -2923,6 +2935,8 @@ fn assertion_type_hint_text(type_hint: &AstTypeHint) -> String {
         AstTypeHint::Float => "float".to_string(),
         AstTypeHint::String => "string".to_string(),
         AstTypeHint::Bool => "bool".to_string(),
+        AstTypeHint::Object => "object".to_string(),
+        AstTypeHint::Iterable => "Traversable|array".to_string(),
         AstTypeHint::Mixed => "mixed".to_string(),
         AstTypeHint::Void => "void".to_string(),
         AstTypeHint::Never => "never".to_string(),
@@ -2932,6 +2946,11 @@ fn assertion_type_hint_text(type_hint: &AstTypeHint) -> String {
             .map(assertion_type_hint_text)
             .collect::<Vec<_>>()
             .join("|"),
+        AstTypeHint::Intersection(types) => types
+            .iter()
+            .map(assertion_type_hint_text)
+            .collect::<Vec<_>>()
+            .join("&"),
         AstTypeHint::Class(name) => name.clone(),
     }
 }

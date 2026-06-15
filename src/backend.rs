@@ -46,6 +46,7 @@ pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let runtime_requirements = module_runtime_requirements(module);
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
+    let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let serializable_deprecations = collect_module_serializable_deprecations(module);
     let magic_declaration_fatals = collect_module_magic_declaration_fatals(module);
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
@@ -205,6 +206,11 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
     );
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
+    emit_parameter_default_diagnostics(
+        &mut out,
+        &parameter_default_diagnostics,
+        &module.source_file,
+    );
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
@@ -476,6 +482,18 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_value_satisfies_object_type_hint(PtnValue value) {\n",
+    );
+    out.push_str("    value = ptn_value_deref(value);\n");
+    out.push_str("    return value.type == PTN_OBJECT || value.type == PTN_EXCEPTION || value.type == PTN_CLOSURE;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_value_satisfies_iterable_type_hint(PtnRuntime *runtime, PtnValue value) {\n");
+    out.push_str("    value = ptn_value_deref(value);\n");
+    out.push_str("    return value.type == PTN_ARRAY || ptn_value_satisfies_class_type_hint(runtime, value, \"Traversable\");\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED void ptn_throw_user_parameter_class_type_error(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_class_name, PtnValue value, size_t line) {\n",
     );
     out.push_str("    const char *given = ptn_user_type_hint_given_name(value);\n");
@@ -500,6 +518,22 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    } else {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
     out.push_str("    }\n");
+    out.push_str("    ptn_throw_exception_owned_message(runtime, \"TypeError\", message);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_throw_user_return_type_error(PtnRuntime *runtime, const char *function_name, const char *expected_type_name, PtnValue value) {\n",
+    );
+    out.push_str("    const char *given = ptn_user_type_hint_given_name(value);\n");
+    out.push_str("    int needed = snprintf(NULL, 0, \"%s(): Return value must be of type %s, %s returned\", function_name, expected_type_name, given);\n");
+    out.push_str("    if (needed < 0) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    char *message = malloc((size_t)needed + 1);\n");
+    out.push_str("    if (message == NULL) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    snprintf(message, (size_t)needed + 1, \"%s(): Return value must be of type %s, %s returned\", function_name, expected_type_name, given);\n");
     out.push_str("    ptn_throw_exception_owned_message(runtime, \"TypeError\", message);\n");
     out.push_str("}\n");
 
@@ -811,65 +845,21 @@ fn emit_user_functions(
                 }
             }
             let type_hint = parameter.type_hint.as_ref();
-            let parameter_cast_temp = if let Some(TypeHint::Union(_)) = type_hint {
-                emit_user_parameter_type_check(
-                    out,
-                    "    ",
-                    &parameter_source,
-                    "caller_runtime",
-                    type_hint.expect("checked type hint"),
-                    &function.display_name,
-                    &parameter.name,
-                    None,
-                );
-                None
-            } else {
-                let effective_type_hint = non_nullable_type_hint(type_hint);
-                let allows_null = type_hint_allows_null(type_hint);
-                if matches!(effective_type_hint, Some(TypeHint::Null)) {
-                    out.push_str("    if (ptn_value_deref(");
-                    out.push_str(&parameter_source);
-                    out.push_str(").type != PTN_NULL) {\n");
-                    out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-                    out.push_str(&c_string(&function.display_name));
-                    out.push_str("() argument $");
-                    out.push_str(&c_string(&parameter.name));
-                    out.push_str(" must be of type null\");\n");
-                    out.push_str("        ptn_runtime_free(&runtime);\n");
-                    out.push_str("        exit(255);\n");
-                    out.push_str("    }\n");
-                }
-                if matches!(effective_type_hint, Some(TypeHint::Array)) {
-                    out.push_str("    if (ptn_value_deref(");
-                    out.push_str(&parameter_source);
-                    out.push_str(").type != PTN_ARRAY");
-                    if allows_null {
-                        out.push_str(" && ptn_value_deref(");
-                        out.push_str(&parameter_source);
-                        out.push_str(").type != PTN_NULL");
+            let effective_type_hint = non_nullable_type_hint(type_hint);
+            let allows_null =
+                type_hint_allows_null(type_hint) || parameter_default_value_is_null(parameter);
+            let parameter_cast_temp = if let Some(type_hint) = type_hint {
+                if type_hint_uses_generic_runtime_check(type_hint) {
+                    let mut condition =
+                        type_hint_condition(&parameter_source, "caller_runtime", type_hint);
+                    if allows_null && !type_hint_allows_null(Some(type_hint)) {
+                        condition = format!(
+                            "ptn_value_deref({parameter_source}).type == PTN_NULL || ({condition})"
+                        );
                     }
-                    out.push_str(") {\n");
-                    out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-                    out.push_str(&c_string(&function.display_name));
-                    out.push_str("() argument $");
-                    out.push_str(&c_string(&parameter.name));
-                    out.push_str(" must be of type array\");\n");
-                    out.push_str("        ptn_runtime_free(&runtime);\n");
-                    out.push_str("        exit(255);\n");
-                    out.push_str("    }\n");
-                }
-                if let Some(TypeHint::Class(class_name)) = effective_type_hint {
-                    out.push_str("    if (");
-                    if allows_null {
-                        out.push_str("ptn_value_deref(");
-                        out.push_str(&parameter_source);
-                        out.push_str(").type != PTN_NULL && ");
-                    }
-                    out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, ");
-                    out.push_str(&parameter_source);
-                    out.push_str(", \"");
-                    out.push_str(&c_string(class_name));
-                    out.push_str("\")) {\n");
+                    out.push_str("    if (!(");
+                    out.push_str(&condition);
+                    out.push_str(")) {\n");
                     out.push_str("        ptn_runtime_free(&runtime);\n");
                     out.push_str(
                         "        ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
@@ -880,47 +870,116 @@ fn emit_user_functions(
                     out.push_str(", \"");
                     out.push_str(&c_string(&parameter.name));
                     out.push_str("\", \"");
-                    out.push_str(&c_string(class_name));
+                    out.push_str(&c_string(&type_hint_label(type_hint)));
                     out.push_str("\", ");
                     out.push_str(&parameter_source);
                     out.push_str(", line);\n");
                     out.push_str("        return ptn_null();\n");
                     out.push_str("    }\n");
-                }
-                if let Some(cast_helper) = type_hint_scalar_cast_helper(effective_type_hint) {
-                    let temp = format!("ptn_parameter_{}", parameter_index);
-                    if allows_null {
-                        out.push_str("    PtnValue ");
-                        out.push_str(&temp);
-                        out.push_str(";\n");
+                    None
+                } else {
+                    if matches!(effective_type_hint, Some(TypeHint::Null)) {
                         out.push_str("    if (ptn_value_deref(");
                         out.push_str(&parameter_source);
-                        out.push_str(").type == PTN_NULL) {\n");
-                        out.push_str("        ");
-                        out.push_str(&temp);
-                        out.push_str(" = ptn_null();\n");
-                        out.push_str("    } else {\n");
-                        out.push_str("        ");
-                        out.push_str(&temp);
-                        out.push_str(" = ");
-                        out.push_str(cast_helper);
-                        out.push('(');
-                        out.push_str(&parameter_source);
-                        out.push_str(");\n");
+                        out.push_str(").type != PTN_NULL) {\n");
+                        out.push_str(
+                            "        ptn_emit_type_error(&caller_runtime->diagnostics, \"",
+                        );
+                        out.push_str(&c_string(&function.display_name));
+                        out.push_str("() argument $");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str(" must be of type null\");\n");
+                        out.push_str("        ptn_runtime_free(&runtime);\n");
+                        out.push_str("        exit(255);\n");
                         out.push_str("    }\n");
-                    } else {
-                        out.push_str("    PtnValue ");
-                        out.push_str(&temp);
-                        out.push_str(" = ");
-                        out.push_str(cast_helper);
-                        out.push('(');
-                        out.push_str(&parameter_source);
-                        out.push_str(");\n");
                     }
-                    Some(temp)
-                } else {
-                    None
+                    if matches!(effective_type_hint, Some(TypeHint::Array)) {
+                        out.push_str("    if (ptn_value_deref(");
+                        out.push_str(&parameter_source);
+                        out.push_str(").type != PTN_ARRAY");
+                        if allows_null {
+                            out.push_str(" && ptn_value_deref(");
+                            out.push_str(&parameter_source);
+                            out.push_str(").type != PTN_NULL");
+                        }
+                        out.push_str(") {\n");
+                        out.push_str(
+                            "        ptn_emit_type_error(&caller_runtime->diagnostics, \"",
+                        );
+                        out.push_str(&c_string(&function.display_name));
+                        out.push_str("() argument $");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str(" must be of type array\");\n");
+                        out.push_str("        ptn_runtime_free(&runtime);\n");
+                        out.push_str("        exit(255);\n");
+                        out.push_str("    }\n");
+                    }
+                    if let Some(TypeHint::Class(class_name)) = effective_type_hint {
+                        out.push_str("    if (");
+                        if allows_null {
+                            out.push_str("ptn_value_deref(");
+                            out.push_str(&parameter_source);
+                            out.push_str(").type != PTN_NULL && ");
+                        }
+                        out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", \"");
+                        out.push_str(&c_string(class_name));
+                        out.push_str("\")) {\n");
+                        out.push_str("        ptn_runtime_free(&runtime);\n");
+                        out.push_str(
+                            "        ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
+                        );
+                        out.push_str(&c_string(&function.display_name));
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(class_name));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line);\n");
+                        out.push_str("        return ptn_null();\n");
+                        out.push_str("    }\n");
+                    }
+                    if let Some(cast_helper) = type_hint_scalar_cast_helper(effective_type_hint) {
+                        let temp = format!("ptn_parameter_{}", parameter_index);
+                        if allows_null {
+                            out.push_str("    PtnValue ");
+                            out.push_str(&temp);
+                            out.push_str(";\n");
+                            out.push_str("    if (ptn_value_deref(");
+                            out.push_str(&parameter_source);
+                            out.push_str(").type == PTN_NULL) {\n");
+                            out.push_str("        ");
+                            out.push_str(&temp);
+                            out.push_str(" = ptn_null();\n");
+                            out.push_str("    } else {\n");
+                            out.push_str("        ");
+                            out.push_str(&temp);
+                            out.push_str(" = ");
+                            out.push_str(cast_helper);
+                            out.push('(');
+                            out.push_str(&parameter_source);
+                            out.push_str(");\n");
+                            out.push_str("    }\n");
+                        } else {
+                            out.push_str("    PtnValue ");
+                            out.push_str(&temp);
+                            out.push_str(" = ");
+                            out.push_str(cast_helper);
+                            out.push('(');
+                            out.push_str(&parameter_source);
+                            out.push_str(");\n");
+                        }
+                        Some(temp)
+                    } else {
+                        None
+                    }
                 }
+            } else {
+                None
             };
             let parameter_value = parameter_cast_temp
                 .as_deref()
@@ -1140,73 +1199,18 @@ fn emit_variadic_parameter_binding(
     }
 
     let type_hint = parameter.type_hint.as_ref();
-    let union_cleanup = format!("ptn_value_drop(&{});", array_temp);
-    let (effective_type_hint, allows_null) = if let Some(TypeHint::Union(_)) = type_hint {
-        emit_user_parameter_type_check(
-            out,
-            "        ",
-            &format!("args[{index_temp}]"),
-            "caller_runtime",
-            type_hint.expect("checked type hint"),
-            &function.display_name,
-            &parameter.name,
-            Some(&union_cleanup),
-        );
-        (None, false)
-    } else {
-        let effective_type_hint = non_nullable_type_hint(type_hint);
-        let allows_null = type_hint_allows_null(type_hint);
+    let effective_type_hint = non_nullable_type_hint(type_hint);
+    let allows_null = type_hint_allows_null(type_hint);
 
-        if matches!(effective_type_hint, Some(TypeHint::Null)) {
-            out.push_str("        if (ptn_value_deref(args[");
-            out.push_str(&index_temp);
-            out.push_str("]).type != PTN_NULL) {\n");
-            out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-            out.push_str(&c_string(&function.display_name));
-            out.push_str("() argument $");
-            out.push_str(&c_string(&parameter.name));
-            out.push_str(" must be of type null\");\n");
-            out.push_str("            ptn_value_drop(&");
-            out.push_str(&array_temp);
-            out.push_str(");\n");
-            out.push_str("            ptn_runtime_free(&runtime);\n");
-            out.push_str("            exit(255);\n");
-            out.push_str("        }\n");
-        }
-        if matches!(effective_type_hint, Some(TypeHint::Array)) {
-            out.push_str("        if (ptn_value_deref(args[");
-            out.push_str(&index_temp);
-            out.push_str("]).type != PTN_ARRAY");
-            if allows_null {
-                out.push_str(" && ptn_value_deref(args[");
-                out.push_str(&index_temp);
-                out.push_str("]).type != PTN_NULL");
-            }
-            out.push_str(") {\n");
-            out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-            out.push_str(&c_string(&function.display_name));
-            out.push_str("() argument $");
-            out.push_str(&c_string(&parameter.name));
-            out.push_str(" must be of type array\");\n");
-            out.push_str("            ptn_value_drop(&");
-            out.push_str(&array_temp);
-            out.push_str(");\n");
-            out.push_str("            ptn_runtime_free(&runtime);\n");
-            out.push_str("            exit(255);\n");
-            out.push_str("        }\n");
-        }
-        if let Some(TypeHint::Class(class_name)) = effective_type_hint {
-            out.push_str("        if (");
-            if allows_null {
-                out.push_str("ptn_value_deref(args[");
-                out.push_str(&index_temp);
-                out.push_str("]).type != PTN_NULL && ");
-            }
-            out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, args[");
-            out.push_str(&index_temp);
-            out.push_str("], \"");
-            out.push_str(&c_string(class_name));
-            out.push_str("\")) {\n");
+    if let Some(type_hint) = type_hint {
+        if type_hint_uses_generic_runtime_check(type_hint) {
+            out.push_str("        if (!(");
+            out.push_str(&type_hint_condition(
+                &format!("args[{index_temp}]"),
+                "caller_runtime",
+                type_hint,
+            ));
+            out.push_str(")) {\n");
             out.push_str("            ptn_value_drop(&");
             out.push_str(&array_temp);
             out.push_str(");\n");
@@ -1220,15 +1224,83 @@ fn emit_variadic_parameter_binding(
             out.push_str(" + 1, \"");
             out.push_str(&c_string(&parameter.name));
             out.push_str("\", \"");
-            out.push_str(&c_string(class_name));
+            out.push_str(&c_string(&type_hint_label(type_hint)));
             out.push_str("\", args[");
             out.push_str(&index_temp);
             out.push_str("], line);\n");
             out.push_str("            return ptn_null();\n");
             out.push_str("        }\n");
         }
-        (effective_type_hint, allows_null)
-    };
+    }
+
+    if matches!(effective_type_hint, Some(TypeHint::Null)) {
+        out.push_str("        if (ptn_value_deref(args[");
+        out.push_str(&index_temp);
+        out.push_str("]).type != PTN_NULL) {\n");
+        out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+        out.push_str(&c_string(&function.display_name));
+        out.push_str("() argument $");
+        out.push_str(&c_string(&parameter.name));
+        out.push_str(" must be of type null\");\n");
+        out.push_str("            ptn_value_drop(&");
+        out.push_str(&array_temp);
+        out.push_str(");\n");
+        out.push_str("            ptn_runtime_free(&runtime);\n");
+        out.push_str("            exit(255);\n");
+        out.push_str("        }\n");
+    }
+    if matches!(effective_type_hint, Some(TypeHint::Array)) {
+        out.push_str("        if (ptn_value_deref(args[");
+        out.push_str(&index_temp);
+        out.push_str("]).type != PTN_ARRAY");
+        if allows_null {
+            out.push_str(" && ptn_value_deref(args[");
+            out.push_str(&index_temp);
+            out.push_str("]).type != PTN_NULL");
+        }
+        out.push_str(") {\n");
+        out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+        out.push_str(&c_string(&function.display_name));
+        out.push_str("() argument $");
+        out.push_str(&c_string(&parameter.name));
+        out.push_str(" must be of type array\");\n");
+        out.push_str("            ptn_value_drop(&");
+        out.push_str(&array_temp);
+        out.push_str(");\n");
+        out.push_str("            ptn_runtime_free(&runtime);\n");
+        out.push_str("            exit(255);\n");
+        out.push_str("        }\n");
+    }
+    if let Some(TypeHint::Class(class_name)) = effective_type_hint {
+        out.push_str("        if (");
+        if allows_null {
+            out.push_str("ptn_value_deref(args[");
+            out.push_str(&index_temp);
+            out.push_str("]).type != PTN_NULL && ");
+        }
+        out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, args[");
+        out.push_str(&index_temp);
+        out.push_str("], \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\")) {\n");
+        out.push_str("            ptn_value_drop(&");
+        out.push_str(&array_temp);
+        out.push_str(");\n");
+        out.push_str("            ptn_runtime_free(&runtime);\n");
+        out.push_str("            ptn_throw_user_parameter_class_type_error(caller_runtime, \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\", ");
+        out.push_str(&index_temp);
+        out.push_str(" + 1, \"");
+        out.push_str(&c_string(&parameter.name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\", args[");
+        out.push_str(&index_temp);
+        out.push_str("], line);\n");
+        out.push_str("            return ptn_null();\n");
+        out.push_str("        }\n");
+    }
 
     let value_expr = if let Some(cast_helper) = type_hint_scalar_cast_helper(effective_type_hint) {
         let value_temp = format!("ptn_variadic_value_{}", parameter_index);
@@ -1511,6 +1583,27 @@ struct MagicDeclarationFatal {
     line: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParameterDefaultDiagnostics {
+    deprecations: Vec<ParameterDefaultDeprecation>,
+    fatal: Option<ParameterDefaultFatal>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParameterDefaultDeprecation {
+    function_name: String,
+    parameter_name: String,
+    line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParameterDefaultFatal {
+    parameter_name: String,
+    default_type_name: String,
+    expected_type_name: String,
+    line: usize,
+}
+
 fn emit_legacy_dollar_brace_deprecations(
     out: &mut String,
     deprecations: &[LegacyDollarBraceDeprecation],
@@ -1522,6 +1615,48 @@ fn emit_legacy_dollar_brace_deprecations(
         out.push_str(&deprecation.line.to_string());
         out.push_str(");\n");
     }
+}
+
+fn emit_parameter_default_diagnostics(
+    out: &mut String,
+    diagnostics: &ParameterDefaultDiagnostics,
+    source_file: &str,
+) {
+    for deprecation in &diagnostics.deprecations {
+        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(&format!(
+            "{}(): Implicitly marking parameter ${} as nullable is deprecated, the explicit nullable type must be used instead",
+            deprecation.function_name, deprecation.parameter_name
+        )));
+        out.push_str("\", ");
+        out.push_str(&deprecation.line.to_string());
+        out.push_str(");\n");
+    }
+    let Some(fatal) = &diagnostics.fatal else {
+        return;
+    };
+    out.push_str("    fflush(stdout);\n");
+    out.push_str("    if (runtime.diagnostics.display_errors) {\n");
+    out.push_str(
+        "        FILE *ptn_parameter_default_fatal_stream = runtime.diagnostics.stream == NULL ? stderr : runtime.diagnostics.stream;\n",
+    );
+    if !diagnostics.deprecations.is_empty() {
+        out.push_str("        fputc('\\n', ptn_parameter_default_fatal_stream);\n");
+    }
+    out.push_str("        fputs(\"Fatal error: Cannot use ");
+    out.push_str(&c_string(&fatal.default_type_name));
+    out.push_str(" as default value for parameter $");
+    out.push_str(&c_string(&fatal.parameter_name));
+    out.push_str(" of type ");
+    out.push_str(&c_string(&fatal.expected_type_name));
+    out.push_str(" in ");
+    out.push_str(&c_string(source_file));
+    out.push_str(" on line ");
+    out.push_str(&fatal.line.to_string());
+    out.push_str("\\n\", ptn_parameter_default_fatal_stream);\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_runtime_free(&runtime);\n");
+    out.push_str("    exit(255);\n");
 }
 
 fn emit_serializable_deprecations(out: &mut String, deprecations: &[SerializableDeprecation]) {
@@ -1625,65 +1760,17 @@ fn emit_return_type_boundary(
             out.push_str("    exit(255);\n");
         }
         TypeHint::Nullable(inner) => {
-            emit_nullable_return_type_boundary(out, inner, function_name, return_by_ref);
+            if type_hint_uses_generic_runtime_check(inner) {
+                emit_generic_return_type_boundary(out, return_type, function_name);
+            } else {
+                emit_nullable_return_type_boundary(out, inner, function_name, return_by_ref);
+            }
         }
-        TypeHint::Union(_) => {
-            let condition = type_hint_condition("ptn_return_value", "&runtime", return_type);
-            out.push_str("    if (!(");
-            out.push_str(&condition);
-            out.push_str(")) {\n");
-            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-            out.push_str(&c_string(function_name));
-            out.push_str("() return value must be of type ");
-            out.push_str(&c_string(&type_hint_label(return_type)));
-            out.push_str("\");\n");
-            out.push_str("        ptn_runtime_free(&runtime);\n");
-            out.push_str("        exit(255);\n");
-            out.push_str("    }\n");
+        TypeHint::Object | TypeHint::Iterable | TypeHint::Union(_) | TypeHint::Intersection(_) => {
+            emit_generic_return_type_boundary(out, return_type, function_name);
         }
         TypeHint::Callable | TypeHint::Mixed | TypeHint::Void => {}
     }
-}
-
-fn emit_user_parameter_type_check(
-    out: &mut String,
-    indent: &str,
-    value_expr: &str,
-    runtime_expr: &str,
-    type_hint: &TypeHint,
-    function_name: &str,
-    parameter_name: &str,
-    cleanup_statement: Option<&str>,
-) {
-    let condition = type_hint_condition(value_expr, runtime_expr, type_hint);
-    if condition == "1" {
-        return;
-    }
-
-    out.push_str(indent);
-    out.push_str("if (!(");
-    out.push_str(&condition);
-    out.push_str(")) {\n");
-    out.push_str(indent);
-    out.push_str("    ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-    out.push_str(&c_string(function_name));
-    out.push_str("() argument $");
-    out.push_str(&c_string(parameter_name));
-    out.push_str(" must be of type ");
-    out.push_str(&c_string(&type_hint_label(type_hint)));
-    out.push_str("\");\n");
-    if let Some(statement) = cleanup_statement {
-        out.push_str(indent);
-        out.push_str("    ");
-        out.push_str(statement);
-        out.push('\n');
-    }
-    out.push_str(indent);
-    out.push_str("    ptn_runtime_free(&runtime);\n");
-    out.push_str(indent);
-    out.push_str("    exit(255);\n");
-    out.push_str(indent);
-    out.push_str("}\n");
 }
 
 fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHint) -> String {
@@ -1694,6 +1781,10 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
         TypeHint::Float => format!("ptn_value_deref({value_expr}).type == PTN_FLOAT"),
         TypeHint::String => format!("ptn_value_deref({value_expr}).type == PTN_STRING"),
         TypeHint::Bool => format!("ptn_value_deref({value_expr}).type == PTN_BOOL"),
+        TypeHint::Object => format!("ptn_value_satisfies_object_type_hint({value_expr})"),
+        TypeHint::Iterable => {
+            format!("ptn_value_satisfies_iterable_type_hint({runtime_expr}, {value_expr})")
+        }
         TypeHint::Callable => "1".to_string(),
         TypeHint::Mixed => "1".to_string(),
         TypeHint::Void | TypeHint::Never => "0".to_string(),
@@ -1711,6 +1802,16 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
             })
             .collect::<Vec<_>>()
             .join(" || "),
+        TypeHint::Intersection(types) => types
+            .iter()
+            .map(|type_hint| {
+                format!(
+                    "({})",
+                    type_hint_condition(value_expr, runtime_expr, type_hint)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" && "),
         TypeHint::Class(class_name) => format!(
             "ptn_value_satisfies_class_type_hint({runtime_expr}, {value_expr}, \"{}\")",
             c_string(class_name)
@@ -1727,16 +1828,79 @@ fn type_hint_label(type_hint: &TypeHint) -> String {
         TypeHint::String => "string".to_string(),
         TypeHint::Bool => "bool".to_string(),
         TypeHint::Callable => "callable".to_string(),
+        TypeHint::Object => "object".to_string(),
+        TypeHint::Iterable => "Traversable|array".to_string(),
         TypeHint::Mixed => "mixed".to_string(),
         TypeHint::Void => "void".to_string(),
         TypeHint::Never => "never".to_string(),
-        TypeHint::Nullable(inner) => format!("?{}", type_hint_label(inner)),
+        TypeHint::Nullable(inner) => match inner.as_ref() {
+            TypeHint::Iterable => "Traversable|array|null".to_string(),
+            TypeHint::Union(_) | TypeHint::Intersection(_) => {
+                format!("{}|null", type_hint_label(inner))
+            }
+            _ => format!("?{}", type_hint_label(inner)),
+        },
         TypeHint::Union(types) => types
+            .iter()
+            .map(type_hint_union_member_label)
+            .collect::<Vec<_>>()
+            .join("|"),
+        TypeHint::Intersection(types) => types
             .iter()
             .map(type_hint_label)
             .collect::<Vec<_>>()
-            .join("|"),
+            .join("&"),
         TypeHint::Class(class_name) => class_name.clone(),
+    }
+}
+
+fn type_hint_union_member_label(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Intersection(_) => format!("({})", type_hint_label(type_hint)),
+        _ => type_hint_label(type_hint),
+    }
+}
+
+fn emit_generic_return_type_boundary(
+    out: &mut String,
+    return_type: &TypeHint,
+    function_name: &str,
+) {
+    out.push_str("    if (!(");
+    out.push_str(&type_hint_condition(
+        "ptn_return_value",
+        "&runtime",
+        return_type,
+    ));
+    out.push_str(")) {\n");
+    out.push_str("        ptn_throw_user_return_type_error(caller_runtime, \"");
+    out.push_str(&c_string(function_name));
+    out.push_str("\", \"");
+    out.push_str(&c_string(&type_hint_label(return_type)));
+    out.push_str("\", ptn_return_value);\n");
+    out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
+    out.push_str("        ptn_runtime_free(&runtime);\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+}
+
+fn type_hint_uses_generic_runtime_check(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Object | TypeHint::Iterable | TypeHint::Union(_) | TypeHint::Intersection(_) => {
+            true
+        }
+        TypeHint::Nullable(inner) => type_hint_uses_generic_runtime_check(inner),
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::Callable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Class(_) => false,
     }
 }
 
@@ -1800,12 +1964,15 @@ fn emit_nullable_return_type_boundary(
             out.push_str("    }\n");
         }
         TypeHint::Null
+        | TypeHint::Object
+        | TypeHint::Iterable
         | TypeHint::Callable
         | TypeHint::Mixed
         | TypeHint::Void
         | TypeHint::Never
         | TypeHint::Nullable(_)
-        | TypeHint::Union(_) => {}
+        | TypeHint::Union(_)
+        | TypeHint::Intersection(_) => {}
     }
 }
 
@@ -1818,12 +1985,15 @@ fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static
         Some(
             TypeHint::Null
             | TypeHint::Array
+            | TypeHint::Object
+            | TypeHint::Iterable
             | TypeHint::Callable
             | TypeHint::Mixed
             | TypeHint::Void
             | TypeHint::Never
             | TypeHint::Nullable(_)
             | TypeHint::Union(_)
+            | TypeHint::Intersection(_)
             | TypeHint::Class(_),
         )
         | None => None,
@@ -1843,6 +2013,10 @@ fn type_hint_allows_null(type_hint: Option<&TypeHint>) -> bool {
         Some(TypeHint::Union(types)) => types.iter().any(|type_hint| type_hint == &TypeHint::Null),
         _ => false,
     }
+}
+
+fn parameter_default_value_is_null(parameter: &FunctionParameter) -> bool {
+    matches!(parameter.default_value.as_ref(), Some(ValueExpr::Null))
 }
 
 fn emit_user_function_dispatch(
@@ -6303,6 +6477,147 @@ fn collect_module_magic_visibility_warnings(module: &Module) -> Vec<MagicVisibil
         }
     }
     warnings
+}
+
+fn collect_module_parameter_default_diagnostics(module: &Module) -> ParameterDefaultDiagnostics {
+    let mut diagnostics = ParameterDefaultDiagnostics {
+        deprecations: Vec::new(),
+        fatal: None,
+    };
+    for function in &module.functions {
+        if !function.initially_declared {
+            continue;
+        }
+        collect_function_parameter_default_diagnostics(function, &mut diagnostics);
+        if diagnostics.fatal.is_some() {
+            break;
+        }
+    }
+    diagnostics
+}
+
+fn collect_function_parameter_default_diagnostics(
+    function: &FunctionDecl,
+    diagnostics: &mut ParameterDefaultDiagnostics,
+) {
+    for parameter in &function.parameters {
+        let Some(type_hint) = parameter.type_hint.as_ref() else {
+            continue;
+        };
+        let Some(default_value) = parameter.default_value.as_ref() else {
+            continue;
+        };
+        if type_hint_accepts_default_value(type_hint, default_value) {
+            continue;
+        }
+        if matches!(default_value, ValueExpr::Null)
+            && type_hint_allows_implicit_nullable_default(type_hint)
+        {
+            diagnostics.deprecations.push(ParameterDefaultDeprecation {
+                function_name: function.display_name.clone(),
+                parameter_name: parameter.name.clone(),
+                line: function.line,
+            });
+            continue;
+        }
+        let Some(default_type_name) = default_value_type_name(default_value) else {
+            continue;
+        };
+        diagnostics.fatal = Some(ParameterDefaultFatal {
+            parameter_name: parameter.name.clone(),
+            default_type_name: default_type_name.to_string(),
+            expected_type_name: type_hint_label(type_hint),
+            line: function.line,
+        });
+        break;
+    }
+}
+
+fn type_hint_accepts_default_value(type_hint: &TypeHint, value: &ValueExpr) -> bool {
+    match type_hint {
+        TypeHint::Null => matches!(value, ValueExpr::Null),
+        TypeHint::Array => matches!(value, ValueExpr::Array(_)),
+        TypeHint::Int => matches!(value, ValueExpr::Int(_)),
+        TypeHint::Float => matches!(value, ValueExpr::Float(_)),
+        TypeHint::String => matches!(value, ValueExpr::String(_)),
+        TypeHint::Bool => matches!(value, ValueExpr::Bool(_)),
+        TypeHint::Callable | TypeHint::Object | TypeHint::Intersection(_) | TypeHint::Class(_) => {
+            false
+        }
+        TypeHint::Iterable => matches!(value, ValueExpr::Array(_)),
+        TypeHint::Mixed => true,
+        TypeHint::Void | TypeHint::Never => false,
+        TypeHint::Nullable(inner) => {
+            matches!(value, ValueExpr::Null) || type_hint_accepts_default_value(inner, value)
+        }
+        TypeHint::Union(types) => types
+            .iter()
+            .any(|member| type_hint_accepts_default_value(member, value)),
+    }
+}
+
+fn type_hint_allows_implicit_nullable_default(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Mixed | TypeHint::Null | TypeHint::Nullable(_) => false,
+        TypeHint::Union(types) => !types.iter().any(|member| matches!(member, TypeHint::Null)),
+        TypeHint::Void | TypeHint::Never => false,
+        TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Intersection(_)
+        | TypeHint::Class(_) => true,
+    }
+}
+
+fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
+    match value {
+        ValueExpr::String(_) => Some("string"),
+        ValueExpr::Int(_) => Some("int"),
+        ValueExpr::Float(_) => Some("float"),
+        ValueExpr::Bool(_) => Some("bool"),
+        ValueExpr::Null => Some("null"),
+        ValueExpr::Array(_) => Some("array"),
+        ValueExpr::Constant { .. } | ValueExpr::MagicConstant { .. } => None,
+        ValueExpr::Closure { .. }
+        | ValueExpr::Load { .. }
+        | ValueExpr::LegacyDollarBraceStringVariable { .. }
+        | ValueExpr::DynamicVariable { .. }
+        | ValueExpr::IncDec { .. }
+        | ValueExpr::Assign { .. }
+        | ValueExpr::AssignRef { .. }
+        | ValueExpr::ArrayAccess { .. }
+        | ValueExpr::ArrayAppendAccess { .. }
+        | ValueExpr::Isset { .. }
+        | ValueExpr::Empty { .. }
+        | ValueExpr::Print { .. }
+        | ValueExpr::Include { .. }
+        | ValueExpr::Throw { .. }
+        | ValueExpr::Yield { .. }
+        | ValueExpr::InternalCall { .. }
+        | ValueExpr::FirstClassCallable { .. }
+        | ValueExpr::DynamicCall { .. }
+        | ValueExpr::MethodCall { .. }
+        | ValueExpr::DynamicMethodCall { .. }
+        | ValueExpr::NewObject { .. }
+        | ValueExpr::DynamicNewObject { .. }
+        | ValueExpr::Clone { .. }
+        | ValueExpr::PropertyFetch { .. }
+        | ValueExpr::DynamicPropertyFetch { .. }
+        | ValueExpr::StaticPropertyFetch { .. }
+        | ValueExpr::ClassConstantFetch { .. }
+        | ValueExpr::DynamicClassNameFetch { .. }
+        | ValueExpr::InstanceOf { .. }
+        | ValueExpr::Unary { .. }
+        | ValueExpr::Cast { .. }
+        | ValueExpr::Binary { .. }
+        | ValueExpr::Ternary { .. }
+        | ValueExpr::Match { .. } => None,
+    }
 }
 
 fn collect_module_magic_declaration_fatals(module: &Module) -> Vec<MagicDeclarationFatal> {

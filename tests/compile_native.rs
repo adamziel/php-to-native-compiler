@@ -1650,6 +1650,89 @@ fn parser_accepts_class_name_parameter_and_return_type_hints() {
 }
 
 #[test]
+fn parser_accepts_iterable_object_union_intersection_and_dnf_type_hints() {
+    let program = parser::parse(
+        "<?php function test(object $object, iterable $iterable, (A&B)|array $value): object|iterable {}",
+    )
+    .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(
+        function.return_type,
+        Some(TypeHint::Union(vec![TypeHint::Object, TypeHint::Iterable,]))
+    );
+    assert_eq!(function.parameters[0].type_hint, Some(TypeHint::Object));
+    assert_eq!(function.parameters[1].type_hint, Some(TypeHint::Iterable));
+    assert_eq!(
+        function.parameters[2].type_hint,
+        Some(TypeHint::Union(vec![
+            TypeHint::Intersection(vec![
+                TypeHint::Class("A".to_string()),
+                TypeHint::Class("B".to_string()),
+            ]),
+            TypeHint::Array,
+        ]))
+    );
+}
+
+#[test]
+fn parser_rejects_iterable_inside_intersection_type_hint() {
+    let error = parser::parse("<?php function test(iterable&Iterator $value) {}").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Type Traversable|array cannot be part of an intersection type"
+    );
+}
+
+#[test]
+fn parser_validates_iterable_and_dnf_method_signature_variance() {
+    parser::parse(
+        "<?php
+interface A {}
+interface B {}
+class ParentType {
+    public function both(): (A&B)|array {}
+}
+class ChildType extends ParentType {
+    public function both(): A&B {}
+}",
+    )
+    .unwrap();
+
+    let error = parser::parse(
+        "<?php
+class ParentItems {
+    public function items(iterable $value): iterable {}
+}
+class ChildItems extends ParentItems {
+    public function items(array $value): iterable {}
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of ChildItems::items(array $value): Traversable|array must be compatible with ParentItems::items(Traversable|array $value): Traversable|array"
+    );
+
+    let error = parser::parse(
+        "<?php
+interface LeftMarker {}
+interface RightMarker {}
+class ParentDnf {
+    public function both(): LeftMarker&RightMarker {}
+}
+class ChildDnf extends ParentDnf {
+    public function both(): LeftMarker|RightMarker {}
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of ChildDnf::both(): LeftMarker|RightMarker must be compatible with ParentDnf::both(): LeftMarker&RightMarker"
+    );
+}
+
+#[test]
 fn parser_accepts_union_parameter_and_return_type_hints() {
     let program = parser::parse(
         "<?php namespace App; use Vendor\\Type as Imported; \
@@ -12511,6 +12594,112 @@ fn compile_array_type_errors_to_native_binary() {
 }
 
 #[test]
+fn compile_iterable_default_value_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-iterable-default-value-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iterable-default-value-diagnostics.php");
+    let output = root.join("iterable-default-value-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php
+function foo(iterable $iterable = null) {}
+function bar(iterable $iterable = []) {}
+function baz(iterable $iterable = 1) {}
+echo \"unreachable\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: foo(): Implicitly marking parameter $iterable as nullable is deprecated, the explicit nullable type must be used instead in ptn on line 2\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Cannot use int as default value for parameter $iterable of type Traversable|array in {} on line 4\n",
+            input.display()
+        )
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot use int as default value for parameter $iterable"));
+}
+
+#[test]
+fn compile_iterable_object_and_composite_type_hints_to_native_binary() {
+    let root = temp_dir("ptn-native-composite-user-type-hints");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("composite-user-type-hints.php");
+    let output = root.join("composite-user-type-hints-bin");
+    fs::write(
+        &input,
+        "<?php
+interface LeftMarker {}
+interface RightMarker {}
+class BothMarkers implements LeftMarker, RightMarker {}
+
+function accept_iterable(iterable $value): iterable {
+    foreach ($value as $item) {
+        echo $item;
+    }
+    echo \"\\n\";
+    return $value;
+}
+function accept_object(object $value): object { return $value; }
+function accept_union(array|stdClass $value): array|stdClass { return $value; }
+function accept_intersection(LeftMarker&RightMarker $value): LeftMarker&RightMarker { return $value; }
+function invalid_return(): iterable { return 1; }
+
+accept_iterable([1, 2]);
+accept_iterable(new ArrayIterator([3, 4]));
+var_dump(accept_object(new stdClass) instanceof stdClass);
+var_dump(accept_union(new stdClass) instanceof stdClass);
+var_dump(accept_union([\"x\"]));
+var_dump(accept_intersection(new BothMarkers) instanceof BothMarkers);
+
+try { accept_iterable(1); } catch (TypeError $e) { echo \"iterable error: \", $e->getMessage(), \"\\n\"; }
+try { accept_object([]); } catch (TypeError $e) { echo \"object error: \", $e->getMessage(), \"\\n\"; }
+try { accept_intersection(new stdClass); } catch (TypeError $e) { echo \"intersection error: \", $e->getMessage(), \"\\n\"; }
+try { invalid_return(); } catch (TypeError $e) { echo \"return error: \", $e->getMessage(), \"\\n\"; }
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "12\n34\nbool(true)\nbool(true)\narray(1) {\n  [0]=>\n  string(1) \"x\"\n}\nbool(true)\n"
+    ));
+    assert!(stdout.contains(
+        "iterable error: accept_iterable(): Argument #1 ($value) must be of type Traversable|array, int given, called in "
+    ));
+    assert!(stdout.contains(
+        "object error: accept_object(): Argument #1 ($value) must be of type object, array given, called in "
+    ));
+    assert!(stdout.contains(
+        "intersection error: accept_intersection(): Argument #1 ($value) must be of type LeftMarker&RightMarker, stdClass given, called in "
+    ));
+    assert!(stdout.contains(
+        "return error: invalid_return(): Return value must be of type Traversable|array, int returned\n"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_satisfies_iterable_type_hint"));
+    assert!(c_source.contains("ptn_value_satisfies_object_type_hint"));
+    assert!(c_source.contains("ptn_throw_user_return_type_error"));
+}
+
+#[test]
 fn compile_union_typed_user_function_parameters_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-union-type");
     fs::create_dir_all(&root).unwrap();
@@ -12557,9 +12746,16 @@ var_dump(collect(1, 2.5));",
     let error_execution = Command::new(&error_output).output().unwrap();
     assert!(!error_execution.status.success());
     assert_eq!(error_execution.status.code(), Some(255));
-    assert_eq!(
-        String::from_utf8(error_execution.stderr).unwrap(),
-        "Fatal error: safe_to_string() argument $number must be of type int|float\n"
+    let error_stderr = String::from_utf8(error_execution.stderr).unwrap();
+    assert!(
+        error_stderr.contains(
+            "Fatal error: safe_to_string(): Argument #1 ($number) must be of type int|float, array given, called in "
+        ),
+        "{error_stderr}"
+    );
+    assert!(
+        error_stderr.contains("user-function-union-type-error.php on line 1\n"),
+        "{error_stderr}"
     );
 }
 

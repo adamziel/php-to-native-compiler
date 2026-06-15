@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.31 iterable/DNF type row pack | 27 | 27 |
 | ptn-w17z.29 SPL iterator wrapper row pack | 7 | 7 |
 | ptn-50g7 COW/reference array-walk and sort row pack | 10 | 10 |
 | ptn-jrzu CSV stream parity row pack | 22 | 22 |
@@ -44,6 +45,17 @@ Current hook: `ptn-50g7` final focused runs:
 `.runtime/ptn-50g7-final-cow-foreach/summary-20260615T183512Z.txt`.
 Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
+
+## 2026-06-15 ptn-w17z.31 Iterable/DNF Type Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-w17z31-before/run-20260615T175811Z-manifest.log`) | 27 selected / 27 runnable | 1 |
+| Final focused run (`.runtime/ptn-w17z31-final-focused-27-pass/run-20260615T183817Z-manifest.log`) | 27 selected / 27 runnable | 27 |
+| Merged focused run (`.runtime/ptn-w17z31-merged-focused/run-20260615T185932Z-manifest.log`) | 27 selected / 27 runnable | 27 |
+| Final integrated focused run (`.runtime/ptn-w17z31-final-integrated/run-20260615T190737Z-manifest.log`) | 27 selected / 27 runnable | 27 |
+| Final ptn-vvpn-integrated focused run (`.runtime/ptn-w17z31-vvpn-integrated/run-20260615T191440Z-manifest.log`) | 27 selected / 27 runnable | 27 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z31-iterable-dnf/summary-20260615T200733Z.txt`) | 27 selected / 27 runnable | 27 |
 
 ## 2026-06-15 ptn-w17z.29 SPL Iterator Wrapper Row Pack
 

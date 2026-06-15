@@ -183,11 +183,14 @@ pub enum TypeHint {
     Float,
     String,
     Bool,
+    Object,
+    Iterable,
     Mixed,
     Void,
     Never,
     Nullable(Box<TypeHint>),
     Union(Vec<TypeHint>),
+    Intersection(Vec<TypeHint>),
     Class(String),
 }
 
