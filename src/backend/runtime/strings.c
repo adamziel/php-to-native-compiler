@@ -177,6 +177,93 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
     return ptn_duplicate_string(buffer);
 }
 
+static PTN_UNUSED void ptn_match_append_quoted_string(PtnStringBuffer *buffer, PtnString string) {
+    size_t limit = string.len < 15 ? string.len : 15;
+    ptn_string_buffer_append_char(buffer, '\'');
+    for (size_t i = 0; i < limit; i++) {
+        unsigned char byte = string.data[i];
+        switch (byte) {
+            case '\n':
+                ptn_string_buffer_append(buffer, "\\n");
+                break;
+            case '\r':
+                ptn_string_buffer_append(buffer, "\\r");
+                break;
+            case '\t':
+                ptn_string_buffer_append(buffer, "\\t");
+                break;
+            case '\'':
+                ptn_string_buffer_append(buffer, "\\'");
+                break;
+            case '\\':
+                ptn_string_buffer_append(buffer, "\\\\");
+                break;
+            default:
+                ptn_string_buffer_append_char(buffer, (char)byte);
+                break;
+        }
+    }
+    if (string.len > limit) {
+        ptn_string_buffer_append(buffer, "...");
+    }
+    ptn_string_buffer_append_char(buffer, '\'');
+}
+
+static PTN_UNUSED char *ptn_unhandled_match_message(PtnValue value) {
+    value = ptn_value_deref(value);
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_string_buffer_append(&buffer, "Unhandled match case ");
+
+    char scalar[128];
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_string_buffer_append(&buffer, "NULL");
+            break;
+        case PTN_BOOL:
+            ptn_string_buffer_append(&buffer, value.as.boolean ? "true" : "false");
+            break;
+        case PTN_INT:
+            ptn_string_buffer_append_format(&buffer, "%lld", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT:
+            ptn_format_scalar_float(value.as.floating, scalar, sizeof(scalar));
+            if (
+                isfinite(value.as.floating) &&
+                strchr(scalar, '.') == NULL &&
+                strchr(scalar, 'E') == NULL &&
+                strchr(scalar, 'e') == NULL
+            ) {
+                ptn_string_buffer_append_format(&buffer, "%s.0", scalar);
+            } else {
+                ptn_string_buffer_append(&buffer, scalar);
+            }
+            break;
+        case PTN_STRING:
+            ptn_match_append_quoted_string(&buffer, value.as.string);
+            break;
+        case PTN_ARRAY:
+            ptn_string_buffer_append(&buffer, "of type array");
+            break;
+        case PTN_OBJECT:
+            ptn_string_buffer_append_format(&buffer, "of type %s", value.as.object->class_name);
+            break;
+        case PTN_CLOSURE:
+            ptn_string_buffer_append(&buffer, "of type Closure");
+            break;
+        case PTN_EXCEPTION:
+            ptn_string_buffer_append_format(&buffer, "of type %s", value.as.exception->class_name);
+            break;
+        case PTN_RESOURCE:
+            ptn_string_buffer_append(&buffer, "of type resource");
+            break;
+        case PTN_REFERENCE:
+            ptn_string_buffer_append(&buffer, "of type reference");
+            break;
+    }
+    return buffer.data;
+}
+
 static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_STRING && ptn_string_has_embedded_nul(value.as.string)) {

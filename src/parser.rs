@@ -6630,6 +6630,13 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
             }
             validate_control_transfers_in_expr(if_false)?;
         }
+        Expr::Match { subject, arms, .. } => {
+            validate_control_transfers_in_expr(subject)?;
+            for arm in arms {
+                validate_control_transfers_in_exprs(&arm.conditions)?;
+                validate_control_transfers_in_expr(&arm.value)?;
+            }
+        }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
         | Expr::ShellExec { .. }
@@ -6891,6 +6898,18 @@ fn expr_array_literal_reference_to_variable(
                     .and_then(|if_true| expr_array_literal_reference_to_variable(if_true, variable))
             })
             .or_else(|| expr_array_literal_reference_to_variable(if_false, variable)),
+        Expr::Match { subject, arms, .. } => {
+            expr_array_literal_reference_to_variable(subject, variable).or_else(|| {
+                arms.iter().find_map(|arm| {
+                    arm.conditions
+                        .iter()
+                        .find_map(|condition| {
+                            expr_array_literal_reference_to_variable(condition, variable)
+                        })
+                        .or_else(|| expr_array_literal_reference_to_variable(&arm.value, variable))
+                })
+            })
+        }
         Expr::Assign { value, .. }
         | Expr::AssignRef { source: value, .. }
         | Expr::Print {
@@ -7412,6 +7431,15 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
                 validate_anonymous_functions_in_expr(if_true, functions)?;
             }
             validate_anonymous_functions_in_expr(if_false, functions)?;
+        }
+        Expr::Match { subject, arms, .. } => {
+            validate_anonymous_functions_in_expr(subject, functions)?;
+            for arm in arms {
+                for condition in &arm.conditions {
+                    validate_anonymous_functions_in_expr(condition, functions)?;
+                }
+                validate_anonymous_functions_in_expr(&arm.value, functions)?;
+            }
         }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
@@ -8967,6 +8995,15 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
             }
             reject_append_array_read(if_false)?;
         }
+        Expr::Match { subject, arms, .. } => {
+            reject_append_array_read(subject)?;
+            for arm in arms {
+                for condition in &arm.conditions {
+                    reject_append_array_read(condition)?;
+                }
+                reject_append_array_read(&arm.value)?;
+            }
+        }
         Expr::InterpolatedString(_, _)
         | Expr::AnonymousFunction(_)
         | Expr::ShellExec { .. }
@@ -9125,7 +9162,7 @@ fn is_supported_global_const_expr_with_options(
                 allow_const_array_unpack_error_operands,
             )
         }
-        Expr::Ternary { .. } => false,
+        Expr::Ternary { .. } | Expr::Match { .. } => false,
         Expr::InterpolatedString(_, _)
         | Expr::ShellExec { .. }
         | Expr::Variable(_, _)
@@ -9219,6 +9256,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
             is_supported_parameter_default_expr(left) && is_supported_parameter_default_expr(right)
         }
         Expr::Ternary { .. }
+        | Expr::Match { .. }
         | Expr::InterpolatedString(_, _)
         | Expr::ShellExec { .. }
         | Expr::Variable(_, _)
@@ -9335,6 +9373,16 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         }
         Expr::FirstClassCallable { callable, .. } => {
             validate_class_scoped_constant_expr(callable, parent_name)
+        }
+        Expr::Match { subject, arms, .. } => {
+            validate_class_scoped_constant_expr(subject, parent_name)?;
+            for arm in arms {
+                for condition in &arm.conditions {
+                    validate_class_scoped_constant_expr(condition, parent_name)?;
+                }
+                validate_class_scoped_constant_expr(&arm.value, parent_name)?;
+            }
+            Ok(())
         }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)

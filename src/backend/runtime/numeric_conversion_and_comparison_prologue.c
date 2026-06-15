@@ -594,6 +594,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "ParseError")) {
         return "ParseError";
     }
+    if (ptn_exception_name_equal(class_name, "UnhandledMatchError")) {
+        return "UnhandledMatchError";
+    }
     return NULL;
 }
 
@@ -625,7 +628,8 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "ArithmeticError") ||
             ptn_exception_name_equal(class_name, "DivisionByZeroError") ||
             ptn_exception_name_equal(class_name, "AssertionError") ||
-            ptn_exception_name_equal(class_name, "ParseError");
+            ptn_exception_name_equal(class_name, "ParseError") ||
+            ptn_exception_name_equal(class_name, "UnhandledMatchError");
     }
     if (ptn_exception_name_equal(type_name, "TypeError")) {
         return ptn_exception_name_equal(class_name, "ArgumentCountError");

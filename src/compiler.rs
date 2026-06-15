@@ -447,6 +447,14 @@ impl IncludeCollector {
                 }
                 self.collect_expr(if_false, source_file, source_dir)
             }
+            Expr::Match { subject, arms, .. } => {
+                self.collect_expr(subject, source_file, source_dir)?;
+                for arm in arms {
+                    self.collect_exprs(&arm.conditions, source_file, source_dir)?;
+                    self.collect_expr(&arm.value, source_file, source_dir)?;
+                }
+                Ok(())
+            }
             Expr::String(_, _)
             | Expr::InterpolatedString(_, _)
             | Expr::ShellExec { .. }

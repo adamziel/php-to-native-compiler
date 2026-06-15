@@ -13310,6 +13310,82 @@ echo $value ?: \"fallback\", \"\\n\";
 }
 
 #[test]
+fn compile_match_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-match-expressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("match-expressions.php");
+    let output = root.join("match-expressions-bin");
+    fs::write(
+        &input,
+        "<?php
+class Beep {}
+
+function label($value) {
+    return match ($value) {
+        0 => 'zero',
+        '0' => 'string zero',
+        1, 2 => 'small',
+        default => 'other',
+    };
+}
+
+echo label(0), \"\\n\";
+echo label('0'), \"\\n\";
+echo label(2), \"\\n\";
+echo label(false), \"\\n\";
+echo match (true) {
+    false,
+    0,
+        => 'false',
+    true,
+    1,
+        => 'true',
+    default,
+        => 'other',
+}, \"\\n\";
+echo match (match ('b') { default => 'b' }) {
+    'a' => 'A',
+    'b' => 'B',
+    default => 'D',
+}, \"\\n\";
+
+try {
+    match (3) { 1 => 'one' };
+} catch (UnhandledMatchError $e) {
+    echo 'caught-int:', $e->getMessage(), \"\\n\";
+}
+
+try {
+    match (new Beep()) {};
+} catch (Error $e) {
+    echo 'caught-object:', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "zero\nstring zero\nsmall\nother\ntrue\nB\ncaught-int:Unhandled match case 3\ncaught-object:Unhandled match case of type Beep\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_rejects_multiple_match_default_arms() {
+    let error =
+        parser::parse("<?php match (1) { default => 'a', 1 => 'b', default => 'c' };").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Match expressions may only contain one default arm"
+    );
+}
+
+#[test]
 fn compile_keyword_boolean_ops_to_native_binary() {
     let root = temp_dir("ptn-native-keyword-boolean-ops");
     fs::create_dir_all(&root).unwrap();

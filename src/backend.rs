@@ -12,7 +12,8 @@ use crate::ir::{
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
     FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, Instruction,
     ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind,
-    Module, PropertyVisibility, ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
+    MatchArm as IrMatchArm, Module, PropertyVisibility, ReferenceTarget, TypeHint, UnaryOp,
+    ValueExpr,
 };
 
 mod runtime;
@@ -5043,6 +5044,15 @@ fn collect_value_legacy_dollar_brace_deprecations(
             }
             collect_value_legacy_dollar_brace_deprecations(if_false, deprecations);
         }
+        ValueExpr::Match { subject, arms, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(subject, deprecations);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_value_legacy_dollar_brace_deprecations(condition, deprecations);
+                }
+                collect_value_legacy_dollar_brace_deprecations(&arm.value, deprecations);
+            }
+        }
         ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
@@ -5605,6 +5615,15 @@ fn collect_value_runtime_requirements(
                 collect_value_runtime_requirements(if_true, functions, requirements);
             }
             collect_value_runtime_requirements(if_false, functions, requirements);
+        }
+        ValueExpr::Match { subject, arms, .. } => {
+            collect_value_runtime_requirements(subject, functions, requirements);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_value_runtime_requirements(condition, functions, requirements);
+                }
+                collect_value_runtime_requirements(&arm.value, functions, requirements);
+            }
         }
     }
 }
@@ -6730,6 +6749,15 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .as_ref()
                     .is_some_and(|if_true| value_mentions_variable(if_true, name))
                 || value_mentions_variable(if_false, name)
+        }
+        ValueExpr::Match { subject, arms, .. } => {
+            value_mentions_variable(subject, name)
+                || arms.iter().any(|arm| {
+                    arm.conditions
+                        .iter()
+                        .any(|condition| value_mentions_variable(condition, name))
+                        || value_mentions_variable(&arm.value, name)
+                })
         }
         ValueExpr::String(_)
         | ValueExpr::Int(_)
@@ -8782,6 +8810,11 @@ impl ValueEmitter {
                 if_false,
                 ..
             } => self.emit_ternary(out, condition, if_true.as_deref(), if_false),
+            ValueExpr::Match {
+                subject,
+                arms,
+                line,
+            } => self.emit_match(out, subject, arms, *line),
             ValueExpr::InstanceOf {
                 expr, class_name, ..
             } => self.emit_instanceof(out, expr, class_name),
@@ -10694,6 +10727,96 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_match(
+        &mut self,
+        out: &mut String,
+        subject: &ValueExpr,
+        arms: &[IrMatchArm],
+        line: usize,
+    ) -> String {
+        let subject_temp = self.emit_materialized_value(out, subject);
+        let result_temp = self.next_temp();
+        let matched_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    int ");
+        out.push_str(&matched_temp);
+        out.push_str(" = 0;\n");
+
+        for arm in arms {
+            if arm.is_default {
+                out.push_str("    if (!");
+                out.push_str(&matched_temp);
+                out.push_str(") {\n");
+                let value_temp = self.emit_materialized_value(out, &arm.value);
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&value_temp);
+                out.push_str(";\n");
+                out.push_str("        ");
+                out.push_str(&matched_temp);
+                out.push_str(" = 1;\n");
+                out.push_str("    }\n");
+                continue;
+            }
+
+            for condition in &arm.conditions {
+                out.push_str("    if (!");
+                out.push_str(&matched_temp);
+                out.push_str(") {\n");
+                let condition_temp = self.emit_materialized_value(out, condition);
+                let predicate_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&predicate_temp);
+                out.push_str(" = ptn_compare_identical(");
+                out.push_str(&subject_temp);
+                out.push_str(", ");
+                out.push_str(&condition_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "        ", &condition_temp);
+                out.push_str("        if (");
+                out.push_str(&predicate_temp);
+                out.push_str(") {\n");
+                let value_temp = self.emit_materialized_value(out, &arm.value);
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&value_temp);
+                out.push_str(";\n");
+                out.push_str("            ");
+                out.push_str(&matched_temp);
+                out.push_str(" = 1;\n");
+                out.push_str("        }\n");
+                out.push_str("    }\n");
+            }
+        }
+
+        out.push_str("    if (!");
+        out.push_str(&matched_temp);
+        out.push_str(") {\n");
+        let message_temp = self.next_temp();
+        out.push_str("        char *");
+        out.push_str(&message_temp);
+        out.push_str(" = ptn_unhandled_match_message(");
+        out.push_str(&subject_temp);
+        out.push_str(");\n");
+        out.push_str(
+            "        ptn_throw_exception_owned_message_at(&runtime, \"UnhandledMatchError\", ",
+        );
+        out.push_str(&message_temp);
+        out.push_str(", runtime.source_path, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &subject_temp);
+        result_temp
+    }
+
     fn emit_runtime_binary(
         &mut self,
         out: &mut String,
@@ -11878,6 +12001,7 @@ impl ValueEmitter {
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }
                 | ValueExpr::Ternary { .. }
+                | ValueExpr::Match { .. }
                 | ValueExpr::MethodCall { .. }
                 | ValueExpr::DynamicMethodCall { .. }
                 | ValueExpr::Clone { .. }
