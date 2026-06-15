@@ -292,16 +292,35 @@ struct PtnClosure {
     PtnValue wrapped_callable;
 };
 
-struct PtnReference {
-    size_t refcount;
-    PtnValue value;
-};
-
 typedef enum {
     PTN_PROPERTY_PUBLIC,
     PTN_PROPERTY_PROTECTED,
     PTN_PROPERTY_PRIVATE
 } PtnPropertyVisibility;
+
+typedef enum {
+    PTN_PROPERTY_TYPE_NONE,
+    PTN_PROPERTY_TYPE_NULL,
+    PTN_PROPERTY_TYPE_ARRAY,
+    PTN_PROPERTY_TYPE_INT,
+    PTN_PROPERTY_TYPE_FLOAT,
+    PTN_PROPERTY_TYPE_STRING,
+    PTN_PROPERTY_TYPE_BOOL,
+    PTN_PROPERTY_TYPE_MIXED,
+    PTN_PROPERTY_TYPE_OBJECT,
+    PTN_PROPERTY_TYPE_CLASS
+} PtnPropertyTypeKind;
+
+struct PtnReference {
+    size_t refcount;
+    PtnValue value;
+    PtnPropertyTypeKind property_type_kind;
+    char *property_type_class_name;
+    char *property_type_text;
+    int property_type_allows_null;
+    char *property_declaring_class;
+    char *property_name;
+};
 
 typedef struct {
     char *storage_name;
@@ -312,6 +331,10 @@ typedef struct {
     int is_readonly;
     int is_unset;
     char *last_type_name;
+    PtnPropertyTypeKind type_kind;
+    char *type_class_name;
+    char *type_text;
+    int type_allows_null;
 } PtnObjectPropertyMetadata;
 
 typedef void (*PtnObjectNativeDataFree)(void *data);
@@ -320,6 +343,16 @@ typedef struct {
     int exists;
     PtnValue value;
 } PtnLookupResult;
+
+static PTN_UNUSED int ptn_property_reference_coerce_assignment(
+    PtnRuntime *runtime,
+    const PtnReference *reference,
+    PtnValue value,
+    int reference_context,
+    PtnValue *out
+);
+static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value);
+static PTN_UNUSED int ptn_value_satisfies_class_type_hint(PtnValue value, const char *expected_class_name);
 
 typedef struct {
     int append;

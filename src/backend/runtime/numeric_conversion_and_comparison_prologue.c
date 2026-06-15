@@ -213,7 +213,7 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_snapshot(PtnRuntime *runtime) {
 static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnValue current;
     if (ptn_symbols_get(&runtime->symbols, name, &current) && current.type == PTN_REFERENCE) {
-        ptn_reference_assign(current.as.reference, value);
+        ptn_reference_assign(runtime, current.as.reference, value);
         return;
     }
     ptn_symbols_set(&runtime->symbols, name, ptn_value_deref(value));
@@ -223,7 +223,7 @@ static PTN_UNUSED void ptn_runtime_write_global_variable(PtnRuntime *runtime, co
     PtnSymbolTable *globals = ptn_runtime_global_symbol_table(runtime);
     PtnValue current;
     if (ptn_symbols_get(globals, name, &current) && current.type == PTN_REFERENCE) {
-        ptn_reference_assign(current.as.reference, value);
+        ptn_reference_assign(runtime, current.as.reference, value);
         return;
     }
     ptn_symbols_set(globals, name, ptn_value_deref(value));

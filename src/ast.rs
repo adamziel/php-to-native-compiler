@@ -49,6 +49,7 @@ pub struct PropertyDecl {
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
     pub is_readonly: bool,
+    pub type_hint: Option<PropertyTypeHint>,
     pub has_override_attribute: bool,
     pub value: Option<Expr>,
     pub span: SourceSpan,
@@ -72,9 +73,31 @@ pub struct StaticPropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
+    pub type_hint: Option<PropertyTypeHint>,
     pub has_override_attribute: bool,
     pub value: Option<Expr>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PropertyTypeHint {
+    pub text: String,
+    pub kind: PropertyTypeKind,
+    pub allows_null: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PropertyTypeKind {
+    Null,
+    Array,
+    Int,
+    Float,
+    String,
+    Bool,
+    Mixed,
+    Object,
+    Class(String),
+    Unsupported,
 }
 
 #[derive(Debug, Clone, PartialEq)]

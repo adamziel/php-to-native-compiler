@@ -12,8 +12,8 @@ use crate::ast::{
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
     ListAssignmentTarget as AstListAssignmentTarget,
     ListExprElementTarget as AstListExprElementTarget, MagicConstantKind as AstMagicConstantKind,
-    MatchArm as AstMatchArm, Program, PropertyVisibility as AstPropertyVisibility,
-    ReferenceTarget as AstReferenceTarget, Statement,
+    MatchArm as AstMatchArm, Program, PropertyTypeKind as AstPropertyTypeKind,
+    PropertyVisibility as AstPropertyVisibility, ReferenceTarget as AstReferenceTarget, Statement,
     StringInterpolationIndex as AstStringInterpolationIndex, StringPart as AstStringPart,
     TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
 };
@@ -74,6 +74,7 @@ pub struct PropertyDecl {
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
     pub is_readonly: bool,
+    pub type_hint: Option<PropertyTypeHint>,
     pub value: Option<ValueExpr>,
     pub line: usize,
 }
@@ -90,7 +91,29 @@ pub struct StaticPropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
+    pub type_hint: Option<PropertyTypeHint>,
     pub value: Option<ValueExpr>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PropertyTypeHint {
+    pub text: String,
+    pub kind: PropertyTypeKind,
+    pub allows_null: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PropertyTypeKind {
+    Null,
+    Array,
+    Int,
+    Float,
+    String,
+    Bool,
+    Mixed,
+    Object,
+    Class(String),
+    Unsupported,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -950,6 +973,7 @@ impl<'a> LoweringContext<'a> {
                 visibility: lower_property_visibility(property.visibility),
                 set_visibility: lower_property_visibility(property.set_visibility),
                 is_readonly: property.is_readonly,
+                type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
                 line: property.span.line,
             })
@@ -961,6 +985,7 @@ impl<'a> LoweringContext<'a> {
                 name: property.name.clone(),
                 visibility: lower_property_visibility(property.visibility),
                 set_visibility: lower_property_visibility(property.set_visibility),
+                type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
             })
             .collect();
@@ -1370,6 +1395,25 @@ fn lower_property_visibility(visibility: AstPropertyVisibility) -> PropertyVisib
         AstPropertyVisibility::Public => PropertyVisibility::Public,
         AstPropertyVisibility::Protected => PropertyVisibility::Protected,
         AstPropertyVisibility::Private => PropertyVisibility::Private,
+    }
+}
+
+fn lower_property_type_hint(type_hint: &crate::ast::PropertyTypeHint) -> PropertyTypeHint {
+    PropertyTypeHint {
+        text: type_hint.text.clone(),
+        kind: match &type_hint.kind {
+            AstPropertyTypeKind::Null => PropertyTypeKind::Null,
+            AstPropertyTypeKind::Array => PropertyTypeKind::Array,
+            AstPropertyTypeKind::Int => PropertyTypeKind::Int,
+            AstPropertyTypeKind::Float => PropertyTypeKind::Float,
+            AstPropertyTypeKind::String => PropertyTypeKind::String,
+            AstPropertyTypeKind::Bool => PropertyTypeKind::Bool,
+            AstPropertyTypeKind::Mixed => PropertyTypeKind::Mixed,
+            AstPropertyTypeKind::Object => PropertyTypeKind::Object,
+            AstPropertyTypeKind::Class(name) => PropertyTypeKind::Class(name.clone()),
+            AstPropertyTypeKind::Unsupported => PropertyTypeKind::Unsupported,
+        },
+        allows_null: type_hint.allows_null,
     }
 }
 

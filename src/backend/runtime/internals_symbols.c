@@ -21,13 +21,23 @@ static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     }
     reference->refcount = 1;
     reference->value = value;
+    reference->property_type_kind = PTN_PROPERTY_TYPE_NONE;
+    reference->property_type_class_name = NULL;
+    reference->property_type_text = NULL;
+    reference->property_type_allows_null = 0;
+    reference->property_declaring_class = NULL;
+    reference->property_name = NULL;
     return reference;
 }
 
-static PTN_UNUSED void ptn_reference_assign(PtnReference *reference, PtnValue value) {
-    PtnValue stored_value = ptn_value_clone_deref(value);
+static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *reference, PtnValue value) {
+    PtnValue stored_value = ptn_null();
+    if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, &stored_value)) {
+        return 0;
+    }
     ptn_value_destroy(&reference->value);
     reference->value = stored_value;
+    return 1;
 }
 
 static PTN_UNUSED size_t ptn_array_count_reference(PtnArray *array, PtnReference *reference, size_t depth) {
@@ -93,6 +103,10 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
         return;
     }
     ptn_value_destroy(&reference->value);
+    free(reference->property_type_class_name);
+    free(reference->property_type_text);
+    free(reference->property_declaring_class);
+    free(reference->property_name);
     free(reference);
 }
 
