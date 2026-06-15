@@ -1868,6 +1868,85 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: 
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_user_class_or_interface_exists(const char *name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_is_abstract(const char *name) {\n");
+    if classes.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if class.is_abstract && !class.is_interface {
+            out.push_str("        return 1;\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_is_final(const char *name) {\n");
+    if classes.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if class.is_final {
+            out.push_str("        return 1;\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_has_non_public_constructor(const char *name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            if !method.is_static && method.name.eq_ignore_ascii_case("__construct") {
+                out.push_str("        return ");
+                out.push_str(if method.visibility == PropertyVisibility::Public {
+                    "0"
+                } else {
+                    "1"
+                });
+                out.push_str(";\n");
+                break;
+            }
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED const char *ptn_declared_class_parent_name(const char *name) {\n",
     );
     if classes.is_empty() {
@@ -1928,7 +2007,7 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: 
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        for interface in &class.interfaces {
+        for interface in class_transitive_interfaces(class, classes) {
             out.push_str("        if (ptn_ascii_case_equal(interface_name, \"");
             out.push_str(&c_string(interface));
             out.push_str("\")) {\n");
@@ -2075,6 +2154,35 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: 
             }
             out.push_str("        if (strcmp(property_name, \"");
             out.push_str(&c_string(property.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_constant_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)constant_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for constant in class_constant_lookup_chain(class, classes) {
+            out.push_str("        if (strcmp(constant_name, \"");
+            out.push_str(&c_string(&constant.name));
             out.push_str("\") == 0) {\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
@@ -2533,6 +2641,33 @@ fn class_method_lookup_chain<'a>(
     methods
 }
 
+fn class_transitive_interfaces<'a>(class: &'a ClassDecl, classes: &'a [ClassDecl]) -> Vec<&'a str> {
+    fn collect<'a>(
+        interface_name: &'a str,
+        classes: &'a [ClassDecl],
+        seen: &mut HashSet<String>,
+        interfaces: &mut Vec<&'a str>,
+    ) {
+        let key = interface_name.to_ascii_lowercase();
+        if !seen.insert(key) {
+            return;
+        }
+        interfaces.push(interface_name);
+        if let Some(interface) = class_by_name(classes, interface_name) {
+            for parent_interface in &interface.interfaces {
+                collect(parent_interface, classes, seen, interfaces);
+            }
+        }
+    }
+
+    let mut seen = HashSet::new();
+    let mut interfaces = Vec::new();
+    for interface in &class.interfaces {
+        collect(interface, classes, &mut seen, &mut interfaces);
+    }
+    interfaces
+}
+
 fn class_public_method_lookup_chain<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
@@ -2627,6 +2762,47 @@ fn class_property_initialization_chain(
     let mut seen_classes = HashSet::new();
     collect(class, classes, &mut seen_classes, &mut properties);
     properties
+}
+
+fn class_constant_lookup_chain<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Vec<&'a crate::ir::ClassConstantDecl> {
+    fn collect<'a>(
+        class: &'a ClassDecl,
+        classes: &'a [ClassDecl],
+        seen_classes: &mut HashSet<String>,
+        seen_constants: &mut HashSet<String>,
+        constants: &mut Vec<&'a crate::ir::ClassConstantDecl>,
+    ) {
+        let lookup_name = class.name.to_ascii_lowercase();
+        if !seen_classes.insert(lookup_name) {
+            return;
+        }
+        for constant in &class.constants {
+            if seen_constants.insert(constant.name.clone()) {
+                constants.push(constant);
+            }
+        }
+        let Some(parent_name) = &class.parent_name else {
+            return;
+        };
+        if let Some(parent) = class_by_name(classes, parent_name) {
+            collect(parent, classes, seen_classes, seen_constants, constants);
+        }
+    }
+
+    let mut constants = Vec::new();
+    let mut seen_classes = HashSet::new();
+    let mut seen_constants = HashSet::new();
+    collect(
+        class,
+        classes,
+        &mut seen_classes,
+        &mut seen_constants,
+        &mut constants,
+    );
+    constants
 }
 
 fn class_constructor_method<'a>(

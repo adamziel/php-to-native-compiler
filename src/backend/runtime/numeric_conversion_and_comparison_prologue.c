@@ -1660,6 +1660,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (
         receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_reflection_class(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_reflection_class_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_internal_class_name_is_reflection_function(receiver.as.object->class_name)
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
