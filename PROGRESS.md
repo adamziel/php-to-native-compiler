@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-50g7 COW/reference array-walk and sort row pack | 10 | 10 |
 | ptn-jrzu CSV stream parity row pack | 22 | 22 |
 | ptn-w17z.16.1 ErrorException severity row pack | 2 | 2 |
 | ptn-w17z.16.2 nested try/finally row pack | 9 | 9 |
@@ -33,14 +34,45 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:54Z.
-Measured latest: `ptn-w17z.36` extract typed references selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.36` completed the checked-in extract typed references row pack. Previous: `ptn-vj4r` completed the checked-in class_alias namespace metadata row pack.
+Refresh: 2026-06-15T18:58Z.
+Measured latest: `ptn-50g7` COW/reference array-walk and sort row pack added 10 unique newly passing full-corpus-source PHPT rows.
+Latest: `ptn-50g7` moved the focused array-internal COW frontier from 54/61 to 59/61 runnable rows and the COW/foreach reference frontier from 81/90 to 87/90 runnable rows.
 
-Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
+Current hook: `ptn-50g7` final focused runs:
+`.runtime/ptn-50g7-final-array-internal/summary-20260615T183512Z.txt` and
+`.runtime/ptn-50g7-final-cow-foreach/summary-20260615T183512Z.txt`.
+Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
-Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
-`.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
+
+## 2026-06-15 ptn-50g7 COW/Reference Array-Walk and Sort Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start array-internal COW frontier (`.runtime/ptn-50g7-before-array-internal/summary-20260615T171151Z.txt`) | 72 selected / 61 runnable / 11 classified | 54 |
+| Final array-internal COW frontier (`.runtime/ptn-50g7-final-array-internal/summary-20260615T183512Z.txt`) | 72 selected / 61 runnable / 11 classified | 59 |
+| Integrated array-internal COW frontier (`.runtime/merge-ptn-50g7-array-internal/summary-20260615T194333Z.txt`) | 72 selected / 61 runnable / 11 classified | 59 |
+| Hook-start COW/foreach reference frontier (`.runtime/ptn-50g7-before-cow-foreach/summary-20260615T171151Z.txt`) | 103 selected / 90 runnable / 13 classified | 81 |
+| Final COW/foreach reference frontier (`.runtime/ptn-50g7-final-cow-foreach/summary-20260615T183512Z.txt`) | 103 selected / 90 runnable / 13 classified | 87 |
+| Integrated COW/foreach reference frontier (`.runtime/merge-ptn-50g7-cow-foreach/summary-20260615T194929Z.txt`) | 103 selected / 91 runnable / 12 classified | 88 |
+| Focused newly passing confirmation (`.runtime/ptn-50g7-expanded-targeted-after/summary-20260615T174107Z.txt`) | 8 selected / 8 runnable / 0 classified | 8 |
+
+| Newly passing row | Source bucket |
+| --- | --- |
+| `ext/standard/tests/array/array_walk/array_walk_object1.phpt` | COW/foreach reference frontier |
+| `ext/standard/tests/array/array_walk/array_walk_objects.phpt` | COW/foreach reference frontier |
+| `ext/standard/tests/array/array_walk/array_walk_rec_objects.phpt` | COW/foreach reference frontier |
+| `ext/standard/tests/array/array_walk/array_walk_recursive_object1.phpt` | array-internal COW frontier / COW/foreach reference frontier |
+| `ext/standard/tests/array/array_walk/bug39576.phpt` | COW/foreach reference frontier |
+| `ext/standard/tests/array/array_walk/bug42850.phpt` | COW/foreach reference frontier |
+| `ext/standard/tests/array/sort/array_multisort_variation10.phpt` | array-internal COW frontier |
+| `ext/standard/tests/array/sort/array_multisort_variation11.phpt` | array-internal COW frontier |
+| `ext/standard/tests/array/sort/usort_variation11.phpt` | array-internal COW frontier |
+| `ext/standard/tests/array/sort/usort_variation6.phpt` | array-internal COW frontier |
+
+| Focused command | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| `PHPT_PROGRESS_DIR=.runtime/ptn-50g7-final-array-internal timeout 1800s tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-array-internal-cow-frontier-manifest.txt` | 61 runnable | 59 |
+| `PHPT_PROGRESS_DIR=.runtime/ptn-50g7-final-cow-foreach timeout 1800s tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-cow-foreach-reference-manifest.txt` | 90 runnable | 87 |
 
 ## 2026-06-15 ptn-jrzu CSV Stream Parity Row Pack
 

@@ -12501,6 +12501,47 @@ fn compile_scalar_type_internal_functions_to_native_binary() {
 }
 
 #[test]
+fn compile_settype_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-settype-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("settype-function.php");
+    let output = root.join("settype-function-bin");
+    fs::write(
+        &input,
+        "<?php
+$value = 12;
+var_dump(settype($value, \"string\"), gettype($value), $value);
+$value = \"42\";
+var_dump(settype($value, \"int\"), gettype($value), $value);
+$value = 0;
+var_dump(settype($value, \"bool\"), gettype($value), $value);
+var_dump(function_exists(\"settype\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(6) \"string\"\n",
+            "string(2) \"12\"\n",
+            "bool(true)\n",
+            "string(7) \"integer\"\n",
+            "int(42)\n",
+            "bool(true)\n",
+            "string(7) \"boolean\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_type_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-type-predicates");
     fs::create_dir_all(&root).unwrap();
@@ -19956,16 +19997,16 @@ fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_target
         "<?php $items = [3, 2, 1]; sort($items, 0);",
         "<?php $items = [3, 2, 1]; sort($items, (SORT_REGULAR));",
         "<?php $items = [3, 2, 1]; sort($items, 999);",
+        "<?php $items = [[3, 2, 1]]; asort($items[0]);",
+        "<?php $items = [[3, 2, 1]]; sort($items[0], SORT_REGULAR);",
+        "<?php $items = [[\"img2\", \"img1\"]]; natsort($items[0]);",
+        "<?php $items = [[3, 2, 1]]; usort($items[0], \"cmp\");",
+        "<?php $items = [[3 => \"c\", 1 => \"a\"]]; uksort($items[0], \"cmp\");",
     ] {
         parser::parse(source).unwrap();
     }
 
     for (source, function, target_message) in [
-        (
-            "<?php $items = [[3, 2, 1]]; asort($items[0]);",
-            "asort",
-            "non-variable array mutation targets are unsupported",
-        ),
         (
             "<?php sort([3, 2, 1], SORT_REGULAR);",
             "sort",
@@ -19980,11 +20021,6 @@ fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_target
             "<?php $items = [\"img2\", \"img1\"]; natcasesort($items, SORT_REGULAR);",
             "natcasesort",
             "extra arguments are unsupported",
-        ),
-        (
-            "<?php $items = [[3, 2, 1]]; usort($items[0], \"cmp\");",
-            "usort",
-            "non-variable array mutation targets are unsupported",
         ),
     ] {
         let error = parser::parse(source).unwrap_err();
@@ -20001,6 +20037,8 @@ fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_target
     }
 
     parser::parse("<?php $items = [3, 2, 1]; array_multisort($items);").unwrap();
+    parser::parse("<?php array_multisort([1, 3, 2]);").unwrap();
+    parser::parse("<?php array_multisort([]);").unwrap();
     parser::parse(
         "<?php $left = [2, 1]; $right = [\"b\", \"a\"]; array_multisort($left, SORT_ASC, SORT_REGULAR, $right, SORT_DESC, SORT_STRING);",
     )
@@ -20031,6 +20069,8 @@ $copy = [3, 2, 1];\n\
 $alias = $copy;\n\
 array_multisort($copy);\n\
 var_dump($copy, $alias);\n\
+var_dump(array_multisort([1, 3, 2, 4]));\n\
+var_dump(array_multisort([]));\n\
 try { $a = [1]; array_multisort($a, SORT_ASC, SORT_ASC); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { $a = [1, 2]; $b = [1]; array_multisort($a, $b); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(function_exists(\"array_multisort\"));",
@@ -20109,6 +20149,8 @@ var_dump(function_exists(\"array_multisort\"));",
             "  [2]=>\n",
             "  int(1)\n",
             "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "array_multisort(): Argument #3 must be an array or a sort flag that has not already been specified\n",
             "Array sizes are inconsistent\n",
             "bool(true)\n",
@@ -20771,6 +20813,76 @@ var_dump(function_exists(\"usort\"), function_exists(\"uasort\"), function_exist
     assert!(c_source.contains("ptn_runtime_array_uasort_variable"));
     assert!(c_source.contains("ptn_runtime_array_uksort_variable"));
     assert!(c_source.contains("ptn_array_user_sort_entries"));
+}
+
+#[test]
+fn compile_array_sort_mutators_on_array_paths_to_native_binary() {
+    let root = temp_dir("ptn-native-array-sort-mutator-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-sort-mutator-paths.php");
+    let output = root.join("array-sort-mutator-paths-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function cmp($left, $right) {\n\
+    if ($left == $right) {\n\
+        return 0;\n\
+    }\n\
+    return $left < $right ? -1 : 1;\n\
+}\n\
+$groups = [\n\
+    [3, 1, 2],\n\
+    [\"b\" => 2, \"a\" => 1],\n\
+    [\"img2\", \"img10\", \"img1\"],\n\
+    [3, 1, 2],\n\
+];\n\
+var_dump(sort($groups[0]));\n\
+foreach ($groups[0] as $key => $value) { echo \"s\", $key, \"=\", $value, \"\\n\"; }\n\
+var_dump(asort($groups[1]));\n\
+foreach ($groups[1] as $key => $value) { echo \"a\", $key, \"=\", $value, \"\\n\"; }\n\
+var_dump(natsort($groups[2]));\n\
+foreach ($groups[2] as $key => $value) { echo \"n\", $key, \"=\", $value, \"\\n\"; }\n\
+var_dump(usort($groups[3], \"cmp\"));\n\
+foreach ($groups[3] as $key => $value) { echo \"u\", $key, \"=\", $value, \"\\n\"; }\n\
+foreach ($groups as $group_key => $group) { echo \"g\", $group_key, \"=\", count($group), \"\\n\"; }",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "s0=1\n",
+            "s1=2\n",
+            "s2=3\n",
+            "bool(true)\n",
+            "aa=1\n",
+            "ab=2\n",
+            "bool(true)\n",
+            "n2=img1\n",
+            "n0=img2\n",
+            "n1=img10\n",
+            "bool(true)\n",
+            "u0=1\n",
+            "u1=2\n",
+            "u2=3\n",
+            "g0=3\n",
+            "g1=2\n",
+            "g2=3\n",
+            "g3=3\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_sort_path"));
+    assert!(c_source.contains("ptn_runtime_array_asort_path"));
+    assert!(c_source.contains("ptn_runtime_array_natsort_path"));
+    assert!(c_source.contains("ptn_runtime_array_usort_path"));
 }
 
 #[test]
@@ -22576,6 +22688,125 @@ var_dump($result, $data, $copy, function_exists(\"array_walk_recursive\"));",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_walk_recursive"));
     assert!(c_source.contains("ptn_runtime_array_walk_recursive_variable"));
+}
+
+#[test]
+fn compile_array_walk_object_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-object-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-object-properties.php");
+    let output = root.join("array-walk-object-properties-bin");
+    fs::write(
+        &input,
+        "<?php
+class Walker {
+    private $hidden = 1;
+    protected $guarded = 2;
+    public $open = 3;
+
+    public function total() {
+        return $this->hidden + $this->guarded + $this->open;
+    }
+}
+
+function bump_object_walk(&$value, $key) {
+    var_dump($key);
+    var_dump($value);
+    $value += 10;
+}
+
+$object = new Walker;
+var_dump(array_walk($object, \"bump_object_walk\"));
+echo \"total=\", $object->total(), \"\\n\";
+
+$recursive = new Walker;
+var_dump(array_walk_recursive($recursive, \"bump_object_walk\"));
+echo \"recursive=\", $recursive->total(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(14) \"\0Walker\0hidden\"\n",
+            "int(1)\n",
+            "string(10) \"\0*\0guarded\"\n",
+            "int(2)\n",
+            "string(4) \"open\"\n",
+            "int(3)\n",
+            "bool(true)\n",
+            "total=36\n",
+            "string(14) \"\0Walker\0hidden\"\n",
+            "int(1)\n",
+            "string(10) \"\0*\0guarded\"\n",
+            "int(2)\n",
+            "string(4) \"open\"\n",
+            "int(3)\n",
+            "bool(true)\n",
+            "recursive=36\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("resolved.type == PTN_OBJECT"));
+    assert!(c_source.contains("ptn_array_walk_slot_array_for_write"));
+}
+
+#[test]
+fn compile_array_walk_recursive_unwraps_temporary_callback_references_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-recursive-reference-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-recursive-reference-cleanup.php");
+    let output = root.join("array-walk-recursive-reference-cleanup-bin");
+    fs::write(
+        &input,
+        "<?php
+$data = [\"key1\" => \"val1\", [\"key2\" => \"val2\"]];
+function observe_walk($item, $key) {}
+array_walk_recursive($data, \"observe_walk\");
+$copy = $data;
+$copy[0] = \"altered\";
+var_dump($data);
+var_dump($copy);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [\"key1\"]=>\n",
+            "  string(4) \"val1\"\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [\"key2\"]=>\n",
+            "    string(4) \"val2\"\n",
+            "  }\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"key1\"]=>\n",
+            "  string(4) \"val1\"\n",
+            "  [0]=>\n",
+            "  string(7) \"altered\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("created_walk_reference"));
+    assert!(c_source.contains("ptn_value_unwrap_reference_slots"));
 }
 
 #[test]
@@ -27458,6 +27689,47 @@ var_dump($userdata);
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "\nWarning: needs_userdata_ref(): Argument #3 ($userdata) must be passed by reference, value given in ptn on line 7\n",
+            "bool(true)\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_walk_property_userdata_by_ref_notice_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-property-userdata-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-property-userdata-ref.php");
+    let output = root.join("array-walk-property-userdata-ref-bin");
+    fs::write(
+        &input,
+        "<?php
+class Holder {
+    public $columns = [];
+}
+function needs_userdata_ref($value, $key, &$userdata) {
+    $userdata[] = $key;
+}
+$input = [\"k\" => \"v\", \"j\" => \"w\"];
+$holder = new Holder();
+var_dump(array_walk($input, \"needs_userdata_ref\", $holder->columns));
+var_dump($holder->columns);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nNotice: Only variables should be passed by reference in ptn on line 10\n",
+            "\nWarning: needs_userdata_ref(): Argument #3 ($userdata) must be passed by reference, value given in ptn on line 10\n",
+            "\nWarning: needs_userdata_ref(): Argument #3 ($userdata) must be passed by reference, value given in ptn on line 10\n",
             "bool(true)\n",
             "array(0) {\n",
             "}\n",

@@ -803,6 +803,53 @@ static int ptn_array_user_compare(
     return 0;
 }
 
+static int ptn_array_user_compare_for_sort(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue callback,
+    PtnValue left,
+    PtnValue right,
+    int *bool_deprecation_emitted,
+    size_t line
+) {
+    PtnValue callback_args[2] = {
+        ptn_value_clone_deref(left),
+        ptn_value_clone_deref(right)
+    };
+    PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 2, callback_args, line);
+    PtnValue resolved_result = ptn_value_deref(callback_result);
+    if (
+        resolved_result.type == PTN_BOOL &&
+        (bool_deprecation_emitted == NULL || !*bool_deprecation_emitted)
+    ) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Returning bool from comparison function is deprecated, return an integer less than, equal to, or greater than zero",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+        if (bool_deprecation_emitted != NULL) {
+            *bool_deprecation_emitted = 1;
+        }
+    }
+    int64_t compared = ptn_value_to_integer(callback_result);
+    ptn_value_destroy(&callback_args[0]);
+    ptn_value_destroy(&callback_args[1]);
+    ptn_value_destroy(&callback_result);
+    if (compared < 0) {
+        return -1;
+    }
+    if (compared > 0) {
+        return 1;
+    }
+    return 0;
+}
+
 static PtnRuntime *ptn_var_dump_active_runtime = NULL;
 
 static void ptn_var_dump_write(const char *data, size_t len) {
@@ -1042,6 +1089,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
             ptn_ascii_case_equal(name, "strtoupper")) {
             return "string";
         }
+        if (ptn_ascii_case_equal(name, "settype")) {
+            return "var";
+        }
         if (ptn_ascii_case_equal(name, "sprintf") ||
             ptn_ascii_case_equal(name, "printf") ||
             ptn_ascii_case_equal(name, "vprintf") ||
@@ -1057,6 +1107,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         if (ptn_ascii_case_equal(name, "vprintf") ||
             ptn_ascii_case_equal(name, "vsprintf")) {
             return "values";
+        }
+        if (ptn_ascii_case_equal(name, "settype")) {
+            return "type";
         }
     }
     return NULL;
@@ -3606,14 +3659,24 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shift_temporary(PtnRuntime *runtime
 
 static int ptn_array_user_compare_keys(
     PtnRuntime *runtime,
+    const char *function_name,
     PtnValue callback,
     PtnArrayKey left,
     PtnArrayKey right,
+    int *bool_deprecation_emitted,
     size_t line
 ) {
     PtnValue left_key = ptn_array_key_value(left);
     PtnValue right_key = ptn_array_key_value(right);
-    int compared = ptn_array_user_compare(runtime, callback, left_key, right_key, line);
+    int compared = ptn_array_user_compare_for_sort(
+        runtime,
+        function_name,
+        callback,
+        left_key,
+        right_key,
+        bool_deprecation_emitted,
+        line
+    );
     ptn_value_destroy(&left_key);
     ptn_value_destroy(&right_key);
     return compared;
@@ -3621,34 +3684,56 @@ static int ptn_array_user_compare_keys(
 
 static int ptn_array_user_compare_entries(
     PtnRuntime *runtime,
+    const char *function_name,
     PtnValue callback,
     PtnArrayEntry *left,
     PtnArrayEntry *right,
     int compare_keys,
+    int *bool_deprecation_emitted,
     size_t line
 ) {
     return compare_keys
-        ? ptn_array_user_compare_keys(runtime, callback, left->key, right->key, line)
-        : ptn_array_user_compare(runtime, callback, left->value, right->value, line);
+        ? ptn_array_user_compare_keys(
+            runtime,
+            function_name,
+            callback,
+            left->key,
+            right->key,
+            bool_deprecation_emitted,
+            line
+        )
+        : ptn_array_user_compare_for_sort(
+            runtime,
+            function_name,
+            callback,
+            left->value,
+            right->value,
+            bool_deprecation_emitted,
+            line
+        );
 }
 
 static void ptn_array_user_sort_entries(
     PtnRuntime *runtime,
+    const char *function_name,
     PtnArray *array,
     PtnValue callback,
     int compare_keys,
     int reindex,
     size_t line
 ) {
+    int bool_deprecation_emitted = 0;
     for (size_t i = 1; i < array->len; i++) {
         PtnArrayEntry moving = array->entries[i];
         size_t j = i;
         while (j > 0 && ptn_array_user_compare_entries(
                 runtime,
+                function_name,
                 callback,
                 &array->entries[j - 1],
                 &moving,
                 compare_keys,
+                &bool_deprecation_emitted,
                 line
             ) > 0) {
             array->entries[j] = array->entries[j - 1];
@@ -3671,15 +3756,15 @@ static void ptn_array_user_sort_entries(
 }
 
 static void ptn_array_usort_values(PtnRuntime *runtime, PtnArray *array, PtnValue callback, size_t line) {
-    ptn_array_user_sort_entries(runtime, array, callback, 0, 1, line);
+    ptn_array_user_sort_entries(runtime, "usort", array, callback, 0, 1, line);
 }
 
 static void ptn_array_uasort_values(PtnRuntime *runtime, PtnArray *array, PtnValue callback, size_t line) {
-    ptn_array_user_sort_entries(runtime, array, callback, 0, 0, line);
+    ptn_array_user_sort_entries(runtime, "uasort", array, callback, 0, 0, line);
 }
 
 static void ptn_array_uksort_entries(PtnRuntime *runtime, PtnArray *array, PtnValue callback, size_t line) {
-    ptn_array_user_sort_entries(runtime, array, callback, 1, 0, line);
+    ptn_array_user_sort_entries(runtime, "uksort", array, callback, 1, 0, line);
 }
 
 static PtnValue ptn_runtime_user_comparator_sort_variable(
@@ -3711,6 +3796,38 @@ static PtnValue ptn_runtime_user_comparator_sort_variable(
     return ptn_bool(1);
 }
 
+static PtnValue ptn_runtime_user_comparator_sort_path(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue callback,
+    size_t line,
+    void (*sorter)(PtnRuntime *, PtnArray *, PtnValue, size_t)
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        function_name,
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    PtnValue checked_callback = ptn_internal_expect_callback_arg(
+        runtime,
+        function_name,
+        2,
+        "callback",
+        callback
+    );
+    sorter(runtime, array, checked_callback, line);
+    ptn_value_destroy(&checked_callback);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_usort_variable(
     PtnRuntime *runtime,
     const char *name,
@@ -3723,6 +3840,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_usort_variable(
         "usort",
         name,
         value,
+        callback,
+        line,
+        ptn_array_usort_values
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_usort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue callback,
+    size_t line
+) {
+    return ptn_runtime_user_comparator_sort_path(
+        runtime,
+        "usort",
+        name,
+        segments,
+        segment_count,
         callback,
         line,
         ptn_array_usort_values
@@ -3747,6 +3884,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_uasort_variable(
     );
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_uasort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue callback,
+    size_t line
+) {
+    return ptn_runtime_user_comparator_sort_path(
+        runtime,
+        "uasort",
+        name,
+        segments,
+        segment_count,
+        callback,
+        line,
+        ptn_array_uasort_values
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_uksort_variable(
     PtnRuntime *runtime,
     const char *name,
@@ -3759,6 +3916,26 @@ static PTN_UNUSED PtnValue ptn_runtime_array_uksort_variable(
         "uksort",
         name,
         value,
+        callback,
+        line,
+        ptn_array_uksort_entries
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_uksort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue callback,
+    size_t line
+) {
+    return ptn_runtime_user_comparator_sort_path(
+        runtime,
+        "uksort",
+        name,
+        segments,
+        segment_count,
         callback,
         line,
         ptn_array_uksort_entries
@@ -3828,6 +4005,29 @@ static PTN_UNUSED PtnValue ptn_runtime_array_ksort_variable(
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_ksort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue flags_value,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "ksort",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "ksort", flags_value, line);
+    ptn_array_ksort_entries_with_flags(array, flags);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_krsort_variable(
     PtnRuntime *runtime,
     const char *name,
@@ -3842,6 +4042,29 @@ static PTN_UNUSED PtnValue ptn_runtime_array_krsort_variable(
         "array",
         name,
         value
+    );
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "krsort", flags_value, line);
+    ptn_array_krsort_entries_with_flags(array, flags);
+    return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_krsort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue flags_value,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "krsort",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
     );
     int64_t flags = ptn_internal_sort_flags_arg(runtime, "krsort", flags_value, line);
     ptn_array_krsort_entries_with_flags(array, flags);
@@ -3868,6 +4091,29 @@ static PTN_UNUSED PtnValue ptn_runtime_array_asort_variable(
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_asort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue flags_value,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "asort",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "asort", flags_value, line);
+    ptn_array_asort_values_with_flags(array, flags);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_arsort_variable(
     PtnRuntime *runtime,
     const char *name,
@@ -3888,6 +4134,29 @@ static PTN_UNUSED PtnValue ptn_runtime_array_arsort_variable(
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_arsort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue flags_value,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "arsort",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "arsort", flags_value, line);
+    ptn_array_arsort_values_with_flags(array, flags);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_natsort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -3901,6 +4170,27 @@ static PTN_UNUSED PtnValue ptn_runtime_array_natsort_variable(PtnRuntime *runtim
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_natsort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "natsort",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    ptn_array_natsort_values(array);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_natcasesort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -3909,6 +4199,27 @@ static PTN_UNUSED PtnValue ptn_runtime_array_natcasesort_variable(PtnRuntime *ru
         "array",
         name,
         value
+    );
+    ptn_array_natcasesort_values(array);
+    return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_natcasesort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "natcasesort",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
     );
     ptn_array_natcasesort_values(array);
     return ptn_bool(1);
@@ -3934,6 +4245,29 @@ static PTN_UNUSED PtnValue ptn_runtime_array_sort_variable(
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_sort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue flags_value,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "sort",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "sort", flags_value, line);
+    ptn_array_sort_values_with_flags(array, flags);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_rsort_variable(
     PtnRuntime *runtime,
     const char *name,
@@ -3954,6 +4288,29 @@ static PTN_UNUSED PtnValue ptn_runtime_array_rsort_variable(
     return ptn_bool(1);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_rsort_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue flags_value,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "rsort",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    int64_t flags = ptn_internal_sort_flags_arg(runtime, "rsort", flags_value, line);
+    ptn_array_rsort_values_with_flags(array, flags);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_shuffle_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -3962,6 +4319,27 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shuffle_variable(PtnRuntime *runtim
         "array",
         name,
         value
+    );
+    ptn_array_shuffle_values(array);
+    return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_shuffle_path(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_path_arg(
+        runtime,
+        "shuffle",
+        1,
+        "array",
+        name,
+        segments,
+        segment_count,
+        line
     );
     ptn_array_shuffle_values(array);
     return ptn_bool(1);
@@ -4312,6 +4690,10 @@ static PtnArray *ptn_array_walk_slot_array_for_write(
     PtnValue value
 ) {
     PtnValue current_value = slot == NULL ? value : *slot;
+    PtnValue resolved = ptn_value_deref(current_value);
+    if (resolved.type == PTN_OBJECT && resolved.as.object != NULL) {
+        return resolved.as.object->properties;
+    }
     PtnArray *array = ptn_internal_expect_array_arg(
         runtime,
         function_name,
@@ -4337,7 +4719,16 @@ static PtnArray *ptn_array_walk_slot_current_array(PtnValue *slot) {
         return NULL;
     }
     PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    if (slot_value->type == PTN_OBJECT && slot_value->as.object != NULL) {
+        return slot_value->as.object->properties;
+    }
     return slot_value->type == PTN_ARRAY ? slot_value->as.array : NULL;
+}
+
+static PtnObject *ptn_array_walk_slot_object(PtnValue *slot, PtnValue value) {
+    PtnValue current_value = slot == NULL ? value : *slot;
+    PtnValue resolved = ptn_value_deref(current_value);
+    return resolved.type == PTN_OBJECT ? resolved.as.object : NULL;
 }
 
 static PtnValue *ptn_array_walk_current_slot(
@@ -4351,23 +4742,69 @@ static PtnValue *ptn_array_walk_current_slot(
     return ptn_symbols_value_slot(&runtime->symbols, name);
 }
 
+static PtnValue ptn_array_walk_property_key_value(PtnObject *object, PtnArrayKey key) {
+    if (object == NULL || key.type != PTN_ARRAY_KEY_STRING) {
+        return ptn_array_key_value(key);
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, key.as.string);
+    if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        return ptn_array_key_value(key);
+    }
+
+    size_t display_len = strlen(metadata->display_name);
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        if (display_len > SIZE_MAX - 3) {
+            ptn_abort_out_of_memory();
+        }
+        size_t key_len = display_len + 3;
+        char *storage = malloc(key_len);
+        if (storage == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        storage[0] = '\0';
+        storage[1] = '*';
+        storage[2] = '\0';
+        memcpy(storage + 3, metadata->display_name, display_len);
+        return ptn_owned_string_len(storage, key_len);
+    }
+
+    size_t declaring_len = strlen(metadata->declaring_class);
+    if (declaring_len > SIZE_MAX - display_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t key_len = declaring_len + display_len + 2;
+    char *storage = malloc(key_len);
+    if (storage == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    storage[0] = '\0';
+    memcpy(storage + 1, metadata->declaring_class, declaring_len);
+    storage[declaring_len + 1] = '\0';
+    memcpy(storage + declaring_len + 2, metadata->display_name, display_len);
+    return ptn_owned_string_len(storage, key_len);
+}
+
 static void ptn_array_walk_call_function(
     PtnRuntime *runtime,
     PtnValue callback,
     PtnArray *array,
+    PtnObject *object,
     size_t index,
     int has_userdata,
     PtnValue userdata,
     size_t line
 ) {
     PtnArrayEntry *entry = &array->entries[index];
+    int created_reference = entry->value.type != PTN_REFERENCE;
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
     }
+    PtnReference *created_walk_reference = created_reference ? entry->value.as.reference : NULL;
 
     PtnValue value_reference = ptn_value_clone(entry->value);
-    PtnValue key = ptn_array_key_value(entry->key);
+    PtnValue key = ptn_array_walk_property_key_value(object, entry->key);
     PtnValue callback_args[3] = {
         value_reference,
         key,
@@ -4386,6 +4823,15 @@ static void ptn_array_walk_call_function(
         ptn_value_destroy(&callback_args[2]);
     }
     ptn_value_destroy(&callback_result);
+    if (
+        created_reference &&
+        created_walk_reference != NULL &&
+        created_walk_reference->refcount == 1
+    ) {
+        for (size_t i = 0; i < array->len; i++) {
+            ptn_value_unwrap_reference_slots(&array->entries[i].value, created_walk_reference, 0);
+        }
+    }
 }
 
 static PtnArrayKey *ptn_array_walk_snapshot_keys(PtnArray *array, size_t *count_out) {
@@ -4431,6 +4877,7 @@ static PtnValue ptn_array_walk_slot(
     for (;;) {
         PtnValue *slot = ptn_array_walk_current_slot(runtime, name, local_slot);
         PtnArray *array = ptn_array_walk_slot_array_for_write(runtime, "array_walk", slot, value);
+        PtnObject *object = ptn_array_walk_slot_object(slot, value);
         if (array != last_array) {
             ptn_array_walk_free_snapshot_keys(snapshot_keys, snapshot_count);
             last_array = array;
@@ -4450,6 +4897,7 @@ static PtnValue ptn_array_walk_slot(
                 runtime,
                 callback,
                 array,
+                object,
                 entry_index,
                 has_userdata,
                 userdata,
@@ -4476,6 +4924,7 @@ static PtnValue ptn_array_walk_checked(
     PtnValue callback,
     int has_userdata,
     PtnValue userdata,
+    int userdata_allows_reference,
     size_t line
 ) {
     PtnValue checked_callback = ptn_internal_expect_callback_arg(
@@ -4487,8 +4936,16 @@ static PtnValue ptn_array_walk_checked(
     );
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    int previous_by_ref_argument_notice_pending = runtime->by_ref_argument_notice_pending;
+    int previous_by_ref_argument_notice_emitted = runtime->by_ref_argument_notice_emitted;
+    size_t previous_by_ref_argument_notice_line = runtime->by_ref_argument_notice_line;
     runtime->warn_by_ref_argument_mismatch = 1;
     runtime->throw_argument_count_errors = 1;
+    if (has_userdata && !userdata_allows_reference) {
+        runtime->by_ref_argument_notice_pending = 1;
+        runtime->by_ref_argument_notice_emitted = 0;
+        runtime->by_ref_argument_notice_line = line;
+    }
     PtnValue result = ptn_array_walk_slot(
         runtime,
         name,
@@ -4499,6 +4956,9 @@ static PtnValue ptn_array_walk_checked(
         userdata,
         line
     );
+    runtime->by_ref_argument_notice_line = previous_by_ref_argument_notice_line;
+    runtime->by_ref_argument_notice_emitted = previous_by_ref_argument_notice_emitted;
+    runtime->by_ref_argument_notice_pending = previous_by_ref_argument_notice_pending;
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     ptn_value_destroy(&checked_callback);
@@ -4512,6 +4972,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_walk_variable(
     PtnValue callback,
     int has_userdata,
     PtnValue userdata,
+    int userdata_allows_reference,
     size_t line
 ) {
     PtnValue trace_args[3] = {
@@ -4529,17 +4990,90 @@ static PTN_UNUSED PtnValue ptn_runtime_array_walk_variable(
         has_userdata ? 3 : 2,
         trace_args
     );
-    PtnValue result = ptn_array_walk_checked(runtime, name, NULL, value, callback, has_userdata, userdata, line);
+    PtnValue result = ptn_array_walk_checked(
+        runtime,
+        name,
+        NULL,
+        value,
+        callback,
+        has_userdata,
+        userdata,
+        userdata_allows_reference,
+        line
+    );
     ptn_runtime_pop_trace_frame(runtime, &trace_frame);
     return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_walk_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnValue callback,
+    int has_userdata,
+    PtnValue userdata,
+    int userdata_allows_reference,
+    size_t line
+) {
+    PtnValue trace_args[3] = {
+        value,
+        callback,
+        userdata
+    };
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        "array_walk",
+        runtime->source_path,
+        line,
+        has_userdata ? 3 : 2,
+        trace_args
+    );
+    PtnValue local_value = ptn_value_clone(value);
+    PtnValue result = ptn_array_walk_checked(
+        runtime,
+        NULL,
+        &local_value,
+        local_value,
+        callback,
+        has_userdata,
+        userdata,
+        userdata_allows_reference,
+        line
+    );
+    ptn_value_destroy(&local_value);
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    return result;
+}
+
+static int ptn_array_walk_recursive_root_still_iterable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue *local_slot,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue *slot = ptn_array_walk_current_slot(runtime, name, local_slot);
+    PtnValue current = slot == NULL ? value : *slot;
+    current = ptn_value_deref(current);
+    if (current.type == PTN_ARRAY || current.type == PTN_OBJECT) {
+        return 1;
+    }
+    ptn_throw_exception(runtime, "TypeError", "Iterated value is no longer an array or object");
+    (void)line;
+    return 0;
 }
 
 static void ptn_array_walk_recursive_array(
     PtnRuntime *runtime,
     PtnArray *array,
+    PtnObject *object,
     PtnValue callback,
     int has_userdata,
     PtnValue userdata,
+    const char *root_name,
+    PtnValue *root_local_slot,
+    PtnValue root_value,
     size_t line
 ) {
     size_t snapshot_count = 0;
@@ -4560,11 +5094,24 @@ static void ptn_array_walk_recursive_array(
             ptn_array_walk_recursive_array(
                 runtime,
                 child == NULL ? resolved.as.array : child,
+                NULL,
                 callback,
                 has_userdata,
                 userdata,
+                root_name,
+                root_local_slot,
+                root_value,
                 line
             );
+            if (!ptn_array_walk_recursive_root_still_iterable(
+                runtime,
+                root_name,
+                root_local_slot,
+                root_value,
+                line
+            )) {
+                break;
+            }
             continue;
         }
 
@@ -4573,11 +5120,21 @@ static void ptn_array_walk_recursive_array(
             runtime,
             callback,
             array,
+            object,
             current_index,
             has_userdata,
             userdata,
             line
         );
+        if (!ptn_array_walk_recursive_root_still_iterable(
+            runtime,
+            root_name,
+            root_local_slot,
+            root_value,
+            line
+        )) {
+            break;
+        }
     }
 
     ptn_array_walk_free_snapshot_keys(snapshot_keys, snapshot_count);
@@ -4591,6 +5148,7 @@ static PtnValue ptn_array_walk_recursive_checked(
     PtnValue callback,
     int has_userdata,
     PtnValue userdata,
+    int userdata_allows_reference,
     size_t line
 ) {
     PtnValue checked_callback = ptn_internal_expect_callback_arg(
@@ -4607,18 +5165,34 @@ static PtnValue ptn_array_walk_recursive_checked(
         slot,
         value
     );
+    PtnObject *object = ptn_array_walk_slot_object(slot, value);
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    int previous_by_ref_argument_notice_pending = runtime->by_ref_argument_notice_pending;
+    int previous_by_ref_argument_notice_emitted = runtime->by_ref_argument_notice_emitted;
+    size_t previous_by_ref_argument_notice_line = runtime->by_ref_argument_notice_line;
     runtime->warn_by_ref_argument_mismatch = 1;
     runtime->throw_argument_count_errors = 1;
+    if (has_userdata && !userdata_allows_reference) {
+        runtime->by_ref_argument_notice_pending = 1;
+        runtime->by_ref_argument_notice_emitted = 0;
+        runtime->by_ref_argument_notice_line = line;
+    }
     ptn_array_walk_recursive_array(
         runtime,
         array,
+        object,
         checked_callback,
         has_userdata,
         userdata,
+        name,
+        local_slot,
+        value,
         line
     );
+    runtime->by_ref_argument_notice_line = previous_by_ref_argument_notice_line;
+    runtime->by_ref_argument_notice_emitted = previous_by_ref_argument_notice_emitted;
+    runtime->by_ref_argument_notice_pending = previous_by_ref_argument_notice_pending;
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     ptn_value_destroy(&checked_callback);
@@ -4632,6 +5206,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_walk_recursive_variable(
     PtnValue callback,
     int has_userdata,
     PtnValue userdata,
+    int userdata_allows_reference,
     size_t line
 ) {
     PtnValue trace_args[3] = {
@@ -4649,7 +5224,58 @@ static PTN_UNUSED PtnValue ptn_runtime_array_walk_recursive_variable(
         has_userdata ? 3 : 2,
         trace_args
     );
-    PtnValue result = ptn_array_walk_recursive_checked(runtime, name, NULL, value, callback, has_userdata, userdata, line);
+    PtnValue result = ptn_array_walk_recursive_checked(
+        runtime,
+        name,
+        NULL,
+        value,
+        callback,
+        has_userdata,
+        userdata,
+        userdata_allows_reference,
+        line
+    );
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_walk_recursive_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnValue callback,
+    int has_userdata,
+    PtnValue userdata,
+    int userdata_allows_reference,
+    size_t line
+) {
+    PtnValue trace_args[3] = {
+        value,
+        callback,
+        userdata
+    };
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        "array_walk_recursive",
+        runtime->source_path,
+        line,
+        has_userdata ? 3 : 2,
+        trace_args
+    );
+    PtnValue local_value = ptn_value_clone(value);
+    PtnValue result = ptn_array_walk_recursive_checked(
+        runtime,
+        NULL,
+        &local_value,
+        local_value,
+        callback,
+        has_userdata,
+        userdata,
+        userdata_allows_reference,
+        line
+    );
+    ptn_value_destroy(&local_value);
     ptn_runtime_pop_trace_frame(runtime, &trace_frame);
     return result;
 }
@@ -6651,6 +7277,7 @@ static PtnValue ptn_internal_array_walk(PtnRuntime *runtime, size_t argc, const 
         args[1],
         argc >= 3,
         argc >= 3 ? args[2] : ptn_null(),
+        1,
         line
     );
     ptn_value_destroy(&value);
@@ -6667,6 +7294,7 @@ static PtnValue ptn_internal_array_walk_recursive(PtnRuntime *runtime, size_t ar
         args[1],
         argc >= 3,
         argc >= 3 ? args[2] : ptn_null(),
+        1,
         line
     );
     ptn_value_destroy(&value);
@@ -16580,6 +17208,59 @@ static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_gettype_value(args[0]);
 }
 
+static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    if (args[0].type != PTN_REFERENCE) {
+        if (runtime->warn_by_ref_argument_mismatch) {
+            ptn_emit_by_reference_argument_warning(runtime, "settype", 1, "var", line);
+            return ptn_bool(0);
+        }
+        ptn_abort_by_reference_argument_error("settype", 1, "var");
+    }
+
+    PtnStringOperand type = ptn_value_to_string_operand(args[1]);
+    PtnValue current = ptn_value_deref(args[0].as.reference->value);
+    PtnValue converted;
+    int valid = 1;
+
+    if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "null")) {
+        converted = ptn_null();
+    } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "integer") ||
+        ptn_ascii_case_equal_span_to_string(type.data, type.len, "int")) {
+        converted = ptn_int(ptn_value_to_integer(current));
+    } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "double") ||
+        ptn_ascii_case_equal_span_to_string(type.data, type.len, "float")) {
+        converted = ptn_float(ptn_value_to_double(current));
+    } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "string")) {
+        PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, current, line);
+        converted = ptn_owned_string_len(
+            ptn_duplicate_string_len(string.data, string.len),
+            string.len
+        );
+        ptn_string_operand_free(string);
+    } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "boolean") ||
+        ptn_ascii_case_equal_span_to_string(type.data, type.len, "bool")) {
+        converted = ptn_bool(ptn_is_truthy(current));
+    } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "array")) {
+        converted = ptn_cast_array(current);
+    } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "object")) {
+        converted = ptn_cast_object(runtime, current);
+    } else {
+        valid = 0;
+        converted = ptn_null();
+    }
+
+    ptn_string_operand_free(type);
+    if (!valid) {
+        ptn_throw_exception(runtime, "ValueError", "settype(): Argument #2 ($type) must be a valid type");
+        return ptn_null();
+    }
+
+    ptn_value_destroy(&args[0].as.reference->value);
+    args[0].as.reference->value = converted;
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_is_null(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -20729,6 +21410,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "scandir", 1, 3, ptn_internal_scandir },
         { "serialize", 1, 1, ptn_internal_serialize },
         { "set_include_path", 1, 1, ptn_internal_set_include_path },
+        { "settype", 2, 2, ptn_internal_settype },
         { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },

@@ -9503,13 +9503,29 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
 fn is_array_path_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "array_pop" | "array_push" | "array_shift" | "array_unshift"
+        "array_pop"
+            | "array_push"
+            | "array_shift"
+            | "array_unshift"
+            | "arsort"
+            | "asort"
+            | "krsort"
+            | "ksort"
+            | "natcasesort"
+            | "natsort"
+            | "rsort"
+            | "shuffle"
+            | "sort"
+            | "uasort"
+            | "uksort"
+            | "usort"
     )
 }
 
 fn is_array_multisort_argument(expr: &Expr) -> bool {
     match expr {
         Expr::Variable(_, _) => true,
+        Expr::Array { .. } => true,
         Expr::Grouped { expr, .. } => is_array_multisort_argument(expr),
         Expr::Int(_, _) => true,
         Expr::Constant(name, _) => matches!(

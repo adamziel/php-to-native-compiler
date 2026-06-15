@@ -1341,6 +1341,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("is_callable") && argument_index == 2 {
         return Some("callable_name");
     }
+    if name.eq_ignore_ascii_case("settype") && argument_index == 0 {
+        return Some("var");
+    }
     if matches!(
         name.to_ascii_lowercase().as_str(),
         "end" | "next" | "prev" | "reset"
@@ -15430,24 +15433,35 @@ impl ValueEmitter {
             || name.eq_ignore_ascii_case("array_walk_recursive"))
             && (arguments.len() == 2 || arguments.len() == 3)
         {
-            let variable_name = variable_name?;
             let array_temp = self.emit_materialized_value(out, &arguments[0]);
             let callback_temp = self.emit_materialized_value(out, &arguments[1]);
             let userdata_temp = arguments
                 .get(2)
                 .map(|argument| self.emit_materialized_value(out, argument));
+            let userdata_allows_reference = arguments
+                .get(2)
+                .is_some_and(|argument| matches!(argument, ValueExpr::Load { .. }));
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ");
-            if name.eq_ignore_ascii_case("array_walk_recursive") {
-                out.push_str("ptn_runtime_array_walk_recursive_variable");
+            if let Some(variable_name) = variable_name {
+                if name.eq_ignore_ascii_case("array_walk_recursive") {
+                    out.push_str("ptn_runtime_array_walk_recursive_variable");
+                } else {
+                    out.push_str("ptn_runtime_array_walk_variable");
+                }
+                out.push_str("(&runtime, \"");
+                out.push_str(&c_string(variable_name));
+                out.push_str("\", ");
             } else {
-                out.push_str("ptn_runtime_array_walk_variable");
+                if name.eq_ignore_ascii_case("array_walk_recursive") {
+                    out.push_str("ptn_runtime_array_walk_recursive_value");
+                } else {
+                    out.push_str("ptn_runtime_array_walk_value");
+                }
+                out.push_str("(&runtime, ");
             }
-            out.push_str("(&runtime, \"");
-            out.push_str(&c_string(variable_name));
-            out.push_str("\", ");
             out.push_str(&array_temp);
             out.push_str(", ");
             out.push_str(&callback_temp);
@@ -15459,6 +15473,8 @@ impl ValueEmitter {
             } else {
                 out.push_str("ptn_null()");
             }
+            out.push_str(", ");
+            out.push_str(if userdata_allows_reference { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
@@ -15475,10 +15491,6 @@ impl ValueEmitter {
             "uasort" | "uksort" | "usort"
         ) && arguments.len() == 2
         {
-            let variable_name = variable_name?;
-            let array_temp = self.emit_materialized_value(out, &arguments[0]);
-            let callback_temp = self.emit_materialized_value(out, &arguments[1]);
-            let result_temp = self.next_temp();
             let helper = if name.eq_ignore_ascii_case("uasort") {
                 "ptn_runtime_array_uasort_variable"
             } else if name.eq_ignore_ascii_case("uksort") {
@@ -15486,22 +15498,64 @@ impl ValueEmitter {
             } else {
                 "ptn_runtime_array_usort_variable"
             };
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ");
-            out.push_str(helper);
-            out.push_str("(&runtime, \"");
-            out.push_str(&c_string(variable_name));
-            out.push_str("\", ");
-            out.push_str(&array_temp);
-            out.push_str(", ");
-            out.push_str(&callback_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &callback_temp);
-            emit_value_cleanup(out, "    ", &array_temp);
-            return Some(result_temp);
+            if let Some(variable_name) = variable_name {
+                let array_temp = self.emit_materialized_value(out, &arguments[0]);
+                let callback_temp = self.emit_materialized_value(out, &arguments[1]);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(helper);
+                out.push_str("(&runtime, \"");
+                out.push_str(&c_string(variable_name));
+                out.push_str("\", ");
+                out.push_str(&array_temp);
+                out.push_str(", ");
+                out.push_str(&callback_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &callback_temp);
+                emit_value_cleanup(out, "    ", &array_temp);
+                return Some(result_temp);
+            }
+
+            if let Some(ReferenceTarget::ArrayDim(target)) =
+                reference_array_dim_target_from_value(first_argument)
+            {
+                let path_helper = if name.eq_ignore_ascii_case("uasort") {
+                    "ptn_runtime_array_uasort_path"
+                } else if name.eq_ignore_ascii_case("uksort") {
+                    "ptn_runtime_array_uksort_path"
+                } else {
+                    "ptn_runtime_array_usort_path"
+                };
+                let path = emit_array_path_segments(out, self, &target.dimensions);
+                let callback_temp = self.emit_materialized_value(out, &arguments[1]);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(path_helper);
+                out.push_str("(&runtime, \"");
+                out.push_str(&c_string(&target.array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&callback_temp);
+                out.push_str(", ");
+                out.push_str(&target.line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &callback_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                return Some(result_temp);
+            }
+
+            return None;
         }
 
         let sort_mutator_with_flags = matches!(
@@ -15599,10 +15653,33 @@ impl ValueEmitter {
                     Some("ptn_runtime_array_prev_path")
                 } else if name.eq_ignore_ascii_case("reset") {
                     Some("ptn_runtime_array_reset_path")
+                } else if name.eq_ignore_ascii_case("arsort") {
+                    Some("ptn_runtime_array_arsort_path")
+                } else if name.eq_ignore_ascii_case("asort") {
+                    Some("ptn_runtime_array_asort_path")
+                } else if name.eq_ignore_ascii_case("krsort") {
+                    Some("ptn_runtime_array_krsort_path")
+                } else if name.eq_ignore_ascii_case("ksort") {
+                    Some("ptn_runtime_array_ksort_path")
+                } else if name.eq_ignore_ascii_case("natcasesort") {
+                    Some("ptn_runtime_array_natcasesort_path")
+                } else if name.eq_ignore_ascii_case("natsort") {
+                    Some("ptn_runtime_array_natsort_path")
+                } else if name.eq_ignore_ascii_case("rsort") {
+                    Some("ptn_runtime_array_rsort_path")
+                } else if name.eq_ignore_ascii_case("shuffle") {
+                    Some("ptn_runtime_array_shuffle_path")
+                } else if name.eq_ignore_ascii_case("sort") {
+                    Some("ptn_runtime_array_sort_path")
                 } else {
                     None
                 }?;
                 let path = emit_array_path_segments(out, self, &target.dimensions);
+                let flag_temp = if sort_flag_argument {
+                    Some(self.emit_materialized_value(out, &arguments[1]))
+                } else {
+                    None
+                };
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
@@ -15615,8 +15692,19 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
+                if sort_mutator_with_flags {
+                    if let Some(flag_temp) = &flag_temp {
+                        out.push_str(flag_temp);
+                    } else {
+                        out.push_str("ptn_int(PTN_SORT_REGULAR)");
+                    }
+                    out.push_str(", ");
+                }
                 out.push_str(&target.line.to_string());
                 out.push_str(");\n");
+                if let Some(flag_temp) = &flag_temp {
+                    emit_value_cleanup(out, "    ", flag_temp);
+                }
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
