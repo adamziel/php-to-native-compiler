@@ -1,0 +1,41 @@
+# Full-corpus ReflectionClass metadata row pack for ptn-w17z.7.
+# Source: ext/reflection/tests rows classified runnable in the local full-corpus
+# reflection probe. Selection focuses constructor/name/parent/has/is/modifier
+# metadata that maps to PTN's declared class, interface, method, property, and
+# constant tables.
+ext/reflection/tests/ReflectionClass_CannotClone_basic.phpt
+ext/reflection/tests/ReflectionClass_constructor_001.phpt
+ext/reflection/tests/ReflectionClass_constructor_002.phpt
+ext/reflection/tests/ReflectionClass_getExtension_variation.phpt
+ext/reflection/tests/ReflectionClass_getExtensionName_variation.phpt
+ext/reflection/tests/ReflectionClass_getConstructor_basic.phpt
+ext/reflection/tests/ReflectionClass_getInterfaceNames_basic.phpt
+ext/reflection/tests/ReflectionClass_getInterfaces_001.phpt
+ext/reflection/tests/ReflectionClass_getMethod_001.phpt
+ext/reflection/tests/ReflectionClass_getMethods_001.phpt
+ext/reflection/tests/ReflectionClass_getModifiers_basic.phpt
+ext/reflection/tests/ReflectionClass_getName_basic.phpt
+ext/reflection/tests/ReflectionClass_getNamespaceName.phpt
+ext/reflection/tests/ReflectionClass_getParentClass.phpt
+ext/reflection/tests/ReflectionClass_hasConstant_001.phpt
+ext/reflection/tests/ReflectionClass_hasConstant_002.phpt
+ext/reflection/tests/ReflectionClass_hasConstant_basic.phpt
+ext/reflection/tests/ReflectionClass_hasMethod_001.phpt
+ext/reflection/tests/ReflectionClass_hasMethod_002.phpt
+ext/reflection/tests/ReflectionClass_hasMethod_basic.phpt
+ext/reflection/tests/ReflectionClass_hasProperty_002.phpt
+ext/reflection/tests/ReflectionClass_hasProperty_basic.phpt
+ext/reflection/tests/ReflectionClass_isAbstract_basic.phpt
+ext/reflection/tests/ReflectionClass_isAnonymous.phpt
+ext/reflection/tests/ReflectionClass_isFinal_basic.phpt
+ext/reflection/tests/ReflectionClass_isInstance_basic.phpt
+ext/reflection/tests/ReflectionClass_isInstantiable_basic.phpt
+ext/reflection/tests/ReflectionClass_isInstantiable_variation.phpt
+ext/reflection/tests/ReflectionClass_isInterface_basic.phpt
+ext/reflection/tests/ReflectionClass_isInternal_basic.phpt
+ext/reflection/tests/ReflectionClass_isIterateable_basic.phpt
+ext/reflection/tests/ReflectionClass_isIterateable_variation1.phpt
+ext/reflection/tests/ReflectionClass_isSubclassOf_002.phpt
+ext/reflection/tests/ReflectionClass_isSubclassOf_basic.phpt
+ext/reflection/tests/ReflectionClass_isUserDefined_basic.phpt
+ext/reflection/tests/ReflectionClass_modifiers_001.phpt
