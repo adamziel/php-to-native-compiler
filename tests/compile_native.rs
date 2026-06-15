@@ -23503,6 +23503,35 @@ fn compile_include_return_value_and_output_to_native_binary() {
 }
 
 #[test]
+fn compile_include_path_variable_concatenation_to_native_binary() {
+    let root = temp_dir("ptn-native-include-path-variable-concat");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("allowed_rounding_error.inc");
+    let output = root.join("include-path-variable-concat-bin");
+    fs::write(
+        &included,
+        "<?php echo \"included:$label\\n\"; return \"allowed\";",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php $label = \"scope\"; $file_path = __DIR__; $result = require($file_path . '/allowed_rounding_error.inc'); echo \"result=$result\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "included:scope\nresult=allowed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_bounded_dynamic_include_paths_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-include-paths");
     fs::create_dir_all(&root).unwrap();
