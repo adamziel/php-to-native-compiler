@@ -924,6 +924,18 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "RuntimeException")) {
         return "RuntimeException";
     }
+    if (ptn_exception_name_equal(class_name, "InvalidArgumentException")) {
+        return "InvalidArgumentException";
+    }
+    if (ptn_exception_name_equal(class_name, "UnexpectedValueException")) {
+        return "UnexpectedValueException";
+    }
+    if (ptn_exception_name_equal(class_name, "OutOfBoundsException")) {
+        return "OutOfBoundsException";
+    }
+    if (ptn_exception_name_equal(class_name, "OutOfRangeException")) {
+        return "OutOfRangeException";
+    }
     if (ptn_exception_name_equal(class_name, "Error")) {
         return "Error";
     }
@@ -998,7 +1010,17 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
     if (ptn_exception_name_equal(type_name, "Exception")) {
         return ptn_exception_name_equal(class_name, "ErrorException") ||
             ptn_exception_name_equal(class_name, "ReflectionException") ||
-            ptn_exception_name_equal(class_name, "RuntimeException");
+            ptn_exception_name_equal(class_name, "RuntimeException") ||
+            ptn_exception_name_equal(class_name, "InvalidArgumentException") ||
+            ptn_exception_name_equal(class_name, "UnexpectedValueException") ||
+            ptn_exception_name_equal(class_name, "OutOfBoundsException") ||
+            ptn_exception_name_equal(class_name, "OutOfRangeException");
+    }
+    if (ptn_exception_name_equal(type_name, "RuntimeException")) {
+        return ptn_exception_name_equal(class_name, "InvalidArgumentException") ||
+            ptn_exception_name_equal(class_name, "UnexpectedValueException") ||
+            ptn_exception_name_equal(class_name, "OutOfBoundsException") ||
+            ptn_exception_name_equal(class_name, "OutOfRangeException");
     }
     if (ptn_exception_name_equal(type_name, "Throwable")) {
         return 1;
@@ -2365,6 +2387,11 @@ static PTN_UNUSED void ptn_rethrow_exception(PtnRuntime *runtime) {
     exit(255);
 }
 
+static PTN_UNUSED int ptn_object_is_internal_or_descendant(PtnValue receiver, const char *class_name) {
+    return receiver.type == PTN_OBJECT &&
+        ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, class_name);
+}
+
 static PTN_UNUSED PtnValue ptn_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -2470,22 +2497,39 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_internal_class_name_is_array_iterator(receiver.as.object->class_name)
-        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+        && (ptn_object_is_internal_or_descendant(receiver, "ArrayIterator") ||
+            ptn_object_is_internal_or_descendant(receiver, "RecursiveArrayIterator"))
+        && ptn_internal_class_method_exists("ArrayIterator", name)
     ) {
         return ptn_array_iterator_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_internal_class_name_is_array_object(receiver.as.object->class_name)
-        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+        && ptn_object_is_internal_or_descendant(receiver, "ArrayObject")
+        && ptn_internal_class_method_exists("ArrayObject", name)
     ) {
         return ptn_array_object_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_internal_class_name_is_iterator_iterator(receiver.as.object->class_name)
-        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+        && ptn_object_is_internal_or_descendant(receiver, "CallbackFilterIterator")
+        && ptn_internal_class_method_exists("CallbackFilterIterator", name)
+    ) {
+        return ptn_callback_filter_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "LimitIterator")
+        && ptn_internal_class_method_exists("LimitIterator", name)
+    ) {
+        return ptn_limit_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && (ptn_object_is_internal_or_descendant(receiver, "FilterIterator") ||
+            ptn_object_is_internal_or_descendant(receiver, "InfiniteIterator") ||
+            ptn_object_is_internal_or_descendant(receiver, "IteratorIterator"))
+        && ptn_internal_class_method_exists("IteratorIterator", name)
     ) {
         return ptn_iterator_iterator_call_method(runtime, receiver, name, argc, args, line);
     }

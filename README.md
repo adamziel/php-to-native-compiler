@@ -52,7 +52,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Direct references and by-reference parameters cover the first COW/reference
   slice; live by-reference `foreach` iterators keep nested unset/rekey mutation
   parity; object `foreach` covers bounded `Iterator`/`IteratorAggregate`
-  protocol dispatch and array-backed SPL iterators; dynamic roots support
+  protocol dispatch, array-backed SPL iterators, and bounded SPL wrappers
+  including `CallbackFilterIterator`, `InfiniteIterator`, `LimitIterator`, and
+  `RecursiveArrayIterator`; dynamic roots support
   reads/writes, array/string-offset writes, unsets, compounds, null coalescing
   assignments, and inc/dec targets.
 - Arithmetic models non-numeric string/array `TypeError`s while preserving

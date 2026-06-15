@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.29 SPL iterator wrapper row pack | 7 | 7 |
 | ptn-w17z.36 extract typed references | 1 | 1 |
 | ptn-2cij ENV/CLEAN SKIPIF preconditions | 33 | 0 |
 | ptn-vj4r class_alias namespace metadata | 5 | 5 |
@@ -28,14 +29,21 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:54Z.
-Measured latest: `ptn-w17z.36` extract typed references selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.36` completed the checked-in extract typed references row pack. Previous: `ptn-vj4r` completed the checked-in class_alias namespace metadata row pack.
+Refresh: 2026-06-15T19:07Z.
+Measured latest: `ptn-w17z.29` SPL iterator wrapper row pack selected 7 rows, kept 7 runnable, and passed 7/7 in the focused run.
+Latest: `ptn-w17z.29` completed the checked-in SPL iterator wrapper row pack. Previous: `ptn-w17z.36` completed the checked-in extract typed references row pack.
 
-Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
+Current hook: `ptn-w17z.29` SPL iterator wrapper row pack passed 7/7 runnable rows at
+`.runtime/ptn-w17z29-final-submit-row-pack/summary-20260615T190455Z.txt`.
+Previous hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
-Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
-`.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
+
+## 2026-06-15 ptn-w17z.29 SPL Iterator Wrapper Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-w17z29-before/summary-20260615T180119Z.txt`) | 7 selected / 2 runnable / 5 classified | 2 |
+| Final rebased checked-in focused run (`.runtime/ptn-w17z29-final-submit-row-pack/summary-20260615T190455Z.txt`) | 7 selected / 7 runnable / 0 classified | 7 |
 
 ## 2026-06-15 ptn-w17z.36 Extract Typed References
 

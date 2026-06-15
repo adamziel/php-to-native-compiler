@@ -1,0 +1,7 @@
+ext/spl/tests/iterator_004.phpt
+ext/spl/tests/iterator_008.phpt
+ext/spl/tests/iterator_032.phpt
+ext/spl/tests/CallbackFilterIteratorTest.phpt
+ext/spl/tests/spl_iterator_iterator_constructor.phpt
+ext/reflection/tests/ReflectionClass_isIterateable_001.phpt
+ext/reflection/tests/ReflectionClass_isIterateable_variation1.phpt

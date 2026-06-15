@@ -155,6 +155,120 @@ foreach ($wrap as $value) {
 }
 
 #[test]
+fn compile_broader_spl_iterator_wrappers_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-iterator-wrappers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-iterator-wrappers.php");
+    let output = root.join("spl-iterator-wrappers-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function keep_odd($value, $key, $inner) {
+    echo "cb:$value/$key/", $value === $inner->current() ? "1" : "0", "\n";
+    return $value === 1 || $value === 3;
+}
+
+$filter = new CallbackFilterIterator(new ArrayIterator([1, 2, 3, 4]), 'keep_odd');
+foreach ($filter as $key => $value) {
+    echo "f:$key=$value\n";
+}
+
+$infinite = new InfiniteIterator(new ArrayIterator(["a", "b"]));
+$seen = 0;
+foreach ($infinite as $key => $value) {
+    echo "i:$key=$value\n";
+    if (++$seen >= 5) {
+        break;
+    }
+}
+
+$limit = new LimitIterator(new ArrayIterator([10, 20, 30, 40]), 1, 2);
+foreach ($limit as $key => $value) {
+    echo "l:$key=$value\n";
+    var_dump($limit->getPosition());
+}
+try {
+    $limit->seek(0);
+} catch (OutOfBoundsException $e) {
+    echo $e->getMessage(), "\n";
+}
+$limit->seek(2);
+var_dump($limit->current());
+try {
+    $limit->seek(3);
+} catch (OutOfBoundsException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$recursive = new RecursiveArrayIterator([1, [2, 3], 4]);
+$recursive->rewind();
+var_dump($recursive->hasChildren());
+$recursive->next();
+var_dump($recursive->hasChildren());
+foreach ($recursive->getChildren() as $value) {
+    echo "r:$value\n";
+}
+
+$ref = new ReflectionClass("LimitIterator");
+var_dump(class_exists("CallbackFilterIterator"));
+var_dump(interface_exists("SeekableIterator"));
+var_dump($ref->isIterateable());
+var_dump($ref->isInstantiable());
+var_dump($ref->getParentClass()->getName());
+var_dump($ref->implementsInterface("OuterIterator"));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_callback_filter_iterator_call_method"));
+    assert!(c_source.contains("ptn_limit_iterator_call_method"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "cb:1/0/1\n",
+            "f:0=1\n",
+            "cb:2/1/1\n",
+            "cb:3/2/1\n",
+            "f:2=3\n",
+            "cb:4/3/1\n",
+            "i:0=a\n",
+            "i:1=b\n",
+            "i:0=a\n",
+            "i:1=b\n",
+            "i:0=a\n",
+            "l:1=20\n",
+            "int(1)\n",
+            "l:2=30\n",
+            "int(2)\n",
+            "Cannot seek to 0 which is below the offset 1\n",
+            "int(30)\n",
+            "Cannot seek to 3 which is behind offset 1 plus count 2\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "r:2\n",
+            "r:3\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(16) \"IteratorIterator\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_validates_traversable_interface_combinations() {
     let direct = parser::parse("<?php class T implements Traversable {}").unwrap_err();
     assert_eq!(
