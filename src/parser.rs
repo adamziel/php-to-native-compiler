@@ -7272,6 +7272,7 @@ fn type_hint_mentions_iterable_or_traversable(type_hint: &TypeHint) -> bool {
         | TypeHint::Float
         | TypeHint::String
         | TypeHint::Bool
+        | TypeHint::Callable
         | TypeHint::Object
         | TypeHint::Mixed
         | TypeHint::Void
@@ -7302,6 +7303,7 @@ fn first_unavailable_intersection_class(
         | TypeHint::Float
         | TypeHint::String
         | TypeHint::Bool
+        | TypeHint::Callable
         | TypeHint::Object
         | TypeHint::Iterable
         | TypeHint::Mixed
@@ -7450,6 +7452,7 @@ enum TypeAtom {
     Float,
     String,
     Bool,
+    Callable,
     Object,
     Mixed,
     Never,
@@ -7490,6 +7493,9 @@ fn type_hint_alternatives(type_hint: &TypeHint) -> Vec<TypeAlternative> {
         }],
         TypeHint::Bool => vec![TypeAlternative {
             atoms: vec![TypeAtom::Bool],
+        }],
+        TypeHint::Callable => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Callable],
         }],
         TypeHint::Object => vec![TypeAlternative {
             atoms: vec![TypeAtom::Object],
@@ -7669,6 +7675,7 @@ fn type_hint_display(type_hint: &TypeHint) -> String {
         TypeHint::Float => "float".to_string(),
         TypeHint::String => "string".to_string(),
         TypeHint::Bool => "bool".to_string(),
+        TypeHint::Callable => "callable".to_string(),
         TypeHint::Object => "object".to_string(),
         TypeHint::Iterable => "Traversable|array".to_string(),
         TypeHint::Mixed => "mixed".to_string(),

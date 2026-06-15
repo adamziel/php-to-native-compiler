@@ -465,11 +465,9 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    return value.type == PTN_OBJECT || value.type == PTN_EXCEPTION || value.type == PTN_CLOSURE;\n");
     out.push_str("}\n");
 
-    out.push_str(
-        "\nstatic PTN_UNUSED int ptn_value_satisfies_iterable_type_hint(PtnValue value) {\n",
-    );
+    out.push_str("\nstatic PTN_UNUSED int ptn_value_satisfies_iterable_type_hint(PtnRuntime *runtime, PtnValue value) {\n");
     out.push_str("    value = ptn_value_deref(value);\n");
-    out.push_str("    return value.type == PTN_ARRAY || ptn_value_satisfies_class_type_hint(value, \"Traversable\");\n");
+    out.push_str("    return value.type == PTN_ARRAY || ptn_value_satisfies_class_type_hint(runtime, value, \"Traversable\");\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -829,21 +827,16 @@ fn emit_user_functions(
                 type_hint_allows_null(type_hint) || parameter_default_value_is_null(parameter);
             let parameter_cast_temp = if let Some(type_hint) = type_hint {
                 if type_hint_uses_generic_runtime_check(type_hint) {
-                    out.push_str("    if (!");
+                    let mut condition =
+                        type_hint_condition(&parameter_source, "caller_runtime", type_hint);
                     if allows_null && !type_hint_allows_null(Some(type_hint)) {
-                        out.push_str("(ptn_value_deref(");
-                        out.push_str(&parameter_source);
-                        out.push_str(").type == PTN_NULL || ");
+                        condition = format!(
+                            "ptn_value_deref({parameter_source}).type == PTN_NULL || ({condition})"
+                        );
                     }
-                    out.push_str(&type_hint_condition(
-                        &parameter_source,
-                        "caller_runtime",
-                        type_hint,
-                    ));
-                    if allows_null && !type_hint_allows_null(Some(type_hint)) {
-                        out.push(')');
-                    }
-                    out.push_str(") {\n");
+                    out.push_str("    if (!(");
+                    out.push_str(&condition);
+                    out.push_str(")) {\n");
                     out.push_str("        ptn_runtime_free(&runtime);\n");
                     out.push_str(
                         "        ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
@@ -1746,20 +1739,6 @@ fn emit_return_type_boundary(
         TypeHint::Object | TypeHint::Iterable | TypeHint::Union(_) | TypeHint::Intersection(_) => {
             emit_generic_return_type_boundary(out, return_type, function_name);
         }
-        TypeHint::Union(_) => {
-            let condition = type_hint_condition("ptn_return_value", "&runtime", return_type);
-            out.push_str("    if (!(");
-            out.push_str(&condition);
-            out.push_str(")) {\n");
-            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-            out.push_str(&c_string(function_name));
-            out.push_str("() return value must be of type ");
-            out.push_str(&c_string(&type_hint_label(return_type)));
-            out.push_str("\");\n");
-            out.push_str("        ptn_runtime_free(&runtime);\n");
-            out.push_str("        exit(255);\n");
-            out.push_str("    }\n");
-        }
         TypeHint::Callable | TypeHint::Mixed | TypeHint::Void => {}
     }
 }
@@ -1813,6 +1792,10 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
         TypeHint::Float => format!("ptn_value_deref({value_expr}).type == PTN_FLOAT"),
         TypeHint::String => format!("ptn_value_deref({value_expr}).type == PTN_STRING"),
         TypeHint::Bool => format!("ptn_value_deref({value_expr}).type == PTN_BOOL"),
+        TypeHint::Object => format!("ptn_value_satisfies_object_type_hint({value_expr})"),
+        TypeHint::Iterable => {
+            format!("ptn_value_satisfies_iterable_type_hint({runtime_expr}, {value_expr})")
+        }
         TypeHint::Callable => "1".to_string(),
         TypeHint::Mixed => "1".to_string(),
         TypeHint::Void | TypeHint::Never => "0".to_string(),
@@ -1830,6 +1813,16 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
             })
             .collect::<Vec<_>>()
             .join(" || "),
+        TypeHint::Intersection(types) => types
+            .iter()
+            .map(|type_hint| {
+                format!(
+                    "({})",
+                    type_hint_condition(value_expr, runtime_expr, type_hint)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" && "),
         TypeHint::Class(class_name) => format!(
             "ptn_value_satisfies_class_type_hint({runtime_expr}, {value_expr}, \"{}\")",
             c_string(class_name)
@@ -1846,16 +1839,36 @@ fn type_hint_label(type_hint: &TypeHint) -> String {
         TypeHint::String => "string".to_string(),
         TypeHint::Bool => "bool".to_string(),
         TypeHint::Callable => "callable".to_string(),
+        TypeHint::Object => "object".to_string(),
+        TypeHint::Iterable => "Traversable|array".to_string(),
         TypeHint::Mixed => "mixed".to_string(),
         TypeHint::Void => "void".to_string(),
         TypeHint::Never => "never".to_string(),
-        TypeHint::Nullable(inner) => format!("?{}", type_hint_label(inner)),
+        TypeHint::Nullable(inner) => match inner.as_ref() {
+            TypeHint::Iterable => "Traversable|array|null".to_string(),
+            TypeHint::Union(_) | TypeHint::Intersection(_) => {
+                format!("{}|null", type_hint_label(inner))
+            }
+            _ => format!("?{}", type_hint_label(inner)),
+        },
         TypeHint::Union(types) => types
+            .iter()
+            .map(type_hint_union_member_label)
+            .collect::<Vec<_>>()
+            .join("|"),
+        TypeHint::Intersection(types) => types
             .iter()
             .map(type_hint_label)
             .collect::<Vec<_>>()
-            .join("|"),
+            .join("&"),
         TypeHint::Class(class_name) => class_name.clone(),
+    }
+}
+
+fn type_hint_union_member_label(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Intersection(_) => format!("({})", type_hint_label(type_hint)),
+        _ => type_hint_label(type_hint),
     }
 }
 
@@ -1864,16 +1877,17 @@ fn emit_generic_return_type_boundary(
     return_type: &TypeHint,
     function_name: &str,
 ) {
-    out.push_str("    if (!");
-    out.push_str(&type_hint_runtime_condition(
+    out.push_str("    if (!(");
+    out.push_str(&type_hint_condition(
         "ptn_return_value",
+        "&runtime",
         return_type,
     ));
-    out.push_str(") {\n");
+    out.push_str(")) {\n");
     out.push_str("        ptn_throw_user_return_type_error(caller_runtime, \"");
     out.push_str(&c_string(function_name));
     out.push_str("\", \"");
-    out.push_str(&c_string(&type_hint_display(return_type)));
+    out.push_str(&c_string(&type_hint_label(return_type)));
     out.push_str("\", ptn_return_value);\n");
     out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
     out.push_str("        ptn_runtime_free(&runtime);\n");
@@ -1893,88 +1907,11 @@ fn type_hint_uses_generic_runtime_check(type_hint: &TypeHint) -> bool {
         | TypeHint::Float
         | TypeHint::String
         | TypeHint::Bool
+        | TypeHint::Callable
         | TypeHint::Mixed
         | TypeHint::Void
         | TypeHint::Never
         | TypeHint::Class(_) => false,
-    }
-}
-
-fn type_hint_runtime_condition(value_expr: &str, type_hint: &TypeHint) -> String {
-    match type_hint {
-        TypeHint::Null => format!("ptn_value_deref({value_expr}).type == PTN_NULL"),
-        TypeHint::Array => format!("ptn_value_deref({value_expr}).type == PTN_ARRAY"),
-        TypeHint::Int => format!("ptn_value_deref({value_expr}).type == PTN_INT"),
-        TypeHint::Float => format!("ptn_value_deref({value_expr}).type == PTN_FLOAT"),
-        TypeHint::String => format!("ptn_value_deref({value_expr}).type == PTN_STRING"),
-        TypeHint::Bool => format!("ptn_value_deref({value_expr}).type == PTN_BOOL"),
-        TypeHint::Object => format!("ptn_value_satisfies_object_type_hint({value_expr})"),
-        TypeHint::Iterable => format!("ptn_value_satisfies_iterable_type_hint({value_expr})"),
-        TypeHint::Mixed | TypeHint::Void => "1".to_string(),
-        TypeHint::Never => "0".to_string(),
-        TypeHint::Nullable(inner) => format!(
-            "(ptn_value_deref({value_expr}).type == PTN_NULL || {})",
-            type_hint_runtime_condition(value_expr, inner)
-        ),
-        TypeHint::Union(types) => {
-            let conditions = types
-                .iter()
-                .map(|type_hint| type_hint_runtime_condition(value_expr, type_hint))
-                .collect::<Vec<_>>();
-            format!("({})", conditions.join(" || "))
-        }
-        TypeHint::Intersection(types) => {
-            let conditions = types
-                .iter()
-                .map(|type_hint| type_hint_runtime_condition(value_expr, type_hint))
-                .collect::<Vec<_>>();
-            format!("({})", conditions.join(" && "))
-        }
-        TypeHint::Class(class_name) => format!(
-            "ptn_value_satisfies_class_type_hint({value_expr}, \"{}\")",
-            c_string(class_name)
-        ),
-    }
-}
-
-fn type_hint_display(type_hint: &TypeHint) -> String {
-    match type_hint {
-        TypeHint::Null => "null".to_string(),
-        TypeHint::Array => "array".to_string(),
-        TypeHint::Int => "int".to_string(),
-        TypeHint::Float => "float".to_string(),
-        TypeHint::String => "string".to_string(),
-        TypeHint::Bool => "bool".to_string(),
-        TypeHint::Object => "object".to_string(),
-        TypeHint::Iterable => "Traversable|array".to_string(),
-        TypeHint::Mixed => "mixed".to_string(),
-        TypeHint::Void => "void".to_string(),
-        TypeHint::Never => "never".to_string(),
-        TypeHint::Nullable(inner) => match inner.as_ref() {
-            TypeHint::Iterable => "Traversable|array|null".to_string(),
-            TypeHint::Union(_) | TypeHint::Intersection(_) => {
-                format!("{}|null", type_hint_display(inner))
-            }
-            _ => format!("?{}", type_hint_display(inner)),
-        },
-        TypeHint::Union(types) => types
-            .iter()
-            .map(type_hint_union_member_display)
-            .collect::<Vec<_>>()
-            .join("|"),
-        TypeHint::Intersection(types) => types
-            .iter()
-            .map(type_hint_display)
-            .collect::<Vec<_>>()
-            .join("&"),
-        TypeHint::Class(class_name) => class_name.clone(),
-    }
-}
-
-fn type_hint_union_member_display(type_hint: &TypeHint) -> String {
-    match type_hint {
-        TypeHint::Intersection(_) => format!("({})", type_hint_display(type_hint)),
-        _ => type_hint_display(type_hint),
     }
 }
 
@@ -2038,22 +1975,15 @@ fn emit_nullable_return_type_boundary(
             out.push_str("    }\n");
         }
         TypeHint::Null
-<<<<<<< HEAD
         | TypeHint::Object
         | TypeHint::Iterable
-=======
         | TypeHint::Callable
->>>>>>> origin/master
         | TypeHint::Mixed
         | TypeHint::Void
         | TypeHint::Never
         | TypeHint::Nullable(_)
-<<<<<<< HEAD
         | TypeHint::Union(_)
         | TypeHint::Intersection(_) => {}
-=======
-        | TypeHint::Union(_) => {}
->>>>>>> origin/master
     }
 }
 
@@ -2066,21 +1996,15 @@ fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static
         Some(
             TypeHint::Null
             | TypeHint::Array
-<<<<<<< HEAD
             | TypeHint::Object
             | TypeHint::Iterable
-=======
             | TypeHint::Callable
->>>>>>> origin/master
             | TypeHint::Mixed
             | TypeHint::Void
             | TypeHint::Never
             | TypeHint::Nullable(_)
             | TypeHint::Union(_)
-<<<<<<< HEAD
             | TypeHint::Intersection(_)
-=======
->>>>>>> origin/master
             | TypeHint::Class(_),
         )
         | None => None,
@@ -6222,7 +6146,7 @@ fn collect_function_parameter_default_diagnostics(
         diagnostics.fatal = Some(ParameterDefaultFatal {
             parameter_name: parameter.name.clone(),
             default_type_name: default_type_name.to_string(),
-            expected_type_name: type_hint_display(type_hint),
+            expected_type_name: type_hint_label(type_hint),
             line: function.line,
         });
         break;
@@ -6237,7 +6161,9 @@ fn type_hint_accepts_default_value(type_hint: &TypeHint, value: &ValueExpr) -> b
         TypeHint::Float => matches!(value, ValueExpr::Float(_)),
         TypeHint::String => matches!(value, ValueExpr::String(_)),
         TypeHint::Bool => matches!(value, ValueExpr::Bool(_)),
-        TypeHint::Object | TypeHint::Intersection(_) | TypeHint::Class(_) => false,
+        TypeHint::Callable | TypeHint::Object | TypeHint::Intersection(_) | TypeHint::Class(_) => {
+            false
+        }
         TypeHint::Iterable => matches!(value, ValueExpr::Array(_)),
         TypeHint::Mixed => true,
         TypeHint::Void | TypeHint::Never => false,
@@ -6260,6 +6186,7 @@ fn type_hint_allows_implicit_nullable_default(type_hint: &TypeHint) -> bool {
         | TypeHint::Float
         | TypeHint::String
         | TypeHint::Bool
+        | TypeHint::Callable
         | TypeHint::Object
         | TypeHint::Iterable
         | TypeHint::Intersection(_)

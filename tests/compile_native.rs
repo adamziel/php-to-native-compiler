@@ -1536,23 +1536,14 @@ fn parser_accepts_class_name_parameter_and_return_type_hints() {
 }
 
 #[test]
-<<<<<<< HEAD
 fn parser_accepts_iterable_object_union_intersection_and_dnf_type_hints() {
     let program = parser::parse(
         "<?php function test(object $object, iterable $iterable, (A&B)|array $value): object|iterable {}",
-=======
-fn parser_accepts_union_parameter_and_return_type_hints() {
-    let program = parser::parse(
-        "<?php namespace App; use Vendor\\Type as Imported; \
-         function test(int|float $number, null|Imported $maybe): string|\\Vendor\\Type { return $maybe; } \
-         $callback = fn(int|float ...$values): int|float => $values[0];",
->>>>>>> origin/master
     )
     .unwrap();
 
     let function = &program.functions[0];
     assert_eq!(
-<<<<<<< HEAD
         function.return_type,
         Some(TypeHint::Union(vec![TypeHint::Object, TypeHint::Iterable,]))
     );
@@ -1624,7 +1615,20 @@ class ChildDnf extends ParentDnf {
     assert_eq!(
         error.message,
         "Declaration of ChildDnf::both(): LeftMarker|RightMarker must be compatible with ParentDnf::both(): LeftMarker&RightMarker"
-=======
+    );
+}
+
+#[test]
+fn parser_accepts_union_parameter_and_return_type_hints() {
+    let program = parser::parse(
+        "<?php namespace App; use Vendor\\Type as Imported; \
+         function test(int|float $number, null|Imported $maybe): string|\\Vendor\\Type { return $maybe; } \
+         $callback = fn(int|float ...$values): int|float => $values[0];",
+    )
+    .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(
         function.parameters[0].type_hint,
         Some(TypeHint::Union(vec![TypeHint::Int, TypeHint::Float]))
     );
@@ -1657,7 +1661,6 @@ class ChildDnf extends ParentDnf {
     assert_eq!(
         closure.return_type,
         Some(TypeHint::Union(vec![TypeHint::Int, TypeHint::Float]))
->>>>>>> origin/master
     );
 }
 
@@ -12432,7 +12435,6 @@ fn compile_array_type_errors_to_native_binary() {
 }
 
 #[test]
-<<<<<<< HEAD
 fn compile_iterable_default_value_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-iterable-default-value-diagnostics");
     fs::create_dir_all(&root).unwrap();
@@ -12536,7 +12538,9 @@ try { invalid_return(); } catch (TypeError $e) { echo \"return error: \", $e->ge
     assert!(c_source.contains("ptn_value_satisfies_iterable_type_hint"));
     assert!(c_source.contains("ptn_value_satisfies_object_type_hint"));
     assert!(c_source.contains("ptn_throw_user_return_type_error"));
-=======
+}
+
+#[test]
 fn compile_union_typed_user_function_parameters_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-union-type");
     fs::create_dir_all(&root).unwrap();
@@ -12583,11 +12587,17 @@ var_dump(collect(1, 2.5));",
     let error_execution = Command::new(&error_output).output().unwrap();
     assert!(!error_execution.status.success());
     assert_eq!(error_execution.status.code(), Some(255));
-    assert_eq!(
-        String::from_utf8(error_execution.stderr).unwrap(),
-        "Fatal error: safe_to_string() argument $number must be of type int|float\n"
+    let error_stderr = String::from_utf8(error_execution.stderr).unwrap();
+    assert!(
+        error_stderr.contains(
+            "Fatal error: safe_to_string(): Argument #1 ($number) must be of type int|float, array given, called in "
+        ),
+        "{error_stderr}"
     );
->>>>>>> origin/master
+    assert!(
+        error_stderr.contains("user-function-union-type-error.php on line 1\n"),
+        "{error_stderr}"
+    );
 }
 
 #[test]

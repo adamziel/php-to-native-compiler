@@ -2,16 +2,13 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
-<<<<<<< HEAD
 | ptn-w17z.31 iterable/DNF type row pack | 27 | 27 |
-=======
 | ptn-vj4r class_alias namespace metadata | 5 | 5 |
 | ptn-144g parser residual row pack | 2 | 2 |
 | ptn-evvk stream mode diagnostics | 8 | 8 |
 | ptn-w17z.26 Serializable/SPL unserialize row pack | 5 | 5 |
 | ptn-w17z.23 union type declaration parser row | 1 | 1 |
 | ptn-utht filtered stream copy row pack | 4 | 4 |
->>>>>>> origin/master
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
 | ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
@@ -30,15 +27,14 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-<<<<<<< HEAD
 Refresh: 2026-06-15T18:40Z.
 Measured latest: `ptn-w17z.31` iterable/DNF type row pack selected 27 rows, kept 27 runnable, and passed 27/27 in the focused run.
-Latest: `ptn-w17z.31` completed the checked-in iterable/DNF type row pack. Previous: `ptn-vqg1` completed the checked-in temp stream wrappers row pack.
+Latest: `ptn-w17z.31` completed the checked-in iterable/DNF type row pack. Previous: `ptn-vj4r` completed the checked-in class_alias namespace metadata row pack.
 
 Current hook: `ptn-w17z.31` iterable/DNF type row pack passed 27/27 at
 `.runtime/ptn-w17z31-final-focused-27-pass/run-20260615T183817Z-manifest.log`.
-Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
-`.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
+Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
+`.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
 
 ## 2026-06-15 ptn-w17z.31 Iterable/DNF Type Row Pack
 
@@ -54,15 +50,6 @@ union, intersection, and DNF user type hints; method signature compatibility
 for iterable, object, and DNF variance; iterable union/intersection redundancy
 diagnostics; declaration-time default diagnostics for iterable defaults; and
 runtime checks/errors for composite parameter and return type boundaries.
-=======
-Refresh: 2026-06-15T18:37Z.
-Measured latest: `ptn-vj4r` class_alias namespace metadata selected 5 rows, kept 5 runnable, and passed 5/5 in the focused run.
-Latest: `ptn-vj4r` completed the checked-in class_alias namespace metadata row pack. Previous: `ptn-144g` completed the checked-in parser residual row pack.
-
-Current hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
-`.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
-Previous hook: `ptn-144g` parser residual row pack passed 2/2 at
-`.runtime/merge-ptn-144g-parser-residuals/summary-20260615T182723Z.txt`.
 
 ## 2026-06-15 ptn-vj4r Class Alias Namespace Metadata
 
@@ -108,7 +95,6 @@ Previous hook: `ptn-144g` parser residual row pack passed 2/2 at
 | Current master focused baseline (`/tmp/ptn-utht-before/.runtime/ptn-utht-filtered-stream-copy-before/summary-20260615T162046Z.txt`) | 4 selected / 4 runnable / 0 classified | 0 |
 | Final rebased branch focused (`.runtime/ptn-utht-filtered-stream-copy-rebased/summary-20260615T162747Z.txt`) | 4 selected / 4 runnable / 0 classified | 4 |
 | Integrated focused merge run (`.runtime/merge-ptn-utht-filtered-stream-copy/summary-20260615T175250Z.txt`) | 4 selected / 4 runnable | 4 |
->>>>>>> origin/master
 
 ## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
 
