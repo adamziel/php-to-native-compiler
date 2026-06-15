@@ -21,12 +21,12 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:26Z.
+Refresh: 2026-06-15T17:34Z.
 Measured latest: `ptn-w17z.36` extract typed references selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
 Latest: `ptn-w17z.36` enforces typed-property references when `extract()` writes into existing aliases. Previous: `ptn-vqg1` completed the checked-in temp stream wrappers row pack.
 
 Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
-`.runtime/ptn-w17z36-extract-typed-ref/run-20260615T172529Z-manifest.log`.
+`.runtime/ptn-w17z36-extract-typed-ref-postrebase/run-20260615T173320Z-manifest.log`.
 Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
 `.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
 
@@ -34,7 +34,7 @@ Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
 
 | Evidence | Ported tests | Passed tests |
 | --- | ---: | ---: |
-| Focused acceptance row (`.runtime/ptn-w17z36-extract-typed-ref/run-20260615T172529Z-manifest.log`) | 1 selected / 1 runnable | 1 |
+| Final rebased focused acceptance row (`.runtime/ptn-w17z36-extract-typed-ref-postrebase/run-20260615T173320Z-manifest.log`) | 1 selected / 1 runnable | 1 |
 
 ## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
 
