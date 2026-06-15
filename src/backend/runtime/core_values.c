@@ -309,6 +309,7 @@ typedef struct {
     size_t index;
     size_t length;
     PtnArrayKey current_key;
+    PtnValue *watched_slot;
     int has_current_key;
     int valid;
     int live;

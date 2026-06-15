@@ -19600,6 +19600,50 @@ var_dump($x, $removed, $a, $rep, function_exists(\"array_splice\"));",
 }
 
 #[test]
+fn compile_foreach_by_ref_array_splice_replacement_iterator_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-by-ref-array-splice-replacement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-by-ref-array-splice-replacement.php");
+    let output = root.join("foreach-by-ref-array-splice-replacement-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [4];\n\
+$i = 0;\n\
+foreach ($items as &$item) {\n\
+    var_dump($item);\n\
+    $items = array_splice($items, 0);\n\
+    if (++$i == 2) {\n\
+        break;\n\
+    }\n\
+}\n\
+var_dump($items);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(4)\n",
+            "int(4)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  &int(4)\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_iterator_refresh_watched_array"));
+    assert!(c_source.contains("ptn_internal_array_splice"));
+}
+
+#[test]
 fn compile_array_walk_recursive_to_native_binary() {
     let root = temp_dir("ptn-native-array-walk-recursive");
     fs::create_dir_all(&root).unwrap();
