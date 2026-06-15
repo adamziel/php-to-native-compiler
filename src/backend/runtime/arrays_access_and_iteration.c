@@ -650,6 +650,21 @@ static PTN_UNUSED int ptn_magic_property_get_exists(PtnRuntime *runtime, PtnValu
     return runtime->magic_property_get_exists(runtime, receiver);
 }
 
+static PTN_UNUSED int ptn_magic_property_isset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    int *isset_out
+) {
+    if (runtime == NULL ||
+        runtime->magic_property_isset == NULL ||
+        runtime->in_magic_property_dispatch) {
+        return 0;
+    }
+    return runtime->magic_property_isset(runtime, receiver, property, line, isset_out);
+}
+
 static PTN_UNUSED int ptn_magic_property_set(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -1122,7 +1137,6 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     const char *access_scope,
     size_t line
 ) {
-    (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
@@ -1136,6 +1150,14 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         1
     );
     if (storage_key == NULL) {
+        PtnValue magic_value;
+        if (
+            runtime != NULL &&
+            runtime->magic_property_read != NULL &&
+            runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
+        ) {
+            return ptn_lookup_found(magic_value);
+        }
         return ptn_lookup_missing();
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
@@ -1143,6 +1165,14 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
+        PtnValue magic_value;
+        if (
+            runtime != NULL &&
+            runtime->magic_property_read != NULL &&
+            runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
+        ) {
+            return ptn_lookup_found(magic_value);
+        }
         return ptn_lookup_missing();
     }
     return ptn_lookup_found(ptn_value_clone_deref(entry->value));
@@ -1155,7 +1185,6 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
     const char *access_scope,
     size_t line
 ) {
-    (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
@@ -1169,6 +1198,14 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         1
     );
     if (storage_key == NULL) {
+        PtnValue magic_value;
+        if (
+            runtime != NULL &&
+            runtime->magic_property_read != NULL &&
+            runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
+        ) {
+            return ptn_lookup_found(magic_value);
+        }
         return ptn_lookup_missing();
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
@@ -1176,9 +1213,61 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
+        PtnValue magic_value;
+        if (
+            runtime != NULL &&
+            runtime->magic_property_read != NULL &&
+            runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
+        ) {
+            return ptn_lookup_found(magic_value);
+        }
         return ptn_lookup_missing();
     }
     return ptn_lookup_found(ptn_value_clone_deref(entry->value));
+}
+
+static PTN_UNUSED int ptn_object_property_is_set(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return 0;
+    }
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        1
+    );
+    if (storage_key == NULL) {
+        int magic_isset = 0;
+        if (ptn_magic_property_isset(runtime, receiver, property, line, &magic_isset)) {
+            return magic_isset;
+        }
+        return 0;
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
+    ptn_array_key_free(key);
+    free(storage_key);
+    if (entry == NULL) {
+        if (metadata == NULL || metadata->is_unset) {
+            int magic_isset = 0;
+            if (ptn_magic_property_isset(runtime, receiver, property, line, &magic_isset)) {
+                return magic_isset;
+            }
+        }
+        return 0;
+    }
+    return ptn_value_deref(entry->value).type != PTN_NULL;
 }
 
 static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(

@@ -873,12 +873,6 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires final class/method override metadata",
         ),
         (
-            "magic isset dispatch",
-            "--TEST--\nmagic\n--FILE--\n<?php\nclass Bag { public function __isset($name) { return true; } }\n--EXPECT--\n",
-            "unsupported-magic-method-metadata\t",
-            "requires general __isset() magic property dispatch",
-        ),
-        (
             "magic sleep metadata",
             "--TEST--\nmagic\n--FILE--\n<?php\nclass Bag { public function __sleep() { return []; } }\n--EXPECT--\n",
             "unsupported-magic-method-metadata\t",
@@ -1065,11 +1059,6 @@ fn phpt_classifier_keeps_object_string_array_helpers_runnable() {
 fn phpt_classifier_splits_remaining_magic_method_metadata_blockers() {
     let cases = [
         (
-            "property magic isset hook",
-            "--TEST--\nmagic isset\n--FILE--\n<?php\nclass Box { public function __isset($name) { return true; } }\n--EXPECT--\n",
-            "requires general __isset() magic property dispatch",
-        ),
-        (
             "sleep hook",
             "--TEST--\nmagic sleep\n--FILE--\n<?php\nclass Box { public function __sleep() { return []; } }\n--EXPECT--\n",
             "requires magic method dispatch/reflection metadata",
@@ -1095,8 +1084,10 @@ fn phpt_classifier_keeps_supported_magic_property_and_debug_rows_runnable() {
         "--TEST--\nmagic get\n--FILE--\n<?php\nclass Box { public function __get($name) { return 1; } }\necho (new Box)->x;\n--EXPECT--\n1\n",
         "--TEST--\nmagic get by ref\n--FILE--\n<?php\nclass Box { public function &__get($name) { return $this->x; } }\n--EXPECT--\n",
         "--TEST--\nmagic set\n--FILE--\n<?php\nclass Box { public function __set($name, $value) { echo $name; } }\n(new Box)->x = 1;\n--EXPECT--\nx\n",
+        "--TEST--\nmagic isset\n--FILE--\n<?php\nclass Box { public function __isset($name) { return true; } }\nvar_dump(isset((new Box)->x));\n--EXPECT--\nbool(true)\n",
         "--TEST--\nmagic unset\n--FILE--\n<?php\nclass Box { public function __unset($name) { echo $name; } }\nunset((new Box)->x);\n--EXPECT--\nx\n",
         "--TEST--\nmagic debug\n--FILE--\n<?php\nclass Box { public function __debugInfo() { return []; } }\nvar_dump(new Box);\n--EXPECT--\nobject(Box)#1 (0) {\n}\n",
+        "--TEST--\nmagic static call\n--FILE--\n<?php\nclass Box { public static function __callStatic($name, $args) { return $name; } }\necho Box::missing();\n--EXPECT--\nmissing\n",
     ] {
         assert_eq!(
             classify(source),

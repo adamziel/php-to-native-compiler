@@ -3918,7 +3918,7 @@ impl Parser<'_> {
                     expr = if let Some(name) = literal_name {
                         Expr::MethodCall {
                             receiver: Box::new(expr),
-                            name: name.to_ascii_lowercase(),
+                            name,
                             arguments,
                             argument_names,
                             argument_unpacks,
@@ -3959,27 +3959,70 @@ impl Parser<'_> {
                     let start_span = expr.span();
                     let scope_span = self.advance().span;
                     let member = self.advance().clone();
-                    if let TokenKind::Identifier(member_name) = member.kind {
-                        if member_name.eq_ignore_ascii_case("class")
-                            && !matches!(self.peek().kind, TokenKind::LeftParen)
-                        {
-                            if dynamic_class_name_fetch_has_illegal_literal_receiver(&expr) {
-                                return Err(Diagnostic::new(
-                                    "Illegal class name",
-                                    Some(start_span),
-                                ));
+                    let (literal_name, dynamic_name, member_span) = match member.kind {
+                        TokenKind::Identifier(member_name) => {
+                            if member_name.eq_ignore_ascii_case("class")
+                                && !matches!(self.peek().kind, TokenKind::LeftParen)
+                            {
+                                if dynamic_class_name_fetch_has_illegal_literal_receiver(&expr) {
+                                    return Err(Diagnostic::new(
+                                        "Illegal class name",
+                                        Some(start_span),
+                                    ));
+                                }
+                                expr = Expr::DynamicClassNameFetch {
+                                    receiver: Box::new(expr),
+                                    span: combine_spans(start_span, member.span),
+                                };
+                                continue;
                             }
-                            expr = Expr::DynamicClassNameFetch {
-                                receiver: Box::new(expr),
-                                span: combine_spans(start_span, member.span),
-                            };
-                            continue;
+                            (Some(member_name), None, member.span)
                         }
+                        TokenKind::Variable(name) => {
+                            (None, Some(Expr::Variable(name, member.span)), member.span)
+                        }
+                        TokenKind::LeftBrace => {
+                            let name_expr = self.parse_expr()?;
+                            let right_span = self.expect_right_brace()?;
+                            let member_span = combine_spans(member.span, right_span);
+                            match literal_member_name_from_expr(&name_expr) {
+                                Some(name) => (Some(name), None, member_span),
+                                None => (None, Some(name_expr), member_span),
+                            }
+                        }
+                        _ => {
+                            return Err(Diagnostic::new(
+                                CLASS_CONSTANT_FETCH_UNSUPPORTED,
+                                Some(scope_span),
+                            ));
+                        }
+                    };
+                    if !matches!(self.peek().kind, TokenKind::LeftParen) {
+                        return Err(Diagnostic::new(
+                            CLASS_CONSTANT_FETCH_UNSUPPORTED,
+                            Some(scope_span),
+                        ));
                     }
-                    return Err(Diagnostic::new(
-                        CLASS_CONSTANT_FETCH_UNSUPPORTED,
-                        Some(scope_span),
-                    ));
+                    if self.peek_is_first_class_callable_arguments() {
+                        return Err(Diagnostic::new(
+                            "dynamic first-class static method callables are unsupported",
+                            Some(member_span),
+                        ));
+                    }
+                    let receiver_span = expr.span();
+                    let class_name_fetch = Expr::DynamicClassNameFetch {
+                        receiver: Box::new(expr),
+                        span: combine_spans(start_span, receiver_span),
+                    };
+                    let method_name = literal_name.map_or_else(
+                        || dynamic_name.expect("dynamic static member expression"),
+                        |name| Expr::String(name, member_span),
+                    );
+                    expr = self.parse_dynamic_static_method_call_expr(
+                        class_name_fetch,
+                        start_span,
+                        method_name,
+                    )?;
                 }
                 TokenKind::PlusPlus | TokenKind::MinusMinus => {
                     let op_token = self.advance().clone();
@@ -4391,13 +4434,26 @@ impl Parser<'_> {
         class_span: SourceSpan,
         method_name: Expr,
     ) -> Result<Expr> {
+        self.parse_dynamic_static_method_call_expr(
+            Expr::String(class_name, class_span),
+            class_span,
+            method_name,
+        )
+    }
+
+    fn parse_dynamic_static_method_call_expr(
+        &mut self,
+        class_name: Expr,
+        class_span: SourceSpan,
+        method_name: Expr,
+    ) -> Result<Expr> {
         let (arguments, argument_names, argument_unpacks, right_span) =
             self.parse_call_arguments()?;
         let callable = Expr::Array {
             elements: vec![
                 ArrayElement {
                     key: None,
-                    value: ArrayElementValue::Value(Expr::String(class_name, class_span)),
+                    value: ArrayElementValue::Value(class_name),
                 },
                 ArrayElement {
                     key: None,

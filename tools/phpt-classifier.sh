@@ -1539,7 +1539,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /(^|[^[:alnum:]_$])array_column[[:space:]]*\(/) {
                 array_column_seen = 1
             }
-            if (line ~ /function[[:space:]]+&?[[:space:]]*__(callstatic|serialize|unserialize|sleep|wakeup)[[:space:]]*\(/) {
+            if (line ~ /function[[:space:]]+&?[[:space:]]*__(serialize|unserialize|sleep|wakeup)[[:space:]]*\(/) {
                 print "unsupported-magic-method-metadata\trequires magic method dispatch/reflection metadata, outside PTN modeled object/class metadata"
                 found = 1
                 exit
@@ -1643,11 +1643,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
         }
         END {
-            if (!found && magic_isset_seen &&
-                !(array_column_seen && magic_get_seen && magic_isset_seen)) {
-                print "unsupported-magic-method-metadata\trequires general __isset() magic property dispatch, outside PTN modeled array_column() property extraction"
-                found = 1
-            }
             if (!found && object_string_seen && object_string_unsupported_reason != "") {
                 print "unsupported-object-string-conversion-metadata\t" object_string_unsupported_reason
                 found = 1

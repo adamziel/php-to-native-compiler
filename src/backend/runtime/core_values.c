@@ -480,6 +480,13 @@ typedef int (*PtnMagicPropertyReadHandler)(
     int require_isset,
     PtnValue *value_out
 );
+typedef int (*PtnMagicPropertyIssetHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    int *isset_out
+);
 typedef int (*PtnMagicPropertyGetHandler)(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -541,6 +548,7 @@ struct PtnRuntime {
     PtnClassScopeAllowsHandler class_scope_allows;
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
     PtnMagicPropertyReadHandler magic_property_read;
+    PtnMagicPropertyIssetHandler magic_property_isset;
     int *declared_user_functions;
     PtnMagicPropertyGetHandler magic_property_get;
     PtnMagicPropertyGetExistsHandler magic_property_get_exists;

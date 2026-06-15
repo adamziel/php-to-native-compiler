@@ -44,6 +44,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->class_scope_allows = caller_runtime->class_scope_allows;
     runtime->declared_class_is_readonly = caller_runtime->declared_class_is_readonly;
     runtime->magic_property_read = caller_runtime->magic_property_read;
+    runtime->magic_property_isset = caller_runtime->magic_property_isset;
     runtime->declared_user_functions = caller_runtime->declared_user_functions;
     runtime->magic_property_get = caller_runtime->magic_property_get;
     runtime->magic_property_get_exists = caller_runtime->magic_property_get_exists;
@@ -1441,6 +1442,8 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_class_name(
         class_name = receiver.as.exception->class_name;
     } else if (receiver.type == PTN_CLOSURE) {
         class_name = "Closure";
+    } else if (receiver.type == PTN_STRING) {
+        return ptn_value_clone_deref(receiver);
     }
     if (class_name != NULL) {
         return ptn_owned_string(ptn_duplicate_string(class_name));
