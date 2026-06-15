@@ -28274,6 +28274,7 @@ static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_reflection_get_modifier_names(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -28693,6 +28694,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "readdir", 1, 1, ptn_internal_readdir },
         { "readfile", 1, 3, ptn_internal_readfile },
         { "realpath", 1, 1, ptn_internal_realpath },
+        { "Reflection::getModifierNames", 1, 1, ptn_internal_reflection_get_modifier_names },
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
         { "reset", 1, 1, ptn_internal_reset },
@@ -34082,6 +34084,59 @@ static PtnValue ptn_internal_reflection_class_is_iterateable_static(
         line
     );
     return ptn_null();
+}
+
+static void ptn_reflection_modifier_names_add(PtnValue result, int64_t *index, const char *name) {
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key((*index)++),
+        ptn_string(name)
+    );
+}
+
+static PtnValue ptn_internal_reflection_get_modifier_names(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    int64_t modifiers = ptn_value_to_integer(args[0]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    if ((modifiers & 1) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "public");
+    }
+    if ((modifiers & 2) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "protected");
+    }
+    if ((modifiers & 4) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "private");
+    }
+    if ((modifiers & 64) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "abstract");
+    }
+    if ((modifiers & 32) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "final");
+    }
+    if ((modifiers & 16) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "static");
+    }
+    if ((modifiers & 128) != 0 || (modifiers & 65536) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "readonly");
+    }
+    if ((modifiers & 512) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "virtual");
+    }
+    if ((modifiers & 2048) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "protected(set)");
+    }
+    if ((modifiers & 4096) != 0) {
+        ptn_reflection_modifier_names_add(result, &index, "private(set)");
+    }
+    return result;
 }
 
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
