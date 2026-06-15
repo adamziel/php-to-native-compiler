@@ -1446,6 +1446,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     {
         return Some("count");
     }
+    if name.eq_ignore_ascii_case("parse_str") && argument_index == 1 {
+        return Some("result");
+    }
     if (name.eq_ignore_ascii_case("str_replace") || name.eq_ignore_ascii_case("str_ireplace"))
         && argument_index == 3
     {
@@ -1453,6 +1456,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     }
     if name.eq_ignore_ascii_case("similar_text") && argument_index == 2 {
         return Some("percent");
+    }
+    if name.eq_ignore_ascii_case("sscanf") && argument_index >= 2 {
+        return Some("var");
     }
     if name.eq_ignore_ascii_case("is_callable") && argument_index == 2 {
         return Some("callable_name");

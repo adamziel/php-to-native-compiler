@@ -23,6 +23,7 @@
 #include <sys/utime.h>
 #else
 #include <dirent.h>
+#include <langinfo.h>
 #include <regex.h>
 #include <sys/utsname.h>
 #include <utime.h>
@@ -156,6 +157,13 @@ typedef struct {
 #define PTN_ENT_XHTML 32
 #define PTN_ENT_HTML5 48
 #define PTN_ENT_DISALLOWED 128
+#define PTN_CRYPT_SALT_LENGTH 123
+#define PTN_CRYPT_STD_DES 1
+#define PTN_CRYPT_EXT_DES 1
+#define PTN_CRYPT_MD5 1
+#define PTN_CRYPT_BLOWFISH 1
+#define PTN_CRYPT_SHA256 1
+#define PTN_CRYPT_SHA512 1
 #define PTN_STR_PAD_LEFT 0
 #define PTN_STR_PAD_RIGHT 1
 #define PTN_STR_PAD_BOTH 2
@@ -182,6 +190,49 @@ typedef struct {
 #define PTN_LC_MONETARY 4
 #define PTN_LC_MESSAGES 5
 #define PTN_LC_ALL 6
+#define PTN_ABDAY_1 131072
+#define PTN_ABDAY_2 131073
+#define PTN_ABDAY_3 131074
+#define PTN_ABDAY_4 131075
+#define PTN_ABDAY_5 131076
+#define PTN_ABDAY_6 131077
+#define PTN_ABDAY_7 131078
+#define PTN_DAY_1 131079
+#define PTN_DAY_2 131080
+#define PTN_DAY_3 131081
+#define PTN_DAY_4 131082
+#define PTN_DAY_5 131083
+#define PTN_DAY_6 131084
+#define PTN_DAY_7 131085
+#define PTN_ABMON_1 131086
+#define PTN_ABMON_2 131087
+#define PTN_ABMON_3 131088
+#define PTN_ABMON_4 131089
+#define PTN_ABMON_5 131090
+#define PTN_ABMON_6 131091
+#define PTN_ABMON_7 131092
+#define PTN_ABMON_8 131093
+#define PTN_ABMON_9 131094
+#define PTN_ABMON_10 131095
+#define PTN_ABMON_11 131096
+#define PTN_ABMON_12 131097
+#define PTN_MON_1 131098
+#define PTN_MON_2 131099
+#define PTN_MON_3 131100
+#define PTN_MON_4 131101
+#define PTN_MON_5 131102
+#define PTN_MON_6 131103
+#define PTN_MON_7 131104
+#define PTN_MON_8 131105
+#define PTN_MON_9 131106
+#define PTN_MON_10 131107
+#define PTN_MON_11 131108
+#define PTN_MON_12 131109
+#define PTN_RADIXCHAR 65536
+#define PTN_THOUSEP 65537
+#define PTN_YESEXPR 327680
+#define PTN_NOEXPR 327681
+#define PTN_CODESET 14
 #define PTN_DEFAULT_PRECISION 14
 
 typedef struct PtnArray PtnArray;
