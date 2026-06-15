@@ -3,9 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    ArrayDimTarget, ArrayElementValue, AssignmentTarget, BinaryOp, CatchClause, Expr,
-    ListAssignmentElementTarget, MagicConstantKind, Program, ReferenceTarget, Statement,
-    SwitchCase, UnsetTarget,
+    ArrayDimTarget, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CatchClause, Expr,
+    IncDecTarget, ListAssignmentElementTarget, MagicConstantKind, Program, ReferenceTarget,
+    Statement, SwitchCase, UnsetTarget,
 };
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
@@ -13,6 +13,8 @@ use crate::ir::{lower_with_source_and_includes, IncludeResolutionMap, IncludeSou
 use crate::parser::parse;
 
 const MAX_BOUNDED_INCLUDE_CANDIDATES: usize = 32;
+
+type IncludePathEnv = HashMap<String, Vec<String>>;
 
 #[derive(Debug, Clone)]
 pub struct CompileOptions {
@@ -62,6 +64,7 @@ struct IncludeCollector {
     sources: Vec<IncludeSource>,
     by_path: HashMap<PathBuf, usize>,
     resolutions: IncludeResolutionMap,
+    path_env: IncludePathEnv,
 }
 
 impl IncludeCollector {
@@ -70,6 +73,7 @@ impl IncludeCollector {
             sources: Vec::new(),
             by_path: HashMap::new(),
             resolutions: IncludeResolutionMap::new(),
+            path_env: IncludePathEnv::new(),
         }
     }
 
@@ -79,25 +83,54 @@ impl IncludeCollector {
         source_file: &str,
         source_dir: &str,
     ) -> Result<()> {
+        self.collect_with_fresh_path_env(|collector| {
+            collector.collect_program_with_current_env(program, source_file, source_dir)
+        })
+    }
+
+    fn collect_program_with_current_env(
+        &mut self,
+        program: &Program,
+        source_file: &str,
+        source_dir: &str,
+    ) -> Result<()> {
         for function in &program.functions {
-            self.collect_statements(&function.body, source_file, source_dir)?;
+            self.collect_with_fresh_path_env(|collector| {
+                collector.collect_statements(&function.body, source_file, source_dir)
+            })?;
         }
         for class in &program.classes {
             for property in &class.properties {
                 if let Some(value) = &property.value {
-                    self.collect_expr(value, source_file, source_dir)?;
+                    self.collect_with_fresh_path_env(|collector| {
+                        collector.collect_expr(value, source_file, source_dir)
+                    })?;
                 }
             }
             for property in &class.static_properties {
                 if let Some(value) = &property.value {
-                    self.collect_expr(value, source_file, source_dir)?;
+                    self.collect_with_fresh_path_env(|collector| {
+                        collector.collect_expr(value, source_file, source_dir)
+                    })?;
                 }
             }
             for method in &class.methods {
-                self.collect_statements(&method.body, source_file, source_dir)?;
+                self.collect_with_fresh_path_env(|collector| {
+                    collector.collect_statements(&method.body, source_file, source_dir)
+                })?;
             }
         }
         self.collect_statements(&program.statements, source_file, source_dir)
+    }
+
+    fn collect_with_fresh_path_env<F>(&mut self, f: F) -> Result<()>
+    where
+        F: FnOnce(&mut Self) -> Result<()>,
+    {
+        let saved_env = std::mem::take(&mut self.path_env);
+        let result = f(self);
+        self.path_env = saved_env;
+        result
     }
 
     fn collect_statements(
@@ -119,26 +152,38 @@ impl IncludeCollector {
         source_dir: &str,
     ) -> Result<()> {
         match statement {
-            Statement::Assign { value, .. }
-            | Statement::Print {
+            Statement::Assign {
+                name, op, value, ..
+            } => self.collect_direct_assignment(name, *op, value, source_file, source_dir),
+            Statement::Print {
                 expression: value, ..
             } => self.collect_expr(value, source_file, source_dir),
-            Statement::AssignRef { source, .. } => {
-                self.collect_expr(source, source_file, source_dir)
+            Statement::AssignRef { name, source, .. } => {
+                self.collect_expr(source, source_file, source_dir)?;
+                self.path_env.remove(name);
+                Ok(())
             }
             Statement::ArrayAssign { target, value, .. } => {
                 self.collect_array_dim_target(target, source_file, source_dir)?;
-                self.collect_expr(value, source_file, source_dir)
+                self.collect_expr(value, source_file, source_dir)?;
+                self.path_env.remove(&target.array);
+                Ok(())
             }
             Statement::ArrayAssignRef { target, source, .. } => {
                 self.collect_array_dim_target(target, source_file, source_dir)?;
-                self.collect_expr(source, source_file, source_dir)
+                self.collect_expr(source, source_file, source_dir)?;
+                self.path_env.remove(&target.array);
+                Ok(())
             }
             Statement::Unset { targets, .. } => {
                 for target in targets {
                     match target {
+                        UnsetTarget::Variable { name, .. } => {
+                            self.path_env.remove(name);
+                        }
                         UnsetTarget::ArrayDim(target) => {
                             self.collect_array_dim_target(target, source_file, source_dir)?;
+                            self.path_env.remove(&target.array);
                         }
                         UnsetTarget::DynamicArrayDim {
                             name, dimensions, ..
@@ -147,6 +192,7 @@ impl IncludeCollector {
                             for dimension in dimensions {
                                 self.collect_expr(dimension, source_file, source_dir)?;
                             }
+                            self.path_env.clear();
                         }
                         UnsetTarget::PropertyArrayDim {
                             receiver,
@@ -163,8 +209,8 @@ impl IncludeCollector {
                         }
                         UnsetTarget::DynamicVariable { name, .. } => {
                             self.collect_expr(name, source_file, source_dir)?;
+                            self.path_env.clear();
                         }
-                        UnsetTarget::Variable { .. } => {}
                     }
                 }
                 Ok(())
@@ -187,7 +233,15 @@ impl IncludeCollector {
             Statement::Static { declarations, .. } => {
                 for declaration in declarations {
                     if let Some(value) = &declaration.value {
-                        self.collect_expr(value, source_file, source_dir)?;
+                        self.collect_direct_assignment(
+                            &declaration.name,
+                            AssignmentOp::Assign,
+                            value,
+                            source_file,
+                            source_dir,
+                        )?;
+                    } else {
+                        self.path_env.remove(&declaration.name);
                     }
                 }
                 Ok(())
@@ -202,14 +256,25 @@ impl IncludeCollector {
                 ..
             } => {
                 self.collect_expr(condition, source_file, source_dir)?;
+                let before = self.path_env.clone();
+                self.path_env = before.clone();
                 self.collect_statements(then_body, source_file, source_dir)?;
-                self.collect_statements(else_body, source_file, source_dir)
+                let then_env = self.path_env.clone();
+                self.path_env = before;
+                self.collect_statements(else_body, source_file, source_dir)?;
+                let else_env = self.path_env.clone();
+                self.path_env = merge_include_path_envs(&then_env, &else_env);
+                Ok(())
             }
             Statement::While {
                 condition, body, ..
             } => {
                 self.collect_expr(condition, source_file, source_dir)?;
-                self.collect_statements(body, source_file, source_dir)
+                let before = self.path_env.clone();
+                self.collect_statements(body, source_file, source_dir)?;
+                let body_env = self.path_env.clone();
+                self.path_env = merge_include_path_envs(&before, &body_env);
+                Ok(())
             }
             Statement::DoWhile {
                 body, condition, ..
@@ -228,8 +293,12 @@ impl IncludeCollector {
                 if let Some(condition) = condition {
                     self.collect_expr(condition, source_file, source_dir)?;
                 }
+                let before_loop = self.path_env.clone();
+                self.collect_statements(body, source_file, source_dir)?;
                 self.collect_statements(updates, source_file, source_dir)?;
-                self.collect_statements(body, source_file, source_dir)
+                let loop_env = self.path_env.clone();
+                self.path_env = merge_include_path_envs(&before_loop, &loop_env);
+                Ok(())
             }
             Statement::Foreach {
                 iterable,
@@ -241,17 +310,28 @@ impl IncludeCollector {
                 self.collect_expr(iterable, source_file, source_dir)?;
                 if let Some(key) = key {
                     self.collect_assignment_target(key, source_file, source_dir)?;
+                    self.invalidate_assignment_target(key);
                 }
                 self.collect_assignment_target(value, source_file, source_dir)?;
-                self.collect_statements(body, source_file, source_dir)
+                self.invalidate_assignment_target(value);
+                let before_body = self.path_env.clone();
+                self.collect_statements(body, source_file, source_dir)?;
+                let body_env = self.path_env.clone();
+                self.path_env = merge_include_path_envs(&before_body, &body_env);
+                Ok(())
             }
             Statement::Switch {
                 expression, cases, ..
             } => {
                 self.collect_expr(expression, source_file, source_dir)?;
+                let before_switch = self.path_env.clone();
+                let mut case_envs = vec![before_switch.clone()];
                 for case in cases {
+                    self.path_env = before_switch.clone();
                     self.collect_switch_case(case, source_file, source_dir)?;
+                    case_envs.push(self.path_env.clone());
                 }
+                self.path_env = merge_many_include_path_envs(&case_envs);
                 Ok(())
             }
             Statement::Return { value, .. } => {
@@ -272,16 +352,23 @@ impl IncludeCollector {
                 }
                 self.collect_statements(finally_body, source_file, source_dir)
             }
-            Statement::Increment { .. }
-            | Statement::Empty { .. }
+            Statement::Increment { target, .. } => {
+                self.collect_inc_dec_target(target, source_file, source_dir)
+            }
+            Statement::Empty { .. }
             | Statement::ClassDeclaration { .. }
             | Statement::FunctionDeclaration { .. }
             | Statement::Break { .. }
             | Statement::Continue { .. }
-            | Statement::Global { .. }
             | Statement::Label { .. }
             | Statement::Goto { .. }
             | Statement::InlineHtml { .. } => Ok(()),
+            Statement::Global { names, .. } => {
+                for name in names {
+                    self.path_env.remove(name);
+                }
+                Ok(())
+            }
         }
     }
 
@@ -306,6 +393,164 @@ impl IncludeCollector {
         self.collect_statements(&catch.body, source_file, source_dir)
     }
 
+    fn collect_direct_assignment(
+        &mut self,
+        name: &str,
+        op: AssignmentOp,
+        value: &Expr,
+        source_file: &str,
+        source_dir: &str,
+    ) -> Result<()> {
+        let assigned_paths = self.assigned_include_paths(name, op, value, source_file, source_dir);
+        self.collect_expr(value, source_file, source_dir)?;
+        self.apply_direct_assignment(name, assigned_paths);
+        Ok(())
+    }
+
+    fn collect_assignment_expr(
+        &mut self,
+        target: &AssignmentTarget,
+        op: AssignmentOp,
+        value: &Expr,
+        source_file: &str,
+        source_dir: &str,
+    ) -> Result<()> {
+        if let AssignmentTarget::Variable { name, .. } = target {
+            return self.collect_direct_assignment(name, op, value, source_file, source_dir);
+        }
+
+        self.collect_assignment_target(target, source_file, source_dir)?;
+        self.collect_expr(value, source_file, source_dir)?;
+        self.invalidate_assignment_target(target);
+        Ok(())
+    }
+
+    fn assigned_include_paths(
+        &self,
+        name: &str,
+        op: AssignmentOp,
+        value: &Expr,
+        source_file: &str,
+        source_dir: &str,
+    ) -> Option<Vec<String>> {
+        match op {
+            AssignmentOp::Assign => {
+                bounded_include_paths(value, source_file, source_dir, &self.path_env)
+            }
+            AssignmentOp::ConcatAssign => {
+                let left_paths = self.path_env.get(name)?;
+                let right_paths =
+                    bounded_include_paths(value, source_file, source_dir, &self.path_env)?;
+                concat_bounded_include_paths(left_paths, &right_paths)
+            }
+            AssignmentOp::CoalesceAssign => self.path_env.get(name).cloned(),
+            AssignmentOp::AddAssign
+            | AssignmentOp::SubtractAssign
+            | AssignmentOp::MultiplyAssign
+            | AssignmentOp::PowerAssign
+            | AssignmentOp::DivideAssign
+            | AssignmentOp::ModuloAssign
+            | AssignmentOp::BitwiseAndAssign
+            | AssignmentOp::BitwiseOrAssign
+            | AssignmentOp::BitwiseXorAssign
+            | AssignmentOp::ShiftLeftAssign
+            | AssignmentOp::ShiftRightAssign => None,
+        }
+    }
+
+    fn apply_direct_assignment(&mut self, name: &str, paths: Option<Vec<String>>) {
+        match paths {
+            Some(paths) if paths.len() <= MAX_BOUNDED_INCLUDE_CANDIDATES => {
+                self.path_env.insert(name.to_string(), paths);
+            }
+            _ => {
+                self.path_env.remove(name);
+            }
+        }
+    }
+
+    fn collect_inc_dec_target(
+        &mut self,
+        target: &IncDecTarget,
+        source_file: &str,
+        source_dir: &str,
+    ) -> Result<()> {
+        match target {
+            IncDecTarget::Variable { name, .. } => {
+                self.path_env.remove(name);
+                Ok(())
+            }
+            IncDecTarget::DynamicVariable { name, .. } => {
+                self.collect_expr(name, source_file, source_dir)?;
+                self.path_env.clear();
+                Ok(())
+            }
+            IncDecTarget::DynamicArrayDim {
+                name, dimensions, ..
+            } => {
+                self.collect_expr(name, source_file, source_dir)?;
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                self.path_env.clear();
+                Ok(())
+            }
+            IncDecTarget::ArrayDim(target) => {
+                self.collect_array_dim_target(target, source_file, source_dir)?;
+                self.path_env.remove(&target.array);
+                Ok(())
+            }
+            IncDecTarget::Property { receiver, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)
+            }
+            IncDecTarget::StaticProperty { .. } => Ok(()),
+        }
+    }
+
+    fn invalidate_assignment_target(&mut self, target: &AssignmentTarget) {
+        match target {
+            AssignmentTarget::Variable { name, .. } => {
+                self.path_env.remove(name);
+            }
+            AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::DynamicArrayDim { .. } => {
+                self.path_env.clear();
+            }
+            AssignmentTarget::ArrayDim(target) => {
+                self.path_env.remove(&target.array);
+            }
+            AssignmentTarget::List(target) => {
+                for element in &target.elements {
+                    match &element.target {
+                        ListAssignmentElementTarget::Value(target) => {
+                            self.invalidate_assignment_target(target);
+                        }
+                        ListAssignmentElementTarget::Reference(target) => {
+                            self.invalidate_reference_target(target);
+                        }
+                    }
+                }
+            }
+            AssignmentTarget::PropertyArrayDim { .. }
+            | AssignmentTarget::Property { .. }
+            | AssignmentTarget::DynamicProperty { .. }
+            | AssignmentTarget::StaticProperty { .. } => {}
+        }
+    }
+
+    fn invalidate_reference_target(&mut self, target: &ReferenceTarget) {
+        match target {
+            ReferenceTarget::Variable { name, .. } => {
+                self.path_env.remove(name);
+            }
+            ReferenceTarget::ArrayDim(target) => {
+                self.path_env.remove(&target.array);
+            }
+            ReferenceTarget::PropertyArrayDim { .. } | ReferenceTarget::Property { .. } => {}
+        }
+    }
+
     fn collect_exprs(&mut self, exprs: &[Expr], source_file: &str, source_dir: &str) -> Result<()> {
         for expr in exprs {
             self.collect_expr(expr, source_file, source_dir)?;
@@ -323,16 +568,20 @@ impl IncludeCollector {
                 );
                 Ok(())
             }
-            Expr::AnonymousFunction(function) => {
-                self.collect_statements(&function.body, source_file, source_dir)
-            }
-            Expr::Assign { target, value, .. } => {
-                self.collect_assignment_target(target, source_file, source_dir)?;
-                self.collect_expr(value, source_file, source_dir)
-            }
+            Expr::AnonymousFunction(function) => self.collect_with_fresh_path_env(|collector| {
+                collector.collect_statements(&function.body, source_file, source_dir)
+            }),
+            Expr::Assign {
+                target, op, value, ..
+            } => self.collect_assignment_expr(target, *op, value, source_file, source_dir),
             Expr::AssignRef { target, source, .. } => {
                 self.collect_assignment_target(target, source_file, source_dir)?;
-                self.collect_expr(source, source_file, source_dir)
+                self.collect_expr(source, source_file, source_dir)?;
+                self.invalidate_assignment_target(target);
+                Ok(())
+            }
+            Expr::IncDec { target, .. } => {
+                self.collect_inc_dec_target(target, source_file, source_dir)
             }
             Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => {
                 self.collect_exprs(arguments, source_file, source_dir)
@@ -477,7 +726,6 @@ impl IncludeCollector {
             | Expr::Bool(_, _)
             | Expr::Null(_)
             | Expr::Variable(_, _)
-            | Expr::IncDec { .. }
             | Expr::Constant(_, _)
             | Expr::MagicConstant(_, _)
             | Expr::StaticPropertyFetch { .. }
@@ -600,12 +848,15 @@ impl IncludeCollector {
         source_file: &str,
         source_dir: &str,
     ) -> Result<Vec<usize>> {
-        let include_paths = bounded_include_paths(path, source_file, source_dir).ok_or_else(|| {
+        let include_paths =
+            bounded_include_paths(path, source_file, source_dir, &self.path_env).ok_or_else(
+                || {
             Diagnostic::new(
                 "dynamic include paths are unsupported; use a compile-time string path or bounded conditional of compile-time string paths",
                 Some(path.span()),
             )
-        })?;
+                },
+            )?;
         let mut candidates = Vec::new();
         for include_path in include_paths {
             let index = self.resolve_include_candidate(&include_path, span, source_dir)?;
@@ -676,10 +927,16 @@ impl IncludeCollector {
     }
 }
 
-fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Option<Vec<String>> {
+fn bounded_include_paths(
+    expr: &Expr,
+    source_file: &str,
+    source_dir: &str,
+    path_env: &IncludePathEnv,
+) -> Option<Vec<String>> {
     match expr {
         Expr::String(value, _) => Some(vec![value.clone()]),
         Expr::ShellExec { .. } => None,
+        Expr::Variable(name, _) => path_env.get(name).cloned(),
         Expr::MagicConstant(MagicConstantKind::File, _) => Some(vec![source_file.to_string()]),
         Expr::MagicConstant(MagicConstantKind::Dir, _) => Some(vec![source_dir.to_string()]),
         Expr::Constant(name, _) if name == "DIRECTORY_SEPARATOR" => {
@@ -693,7 +950,7 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         } if name.eq_ignore_ascii_case("dirname")
             && (arguments.len() == 1 || arguments.len() == 2) =>
         {
-            let paths = bounded_include_paths(&arguments[0], source_file, source_dir)?;
+            let paths = bounded_include_paths(&arguments[0], source_file, source_dir, path_env)?;
             let levels = if arguments.len() == 2 {
                 match &arguments[1] {
                     Expr::Int(levels, _) if *levels >= 1 => usize::try_from(*levels).ok()?,
@@ -711,7 +968,7 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         Expr::Call {
             name, arguments, ..
         } if name.eq_ignore_ascii_case("realpath") && arguments.len() == 1 => {
-            let paths = bounded_include_paths(&arguments[0], source_file, source_dir)?;
+            let paths = bounded_include_paths(&arguments[0], source_file, source_dir, path_env)?;
             let mut resolved = Vec::new();
             for path in paths {
                 let canonical = fs::canonicalize(PathBuf::from(path)).ok()?;
@@ -725,20 +982,9 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
             right,
             ..
         } => {
-            let left_paths = bounded_include_paths(left, source_file, source_dir)?;
-            let right_paths = bounded_include_paths(right, source_file, source_dir)?;
-            if left_paths.len().saturating_mul(right_paths.len()) > MAX_BOUNDED_INCLUDE_CANDIDATES {
-                return None;
-            }
-            let mut paths = Vec::new();
-            for left_path in &left_paths {
-                for right_path in &right_paths {
-                    let mut path = left_path.clone();
-                    path.push_str(right_path);
-                    push_unique_string(&mut paths, path);
-                }
-            }
-            Some(paths)
+            let left_paths = bounded_include_paths(left, source_file, source_dir, path_env)?;
+            let right_paths = bounded_include_paths(right, source_file, source_dir, path_env)?;
+            concat_bounded_include_paths(&left_paths, &right_paths)
         }
         Expr::Ternary {
             condition,
@@ -748,10 +994,10 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         } => {
             let mut paths = Vec::new();
             let true_expr = if_true.as_deref().unwrap_or(condition);
-            for path in bounded_include_paths(true_expr, source_file, source_dir)? {
+            for path in bounded_include_paths(true_expr, source_file, source_dir, path_env)? {
                 push_unique_string(&mut paths, path);
             }
-            for path in bounded_include_paths(if_false, source_file, source_dir)? {
+            for path in bounded_include_paths(if_false, source_file, source_dir, path_env)? {
                 push_unique_string(&mut paths, path);
             }
             if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
@@ -762,7 +1008,7 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         Expr::Match { arms, .. } => {
             let mut paths = Vec::new();
             for arm in arms {
-                for path in bounded_include_paths(&arm.value, source_file, source_dir)? {
+                for path in bounded_include_paths(&arm.value, source_file, source_dir, path_env)? {
                     push_unique_string(&mut paths, path);
                 }
                 if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
@@ -771,9 +1017,60 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
             }
             Some(paths)
         }
-        Expr::Grouped { expr, .. } => bounded_include_paths(expr, source_file, source_dir),
+        Expr::Grouped { expr, .. } => {
+            bounded_include_paths(expr, source_file, source_dir, path_env)
+        }
         _ => None,
     }
+}
+
+fn concat_bounded_include_paths(
+    left_paths: &[String],
+    right_paths: &[String],
+) -> Option<Vec<String>> {
+    if left_paths.len().saturating_mul(right_paths.len()) > MAX_BOUNDED_INCLUDE_CANDIDATES {
+        return None;
+    }
+    let mut paths = Vec::new();
+    for left_path in left_paths {
+        for right_path in right_paths {
+            let mut path = left_path.clone();
+            path.push_str(right_path);
+            push_unique_string(&mut paths, path);
+        }
+    }
+    Some(paths)
+}
+
+fn merge_many_include_path_envs(envs: &[IncludePathEnv]) -> IncludePathEnv {
+    let Some((first, rest)) = envs.split_first() else {
+        return IncludePathEnv::new();
+    };
+    let mut merged = first.clone();
+    for env in rest {
+        merged = merge_include_path_envs(&merged, env);
+    }
+    merged
+}
+
+fn merge_include_path_envs(left: &IncludePathEnv, right: &IncludePathEnv) -> IncludePathEnv {
+    let mut merged = IncludePathEnv::new();
+    for (name, left_paths) in left {
+        let Some(right_paths) = right.get(name) else {
+            continue;
+        };
+        let mut paths = left_paths.clone();
+        for path in right_paths {
+            push_unique_string(&mut paths, path.clone());
+            if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                break;
+            }
+        }
+        if paths.len() <= MAX_BOUNDED_INCLUDE_CANDIDATES {
+            merged.insert(name.clone(), paths);
+        }
+    }
+    merged
 }
 
 fn compile_time_dirname(path: &str, levels: usize) -> String {

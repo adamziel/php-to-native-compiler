@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.22 compile-time include path variables | 1 | 1 |
 | ptn-w17z.28 collected Generator runtime row pack | 6 | 6 |
 | ptn-w17z.34 output-buffer compact row | 1 | 1 |
 | ptn-w17z.35 compact closure this row pack | 2 | 2 |
@@ -16,14 +17,20 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T16:01Z.
-Measured latest: `ptn-w17z.28` collected Generator runtime row pack selected 6 rows, ran all 6, and passed 6/6.
-Latest: `ptn-w17z.28` added bounded collected `Generator` runtime objects for eager generator-body execution. Previous: `ptn-w17z.34` completed the output-buffer compact row at 1/1.
+Refresh: 2026-06-15T16:15Z.
+Measured latest: `ptn-w17z.22` compile-time include path variable acceptance selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
+Latest: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path. Previous: `ptn-w17z.28` completed the collected Generator runtime row pack at 6/6.
 
-Current hook: `ptn-w17z.28` collected Generator runtime row pack passed 6/6 at
+Current hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
+`.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
+Previous hook: `ptn-w17z.28` collected Generator runtime row pack passed 6/6 at
 `.runtime/merge-ptn-w17z28-generator-runtime/summary-20260615T163051Z.txt`.
-Previous hook: `ptn-w17z.34` output-buffer compact row passed 1/1 at
-`.runtime/merge-ptn-w17z34-output-buffer-compact/summary-20260615T162323Z.txt`.
+
+## 2026-06-15 ptn-w17z.22 Compile-Time Include Path Variables
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final rebased focused acceptance row (`.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`) | 1 selected / 1 runnable | 1 |
 
 ## 2026-06-15 ptn-w17z.28 Collected Generator Runtime Row Pack
 
