@@ -15889,6 +15889,41 @@ static PtnValue ptn_reflection_class_string_after_last_namespace_separator(const
     return ptn_owned_string(ptn_duplicate_string(short_name));
 }
 
+static const char *ptn_reflection_class_canonical_method_name(const char *method_name) {
+    if (ptn_ascii_case_equal(method_name, "getConstructor")) return "getConstructor";
+    if (ptn_ascii_case_equal(method_name, "getExtension")) return "getExtension";
+    if (ptn_ascii_case_equal(method_name, "getExtensionName")) return "getExtensionName";
+    if (ptn_ascii_case_equal(method_name, "getInterfaceNames")) return "getInterfaceNames";
+    if (ptn_ascii_case_equal(method_name, "getInterfaces")) return "getInterfaces";
+    if (ptn_ascii_case_equal(method_name, "getMethod")) return "getMethod";
+    if (ptn_ascii_case_equal(method_name, "getMethods")) return "getMethods";
+    if (ptn_ascii_case_equal(method_name, "getModifiers")) return "getModifiers";
+    if (ptn_ascii_case_equal(method_name, "getName")) return "getName";
+    if (ptn_ascii_case_equal(method_name, "getNamespaceName")) return "getNamespaceName";
+    if (ptn_ascii_case_equal(method_name, "getParentClass")) return "getParentClass";
+    if (ptn_ascii_case_equal(method_name, "getProperties")) return "getProperties";
+    if (ptn_ascii_case_equal(method_name, "getShortName")) return "getShortName";
+    if (ptn_ascii_case_equal(method_name, "hasConstant")) return "hasConstant";
+    if (ptn_ascii_case_equal(method_name, "hasMethod")) return "hasMethod";
+    if (ptn_ascii_case_equal(method_name, "hasProperty")) return "hasProperty";
+    if (ptn_ascii_case_equal(method_name, "implementsInterface")) return "implementsInterface";
+    if (ptn_ascii_case_equal(method_name, "inNamespace")) return "inNamespace";
+    if (ptn_ascii_case_equal(method_name, "isAbstract")) return "isAbstract";
+    if (ptn_ascii_case_equal(method_name, "isAnonymous")) return "isAnonymous";
+    if (ptn_ascii_case_equal(method_name, "isCloneable")) return "isCloneable";
+    if (ptn_ascii_case_equal(method_name, "isFinal")) return "isFinal";
+    if (ptn_ascii_case_equal(method_name, "isInstance")) return "isInstance";
+    if (ptn_ascii_case_equal(method_name, "isInstantiable")) return "isInstantiable";
+    if (ptn_ascii_case_equal(method_name, "isInterface")) return "isInterface";
+    if (ptn_ascii_case_equal(method_name, "isInternal")) return "isInternal";
+    if (ptn_ascii_case_equal(method_name, "isIterable")) return "isIterable";
+    if (ptn_ascii_case_equal(method_name, "isIterateable")) return "isIterateable";
+    if (ptn_ascii_case_equal(method_name, "isReadOnly")) return "isReadOnly";
+    if (ptn_ascii_case_equal(method_name, "isSubclassOf")) return "isSubclassOf";
+    if (ptn_ascii_case_equal(method_name, "isUserDefined")) return "isUserDefined";
+    return method_name;
+}
+
 static void ptn_reflection_class_check_exact_arguments(
     PtnRuntime *runtime,
     const char *method_name,
@@ -15898,12 +15933,13 @@ static void ptn_reflection_class_check_exact_arguments(
     if (argc == expected) {
         return;
     }
+    const char *canonical_method_name = ptn_reflection_class_canonical_method_name(method_name);
     char message[192];
     int written = snprintf(
         message,
         sizeof(message),
         "ReflectionClass::%s() expects exactly %zu argument%s, %zu given",
-        method_name,
+        canonical_method_name,
         expected,
         expected == 1 ? "" : "s",
         argc
@@ -16106,7 +16142,7 @@ static char *ptn_reflection_class_required_class_arg_name(
                 message,
                 sizeof(message),
                 "ReflectionClass::%s(): Passing null to parameter #1 ($%s) of type ReflectionClass|string is deprecated",
-                method_name,
+                ptn_reflection_class_canonical_method_name(method_name),
                 parameter_name
             );
             if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -16327,12 +16363,13 @@ static void ptn_reflection_class_check_at_most_arguments(
     if (argc <= maximum) {
         return;
     }
+    const char *canonical_method_name = ptn_reflection_class_canonical_method_name(method_name);
     char message[192];
     int written = snprintf(
         message,
         sizeof(message),
         "ReflectionClass::%s() expects at most %zu argument%s, %zu given",
-        method_name,
+        canonical_method_name,
         maximum,
         maximum == 1 ? "" : "s",
         argc
