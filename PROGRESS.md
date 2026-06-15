@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-jrzu CSV stream parity row pack | 22 | 22 |
 | ptn-w17z.16.1 ErrorException severity row pack | 2 | 2 |
 | ptn-w17z.16.2 nested try/finally row pack | 9 | 9 |
 | ptn-90cm compare64bit object/number diagnostics | 6 | 6 |
@@ -40,6 +41,15 @@ Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
 Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
 `.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
+
+## 2026-06-15 ptn-jrzu CSV Stream Parity Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| CSV-reference baseline (`.runtime/ptn-jrzu-csv-before/summary-20260615T163806Z.txt`) | 57 selected / 57 runnable | 32 |
+| Final rebased focused row pack (`.runtime/ptn-jrzu-csv-row-pack-final-rebased/summary-20260615T182239Z.txt`) | 22 selected / 22 runnable | 22 |
+| Final rebased file-stream family (`.runtime/ptn-jrzu-csv-file-rebased/summary-20260615T175302Z.txt`) | 54 selected / 54 runnable | 54 |
+| Integrated focused merge run (`.runtime/merge-ptn-jrzu-csv-stream-parity/summary-20260615T193520Z.txt`) | 22 selected / 22 runnable | 22 |
 
 ## 2026-06-15 ptn-w17z.16.1 ErrorException Severity Row Pack
 
