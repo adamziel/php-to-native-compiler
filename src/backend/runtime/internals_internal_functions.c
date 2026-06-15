@@ -24510,6 +24510,29 @@ static void ptn_throw_internal_argument_count_error(
     ptn_throw_exception_owned_message(runtime, "ArgumentCountError", message);
 }
 
+static void ptn_throw_undefined_function_error(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "Call to undefined function %s()", name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Call to undefined function %s()", name);
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "Error",
+        message,
+        runtime->source_path,
+        line
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
     const PtnInternalFunction *function = ptn_find_internal_function(name);
     if (function != NULL) {
@@ -24548,8 +24571,7 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
         return result;
     }
 
-    ptn_emit_undefined_function_error(&runtime->diagnostics, name);
-    exit(255);
+    ptn_throw_undefined_function_error(runtime, name, line);
     return ptn_null();
 }
 /* PTN_INTERNAL_FUNCTIONS_END */

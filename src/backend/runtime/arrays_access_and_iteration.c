@@ -373,7 +373,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "Error", message);
+        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
         return ptn_null();
     }
     if (argc != 0) {

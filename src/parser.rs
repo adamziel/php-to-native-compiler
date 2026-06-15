@@ -317,6 +317,12 @@ impl Parser<'_> {
                 }
             } else if token_is_identifier_named(self.peek(), "namespace") {
                 if scope == TopLevelScope::NamespaceBlock {
+                    if !self.peek_namespace_declaration_is_bracketed() {
+                        return Err(Diagnostic::new(
+                            "Cannot mix bracketed namespace declarations with unbracketed namespace declarations",
+                            Some(self.peek().span),
+                        ));
+                    }
                     return Err(Diagnostic::new(
                         "Namespace declarations cannot be nested",
                         Some(self.peek().span),
@@ -355,6 +361,18 @@ impl Parser<'_> {
             }
         }
         Ok(())
+    }
+
+    fn peek_namespace_declaration_is_bracketed(&self) -> bool {
+        let mut index = self.index + 1;
+        while let Some(token) = self.tokens.get(index) {
+            match token.kind {
+                TokenKind::LeftBrace => return true,
+                TokenKind::Semicolon | TokenKind::Eof => return false,
+                _ => index += 1,
+            }
+        }
+        false
     }
 
     fn reject_code_outside_bracketed_namespace(&self, scope: TopLevelScope) -> Result<()> {
@@ -585,6 +603,11 @@ impl Parser<'_> {
             if parsed_any && matches!(self.peek().kind, TokenKind::RightBrace) {
                 break;
             }
+            if outer_kind != UseDeclarationKind::Class
+                && matches!(self.peek().kind, TokenKind::Function | TokenKind::Const)
+            {
+                return Err(syntax_error_unexpected(self.peek(), Some("\"}\"")));
+            }
             let item_kind = if outer_kind == UseDeclarationKind::Class
                 && matches!(self.peek().kind, TokenKind::Function)
             {
@@ -647,7 +670,7 @@ impl Parser<'_> {
         target: ParsedName,
         alias: String,
     ) -> Result<()> {
-        if self.global_namespace_import_has_no_effect(&target) {
+        if self.global_namespace_import_has_no_effect(kind, &target, &alias) {
             self.compile_warnings.push(CompileWarning {
                 message: format!(
                     "The use statement with non-compound name '{}' has no effect",
@@ -691,7 +714,13 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn global_namespace_import_has_no_effect(&self, target: &ParsedName) -> bool {
+    fn global_namespace_import_has_no_effect(
+        &self,
+        kind: UseDeclarationKind,
+        target: &ParsedName,
+        alias: &str,
+    ) -> bool {
+        let target_alias = target.name.rsplit('\\').next().unwrap_or(&target.name);
         self.current_namespace
             .as_deref()
             .unwrap_or_default()
@@ -701,6 +730,7 @@ impl Parser<'_> {
                 target.resolution,
                 NameResolution::Unqualified | NameResolution::FullyQualified
             )
+            && import_alias_key(kind, alias) == import_alias_key(kind, target_alias)
     }
 
     fn namespace_symbol_set(&self, kind: UseDeclarationKind) -> &HashSet<String> {
@@ -775,7 +805,7 @@ impl Parser<'_> {
             None
         };
         let first_token = self.advance().clone();
-        let TokenKind::Identifier(first_segment) = first_token.kind else {
+        let Some(first_segment) = name_segment_from_token(&first_token) else {
             return Err(Diagnostic::new(expected, Some(first_token.span)));
         };
         let mut span = start_span
@@ -800,7 +830,7 @@ impl Parser<'_> {
             {
                 return Err(syntax_error_unexpected(&slash_token, None));
             }
-            let TokenKind::Identifier(segment) = segment_token.kind else {
+            let Some(segment) = name_segment_from_token(&segment_token) else {
                 return Err(Diagnostic::new(expected, Some(segment_token.span)));
             };
             span = combine_spans(span, segment_token.span);
@@ -890,7 +920,7 @@ impl Parser<'_> {
             None
         };
         let first_token = self.advance().clone();
-        let TokenKind::Identifier(first_segment) = first_token.kind else {
+        let Some(first_segment) = name_segment_from_token(&first_token) else {
             return Err(Diagnostic::new(expected, Some(first_token.span)));
         };
         self.parse_name_from_first(first_segment, first_token.span, start_span, expected)
@@ -915,7 +945,7 @@ impl Parser<'_> {
             {
                 return Err(syntax_error_unexpected(&slash_token, None));
             }
-            let TokenKind::Identifier(segment) = segment_token.kind else {
+            let Some(segment) = name_segment_from_token(&segment_token) else {
                 return Err(Diagnostic::new(expected, Some(segment_token.span)));
             };
             span = combine_spans(span, segment_token.span);
@@ -973,7 +1003,7 @@ impl Parser<'_> {
     }
 
     fn resolve_function_name(&self, parsed: &ParsedName) -> String {
-        let resolved = match parsed.resolution {
+        match parsed.resolution {
             NameResolution::FullyQualified => parsed.name.clone(),
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
             NameResolution::Unqualified => {
@@ -996,8 +1026,7 @@ impl Parser<'_> {
             NameResolution::Qualified => {
                 self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
             }
-        };
-        resolved.to_ascii_lowercase()
+        }
     }
 
     fn resolve_constant_name(&self, parsed: &ParsedName) -> String {
@@ -4492,7 +4521,9 @@ impl Parser<'_> {
             TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Yield => self.parse_yield_expr(token.span),
             TokenKind::Identifier(name) => {
-                if name.eq_ignore_ascii_case("fn") {
+                if name.eq_ignore_ascii_case("fn")
+                    && matches!(self.peek().kind, TokenKind::LeftParen)
+                {
                     return self.parse_arrow_function_expr(token.span, false);
                 }
                 if name.eq_ignore_ascii_case("static") && self.peek_is_identifier("fn") {
@@ -7062,6 +7093,21 @@ fn default_set_visibility(
 
 fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
+}
+
+fn name_segment_from_token(token: &Token) -> Option<String> {
+    match &token.kind {
+        TokenKind::Identifier(name) => Some(name.clone()),
+        TokenKind::IntType => Some("int".to_string()),
+        TokenKind::IntegerType => Some("integer".to_string()),
+        TokenKind::FloatType => Some("float".to_string()),
+        TokenKind::DoubleType => Some("double".to_string()),
+        TokenKind::StringType => Some("string".to_string()),
+        TokenKind::BinaryType => Some("binary".to_string()),
+        TokenKind::BoolType => Some("bool".to_string()),
+        TokenKind::BooleanType => Some("boolean".to_string()),
+        _ => None,
+    }
 }
 
 fn normalize_runtime_class_alias_key(name: &str) -> String {

@@ -32643,6 +32643,13 @@ fn parser_rejects_unsupported_grouped_namespace_import_forms() {
         let error = parser::parse(source).unwrap_err();
         assert_eq!(error.message, expected);
     }
+
+    let error = parser::parse("<?php use const Lib\\{A, const B};").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        error.message,
+        "syntax error, unexpected token \"const\", expecting \"}\""
+    );
 }
 
 #[test]
@@ -32680,6 +32687,13 @@ fn parser_records_global_non_compound_use_warning() {
         program.compile_warnings[0].message,
         "The use statement with non-compound name 'DateTime' has no effect"
     );
+
+    let aliased = parser::parse("<?php class A {} use \\A as B; new B;").unwrap();
+    assert!(aliased.compile_warnings.is_empty());
+
+    let reserved_alias =
+        parser::parse("<?php use function self as foo; use const parent as bar;").unwrap();
+    assert!(reserved_alias.compile_warnings.is_empty());
 }
 
 #[test]
@@ -32698,6 +32712,17 @@ fn parser_rejects_reserved_constant_declarations() {
 #[test]
 fn parser_handles_namespace_declaration_start_and_name_tokens() {
     parser::parse("<?php ; namespace App; echo __NAMESPACE__;").unwrap();
+    parser::parse("<?php namespace string; use string as StringAlias;").unwrap();
+    parser::parse("<?php namespace { use iter\\fn; use function fn\\test as test2; fn\\test(); }")
+        .unwrap();
+    let program = parser::parse("<?php namespace Hello; World();").unwrap();
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected function call statement");
+    };
+    let Expr::Call { name, .. } = expression else {
+        panic!("expected function call");
+    };
+    assert_eq!(name, "Hello\\World");
 
     let namespace_name = parser::parse("<?php namespace NAMEspace;").unwrap_err();
     assert_eq!(namespace_name.kind, DiagnosticKind::Fatal);
@@ -32737,6 +32762,12 @@ fn parser_rejects_mixed_namespace_declaration_styles() {
         error.message,
         "Cannot mix bracketed namespace declarations with unbracketed namespace declarations"
     );
+
+    let nested_unbracketed = parser::parse("<?php namespace A { namespace B; }").unwrap_err();
+    assert_eq!(
+        nested_unbracketed.message,
+        "Cannot mix bracketed namespace declarations with unbracketed namespace declarations"
+    );
 }
 
 #[test]
@@ -32758,10 +32789,33 @@ fn unsupported_internal_functions_fail_in_generated_runtime() {
     let execution = Command::new(&output).output().unwrap();
     assert!(!execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        "Fatal error: Call to undefined function definitely_missing_internal()\n"
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains(
+        "Fatal error: Uncaught Error: Call to undefined function definitely_missing_internal() in "
+    ));
+    assert!(stderr.contains("Stack trace:\n#0 {main}\n"));
+    assert!(stderr.contains("unsupported-internal-function.php on line 1\n"));
+}
+
+#[test]
+fn unknown_class_construction_reports_uncaught_error_location() {
+    let root = temp_dir("ptn-native-unknown-class-construction");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unknown-class-construction.php");
+    let output = root.join("unknown-class-construction-bin");
+    fs::write(&input, "<?php namespace App; new MissingClass();").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Error: Class \"App\\MissingClass\" not found in ")
     );
+    assert!(stderr.contains("Stack trace:\n#0 {main}\n"));
+    assert!(stderr.contains("unknown-class-construction.php on line 1\n"));
 }
 
 #[test]
