@@ -94,6 +94,7 @@ enum Mode {
 #[derive(Debug, Default)]
 struct RuntimeIni {
     precision: Option<u8>,
+    date_timezone: Option<String>,
     assert_exception: Option<String>,
     display_errors: Option<String>,
     error_reporting: Option<i64>,
@@ -206,6 +207,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         }
     } else if name.eq_ignore_ascii_case("assert.exception") {
         ini.assert_exception = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("date.timezone") {
+        ini.date_timezone = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("display_errors") {
         ini.display_errors = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("error_reporting") {
@@ -482,6 +485,7 @@ fn apply_memory_limit_bounds(ini: &mut RuntimeIni) -> Option<String> {
 fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i32, PhpcError> {
     let mut ini = RuntimeIni {
         precision: ini.precision,
+        date_timezone: ini.date_timezone.clone(),
         assert_exception: ini.assert_exception.clone(),
         display_errors: ini.display_errors.clone(),
         error_reporting: ini.error_reporting,
@@ -506,6 +510,9 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     command.args(args);
     if let Some(precision) = ini.precision {
         command.env("PTN_PHP_PRECISION", precision.to_string());
+    }
+    if let Some(date_timezone) = &ini.date_timezone {
+        command.env("PTN_DATE_TIMEZONE", date_timezone);
     }
     if let Some(assert_exception) = &ini.assert_exception {
         command.env("PTN_ASSERT_EXCEPTION", assert_exception);

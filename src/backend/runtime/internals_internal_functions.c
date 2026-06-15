@@ -7031,7 +7031,15 @@ static int ptn_sprintf_parse_decimal(const char *data, size_t len, size_t *offse
     return value;
 }
 
-static void ptn_sprintf_build_numeric_format(char *format, size_t format_size, const PtnSprintfSpec *spec, char conversion, int use_long_long) {
+static void ptn_sprintf_build_numeric_format(
+    char *format,
+    size_t format_size,
+    const PtnSprintfSpec *spec,
+    char conversion,
+    int use_long_long,
+    int include_width,
+    int include_precision
+) {
     char *cursor = format;
     char *end = format + format_size;
     if (cursor >= end) {
@@ -7053,14 +7061,14 @@ static void ptn_sprintf_build_numeric_format(char *format, size_t format_size, c
     if (spec->alternate && cursor < end) {
         *cursor++ = '#';
     }
-    if (spec->has_width) {
+    if (include_width && spec->has_width) {
         int written = snprintf(cursor, (size_t)(end - cursor), "%d", spec->width);
         if (written < 0 || written >= end - cursor) {
             ptn_abort_out_of_memory();
         }
         cursor += written;
     }
-    if (spec->has_precision) {
+    if (include_precision && spec->has_precision) {
         if (cursor >= end) {
             ptn_abort_out_of_memory();
         }
@@ -7085,7 +7093,7 @@ static void ptn_sprintf_build_numeric_format(char *format, size_t format_size, c
     *cursor = '\0';
 }
 
-static void ptn_sprintf_append_snprintf_signed(PtnStringBuffer *buffer, const char *format, long long value) {
+static char *ptn_sprintf_format_snprintf_signed(const char *format, long long value, size_t *len) {
     int needed = snprintf(NULL, 0, format, value);
     if (needed < 0) {
         ptn_abort_out_of_memory();
@@ -7099,11 +7107,18 @@ static void ptn_sprintf_append_snprintf_signed(PtnStringBuffer *buffer, const ch
         free(formatted);
         ptn_abort_out_of_memory();
     }
-    ptn_string_buffer_append_len(buffer, formatted, (size_t)needed);
+    *len = (size_t)needed;
+    return formatted;
+}
+
+static PTN_UNUSED void ptn_sprintf_append_snprintf_signed(PtnStringBuffer *buffer, const char *format, long long value) {
+    size_t len = 0;
+    char *formatted = ptn_sprintf_format_snprintf_signed(format, value, &len);
+    ptn_string_buffer_append_len(buffer, formatted, len);
     free(formatted);
 }
 
-static void ptn_sprintf_append_snprintf_unsigned(PtnStringBuffer *buffer, const char *format, unsigned long long value) {
+static char *ptn_sprintf_format_snprintf_unsigned(const char *format, unsigned long long value, size_t *len) {
     int needed = snprintf(NULL, 0, format, value);
     if (needed < 0) {
         ptn_abort_out_of_memory();
@@ -7117,11 +7132,18 @@ static void ptn_sprintf_append_snprintf_unsigned(PtnStringBuffer *buffer, const 
         free(formatted);
         ptn_abort_out_of_memory();
     }
-    ptn_string_buffer_append_len(buffer, formatted, (size_t)needed);
+    *len = (size_t)needed;
+    return formatted;
+}
+
+static PTN_UNUSED void ptn_sprintf_append_snprintf_unsigned(PtnStringBuffer *buffer, const char *format, unsigned long long value) {
+    size_t len = 0;
+    char *formatted = ptn_sprintf_format_snprintf_unsigned(format, value, &len);
+    ptn_string_buffer_append_len(buffer, formatted, len);
     free(formatted);
 }
 
-static void ptn_sprintf_append_snprintf_double(PtnStringBuffer *buffer, const char *format, double value) {
+static char *ptn_sprintf_format_snprintf_double(const char *format, double value, size_t *len) {
     int needed = snprintf(NULL, 0, format, value);
     if (needed < 0) {
         ptn_abort_out_of_memory();
@@ -7135,8 +7157,63 @@ static void ptn_sprintf_append_snprintf_double(PtnStringBuffer *buffer, const ch
         free(formatted);
         ptn_abort_out_of_memory();
     }
-    ptn_string_buffer_append_len(buffer, formatted, (size_t)needed);
+    *len = (size_t)needed;
+    return formatted;
+}
+
+static PTN_UNUSED void ptn_sprintf_append_snprintf_double(PtnStringBuffer *buffer, const char *format, double value) {
+    size_t len = 0;
+    char *formatted = ptn_sprintf_format_snprintf_double(format, value, &len);
+    ptn_string_buffer_append_len(buffer, formatted, len);
     free(formatted);
+}
+
+static void ptn_sprintf_normalize_exponent(char *formatted, char conversion) {
+    for (char *cursor = formatted; *cursor != '\0'; cursor++) {
+        if (*cursor != 'e' && *cursor != 'E') {
+            continue;
+        }
+        *cursor = (conversion == 'E' || conversion == 'G' || conversion == 'H') ? 'E' : 'e';
+        cursor++;
+        if (*cursor == '+' || *cursor == '-') {
+            cursor++;
+        }
+        while (*cursor == '0' && isdigit((unsigned char)cursor[1])) {
+            memmove(cursor, cursor + 1, strlen(cursor));
+        }
+        return;
+    }
+}
+
+static void ptn_sprintf_append_manual_padding(
+    PtnStringBuffer *buffer,
+    const char *formatted,
+    size_t len,
+    const PtnSprintfSpec *spec,
+    char pad,
+    int left_adjust
+) {
+    size_t width = spec->has_width && spec->width > 0 ? (size_t)spec->width : 0;
+    size_t padding = width > len ? width - len : 0;
+    if (!left_adjust) {
+        ptn_sprintf_append_repeated(buffer, pad, padding);
+    }
+    ptn_string_buffer_append_len(buffer, formatted, len);
+    if (left_adjust) {
+        ptn_sprintf_append_repeated(buffer, pad, padding);
+    }
+}
+
+static int64_t ptn_sprintf_value_to_integer(PtnValue value) {
+    value = ptn_value_deref(value);
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        return integer;
+    }
+    if (value.type == PTN_FLOAT) {
+        return (int64_t)value.as.floating;
+    }
+    return ptn_number_to_integer(ptn_to_number(value));
 }
 
 static void ptn_sprintf_append_string(PtnStringBuffer *buffer, PtnStringOperand string, const PtnSprintfSpec *spec) {
@@ -7187,13 +7264,10 @@ static void ptn_sprintf_append_binary(PtnStringBuffer *buffer, uint64_t value, c
     }
 
     size_t precision_padding = 0;
-    if (spec->has_precision && spec->precision > 0 && (size_t)spec->precision > len) {
-        precision_padding = (size_t)spec->precision - len;
-    }
     size_t value_len = len + precision_padding;
     size_t width = spec->has_width && spec->width > 0 ? (size_t)spec->width : 0;
     size_t width_padding = width > value_len ? width - value_len : 0;
-    char pad = spec->zero_pad && !spec->left_adjust && !spec->has_precision ? '0' : ' ';
+    char pad = spec->pad_char != '\0' ? spec->pad_char : (spec->zero_pad && !spec->left_adjust ? '0' : ' ');
     if (!spec->left_adjust) {
         ptn_sprintf_append_repeated(buffer, pad, width_padding);
     }
@@ -7328,25 +7402,91 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                 break;
             }
             case 'c':
-                ptn_sprintf_append_char(&output, ptn_value_to_integer(arg), &spec);
+                ptn_sprintf_append_char(&output, ptn_sprintf_value_to_integer(arg), &spec);
                 break;
             case 'b':
-                ptn_sprintf_append_binary(&output, (uint64_t)ptn_value_to_integer(arg), &spec);
+                ptn_sprintf_append_binary(&output, (uint64_t)ptn_sprintf_value_to_integer(arg), &spec);
                 break;
             case 'd':
             case 'i': {
+                int manual_padding = spec.pad_char != '\0';
+                PtnSprintfSpec effective = spec;
+                if (manual_padding) {
+                    effective.has_width = 0;
+                    effective.left_adjust = 0;
+                    effective.zero_pad = 0;
+                }
                 char c_format[64];
-                ptn_sprintf_build_numeric_format(c_format, sizeof(c_format), &spec, conversion, 1);
-                ptn_sprintf_append_snprintf_signed(&output, c_format, (long long)ptn_value_to_integer(arg));
+                ptn_sprintf_build_numeric_format(
+                    c_format,
+                    sizeof(c_format),
+                    &effective,
+                    conversion,
+                    1,
+                    1,
+                    0
+                );
+                size_t formatted_len = 0;
+                char *formatted = ptn_sprintf_format_snprintf_signed(
+                    c_format,
+                    (long long)ptn_sprintf_value_to_integer(arg),
+                    &formatted_len
+                );
+                if (manual_padding) {
+                    ptn_sprintf_append_manual_padding(
+                        &output,
+                        formatted,
+                        formatted_len,
+                        &spec,
+                        spec.pad_char,
+                        spec.left_adjust
+                    );
+                } else {
+                    ptn_string_buffer_append_len(&output, formatted, formatted_len);
+                }
+                free(formatted);
                 break;
             }
             case 'u':
             case 'o':
             case 'x':
             case 'X': {
+                int manual_padding = spec.pad_char != '\0';
+                PtnSprintfSpec effective = spec;
+                if (manual_padding) {
+                    effective.has_width = 0;
+                    effective.left_adjust = 0;
+                    effective.zero_pad = 0;
+                }
                 char c_format[64];
-                ptn_sprintf_build_numeric_format(c_format, sizeof(c_format), &spec, conversion, 1);
-                ptn_sprintf_append_snprintf_unsigned(&output, c_format, (unsigned long long)((uint64_t)ptn_value_to_integer(arg)));
+                ptn_sprintf_build_numeric_format(
+                    c_format,
+                    sizeof(c_format),
+                    &effective,
+                    conversion,
+                    1,
+                    1,
+                    0
+                );
+                size_t formatted_len = 0;
+                char *formatted = ptn_sprintf_format_snprintf_unsigned(
+                    c_format,
+                    (unsigned long long)((uint64_t)ptn_sprintf_value_to_integer(arg)),
+                    &formatted_len
+                );
+                if (manual_padding) {
+                    ptn_sprintf_append_manual_padding(
+                        &output,
+                        formatted,
+                        formatted_len,
+                        &spec,
+                        spec.pad_char,
+                        spec.left_adjust
+                    );
+                } else {
+                    ptn_string_buffer_append_len(&output, formatted, formatted_len);
+                }
+                free(formatted);
                 break;
             }
             case 'f':
@@ -7355,9 +7495,42 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
             case 'E':
             case 'g':
             case 'G': {
+                int manual_padding = spec.pad_char != '\0' || (spec.left_adjust && spec.zero_pad && spec.has_width);
+                PtnSprintfSpec effective = spec;
+                if (manual_padding) {
+                    effective.has_width = 0;
+                    effective.left_adjust = 0;
+                    effective.zero_pad = 0;
+                }
                 char c_format[64];
-                ptn_sprintf_build_numeric_format(c_format, sizeof(c_format), &spec, conversion, 0);
-                ptn_sprintf_append_snprintf_double(&output, c_format, ptn_value_to_double(arg));
+                ptn_sprintf_build_numeric_format(
+                    c_format,
+                    sizeof(c_format),
+                    &effective,
+                    conversion,
+                    0,
+                    1,
+                    1
+                );
+                size_t formatted_len = 0;
+                char *formatted = ptn_sprintf_format_snprintf_double(c_format, ptn_value_to_double(arg), &formatted_len);
+                if (conversion == 'e' || conversion == 'E' || conversion == 'g' || conversion == 'G') {
+                    ptn_sprintf_normalize_exponent(formatted, conversion);
+                    formatted_len = strlen(formatted);
+                }
+                if (manual_padding) {
+                    ptn_sprintf_append_manual_padding(
+                        &output,
+                        formatted,
+                        formatted_len,
+                        &spec,
+                        spec.pad_char != '\0' ? spec.pad_char : '0',
+                        spec.left_adjust
+                    );
+                } else {
+                    ptn_string_buffer_append_len(&output, formatted, formatted_len);
+                }
+                free(formatted);
                 break;
             }
             default:
@@ -15175,44 +15348,292 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_bool(0);
 }
 
-static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static const char *ptn_date_weekday_short(int wday) {
+    static const char *names[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+    return names[wday >= 0 && wday < 7 ? wday : 0];
+}
+
+static const char *ptn_date_weekday_long(int wday) {
+    static const char *names[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+    return names[wday >= 0 && wday < 7 ? wday : 0];
+}
+
+static const char *ptn_date_month_short(int mon) {
+    static const char *names[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    return names[mon >= 0 && mon < 12 ? mon : 0];
+}
+
+static const char *ptn_date_month_long(int mon) {
+    static const char *names[] = {
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    };
+    return names[mon >= 0 && mon < 12 ? mon : 0];
+}
+
+static int ptn_date_is_leap_year(int year) {
+    return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+}
+
+static int ptn_date_days_in_month(int year, int month) {
+    static const int days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    if (month == 2 && ptn_date_is_leap_year(year)) {
+        return 29;
+    }
+    return month >= 1 && month <= 12 ? days[month - 1] : 31;
+}
+
+static const char *ptn_date_day_suffix(int day) {
+    if (day >= 11 && day <= 13) {
+        return "th";
+    }
+    switch (day % 10) {
+        case 1:
+            return "st";
+        case 2:
+            return "nd";
+        case 3:
+            return "rd";
+        default:
+            return "th";
+    }
+}
+
+static void ptn_tzset(void) {
+#if defined(_WIN32)
+    _tzset();
+#else
+    tzset();
+#endif
+}
+
+static void ptn_set_timezone_env(const char *timezone) {
+#if defined(_WIN32)
+    size_t len = strlen(timezone) + 4;
+    char *assignment = malloc(len);
+    if (assignment == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(assignment, len, "TZ=%s", timezone);
+    _putenv(assignment);
+    free(assignment);
+#else
+    setenv("TZ", timezone, 1);
+#endif
+    ptn_tzset();
+}
+
+static const char *ptn_current_timezone_name(void) {
+    const char *timezone = getenv("TZ");
+    if (timezone != NULL && timezone[0] != '\0') {
+        return timezone;
+    }
+    timezone = getenv("PTN_DATE_TIMEZONE");
+    return timezone != NULL && timezone[0] != '\0' ? timezone : "UTC";
+}
+
+static int ptn_timezone_name_is_supported(PtnStringOperand timezone) {
+    if (timezone.len == 0 || memchr(timezone.data, '\0', timezone.len) != NULL) {
+        return 0;
+    }
+    if (
+        (timezone.len == 3 && strncmp(timezone.data, "UTC", 3) == 0) ||
+        (timezone.len == 3 && strncmp(timezone.data, "GMT", 3) == 0)
+    ) {
+        return 1;
+    }
+    if (memchr(timezone.data, '/', timezone.len) == NULL) {
+        if (timezone.len < 2 || timezone.len > 6) {
+            return 0;
+        }
+        for (size_t i = 0; i < timezone.len; i++) {
+            if (!isupper((unsigned char)timezone.data[i])) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    for (size_t i = 0; i < timezone.len; i++) {
+        unsigned char ch = (unsigned char)timezone.data[i];
+        if (!(isalnum(ch) || ch == '_' || ch == '-' || ch == '/' || ch == '+')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static time_t ptn_mktime_in_utc(struct tm *parts) {
+    const char *old_tz = getenv("TZ");
+    char *old_copy = old_tz == NULL ? NULL : ptn_duplicate_string(old_tz);
+    ptn_set_timezone_env("UTC");
+    time_t result = mktime(parts);
+    if (old_copy == NULL) {
+#if defined(_WIN32)
+        _putenv("TZ=");
+#else
+        unsetenv("TZ");
+#endif
+        ptn_tzset();
+    } else {
+        ptn_set_timezone_env(old_copy);
+        free(old_copy);
+    }
+    return result;
+}
+
+static int64_t ptn_date_timezone_offset(time_t timestamp) {
+    struct tm utc_parts;
+    struct tm *utc = gmtime(&timestamp);
+    if (utc == NULL) {
+        return 0;
+    }
+    utc_parts = *utc;
+    utc_parts.tm_isdst = -1;
+    time_t local_interpretation = mktime(&utc_parts);
+    if (local_interpretation == (time_t)-1) {
+        return 0;
+    }
+    return (int64_t)difftime(timestamp, local_interpretation);
+}
+
+static void ptn_date_append_offset(PtnStringBuffer *buffer, int64_t offset, int colon) {
+    char sign = offset < 0 ? '-' : '+';
+    int64_t absolute = offset < 0 ? -offset : offset;
+    int64_t hours = absolute / 3600;
+    int64_t minutes = (absolute % 3600) / 60;
+    if (colon) {
+        ptn_string_buffer_append_format(buffer, "%c%02lld:%02lld", sign, (long long)hours, (long long)minutes);
+    } else {
+        ptn_string_buffer_append_format(buffer, "%c%02lld%02lld", sign, (long long)hours, (long long)minutes);
+    }
+}
+
+static int ptn_date_swatch_beats(time_t timestamp) {
+    struct tm *utc = gmtime(&timestamp);
+    if (utc == NULL) {
+        return 0;
+    }
+    int seconds = utc->tm_hour * 3600 + utc->tm_min * 60 + utc->tm_sec + 3600;
+    seconds %= 86400;
+    if (seconds < 0) {
+        seconds += 86400;
+    }
+    return (int)floor((double)seconds / 86.4);
+}
+
+static PtnValue ptn_format_date_value(PtnRuntime *runtime, const char *function_name, PtnStringOperand format, time_t timestamp, int use_gmt, size_t line) {
     (void)runtime;
+    (void)function_name;
     (void)line;
-    char *format = ptn_value_to_string(args[0]);
-    time_t timestamp = argc >= 2 ? (time_t)ptn_value_to_integer(args[1]) : time(NULL);
-    struct tm *parts = localtime(&timestamp);
+    struct tm parts_storage;
+    struct tm *parts = use_gmt ? gmtime(&timestamp) : localtime(&timestamp);
     if (parts == NULL) {
-        free(format);
         return ptn_bool(0);
     }
+    parts_storage = *parts;
+    parts = &parts_storage;
 
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
-    for (size_t i = 0; format[i] != '\0'; i++) {
-        char ch = format[i];
-        if (ch == '\\' && format[i + 1] != '\0') {
+    int year = parts->tm_year + 1900;
+    int month = parts->tm_mon + 1;
+    int64_t offset = use_gmt ? 0 : ptn_date_timezone_offset(timestamp);
+    for (size_t i = 0; i < format.len; i++) {
+        char ch = format.data[i];
+        if (ch == '\\' && i + 1 < format.len) {
             i++;
-            ptn_string_buffer_append_char(&buffer, format[i]);
+            ptn_string_buffer_append_char(&buffer, format.data[i]);
             continue;
         }
         switch (ch) {
+            case 'D':
+                ptn_string_buffer_append(&buffer, ptn_date_weekday_short(parts->tm_wday));
+                break;
+            case 'l':
+                ptn_string_buffer_append(&buffer, ptn_date_weekday_long(parts->tm_wday));
+                break;
+            case 'N':
+                ptn_string_buffer_append_format(&buffer, "%d", parts->tm_wday == 0 ? 7 : parts->tm_wday);
+                break;
+            case 'w':
+                ptn_string_buffer_append_format(&buffer, "%d", parts->tm_wday);
+                break;
+            case 'z':
+                ptn_string_buffer_append_format(&buffer, "%d", parts->tm_yday);
+                break;
+            case 'c':
+                ptn_string_buffer_append_format(&buffer, "%04d-%02d-%02dT%02d:%02d:%02d", year, month, parts->tm_mday, parts->tm_hour, parts->tm_min, parts->tm_sec);
+                ptn_date_append_offset(&buffer, offset, 1);
+                break;
+            case 'r':
+                ptn_string_buffer_append_format(
+                    &buffer,
+                    "%s, %02d %s %04d %02d:%02d:%02d ",
+                    ptn_date_weekday_short(parts->tm_wday),
+                    parts->tm_mday,
+                    ptn_date_month_short(parts->tm_mon),
+                    year,
+                    parts->tm_hour,
+                    parts->tm_min,
+                    parts->tm_sec
+                );
+                ptn_date_append_offset(&buffer, offset, 0);
+                break;
+            case 'F':
+                ptn_string_buffer_append(&buffer, ptn_date_month_long(parts->tm_mon));
+                break;
+            case 'M':
+                ptn_string_buffer_append(&buffer, ptn_date_month_short(parts->tm_mon));
+                break;
             case 'Y':
-                ptn_string_buffer_append_format(&buffer, "%04d", parts->tm_year + 1900);
+                ptn_string_buffer_append_format(&buffer, "%04d", year);
+                break;
+            case 'X':
+                ptn_string_buffer_append_format(&buffer, "%+05d", year);
                 break;
             case 'y':
-                ptn_string_buffer_append_format(&buffer, "%02d", (parts->tm_year + 1900) % 100);
+                ptn_string_buffer_append_format(&buffer, "%02d", year % 100);
                 break;
             case 'm':
-                ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_mon + 1);
+                ptn_string_buffer_append_format(&buffer, "%02d", month);
                 break;
             case 'n':
-                ptn_string_buffer_append_format(&buffer, "%d", parts->tm_mon + 1);
+                ptn_string_buffer_append_format(&buffer, "%d", month);
+                break;
+            case 't':
+                ptn_string_buffer_append_format(&buffer, "%d", ptn_date_days_in_month(year, month));
+                break;
+            case 'L':
+                ptn_string_buffer_append_format(&buffer, "%d", ptn_date_is_leap_year(year));
                 break;
             case 'd':
                 ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_mday);
                 break;
             case 'j':
                 ptn_string_buffer_append_format(&buffer, "%d", parts->tm_mday);
+                break;
+            case 'S':
+                ptn_string_buffer_append(&buffer, ptn_date_day_suffix(parts->tm_mday));
+                break;
+            case 'a':
+                ptn_string_buffer_append(&buffer, parts->tm_hour < 12 ? "am" : "pm");
+                break;
+            case 'A':
+                ptn_string_buffer_append(&buffer, parts->tm_hour < 12 ? "AM" : "PM");
+                break;
+            case 'B':
+                ptn_string_buffer_append_format(&buffer, "%03d", ptn_date_swatch_beats(timestamp));
+                break;
+            case 'g': {
+                int hour = parts->tm_hour % 12;
+                if (hour == 0) {
+                    hour = 12;
+                }
+                ptn_string_buffer_append_format(&buffer, "%d", hour);
+                break;
+            }
+            case 'G':
+                ptn_string_buffer_append_format(&buffer, "%d", parts->tm_hour);
                 break;
             case 'H':
                 ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_hour);
@@ -15231,13 +15652,287 @@ static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnVal
             case 's':
                 ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_sec);
                 break;
+            case 'v':
+                ptn_string_buffer_append(&buffer, "000");
+                break;
+            case 'I':
+                ptn_string_buffer_append_format(&buffer, "%d", parts->tm_isdst > 0 ? 1 : 0);
+                break;
+            case 'O':
+                ptn_date_append_offset(&buffer, offset, 0);
+                break;
+            case 'P':
+                ptn_date_append_offset(&buffer, offset, 1);
+                break;
+            case 'T': {
+                char zone[64];
+                if (strftime(zone, sizeof(zone), "%Z", parts) == 0) {
+                    zone[0] = '\0';
+                }
+                ptn_string_buffer_append(&buffer, use_gmt ? "GMT" : zone);
+                break;
+            }
+            case 'e':
+                ptn_string_buffer_append(&buffer, use_gmt ? "UTC" : ptn_current_timezone_name());
+                break;
+            case 'Z':
+                ptn_string_buffer_append_format(&buffer, "%lld", (long long)offset);
+                break;
+            case 'U':
+                ptn_string_buffer_append_format(&buffer, "%lld", (long long)timestamp);
+                break;
             default:
                 ptn_string_buffer_append_char(&buffer, ch);
                 break;
         }
     }
-    free(format);
     return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static time_t ptn_date_mktime_from_args(size_t argc, const PtnValue *args, int use_gmt) {
+    time_t now = time(NULL);
+    struct tm parts_storage;
+    struct tm *current = use_gmt ? gmtime(&now) : localtime(&now);
+    if (current == NULL) {
+        memset(&parts_storage, 0, sizeof(parts_storage));
+        parts_storage.tm_mday = 1;
+        parts_storage.tm_year = 70;
+    } else {
+        parts_storage = *current;
+    }
+    if (argc >= 1) {
+        parts_storage.tm_hour = (int)ptn_value_to_integer(args[0]);
+    }
+    if (argc >= 2) {
+        parts_storage.tm_min = (int)ptn_value_to_integer(args[1]);
+    }
+    if (argc >= 3) {
+        parts_storage.tm_sec = (int)ptn_value_to_integer(args[2]);
+    }
+    if (argc >= 4) {
+        parts_storage.tm_mon = (int)ptn_value_to_integer(args[3]) - 1;
+    }
+    if (argc >= 5) {
+        parts_storage.tm_mday = (int)ptn_value_to_integer(args[4]);
+    }
+    if (argc >= 6) {
+        parts_storage.tm_year = (int)ptn_value_to_integer(args[5]) - 1900;
+    }
+    parts_storage.tm_isdst = -1;
+    return use_gmt ? ptn_mktime_in_utc(&parts_storage) : mktime(&parts_storage);
+}
+
+static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "date", 1, "format", args[0], line);
+    time_t timestamp = argc >= 2 ? (time_t)ptn_value_to_integer(args[1]) : time(NULL);
+    PtnValue result = ptn_format_date_value(runtime, "date", format, timestamp, 0, line);
+    ptn_string_operand_free(format);
+    return result;
+}
+
+static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "gmdate", 1, "format", args[0], line);
+    time_t timestamp = argc >= 2 ? (time_t)ptn_value_to_integer(args[1]) : time(NULL);
+    PtnValue result = ptn_format_date_value(runtime, "gmdate", format, timestamp, 1, line);
+    ptn_string_operand_free(format);
+    return result;
+}
+
+static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    return ptn_int((int64_t)ptn_date_mktime_from_args(argc, args, 0));
+}
+
+static PtnValue ptn_internal_gmmktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    return ptn_int((int64_t)ptn_date_mktime_from_args(argc, args, 1));
+}
+
+static PtnValue ptn_internal_time(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int((int64_t)time(NULL));
+}
+
+static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_string(ptn_current_timezone_name());
+}
+
+static PtnValue ptn_internal_date_default_timezone_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand timezone = ptn_internal_expect_string_arg(runtime, "date_default_timezone_set", 1, "timezoneId", args[0], line);
+    if (!ptn_timezone_name_is_supported(timezone)) {
+        char *name = ptn_duplicate_string_len(timezone.data, timezone.len);
+        size_t message_len = strlen(name) + 64;
+        char *message = malloc(message_len);
+        if (message == NULL) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, message_len, "date_default_timezone_set(): Timezone ID '%s' is invalid", name);
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(message);
+        free(name);
+        ptn_string_operand_free(timezone);
+        return ptn_bool(0);
+    }
+    char *name = ptn_duplicate_string_len(timezone.data, timezone.len);
+    ptn_set_timezone_env(name);
+    free(name);
+    ptn_string_operand_free(timezone);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_checkdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    int month = (int)ptn_value_to_integer(args[0]);
+    int day = (int)ptn_value_to_integer(args[1]);
+    int year = (int)ptn_value_to_integer(args[2]);
+    if (year < 1 || year > 32767 || month < 1 || month > 12 || day < 1) {
+        return ptn_bool(0);
+    }
+    return ptn_bool(day <= ptn_date_days_in_month(year, month));
+}
+
+static int ptn_idate_value(char token, const struct tm *parts, time_t timestamp, int64_t offset, int *out) {
+    int year = parts->tm_year + 1900;
+    int month = parts->tm_mon + 1;
+    switch (token) {
+        case 'B':
+            *out = ptn_date_swatch_beats(timestamp);
+            return 1;
+        case 'd':
+            *out = parts->tm_mday;
+            return 1;
+        case 'h': {
+            int hour = parts->tm_hour % 12;
+            *out = hour == 0 ? 12 : hour;
+            return 1;
+        }
+        case 'H':
+            *out = parts->tm_hour;
+            return 1;
+        case 'i':
+            *out = parts->tm_min;
+            return 1;
+        case 'I':
+            *out = parts->tm_isdst > 0 ? 1 : 0;
+            return 1;
+        case 'L':
+            *out = ptn_date_is_leap_year(year);
+            return 1;
+        case 'm':
+        case 'n':
+            *out = month;
+            return 1;
+        case 's':
+            *out = parts->tm_sec;
+            return 1;
+        case 't':
+            *out = ptn_date_days_in_month(year, month);
+            return 1;
+        case 'U':
+            *out = (int)timestamp;
+            return 1;
+        case 'w':
+            *out = parts->tm_wday;
+            return 1;
+        case 'y':
+            *out = year % 100;
+            return 1;
+        case 'Y':
+            *out = year;
+            return 1;
+        case 'z':
+            *out = parts->tm_yday;
+            return 1;
+        case 'Z':
+            *out = (int)offset;
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static PtnValue ptn_internal_idate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "idate", 1, "format", args[0], line);
+    if (format.len != 1) {
+        ptn_emit_warning(&runtime->diagnostics, "idate(): idate format is one char", line);
+        ptn_string_operand_free(format);
+        return ptn_bool(0);
+    }
+    time_t timestamp = argc >= 2 ? (time_t)ptn_value_to_integer(args[1]) : time(NULL);
+    struct tm *parts = localtime(&timestamp);
+    if (parts == NULL) {
+        ptn_string_operand_free(format);
+        return ptn_bool(0);
+    }
+    int value = 0;
+    if (!ptn_idate_value(format.data[0], parts, timestamp, ptn_date_timezone_offset(timestamp), &value)) {
+        ptn_emit_warning(&runtime->diagnostics, "idate(): Unrecognized date format token", line);
+        ptn_string_operand_free(format);
+        return ptn_bool(0);
+    }
+    ptn_string_operand_free(format);
+    return ptn_int(value);
+}
+
+static PtnValue ptn_internal_getdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    time_t timestamp = argc >= 1 ? (time_t)ptn_value_to_integer(args[0]) : time(NULL);
+    struct tm *parts = localtime(&timestamp);
+    if (parts == NULL) {
+        return ptn_bool(0);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("seconds"), ptn_int(parts->tm_sec));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("minutes"), ptn_int(parts->tm_min));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("hours"), ptn_int(parts->tm_hour));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("mday"), ptn_int(parts->tm_mday));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("wday"), ptn_int(parts->tm_wday));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("mon"), ptn_int(parts->tm_mon + 1));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("year"), ptn_int(parts->tm_year + 1900));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("yday"), ptn_int(parts->tm_yday));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("weekday"), ptn_string(ptn_date_weekday_long(parts->tm_wday)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("month"), ptn_string(ptn_date_month_long(parts->tm_mon)));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_int((int64_t)timestamp));
+    return result;
+}
+
+static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    time_t timestamp = argc >= 1 ? (time_t)ptn_value_to_integer(args[0]) : time(NULL);
+    int associative = argc >= 2 && ptn_is_truthy(args[1]);
+    struct tm *parts = localtime(&timestamp);
+    if (parts == NULL) {
+        return ptn_bool(0);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    const char *keys[] = { "tm_sec", "tm_min", "tm_hour", "tm_mday", "tm_mon", "tm_year", "tm_wday", "tm_yday", "tm_isdst" };
+    int values[] = {
+        parts->tm_sec, parts->tm_min, parts->tm_hour, parts->tm_mday, parts->tm_mon,
+        parts->tm_year, parts->tm_wday, parts->tm_yday, parts->tm_isdst
+    };
+    for (int i = 0; i < 9; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            associative ? ptn_array_string_key(keys[i]) : ptn_array_int_key(i),
+            ptn_int(values[i])
+        );
+    }
+    return result;
 }
 
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -15254,20 +15949,30 @@ static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
 static const char *ptn_property_exists_target_type_name(PtnValue value);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_checkdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_date_default_timezone_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_getdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gmmktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_idate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_time(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -15355,6 +16060,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "call_user_func_array", 2, 2, ptn_internal_call_user_func_array },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chdir", 1, 1, ptn_internal_chdir },
+        { "checkdate", 3, 3, ptn_internal_checkdate },
         { "chmod", 2, 2, ptn_internal_chmod },
         { "chop", 1, 2, ptn_internal_chop },
         { "chr", 1, 1, ptn_internal_chr },
@@ -15371,6 +16077,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "crc32", 1, 1, ptn_internal_crc32 },
         { "current", 1, 1, ptn_internal_current },
         { "date", 1, 2, ptn_internal_date },
+        { "date_default_timezone_get", 0, 0, ptn_internal_date_default_timezone_get },
+        { "date_default_timezone_set", 1, 1, ptn_internal_date_default_timezone_set },
         { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
         { "decbin", 1, 1, ptn_internal_decbin },
         { "define", 2, 3, ptn_internal_define },
@@ -15414,16 +16122,20 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
         { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
         { "getcwd", 0, 0, ptn_internal_getcwd },
+        { "getdate", 0, 1, ptn_internal_getdate },
         { "getenv", 0, 2, ptn_internal_getenv },
         { "getmypid", 0, 0, ptn_internal_getmypid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "gettype", 1, 1, ptn_internal_gettype },
+        { "gmdate", 1, 2, ptn_internal_gmdate },
+        { "gmmktime", 0, 6, ptn_internal_gmmktime },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "highlight_file", 1, 2, ptn_internal_highlight_file },
         { "highlight_string", 1, 2, ptn_internal_highlight_string },
         { "htmlspecialchars", 1, 4, ptn_internal_htmlspecialchars },
         { "htmlspecialchars_decode", 1, 2, ptn_internal_htmlspecialchars_decode },
+        { "idate", 1, 2, ptn_internal_idate },
         { "implode", 1, 2, ptn_internal_implode },
         { "in_array", 2, 3, ptn_internal_in_array },
         { "ini_get", 1, 1, ptn_internal_ini_get },
@@ -15467,6 +16179,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "lcfirst", 1, 1, ptn_internal_lcfirst },
         { "levenshtein", 2, 5, ptn_internal_levenshtein },
         { "localeconv", 0, 0, ptn_internal_localeconv },
+        { "localtime", 0, 2, ptn_internal_localtime },
         { "lstat", 1, 1, ptn_internal_lstat },
         { "ltrim", 1, 2, ptn_internal_ltrim },
         { "max", 1, PTN_VARIADIC_ARGS, ptn_internal_max },
@@ -15474,6 +16187,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "method_exists", 2, 2, ptn_internal_method_exists },
         { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
+        { "mktime", 0, 6, ptn_internal_mktime },
         { "natcasesort", 1, 1, ptn_internal_natcasesort },
         { "natsort", 1, 1, ptn_internal_natsort },
         { "next", 1, 1, ptn_internal_next },
@@ -15557,6 +16271,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "substr", 2, 3, ptn_internal_substr },
         { "substr_count", 2, 4, ptn_internal_substr_count },
         { "substr_replace", 3, 4, ptn_internal_substr_replace },
+        { "time", 0, 0, ptn_internal_time },
         { "touch", 1, 3, ptn_internal_touch },
         { "trait_exists", 1, 2, ptn_internal_trait_exists },
         { "trim", 1, 2, ptn_internal_trim },

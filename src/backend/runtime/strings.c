@@ -1130,6 +1130,50 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_LC_TIME);
         return 1;
     }
+    if (strcmp(name, "DATE_ATOM") == 0) {
+        *out = ptn_string("Y-m-d\\TH:i:sP");
+        return 1;
+    }
+    if (strcmp(name, "DATE_COOKIE") == 0) {
+        *out = ptn_string("l, d-M-Y H:i:s T");
+        return 1;
+    }
+    if (strcmp(name, "DATE_ISO8601") == 0) {
+        *out = ptn_string("Y-m-d\\TH:i:sO");
+        return 1;
+    }
+    if (strcmp(name, "DATE_ISO8601_EXPANDED") == 0) {
+        *out = ptn_string("X-m-d\\TH:i:sP");
+        return 1;
+    }
+    if (strcmp(name, "DATE_RFC822") == 0) {
+        *out = ptn_string("D, d M y H:i:s O");
+        return 1;
+    }
+    if (strcmp(name, "DATE_RFC850") == 0 || strcmp(name, "DATE_RFC1036") == 0) {
+        *out = ptn_string("l, d-M-y H:i:s T");
+        return 1;
+    }
+    if (
+        strcmp(name, "DATE_RFC1123") == 0 ||
+        strcmp(name, "DATE_RFC2822") == 0 ||
+        strcmp(name, "DATE_RSS") == 0
+    ) {
+        *out = ptn_string("D, d M Y H:i:s O");
+        return 1;
+    }
+    if (strcmp(name, "DATE_RFC7231") == 0) {
+        *out = ptn_string("D, d M Y H:i:s \\G\\M\\T");
+        return 1;
+    }
+    if (strcmp(name, "DATE_RFC3339") == 0 || strcmp(name, "DATE_W3C") == 0) {
+        *out = ptn_string("Y-m-d\\TH:i:sP");
+        return 1;
+    }
+    if (strcmp(name, "DATE_RFC3339_EXTENDED") == 0) {
+        *out = ptn_string("Y-m-d\\TH:i:s.vP");
+        return 1;
+    }
     if (strcmp(name, "M_E") == 0) {
         *out = ptn_float(2.718281828459045);
         return 1;
