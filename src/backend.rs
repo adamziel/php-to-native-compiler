@@ -6914,6 +6914,20 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static EXTRACT_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "array",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "prefix",
+            default: Some(InternalParameterDefault::String("")),
+        },
+    ];
     static FGETCSV_PARAMETERS: [InternalParameterSpec; 5] = [
         InternalParameterSpec {
             name: "stream",
@@ -6965,6 +6979,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
 
     if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("extract") {
+        Some(&EXTRACT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("fgetcsv") {
         Some(&FGETCSV_PARAMETERS)
     } else if name.eq_ignore_ascii_case("fputcsv") {
@@ -13750,6 +13766,11 @@ impl ValueEmitter {
         }
 
         if !has_named_arguments && !has_unpacked_arguments {
+            if name.eq_ignore_ascii_case("extract") {
+                if let Some(result_temp) = self.emit_extract_call(out, arguments, line) {
+                    return result_temp;
+                }
+            }
             if let Some(result_temp) =
                 self.emit_variable_array_mutator_call(out, name, arguments, line)
             {
@@ -14886,6 +14907,74 @@ impl ValueEmitter {
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
+        }
+        Some(result_temp)
+    }
+
+    fn emit_extract_call(
+        &mut self,
+        out: &mut String,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> Option<String> {
+        if arguments.is_empty() || arguments.len() > 3 {
+            return None;
+        }
+
+        let globals_source =
+            matches!(&arguments[0], ValueExpr::Load { name, .. } if name == "GLOBALS");
+        let mut temps = Vec::with_capacity(arguments.len());
+        if globals_source {
+            let temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&temp);
+            out.push_str(" = ptn_null();\n");
+            temps.push(temp);
+        } else if let Some(target) = reference_target_from_value(&arguments[0]) {
+            temps.push(self.emit_reference_target(out, &target));
+        } else {
+            temps.push(self.emit_materialized_value(out, &arguments[0]));
+        }
+        for argument in &arguments[1..] {
+            temps.push(self.emit_materialized_value(out, argument));
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        if globals_source {
+            out.push_str("ptn_internal_extract_globals");
+        } else {
+            out.push_str("ptn_internal_extract");
+        }
+        out.push_str("(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
         }
         Some(result_temp)
     }

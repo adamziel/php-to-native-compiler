@@ -18199,6 +18199,65 @@ var_dump(ARRAY_FILTER_USE_BOTH, ARRAY_FILTER_USE_KEY, function_exists('array_fil
 }
 
 #[test]
+fn compile_extract_refs_and_globals_to_native_binary() {
+    let root = temp_dir("ptn-native-extract-refs-globals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("extract-refs-globals.php");
+    let output = root.join("extract-refs-globals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = [\"a\" => 1, \"b\" => 2, 1 => \"skip\", \"bad-name\" => 3, \"GLOBALS\" => [\"no\"]];\n\
+var_dump(extract($source));\n\
+var_dump($a, $b);\n\
+$refs = [\"r\" => 10];\n\
+$other = $refs;\n\
+var_dump(extract($refs, EXTR_REFS));\n\
+$r = 20;\n\
+var_dump($refs[\"r\"], $other[\"r\"], $r);\n\
+$str = \"John\";\n\
+var_dump(extract([\"GLOBALS\" => [\"str\" => \"bad\"]]));\n\
+var_dump($GLOBALS[\"str\"]);\n\
+function check_globals($ref) {\n\
+    unset($GLOBALS[\"ga\"]);\n\
+    $GLOBALS[\"ga\"] = 1;\n\
+    if ($ref) {\n\
+        global $ga;\n\
+    } else {\n\
+        $ga = NULL;\n\
+    }\n\
+    var_dump(is_int(extract($GLOBALS, EXTR_REFS)));\n\
+    var_dump($ga, $GLOBALS[\"ga\"]);\n\
+    $ga = 4;\n\
+    var_dump($ga, $GLOBALS[\"ga\"]);\n\
+}\n\
+check_globals(false);\n\
+check_globals(true);\n\
+var_dump(EXTR_REFS, EXTR_OVERWRITE, function_exists(\"extract\"), function_exists(\"EXTRACT\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3)\nint(1)\nint(2)\nint(1)\nint(20)\nint(10)\nint(20)\nint(1)\nstring(4) \"John\"\nbool(true)\nint(1)\nint(1)\nint(4)\nint(1)\nbool(true)\nint(1)\nint(1)\nint(4)\nint(4)\nint(256)\nint(0)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_extract"));
+    assert!(c_source.contains("ptn_internal_extract_globals"));
+}
+
+#[test]
 fn compile_array_callback_validation_to_native_binary() {
     let root = temp_dir("ptn-native-array-callback-validation");
     fs::create_dir_all(&root).unwrap();
