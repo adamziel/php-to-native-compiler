@@ -1067,26 +1067,6 @@ ptn_phpt_first_unsupported_language_surface() {
             if (!saw_anonymous_class && saw_interface && match(line, /function[[:space:]]+([a-z_][a-z0-9_]*)[[:space:]]*[(]/, method_match)) {
                 override_interface_methods[method_match[1]] = 1
             }
-            if (ptn_has_php_attribute_syntax($0)) {
-                attr_raw = tolower($0)
-                if (attr_raw ~ /#\[[[:space:]]*\\?override[[:space:]]*\]/) {
-                    pending_override_attribute = 1
-                    next
-                }
-                print "unsupported-attribute-syntax-metadata\trequires PHP attribute syntax (`#[...]`) plus declaration/reflection metadata, outside PTN parser/metadata model"
-                found = 1
-                exit
-            }
-            if (pending_override_attribute && line !~ /^[[:space:]]*$/) {
-                if (match(line, /function[[:space:]]+([a-z_][a-z0-9_]*)[[:space:]]*[(]/, override_method_match) &&
-                    (override_method_match[1] in override_interface_methods)) {
-                    pending_override_attribute = 0
-                } else {
-                    print "unsupported-attribute-syntax-metadata\trequires #[Override] validation metadata, outside PTN modeled attribute subset"
-                    found = 1
-                    exit
-                }
-            }
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/) {
                 print "unsupported-generator-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
                 found = 1

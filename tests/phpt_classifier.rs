@@ -497,14 +497,14 @@ fn phpt_classifier_splits_attribute_metadata_blockers() {
         (
             "attribute syntax on class",
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nclass Bag {}\n--EXPECT--\n",
-            "unsupported-attribute-syntax-metadata\t",
-            "requires PHP attribute syntax",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "attribute syntax on function",
             "--TEST--\nattribute\n--FILE--\n<?php\n#[Example]\nfunction f() {}\n--EXPECT--\n",
-            "unsupported-attribute-syntax-metadata\t",
-            "requires PHP attribute syntax",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "internal attribute reflection metadata",

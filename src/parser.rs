@@ -269,6 +269,7 @@ impl Parser<'_> {
             {
                 break;
             }
+            self.parse_attribute_groups()?;
             if token_is_identifier_named(self.peek(), "declare") {
                 let statement = self.parse_declare_statement()?;
                 if !matches!(statement, Statement::Empty { .. }) {
@@ -1041,6 +1042,7 @@ impl Parser<'_> {
         class_is_interface: bool,
         class_name: &str,
     ) -> Result<ParsedClassMember> {
+        self.parse_attribute_groups()?;
         let mut modifiers = self.parse_class_modifiers()?;
         if token_is_identifier_named(self.peek(), "use") {
             if class_is_interface {
@@ -1779,6 +1781,7 @@ impl Parser<'_> {
     }
 
     fn parse_statement(&mut self) -> Result<Statement> {
+        self.parse_attribute_groups()?;
         match self.peek().kind {
             TokenKind::Semicolon => self.parse_empty_statement(),
             TokenKind::Echo => self.parse_echo(),
@@ -2045,6 +2048,7 @@ impl Parser<'_> {
         class_name_for_promotions: Option<&str>,
         class_is_readonly: bool,
     ) -> Result<FunctionParameter> {
+        self.parse_attribute_groups()?;
         let promotion_modifiers = if class_name_for_promotions.is_some() {
             let modifiers = self.parse_class_modifiers()?;
             if modifiers.has_promoted_property_modifier() {
@@ -3319,6 +3323,30 @@ impl Parser<'_> {
         }
     }
 
+    fn parse_attribute_groups(&mut self) -> Result<()> {
+        while matches!(self.peek().kind, TokenKind::AttributeStart) {
+            self.parse_attribute_group()?;
+        }
+        Ok(())
+    }
+
+    fn parse_attribute_group(&mut self) -> Result<()> {
+        let start = self.advance().span;
+        let mut bracket_depth = 1usize;
+        while bracket_depth > 0 {
+            let token = self.advance().clone();
+            match token.kind {
+                TokenKind::LeftBracket => bracket_depth += 1,
+                TokenKind::RightBracket => bracket_depth -= 1,
+                TokenKind::Eof => {
+                    return Err(Diagnostic::new("unterminated attribute", Some(start)));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     fn parse_expr(&mut self) -> Result<Expr> {
         self.parse_assignment_expr()
     }
@@ -3869,6 +3897,7 @@ impl Parser<'_> {
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr> {
+        self.parse_attribute_groups()?;
         let token = self.advance().clone();
         match token.kind {
             TokenKind::String(value) => Ok(Expr::String(value, token.span)),
@@ -4277,6 +4306,7 @@ impl Parser<'_> {
     }
 
     fn parse_new_object_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        self.parse_attribute_groups()?;
         if token_is_identifier_named(self.peek(), "class") {
             return self.parse_anonymous_class_expr(start_span);
         }
@@ -5571,6 +5601,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Tilde => "~",
         TokenKind::Bang => "!",
         TokenKind::At => "@",
+        TokenKind::AttributeStart => "#[",
         TokenKind::Backslash => "\\",
         TokenKind::Ellipsis => "...",
         TokenKind::Dot => ".",

@@ -96,6 +96,7 @@ pub enum TokenKind {
     Tilde,
     Bang,
     At,
+    AttributeStart,
     Backslash,
     Ellipsis,
     Dot,
@@ -209,6 +210,9 @@ impl<'a> Lexer<'a> {
                 }
                 '/' if self.rest().starts_with("//") => self.skip_line_comment(),
                 '/' if self.rest().starts_with("/*") => self.skip_block_comment()?,
+                '#' if self.rest().starts_with("#[") => {
+                    self.push_fixed(TokenKind::AttributeStart, 2)
+                }
                 '#' => self.skip_line_comment(),
                 c if c.is_whitespace() => self.bump_char(),
                 ';' => self.push_fixed(TokenKind::Semicolon, 1),
