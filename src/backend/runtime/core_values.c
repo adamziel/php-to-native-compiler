@@ -470,6 +470,7 @@ typedef int (*PtnMagicPropertyReadHandler)(
     PtnValue receiver,
     const char *property,
     size_t line,
+    int require_isset,
     PtnValue *value_out
 );
 typedef int (*PtnMagicPropertyGetHandler)(

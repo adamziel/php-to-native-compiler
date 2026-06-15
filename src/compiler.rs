@@ -184,6 +184,14 @@ impl IncludeCollector {
                 }
                 Ok(())
             }
+            Statement::Static { declarations, .. } => {
+                for declaration in declarations {
+                    if let Some(value) = &declaration.value {
+                        self.collect_expr(value, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
             Statement::Block { statements, .. } => {
                 self.collect_statements(statements, source_file, source_dir)
             }
@@ -362,6 +370,10 @@ impl IncludeCollector {
             Expr::PropertyFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
+            Expr::DynamicPropertyFetch { receiver, name, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                self.collect_expr(name, source_file, source_dir)
+            }
             Expr::DynamicClassNameFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
@@ -476,6 +488,10 @@ impl IncludeCollector {
             }
             AssignmentTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
+            }
+            AssignmentTarget::DynamicProperty { receiver, name, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                self.collect_expr(name, source_file, source_dir)
             }
             AssignmentTarget::List(target) => {
                 for element in &target.elements {

@@ -113,6 +113,7 @@ pub struct AnonymousFunction {
     pub captures: Vec<ClosureUseCapture>,
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
+    pub is_arrow: bool,
     pub body: Vec<Statement>,
     pub span: SourceSpan,
 }
@@ -135,6 +136,8 @@ pub enum TypeHint {
     Bool,
     Mixed,
     Void,
+    Never,
+    Nullable(Box<TypeHint>),
     Class(String),
 }
 
@@ -184,6 +187,10 @@ pub enum Statement {
     },
     Global {
         names: Vec<String>,
+        span: SourceSpan,
+    },
+    Static {
+        declarations: Vec<StaticLocalDeclaration>,
         span: SourceSpan,
     },
     Call {
@@ -307,6 +314,13 @@ pub struct ConstDeclaration {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct StaticLocalDeclaration {
+    pub name: String,
+    pub value: Option<Expr>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArrayDimTarget {
     pub array: String,
     pub dimensions: Vec<Option<Expr>>,
@@ -338,6 +352,11 @@ pub enum AssignmentTarget {
     Property {
         receiver: Box<Expr>,
         name: String,
+        span: SourceSpan,
+    },
+    DynamicProperty {
+        receiver: Box<Expr>,
+        name: Box<Expr>,
         span: SourceSpan,
     },
     StaticProperty {
@@ -594,6 +613,11 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    DynamicPropertyFetch {
+        receiver: Box<Expr>,
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
     StaticPropertyFetch {
         class_name: String,
         name: String,
@@ -785,6 +809,7 @@ impl Expr {
             | Expr::DynamicNewObject { span, .. }
             | Expr::Clone { span, .. }
             | Expr::PropertyFetch { span, .. }
+            | Expr::DynamicPropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. }
             | Expr::DynamicClassNameFetch { span, .. }

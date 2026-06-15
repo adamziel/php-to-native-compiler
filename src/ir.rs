@@ -138,6 +138,8 @@ pub enum TypeHint {
     Bool,
     Mixed,
     Void,
+    Never,
+    Nullable(Box<TypeHint>),
     Class(String),
 }
 
@@ -180,6 +182,11 @@ pub enum Instruction {
     },
     DeclareFunction {
         function_index: usize,
+    },
+    BindStatic {
+        name: String,
+        value: Option<ValueExpr>,
+        line: usize,
     },
     UnsetArrayDim {
         array: String,
@@ -418,6 +425,11 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    DynamicPropertyFetch {
+        receiver: Box<ValueExpr>,
+        name: Box<ValueExpr>,
+        line: usize,
+    },
     StaticPropertyFetch {
         class_name: String,
         name: String,
@@ -518,6 +530,11 @@ pub enum AssignmentTarget {
     Property {
         receiver: Box<ValueExpr>,
         name: String,
+        line: usize,
+    },
+    DynamicProperty {
+        receiver: Box<ValueExpr>,
+        name: Box<ValueExpr>,
         line: usize,
     },
     StaticProperty {
@@ -1028,6 +1045,18 @@ impl<'a> LoweringContext<'a> {
                         instructions.push(Instruction::BindGlobal { name: name.clone() });
                     }
                 }
+                Statement::Static { declarations, .. } => {
+                    for declaration in declarations {
+                        instructions.push(Instruction::BindStatic {
+                            name: declaration.name.clone(),
+                            value: declaration
+                                .value
+                                .as_ref()
+                                .map(|value| self.lower_expr(value)),
+                            line: declaration.span.line,
+                        });
+                    }
+                }
                 Statement::Const { declarations, .. } => {
                     for declaration in declarations {
                         instructions.push(Instruction::DefineConstant {
@@ -1279,6 +1308,8 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::Bool => TypeHint::Bool,
         AstTypeHint::Mixed => TypeHint::Mixed,
         AstTypeHint::Void => TypeHint::Void,
+        AstTypeHint::Never => TypeHint::Never,
+        AstTypeHint::Nullable(inner) => TypeHint::Nullable(Box::new(lower_type_hint(*inner))),
         AstTypeHint::Class(name) => TypeHint::Class(name),
     }
 }
@@ -1350,6 +1381,15 @@ impl<'a> LoweringContext<'a> {
             } => AssignmentTarget::Property {
                 receiver: Box::new(self.lower_expr(receiver)),
                 name: name.clone(),
+                line: span.line,
+            },
+            AstAssignmentTarget::DynamicProperty {
+                receiver,
+                name,
+                span,
+            } => AssignmentTarget::DynamicProperty {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: Box::new(self.lower_expr(name)),
                 line: span.line,
             },
             AstAssignmentTarget::StaticProperty {
@@ -1668,10 +1708,10 @@ impl<'a> LoweringContext<'a> {
                 ),
                 AssignmentTarget::ArrayDim { .. }
                 | AssignmentTarget::DynamicArrayDim { .. }
-                | AssignmentTarget::PropertyArrayDim { .. } => (op, self.lower_expr(value)),
-                AssignmentTarget::Property { .. } | AssignmentTarget::StaticProperty { .. } => {
-                    (op, self.lower_expr(value))
-                }
+                | AssignmentTarget::PropertyArrayDim { .. }
+                | AssignmentTarget::Property { .. }
+                | AssignmentTarget::DynamicProperty { .. }
+                | AssignmentTarget::StaticProperty { .. } => (op, self.lower_expr(value)),
                 AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::List(_) => {
                     unreachable!("parser rejects compound assignment expression targets")
                 }
@@ -1906,6 +1946,15 @@ impl<'a> LoweringContext<'a> {
             } => ValueExpr::PropertyFetch {
                 receiver: Box::new(self.lower_expr(receiver)),
                 name: name.clone(),
+                line: span.line,
+            },
+            Expr::DynamicPropertyFetch {
+                receiver,
+                name,
+                span,
+            } => ValueExpr::DynamicPropertyFetch {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: Box::new(self.lower_expr(name)),
                 line: span.line,
             },
             Expr::StaticPropertyFetch {
@@ -2170,6 +2219,13 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::PropertyFetch { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            format!(
+                "{}->{{{}}}",
+                assertion_expr_text(receiver),
+                assertion_expr_text(name)
+            )
+        }
         Expr::StaticPropertyFetch {
             class_name, name, ..
         } => format!("{class_name}::${name}"),
@@ -2267,6 +2323,29 @@ fn assertion_expr_text(expr: &Expr) -> String {
 }
 
 fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String {
+    if function.is_arrow {
+        let return_by_ref = if function.return_by_ref { "&" } else { "" };
+        let parameters = function
+            .parameters
+            .iter()
+            .map(assertion_function_parameter_text)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let return_type = function
+            .return_type
+            .as_ref()
+            .map(|hint| format!(": {}", assertion_type_hint_text(hint)))
+            .unwrap_or_default();
+        let body = match function.body.as_slice() {
+            [Statement::Return {
+                value: Some(value), ..
+            }] => assertion_expr_text(value),
+            _ => "null".to_string(),
+        };
+
+        return format!("fn{return_by_ref}({parameters}){return_type} => {body}");
+    }
+
     let body = function
         .body
         .iter()
@@ -2325,6 +2404,40 @@ fn assertion_argument_list_text(arguments: &[Expr]) -> String {
         .map(assertion_expr_text)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn assertion_function_parameter_text(parameter: &AstFunctionParameter) -> String {
+    let mut variable = String::new();
+    if parameter.by_ref {
+        variable.push('&');
+    }
+    if parameter.is_variadic {
+        variable.push_str("...");
+    }
+    variable.push('$');
+    variable.push_str(&parameter.name);
+
+    if let Some(type_hint) = &parameter.type_hint {
+        format!("{} {variable}", assertion_type_hint_text(type_hint))
+    } else {
+        variable
+    }
+}
+
+fn assertion_type_hint_text(type_hint: &AstTypeHint) -> String {
+    match type_hint {
+        AstTypeHint::Null => "null".to_string(),
+        AstTypeHint::Array => "array".to_string(),
+        AstTypeHint::Int => "int".to_string(),
+        AstTypeHint::Float => "float".to_string(),
+        AstTypeHint::String => "string".to_string(),
+        AstTypeHint::Bool => "bool".to_string(),
+        AstTypeHint::Mixed => "mixed".to_string(),
+        AstTypeHint::Void => "void".to_string(),
+        AstTypeHint::Never => "never".to_string(),
+        AstTypeHint::Nullable(inner) => format!("?{}", assertion_type_hint_text(inner)),
+        AstTypeHint::Class(name) => name.clone(),
+    }
 }
 
 fn assertion_array_element_text(element: &AstArrayElement) -> String {
@@ -2401,6 +2514,13 @@ fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
         }
         AstAssignmentTarget::Property { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
+        }
+        AstAssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            format!(
+                "{}->{{{}}}",
+                assertion_expr_text(receiver),
+                assertion_expr_text(name)
+            )
         }
         AstAssignmentTarget::StaticProperty {
             class_name, name, ..

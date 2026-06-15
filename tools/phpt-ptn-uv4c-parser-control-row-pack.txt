@@ -1,0 +1,35 @@
+# ptn-uv4c: broad 1k parser/control-flow red-to-green row pack
+#
+# Rows selected from the broad tier-1000 classifier buckets for:
+# - function-local static declarations
+# - nullable/never type hints
+# - dynamic object/static member-name dispatch
+
+Zend/tests/anon/015.phpt
+Zend/tests/anon/016.phpt
+Zend/tests/bind_static_exception.phpt
+Zend/tests/bug28072.phpt
+Zend/tests/bug32322.phpt
+Zend/tests/bug38287.phpt
+
+Zend/tests/arrow_functions/006.phpt
+Zend/tests/arrow_functions/007.phpt
+Zend/tests/arrow_functions/gh7900.phpt
+Zend/tests/attributes/deprecated/class_constants/deprecated_constant_as_message_002.phpt
+Zend/tests/attributes/deprecated/class_constants/error_code_001.phpt
+Zend/tests/attributes/deprecated/constants/deprecated_constant_as_message_002.phpt
+Zend/tests/attributes/deprecated/constants/error_code.phpt
+Zend/tests/attributes/deprecated/functions/deprecated_handler_002.phpt
+Zend/tests/attributes/deprecated/functions/error_code_001.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_001.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_002.phpt
+Zend/tests/attributes/deprecated/functions/throwing_error_handler_003.phpt
+Zend/tests/attributes/deprecated/traits/throwing_error_handler.phpt
+Zend/tests/attributes/nodiscard/error_code_001.phpt
+Zend/tests/attributes/nodiscard/throwing_error_handler_001.phpt
+
+Zend/tests/access_modifiers/access_modifiers_011.phpt
+Zend/tests/assign_obj_op_cache_slot.phpt
+Zend/tests/bug26802.phpt
+Zend/tests/bug27669.phpt
+Zend/tests/bug29015.phpt

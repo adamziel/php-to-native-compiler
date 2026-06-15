@@ -1315,6 +1315,55 @@ fn parser_accepts_null_parameter_and_return_type_hints() {
 }
 
 #[test]
+fn parser_accepts_nullable_and_never_type_hints() {
+    let program = parser::parse(
+        "<?php $fn = fn(?int $value): ?bool => $value ? true : null; \
+         $never = fn(): never => throw new Exception('done');",
+    )
+    .unwrap();
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert_eq!(
+        closure.parameters[0].type_hint,
+        Some(TypeHint::Nullable(Box::new(TypeHint::Int)))
+    );
+    assert_eq!(
+        closure.return_type,
+        Some(TypeHint::Nullable(Box::new(TypeHint::Bool)))
+    );
+
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected never closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert_eq!(closure.return_type, Some(TypeHint::Never));
+}
+
+#[test]
+fn parser_accepts_function_static_local_declarations() {
+    let program = parser::parse(
+        "<?php function next_value() { static $value = 0, $other; return ++$value; }",
+    )
+    .unwrap();
+
+    let Statement::Static { declarations, .. } = &program.functions[0].body[0] else {
+        panic!("expected static local declaration");
+    };
+    assert_eq!(declarations.len(), 2);
+    assert_eq!(declarations[0].name, "value");
+    assert!(matches!(declarations[0].value, Some(Expr::Int(0, _))));
+    assert_eq!(declarations[1].name, "other");
+    assert!(declarations[1].value.is_none());
+}
+
+#[test]
 fn parser_accepts_scalar_parameter_return_hints_and_by_ref_returns() {
     let program = parser::parse(
         "<?php function &test(int $a, string &$b): string { return $b; } var_dump(test(1, $x));",
@@ -12428,6 +12477,45 @@ try {
 }
 
 #[test]
+fn compile_assert_arrow_function_messages_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-arrow-function-messages");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-arrow-function-messages.php");
+    let output = root.join("assert-arrow-function-messages-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    assert((fn() => false)());
+} catch (AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', \"\\n\";
+}
+try {
+    assert((fn&(int... $args): ?bool => $args[0])(false));
+} catch (AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', \"\\n\";
+}
+try {
+    assert((fn(): never => 42) && false);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "assert(): assert((fn() => false)()) failed\nassert(): assert((fn&(int ...$args): ?bool => $args[0])(false)) failed\nassert((fn(): never => 42) && false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_assertion_runtime_ini_state_to_native_binary() {
     let root = temp_dir("ptn-native-assert-runtime-ini");
     fs::create_dir_all(&root).unwrap();
@@ -16520,6 +16608,36 @@ var_dump($referenced);",
             "  int(3)\n",
             "}\n",
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_function_static_local_to_native_binary() {
+    let root = temp_dir("ptn-native-function-static-local");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-static-local.php");
+    let output = root.join("function-static-local-bin");
+    fs::write(
+        &input,
+        "<?php
+function next_value() {
+    static $value = 0;
+    return ++$value;
+}
+var_dump(next_value());
+var_dump(next_value());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -24993,6 +25111,54 @@ $object->missing ??= 8;\n",
 }
 
 #[test]
+fn parser_accepts_dynamic_property_and_method_dispatch() {
+    let program = parser::parse(
+        "<?php\n\
+$object->$name = 7;\n\
+echo $object->$name;\n\
+$object->{$name . \"_suffix\"} = 8;\n\
+$object->$method();\n\
+Example::$method();\n\
+Example::{$method}();\n",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 6);
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected dynamic property assignment expression");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::DynamicProperty { name, .. },
+            op: AssignmentOp::Assign,
+            ..
+        } if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::DynamicPropertyFetch { name, .. }
+            if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[3] else {
+        panic!("expected dynamic method call expression");
+    };
+    assert!(matches!(expression, Expr::DynamicMethodCall { .. }));
+
+    for index in 4..=5 {
+        let Statement::Expression { expression, .. } = &program.statements[index] else {
+            panic!("expected dynamic static call expression");
+        };
+        assert!(matches!(expression, Expr::DynamicCall { .. }));
+    }
+}
+
+#[test]
 fn compile_stdclass_property_reads_and_writes_to_native_binary() {
     let root = temp_dir("ptn-native-stdclass-property-access");
     fs::create_dir_all(&root).unwrap();
@@ -25026,6 +25192,91 @@ var_dump($object->value);
     assert!(c_source.contains("ptn_new_object(&runtime, \"stdClass\""));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_object_read_property(&runtime"));
+}
+
+#[test]
+fn compile_dynamic_property_and_method_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-property-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-property-dispatch.php");
+    let output = root.join("dynamic-property-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php
+class Example {
+    public function instance() { echo \"instance\\n\"; }
+    public static function statik() { echo \"static\\n\"; }
+}
+
+$object = new stdClass;
+$name = \"value\";
+$object->$name = 3;
+$object->$name &= 1;
+var_dump($object->$name);
+$suffix = \"tail\";
+$object->{\"pre_\" . $suffix} = \"ok\";
+var_dump($object->pre_tail);
+
+$example = new Example;
+$method = \"instance\";
+$example->$method();
+$static = \"statik\";
+Example::$static();
+Example::{$static}();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nstring(2) \"ok\"\ninstance\nstatic\nstatic\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_property_name(&runtime"));
+    assert!(c_source.contains("ptn_object_write_property(&runtime"));
+    assert!(c_source.contains("ptn_object_read_property(&runtime"));
+}
+
+#[test]
+fn compile_dynamic_property_leading_nul_name_throws_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-property-leading-nul");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-property-leading-nul.php");
+    let output = root.join("dynamic-property-leading-nul-bin");
+    fs::write(
+        &input,
+        "<?php
+$object = new stdClass;
+$name = \"\";
+$object->$name = \"ok\";
+var_dump($object);
+$object->{\"\\0\"} = 1;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(stdClass)#1 (1) {\n  [\"\"]=>\n  string(2) \"ok\"\n}\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Cannot access property starting with \"\\0\" in {}:6\nStack trace:\n#0 {{main}}\n  thrown in {} on line 6\n",
+            input.display(),
+            input.display()
+        )
+    );
 }
 
 #[test]
@@ -28341,6 +28592,60 @@ function side_effect() { echo \"side-effect\\n\"; return 1; }
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_method_visibility_allows"));
     assert!(c_source.contains("ptn_throw_declared_method_visibility_error"));
+}
+
+#[test]
+fn compile_magic_get_and_call_access_non_public_members_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-get-call-non-public");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-get-call-non-public.php");
+    let output = root.join("magic-get-call-non-public-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    private $var1 = 'var1 value';
+    protected $var2 = 'var2 value';
+
+    private function func1() {
+        return \"in func1\";
+    }
+
+    protected function func2() {
+        return \"in func2\";
+    }
+
+    public function __get($var) {
+        return $this->$var;
+    }
+
+    public function __call($func, array $args = array()) {
+        return call_user_func_array(array($this, $func), $args);
+    }
+}
+
+$a = new A();
+echo $a->var1, \"\\n\";
+echo $a->var2, \"\\n\";
+echo $a->func1(), \"\\n\";
+echo $a->func2(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "var1 value\nvar2 value\nin func1\nin func2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_magic_property_read"));
+    assert!(c_source.contains("ptn_object_read_property_no_magic"));
 }
 
 #[test]

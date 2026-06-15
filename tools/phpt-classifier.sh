@@ -1195,20 +1195,9 @@ ptn_phpt_first_unsupported_language_surface() {
                 }
                 next
             }
-            if (line ~ /(^|[,(])[[:space:]]*\?[[:space:]]*([a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:].&]*\$[a-z_]/ ||
-                line ~ /\)[[:space:]]*:[[:space:]]*\?[[:space:]]*([a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)([^[:alnum:]_]|$)/) {
-                print "unsupported-type-hint\trequires nullable type-hint metadata and coercion (`?T`), outside PTN modeled type hints"
-                found = 1
-                exit
-            }
-            if (line ~ /\)[[:space:]]*:[[:space:]]*never([^[:alnum:]_]|$)/) {
-                print "unsupported-type-hint\trequires `never` return type control-flow validation, outside PTN modeled type hints"
-                found = 1
-                exit
-            }
-            if ((ptn_static_local_context || ptn_class_body_depth == 0) &&
+            if (!ptn_static_local_context && ptn_class_body_depth == 0 &&
                 line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+\$[a-z_]/) {
-                print "unsupported-function-state\trequires static local variables, outside PTN function-local static storage model"
+                print "unsupported-function-state\trequires top-level static variable diagnostics, outside PTN function-local static storage model"
                 found = 1
                 exit
             }
@@ -1366,13 +1355,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /->[[:space:]]*[$]/ ||
-                line ~ /::[[:space:]]*[$]([$]|[{])/ ||
-                line ~ /::[[:space:]]*[$][a-z_][a-z0-9_]*[[:space:]]*[(]/) {
-                print "unsupported-dynamic-member-dispatch\trequires dynamic property/method/member-name dispatch, outside PTN modeled member access"
-                found = 1
-                exit
-            }
             if (line ~ /function[[:space:]]+__tostring[[:space:]]*\(/) {
                 object_string_seen = 1
             }
@@ -1487,7 +1469,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         END {
             if (!found && magic_isset_seen &&
                 !(array_column_seen && magic_get_seen && magic_isset_seen)) {
-                print "unsupported-magic-method-metadata\trequires direct __isset() magic property dispatch, outside PTN modeled object/class metadata"
+                print "unsupported-magic-method-metadata\trequires general __isset() magic property dispatch, outside PTN modeled array_column() property extraction"
                 found = 1
             }
             if (!found && object_string_seen && object_string_unsupported_reason != "") {

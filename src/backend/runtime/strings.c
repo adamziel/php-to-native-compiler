@@ -218,6 +218,27 @@ static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue 
     exit(255);
 }
 
+static PTN_UNUSED char *ptn_dynamic_property_name(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_STRING && value.as.string.len > 0 && value.as.string.data[0] == '\0') {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Cannot access property starting with \"\\0\"",
+            runtime->source_path,
+            line
+        );
+    }
+    if (value.type == PTN_STRING && ptn_string_has_embedded_nul(value.as.string)) {
+        ptn_emit_type_error(
+            &runtime->diagnostics,
+            "Unsupported dynamic property name containing embedded NUL"
+        );
+        exit(255);
+    }
+    return ptn_dynamic_variable_name(runtime, value, line);
+}
+
 static PTN_UNUSED char *ptn_callable_function_name(PtnValue callable) {
     callable = ptn_value_deref(callable);
     if (callable.type == PTN_ARRAY && callable.as.array->len == 2) {

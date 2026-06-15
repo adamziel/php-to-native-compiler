@@ -30,10 +30,10 @@ pub fn emit_c(module: &Module) -> String {
         || runtime_requirements.dynamic_function_dispatch;
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
     let needs_method_dispatch = runtime_requirements.method_dispatch || has_declared_methods;
-    let needs_magic_property_read = module
-        .classes
-        .iter()
-        .any(|class| class_magic_isset_method(class, &module.classes).is_some());
+    let needs_magic_property_read = module.classes.iter().any(|class| {
+        class_magic_get_method(class, &module.classes).is_some()
+            || class_magic_isset_method(class, &module.classes).is_some()
+    });
     let needs_magic_property_get = module
         .classes
         .iter()
@@ -651,7 +651,10 @@ fn emit_user_functions(
                     out.push_str("    }\n");
                 }
             }
-            if matches!(parameter.type_hint.as_ref(), Some(TypeHint::Null)) {
+            let type_hint = parameter.type_hint.as_ref();
+            let effective_type_hint = non_nullable_type_hint(type_hint);
+            let allows_null = type_hint_allows_null(type_hint);
+            if matches!(effective_type_hint, Some(TypeHint::Null)) {
                 out.push_str("    if (ptn_value_deref(");
                 out.push_str(&parameter_source);
                 out.push_str(").type != PTN_NULL) {\n");
@@ -664,10 +667,16 @@ fn emit_user_functions(
                 out.push_str("        exit(255);\n");
                 out.push_str("    }\n");
             }
-            if matches!(parameter.type_hint.as_ref(), Some(TypeHint::Array)) {
+            if matches!(effective_type_hint, Some(TypeHint::Array)) {
                 out.push_str("    if (ptn_value_deref(");
                 out.push_str(&parameter_source);
-                out.push_str(").type != PTN_ARRAY) {\n");
+                out.push_str(").type != PTN_ARRAY");
+                if allows_null {
+                    out.push_str(" && ptn_value_deref(");
+                    out.push_str(&parameter_source);
+                    out.push_str(").type != PTN_NULL");
+                }
+                out.push_str(") {\n");
                 out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
                 out.push_str(&c_string(&function.display_name));
                 out.push_str("() argument $");
@@ -677,8 +686,14 @@ fn emit_user_functions(
                 out.push_str("        exit(255);\n");
                 out.push_str("    }\n");
             }
-            if let Some(TypeHint::Class(class_name)) = parameter.type_hint.as_ref() {
-                out.push_str("    if (!ptn_value_satisfies_class_type_hint(");
+            if let Some(TypeHint::Class(class_name)) = effective_type_hint {
+                out.push_str("    if (");
+                if allows_null {
+                    out.push_str("ptn_value_deref(");
+                    out.push_str(&parameter_source);
+                    out.push_str(").type != PTN_NULL && ");
+                }
+                out.push_str("!ptn_value_satisfies_class_type_hint(");
                 out.push_str(&parameter_source);
                 out.push_str(", \"");
                 out.push_str(&c_string(class_name));
@@ -700,21 +715,41 @@ fn emit_user_functions(
                 out.push_str("        return ptn_null();\n");
                 out.push_str("    }\n");
             }
-            let parameter_cast_temp = if let Some(cast_helper) =
-                type_hint_scalar_cast_helper(parameter.type_hint.as_ref())
-            {
-                let temp = format!("ptn_parameter_{}", parameter_index);
-                out.push_str("    PtnValue ");
-                out.push_str(&temp);
-                out.push_str(" = ");
-                out.push_str(cast_helper);
-                out.push('(');
-                out.push_str(&parameter_source);
-                out.push_str(");\n");
-                Some(temp)
-            } else {
-                None
-            };
+            let parameter_cast_temp =
+                if let Some(cast_helper) = type_hint_scalar_cast_helper(effective_type_hint) {
+                    let temp = format!("ptn_parameter_{}", parameter_index);
+                    if allows_null {
+                        out.push_str("    PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(";\n");
+                        out.push_str("    if (ptn_value_deref(");
+                        out.push_str(&parameter_source);
+                        out.push_str(").type == PTN_NULL) {\n");
+                        out.push_str("        ");
+                        out.push_str(&temp);
+                        out.push_str(" = ptn_null();\n");
+                        out.push_str("    } else {\n");
+                        out.push_str("        ");
+                        out.push_str(&temp);
+                        out.push_str(" = ");
+                        out.push_str(cast_helper);
+                        out.push('(');
+                        out.push_str(&parameter_source);
+                        out.push_str(");\n");
+                        out.push_str("    }\n");
+                    } else {
+                        out.push_str("    PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(" = ");
+                        out.push_str(cast_helper);
+                        out.push('(');
+                        out.push_str(&parameter_source);
+                        out.push_str(");\n");
+                    }
+                    Some(temp)
+                } else {
+                    None
+                };
             let parameter_value = parameter_cast_temp
                 .as_deref()
                 .map(str::to_string)
@@ -914,7 +949,11 @@ fn emit_variadic_parameter_binding(
         out.push_str("        }\n");
     }
 
-    if matches!(parameter.type_hint.as_ref(), Some(TypeHint::Null)) {
+    let type_hint = parameter.type_hint.as_ref();
+    let effective_type_hint = non_nullable_type_hint(type_hint);
+    let allows_null = type_hint_allows_null(type_hint);
+
+    if matches!(effective_type_hint, Some(TypeHint::Null)) {
         out.push_str("        if (ptn_value_deref(args[");
         out.push_str(&index_temp);
         out.push_str("]).type != PTN_NULL) {\n");
@@ -930,10 +969,16 @@ fn emit_variadic_parameter_binding(
         out.push_str("            exit(255);\n");
         out.push_str("        }\n");
     }
-    if matches!(parameter.type_hint.as_ref(), Some(TypeHint::Array)) {
+    if matches!(effective_type_hint, Some(TypeHint::Array)) {
         out.push_str("        if (ptn_value_deref(args[");
         out.push_str(&index_temp);
-        out.push_str("]).type != PTN_ARRAY) {\n");
+        out.push_str("]).type != PTN_ARRAY");
+        if allows_null {
+            out.push_str(" && ptn_value_deref(args[");
+            out.push_str(&index_temp);
+            out.push_str("]).type != PTN_NULL");
+        }
+        out.push_str(") {\n");
         out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
         out.push_str(&c_string(&function.display_name));
         out.push_str("() argument $");
@@ -946,8 +991,14 @@ fn emit_variadic_parameter_binding(
         out.push_str("            exit(255);\n");
         out.push_str("        }\n");
     }
-    if let Some(TypeHint::Class(class_name)) = parameter.type_hint.as_ref() {
-        out.push_str("        if (!ptn_value_satisfies_class_type_hint(args[");
+    if let Some(TypeHint::Class(class_name)) = effective_type_hint {
+        out.push_str("        if (");
+        if allows_null {
+            out.push_str("ptn_value_deref(args[");
+            out.push_str(&index_temp);
+            out.push_str("]).type != PTN_NULL && ");
+        }
+        out.push_str("!ptn_value_satisfies_class_type_hint(args[");
         out.push_str(&index_temp);
         out.push_str("], \"");
         out.push_str(&c_string(class_name));
@@ -971,17 +1022,36 @@ fn emit_variadic_parameter_binding(
         out.push_str("        }\n");
     }
 
-    let value_expr = if let Some(cast_helper) =
-        type_hint_scalar_cast_helper(parameter.type_hint.as_ref())
-    {
+    let value_expr = if let Some(cast_helper) = type_hint_scalar_cast_helper(effective_type_hint) {
         let value_temp = format!("ptn_variadic_value_{}", parameter_index);
-        out.push_str("        PtnValue ");
-        out.push_str(&value_temp);
-        out.push_str(" = ");
-        out.push_str(cast_helper);
-        out.push_str("(args[");
-        out.push_str(&index_temp);
-        out.push_str("]);\n");
+        if allows_null {
+            out.push_str("        PtnValue ");
+            out.push_str(&value_temp);
+            out.push_str(";\n");
+            out.push_str("        if (ptn_value_deref(args[");
+            out.push_str(&index_temp);
+            out.push_str("]).type == PTN_NULL) {\n");
+            out.push_str("            ");
+            out.push_str(&value_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("        } else {\n");
+            out.push_str("            ");
+            out.push_str(&value_temp);
+            out.push_str(" = ");
+            out.push_str(cast_helper);
+            out.push_str("(args[");
+            out.push_str(&index_temp);
+            out.push_str("]);\n");
+            out.push_str("        }\n");
+        } else {
+            out.push_str("        PtnValue ");
+            out.push_str(&value_temp);
+            out.push_str(" = ");
+            out.push_str(cast_helper);
+            out.push_str("(args[");
+            out.push_str(&index_temp);
+            out.push_str("]);\n");
+        }
         if parameter.by_ref {
             out.push_str("        if (args[");
             out.push_str(&index_temp);
@@ -1245,26 +1315,7 @@ fn emit_return_type_boundary(
             out.push_str("    }\n");
         }
         TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool => {
-            let cast_helper = type_hint_scalar_cast_helper(Some(return_type))
-                .expect("scalar return type should map to cast helper");
-            if return_by_ref {
-                out.push_str("    PtnValue ptn_typed_return_value = ");
-                out.push_str(cast_helper);
-                out.push_str("(ptn_return_value);\n");
-                out.push_str("    if (ptn_return_value.type == PTN_REFERENCE) {\n");
-                out.push_str("        ptn_reference_assign(ptn_return_value.as.reference, ptn_typed_return_value);\n");
-                out.push_str("        ptn_value_drop(&ptn_typed_return_value);\n");
-                out.push_str("    } else {\n");
-                out.push_str("        ptn_value_drop(&ptn_return_value);\n");
-                out.push_str("        ptn_return_value = ptn_typed_return_value;\n");
-                out.push_str("    }\n");
-            } else {
-                out.push_str("    PtnValue ptn_typed_return_value = ");
-                out.push_str(cast_helper);
-                out.push_str("(ptn_return_value);\n");
-                out.push_str("    ptn_value_drop(&ptn_return_value);\n");
-                out.push_str("    ptn_return_value = ptn_typed_return_value;\n");
-            }
+            emit_return_scalar_cast_boundary(out, return_type, return_by_ref);
         }
         TypeHint::Class(class_name) => {
             out.push_str("    if (!ptn_value_satisfies_class_type_hint(ptn_return_value, \"");
@@ -1279,7 +1330,84 @@ fn emit_return_type_boundary(
             out.push_str("        exit(255);\n");
             out.push_str("    }\n");
         }
+        TypeHint::Never => {
+            out.push_str("    ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str(&c_string(function_name));
+            out.push_str("() return value must be of type never\");\n");
+            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    exit(255);\n");
+        }
+        TypeHint::Nullable(inner) => {
+            emit_nullable_return_type_boundary(out, inner, function_name, return_by_ref);
+        }
         TypeHint::Mixed | TypeHint::Void => {}
+    }
+}
+
+fn emit_return_scalar_cast_boundary(out: &mut String, return_type: &TypeHint, return_by_ref: bool) {
+    let cast_helper = type_hint_scalar_cast_helper(Some(return_type))
+        .expect("scalar return type should map to cast helper");
+    if return_by_ref {
+        out.push_str("    PtnValue ptn_typed_return_value = ");
+        out.push_str(cast_helper);
+        out.push_str("(ptn_return_value);\n");
+        out.push_str("    if (ptn_return_value.type == PTN_REFERENCE) {\n");
+        out.push_str(
+            "        ptn_reference_assign(ptn_return_value.as.reference, ptn_typed_return_value);\n",
+        );
+        out.push_str("        ptn_value_drop(&ptn_typed_return_value);\n");
+        out.push_str("    } else {\n");
+        out.push_str("        ptn_value_drop(&ptn_return_value);\n");
+        out.push_str("        ptn_return_value = ptn_typed_return_value;\n");
+        out.push_str("    }\n");
+    } else {
+        out.push_str("    PtnValue ptn_typed_return_value = ");
+        out.push_str(cast_helper);
+        out.push_str("(ptn_return_value);\n");
+        out.push_str("    ptn_value_drop(&ptn_return_value);\n");
+        out.push_str("    ptn_return_value = ptn_typed_return_value;\n");
+    }
+}
+
+fn emit_nullable_return_type_boundary(
+    out: &mut String,
+    return_type: &TypeHint,
+    function_name: &str,
+    return_by_ref: bool,
+) {
+    match return_type {
+        TypeHint::Array => {
+            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL && ptn_value_deref(ptn_return_value).type != PTN_ARRAY) {\n");
+            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str(&c_string(function_name));
+            out.push_str("() return value must be of type ?array\");\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            out.push_str("        exit(255);\n");
+            out.push_str("    }\n");
+        }
+        TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool => {
+            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL) {\n");
+            emit_return_scalar_cast_boundary(out, return_type, return_by_ref);
+            out.push_str("    }\n");
+        }
+        TypeHint::Class(class_name) => {
+            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL && !ptn_value_satisfies_class_type_hint(ptn_return_value, \"");
+            out.push_str(&c_string(class_name));
+            out.push_str("\")) {\n");
+            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str(&c_string(function_name));
+            out.push_str("() return value must be of type ?");
+            out.push_str(&c_string(class_name));
+            out.push_str("\");\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            out.push_str("        exit(255);\n");
+            out.push_str("    }\n");
+        }
+        TypeHint::Null
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Nullable(_) => {}
     }
 }
 
@@ -1294,10 +1422,23 @@ fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static
             | TypeHint::Array
             | TypeHint::Mixed
             | TypeHint::Void
+            | TypeHint::Never
+            | TypeHint::Nullable(_)
             | TypeHint::Class(_),
         )
         | None => None,
     }
+}
+
+fn non_nullable_type_hint(type_hint: Option<&TypeHint>) -> Option<&TypeHint> {
+    match type_hint {
+        Some(TypeHint::Nullable(inner)) => Some(inner),
+        other => other,
+    }
+}
+
+fn type_hint_allows_null(type_hint: Option<&TypeHint>) -> bool {
+    matches!(type_hint, Some(TypeHint::Nullable(_)))
 }
 
 fn emit_user_function_dispatch(
@@ -2464,7 +2605,7 @@ fn class_magic_debug_info_method<'a>(
 
 fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_declared_magic_property_read(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t line, PtnValue *value_out) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_magic_property_read(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t line, int require_isset, PtnValue *value_out) {\n",
     );
     out.push_str("    (void)runtime;\n");
     out.push_str("    (void)property;\n");
@@ -2477,9 +2618,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     out.push_str("    (void)class_name;\n");
     for class in classes {
-        let Some(isset_method) = class_magic_isset_method(class, classes) else {
+        let get_method = class_magic_get_method(class, classes);
+        let isset_method = class_magic_isset_method(class, classes);
+        if get_method.is_none() && isset_method.is_none() {
             continue;
-        };
+        }
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
@@ -2487,23 +2630,34 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
         out.push_str("        runtime->in_magic_property_dispatch = 1;\n");
-        out.push_str("        PtnValue ptn_isset_args[1];\n");
-        out.push_str("        ptn_isset_args[0] = ptn_string(property);\n");
-        out.push_str("        PtnValue ptn_isset_result = ");
-        out.push_str(&user_function_c_name(isset_method.function_index));
-        out.push_str("(runtime, resolved, 1, ptn_isset_args, line);\n");
-        out.push_str(
-            "        int ptn_isset_truthy = ptn_is_truthy(ptn_value_deref(ptn_isset_result));\n",
-        );
-        out.push_str("        ptn_value_destroy(&ptn_isset_result);\n");
-        out.push_str("        ptn_value_destroy(&ptn_isset_args[0]);\n");
-        out.push_str("        if (!ptn_isset_truthy) {\n");
-        out.push_str(
-            "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
-        );
-        out.push_str("            return 0;\n");
-        out.push_str("        }\n");
-        if let Some(get_method) = class_magic_get_method(class, classes) {
+        if let Some(isset_method) = isset_method {
+            out.push_str("        if (require_isset) {\n");
+            out.push_str("            PtnValue ptn_isset_args[1];\n");
+            out.push_str("            ptn_isset_args[0] = ptn_string(property);\n");
+            out.push_str("            PtnValue ptn_isset_result = ");
+            out.push_str(&user_function_c_name(isset_method.function_index));
+            out.push_str("(runtime, resolved, 1, ptn_isset_args, line);\n");
+            out.push_str(
+                "            int ptn_isset_truthy = ptn_is_truthy(ptn_value_deref(ptn_isset_result));\n",
+            );
+            out.push_str("            ptn_value_destroy(&ptn_isset_result);\n");
+            out.push_str("            ptn_value_destroy(&ptn_isset_args[0]);\n");
+            out.push_str("            if (!ptn_isset_truthy) {\n");
+            out.push_str(
+                "                runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+            );
+            out.push_str("                return 0;\n");
+            out.push_str("            }\n");
+            out.push_str("        }\n");
+        } else {
+            out.push_str("        if (require_isset) {\n");
+            out.push_str(
+                "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+            );
+            out.push_str("            return 0;\n");
+            out.push_str("        }\n");
+        }
+        if let Some(get_method) = get_method {
             out.push_str("        PtnValue ptn_get_args[1];\n");
             out.push_str("        ptn_get_args[0] = ptn_string(property);\n");
             out.push_str("        *value_out = ");
@@ -2512,7 +2666,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str("        ptn_value_destroy(&ptn_get_args[0]);\n");
         } else {
             out.push_str(
-                "        *value_out = ptn_object_read_property(runtime, resolved, property, NULL, line);\n",
+                "        *value_out = ptn_object_read_property_no_magic(runtime, resolved, property, NULL, line);\n",
             );
         }
         out.push_str(
@@ -3300,6 +3454,34 @@ fn emit_instruction(
         }
         Instruction::StoreRef { name, source, line } => {
             values.emit_store_reference_source_to_variable(out, name, source, *line);
+        }
+        Instruction::BindStatic { name, value, .. } => {
+            let slot = values.next_static_local();
+            out.push_str("    static PtnReference *");
+            out.push_str(&slot);
+            out.push_str(" = NULL;\n");
+            out.push_str("    if (");
+            out.push_str(&slot);
+            out.push_str(" == NULL) {\n");
+            if let Some(value) = value {
+                let initial_value = values.emit_materialized_value(out, value);
+                out.push_str("        ");
+                out.push_str(&slot);
+                out.push_str(" = ptn_reference_new_owned(ptn_value_clone_deref(");
+                out.push_str(&initial_value);
+                out.push_str("));\n");
+                emit_value_cleanup(out, "        ", &initial_value);
+            } else {
+                out.push_str("        ");
+                out.push_str(&slot);
+                out.push_str(" = ptn_reference_new_owned(ptn_null());\n");
+            }
+            out.push_str("    }\n");
+            out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ptn_reference_value(");
+            out.push_str(&slot);
+            out.push_str("));\n");
         }
         Instruction::StoreArrayDim {
             array,
@@ -4359,6 +4541,12 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         | Instruction::Echo(value) => {
             collect_value_legacy_dollar_brace_deprecations(value, deprecations);
         }
+        Instruction::BindStatic {
+            value: Some(value), ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+        }
+        Instruction::BindStatic { value: None, .. } => {}
         Instruction::StoreRef { source, .. } => {
             collect_value_legacy_dollar_brace_deprecations(source, deprecations);
         }
@@ -4596,6 +4784,10 @@ fn collect_assignment_target_legacy_dollar_brace_deprecations(
         AssignmentTarget::Property { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
+        AssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
         AssignmentTarget::List(target) => {
             collect_list_assignment_legacy_dollar_brace_deprecations(target, deprecations);
         }
@@ -4737,6 +4929,10 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::PropertyFetch { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
+        ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
         }
@@ -4844,6 +5040,12 @@ fn collect_instruction_runtime_requirements(
         | Instruction::Echo(value) => {
             collect_value_runtime_requirements(value, functions, requirements);
         }
+        Instruction::BindStatic {
+            value: Some(value), ..
+        } => {
+            collect_value_runtime_requirements(value, functions, requirements);
+        }
+        Instruction::BindStatic { value: None, .. } => {}
         Instruction::StoreArrayDim {
             dimensions, value, ..
         } => {
@@ -5055,6 +5257,10 @@ fn collect_assignment_target_runtime_requirements(
         }
         AssignmentTarget::Property { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
+        }
+        AssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            collect_value_runtime_requirements(name, functions, requirements);
         }
         AssignmentTarget::StaticProperty { .. } => {}
         AssignmentTarget::List(target) => {
@@ -5281,6 +5487,10 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::PropertyFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
+        }
+        ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            collect_value_runtime_requirements(name, functions, requirements);
         }
         ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
@@ -6131,6 +6341,7 @@ fn cc_optimization_args_for(value: Option<&str>) -> Result<Vec<&'static str>> {
 struct ValueEmitter {
     next_temp: usize,
     next_label: usize,
+    next_static_local: usize,
     source_file: String,
     source_dir: String,
     in_const_declaration: bool,
@@ -6172,7 +6383,8 @@ impl AssignmentTargetLine for AssignmentTarget {
             | AssignmentTarget::DynamicVariable { line, .. }
             | AssignmentTarget::DynamicArrayDim { line, .. }
             | AssignmentTarget::ArrayDim { line, .. }
-            | AssignmentTarget::PropertyArrayDim { line, .. } => *line,
+            | AssignmentTarget::PropertyArrayDim { line, .. }
+            | AssignmentTarget::DynamicProperty { line, .. } => *line,
             AssignmentTarget::Property { line, .. }
             | AssignmentTarget::StaticProperty { line, .. } => *line,
             AssignmentTarget::List(target) => target.line,
@@ -6202,6 +6414,7 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
             | AssignmentTarget::ArrayDim { .. }
             | AssignmentTarget::PropertyArrayDim { .. }
             | AssignmentTarget::Property { .. }
+            | AssignmentTarget::DynamicProperty { .. }
             | AssignmentTarget::StaticProperty { .. } => false,
         },
     })
@@ -6248,6 +6461,13 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
                     .any(|dimension| value_mentions_variable(dimension, name))
         }
         AssignmentTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
+        AssignmentTarget::DynamicProperty {
+            receiver,
+            name: property_name,
+            ..
+        } => {
+            value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
+        }
         AssignmentTarget::StaticProperty { .. } => false,
         AssignmentTarget::List(target) => list_assignment_references_variable(target, name),
     }
@@ -6396,6 +6616,13 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             value_mentions_variable(receiver, name)
         }
+        ValueExpr::DynamicPropertyFetch {
+            receiver,
+            name: property_name,
+            ..
+        } => {
+            value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
+        }
         ValueExpr::InstanceOf { expr, .. } => value_mentions_variable(expr, name),
         ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => false,
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
@@ -6525,6 +6752,7 @@ impl ValueEmitter {
         Self {
             next_temp: 0,
             next_label: 0,
+            next_static_local: 0,
             source_file: source_file.to_string(),
             source_dir: source_dir.to_string(),
             in_const_declaration: false,
@@ -6920,6 +7148,25 @@ impl ValueEmitter {
         name_temp
     }
 
+    fn emit_dynamic_property_name(
+        &mut self,
+        out: &mut String,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let value_temp = self.emit_materialized_value(out, name);
+        let name_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&name_temp);
+        out.push_str(" = ptn_dynamic_property_name(&runtime, ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &value_temp);
+        name_temp
+    }
+
     fn emit_dynamic_variable_read(
         &mut self,
         out: &mut String,
@@ -6990,6 +7237,11 @@ impl ValueEmitter {
                 } => {
                     return self
                         .emit_property_coalesce_assignment(out, receiver, name, *line, value);
+                }
+                AssignmentTarget::DynamicProperty { .. } => {
+                    unreachable!(
+                        "parser rejects null coalescing assignment for dynamic properties"
+                    );
                 }
                 AssignmentTarget::StaticProperty {
                     class_name,
@@ -7196,7 +7448,7 @@ impl ValueEmitter {
         }
 
         if let AssignmentTarget::DynamicVariable { name, line } = target {
-            let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+            let name_temp = self.emit_dynamic_property_name(out, name, *line);
             let value_temp = self.emit_materialized_value(out, value);
             out.push_str("    ptn_runtime_write_variable(&runtime, ");
             out.push_str(&name_temp);
@@ -7249,6 +7501,69 @@ impl ValueEmitter {
             out.push_str(&line.to_string());
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &value_temp);
+            emit_value_cleanup(out, "    ", &receiver_temp);
+            return result_temp;
+        }
+
+        if let AssignmentTarget::DynamicProperty {
+            receiver,
+            name,
+            line,
+        } = target
+        {
+            let receiver_temp = self.emit_materialized_value(out, receiver);
+            let name_temp = self.emit_dynamic_property_name(out, name, *line);
+            let value_temp = self.emit_materialized_value(out, value);
+            let result_temp = if let Some(compound_op) = assignment_compound_binary_op(op) {
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_object_read_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let result_temp = self.emit_compound_binary_value(
+                    out,
+                    &current_temp,
+                    &value_temp,
+                    *line,
+                    compound_op,
+                );
+                emit_value_cleanup(out, "    ", &current_temp);
+                result_temp
+            } else {
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                out.push_str(&value_temp);
+                out.push_str("));\n");
+                result_temp
+            };
+            let assigned_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&assigned_temp);
+            out.push_str(" = ptn_object_write_property(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", ");
+            out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+            out.push_str(", ");
+            out.push_str(&result_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &assigned_temp);
+            emit_value_cleanup(out, "    ", &value_temp);
+            out.push_str("    free(");
+            out.push_str(&name_temp);
+            out.push_str(");\n");
             emit_value_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
@@ -7842,6 +8157,9 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
+            AssignmentTarget::DynamicProperty { .. } => {
+                unreachable!("parser rejects by-reference assignment to dynamic property targets");
+            }
             AssignmentTarget::Property {
                 receiver,
                 name,
@@ -7914,7 +8232,7 @@ impl ValueEmitter {
                 dimensions,
                 line,
             } => {
-                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
                 let path = emit_array_path_segments(out, self, dimensions);
                 let snapshot_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -8010,6 +8328,33 @@ impl ValueEmitter {
                 out.push_str(value_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                result_temp
+            }
+            AssignmentTarget::DynamicProperty {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_write_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(value_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
                 result_temp
@@ -8580,6 +8925,11 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_property_fetch(out, receiver, name, *line),
+            ValueExpr::DynamicPropertyFetch {
+                receiver,
+                name,
+                line,
+            } => self.emit_dynamic_property_fetch(out, receiver, name, *line),
             ValueExpr::StaticPropertyFetch {
                 class_name,
                 name,
@@ -9864,6 +10214,34 @@ impl ValueEmitter {
         out.push_str(&c_optional_string(self.current_class_name.as_deref()));
         out.push_str(", ");
         out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
+    }
+
+    fn emit_dynamic_property_fetch(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let name_temp = self.emit_dynamic_property_name(out, name, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    free(");
+        out.push_str(&name_temp);
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &receiver_temp);
         result_temp
@@ -11357,6 +11735,7 @@ impl ValueEmitter {
                 | ValueExpr::MethodCall { .. }
                 | ValueExpr::DynamicMethodCall { .. }
                 | ValueExpr::Clone { .. }
+                | ValueExpr::DynamicPropertyFetch { .. }
                 | ValueExpr::StaticPropertyFetch { .. }
                 | ValueExpr::ClassConstantFetch { .. }
                 | ValueExpr::DynamicClassNameFetch { .. }
@@ -13047,6 +13426,12 @@ impl ValueEmitter {
         let label = format!("{prefix}_{}", self.next_label);
         self.next_label += 1;
         label
+    }
+
+    fn next_static_local(&mut self) -> String {
+        let name = format!("ptn_static_local_{}", self.next_static_local);
+        self.next_static_local += 1;
+        name
     }
 }
 

@@ -329,28 +329,10 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires generator/yield lowering",
         ),
         (
-            "nullable type hint",
-            "--TEST--\nnullable\n--FILE--\n<?php\n$fn = fn(?int... $args): array => $args;\n--EXPECT--\n",
-            "unsupported-type-hint\t",
-            "requires nullable type-hint metadata",
-        ),
-        (
-            "never return type",
-            "--TEST--\nnever\n--FILE--\n<?php\n$fn = fn(): never => 42;\n--EXPECT--\n",
-            "unsupported-type-hint\t",
-            "requires `never` return type",
-        ),
-        (
-            "static local variable",
-            "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
-            "unsupported-function-state\t",
-            "requires static local variables",
-        ),
-        (
             "top-level static binding",
             "--TEST--\nstatic binding\n--FILE--\n<?php\ntry { static $value; } catch (Throwable $e) {}\n--EXPECT--\n",
             "unsupported-function-state\t",
-            "requires static local variables",
+            "requires top-level static variable diagnostics",
         ),
         (
             "foreach append read",
@@ -394,6 +376,23 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             classification.contains(reason),
             "{name}: {classification:?}"
         );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_nullable_never_and_function_static_rows_runnable() {
+    let cases = [
+        "--TEST--\nnullable\n--FILE--\n<?php\n$fn = fn(?int... $args): array => $args;\n--EXPECT--\n",
+        "--TEST--\nnever\n--FILE--\n<?php\n$fn = fn(): never => throw new Exception('done');\n--EXPECT--\n",
+        "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
+    ];
+
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt).trim_end(),
+            "runnable\tselected for PTN semantic measurement"
+        );
+        assert_eq!(classify(phpt), classify_with_section_cache(phpt));
     }
 }
 
@@ -729,6 +728,12 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires final class/method override metadata",
         ),
         (
+            "magic isset dispatch",
+            "--TEST--\nmagic\n--FILE--\n<?php\nclass Bag { public function __isset($name) { return true; } }\n--EXPECT--\n",
+            "unsupported-magic-method-metadata\t",
+            "requires general __isset() magic property dispatch",
+        ),
+        (
             "magic sleep metadata",
             "--TEST--\nmagic\n--FILE--\n<?php\nclass Bag { public function __sleep() { return []; } }\n--EXPECT--\n",
             "unsupported-magic-method-metadata\t",
@@ -840,16 +845,6 @@ fn phpt_classifier_keeps_non_public_method_visibility_rows_runnable() {
 }
 
 #[test]
-fn phpt_classifier_excludes_dynamic_member_dispatch_rows() {
-    let classification = classify(
-        "--TEST--\ndynamic member\n--FILE--\n<?php\nclass Box { public function read($name) { return $this->$name; } }\n--EXPECT--\n",
-    );
-
-    assert!(classification.starts_with("unsupported-dynamic-member-dispatch\t"));
-    assert!(classification.contains("requires dynamic property/method/member-name dispatch"));
-}
-
-#[test]
 fn phpt_classifier_keeps_direct_static_property_rows_runnable() {
     let classification = classify(
         "--TEST--\nstatic property\n--FILE--\n<?php\nclass Box { public static $value = 1; }\nBox::$value = 2;\nvar_dump(Box::$value);\n--EXPECT--\nint(2)\n",
@@ -862,12 +857,20 @@ fn phpt_classifier_keeps_direct_static_property_rows_runnable() {
 }
 
 #[test]
-fn phpt_classifier_excludes_dynamic_static_method_member_rows() {
-    let classification = classify(
+fn phpt_classifier_keeps_dynamic_member_dispatch_rows_runnable() {
+    let cases = [
+        "--TEST--\ndynamic property\n--FILE--\n<?php\nclass Box { public function read($name) { return $this->$name; } }\n--EXPECT--\n",
         "--TEST--\ndynamic static member\n--FILE--\n<?php\nclass Box { public static function run() {} }\n$name = 'run';\nBox::$name();\n--EXPECT--\n",
-    );
+        "--TEST--\nbraced dynamic static member\n--FILE--\n<?php\nclass Box { public static function run() {} }\n$name = 'run';\nBox::{$name}();\n--EXPECT--\n",
+    ];
 
-    assert!(classification.starts_with("unsupported-dynamic-member-dispatch\t"));
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt).trim_end(),
+            "runnable\tselected for PTN semantic measurement"
+        );
+        assert_eq!(classify(phpt), classify_with_section_cache(phpt));
+    }
 }
 
 #[test]
@@ -917,9 +920,9 @@ fn phpt_classifier_keeps_object_string_array_helpers_runnable() {
 fn phpt_classifier_splits_remaining_magic_method_metadata_blockers() {
     let cases = [
         (
-            "direct isset hook",
+            "property magic isset hook",
             "--TEST--\nmagic isset\n--FILE--\n<?php\nclass Box { public function __isset($name) { return true; } }\n--EXPECT--\n",
-            "requires direct __isset() magic property dispatch",
+            "requires general __isset() magic property dispatch",
         ),
         (
             "sleep hook",
@@ -962,6 +965,18 @@ fn phpt_classifier_keeps_invalid_array_map_object_callback_runnable() {
     let classification = classify_at_relative_path(
         "--TEST--\narray_map invalid object callback\n--FILE--\n<?php\nclass CallbackCandidate { public function __toString() { return 'candidate'; } }\n$items = [1];\n$callbacks = [new CallbackCandidate()];\ntry { array_map($callbacks[0], $items); } catch (TypeError $e) {}\n--EXPECT--\n",
         "ext/standard/tests/array/array_map_variation17.phpt",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_magic_get_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nmagic get\n--FILE--\n<?php\nclass Box { public function __get($name) { return 1; } }\nvar_dump((new Box())->missing);\n--EXPECT--\nint(1)\n",
     );
 
     assert_eq!(

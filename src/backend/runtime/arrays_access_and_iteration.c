@@ -943,6 +943,80 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         0,
         0,
         0,
+        1
+    );
+    if (storage_key == NULL) {
+        PtnValue magic_value;
+        if (
+            runtime != NULL &&
+            runtime->magic_property_read != NULL &&
+            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+        ) {
+            return magic_value;
+        }
+        storage_key = ptn_object_resolve_property_storage_key(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            0,
+            0,
+            0,
+            0
+        );
+    }
+    if (storage_key == NULL) {
+        return ptn_null();
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
+    ptn_array_key_free(key);
+    free(storage_key);
+    if (entry == NULL) {
+        if (metadata != NULL && metadata->is_readonly) {
+            ptn_throw_uninitialized_typed_property_error(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name
+            );
+            return ptn_null();
+        }
+        PtnValue magic_value;
+        if (
+            runtime != NULL &&
+            runtime->magic_property_read != NULL &&
+            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+        ) {
+            return magic_value;
+        }
+        ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(entry->value);
+}
+
+static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
+        return ptn_null();
+    }
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        0,
+        0,
+        0,
         0
     );
     if (storage_key == NULL) {
