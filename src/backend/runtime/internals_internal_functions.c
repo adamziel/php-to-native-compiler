@@ -15227,6 +15227,10 @@ static PtnValue ptn_internal_log(PtnRuntime *runtime, size_t argc, const PtnValu
         return ptn_float(log(value));
     }
     double base = ptn_internal_expect_float_arg(runtime, "log", 2, "base", args[1], line);
+    if (base <= 0.0) {
+        ptn_throw_exception(runtime, "ValueError", "log(): Argument #2 ($base) must be greater than 0");
+        return ptn_null();
+    }
     if (base == 1.0) {
         ptn_throw_exception(runtime, "ValueError", "log(): Argument #2 ($base) must not be 1");
         return ptn_null();
@@ -16341,6 +16345,162 @@ static PtnValue ptn_base_string_to_number(
     return fits_integer ? ptn_int(integer) : ptn_float(floating);
 }
 
+typedef struct {
+    uint32_t *limbs;
+    size_t len;
+    size_t capacity;
+} PtnBaseConvertMagnitude;
+
+static void ptn_base_convert_magnitude_init(PtnBaseConvertMagnitude *magnitude) {
+    magnitude->limbs = NULL;
+    magnitude->len = 0;
+    magnitude->capacity = 0;
+}
+
+static void ptn_base_convert_magnitude_free(PtnBaseConvertMagnitude *magnitude) {
+    free(magnitude->limbs);
+    magnitude->limbs = NULL;
+    magnitude->len = 0;
+    magnitude->capacity = 0;
+}
+
+static void ptn_base_convert_magnitude_ensure_capacity(PtnBaseConvertMagnitude *magnitude, size_t len) {
+    if (len <= magnitude->capacity) {
+        return;
+    }
+    size_t new_capacity = magnitude->capacity == 0 ? 4 : magnitude->capacity;
+    while (new_capacity < len) {
+        if (new_capacity > SIZE_MAX / 2) {
+            ptn_abort_out_of_memory();
+        }
+        new_capacity *= 2;
+    }
+    if (new_capacity > SIZE_MAX / sizeof(uint32_t)) {
+        ptn_abort_out_of_memory();
+    }
+    uint32_t *new_limbs = realloc(magnitude->limbs, new_capacity * sizeof(uint32_t));
+    if (new_limbs == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    magnitude->limbs = new_limbs;
+    magnitude->capacity = new_capacity;
+}
+
+static void ptn_base_convert_magnitude_trim(PtnBaseConvertMagnitude *magnitude) {
+    while (magnitude->len > 0 && magnitude->limbs[magnitude->len - 1] == 0) {
+        magnitude->len--;
+    }
+}
+
+static void ptn_base_convert_magnitude_mul_add(
+    PtnBaseConvertMagnitude *magnitude,
+    unsigned int base,
+    unsigned int digit
+) {
+    uint64_t carry = digit;
+    for (size_t i = 0; i < magnitude->len; i++) {
+        uint64_t product = ((uint64_t)magnitude->limbs[i] * (uint64_t)base) + carry;
+        magnitude->limbs[i] = (uint32_t)product;
+        carry = product >> 32;
+    }
+    while (carry != 0) {
+        ptn_base_convert_magnitude_ensure_capacity(magnitude, magnitude->len + 1);
+        magnitude->limbs[magnitude->len++] = (uint32_t)carry;
+        carry >>= 32;
+    }
+}
+
+static unsigned int ptn_base_convert_magnitude_div(
+    PtnBaseConvertMagnitude *magnitude,
+    unsigned int divisor
+) {
+    uint64_t remainder = 0;
+    for (size_t i = magnitude->len; i > 0; i--) {
+        uint64_t current = (remainder << 32) | (uint64_t)magnitude->limbs[i - 1];
+        magnitude->limbs[i - 1] = (uint32_t)(current / divisor);
+        remainder = current % divisor;
+    }
+    ptn_base_convert_magnitude_trim(magnitude);
+    return (unsigned int)remainder;
+}
+
+static void ptn_base_convert_strip_prefix_for_base(
+    const char **start,
+    const char *end,
+    int base
+) {
+    if (end - *start < 2 || (*start)[0] != '0') {
+        return;
+    }
+    unsigned char prefix = (unsigned char)(*start)[1];
+    if (
+        (base == 16 && tolower(prefix) == 'x') ||
+        (base == 8 && tolower(prefix) == 'o') ||
+        (base == 2 && tolower(prefix) == 'b')
+    ) {
+        *start += 2;
+    }
+}
+
+static PtnValue ptn_base_convert_string(
+    PtnRuntime *runtime,
+    PtnStringOperand string,
+    int from_base,
+    unsigned int to_base,
+    size_t line
+) {
+    const char *start = string.data;
+    const char *end = string.data + string.len;
+    while (start < end && isspace((unsigned char)*start)) {
+        start++;
+    }
+    while (end > start && isspace((unsigned char)*(end - 1))) {
+        end--;
+    }
+    ptn_base_convert_strip_prefix_for_base(&start, end, from_base);
+
+    PtnBaseConvertMagnitude magnitude;
+    ptn_base_convert_magnitude_init(&magnitude);
+    int saw_digit = 0;
+    int saw_invalid = 0;
+    for (const char *cursor = start; cursor < end; cursor++) {
+        int digit = ptn_digit_value_for_base((unsigned char)*cursor, from_base);
+        if (digit < 0) {
+            saw_invalid = 1;
+            continue;
+        }
+        saw_digit = 1;
+        ptn_base_convert_magnitude_mul_add(&magnitude, (unsigned int)from_base, (unsigned int)digit);
+    }
+
+    if (saw_invalid) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Invalid characters passed for attempted conversion, these have been ignored",
+            line
+        );
+    }
+    if (!saw_digit || magnitude.len == 0) {
+        ptn_base_convert_magnitude_free(&magnitude);
+        return ptn_owned_string_len(ptn_duplicate_string_len("0", 1), 1);
+    }
+
+    static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    while (magnitude.len > 0) {
+        unsigned int digit = ptn_base_convert_magnitude_div(&magnitude, to_base);
+        ptn_string_buffer_append_char(&output, digits[digit]);
+    }
+    ptn_base_convert_magnitude_free(&magnitude);
+    for (size_t i = 0, j = output.len - 1; i < j; i++, j--) {
+        char tmp = output.data[i];
+        output.data[i] = output.data[j];
+        output.data[j] = tmp;
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
 static int64_t ptn_intval_string_to_integer(const char *string, size_t string_len, int base) {
     if (base != 0 && (base < 2 || base > 36)) {
         return 0;
@@ -16399,6 +16559,35 @@ static int64_t ptn_intval_string_to_integer(const char *string, size_t string_le
     }
     int64_t value = (int64_t)magnitude;
     return negative ? -value : value;
+}
+
+static PtnValue ptn_internal_base_convert(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand num = ptn_internal_expect_string_arg(runtime, "base_convert", 1, "num", args[0], line);
+    int64_t from_base = ptn_internal_expect_integer_arg(runtime, "base_convert", 2, "from_base", args[1], line);
+    if (from_base < 2 || from_base > 36) {
+        ptn_string_operand_free(num);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "base_convert(): Argument #2 ($from_base) must be between 2 and 36 (inclusive)"
+        );
+        return ptn_null();
+    }
+    int64_t to_base = ptn_internal_expect_integer_arg(runtime, "base_convert", 3, "to_base", args[2], line);
+    if (to_base < 2 || to_base > 36) {
+        ptn_string_operand_free(num);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "base_convert(): Argument #3 ($to_base) must be between 2 and 36 (inclusive)"
+        );
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_base_convert_string(runtime, num, (int)from_base, (unsigned int)to_base, line);
+    ptn_string_operand_free(num);
+    return result;
 }
 
 static PtnValue ptn_internal_bindec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -17576,6 +17765,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "atan2", 2, 2, ptn_internal_atan2 },
         { "atanh", 1, 1, ptn_internal_atanh },
         { "basename", 1, 2, ptn_internal_basename },
+        { "base_convert", 3, 3, ptn_internal_base_convert },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "boolval", 1, 1, ptn_internal_boolval },
