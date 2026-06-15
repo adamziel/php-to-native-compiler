@@ -4,7 +4,7 @@ use crate::ast::{
     AnonymousFunction as AstAnonymousFunction, ArrayDimTarget as AstArrayDimTarget,
     ArrayElement as AstArrayElement, ArrayElementValue as AstArrayElementValue, AssignmentOp,
     AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
-    CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
+    CatchClause as AstCatchClause, ClassDecl as AstClassDecl, CompileWarning as AstCompileWarning,
     ClosureUseCapture as AstClosureUseCapture, Expr, FunctionDecl as AstFunctionDecl,
     FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
     IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
@@ -26,9 +26,16 @@ pub struct Module {
     pub functions: Vec<FunctionDecl>,
     pub includes: Vec<IncludeFile>,
     pub instructions: Vec<Instruction>,
+    pub compile_warnings: Vec<CompileWarning>,
     pub source_file: String,
     pub source_dir: String,
     pub strict_types: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompileWarning {
+    pub message: String,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -772,15 +779,28 @@ pub fn lower_with_source_and_includes(
         .map(|include| context.lower_include_source(include))
         .collect();
     let instructions = context.lower_statements(&program.statements);
+    let compile_warnings = program
+        .compile_warnings
+        .iter()
+        .map(lower_compile_warning)
+        .collect();
     Module {
         classes,
         traits,
         functions: context.functions,
         includes,
         instructions,
+        compile_warnings,
         source_file,
         source_dir,
         strict_types: program.strict_types,
+    }
+}
+
+fn lower_compile_warning(warning: &AstCompileWarning) -> CompileWarning {
+    CompileWarning {
+        message: warning.message.clone(),
+        line: warning.span.line,
     }
 }
 

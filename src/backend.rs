@@ -204,6 +204,14 @@ pub fn emit_c(module: &Module) -> String {
         &module.classes,
         &module.includes,
     );
+    for warning in &module.compile_warnings {
+        emit_control_warning(
+            &mut out,
+            &warning.message,
+            &module.source_file,
+            warning.line,
+        );
+    }
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
