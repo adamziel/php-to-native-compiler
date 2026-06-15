@@ -13669,6 +13669,150 @@ static PtnValue ptn_ini_int_string(int value) {
     return ptn_owned_string(ptn_duplicate_string(buffer));
 }
 
+static const char *ptn_runtime_memory_limit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->memory_limit == NULL) {
+        return "128M";
+    }
+    return root->memory_limit;
+}
+
+static const char *ptn_runtime_max_memory_limit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->max_memory_limit == NULL) {
+        return "-1";
+    }
+    return root->max_memory_limit;
+}
+
+static int ptn_ini_quantity_suffix_multiplier(char suffix, int64_t *multiplier) {
+    switch (tolower((unsigned char)suffix)) {
+        case 'g':
+            *multiplier = 1024LL * 1024LL * 1024LL;
+            return 1;
+        case 'm':
+            *multiplier = 1024LL * 1024LL;
+            return 1;
+        case 'k':
+            *multiplier = 1024LL;
+            return 1;
+        default:
+            *multiplier = 1;
+            return 0;
+    }
+}
+
+static void ptn_emit_sourced_ini_warning(PtnRuntime *runtime, const char *message, size_t line) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    FILE *stream = runtime->diagnostics.stream == NULL ? stdout : runtime->diagnostics.stream;
+    if (runtime->diagnostics.emitted_warning) {
+        fputc('\n', stream);
+    }
+    runtime->diagnostics.emitted_warning = 1;
+    fputs("Warning: ", stream);
+    fputs(message, stream);
+    fputs(" in ", stream);
+    fputs(runtime->source_path == NULL ? "ptn" : runtime->source_path, stream);
+    fputs(" on line ", stream);
+    fprintf(stream, "%zu", line);
+    fputc('\n', stream);
+}
+
+static int64_t ptn_parse_ini_quantity_operand(
+    PtnRuntime *runtime,
+    PtnStringOperand input,
+    size_t line
+) {
+    char *text = ptn_duplicate_string_len(input.data, input.len);
+    char *start = text;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+
+    errno = 0;
+    char *numeric_end = start;
+    long long parsed = strtoll(start, &numeric_end, 0);
+    if (numeric_end == start) {
+        parsed = 0;
+    }
+
+    char *last = start + strlen(start);
+    while (last > start && isspace((unsigned char)last[-1])) {
+        last--;
+    }
+
+    int64_t multiplier = 1;
+    int has_suffix = 0;
+    int valid_suffix = 0;
+    char suffix = '\0';
+    if (last > start && isalpha((unsigned char)last[-1])) {
+        suffix = last[-1];
+        has_suffix = 1;
+        valid_suffix = ptn_ini_quantity_suffix_multiplier(suffix, &multiplier);
+    }
+
+    if (numeric_end == start) {
+        free(text);
+        return 0;
+    }
+
+    if (has_suffix && !valid_suffix) {
+        char message[512];
+        snprintf(
+            message,
+            sizeof(message),
+            "Invalid quantity \"%s\": unknown multiplier \"%c\", interpreting as \"%lld\" for backwards compatibility",
+            start,
+            suffix,
+            parsed
+        );
+        ptn_emit_sourced_ini_warning(runtime, message, line);
+    } else if (has_suffix && valid_suffix) {
+        int ambiguous = 0;
+        for (char *cursor = numeric_end; cursor < last - 1; cursor++) {
+            if (!isspace((unsigned char)*cursor)) {
+                ambiguous = 1;
+                break;
+            }
+        }
+        if (ambiguous) {
+            char message[512];
+            snprintf(
+                message,
+                sizeof(message),
+                "Invalid quantity \"%s\", interpreting as \"%lld %c\" for backwards compatibility",
+                start,
+                parsed,
+                (char)tolower((unsigned char)suffix)
+            );
+            ptn_emit_sourced_ini_warning(runtime, message, line);
+        }
+    }
+
+    int sign = parsed < 0 ? -1 : 1;
+    unsigned long long magnitude = parsed < 0
+        ? (unsigned long long)(-(parsed + 1)) + 1ULL
+        : (unsigned long long)parsed;
+    unsigned long long limit = sign < 0
+        ? (unsigned long long)INT64_MAX + 1ULL
+        : (unsigned long long)INT64_MAX;
+    if (multiplier > 0 && magnitude > limit / (unsigned long long)multiplier) {
+        free(text);
+        return sign < 0 ? INT64_MIN : INT64_MAX;
+    }
+    uint64_t multiplied = (uint64_t)(magnitude * (unsigned long long)multiplier);
+    free(text);
+    if (sign < 0) {
+        if (multiplied == (uint64_t)INT64_MAX + 1ULL) {
+            return INT64_MIN;
+        }
+        return -(int64_t)multiplied;
+    }
+    return (int64_t)multiplied;
+}
+
 static int ptn_runtime_current_zend_assertions(PtnRuntime *runtime) {
     return ptn_runtime_config_root(runtime)->zend_assertions;
 }
@@ -13706,6 +13850,47 @@ static int ptn_runtime_set_zend_assertions(PtnRuntime *runtime, int64_t requeste
     return 1;
 }
 
+static void ptn_runtime_set_memory_limit(PtnRuntime *runtime, const char *memory_limit) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    char *copy = ptn_duplicate_string(memory_limit);
+    free(root->memory_limit);
+    root->memory_limit = copy;
+}
+
+static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requested, size_t line) {
+    int64_t max_value = ptn_parse_ini_quantity_operand(
+        runtime,
+        ptn_string_operand_borrowed(ptn_runtime_max_memory_limit(runtime)),
+        line
+    );
+    if (max_value < 0) {
+        ptn_runtime_set_memory_limit(runtime, requested);
+        return;
+    }
+
+    int64_t requested_value = ptn_parse_ini_quantity_operand(
+        runtime,
+        ptn_string_operand_borrowed(requested),
+        line
+    );
+    if (requested_value > max_value) {
+        char message[192];
+        snprintf(
+            message,
+            sizeof(message),
+            "Failed to set memory_limit to %lld bytes. Setting to max_memory_limit instead (currently: %lld bytes)",
+            (long long)requested_value,
+            (long long)max_value
+        );
+        ptn_emit_sourced_ini_warning(runtime, message, line);
+        ptn_runtime_set_memory_limit(runtime, ptn_runtime_max_memory_limit(runtime));
+    } else if (requested_value < 0) {
+        ptn_runtime_set_memory_limit(runtime, ptn_runtime_max_memory_limit(runtime));
+    } else {
+        ptn_runtime_set_memory_limit(runtime, requested);
+    }
+}
+
 static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
     return ptn_string_operand_ascii_case_equal(extension, "Core") ||
         ptn_string_operand_ascii_case_equal(extension, "date") ||
@@ -13734,6 +13919,14 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
         *out = ptn_string(".");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "max_memory_limit")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_max_memory_limit(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "memory_limit")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_memory_limit(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
@@ -13838,6 +14031,14 @@ static PtnValue ptn_internal_get_include_path(PtnRuntime *runtime, size_t argc, 
     return ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_include_path(runtime)));
 }
 
+static PtnValue ptn_internal_ini_parse_quantity(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "ini_parse_quantity", 1, "shorthand", args[0], line);
+    int64_t quantity = ptn_parse_ini_quantity_operand(runtime, input, line);
+    ptn_string_operand_free(input);
+    return ptn_int(quantity);
+}
+
 static PtnValue ptn_internal_set_include_path(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "set_include_path", 1, "include_path", args[0], line);
@@ -13903,6 +14104,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_exception(runtime));
         ptn_runtime_set_assert_exception(runtime, ptn_is_truthy(args[1]));
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "memory_limit")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_memory_limit(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *requested = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_apply_memory_limit(runtime, requested, line);
+        free(requested);
+        ptn_string_operand_free(value);
         ptn_string_operand_free(option);
         return previous;
     }
@@ -15072,6 +15283,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "implode", 1, 2, ptn_internal_implode },
         { "in_array", 2, 3, ptn_internal_in_array },
         { "ini_get", 1, 1, ptn_internal_ini_get },
+        { "ini_parse_quantity", 1, 1, ptn_internal_ini_parse_quantity },
         { "ini_restore", 1, 1, ptn_internal_ini_restore },
         { "ini_set", 2, 2, ptn_internal_ini_set },
         { "intdiv", 2, 2, ptn_internal_intdiv },

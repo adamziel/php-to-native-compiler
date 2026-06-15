@@ -1042,12 +1042,6 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             "request/input/upload SAPI state",
         ),
         (
-            "resource limits",
-            "memory_limit=2M",
-            "unsupported-resource-limit-ini\t",
-            "memory_limit parsing/enforcement",
-        ),
-        (
             "diagnostics",
             "fatal_error_backtraces=0",
             "unsupported-diagnostics-ini\t",
@@ -1092,6 +1086,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             "{name}: {classification:?}"
         );
     }
+
+    let memory_limit = classify(
+        "--TEST--\nmemory ini\n--INI--\nmemory_limit=128M\nmax_memory_limit=256M\n--FILE--\n<?php\necho ini_get('memory_limit'), \"\\n\";\n--EXPECT--\n128M\n",
+    );
+    assert_eq!(
+        memory_limit.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
 }
 
 #[test]

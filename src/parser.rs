@@ -7530,6 +7530,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "highlight_file"
             | "highlight_string"
             | "ini_get"
+            | "ini_parse_quantity"
             | "intdiv"
             | "assert"
             | "basename"

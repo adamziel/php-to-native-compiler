@@ -98,6 +98,8 @@ struct RuntimeIni {
     display_errors: Option<String>,
     error_reporting: Option<i64>,
     zend_assertions: Option<String>,
+    memory_limit: Option<String>,
+    max_memory_limit: Option<String>,
 }
 
 impl Invocation {
@@ -207,11 +209,15 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
     } else if name.eq_ignore_ascii_case("display_errors") {
         ini.display_errors = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("error_reporting") {
-        if let Ok(parsed) = raw_value.trim().parse::<i64>() {
+        if let Some(parsed) = parse_error_reporting_level(raw_value) {
             ini.error_reporting = Some(parsed);
         }
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("memory_limit") {
+        ini.memory_limit = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("max_memory_limit") {
+        ini.max_memory_limit = Some(raw_value.to_string());
     }
 }
 
@@ -232,7 +238,258 @@ fn normalize_ini_scalar(raw_value: &str) -> String {
     }
 }
 
+fn parse_error_reporting_level(raw_value: &str) -> Option<i64> {
+    ErrorReportingParser::new(raw_value).parse()
+}
+
+struct ErrorReportingParser<'a> {
+    input: &'a str,
+    position: usize,
+}
+
+impl<'a> ErrorReportingParser<'a> {
+    fn new(input: &'a str) -> Self {
+        Self { input, position: 0 }
+    }
+
+    fn parse(mut self) -> Option<i64> {
+        let value = self.parse_or()?;
+        self.skip_whitespace();
+        if self.position == self.input.len() {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    fn parse_or(&mut self) -> Option<i64> {
+        let mut value = self.parse_xor()?;
+        loop {
+            self.skip_whitespace();
+            if !self.consume_byte(b'|') {
+                break;
+            }
+            value |= self.parse_xor()?;
+        }
+        Some(value)
+    }
+
+    fn parse_xor(&mut self) -> Option<i64> {
+        let mut value = self.parse_and()?;
+        loop {
+            self.skip_whitespace();
+            if !self.consume_byte(b'^') {
+                break;
+            }
+            value ^= self.parse_and()?;
+        }
+        Some(value)
+    }
+
+    fn parse_and(&mut self) -> Option<i64> {
+        let mut value = self.parse_unary()?;
+        loop {
+            self.skip_whitespace();
+            if !self.consume_byte(b'&') {
+                break;
+            }
+            value &= self.parse_unary()?;
+        }
+        Some(value)
+    }
+
+    fn parse_unary(&mut self) -> Option<i64> {
+        self.skip_whitespace();
+        if self.consume_byte(b'~') {
+            Some(!self.parse_unary()?)
+        } else {
+            self.parse_atom()
+        }
+    }
+
+    fn parse_atom(&mut self) -> Option<i64> {
+        self.skip_whitespace();
+        if self.consume_byte(b'(') {
+            let value = self.parse_or()?;
+            self.skip_whitespace();
+            return self.consume_byte(b')').then_some(value);
+        }
+
+        let start = self.position;
+        let bytes = self.input.as_bytes();
+        if start < bytes.len() && (bytes[start].is_ascii_digit() || bytes[start] == b'-') {
+            self.position += 1;
+            while self.position < bytes.len() && bytes[self.position].is_ascii_digit() {
+                self.position += 1;
+            }
+            return self.input[start..self.position].parse::<i64>().ok();
+        }
+
+        if start < bytes.len() && (bytes[start].is_ascii_alphabetic() || bytes[start] == b'_') {
+            self.position += 1;
+            while self.position < bytes.len()
+                && (bytes[self.position].is_ascii_alphanumeric() || bytes[self.position] == b'_')
+            {
+                self.position += 1;
+            }
+            return error_reporting_constant(&self.input[start..self.position]);
+        }
+
+        None
+    }
+
+    fn skip_whitespace(&mut self) {
+        while self.position < self.input.len()
+            && self.input.as_bytes()[self.position].is_ascii_whitespace()
+        {
+            self.position += 1;
+        }
+    }
+
+    fn consume_byte(&mut self, byte: u8) -> bool {
+        if self.position < self.input.len() && self.input.as_bytes()[self.position] == byte {
+            self.position += 1;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+fn error_reporting_constant(name: &str) -> Option<i64> {
+    match name {
+        "E_ERROR" => Some(1),
+        "E_WARNING" => Some(2),
+        "E_PARSE" => Some(4),
+        "E_NOTICE" => Some(8),
+        "E_CORE_ERROR" => Some(16),
+        "E_CORE_WARNING" => Some(32),
+        "E_COMPILE_ERROR" => Some(64),
+        "E_COMPILE_WARNING" => Some(128),
+        "E_USER_ERROR" => Some(256),
+        "E_USER_WARNING" => Some(512),
+        "E_USER_NOTICE" => Some(1024),
+        "E_STRICT" => Some(2048),
+        "E_RECOVERABLE_ERROR" => Some(4096),
+        "E_DEPRECATED" => Some(8192),
+        "E_USER_DEPRECATED" => Some(16384),
+        "E_ALL" => Some(32767),
+        _ => None,
+    }
+}
+
+fn parse_ini_quantity_bytes(raw_value: &str) -> Option<i64> {
+    let trimmed = raw_value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let bytes = trimmed.as_bytes();
+    let mut index = 0usize;
+    let sign = if bytes[index] == b'-' {
+        index += 1;
+        -1i128
+    } else if bytes[index] == b'+' {
+        index += 1;
+        1i128
+    } else {
+        1i128
+    };
+    if index >= bytes.len() {
+        return None;
+    }
+
+    let mut radix = 10u32;
+    if index + 1 < bytes.len()
+        && bytes[index] == b'0'
+        && (bytes[index + 1] == b'x' || bytes[index + 1] == b'X')
+    {
+        radix = 16;
+        index += 2;
+    }
+
+    let digit_start = index;
+    let mut value = 0i128;
+    while index < bytes.len() {
+        let digit = match bytes[index] {
+            b'0'..=b'9' => (bytes[index] - b'0') as u32,
+            b'a'..=b'f' if radix == 16 => 10 + (bytes[index] - b'a') as u32,
+            b'A'..=b'F' if radix == 16 => 10 + (bytes[index] - b'A') as u32,
+            _ => break,
+        };
+        if digit >= radix {
+            break;
+        }
+        value = value
+            .saturating_mul(radix as i128)
+            .saturating_add(digit as i128);
+        index += 1;
+    }
+    if index == digit_start {
+        return None;
+    }
+
+    let suffix = trimmed
+        .bytes()
+        .rev()
+        .find(|byte| !byte.is_ascii_whitespace())
+        .map(|byte| byte.to_ascii_lowercase());
+    let multiplier = match suffix {
+        Some(b'g') => 1024i128 * 1024 * 1024,
+        Some(b'm') => 1024i128 * 1024,
+        Some(b'k') => 1024i128,
+        _ => 1i128,
+    };
+    let quantity = sign.saturating_mul(value).saturating_mul(multiplier);
+    if quantity > i64::MAX as i128 {
+        Some(i64::MAX)
+    } else if quantity < i64::MIN as i128 {
+        Some(i64::MIN)
+    } else {
+        Some(quantity as i64)
+    }
+}
+
+fn apply_memory_limit_bounds(ini: &mut RuntimeIni) -> Option<String> {
+    let max_value = ini
+        .max_memory_limit
+        .as_deref()
+        .and_then(parse_ini_quantity_bytes)
+        .unwrap_or(-1);
+    if max_value < 0 {
+        return None;
+    }
+    let Some(memory_limit) = ini.memory_limit.as_deref() else {
+        return None;
+    };
+    let memory_value = parse_ini_quantity_bytes(memory_limit).unwrap_or(0);
+    if memory_value > max_value {
+        let max = ini
+            .max_memory_limit
+            .clone()
+            .unwrap_or_else(|| max_value.to_string());
+        ini.memory_limit = Some(max);
+        Some(format!(
+            "Warning: Failed to set memory_limit to {memory_value} bytes. Setting to max_memory_limit instead (currently: {max_value} bytes) in Unknown on line 0\n"
+        ))
+    } else if memory_value < 0 {
+        ini.memory_limit = ini.max_memory_limit.clone();
+        None
+    } else {
+        None
+    }
+}
+
 fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i32, PhpcError> {
+    let mut ini = RuntimeIni {
+        precision: ini.precision,
+        assert_exception: ini.assert_exception.clone(),
+        display_errors: ini.display_errors.clone(),
+        error_reporting: ini.error_reporting,
+        zend_assertions: ini.zend_assertions.clone(),
+        memory_limit: ini.memory_limit.clone(),
+        max_memory_limit: ini.max_memory_limit.clone(),
+    };
+    let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
     let native = TempPath::new("ptn-phpc-native", "bin");
     compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
         if error.span.is_some() {
@@ -261,6 +518,15 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);
+    }
+    if let Some(memory_limit) = &ini.memory_limit {
+        command.env("PTN_MEMORY_LIMIT", memory_limit);
+    }
+    if let Some(max_memory_limit) = &ini.max_memory_limit {
+        command.env("PTN_MAX_MEMORY_LIMIT", max_memory_limit);
+    }
+    if let Some(warning) = memory_limit_warning {
+        print!("{warning}");
     }
     let status = command
         .status()

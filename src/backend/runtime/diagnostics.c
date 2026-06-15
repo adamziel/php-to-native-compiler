@@ -583,6 +583,14 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override = NULL;
     runtime->include_path = ptn_duplicate_string(".");
+    const char *configured_max_memory_limit = getenv("PTN_MAX_MEMORY_LIMIT");
+    const char *configured_memory_limit = getenv("PTN_MEMORY_LIMIT");
+    runtime->max_memory_limit = ptn_duplicate_string(
+        configured_max_memory_limit == NULL ? "-1" : configured_max_memory_limit
+    );
+    runtime->memory_limit = ptn_duplicate_string(
+        configured_memory_limit == NULL ? "128M" : configured_memory_limit
+    );
     runtime->strict_types = 0;
     runtime->zend_assertions = 1;
     int64_t configured_zend_assertions = 0;
