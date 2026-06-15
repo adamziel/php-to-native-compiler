@@ -1301,6 +1301,15 @@ static void ptn_print_r_key(PtnStringBuffer *buffer, PtnArrayKey key) {
     }
 }
 
+static void ptn_print_r_object_key(PtnStringBuffer *buffer, PtnObject *object, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        ptn_string_buffer_append_format(buffer, "%lld", (long long)key.as.integer);
+        return;
+    }
+    const PtnObjectPropertyMetadata *metadata = ptn_object_property_metadata(object, key.as.string);
+    ptn_string_buffer_append(buffer, metadata == NULL ? key.as.string : metadata->display_name);
+}
+
 static void ptn_print_r_array(PtnStringBuffer *buffer, PtnArray *array, size_t indent) {
     ptn_string_buffer_append(buffer, "Array\n");
     ptn_string_buffer_append_indent(buffer, indent);
@@ -1311,6 +1320,28 @@ static void ptn_print_r_array(PtnStringBuffer *buffer, PtnArray *array, size_t i
         ptn_print_r_key(buffer, array->entries[i].key);
         ptn_string_buffer_append(buffer, "] => ");
         PtnValue entry_value = ptn_value_deref(array->entries[i].value);
+        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+            ptn_print_r_value_indented(buffer, entry_value, indent + 8);
+            ptn_string_buffer_append_char(buffer, '\n');
+        } else {
+            ptn_print_r_value_indented(buffer, entry_value, indent);
+            ptn_string_buffer_append_char(buffer, '\n');
+        }
+    }
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, ")\n");
+}
+
+static void ptn_print_r_object(PtnStringBuffer *buffer, PtnObject *object, size_t indent) {
+    ptn_string_buffer_append_format(buffer, "%s Object\n", object->class_name);
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, "(\n");
+    for (size_t i = 0; i < object->properties->len; i++) {
+        ptn_string_buffer_append_indent(buffer, indent + 4);
+        ptn_string_buffer_append_char(buffer, '[');
+        ptn_print_r_object_key(buffer, object, object->properties->entries[i].key);
+        ptn_string_buffer_append(buffer, "] => ");
+        PtnValue entry_value = ptn_value_deref(object->properties->entries[i].value);
         if (entry_value.type == PTN_ARRAY) {
             ptn_print_r_value_indented(buffer, entry_value, indent + 8);
             ptn_string_buffer_append_char(buffer, '\n');
@@ -1353,6 +1384,8 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
             ptn_print_r_array(buffer, value.as.array, indent);
             break;
         case PTN_OBJECT:
+            ptn_print_r_object(buffer, value.as.object, indent);
+            break;
         case PTN_CLOSURE:
             ptn_string_buffer_append(buffer, "Object");
             break;
