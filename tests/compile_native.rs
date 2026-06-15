@@ -9900,6 +9900,87 @@ echo $dynamic(\"three\"), \"\\n\";
 }
 
 #[test]
+fn compile_magic_call_static_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-call-static-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-call-static-dispatch.php");
+    let output = root.join("magic-call-static-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php
+class StaticMagicBase {
+    public static function __callStatic($name, $args) {
+        echo \"static:\", $name, \":\", count($args);
+        if (count($args)) {
+            echo \":\", $args[0];
+        }
+        echo \"\\n\";
+        return \"ret:\" . $name;
+    }
+}
+
+class StaticMagicChild extends StaticMagicBase {
+}
+
+class InstanceVsStatic extends StaticMagicBase {
+    public function __call($name, $args) {
+        echo \"instance:\", $name, \":\", count($args), \"\\n\";
+    }
+
+    public function run() {
+        self::inside(\"arg\");
+        $this::dynamicInside();
+    }
+}
+
+echo StaticMagicChild::direct(\"one\"), \"\\n\";
+call_user_func(\"StaticMagicChild::via_string\", \"two\", \"three\");
+call_user_func([\"StaticMagicChild\", \"via_array\"], \"four\");
+var_dump(is_callable(\"StaticMagicChild::missing\"));
+var_dump(is_callable([\"StaticMagicChild\", \"missing\"]));
+$target = new StaticMagicChild();
+$method = \"via_object_static\";
+$target::$method(\"five\");
+(new InstanceVsStatic())->run();
+InstanceVsStatic::outside();
+try {
+    StaticMagicChild::__construct();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "static:direct:1:one\n",
+            "ret:direct\n",
+            "static:via_string:2:two\n",
+            "static:via_array:1:four\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "static:via_object_static:1:five\n",
+            "instance:inside:1\n",
+            "instance:dynamicInside:0\n",
+            "static:outside:0\n",
+            "Cannot call constructor\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_magic_static_call"));
+    assert!(c_source.contains("ptn_declared_class_has_static_call_magic"));
+    assert!(c_source.contains("StaticMagicBase::__callStatic"));
+}
+
+#[test]
 fn compile_invokable_object_callables_to_native_binary() {
     let root = temp_dir("ptn-native-invokable-object-callables");
     fs::create_dir_all(&root).unwrap();
@@ -26027,10 +26108,12 @@ echo $object->$name;\n\
 $object->{$name . \"_suffix\"} = 8;\n\
 $object->$method();\n\
 Example::$method();\n\
-Example::{$method}();\n",
+Example::{$method}();\n\
+$object::$method();\n\
+$object::{\"method\"}();\n",
     )
     .unwrap();
-    assert_eq!(program.statements.len(), 6);
+    assert_eq!(program.statements.len(), 8);
 
     let Statement::Expression { expression, .. } = &program.statements[0] else {
         panic!("expected dynamic property assignment expression");
@@ -26058,7 +26141,7 @@ Example::{$method}();\n",
     };
     assert!(matches!(expression, Expr::DynamicMethodCall { .. }));
 
-    for index in 4..=5 {
+    for index in 4..=7 {
         let Statement::Expression { expression, .. } = &program.statements[index] else {
             panic!("expected dynamic static call expression");
         };
@@ -26114,6 +26197,7 @@ fn compile_dynamic_property_and_method_dispatch_to_native_binary() {
 class Example {
     public function instance() { echo \"instance\\n\"; }
     public static function statik() { echo \"static\\n\"; }
+    public static function second() { echo \"second\\n\"; }
 }
 
 $object = new stdClass;
@@ -26131,6 +26215,9 @@ $example->$method();
 $static = \"statik\";
 Example::$static();
 Example::{$static}();
+$example::$static();
+$dynamicStatic = \"second\";
+$example::$dynamicStatic();
 ",
     )
     .unwrap();
@@ -26141,7 +26228,7 @@ Example::{$static}();
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(1)\nstring(2) \"ok\"\ninstance\nstatic\nstatic\n"
+        "int(1)\nstring(2) \"ok\"\ninstance\nstatic\nstatic\nstatic\nsecond\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -29588,6 +29675,83 @@ echo \"done\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source
         .contains("The magic method MagicVisibility::__unset() must have public visibility"));
+}
+
+#[test]
+fn compile_magic_method_declaration_fatals_to_native_binary() {
+    let cases = [
+        (
+            "magic-static-unset",
+            "<?php
+class Box {
+    public static function __unset($name) {}
+}
+echo \"unreachable\\n\";
+",
+            "Method Box::__unset() cannot be static",
+            3,
+        ),
+        (
+            "magic-by-ref-call",
+            "<?php
+class Box {
+    public function __call(&$name, $arguments) {}
+}
+echo \"unreachable\\n\";
+",
+            "Method Box::__call() cannot take arguments by reference",
+            3,
+        ),
+        (
+            "magic-call-name-type",
+            "<?php
+class Box {
+    public static function __callStatic(int $name, array $arguments) {}
+}
+echo \"unreachable\\n\";
+",
+            "Box::__callStatic(): Parameter #1 ($name) must be of type string when declared",
+            3,
+        ),
+        (
+            "magic-call-arguments-type",
+            "<?php
+class Box {
+    public function __call(string $name, Iterator $arguments) {}
+}
+echo \"unreachable\\n\";
+",
+            "Box::__call(): Parameter #2 ($arguments) must be of type array when declared",
+            3,
+        ),
+    ];
+
+    for (name, source, message, line) in cases {
+        let root_name = format!("ptn-native-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "Fatal error: {message} in {} on line {line}\n",
+                input.display()
+            ),
+            "{name}"
+        );
+
+        let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+        assert!(c_source.contains(message), "{name}");
+    }
 }
 
 #[test]

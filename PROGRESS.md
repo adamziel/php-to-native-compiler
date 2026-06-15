@@ -262,6 +262,12 @@ Newly passing checked-in focused rows:
 - `ext/standard/tests/file/file_get_contents_variation7.phpt`
 - `ext/standard/tests/file/filesize_basic.phpt`
 
+## 2026-06-15 ptn-w17z.12 Magic Methods/Lifecycle Row Pack
+
+| Ported tests | Passed tests |
+| --- | --- |
+| `tools/phpt-ptn-w17z12-magic-lifecycle-newly-passing.txt` | 49/49 current; 49 failed on saved base `5a4d735dfd5d` |
+
 ## 2026-06-15 ptn-w17z.21 Date/Time/Formatting Row Pack
 
 Checked-in manifests:

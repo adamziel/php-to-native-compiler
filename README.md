@@ -20,7 +20,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Top-level functions and declared methods include magic constants, call-frame
   introspection, scalar, array, class-name, and void return type hints, array
   defaults, by-reference returns, typed coercion, constructor dispatch, public
-  destructor dispatch, inherited static call dispatch, and metadata intrinsics.
+  destructor dispatch, inherited static call dispatch, `__callStatic()` fallback
+  for inaccessible/missing static-style calls, and metadata intrinsics. Magic
+  method declaration checks cover modeled arity, staticness, by-reference
+  parameter rejection, and required string/array parameter types.
 - Anonymous closures and arrow functions lower through the shared closure
   runtime, including explicit `use(...)` captures, implicit arrow by-value
   captures, nested capture propagation, by-reference returns, typed parameters,
@@ -134,8 +137,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   asymmetric private(set)/protected(set) write visibility metadata, readonly
   write-once metadata for properties and readonly classes, readonly
   uninitialized-read and dynamic-property guards, dump metadata, quiet
-  `isset()`, `empty()`, and `??`, and inherited parent-private slots distinct
-  from child public redeclarations; `property_exists()` covers the current
+  `isset()`, `empty()`, `??`, and modeled `__isset()` fallback, and inherited
+  parent-private slots distinct from child public redeclarations;
+  `property_exists()` covers the current
   declared/static property metadata and stdClass dynamic slots. Public
   `__destruct()` runs on last-reference release and shutdown. Full visibility,
   property type enforcement, and inheritance remain bounded.
