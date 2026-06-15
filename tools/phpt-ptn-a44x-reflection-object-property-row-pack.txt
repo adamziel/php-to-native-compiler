@@ -1,4 +1,10 @@
 Zend/tests/magic_methods/bug72177.phpt
+ext/reflection/tests/ReflectionMethod_006.phpt
+ext/reflection/tests/ReflectionMethod_basic3.phpt
+ext/reflection/tests/ReflectionMethod_constructor_basic.phpt
+ext/reflection/tests/ReflectionMethod_getDeclaringClass_basic.phpt
+ext/reflection/tests/ReflectionMethod_invokeArgs_basic.phpt
+ext/reflection/tests/ReflectionMethod_setAccessible.phpt
 ext/reflection/tests/ReflectionProperty_basic1.phpt
 ext/reflection/tests/ReflectionProperty_constructor_error.phpt
 ext/reflection/tests/ReflectionProperty_constructor_variation1.phpt
@@ -28,4 +34,5 @@ ext/reflection/tests/bug30146.phpt
 ext/reflection/tests/bug36337.phpt
 ext/reflection/tests/bug37816.phpt
 ext/reflection/tests/bug72174.phpt
+ext/reflection/tests/bug75231.phpt
 ext/reflection/tests/bug80564.phpt
