@@ -184,6 +184,7 @@ typedef struct {
 typedef struct PtnArray PtnArray;
 typedef struct PtnClosure PtnClosure;
 typedef struct PtnException PtnException;
+typedef struct PtnGenerator PtnGenerator;
 typedef struct PtnObject PtnObject;
 typedef struct PtnReference PtnReference;
 typedef struct PtnRuntime PtnRuntime;
@@ -339,6 +340,7 @@ typedef struct {
 typedef struct {
     PtnArray *array;
     PtnObject *object;
+    PtnGenerator *generator;
     PtnRuntime *runtime;
     const char *access_scope;
     PtnValue iterator_object;
@@ -353,6 +355,11 @@ typedef struct {
     int valid;
     int live;
 } PtnArrayIterator;
+
+struct PtnGenerator {
+    PtnArray *values;
+    int yields_by_ref;
+};
 
 struct PtnArray {
     size_t refcount;
@@ -579,6 +586,7 @@ struct PtnRuntime {
     const char *current_class_name;
     const char *current_called_class_name;
     const char *called_class_name_override;
+    PtnGenerator *current_generator;
     int has_current_receiver;
     PtnValue current_receiver;
     const char *by_ref_argument_function_name_override;
@@ -615,6 +623,9 @@ static PtnCowDebugCounters ptn_cow_debug_counters;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
 static void ptn_abort_out_of_memory(void);
+static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right);
+static PTN_UNUSED int ptn_object_is_generator(PtnObject *object);
+static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED char *ptn_duplicate_string(const char *string);
 static void ptn_symbols_free(PtnSymbolTable *symbols);
 static PTN_UNUSED void ptn_cow_debug_note_string_alloc(void);

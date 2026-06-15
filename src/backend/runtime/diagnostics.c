@@ -524,6 +524,16 @@ static PTN_UNUSED void ptn_emit_only_variable_references_returned_by_reference_n
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_only_variable_references_yielded_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
+        return;
+    }
+    fputc('\n', stdout);
+    fputs("Notice: Only variable references should be yielded by reference in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static PTN_UNUSED void ptn_emit_control_warning(const char *message, const char *path, size_t line) {
     fputc('\n', stdout);
     fputs("Warning: ", stdout);
@@ -620,6 +630,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->current_class_name = NULL;
     runtime->current_called_class_name = NULL;
     runtime->called_class_name_override = NULL;
+    runtime->current_generator = NULL;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override = NULL;

@@ -34,6 +34,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   dump/reflection metadata, `Closure::__invoke` reference diagnostics use
   Closure method names at callable boundaries, and userland closure dumps
   expose source name/file/line and parameter metadata.
+- Yielding userland functions lower to bounded collected `Generator` objects
+  that eagerly evaluate the body at call time, preserve yielded values and
+  supported by-reference yield diagnostics, expose `Generator::current()` and
+  class/method/interface metadata, work in `foreach`, and can be expanded by
+  call-site argument unpacking.
 - Includes share caller file scope and return values; bounded dynamic
   include/require dispatch uses canonical once guards when candidate string
   paths are statically enumerable.
@@ -188,9 +193,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   expectation rows, broad unsupported language surfaces such as anonymous
   classes, interfaces, trait adaptations/conflicts/reflection edges, remaining
   call-unpacking edges
-  (by-reference spread, Traversable/SPL/generator spread inputs, and
+  (by-reference spread, non-Generator Traversable/SPL spread inputs, and
   resource-limit stress rows),
-  generator/Fiber execution boundaries including by-reference yields/returns,
+  true generator/Fiber execution boundaries including lazy suspension,
+  `yield from`, send/throw/next/getReturn timing, Fiber runtime, generator body
+  cleanup/premature close, and remaining reference-timing edges,
   nullable type hints, interpolating heredoc bodies,
   variable variables,
   PHP attribute syntax/reflection metadata,

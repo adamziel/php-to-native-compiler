@@ -1,0 +1,9 @@
+# Focused collected-generator runtime row pack for ptn-w17z.28.
+# Rows validated after adding collected Generator objects, foreach iteration,
+# Generator::current(), by-reference yield diagnostics, and generator call-unpack.
+Zend/tests/arg_unpack/traversable_with_by_ref_parameters.phpt
+Zend/tests/generators/errors/non_ref_generator_iterated_by_ref_error.phpt
+Zend/tests/generators/errors/yield_const_by_ref_error.phpt
+Zend/tests/generators/errors/yield_non_ref_function_call_by_ref_error.phpt
+Zend/tests/generators/yield_array_offset_by_ref.phpt
+Zend/tests/generators/yield_ref_function_call_by_reference.phpt

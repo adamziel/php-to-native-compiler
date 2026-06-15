@@ -57,6 +57,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->current_class_name = NULL;
     runtime->current_called_class_name = NULL;
     runtime->called_class_name_override = NULL;
+    runtime->current_generator = NULL;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override =
@@ -2299,8 +2300,20 @@ static PTN_UNUSED PtnValue ptn_call_method(
     size_t line
 ) {
     (void)args;
-    (void)line;
     receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_OBJECT && ptn_object_is_generator(receiver.as.object)) {
+        if (ptn_ascii_case_equal(name, "current")) {
+            if (argc != 0) {
+                ptn_throw_exception(
+                    runtime,
+                    "ArgumentCountError",
+                    "Generator::current() expects exactly 0 arguments"
+                );
+                return ptn_null();
+            }
+            return ptn_generator_current(runtime, receiver, line);
+        }
+    }
     int is_throwable_receiver = receiver.type == PTN_EXCEPTION ||
         (receiver.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, receiver.as.object));
     if (is_throwable_receiver && (

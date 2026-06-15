@@ -6038,6 +6038,122 @@ var_dump($constructorArray);
 }
 
 #[test]
+fn compile_generator_foreach_current_and_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-foreach-current");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-foreach-current.php");
+    let output = root.join("generator-foreach-current-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    yield "a" => 1;
+    yield 2;
+}
+foreach (gen() as $key => $value) {
+    var_dump($key, $value);
+}
+$g = gen();
+var_dump($g instanceof Generator);
+var_dump($g instanceof Traversable);
+var_dump(class_exists("Generator"));
+var_dump(method_exists($g, "current"));
+var_dump($g->current());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"a\"\nint(1)\nint(0)\nint(2)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_yield"));
+    assert!(c_source.contains("ptn_generator_current"));
+}
+
+#[test]
+fn compile_by_reference_generator_foreach_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-by-ref-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-by-ref-foreach.php");
+    let output = root.join("generator-by-ref-foreach-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function &walk(array &$array) {
+    foreach ($array as $key => &$value) {
+        yield $key => $value;
+    }
+}
+$items = [1, 2];
+foreach (walk($items) as &$value) {
+    $value *= -1;
+}
+var_dump($items);
+
+function gen_non_ref() {
+    yield 1;
+}
+try {
+    foreach (gen_non_ref() as &$value) {}
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  int(-1)\n  [1]=>\n  &int(-2)\n}\nYou can only iterate a generator by-reference if it declared that it yields by-reference\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_generator_call_unpack_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-call-unpack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-call-unpack.php");
+    let output = root.join("generator-call-unpack-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen_args() {
+    yield 1;
+    yield 2;
+}
+function collect(...$args) {
+    var_dump($args);
+}
+collect(...gen_args());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_flush_and_binary_prefixed_strings_to_native_binary() {
     let root = temp_dir("ptn-native-flush-binary-strings");
     fs::create_dir_all(&root).unwrap();
