@@ -93,7 +93,7 @@ enum Mode {
 
 #[derive(Debug, Default)]
 struct RuntimeIni {
-    precision: Option<u8>,
+    precision: Option<i16>,
     date_timezone: Option<String>,
     assert_exception: Option<String>,
     display_errors: Option<String>,
@@ -200,8 +200,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
     let name = name.trim();
     let raw_value = raw_value.trim();
     if name.eq_ignore_ascii_case("precision") {
-        if let Ok(parsed) = raw_value.parse::<u8>() {
-            if parsed <= 53 {
+        if let Ok(parsed) = raw_value.parse::<i16>() {
+            if (-1..=53).contains(&parsed) {
                 ini.precision = Some(parsed);
             }
         }

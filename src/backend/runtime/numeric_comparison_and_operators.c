@@ -718,6 +718,13 @@ static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValu
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
+        if (left_integer == 0 && right_integer < 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Power of base 0 and negative exponent is deprecated",
+                line
+            );
+        }
         int64_t integer_result = 0;
         if (ptn_integer_power_fits(left_integer, right_integer, &integer_result)) {
             return ptn_int(integer_result);
@@ -728,12 +735,26 @@ static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValu
     double left_fast_number = 0.0;
     double right_fast_number = 0.0;
     if (ptn_fast_numeric_pair(left, right, &left_fast_number, &right_fast_number)) {
+        if (left_fast_number == 0.0 && right_fast_number < 0.0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Power of base 0 and negative exponent is deprecated",
+                line
+            );
+        }
         return ptn_float(pow(left_fast_number, right_fast_number));
     }
 
     PtnNumber left_number;
     PtnNumber right_number;
     ptn_arithmetic_operands(runtime, left, "**", right, line, &left_number, &right_number);
+    if (left_number.floating == 0.0 && right_number.floating < 0.0) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Power of base 0 and negative exponent is deprecated",
+            line
+        );
+    }
     if (left_number.type == PTN_NUMBER_INT && right_number.type == PTN_NUMBER_INT) {
         int64_t integer_result = 0;
         if (ptn_integer_power_fits(left_number.integer, right_number.integer, &integer_result)) {
