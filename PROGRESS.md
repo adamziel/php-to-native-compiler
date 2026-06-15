@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-90cm compare64bit object/number diagnostics | 6 | 6 |
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
 | ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
@@ -20,14 +21,29 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:15Z.
-Measured latest: `ptn-vqg1` temp stream wrappers row pack selected 3 rows, kept 3 runnable, and passed 3/3 in the focused run.
-Latest: `ptn-vqg1` completed the checked-in temp stream wrappers row pack. Previous: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack.
+Refresh: 2026-06-15T17:33Z.
+Measured latest: `ptn-90cm` compare64bit object/number diagnostics row pack selected 6 rows, kept 6 runnable, and passed 6/6 in the focused run.
+Latest: `ptn-90cm` routes `var_dump()`/`debug_zval_dump()`/`print_r()` output through output buffers and matches Zend compare64bit object/number diagnostics and ordering. Previous: `ptn-vqg1` completed the checked-in temp stream wrappers row pack.
 
-Current hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
+Current hook: `ptn-90cm` compare64bit object/number diagnostics passed 6/6 at
+`.runtime/ptn-90cm-compare64bit-final-rebased/summary-20260615T173306Z.txt`.
+Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
 `.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
-Previous hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
-`.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`.
+
+## 2026-06-15 ptn-90cm Compare64bit Object/Number Diagnostics
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final focused row pack (`.runtime/ptn-90cm-compare64bit-final-rebased/summary-20260615T173306Z.txt`) | 6 selected / 6 runnable | 6 |
+
+Implemented behavior: `var_dump()` and `debug_zval_dump()` now write through
+the runtime output sink while active, so `ob_start()` captures dump output;
+`print_r()` writes its non-returning output through the same sink. Loose and
+ordered comparisons now receive runtime/source-line context, emit object-to-int
+and object-to-float notices for object/number comparisons, compare object values
+as `1` against numbers, treat different-class object ordering as unordered,
+order objects above arrays/scalars where PHP does, and compare null against
+numbers by truthiness for ordering.
 
 ## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
 

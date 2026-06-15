@@ -31,13 +31,19 @@ static PTN_UNUSED PtnValue ptn_array_union(PtnArray *left, PtnArray *right) {
     return union_value;
 }
 
-static PTN_UNUSED int ptn_compare_arrays_equal(PtnArray *left, PtnArray *right) {
+static PTN_UNUSED int ptn_compare_arrays_equal(
+    PtnRuntime *runtime,
+    PtnArray *left,
+    PtnArray *right,
+    size_t line
+) {
     if (left->len != right->len) {
         return 0;
     }
     for (size_t i = 0; i < left->len; i++) {
         PtnArrayEntry *right_entry = ptn_array_entry_for_key(right, left->entries[i].key);
-        if (right_entry == NULL || !ptn_compare_equal(left->entries[i].value, right_entry->value)) {
+        if (right_entry == NULL ||
+            !ptn_compare_equal(runtime, left->entries[i].value, right_entry->value, line)) {
             return 0;
         }
     }
@@ -57,17 +63,27 @@ static PTN_UNUSED int ptn_compare_arrays_identical(PtnArray *left, PtnArray *rig
     return 1;
 }
 
-static PTN_UNUSED int ptn_compare_objects_equal(PtnObject *left, PtnObject *right) {
+static PTN_UNUSED int ptn_compare_objects_equal(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line
+) {
     if (left == right) {
         return 1;
     }
     if (strcmp(left->class_name, right->class_name) != 0) {
         return 0;
     }
-    return ptn_compare_arrays_equal(left->properties, right->properties);
+    return ptn_compare_arrays_equal(runtime, left->properties, right->properties, line);
 }
 
-static PTN_UNUSED int ptn_compare_arrays_order(PtnArray *left, PtnArray *right) {
+static PTN_UNUSED int ptn_compare_arrays_order(
+    PtnRuntime *runtime,
+    PtnArray *left,
+    PtnArray *right,
+    size_t line
+) {
     if (left->len < right->len) {
         return PTN_COMPARE_LESS;
     }
@@ -79,7 +95,7 @@ static PTN_UNUSED int ptn_compare_arrays_order(PtnArray *left, PtnArray *right) 
         if (right_entry == NULL) {
             return PTN_COMPARE_UNORDERED;
         }
-        int compared = ptn_compare_order(left->entries[i].value, right_entry->value);
+        int compared = ptn_compare_order(runtime, left->entries[i].value, right_entry->value, line);
         if (compared != PTN_COMPARE_EQUAL) {
             return compared;
         }
@@ -87,17 +103,112 @@ static PTN_UNUSED int ptn_compare_arrays_order(PtnArray *left, PtnArray *right) 
     return PTN_COMPARE_EQUAL;
 }
 
-static PTN_UNUSED int ptn_compare_objects_order(PtnObject *left, PtnObject *right) {
+static PTN_UNUSED int ptn_compare_class_names(const char *left, const char *right) {
+    while (*left != '\0' && *right != '\0') {
+        int left_byte = tolower((unsigned char)*left);
+        int right_byte = tolower((unsigned char)*right);
+        if (left_byte != right_byte) {
+            return left_byte < right_byte ? PTN_COMPARE_LESS : PTN_COMPARE_GREATER;
+        }
+        left++;
+        right++;
+    }
+    if (*left == '\0' && *right == '\0') {
+        return PTN_COMPARE_EQUAL;
+    }
+    return *left == '\0' ? PTN_COMPARE_LESS : PTN_COMPARE_GREATER;
+}
+
+static PTN_UNUSED int ptn_compare_objects_order(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line
+) {
     if (left == right) {
         return PTN_COMPARE_EQUAL;
     }
-    if (strcmp(left->class_name, right->class_name) != 0) {
-        return PTN_COMPARE_GREATER;
+    if (ptn_compare_class_names(left->class_name, right->class_name) != PTN_COMPARE_EQUAL) {
+        return PTN_COMPARE_UNORDERED;
     }
-    return ptn_compare_arrays_order(left->properties, right->properties);
+    return ptn_compare_arrays_order(runtime, left->properties, right->properties, line);
 }
 
-static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
+static PTN_UNUSED int ptn_value_is_comparison_object(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION;
+}
+
+static PTN_UNUSED const char *ptn_comparison_object_class_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_RESOURCE:
+        case PTN_ARRAY:
+        case PTN_REFERENCE:
+            return ptn_offset_container_type_name(value);
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static PTN_UNUSED void ptn_emit_object_to_number_notice(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *target_type,
+    size_t line
+) {
+    if (runtime == NULL || !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_NOTICE)) {
+        return;
+    }
+    fputc('\n', stdout);
+    fputs("Notice: Object of class ", stdout);
+    fputs(ptn_comparison_object_class_name(object), stdout);
+    fputs(" could not be converted to ", stdout);
+    fputs(target_type, stdout);
+    fputs(" in ", stdout);
+    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
+    fputs(" on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
+static PTN_UNUSED int ptn_compare_object_and_number(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int *compared
+) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (ptn_value_is_comparison_object(left) && ptn_is_number_type(right)) {
+        double right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
+        ptn_emit_object_to_number_notice(runtime, left, right.type == PTN_INT ? "int" : "float", line);
+        *compared = ptn_compare_numbers(1.0, right_number);
+        return 1;
+    }
+    if (ptn_is_number_type(left) && ptn_value_is_comparison_object(right)) {
+        double left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
+        ptn_emit_object_to_number_notice(runtime, right, left.type == PTN_INT ? "int" : "float", line);
+        *compared = ptn_compare_numbers(left_number, 1.0);
+        return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type == right.type) {
@@ -113,9 +224,9 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
             case PTN_STRING:
                 return ptn_compare_strings_loose(left.as.string, right.as.string) == PTN_COMPARE_EQUAL;
             case PTN_ARRAY:
-                return ptn_compare_arrays_equal(left.as.array, right.as.array);
+                return ptn_compare_arrays_equal(runtime, left.as.array, right.as.array, line);
             case PTN_OBJECT:
-                return ptn_compare_objects_equal(left.as.object, right.as.object);
+                return ptn_compare_objects_equal(runtime, left.as.object, right.as.object, line);
             case PTN_CLOSURE:
                 return left.as.closure == right.as.closure;
             case PTN_EXCEPTION:
@@ -162,12 +273,15 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
 
     if (left.type == PTN_ARRAY || right.type == PTN_ARRAY) {
         if (left.type == PTN_ARRAY && right.type == PTN_ARRAY) {
-            return ptn_compare_arrays_equal(left.as.array, right.as.array);
+            return ptn_compare_arrays_equal(runtime, left.as.array, right.as.array, line);
         }
         return 0;
     }
 
     int compared = 0;
+    if (ptn_compare_object_and_number(runtime, left, right, line, &compared)) {
+        return compared == PTN_COMPARE_EQUAL;
+    }
     if (ptn_compare_number_types(left, right, &compared)) {
         return compared == PTN_COMPARE_EQUAL;
     }
@@ -258,7 +372,7 @@ static PTN_UNUSED int ptn_value_is_nan(PtnValue value) {
     return value.type == PTN_FLOAT && isnan(value.as.floating);
 }
 
-static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
+static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type == right.type) {
@@ -274,9 +388,9 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
             case PTN_STRING:
                 return ptn_compare_strings_loose(left.as.string, right.as.string);
             case PTN_ARRAY:
-                return ptn_compare_arrays_order(left.as.array, right.as.array);
+                return ptn_compare_arrays_order(runtime, left.as.array, right.as.array, line);
             case PTN_OBJECT:
-                return ptn_compare_objects_order(left.as.object, right.as.object);
+                return ptn_compare_objects_order(runtime, left.as.object, right.as.object, line);
             case PTN_CLOSURE:
                 return left.as.closure == right.as.closure ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
             case PTN_EXCEPTION:
@@ -299,8 +413,7 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
             return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
         }
         if (ptn_is_number_type(right)) {
-            double right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
-            return ptn_compare_numbers(0.0, right_number);
+            return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
         }
         if (right.type == PTN_STRING) {
             return ptn_compare_string_bytes((const unsigned char *)"", 0, right.as.string.data, right.as.string.len);
@@ -314,8 +427,7 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
             return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
         }
         if (ptn_is_number_type(left)) {
-            double left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
-            return ptn_compare_numbers(left_number, 0.0);
+            return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
         }
         if (left.type == PTN_STRING) {
             return ptn_compare_string_bytes(left.as.string.data, left.as.string.len, (const unsigned char *)"", 0);
@@ -327,12 +439,18 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
 
     if (left.type == PTN_ARRAY || right.type == PTN_ARRAY) {
         if (left.type == PTN_ARRAY && right.type == PTN_ARRAY) {
-            return ptn_compare_arrays_order(left.as.array, right.as.array);
+            return ptn_compare_arrays_order(runtime, left.as.array, right.as.array, line);
+        }
+        if (ptn_value_is_comparison_object(left) || ptn_value_is_comparison_object(right)) {
+            return ptn_value_is_comparison_object(left) ? PTN_COMPARE_GREATER : PTN_COMPARE_LESS;
         }
         return left.type == PTN_ARRAY ? PTN_COMPARE_GREATER : PTN_COMPARE_LESS;
     }
 
     int compared = 0;
+    if (ptn_compare_object_and_number(runtime, left, right, line, &compared)) {
+        return compared;
+    }
     if (ptn_compare_number_types(left, right, &compared)) {
         return compared;
     }
@@ -355,29 +473,32 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
         }
         return ptn_compare_number_and_string(right, left.as.string, 0);
     }
+    if (ptn_value_is_comparison_object(left) || ptn_value_is_comparison_object(right)) {
+        return ptn_value_is_comparison_object(left) ? PTN_COMPARE_GREATER : PTN_COMPARE_LESS;
+    }
     return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
 }
 
-static PTN_UNUSED int ptn_compare_less(PtnValue left, PtnValue right) {
-    return ptn_compare_order(left, right) == PTN_COMPARE_LESS;
+static PTN_UNUSED int ptn_compare_less(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    return ptn_compare_order(runtime, left, right, line) == PTN_COMPARE_LESS;
 }
 
-static PTN_UNUSED int ptn_compare_less_equal(PtnValue left, PtnValue right) {
-    int compared = ptn_compare_order(left, right);
+static PTN_UNUSED int ptn_compare_less_equal(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    int compared = ptn_compare_order(runtime, left, right, line);
     return compared == PTN_COMPARE_LESS || compared == PTN_COMPARE_EQUAL;
 }
 
-static PTN_UNUSED int ptn_compare_greater(PtnValue left, PtnValue right) {
-    return ptn_compare_order(left, right) == PTN_COMPARE_GREATER;
+static PTN_UNUSED int ptn_compare_greater(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    return ptn_compare_order(runtime, left, right, line) == PTN_COMPARE_GREATER;
 }
 
-static PTN_UNUSED int ptn_compare_greater_equal(PtnValue left, PtnValue right) {
-    int compared = ptn_compare_order(left, right);
+static PTN_UNUSED int ptn_compare_greater_equal(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    int compared = ptn_compare_order(runtime, left, right, line);
     return compared == PTN_COMPARE_GREATER || compared == PTN_COMPARE_EQUAL;
 }
 
-static PTN_UNUSED int ptn_compare_spaceship(PtnValue left, PtnValue right) {
-    int compared = ptn_compare_order(left, right);
+static PTN_UNUSED int ptn_compare_spaceship(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    int compared = ptn_compare_order(runtime, left, right, line);
     if (compared == PTN_COMPARE_LESS) {
         return -1;
     }

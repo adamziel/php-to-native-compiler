@@ -5386,6 +5386,33 @@ echo \"|\", $contents, \"|\", $length, \"|\", ob_get_level(), \"\\n\";\n",
 }
 
 #[test]
+fn compile_output_buffer_captures_var_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-output-buffer-var-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-buffer-var-dump.php");
+    let output = root.join("output-buffer-var-dump-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_start();\n\
+var_dump(array(1, \"x\"));\n\
+$dump = ob_get_clean();\n\
+echo str_replace(\"\\n\", \"\", $dump), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {  [0]=>  int(1)  [1]=>  string(1) \"x\"}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_ob_start_compact_handler_rejects_dynamic_compact_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-compact-handler");
     fs::create_dir_all(&root).unwrap();
@@ -14202,7 +14229,7 @@ echo _ptn_cow_debug_counter(\"array.live\"), \":\", _ptn_cow_debug_counter(\"str
         .find("\nint main(void)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
-    assert!(main_body.contains(" = ptn_bool(ptn_compare_equal("));
+    assert!(main_body.contains(" = ptn_bool(ptn_compare_equal(&runtime, "));
     assert!(main_body.contains(" = ptn_bool(ptn_compare_not_identical("));
     assert!(main_body.contains("ptn_value_drop(&ptn_tmp_"));
 }
@@ -14267,6 +14294,56 @@ fn compile_loose_scalar_comparison_edges_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "11||1|11\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_object_number_and_type_order_comparisons_to_native_binary() {
+    let root = temp_dir("ptn-native-object-number-comparisons");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-number-comparisons.php");
+    let output = root.join("object-number-comparisons-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test {}
+$object = new Test;
+echo (1 == $object) ? "eq\n" : "ne\n";
+echo (2.5 > $object) ? "fg\n" : "fle\n";
+echo ($object > array()) ? "ogt\n" : "ole\n";
+echo (null < (-PHP_INT_MAX - 1)) ? "nlt\n" : "nge\n";
+echo ((new stdClass) < (new Test)) ? "bad\n" : "unordered-lt\n";
+echo ((new stdClass) > (new Test)) ? "bad\n" : "unordered-gt\n";
+echo ((new stdClass) <= (new Test)) ? "bad\n" : "unordered-le\n";
+echo ((new stdClass) >= (new Test)) ? "bad\n" : "unordered-ge\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Notice: Object of class Test could not be converted to int"));
+    assert!(stdout.contains("Notice: Object of class Test could not be converted to float"));
+    let semantic_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Notice:"))
+        .collect();
+    assert_eq!(
+        semantic_lines,
+        [
+            "eq",
+            "fg",
+            "ogt",
+            "nlt",
+            "unordered-lt",
+            "unordered-gt",
+            "unordered-le",
+            "unordered-ge"
+        ]
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

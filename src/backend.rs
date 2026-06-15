@@ -7478,11 +7478,11 @@ fn emit_switch(
             let matched_temp = values.next_temp();
             out.push_str("        int ");
             out.push_str(&matched_temp);
-            out.push_str(" = ptn_compare_equal(");
+            out.push_str(" = ptn_compare_equal(&runtime, ");
             out.push_str(&switch_temp);
             out.push_str(", ");
             out.push_str(&condition_temp);
-            out.push_str(");\n");
+            out.push_str(", runtime.call_site_line);\n");
             emit_value_cleanup(out, "        ", &condition_temp);
             out.push_str("        if (");
             out.push_str(&matched_temp);
@@ -12069,7 +12069,10 @@ impl ValueEmitter {
                 format!("!({predicate})")
             }
             ValueExpr::Binary {
-                op, left, right, ..
+                op,
+                left,
+                right,
+                line,
             } => match op {
                 BinaryOp::Equal
                 | BinaryOp::NotEqual
@@ -12078,7 +12081,9 @@ impl ValueEmitter {
                 | BinaryOp::Less
                 | BinaryOp::LessEqual
                 | BinaryOp::Greater
-                | BinaryOp::GreaterEqual => self.emit_comparison_predicate(out, *op, left, right),
+                | BinaryOp::GreaterEqual => {
+                    self.emit_comparison_predicate(out, *op, left, right, *line)
+                }
                 BinaryOp::And | BinaryOp::Or => {
                     self.emit_short_circuit_condition(out, *op, left, right)
                 }
@@ -12137,8 +12142,8 @@ impl ValueEmitter {
             | BinaryOp::Less
             | BinaryOp::LessEqual
             | BinaryOp::Greater
-            | BinaryOp::GreaterEqual => self.emit_comparison(out, op, left, right),
-            BinaryOp::Spaceship => self.emit_spaceship(out, left, right),
+            | BinaryOp::GreaterEqual => self.emit_comparison(out, op, left, right, line),
+            BinaryOp::Spaceship => self.emit_spaceship(out, left, right, line),
             BinaryOp::Xor => self.emit_boolean_xor(out, left, right),
             BinaryOp::And | BinaryOp::Or => self.emit_short_circuit(out, op, left, right),
             BinaryOp::Coalesce => self.emit_coalesce(out, left, right),
@@ -12384,16 +12389,24 @@ impl ValueEmitter {
         result_temp
     }
 
-    fn emit_spaceship(&mut self, out: &mut String, left: &ValueExpr, right: &ValueExpr) -> String {
+    fn emit_spaceship(
+        &mut self,
+        out: &mut String,
+        left: &ValueExpr,
+        right: &ValueExpr,
+        line: usize,
+    ) -> String {
         let left_temp = self.emit_materialized_value(out, left);
         let right_temp = self.emit_materialized_value(out, right);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_int(ptn_compare_spaceship(");
+        out.push_str(" = ptn_int(ptn_compare_spaceship(&runtime, ");
         out.push_str(&left_temp);
         out.push_str(", ");
         out.push_str(&right_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
         out.push_str("));\n");
         emit_value_cleanup(out, "    ", &left_temp);
         emit_value_cleanup(out, "    ", &right_temp);
@@ -12871,22 +12884,33 @@ impl ValueEmitter {
         op: BinaryOp,
         left: &ValueExpr,
         right: &ValueExpr,
+        line: usize,
     ) -> String {
         let left_temp = self.emit_materialized_value(out, left);
         let right_temp = self.emit_materialized_value(out, right);
         let result_temp = self.next_temp();
         let comparison = match op {
-            BinaryOp::Equal => format!("ptn_compare_equal({left_temp}, {right_temp})"),
-            BinaryOp::NotEqual => format!("!ptn_compare_equal({left_temp}, {right_temp})"),
+            BinaryOp::Equal => {
+                format!("ptn_compare_equal(&runtime, {left_temp}, {right_temp}, {line})")
+            }
+            BinaryOp::NotEqual => {
+                format!("!ptn_compare_equal(&runtime, {left_temp}, {right_temp}, {line})")
+            }
             BinaryOp::Identical => format!("ptn_compare_identical({left_temp}, {right_temp})"),
             BinaryOp::NotIdentical => {
                 format!("ptn_compare_not_identical({left_temp}, {right_temp})")
             }
-            BinaryOp::Less => format!("ptn_compare_less({left_temp}, {right_temp})"),
-            BinaryOp::LessEqual => format!("ptn_compare_less_equal({left_temp}, {right_temp})"),
-            BinaryOp::Greater => format!("ptn_compare_greater({left_temp}, {right_temp})"),
+            BinaryOp::Less => {
+                format!("ptn_compare_less(&runtime, {left_temp}, {right_temp}, {line})")
+            }
+            BinaryOp::LessEqual => {
+                format!("ptn_compare_less_equal(&runtime, {left_temp}, {right_temp}, {line})")
+            }
+            BinaryOp::Greater => {
+                format!("ptn_compare_greater(&runtime, {left_temp}, {right_temp}, {line})")
+            }
             BinaryOp::GreaterEqual => {
-                format!("ptn_compare_greater_equal({left_temp}, {right_temp})")
+                format!("ptn_compare_greater_equal(&runtime, {left_temp}, {right_temp}, {line})")
             }
             _ => unreachable!(),
         };
@@ -12906,21 +12930,32 @@ impl ValueEmitter {
         op: BinaryOp,
         left: &ValueExpr,
         right: &ValueExpr,
+        line: usize,
     ) -> String {
         let left_temp = self.emit_materialized_value(out, left);
         let right_temp = self.emit_materialized_value(out, right);
         let predicate = match op {
-            BinaryOp::Equal => format!("ptn_compare_equal({left_temp}, {right_temp})"),
-            BinaryOp::NotEqual => format!("!ptn_compare_equal({left_temp}, {right_temp})"),
+            BinaryOp::Equal => {
+                format!("ptn_compare_equal(&runtime, {left_temp}, {right_temp}, {line})")
+            }
+            BinaryOp::NotEqual => {
+                format!("!ptn_compare_equal(&runtime, {left_temp}, {right_temp}, {line})")
+            }
             BinaryOp::Identical => format!("ptn_compare_identical({left_temp}, {right_temp})"),
             BinaryOp::NotIdentical => {
                 format!("ptn_compare_not_identical({left_temp}, {right_temp})")
             }
-            BinaryOp::Less => format!("ptn_compare_less({left_temp}, {right_temp})"),
-            BinaryOp::LessEqual => format!("ptn_compare_less_equal({left_temp}, {right_temp})"),
-            BinaryOp::Greater => format!("ptn_compare_greater({left_temp}, {right_temp})"),
+            BinaryOp::Less => {
+                format!("ptn_compare_less(&runtime, {left_temp}, {right_temp}, {line})")
+            }
+            BinaryOp::LessEqual => {
+                format!("ptn_compare_less_equal(&runtime, {left_temp}, {right_temp}, {line})")
+            }
+            BinaryOp::Greater => {
+                format!("ptn_compare_greater(&runtime, {left_temp}, {right_temp}, {line})")
+            }
             BinaryOp::GreaterEqual => {
-                format!("ptn_compare_greater_equal({left_temp}, {right_temp})")
+                format!("ptn_compare_greater_equal(&runtime, {left_temp}, {right_temp}, {line})")
             }
             _ => unreachable!(),
         };

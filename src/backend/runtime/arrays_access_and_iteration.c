@@ -54,10 +54,10 @@ static PTN_UNUSED int ptn_compare_strings_loose(PtnString left, PtnString right)
     return ptn_compare_value_strings(left, right);
 }
 
-static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right);
+static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right);
-static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right);
+static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value);
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
@@ -5330,7 +5330,7 @@ static PTN_UNUSED void ptn_array_krsort_entries(PtnArray *array) {
 }
 
 static int ptn_array_value_compare_ascending(PtnValue left, PtnValue right) {
-    int compared = ptn_compare_order(left, right);
+    int compared = ptn_compare_order(NULL, left, right, 0);
     if (compared == PTN_COMPARE_LESS) {
         return -1;
     }
