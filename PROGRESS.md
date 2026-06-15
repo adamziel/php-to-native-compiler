@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.16.1 ErrorException severity row pack | 2 | 2 |
 | ptn-w17z.16.2 nested try/finally row pack | 9 | 9 |
 | ptn-90cm compare64bit object/number diagnostics | 6 | 6 |
 | ptn-vvpn class_alias metadata slice | 38 | 13 |
@@ -39,6 +40,14 @@ Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
 Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
 `.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
+
+## 2026-06-15 ptn-w17z.16.1 ErrorException Severity Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-w17z16-1-before/summary-20260615T175644Z.txt`) | 2 selected / 2 runnable / 0 classified | 1 |
+| Final rebased focused run (`.runtime/ptn-w17z16-1-after-rebase/summary-20260615T180659Z.txt`) | 2 selected / 2 runnable / 0 classified | 2 |
+| Integrated focused merge run (`.runtime/merge-ptn-w17z16-1-errorexception-severity/summary-20260615T192939Z.txt`) | 2 selected / 2 runnable | 2 |
 
 ## 2026-06-15 ptn-w17z.16.2 Nested Try/Finally Row Pack
 
