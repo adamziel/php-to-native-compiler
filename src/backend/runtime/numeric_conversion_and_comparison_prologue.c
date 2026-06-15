@@ -1207,24 +1207,11 @@ static PTN_UNUSED const char *ptn_exception_constructor_declaring_class(
     PtnRuntime *runtime,
     const char *class_name
 ) {
-    if (
-        ptn_exception_name_equal(class_name, "ErrorException") ||
-        (
-            runtime != NULL &&
-            runtime->class_scope_allows != NULL &&
-            runtime->class_scope_allows(class_name, "ErrorException")
-        )
-    ) {
+    (void)runtime;
+    if (ptn_declared_class_is_same_or_descendant(class_name, "ErrorException")) {
         return "ErrorException";
     }
-    if (
-        ptn_exception_name_equal(class_name, "Error") ||
-        (
-            runtime != NULL &&
-            runtime->class_scope_allows != NULL &&
-            runtime->class_scope_allows(class_name, "Error")
-        )
-    ) {
+    if (ptn_declared_class_is_same_or_descendant(class_name, "Error")) {
         return "Error";
     }
     return "Exception";

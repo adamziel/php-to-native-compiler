@@ -21,9 +21,12 @@ mod runtime;
 const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
     "Using ${var} in strings is deprecated, use {$var} instead";
+const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ErrorException", "Exception"),
     ("ReflectionException", "Exception"),
+    ("RuntimeException", "Exception"),
+    ("UnhandledMatchError", "Error"),
     ("TypeError", "Error"),
     ("ArgumentCountError", "TypeError"),
     ("ValueError", "Error"),
@@ -1885,6 +1888,9 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
         "static const char *ptn_declared_private_property_class(const char *class_name, const char *property_name);\n",
     );
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
+    out.push_str(
+        "static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
+    );
     out.push_str("static int ptn_declared_trait_exists(const char *name);\n");
     out.push_str(
         "static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);\n",
@@ -1951,6 +1957,20 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (ptn_ascii_case_equal(name, \"stdClass\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
     for class in classes {
         if class.is_interface {
             continue;

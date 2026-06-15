@@ -17974,7 +17974,6 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
 static PtnValue ptn_internal_tmpfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
-    /* Keep sorted by ASCII case-insensitive name for ptn_find_internal_function. */
     static const PtnInternalFunction functions[] = {
         { "_ptn_cow_debug_assert_balanced", 0, 0, ptn_internal__ptn_cow_debug_assert_balanced },
         { "_ptn_cow_debug_assert_counter", 2, 2, ptn_internal__ptn_cow_debug_assert_counter },
@@ -18340,18 +18339,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
 static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
     size_t count = 0;
     const PtnInternalFunction *functions = ptn_internal_functions(&count);
-    size_t low = 0;
-    size_t high = count;
-    while (low < high) {
-        size_t mid = low + ((high - low) / 2);
-        int ordering = ptn_ascii_case_compare(name, functions[mid].name);
-        if (ordering == 0) {
-            return &functions[mid];
-        }
-        if (ordering < 0) {
-            high = mid;
-        } else {
-            low = mid + 1;
+    for (size_t i = 0; i < count; i++) {
+        if (ptn_ascii_case_equal(name, functions[i].name)) {
+            return &functions[i];
         }
     }
     return NULL;
