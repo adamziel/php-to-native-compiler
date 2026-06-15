@@ -32716,13 +32716,15 @@ fn parser_handles_namespace_declaration_start_and_name_tokens() {
     parser::parse("<?php namespace { use iter\\fn; use function fn\\test as test2; fn\\test(); }")
         .unwrap();
     let program = parser::parse("<?php namespace Hello; World();").unwrap();
-    let Statement::Expression { expression, .. } = &program.statements[0] else {
-        panic!("expected function call statement");
-    };
-    let Expr::Call { name, .. } = expression else {
-        panic!("expected function call");
-    };
-    assert_eq!(name, "Hello\\World");
+    let call_name = program
+        .statements
+        .iter()
+        .find_map(|statement| match statement {
+            Statement::Call { name, .. } => Some(name.as_str()),
+            _ => None,
+        })
+        .expect("expected function call");
+    assert_eq!(call_name, "Hello\\World");
 
     let namespace_name = parser::parse("<?php namespace NAMEspace;").unwrap_err();
     assert_eq!(namespace_name.kind, DiagnosticKind::Fatal);

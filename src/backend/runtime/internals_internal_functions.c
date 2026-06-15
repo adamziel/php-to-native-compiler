@@ -24515,7 +24515,11 @@ static void ptn_throw_undefined_function_error(
     const char *name,
     size_t line
 ) {
-    int needed = snprintf(NULL, 0, "Call to undefined function %s()", name);
+    const char *separator = strstr(name, "::");
+    const char *message_format = separator != NULL
+        ? "Call to undefined method %s()"
+        : "Call to undefined function %s()";
+    int needed = snprintf(NULL, 0, message_format, name);
     if (needed < 0) {
         ptn_abort_out_of_memory();
     }
@@ -24523,7 +24527,7 @@ static void ptn_throw_undefined_function_error(
     if (message == NULL) {
         ptn_abort_out_of_memory();
     }
-    snprintf(message, (size_t)needed + 1, "Call to undefined function %s()", name);
+    snprintf(message, (size_t)needed + 1, message_format, name);
     ptn_throw_exception_owned_message_at(
         runtime,
         "Error",

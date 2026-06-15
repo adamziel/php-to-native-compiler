@@ -508,7 +508,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    } else {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_throw_exception_owned_message(runtime, \"TypeError\", message);\n");
+    out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime->source_path, line);\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -878,10 +878,7 @@ fn emit_user_functions(
                     out.push_str(", \"");
                     out.push_str(&c_string(class_name));
                     out.push_str("\")) {\n");
-                    out.push_str("        ptn_runtime_free(&runtime);\n");
-                    out.push_str(
-                        "        ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
-                    );
+                    out.push_str("        ptn_throw_user_parameter_class_type_error(&runtime, \"");
                     out.push_str(&c_string(&function.display_name));
                     out.push_str("\", ");
                     out.push_str(&(parameter_index + 1).to_string());
@@ -1218,10 +1215,7 @@ fn emit_variadic_parameter_binding(
             out.push_str("            ptn_value_drop(&");
             out.push_str(&array_temp);
             out.push_str(");\n");
-            out.push_str("            ptn_runtime_free(&runtime);\n");
-            out.push_str(
-                "            ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
-            );
+            out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"");
             out.push_str(&c_string(&function.name));
             out.push_str("\", ");
             out.push_str(&index_temp);
