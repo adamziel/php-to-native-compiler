@@ -22917,6 +22917,7 @@ static int ptn_declared_class_implements_interface(const char *class_name, const
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static int ptn_declared_class_method_exists_from_class_name(const char *class_name, const char *method_name);
 static PtnValue ptn_declared_class_method_names(PtnRuntime *runtime, const char *class_name, const char *access_scope);
+static PtnValue ptn_declared_class_vars(PtnRuntime *runtime, const char *class_name, const char *access_scope);
 static PtnValue ptn_declared_class_names(PtnRuntime *runtime, int include_internal);
 static PtnValue ptn_declared_interface_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_trait_names(PtnRuntime *runtime);
@@ -22940,6 +22941,7 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
 static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class_methods(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_class_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_getdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_declared_classes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_declared_interfaces(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -23167,6 +23169,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 0, 1, ptn_internal_get_class },
         { "get_class_methods", 1, 1, ptn_internal_get_class_methods },
+        { "get_class_vars", 1, 1, ptn_internal_get_class_vars },
         { "get_declared_classes", 0, 0, ptn_internal_get_declared_classes },
         { "get_declared_interfaces", 0, 0, ptn_internal_get_declared_interfaces },
         { "get_declared_traits", 0, 0, ptn_internal_get_declared_traits },
@@ -26371,7 +26374,7 @@ static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const P
         message,
         sizeof(message),
         "get_class(): Argument #1 ($object) must be of type object, %s given",
-        ptn_offset_container_type_name(value)
+        ptn_property_exists_target_type_name(value)
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
@@ -26427,6 +26430,45 @@ static PtnValue ptn_internal_get_class_methods(PtnRuntime *runtime, size_t argc,
         ? ptn_declared_class_method_names(runtime, resolved_class_name, access_scope)
         : ptn_internal_class_method_names(runtime, resolved_class_name);
     free(owned_class_name);
+    return result;
+}
+
+static PtnValue ptn_internal_get_class_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    char *class_name = ptn_value_to_string(args[0]);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(class_name);
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    if (!ptn_runtime_class_exists(runtime, resolved_class_name)) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "get_class_vars(): Argument #1 ($class) must be a valid class name, %s given",
+            lookup_name
+        );
+        if (needed < 0) {
+            free(class_name);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(class_name);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "get_class_vars(): Argument #1 ($class) must be a valid class name, %s given",
+            lookup_name
+        );
+        ptn_throw_exception_owned_message(runtime, "Error", message);
+        free(class_name);
+        return ptn_null();
+    }
+
+    const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
+    PtnValue result = ptn_declared_class_vars(runtime, resolved_class_name, access_scope);
+    free(class_name);
     return result;
 }
 
@@ -26684,7 +26726,7 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
         runtime,
         ptn_symbol_name_without_leading_slash(class_name)
     );
-    int exists = target_is_object && ptn_declared_class_exists(resolved_class_name)
+    int exists = target_is_object && ptn_declared_user_class_or_interface_exists(resolved_class_name)
         ? ptn_declared_class_method_exists(resolved_class_name, method_name)
         : ptn_internal_class_method_exists(resolved_class_name, method_name);
     free(method_name);

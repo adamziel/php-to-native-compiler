@@ -2940,6 +2940,46 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_vars(PtnRuntime *runtime, const char *class_name, const char *access_scope) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes.iter().all(|class| {
+        class_property_vars_chain(class, classes, false).is_empty()
+            && class_property_vars_chain(class, classes, true).is_empty()
+    }) {
+        out.push_str("    (void)access_scope;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for property in class_property_vars_chain(class, classes, false)
+            .into_iter()
+            .chain(class_property_vars_chain(class, classes, true))
+        {
+            out.push_str("        if (ptn_declared_method_visibility_allows(access_scope, \"");
+            out.push_str(&c_string(property.declaring_class));
+            out.push_str("\", ");
+            out.push_str(c_property_visibility(property.visibility));
+            out.push_str(")) {\n");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str(&c_string(property.name));
+            out.push_str("\"), ");
+            out.push_str(&c_property_default_value(property.value));
+            out.push_str(");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name) {\n",
     );
     if classes.is_empty() {
@@ -3919,6 +3959,13 @@ struct ClassPropertyExistsEntry<'a> {
     is_static: bool,
 }
 
+struct ClassPropertyVarsEntry<'a> {
+    declaring_class: &'a str,
+    name: &'a str,
+    visibility: PropertyVisibility,
+    value: Option<&'a ValueExpr>,
+}
+
 fn class_property_exists_chain<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
@@ -3964,6 +4011,66 @@ fn class_property_exists_chain<'a>(
     let mut properties = Vec::new();
     let mut seen_classes = HashSet::new();
     collect(class, classes, &mut seen_classes, &mut properties);
+    properties
+}
+
+fn class_property_vars_chain<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+    static_properties: bool,
+) -> Vec<ClassPropertyVarsEntry<'a>> {
+    fn collect<'a>(
+        class: &'a ClassDecl,
+        classes: &'a [ClassDecl],
+        static_properties: bool,
+        seen_classes: &mut HashSet<String>,
+        properties: &mut Vec<ClassPropertyVarsEntry<'a>>,
+    ) {
+        let lookup_name = class.name.to_ascii_lowercase();
+        if !seen_classes.insert(lookup_name) {
+            return;
+        }
+        if static_properties {
+            properties.extend(class.static_properties.iter().map(|property| {
+                ClassPropertyVarsEntry {
+                    declaring_class: class.name.as_str(),
+                    name: property.name.as_str(),
+                    visibility: property.visibility,
+                    value: property.value.as_ref(),
+                }
+            }));
+        } else {
+            properties.extend(class.properties.iter().map(|property| ClassPropertyVarsEntry {
+                declaring_class: class.name.as_str(),
+                name: property.name.as_str(),
+                visibility: property.visibility,
+                value: property.value.as_ref(),
+            }));
+        }
+
+        let Some(parent_name) = &class.parent_name else {
+            return;
+        };
+        if let Some(parent) = class_by_name(classes, parent_name) {
+            collect(
+                parent,
+                classes,
+                static_properties,
+                seen_classes,
+                properties,
+            );
+        }
+    }
+
+    let mut properties = Vec::new();
+    let mut seen_classes = HashSet::new();
+    collect(
+        class,
+        classes,
+        static_properties,
+        &mut seen_classes,
+        &mut properties,
+    );
     properties
 }
 
@@ -18041,6 +18148,17 @@ fn c_optional_string(value: Option<&str>) -> String {
     match value {
         Some(value) => format!("\"{}\"", c_string(value)),
         None => "NULL".to_string(),
+    }
+}
+
+fn c_property_default_value(value: Option<&ValueExpr>) -> String {
+    match value {
+        Some(ValueExpr::String(value)) => format!("ptn_string(\"{}\")", c_string(value)),
+        Some(ValueExpr::Int(value)) => format!("ptn_int({})", c_i64_literal(*value)),
+        Some(ValueExpr::Float(value)) => format!("ptn_float({:?})", value),
+        Some(ValueExpr::Bool(value)) => format!("ptn_bool({})", if *value { "1" } else { "0" }),
+        Some(ValueExpr::Null) | None => "ptn_null()".to_string(),
+        _ => "ptn_null()".to_string(),
     }
 }
 

@@ -12317,6 +12317,104 @@ try {
 }
 
 #[test]
+fn compile_get_class_vars_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-get-class-vars-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-class-vars-metadata.php");
+    let output = root.join("get-class-vars-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class VarsA {
+    public $a = 1;
+    protected $b = 2;
+    private $c = 3;
+    static public $sa = 4;
+    static protected $sb = 5;
+    static private $sc = 6;
+
+    public static function fromA() {
+        var_dump(get_class_vars(\"VarsA\"));
+    }
+}
+
+class VarsB extends VarsA {
+    private $d = 7;
+
+    public static function fromB() {
+        var_dump(get_class_vars(\"VarsB\"));
+    }
+}
+
+var_dump(get_class_vars(\"VarsA\"));
+VarsA::fromA();
+var_dump(get_class_vars(\"VarsB\"));
+VarsB::fromB();
+try {
+    get_class_vars(\"MissingVars\");
+} catch (Error $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  int(1)\n",
+            "  [\"sa\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "array(6) {\n",
+            "  [\"a\"]=>\n",
+            "  int(1)\n",
+            "  [\"b\"]=>\n",
+            "  int(2)\n",
+            "  [\"c\"]=>\n",
+            "  int(3)\n",
+            "  [\"sa\"]=>\n",
+            "  int(4)\n",
+            "  [\"sb\"]=>\n",
+            "  int(5)\n",
+            "  [\"sc\"]=>\n",
+            "  int(6)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  int(1)\n",
+            "  [\"sa\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "array(5) {\n",
+            "  [\"d\"]=>\n",
+            "  int(7)\n",
+            "  [\"a\"]=>\n",
+            "  int(1)\n",
+            "  [\"b\"]=>\n",
+            "  int(2)\n",
+            "  [\"sa\"]=>\n",
+            "  int(4)\n",
+            "  [\"sb\"]=>\n",
+            "  int(5)\n",
+            "}\n",
+            "Error: get_class_vars(): Argument #1 ($class) must be a valid class name, MissingVars given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_class_vars"));
+    assert!(c_source.contains("ptn_declared_class_vars"));
+}
+
+#[test]
 fn compile_simple_trait_composition_to_native_binary() {
     let root = temp_dir("ptn-native-simple-trait-composition");
     fs::create_dir_all(&root).unwrap();
