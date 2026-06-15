@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-2cij ENV/CLEAN SKIPIF preconditions | 33 | 0 |
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
 | ptn-w17z.30 foreach mutation visibility row pack | 11 | 7 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
@@ -20,14 +21,40 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:15Z.
-Measured latest: `ptn-vqg1` temp stream wrappers row pack selected 3 rows, kept 3 runnable, and passed 3/3 in the focused run.
-Latest: `ptn-vqg1` completed the checked-in temp stream wrappers row pack. Previous: `ptn-w17z.30` completed the checked-in foreach mutation visibility row pack.
+Refresh: 2026-06-15T17:28Z.
+Measured latest: `ptn-2cij` classified the targeted 20k full-corpus
+ENV/CLEAN slice with 2,086 selected rows, moving runnable rows from 255 to 288
+and reducing `harness-skipif` rows from 50 to 17 in classify-only telemetry.
+Latest: `ptn-2cij` models additional static SKIPIF preconditions for php-src
+root/non-root helper includes, `GLOB_BRACE` constant gates, `CIRRUS_CI` host
+environment gates, and inactive Windows symlink-helper blocks. Previous:
+`ptn-vqg1` completed the checked-in temp stream wrappers row pack.
 
-Current hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
+Current hook: `ptn-2cij` ENV/CLEAN SKIPIF precondition classifier movement
+completed classify-only at
+`.runtime/ptn-2cij/env-clean-rebased/summary-20260615T171427Z.txt`.
+Previous hook: `ptn-vqg1` temp stream wrappers row pack passed 3/3 at
 `.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt`.
-Previous hook: `ptn-w17z.30` foreach mutation visibility row pack passed 7/7 runnable rows at
-`.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt`.
+
+## 2026-06-15 ptn-2cij ENV/CLEAN SKIPIF Preconditions
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current `origin/master` classify-only (`.runtime/ptn-2cij/origin-baseline-rebased/summary-20260615T172331Z.txt`) | 2,086 selected / 255 runnable / 50 `harness-skipif` | 0 |
+| Final rebased classify-only (`.runtime/ptn-2cij/env-clean-rebased/summary-20260615T171427Z.txt`) | 2,086 selected / 288 runnable / 17 `harness-skipif` | 0 |
+
+Implemented behavior: the PHPT classifier now models common static SKIPIF
+preconditions used by full-corpus ENV/CLEAN rows without executing arbitrary
+harness PHP. The new modeled families are php-src `skipif_root.inc` and
+`skipif_no_root.inc` effective-UID helpers, `defined('GLOB_BRACE')` constant
+gates, `getenv('CIRRUS_CI')` host environment gates, and Windows symlink
+privilege helper blocks that are statically inactive on non-Windows hosts.
+
+The final classify-only run made 33 additional rows runnable in the targeted
+slice. Remaining `harness-skipif` rows still contain unmodeled function
+availability probes, explicit disk/resource checks, Windows-only `else`
+helpers, stream-filter harness probes, `dl_test` helper includes, or richer
+locale logic and remain excluded.
 
 ## 2026-06-15 ptn-vqg1 Temp Stream Wrappers Row Pack
 
