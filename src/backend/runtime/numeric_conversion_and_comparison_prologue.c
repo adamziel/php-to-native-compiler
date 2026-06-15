@@ -82,6 +82,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->zend_assertions = caller_runtime->zend_assertions;
     runtime->assert_exception = caller_runtime->assert_exception;
     runtime->call_site_line = 0;
+    runtime->suppress_user_call_frame_location =
+        caller_runtime->suppress_user_call_frame_location;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
     runtime->active_unserialize_state = caller_runtime->active_unserialize_state;
@@ -104,12 +106,15 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     runtime->owned_call_frame.parameter_names = parameter_names;
     runtime->call_frame = &runtime->owned_call_frame;
     runtime->owned_trace_frame.function_name = runtime->current_function_name;
-    runtime->owned_trace_frame.file = runtime->source_path;
-    runtime->owned_trace_frame.line = runtime->call_site_line;
+    runtime->owned_trace_frame.file =
+        runtime->suppress_user_call_frame_location ? NULL : runtime->source_path;
+    runtime->owned_trace_frame.line =
+        runtime->suppress_user_call_frame_location ? 0 : runtime->call_site_line;
     runtime->owned_trace_frame.argc = argc;
     runtime->owned_trace_frame.args = args;
     runtime->owned_trace_frame.previous = runtime->trace_frame;
     runtime->trace_frame = &runtime->owned_trace_frame;
+    runtime->suppress_user_call_frame_location = 0;
 }
 
 static PTN_UNUSED void ptn_runtime_push_trace_frame(
@@ -535,6 +540,10 @@ static PTN_UNUSED PtnValue ptn_trace_value_snapshot_depth(PtnValue value, size_t
     snapshot.as.array->current_index = value.as.array->current_index <= snapshot.as.array->len
         ? value.as.array->current_index
         : snapshot.as.array->len;
+    snapshot.as.array->has_iterator_current_index = 0;
+    snapshot.as.array->iterator_current_index = 0;
+    snapshot.as.array->iterator_mutation_resume_index = 0;
+    snapshot.as.array->iterator_mutation_epoch = 0;
     return snapshot;
 }
 

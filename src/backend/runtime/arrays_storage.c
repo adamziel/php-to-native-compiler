@@ -370,6 +370,10 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     array->index_capacity = 0;
     array->next_auto_key = 0;
     array->current_index = 0;
+    array->has_iterator_current_index = 0;
+    array->iterator_current_index = 0;
+    array->iterator_mutation_resume_index = 0;
+    array->iterator_mutation_epoch = 0;
     if (entry_count != 0) {
         array->entries = malloc(entry_count * sizeof(PtnArrayEntry));
         if (array->entries == NULL) {
@@ -671,6 +675,10 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     array->index_capacity = 0;
     array->next_auto_key = 0;
     array->current_index = source->current_index <= source->len ? source->current_index : source->len;
+    array->has_iterator_current_index = 0;
+    array->iterator_current_index = 0;
+    array->iterator_mutation_resume_index = 0;
+    array->iterator_mutation_epoch = 0;
     if (source->len != 0) {
         array->entries = malloc(source->len * sizeof(PtnArrayEntry));
         if (array->entries == NULL) {

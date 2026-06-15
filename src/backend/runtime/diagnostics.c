@@ -695,6 +695,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         runtime->assert_exception = configured_assert_exception;
     }
     runtime->call_site_line = 0;
+    runtime->suppress_user_call_frame_location = 0;
     runtime->warn_by_ref_argument_mismatch = 0;
     runtime->throw_argument_count_errors = 0;
     runtime->active_unserialize_state = NULL;

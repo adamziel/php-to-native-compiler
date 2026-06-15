@@ -20939,6 +20939,49 @@ var_dump(function_exists(\"array_multisort\"));",
 }
 
 #[test]
+fn compile_array_multisort_mixed_object_order_to_native_binary() {
+    let root = temp_dir("ptn-native-array-multisort-mixed-object-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-multisort-mixed-object-order.php");
+    let output = root.join("array-multisort-mixed-object-order-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class A { public function __toString() { return \"A\"; } }\n\
+class B {}\n\
+$regular = [\"string\" => \"m\", \"a\" => new A, \"b\" => new B];\n\
+var_dump(array_multisort($regular));\n\
+foreach ($regular as $key => $value) { echo $key, \"\\n\"; }\n\
+$numeric = [\"z\" => 0, \"a\" => new A, \"b\" => new B];\n\
+var_dump(array_multisort($numeric, SORT_NUMERIC));\n\
+foreach ($numeric as $key => $value) { echo $key, \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "a\n",
+            "string\n",
+            "b\n",
+            "\nWarning: Object of class A could not be converted to float in ptn on line 8\n",
+            "\nWarning: Object of class A could not be converted to float in ptn on line 8\n",
+            "\nWarning: Object of class B could not be converted to float in ptn on line 8\n",
+            "bool(true)\n",
+            "z\n",
+            "a\n",
+            "b\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_descending_sort_mutators_to_native_binary() {
     let root = temp_dir("ptn-native-descending-sort-mutators");
     fs::create_dir_all(&root).unwrap();
@@ -23464,6 +23507,88 @@ var_dump($items);",
 }
 
 #[test]
+fn compile_foreach_by_ref_array_splice_preserves_iterator_pointer_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-by-ref-array-splice-pointer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-by-ref-array-splice-pointer.php");
+    let output = root.join("foreach-by-ref-array-splice-pointer-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$done = 0;\n\
+$a = [0,1,2,3,4];\n\
+foreach($a as &$v) {\n\
+    echo \"$v\\n\";\n\
+    if (!$done && $v == 3) { $done = 1; array_splice($a, 1, 2); }\n\
+}\n\
+echo \"\\n\";\n\
+\n\
+$done = 0;\n\
+$a = [0,1,2,3,4];\n\
+foreach($a as &$v) {\n\
+    echo \"$v\\n\";\n\
+    if (!$done && $v == 0) { $done = 1; array_splice($a, 2, 2); }\n\
+}\n\
+echo \"\\n\";\n\
+\n\
+$done = 0;\n\
+$a = [0,1,2,3,4];\n\
+foreach($a as &$v) {\n\
+    echo \"$v\\n\";\n\
+    if (!$done && $v == 2) { $done = 1; array_splice($a, 1, 3); }\n\
+}\n\
+echo \"\\n\";\n\
+\n\
+$replacement = ['x', 'y', 'z'];\n\
+\n\
+$done = 0;\n\
+$a = [0,1,2,3,4];\n\
+foreach($a as &$v) {\n\
+    echo \"$v\\n\";\n\
+    if (!$done && $v == 3) { $done = 1; array_splice($a, 1, 2, $replacement); }\n\
+}\n\
+echo \"\\n\";\n\
+\n\
+$done = 0;\n\
+$a = [0,1,2,3,4];\n\
+foreach($a as &$v) {\n\
+    echo \"$v\\n\";\n\
+    if (!$done && $v == 0) { $done = 1; array_splice($a, 2, 2, $replacement); }\n\
+}\n\
+echo \"\\n\";\n\
+\n\
+$done = 0;\n\
+$a = [0,1,2,3,4];\n\
+foreach($a as &$v) {\n\
+    echo \"$v\\n\";\n\
+    if (!$done && $v == 2) { $done = 1; array_splice($a, 1, 3, $replacement); }\n\
+}\n\
+echo \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "0\n1\n2\n3\n4\n\n",
+            "0\n1\n4\n\n",
+            "0\n1\n2\n4\n\n",
+            "0\n1\n2\n3\n4\n\n",
+            "0\n1\nx\ny\nz\n4\n\n",
+            "0\n1\n2\n4\n\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_splice_note_iterator_mutation"));
+}
+
+#[test]
 fn compile_array_walk_recursive_to_native_binary() {
     let root = temp_dir("ptn-native-array-walk-recursive");
     fs::create_dir_all(&root).unwrap();
@@ -23591,6 +23716,51 @@ echo \"recursive=\", $recursive->total(), \"\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("resolved.type == PTN_OBJECT"));
     assert!(c_source.contains("ptn_array_walk_slot_array_for_write"));
+}
+
+#[test]
+fn compile_array_walk_typed_property_reference_cleanup_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-typed-property-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-typed-property-reference.php");
+    let output = root.join("array-walk-typed-property-reference-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Test {\n\
+    public int $prop = 42;\n\
+}\n\
+\n\
+$test = new Test;\n\
+try {\n\
+    array_walk($test, function(&$ref) {\n\
+        $ref = [];\n\
+    });\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump($test);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot assign array to reference held by property Test::$prop of type int\n",
+            "object(Test)#1 (1) {\n",
+            "  [\"prop\"]=>\n",
+            "  int(42)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reference_adopt_property_type"));
 }
 
 #[test]
