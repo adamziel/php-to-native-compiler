@@ -245,12 +245,15 @@ static PTN_UNUSED void ptn_abort_by_reference_argument_error(
     size_t position,
     const char *parameter_name
 ) {
+    const int has_parameter_name = parameter_name != NULL && parameter_name[0] != '\0';
     fprintf(
         stderr,
-        "Fatal error: %s(): Argument #%zu ($%s) cannot be passed by reference\n",
+        has_parameter_name
+            ? "Fatal error: %s(): Argument #%zu ($%s) cannot be passed by reference\n"
+            : "Fatal error: %s(): Argument #%zu cannot be passed by reference\n",
         function_name,
         position,
-        parameter_name
+        has_parameter_name ? parameter_name : ""
     );
     exit(255);
 }
@@ -271,14 +274,26 @@ static PTN_UNUSED void ptn_throw_by_reference_argument_error(
     size_t line
 ) {
     char message[256];
-    int written = snprintf(
-        message,
-        sizeof(message),
-        "%s(): Argument #%zu ($%s) could not be passed by reference",
-        function_name,
-        position,
-        parameter_name
-    );
+    const int has_parameter_name = parameter_name != NULL && parameter_name[0] != '\0';
+    int written;
+    if (has_parameter_name) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) could not be passed by reference",
+            function_name,
+            position,
+            parameter_name
+        );
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu could not be passed by reference",
+            function_name,
+            position
+        );
+    }
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
@@ -353,7 +368,15 @@ static PTN_UNUSED PtnValue ptn_reference_source_or_value(PtnRuntime *runtime, Pt
         return ptn_value_clone(value);
     }
     ptn_emit_only_variable_references_returned_by_reference_notice(&runtime->diagnostics, line);
-    return ptn_value_clone(value);
+    return ptn_reference_value(ptn_reference_new_owned(ptn_value_clone(value)));
+}
+
+static PTN_UNUSED PtnValue ptn_by_ref_argument_source_or_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
+    if (value.type == PTN_REFERENCE) {
+        return ptn_value_clone(value);
+    }
+    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    return ptn_reference_value(ptn_reference_new_owned(ptn_value_clone(ptn_value_deref(value))));
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_read_variable(

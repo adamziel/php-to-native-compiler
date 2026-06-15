@@ -2644,11 +2644,7 @@ takes_ref(($items[0][]));\n",
 
 #[test]
 fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
-    let by_ref_return = parser::parse("<?php function &factory() { return null; }").unwrap_err();
-    assert_eq!(
-        by_ref_return.message,
-        "by-reference return requires a variable or array element"
-    );
+    parser::parse("<?php function &factory() { return null; }").unwrap();
 
     let temporary_assignment = parser::parse("<?php $alias =& 1;").unwrap_err();
     assert_eq!(
@@ -2656,13 +2652,7 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "unsupported by-reference assignment target"
     );
 
-    let dynamic_call_result_return =
-        parser::parse("<?php function &factory(&$value) { $fn = 'id'; return $fn($value); }")
-            .unwrap_err();
-    assert_eq!(
-        dynamic_call_result_return.message,
-        "by-reference call-result returns are unsupported"
-    );
+    parser::parse("<?php function &factory(&$value) { $fn = 'id'; return $fn($value); }").unwrap();
 
     let recursive_return =
         parser::parse("<?php function &factory(&$value) { return factory($value); }").unwrap_err();
@@ -16212,8 +16202,10 @@ echo gettype($typed), \":\", $typed, \"\\n\";\n",
         String::from_utf8(execution.stdout).unwrap(),
         "2|2\n\
 2|3\n\
+\n\
 Notice: Only variable references should be returned by reference in ptn on line 12\n\
 9\n\
+\n\
 Notice: Only variable references should be returned by reference in ptn on line 15\n\
 string:9\n"
     );

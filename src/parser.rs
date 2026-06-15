@@ -7853,14 +7853,10 @@ fn validate_by_reference_returns_in_statements(
 ) -> Result<()> {
     for statement in statements {
         match statement {
-            Statement::Return { value, span } => {
-                let Some(value) = value else {
-                    return Err(Diagnostic::new(
-                        "by-reference return requires a variable or array element",
-                        Some(*span),
-                    ));
-                };
-                validate_by_reference_return_value(value, function_name)?;
+            Statement::Return { value, .. } => {
+                if let Some(value) = value {
+                    validate_by_reference_return_value(value, function_name)?;
+                }
             }
             Statement::If {
                 then_body,
@@ -7997,32 +7993,14 @@ fn validate_reference_assignment_source_expr(
 
 fn validate_by_reference_return_value(value: &Expr, function_name: &str) -> Result<()> {
     match value {
-        Expr::Variable(_, _) => Ok(()),
         Expr::Grouped { expr, .. } => validate_by_reference_return_value(expr, function_name),
-        Expr::PropertyFetch { .. } => Ok(()),
-        Expr::ArrayAccess {
-            array: _,
-            index: _,
-            span: _,
-        } => validate_array_reference_lvalue_expr(
-            value,
-            "by-reference return requires a variable or array element",
-        ),
         Expr::Call { name, span, .. } if name.eq_ignore_ascii_case(function_name) => {
             Err(Diagnostic::new(
                 "recursive by-reference returns are unsupported",
                 Some(*span),
             ))
         }
-        Expr::Call { .. } => Ok(()),
-        Expr::DynamicCall { span, .. } | Expr::MethodCall { span, .. } => Err(Diagnostic::new(
-            "by-reference call-result returns are unsupported",
-            Some(*span),
-        )),
-        _ => Err(Diagnostic::new(
-            "by-reference return requires a variable or array element",
-            Some(value.span()),
-        )),
+        _ => Ok(()),
     }
 }
 
