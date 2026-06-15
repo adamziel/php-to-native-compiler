@@ -11704,7 +11704,7 @@ impl ValueEmitter {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_null();\n");
-                out.push_str("    ptn_abort_type_error_at(\"Cannot use [] for reading\", \"");
+                out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use [] for reading\", \"");
                 out.push_str(&c_string(&self.source_file));
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
