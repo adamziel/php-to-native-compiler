@@ -87,9 +87,12 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   built-in exception values
   through the shared `try`/`catch` runtime, including `Exception`, `Error`
   families, declared `Exception`/`Error` subclasses with message-property
-  throw bridging, `Throwable`, `getMessage()`, and `getTrace()` arrays for
-  userland and modeled internal callback frames; bounded `highlight_file()`
-  shares file-return paths.
+  throw bridging, `Throwable`, binary-safe `getMessage()`/`__toString()`,
+  `getTrace()` arrays, and `getTraceAsString()` stack formatting for userland
+  and modeled internal callback frames; stack argument summaries escape
+  non-printable/high-byte string bytes and observe
+  `zend.exception_string_param_max_len`. Bounded `highlight_file()` shares
+  file-return paths.
 - Modeled metadata includes `phpversion()`, `php_sapi_name()`,
   `zend_version()`, PHP version/build/platform constants, `PHP_SAPI`,
   `get_loaded_extensions()`, stable PHP locale constants, bounded
@@ -168,7 +171,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - Environment and include-path helpers cover `getenv()` snapshots/lookups,
   `putenv()` set/unset plus embedded-NUL/invalid-assignment diagnostics, and
   bounded `get_include_path()`/`set_include_path()`/`ini_set()`/
-  `ini_restore()` state for include-path and assertion configuration.
+  `ini_restore()` state for include-path, assertion configuration, and
+  exception string parameter length.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 - PHPT runners preclassify broad rows before execution and write selected,
@@ -176,9 +180,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
   `pcre`, `Reflection`, and `standard` extension surface plus accepted runner ini keys
   (`assert.exception`, `date.timezone`, `display_errors`, `error_reporting`,
-  `extension_dir`, `include_path`, `pcre.backtrack_limit`, `precision`, and
-  `zend.assertions`); child-process control rows are classified until PTN has a
-  native process boundary. Harness cleanup, environment setup, unsupported
+  `extension_dir`, `include_path`, `pcre.backtrack_limit`, `precision`,
+  `zend.assertions`, and `zend.exception_string_param_max_len`); child-process
+  control rows are classified until PTN has a native process boundary. Harness
+  cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
   expectation rows, broad unsupported language surfaces such as anonymous
   classes, interfaces, trait adaptations/conflicts/reflection edges, remaining
