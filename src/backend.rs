@@ -1533,7 +1533,7 @@ fn emit_return_type_boundary(
         TypeHint::Nullable(inner) => {
             emit_nullable_return_type_boundary(out, inner, function_name, return_by_ref);
         }
-        TypeHint::Mixed | TypeHint::Void => {}
+        TypeHint::Callable | TypeHint::Mixed | TypeHint::Void => {}
     }
 }
 
@@ -1597,6 +1597,7 @@ fn emit_nullable_return_type_boundary(
             out.push_str("    }\n");
         }
         TypeHint::Null
+        | TypeHint::Callable
         | TypeHint::Mixed
         | TypeHint::Void
         | TypeHint::Never
@@ -1613,6 +1614,7 @@ fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static
         Some(
             TypeHint::Null
             | TypeHint::Array
+            | TypeHint::Callable
             | TypeHint::Mixed
             | TypeHint::Void
             | TypeHint::Never
@@ -10409,7 +10411,7 @@ impl ValueEmitter {
                     php_string_byte_len(value)
                 )
             }
-            ValueExpr::Int(value) => format!("ptn_int({value})"),
+            ValueExpr::Int(value) => format!("ptn_int({})", c_i64_literal(*value)),
             ValueExpr::Float(value) => format!("ptn_float({value:?})"),
             ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
             ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
@@ -15574,6 +15576,14 @@ fn c_string(value: &str) -> String {
         }
     }
     out
+}
+
+fn c_i64_literal(value: i64) -> String {
+    if value == i64::MIN {
+        "(-9223372036854775807LL - 1LL)".to_string()
+    } else {
+        format!("{value}LL")
+    }
 }
 
 fn c_optional_string(value: Option<&str>) -> String {

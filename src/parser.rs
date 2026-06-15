@@ -2233,6 +2233,10 @@ impl Parser<'_> {
                 self.advance();
                 Ok(TypeHint::Array)
             }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("callable") => {
+                self.advance();
+                Ok(TypeHint::Callable)
+            }
             TokenKind::IntType | TokenKind::IntegerType => {
                 self.advance();
                 Ok(TypeHint::Int)
@@ -2286,6 +2290,10 @@ impl Parser<'_> {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
                 self.advance();
                 Ok(TypeHint::Array)
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("callable") => {
+                self.advance();
+                Ok(TypeHint::Callable)
             }
             TokenKind::Null => {
                 self.advance();
@@ -2341,6 +2349,7 @@ impl Parser<'_> {
             | TokenKind::BooleanType => true,
             TokenKind::Identifier(name) => {
                 name.eq_ignore_ascii_case("array")
+                    || name.eq_ignore_ascii_case("callable")
                     || name.eq_ignore_ascii_case("mixed")
                     || !is_unsupported_builtin_type_hint_name(name)
             }

@@ -1011,7 +1011,7 @@ impl<'a> Lexer<'a> {
                     self.read_interpolation_variable_name(span)?,
                 ))
             }
-            Some('-') | Some('0'..='9') => self.lex_interpolation_index_int(),
+            Some('-') | Some('0'..='9') => self.lex_unbraced_interpolation_numeric_index(),
             Some(ch) if is_ident_start(ch) => {
                 let mut key = String::new();
                 while let Some(ch) = self.peek_char() {
@@ -1156,6 +1156,31 @@ impl<'a> Lexer<'a> {
             .parse::<i64>()
             .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
         Ok(StringInterpolationIndex::Int(value))
+    }
+
+    fn lex_unbraced_interpolation_numeric_index(&mut self) -> Result<StringInterpolationIndex> {
+        let start = self.current_span(1);
+        let mut text = String::new();
+        if matches!(self.peek_char(), Some('-')) {
+            text.push('-');
+            self.bump_char();
+        }
+        while let Some(ch) = self.peek_char() {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                text.push(ch);
+                self.bump_char();
+            } else {
+                break;
+            }
+        }
+        if text == "-" {
+            return Err(Diagnostic::new("invalid integer literal", Some(start)));
+        }
+        if let Some(value) = canonical_interpolation_array_int_index(&text) {
+            Ok(StringInterpolationIndex::Int(value))
+        } else {
+            Ok(StringInterpolationIndex::String(text))
+        }
     }
 
     fn read_interpolation_variable_name(&mut self, span: SourceSpan) -> Result<String> {
@@ -1627,6 +1652,20 @@ fn decimal_integer_token_kind(text: &str, span: SourceSpan) -> Result<TokenKind>
             Ok(TokenKind::Float(value))
         }
     }
+}
+
+fn canonical_interpolation_array_int_index(text: &str) -> Option<i64> {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    if digits.len() > 1 && digits.starts_with('0') {
+        return None;
+    }
+    if text.starts_with("-0") {
+        return None;
+    }
+    text.parse::<i64>().ok()
 }
 
 fn push_php_string_byte(value: &mut String, byte: u8) {

@@ -1,0 +1,2 @@
+Zend/tests/numeric_strings/neg_num_string.phpt
+Zend/tests/type_declarations/add_return_type.phpt

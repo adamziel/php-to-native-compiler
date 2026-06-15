@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-144g parser residual row pack | 2 | 2 |
 | ptn-w17z.2 sort flags row pack | 78 | 72 |
 | ptn-w17z.22 compile-time include path variables | 1 | 1 |
 | ptn-w17z.28 collected Generator runtime row pack | 6 | 6 |
@@ -18,14 +19,20 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T17:00Z.
-Measured latest: `ptn-w17z.2` sort flags row pack selected 78 rows, kept 78 runnable, and passed 72/78 in the focused run.
-Latest: `ptn-w17z.2` advances single-array sort flag rows to 72/78. Previous: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path.
+Refresh: 2026-06-15T17:06Z.
+Measured latest: `ptn-144g` parser residual row pack selected 2 rows, kept 2 runnable, and passed 2/2 in the focused run.
+Latest: `ptn-144g` accepts non-canonical numeric-looking unbraced interpolation array keys and `callable` type hints in declarations. Previous: `ptn-w17z.2` advances single-array sort flag rows to 72/78.
 
-Current hook: `ptn-w17z.2` sort flags row pack passed 72/78 at
+Current hook: `ptn-144g` parser residual row pack passed 2/2 at
+`.runtime/ptn-144g-after-rebase/summary-20260615T170654Z.txt`.
+Previous hook: `ptn-w17z.2` sort flags row pack passed 72/78 at
 `.runtime/merge-ptn-w17z2-sort-flags/summary-20260615T164329Z.txt`.
-Previous hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
-`.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
+
+## 2026-06-15 ptn-144g Parser Residual Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final rebased focused parser residuals (`.runtime/ptn-144g-after-rebase/summary-20260615T170654Z.txt`) | 2 selected / 2 runnable | 2 |
 
 ## 2026-06-15 ptn-w17z.2 Sort Flags Row Pack
 

@@ -155,6 +155,7 @@ pub struct ClosureUseCapture {
 pub enum TypeHint {
     Null,
     Array,
+    Callable,
     Int,
     Float,
     String,
