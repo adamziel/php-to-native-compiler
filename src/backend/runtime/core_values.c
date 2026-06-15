@@ -394,6 +394,25 @@ typedef struct {
 } PtnStringBuffer;
 
 typedef enum {
+    PTN_STREAM_BACKEND_FILE,
+    PTN_STREAM_BACKEND_MEMORY,
+    PTN_STREAM_BACKEND_TEMP
+} PtnStreamBackend;
+
+typedef struct {
+    unsigned char *data;
+    size_t len;
+    size_t capacity;
+    size_t position;
+    size_t max_memory;
+    int writable;
+    int append;
+    int spilled;
+    int eof;
+    int error;
+} PtnMemoryStream;
+
+typedef enum {
     PTN_NUMBER_INT,
     PTN_NUMBER_FLOAT
 } PtnNumberType;
@@ -438,6 +457,8 @@ struct PtnResource {
     void *directory;
     char *stream_uri;
     char *stream_mode;
+    PtnStreamBackend stream_backend;
+    PtnMemoryStream *memory_stream;
     int persistent;
 };
 
@@ -1140,6 +1161,46 @@ static PTN_UNUSED void ptn_exception_retain(PtnException *exception) {
 
 static int64_t ptn_next_resource_id = 5;
 
+static PTN_UNUSED PtnMemoryStream *ptn_memory_stream_new(size_t max_memory, int writable, int append) {
+    PtnMemoryStream *stream = malloc(sizeof(PtnMemoryStream));
+    if (stream == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    stream->data = NULL;
+    stream->len = 0;
+    stream->capacity = 0;
+    stream->position = 0;
+    stream->max_memory = max_memory;
+    stream->writable = writable;
+    stream->append = append;
+    stream->spilled = 0;
+    stream->eof = 0;
+    stream->error = 0;
+    return stream;
+}
+
+static PTN_UNUSED void ptn_memory_stream_free(PtnMemoryStream *stream) {
+    if (stream == NULL) {
+        return;
+    }
+    free(stream->data);
+    free(stream);
+}
+
+static PTN_UNUSED int ptn_resource_is_open(PtnResource *resource) {
+    if (resource == NULL) {
+        return 0;
+    }
+    return resource->stream != NULL ||
+        resource->directory != NULL ||
+        resource->memory_stream != NULL ||
+        strcmp(resource->type_name, "stream") != 0;
+}
+
+static PTN_UNUSED int ptn_stream_resource_is_open(PtnResource *resource) {
+    return resource != NULL && (resource->stream != NULL || resource->memory_stream != NULL);
+}
+
 static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char *uri, const char *mode) {
     PtnResource *resource = malloc(sizeof(PtnResource));
     if (resource == NULL) {
@@ -1158,6 +1219,37 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->directory = NULL;
     resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
     resource->stream_mode = mode == NULL ? NULL : ptn_duplicate_string(mode);
+    resource->stream_backend = PTN_STREAM_BACKEND_FILE;
+    resource->memory_stream = NULL;
+    resource->persistent = 0;
+    return resource;
+}
+
+static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
+    const char *uri,
+    const char *mode,
+    PtnStreamBackend backend,
+    size_t max_memory,
+    int writable,
+    int append
+) {
+    PtnResource *resource = malloc(sizeof(PtnResource));
+    if (resource == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_next_resource_id == INT64_MAX) {
+        free(resource);
+        ptn_abort_out_of_memory();
+    }
+    resource->refcount = 1;
+    resource->id = ptn_next_resource_id++;
+    resource->type_name = "stream";
+    resource->stream = NULL;
+    resource->directory = NULL;
+    resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
+    resource->stream_mode = mode == NULL ? NULL : ptn_duplicate_string(mode);
+    resource->stream_backend = backend;
+    resource->memory_stream = ptn_memory_stream_new(max_memory, writable, append);
     resource->persistent = 0;
     return resource;
 }
@@ -1182,6 +1274,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->directory = directory;
     resource->stream_uri = uri == NULL ? NULL : ptn_duplicate_string(uri);
     resource->stream_mode = ptn_duplicate_string("r");
+    resource->stream_backend = PTN_STREAM_BACKEND_FILE;
+    resource->memory_stream = NULL;
     resource->persistent = 0;
     return resource;
 }
@@ -1201,8 +1295,271 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->directory = NULL;
     resource->stream_uri = NULL;
     resource->stream_mode = NULL;
+    resource->stream_backend = PTN_STREAM_BACKEND_FILE;
+    resource->memory_stream = NULL;
     resource->persistent = 0;
     return resource;
+}
+
+static PTN_UNUSED int ptn_memory_stream_reserve(PtnMemoryStream *stream, size_t required) {
+    if (required <= stream->capacity) {
+        return 1;
+    }
+    size_t new_capacity = stream->capacity == 0 ? 128 : stream->capacity;
+    while (new_capacity < required) {
+        if (new_capacity > SIZE_MAX / 2) {
+            return 0;
+        }
+        new_capacity *= 2;
+    }
+    unsigned char *new_data = realloc(stream->data, new_capacity);
+    if (new_data == NULL) {
+        return 0;
+    }
+    stream->data = new_data;
+    stream->capacity = new_capacity;
+    return 1;
+}
+
+static PTN_UNUSED void ptn_memory_stream_note_size(PtnResource *resource, PtnMemoryStream *stream) {
+    if (
+        resource->stream_backend == PTN_STREAM_BACKEND_TEMP &&
+        stream->max_memory != SIZE_MAX &&
+        stream->len > stream->max_memory
+    ) {
+        stream->spilled = 1;
+    }
+}
+
+static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const void *data, size_t len) {
+    if (resource == NULL) {
+        return 0;
+    }
+    if (resource->memory_stream == NULL) {
+        return fwrite(data, 1, len, resource->stream);
+    }
+
+    PtnMemoryStream *stream = resource->memory_stream;
+    if (!stream->writable) {
+        stream->error = 1;
+        errno = EBADF;
+        return 0;
+    }
+    if (stream->append) {
+        stream->position = stream->len;
+    }
+    if (stream->position > SIZE_MAX - len) {
+        ptn_abort_out_of_memory();
+    }
+    size_t end = stream->position + len;
+    if (!ptn_memory_stream_reserve(stream, end)) {
+        ptn_abort_out_of_memory();
+    }
+    if (stream->position > stream->len) {
+        memset(stream->data + stream->len, 0, stream->position - stream->len);
+    }
+    if (len != 0) {
+        memcpy(stream->data + stream->position, data, len);
+    }
+    stream->position = end;
+    if (end > stream->len) {
+        stream->len = end;
+        ptn_memory_stream_note_size(resource, stream);
+    }
+    stream->eof = 0;
+    stream->error = 0;
+    return len;
+}
+
+static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buffer, size_t len) {
+    if (resource == NULL) {
+        return 0;
+    }
+    if (resource->memory_stream == NULL) {
+        return fread(buffer, 1, len, resource->stream);
+    }
+
+    PtnMemoryStream *stream = resource->memory_stream;
+    if (len == 0) {
+        return 0;
+    }
+    if (stream->position >= stream->len) {
+        stream->eof = 1;
+        return 0;
+    }
+    size_t available = stream->len - stream->position;
+    size_t read_len = available < len ? available : len;
+    memcpy(buffer, stream->data + stream->position, read_len);
+    stream->position += read_len;
+    stream->eof = read_len < len;
+    stream->error = 0;
+    return read_len;
+}
+
+static PTN_UNUSED int ptn_stream_get_byte(PtnResource *resource) {
+    if (resource == NULL) {
+        return EOF;
+    }
+    if (resource->memory_stream == NULL) {
+        return fgetc(resource->stream);
+    }
+    unsigned char byte = 0;
+    return ptn_stream_read_bytes(resource, &byte, 1) == 1 ? (int)byte : EOF;
+}
+
+static PTN_UNUSED int ptn_stream_unget_byte(PtnResource *resource, int byte) {
+    if (resource == NULL) {
+        return EOF;
+    }
+    if (resource->memory_stream == NULL) {
+        return ungetc(byte, resource->stream);
+    }
+    PtnMemoryStream *stream = resource->memory_stream;
+    if (stream->position == 0 || byte == EOF) {
+        return EOF;
+    }
+    stream->position--;
+    stream->eof = 0;
+    stream->error = 0;
+    return byte;
+}
+
+static PTN_UNUSED int ptn_stream_seek(PtnResource *resource, int64_t offset, int whence) {
+    if (resource == NULL) {
+        return -1;
+    }
+    if (resource->memory_stream == NULL) {
+        return fseek(resource->stream, (long)offset, whence);
+    }
+    PtnMemoryStream *stream = resource->memory_stream;
+    size_t base_size = 0;
+    if (whence == SEEK_SET) {
+        base_size = 0;
+    } else if (whence == SEEK_CUR) {
+        base_size = stream->position;
+    } else if (whence == SEEK_END) {
+        base_size = stream->len;
+    } else {
+        return -1;
+    }
+    if (base_size > (size_t)INT64_MAX) {
+        return -1;
+    }
+    int64_t base = (int64_t)base_size;
+    if (offset < 0) {
+        if (offset == INT64_MIN || base < -offset) {
+            return -1;
+        }
+    } else if (base > INT64_MAX - offset) {
+        return -1;
+    }
+    int64_t target = base + offset;
+    if (target < 0) {
+        return -1;
+    }
+    stream->position = (size_t)target;
+    stream->eof = 0;
+    stream->error = 0;
+    return 0;
+}
+
+static PTN_UNUSED int64_t ptn_stream_tell(PtnResource *resource) {
+    if (resource == NULL) {
+        return -1;
+    }
+    if (resource->memory_stream == NULL) {
+        long position = ftell(resource->stream);
+        return position < 0 ? -1 : (int64_t)position;
+    }
+    PtnMemoryStream *stream = resource->memory_stream;
+    if (stream->position > (size_t)INT64_MAX) {
+        return -1;
+    }
+    return (int64_t)stream->position;
+}
+
+static PTN_UNUSED int ptn_stream_flush(PtnResource *resource) {
+    if (resource == NULL) {
+        return -1;
+    }
+    if (resource->memory_stream == NULL) {
+        return fflush(resource->stream);
+    }
+    resource->memory_stream->error = 0;
+    return 0;
+}
+
+static PTN_UNUSED int ptn_stream_eof(PtnResource *resource) {
+    if (resource == NULL) {
+        return 1;
+    }
+    if (resource->memory_stream == NULL) {
+        return feof(resource->stream) != 0;
+    }
+    return resource->memory_stream->eof != 0;
+}
+
+static PTN_UNUSED int ptn_stream_error(PtnResource *resource) {
+    if (resource == NULL) {
+        return 1;
+    }
+    if (resource->memory_stream == NULL) {
+        return ferror(resource->stream) != 0;
+    }
+    return resource->memory_stream->error != 0;
+}
+
+static PTN_UNUSED void ptn_stream_clear_error(PtnResource *resource) {
+    if (resource == NULL) {
+        return;
+    }
+    if (resource->memory_stream == NULL) {
+        clearerr(resource->stream);
+        return;
+    }
+    resource->memory_stream->eof = 0;
+    resource->memory_stream->error = 0;
+}
+
+static PTN_UNUSED int ptn_stream_truncate(PtnResource *resource, int64_t size) {
+    if (resource == NULL) {
+        return 0;
+    }
+    if (resource->memory_stream == NULL) {
+        int descriptor = -1;
+#if defined(_WIN32)
+        descriptor = _fileno(resource->stream);
+#else
+        descriptor = fileno(resource->stream);
+#endif
+        if (descriptor < 0) {
+            return 0;
+        }
+#if defined(_WIN32)
+        return _chsize_s(descriptor, size) == 0;
+#else
+        return ftruncate(descriptor, (off_t)size) == 0;
+#endif
+    }
+
+    PtnMemoryStream *stream = resource->memory_stream;
+    if (!stream->writable) {
+        stream->error = 1;
+        errno = EBADF;
+        return 0;
+    }
+    size_t new_len = (size_t)size;
+    if (!ptn_memory_stream_reserve(stream, new_len)) {
+        ptn_abort_out_of_memory();
+    }
+    if (new_len > stream->len) {
+        memset(stream->data + stream->len, 0, new_len - stream->len);
+    }
+    stream->len = new_len;
+    ptn_memory_stream_note_size(resource, stream);
+    stream->eof = 0;
+    stream->error = 0;
+    return 1;
 }
 
 static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
@@ -1228,6 +1585,10 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
     if (resource->stream != NULL) {
         fclose(resource->stream);
         resource->stream = NULL;
+    }
+    if (resource->memory_stream != NULL) {
+        ptn_memory_stream_free(resource->memory_stream);
+        resource->memory_stream = NULL;
     }
 #if !defined(_WIN32)
     if (resource->directory != NULL) {
@@ -1266,9 +1627,9 @@ static PTN_UNUSED PtnValue ptn_resource(PtnResource *resource) {
 }
 
 static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
-    static PtnResource stdin_resource = { SIZE_MAX, 1, "stream", NULL, NULL, NULL, NULL, 1 };
-    static PtnResource stdout_resource = { SIZE_MAX, 2, "stream", NULL, NULL, NULL, NULL, 1 };
-    static PtnResource stderr_resource = { SIZE_MAX, 3, "stream", NULL, NULL, NULL, NULL, 1 };
+    static PtnResource stdin_resource = { SIZE_MAX, 1, "stream", NULL, NULL, NULL, NULL, PTN_STREAM_BACKEND_FILE, NULL, 1 };
+    static PtnResource stdout_resource = { SIZE_MAX, 2, "stream", NULL, NULL, NULL, NULL, PTN_STREAM_BACKEND_FILE, NULL, 1 };
+    static PtnResource stderr_resource = { SIZE_MAX, 3, "stream", NULL, NULL, NULL, NULL, PTN_STREAM_BACKEND_FILE, NULL, 1 };
     PtnResource *resource = &stdin_resource;
     if (id == 2) {
         resource = &stdout_resource;

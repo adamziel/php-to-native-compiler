@@ -7927,6 +7927,108 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_php_temp_and_memory_stream_wrappers_to_native_binary() {
+    let root = temp_dir("ptn-native-php-temp-memory-streams");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-temp-memory-streams.php");
+    let output = root.join("php-temp-memory-streams-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function dump_meta($stream) {
+    $meta = stream_get_meta_data($stream);
+    var_dump($meta["wrapper_type"], $meta["stream_type"], $meta["mode"], $meta["seekable"], $meta["uri"]);
+    var_dump(array_key_exists("eof", $meta));
+}
+
+$temp = fopen("php://temp/maxmemory:4", "r+");
+dump_meta($temp);
+fwrite($temp, "abcdef");
+fseek($temp, 2, SEEK_SET);
+fwrite($temp, "XY");
+fseek($temp, 0, SEEK_SET);
+var_dump(fread($temp, 6));
+fseek($temp, 10, SEEK_SET);
+var_dump(fwrite($temp, "z"));
+fseek($temp, 0, SEEK_SET);
+var_dump(bin2hex(fread($temp, 11)));
+$stat = fstat($temp);
+var_dump($stat["size"]);
+var_dump(ftruncate($temp, 3));
+var_dump(ftell($temp));
+fseek($temp, 0, SEEK_SET);
+var_dump(fread($temp, 9));
+
+$append = fopen("php://temp", "a+");
+fwrite($append, "hello");
+fseek($append, 0, SEEK_SET);
+fwrite($append, "world");
+var_dump(stream_get_contents($append, -1, 0));
+
+$read_only = fopen("php://memory", "r");
+var_dump(fwrite($read_only, "no"));
+var_dump(fseek($read_only, 0, SEEK_SET), fread($read_only, 3));
+$read_meta = stream_get_meta_data($read_only);
+var_dump($read_meta["stream_type"], $read_meta["mode"], $read_meta["eof"]);
+
+$memory = fopen("php://memory", "w+");
+fwrite($memory, "foo");
+fseek($memory, 0, SEEK_SET);
+var_dump(fread($memory, 3));
+$memory_meta = stream_get_meta_data($memory);
+var_dump($memory_meta["wrapper_type"], $memory_meta["stream_type"], $memory_meta["mode"], $memory_meta["eof"]);
+
+var_dump(fclose($temp));
+var_dump(is_resource($temp), gettype($temp));
+try {
+    stream_get_meta_data($temp);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"PHP\"\n\
+string(4) \"TEMP\"\n\
+string(3) \"w+b\"\n\
+bool(true)\n\
+string(22) \"php://temp/maxmemory:4\"\n\
+bool(false)\n\
+string(6) \"abXYef\"\n\
+int(1)\n\
+string(22) \"616258596566000000007a\"\n\
+int(11)\n\
+bool(true)\n\
+int(11)\n\
+string(3) \"abX\"\n\
+string(10) \"helloworld\"\n\
+bool(false)\n\
+int(0)\n\
+string(0) \"\"\n\
+string(6) \"MEMORY\"\n\
+string(2) \"rb\"\n\
+bool(true)\n\
+string(3) \"foo\"\n\
+string(3) \"PHP\"\n\
+string(6) \"MEMORY\"\n\
+string(3) \"w+b\"\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+string(17) \"resource (closed)\"\n\
+stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_file_metadata_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-file-metadata-diagnostics");
     fs::create_dir_all(&root).unwrap();
