@@ -1,0 +1,26 @@
+# Broad 1k object/class metadata row pack for ptn-hgfn.
+#
+# The runnable target rows exercise non-public method visibility/callability
+# and object-string array helper metadata that current runtime support can
+# execute. Remaining rows in this pack stay classified as adjacent unsupported
+# magic/debug/dynamic-property metadata.
+Zend/tests/access_modifiers/access_modifiers_008.phpt
+Zend/tests/access_modifiers/access_modifiers_009.phpt
+Zend/tests/access_modifiers/access_modifiers_010.phpt
+Zend/tests/access_modifiers/access_modifiers_011.phpt
+Zend/tests/backtrace/debug_backtrace_options.phpt
+Zend/tests/bug21888.phpt
+Zend/tests/bug29210.phpt
+Zend/tests/__debugInfo_reference.phpt
+Zend/tests/assign_ref_to_overloaded_prop.phpt
+Zend/tests/asymmetric_visibility/__set.phpt
+Zend/tests/asymmetric_visibility/__unset.phpt
+Zend/tests/asymmetric_visibility/bug001.phpt
+Zend/tests/asymmetric_visibility/bug002.phpt
+Zend/tests/bug38220.phpt
+ext/standard/tests/array/array_diff_key_variation1.phpt
+ext/standard/tests/array/array_diff_key_variation2.phpt
+ext/standard/tests/array/array_diff_uassoc_variation1.phpt
+ext/standard/tests/array/array_diff_uassoc_variation2.phpt
+ext/standard/tests/array/array_diff_ukey_variation1.phpt
+ext/standard/tests/array/array_diff_ukey_variation2.phpt

@@ -513,6 +513,11 @@ fn emit_user_functions(
             out.push_str(&call_frame_parameter_count.to_string());
             out.push_str(", ptn_parameter_names);\n");
         }
+        if let Some(trace_display_name) = instance_method_trace_display_name(function) {
+            out.push_str("    runtime.owned_trace_frame.function_name = \"");
+            out.push_str(&c_string(&trace_display_name));
+            out.push_str("\";\n");
+        }
         if function.method_name.is_some() && !function.is_static {
             out.push_str("    runtime.has_current_receiver = 1;\n");
             out.push_str("    runtime.current_receiver = receiver;\n");
@@ -776,6 +781,15 @@ fn function_call_frame_parameter_count(function: &FunctionDecl) -> usize {
         .iter()
         .position(|parameter| parameter.is_variadic)
         .unwrap_or(function.parameters.len())
+}
+
+fn instance_method_trace_display_name(function: &FunctionDecl) -> Option<String> {
+    if function.is_static {
+        return None;
+    }
+    let class_name = function.class_name.as_deref()?;
+    let method_name = function.method_name.as_deref()?;
+    Some(format!("{class_name}->{method_name}"))
 }
 
 fn emit_function_metadata_parameter_names(

@@ -77,8 +77,8 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     runtime->owned_call_frame.parameter_names = parameter_names;
     runtime->call_frame = &runtime->owned_call_frame;
     runtime->owned_trace_frame.function_name = runtime->current_function_name;
-    runtime->owned_trace_frame.file = NULL;
-    runtime->owned_trace_frame.line = 0;
+    runtime->owned_trace_frame.file = runtime->source_path;
+    runtime->owned_trace_frame.line = runtime->call_site_line;
     runtime->owned_trace_frame.argc = argc;
     runtime->owned_trace_frame.args = args;
     runtime->owned_trace_frame.previous = runtime->trace_frame;
@@ -687,25 +687,33 @@ static void ptn_emit_uncaught_trace_arg(FILE *stream, PtnValue value) {
 
 static int ptn_emit_uncaught_internal_trace(PtnRuntime *runtime) {
     PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
-    if (
-        runtime == NULL ||
-        runtime->current_function_name != NULL ||
-        frame == NULL ||
-        frame->function_name == NULL ||
-        frame->file == NULL ||
-        frame->line == 0
-    ) {
+    if (runtime == NULL || frame == NULL) {
         return 0;
     }
 
-    fprintf(stderr, "#0 %s(%zu): %s(", frame->file, frame->line, frame->function_name);
-    for (size_t i = 0; i < frame->argc; i++) {
-        if (i != 0) {
-            fputs(", ", stderr);
+    size_t index = 0;
+    for (; frame != NULL; frame = frame->previous) {
+        if (frame->function_name == NULL) {
+            continue;
         }
-        ptn_emit_uncaught_trace_arg(stderr, frame->args[i]);
+        if (frame->file != NULL && frame->line != 0) {
+            fprintf(stderr, "#%zu %s(%zu): %s(", index, frame->file, frame->line, frame->function_name);
+        } else {
+            fprintf(stderr, "#%zu [internal function]: %s(", index, frame->function_name);
+        }
+        for (size_t i = 0; i < frame->argc; i++) {
+            if (i != 0) {
+                fputs(", ", stderr);
+            }
+            ptn_emit_uncaught_trace_arg(stderr, frame->args[i]);
+        }
+        fputs(")\n", stderr);
+        index++;
     }
-    fputs(")\n#1 {main}\n", stderr);
+    if (index == 0) {
+        return 0;
+    }
+    fprintf(stderr, "#%zu {main}\n", index);
     return 1;
 }
 

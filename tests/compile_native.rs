@@ -3925,9 +3925,30 @@ try {
 }
 
 #[test]
-fn parser_rejects_non_public_methods_before_visibility_dispatch() {
-    let error = parser::parse("<?php class Box { private function hidden() {} }").unwrap_err();
-    assert_eq!(error.message, "non-public class methods are unsupported");
+fn parser_accepts_declared_non_public_method_metadata() {
+    let program = parser::parse(
+        "<?php class Box {
+            private function hidden() {}
+            protected static function guarded() {}
+            public function open() {}
+        }",
+    )
+    .unwrap();
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].methods.len(), 3);
+    assert_eq!(
+        program.classes[0].methods[0].visibility,
+        PropertyVisibility::Private
+    );
+    assert_eq!(
+        program.classes[0].methods[1].visibility,
+        PropertyVisibility::Protected
+    );
+    assert!(program.classes[0].methods[1].is_static);
+    assert_eq!(
+        program.classes[0].methods[2].visibility,
+        PropertyVisibility::Public
+    );
 }
 
 #[test]
@@ -28880,6 +28901,54 @@ $child->childScope();
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn native_method_visibility_uncaught_trace_uses_instance_frames() {
+    let root = temp_dir("ptn-native-method-visibility-uncaught-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("method-visibility-uncaught-trace.php");
+    let output = root.join("method-visibility-uncaught-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class D {
+    private function test2() {
+        print "unreached\n";
+    }
+}
+abstract class A extends D {
+    public function test() {
+        $this->test2();
+    }
+}
+abstract class B extends A {
+}
+class C extends B {
+    public function __construct() {
+        $this->test();
+    }
+}
+new C;
+?>"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Call to private method D::test2() from scope A in {}:9\nStack trace:\n#0 {}(16): A->test()\n#1 {}(19): C->__construct()\n#2 {{main}}\n  thrown in {} on line 9\n",
+            input.display(),
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
