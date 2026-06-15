@@ -508,6 +508,16 @@ static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice_at(P
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_attempting_to_set_reference_to_non_referenceable_value_notice(PtnDiagnosticSink *diagnostics, size_t line) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
+        return;
+    }
+    fputc('\n', stdout);
+    fputs("Notice: Attempting to set reference to non referenceable value in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static PTN_UNUSED void ptn_emit_only_variables_passed_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
         return;

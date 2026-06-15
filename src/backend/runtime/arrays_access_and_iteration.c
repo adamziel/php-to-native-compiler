@@ -2900,10 +2900,18 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
     PtnValue *container,
     const PtnValue *key_value,
     const char *path,
-    size_t line
+    size_t line,
+    int warn_non_referenceable
 ) {
     if (container == NULL) {
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+
+    if (warn_non_referenceable && container->type != PTN_REFERENCE) {
+        ptn_emit_attempting_to_set_reference_to_non_referenceable_value_notice(
+            &runtime->diagnostics,
+            line
+        );
     }
 
     PtnValue *value = container->type == PTN_REFERENCE

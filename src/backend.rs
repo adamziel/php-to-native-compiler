@@ -5521,7 +5521,9 @@ fn emit_instruction(
             out.push_str("    PtnArrayIterator ");
             out.push_str(&iterator_temp);
             out.push_str(";\n");
-            let iterable_temp = if *value_by_ref {
+            let value_list_has_reference = matches!(value, AssignmentTarget::List(target) if list_assignment_has_reference(target));
+            let iterator_needs_reference = *value_by_ref || value_list_has_reference;
+            let iterable_temp = if iterator_needs_reference {
                 match iterable {
                     ValueExpr::Load { name, .. } => {
                         out.push_str("    ");
@@ -5591,12 +5593,10 @@ fn emit_instruction(
             out.push_str(&iterator_temp);
             out.push_str(".valid) {\n");
             let value_temp = values.next_temp();
-            let value_needs_reference = *value_by_ref
-                || matches!(value, AssignmentTarget::List(target) if list_assignment_has_reference(target));
             out.push_str("        PtnValue ");
             out.push_str(&value_temp);
             out.push_str(" = ");
-            if value_needs_reference {
+            if iterator_needs_reference {
                 out.push_str("ptn_array_iterator_current_reference(&");
             } else {
                 out.push_str("ptn_array_iterator_current_value(&");
@@ -8895,6 +8895,16 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
     })
 }
 
+fn list_reference_source_warns_non_referenceable(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::InternalCall { .. }
+            | ValueExpr::DynamicCall { .. }
+            | ValueExpr::MethodCall { .. }
+            | ValueExpr::DynamicMethodCall { .. }
+    )
+}
+
 fn list_assignment_references_variable(target: &ListAssignmentTarget, name: &str) -> bool {
     target.elements.iter().any(|element| match &element.target {
         ListAssignmentElementTarget::Reference(target) => {
@@ -10986,7 +10996,7 @@ impl ValueEmitter {
                 result_temp
             }
             AssignmentTarget::List(target) => {
-                self.emit_list_assignment_from_temp(out, target, value_temp)
+                self.emit_list_assignment_from_temp(out, target, value_temp, false)
             }
         }
     }
@@ -11001,10 +11011,35 @@ impl ValueEmitter {
             if let ValueExpr::Load { name, .. } = value {
                 return self.emit_reference_list_assignment_from_variable(out, target, name);
             }
+            if let Some(source_target) = reference_target_from_value(value) {
+                let reference_temp = self.emit_reference_target(out, &source_target);
+                let result_temp =
+                    self.emit_list_assignment_from_temp(out, target, &reference_temp, false);
+                emit_value_cleanup(out, "    ", &reference_temp);
+                return result_temp;
+            }
+            if let ValueExpr::StaticPropertyFetch {
+                class_name,
+                name,
+                line,
+            } = value
+            {
+                let reference_temp =
+                    self.emit_static_property_reference(out, class_name, name, *line);
+                let result_temp =
+                    self.emit_list_assignment_from_temp(out, target, &reference_temp, false);
+                emit_value_cleanup(out, "    ", &reference_temp);
+                return result_temp;
+            }
         }
 
         let value_temp = self.emit_materialized_value(out, value);
-        let result_temp = self.emit_list_assignment_from_temp(out, target, &value_temp);
+        let result_temp = self.emit_list_assignment_from_temp(
+            out,
+            target,
+            &value_temp,
+            list_reference_source_warns_non_referenceable(value),
+        );
         emit_value_cleanup(out, "    ", &value_temp);
         result_temp
     }
@@ -11014,6 +11049,7 @@ impl ValueEmitter {
         out: &mut String,
         target: &ListAssignmentTarget,
         value_temp: &str,
+        warn_non_referenceable_refs: bool,
     ) -> String {
         for (index, element) in target.elements.iter().enumerate() {
             let key_temp = self.emit_list_key(out, element, index);
@@ -11046,6 +11082,12 @@ impl ValueEmitter {
                     out.push_str(&c_string(&self.source_file));
                     out.push_str("\", ");
                     out.push_str(&target.line().to_string());
+                    out.push_str(", ");
+                    out.push_str(if warn_non_referenceable_refs {
+                        "1"
+                    } else {
+                        "0"
+                    });
                     out.push_str(");\n");
                     self.emit_bind_reference_target(out, target, &source_temp);
                     emit_value_cleanup(out, "    ", &source_temp);
@@ -13253,6 +13295,29 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_static_property_reference(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &str,
+        line: usize,
+    ) -> String {
+        let resolved_class_name = self.static_property_class_name(class_name);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_reference_for_static_property(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));

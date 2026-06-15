@@ -2369,6 +2369,84 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
     return ptn_lookup_missing();
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    (void)line;
+    const char *declaring_class = NULL;
+    char *key = ptn_runtime_resolve_static_property_key(
+        runtime,
+        class_name,
+        property,
+        &declaring_class
+    );
+    if (key == NULL) {
+        return ptn_runtime_undeclared_static_property(runtime, class_name, property);
+    }
+
+    PtnValue read_visibility_value;
+    PtnValue set_visibility_value;
+    PtnPropertyVisibility read_visibility = PTN_PROPERTY_PUBLIC;
+    PtnPropertyVisibility set_visibility = PTN_PROPERTY_PUBLIC;
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_read_visibility_table(runtime),
+            key,
+            &read_visibility_value
+        ) &&
+        ptn_value_deref(read_visibility_value).type == PTN_INT
+    ) {
+        read_visibility = (PtnPropertyVisibility)ptn_value_deref(read_visibility_value).as.integer;
+    }
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_set_visibility_table(runtime),
+            key,
+            &set_visibility_value
+        ) &&
+        ptn_value_deref(set_visibility_value).type == PTN_INT
+    ) {
+        set_visibility = (PtnPropertyVisibility)ptn_value_deref(set_visibility_value).as.integer;
+    }
+    if (!ptn_property_visibility_allows(runtime, read_visibility, declaring_class, access_scope)) {
+        free(key);
+        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property);
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+    if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
+        free(key);
+        if (set_visibility != read_visibility) {
+            ptn_throw_property_set_visibility_error(
+                runtime,
+                set_visibility,
+                declaring_class,
+                property,
+                access_scope
+            );
+        } else {
+            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property);
+        }
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_static_property_table(runtime), key);
+    if (slot == NULL) {
+        free(key);
+        return ptn_runtime_undeclared_static_property(runtime, class_name, property);
+    }
+    if (slot->type != PTN_REFERENCE) {
+        PtnValue current = *slot;
+        *slot = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+    PtnValue reference = ptn_value_clone(*slot);
+    free(key);
+    return reference;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_write_static_property(
     PtnRuntime *runtime,
     const char *class_name,

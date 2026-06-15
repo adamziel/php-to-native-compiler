@@ -1614,6 +1614,7 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         Expr::Array { elements, .. } => elements.iter().any(|element| {
             element.key.as_ref().is_some_and(expr_contains_yield)
                 || match &element.value {
+                    AstArrayElementValue::Hole(_) => false,
                     AstArrayElementValue::Value(value) | AstArrayElementValue::Unpack(value) => {
                         expr_contains_yield(value)
                     }
@@ -2473,6 +2474,9 @@ impl<'a> LoweringContext<'a> {
 
     fn lower_array_element_value(&mut self, value: &AstArrayElementValue) -> ArrayElementValue {
         match value {
+            AstArrayElementValue::Hole(_) => {
+                unreachable!("array holes are rejected outside list destructuring")
+            }
             AstArrayElementValue::Value(value) => ArrayElementValue::Value(self.lower_expr(value)),
             AstArrayElementValue::Reference(target) => {
                 ArrayElementValue::Reference(self.lower_reference_target(target))
@@ -2959,6 +2963,7 @@ fn assertion_type_hint_text(type_hint: &AstTypeHint) -> String {
 
 fn assertion_array_element_text(element: &AstArrayElement) -> String {
     let value = match &element.value {
+        AstArrayElementValue::Hole(_) => String::new(),
         AstArrayElementValue::Value(value) => assertion_expr_text(value),
         AstArrayElementValue::Reference(target) => {
             format!("&{}", assertion_reference_target_text(target))
