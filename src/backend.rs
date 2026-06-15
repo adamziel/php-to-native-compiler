@@ -1721,14 +1721,15 @@ fn emit_user_function_dispatch(
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
+    out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
     out.push_str("    int found = 0;\n");
     out.push_str(
-        "    PtnValue result = ptn_call_user_function(runtime, name, argc, args, line, &found);\n",
+        "    PtnValue result = ptn_call_user_function(runtime, lookup_name, argc, args, line, &found);\n",
     );
     out.push_str("    if (found) {\n");
     out.push_str("        return result;\n");
     out.push_str("    }\n");
-    out.push_str("    return ptn_call_internal(runtime, name, argc, args, line);\n");
+    out.push_str("    return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
     out.push_str("}\n");
 }
 
@@ -1808,6 +1809,8 @@ fn emit_class_metadata_helpers(out: &mut String, classes: &[ClassDecl], traits: 
         "ArrayAccess",
         "Iterator",
         "IteratorAggregate",
+        "SplObserver",
+        "SplSubject",
         "Traversable",
         "Stringable",
         "Throwable",
@@ -5135,7 +5138,7 @@ fn collect_value_legacy_dollar_brace_deprecations(
         | ValueExpr::Null
         | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
-        | ValueExpr::Constant(_)
+        | ValueExpr::Constant { .. }
         | ValueExpr::MagicConstant { .. }
         | ValueExpr::StaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. } => {}
@@ -5509,7 +5512,7 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
         | ValueExpr::LegacyDollarBraceStringVariable { .. }
-        | ValueExpr::Constant(_)
+        | ValueExpr::Constant { .. }
         | ValueExpr::MagicConstant { .. } => {}
         ValueExpr::IncDec { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
@@ -6845,7 +6848,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::Bool(_)
         | ValueExpr::Null
         | ValueExpr::Closure { .. }
-        | ValueExpr::Constant(_)
+        | ValueExpr::Constant { .. }
         | ValueExpr::MagicConstant { .. } => false,
     }
 }
@@ -9186,8 +9189,13 @@ impl ValueEmitter {
                 result,
                 line,
             } => self.emit_inc_dec_expression(out, target, *op, *result, *line),
-            ValueExpr::Constant(name) => {
-                format!("ptn_read_constant(&runtime, \"{}\")", c_string(name))
+            ValueExpr::Constant { name, line } => {
+                format!(
+                    "ptn_read_constant(&runtime, \"{}\", \"{}\", {})",
+                    c_string(name),
+                    c_string(&self.source_file),
+                    line
+                )
             }
             ValueExpr::MagicConstant { kind, line } => match kind {
                 MagicConstantKind::Line => format!("ptn_int({line})"),
@@ -9994,6 +10002,12 @@ impl ValueEmitter {
         out.push_str(&class_value_temp);
         out.push_str("));\n");
         emit_value_cleanup(out, "    ", &class_value_temp);
+        let class_lookup_temp = self.next_temp();
+        out.push_str("    const char *");
+        out.push_str(&class_lookup_temp);
+        out.push_str(" = ptn_symbol_name_without_leading_slash(");
+        out.push_str(&class_name_temp);
+        out.push_str(");\n");
 
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -10007,7 +10021,7 @@ impl ValueEmitter {
                 out.push_str("} else ");
             }
             out.push_str("if (ptn_ascii_case_equal(");
-            out.push_str(&class_name_temp);
+            out.push_str(&class_lookup_temp);
             out.push_str(", \"");
             out.push_str(&c_string(&declared_class.name));
             out.push_str("\")) {\n");

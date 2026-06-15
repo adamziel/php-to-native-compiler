@@ -1226,6 +1226,58 @@ static PTN_UNUSED char *ptn_class_constant_key(const char *class_name, const cha
     return key;
 }
 
+static PTN_UNUSED char ptn_ascii_lower_char(char ch) {
+    return (ch >= 'A' && ch <= 'Z') ? (char)(ch - 'A' + 'a') : ch;
+}
+
+static PTN_UNUSED const char *ptn_symbol_name_without_leading_slash(const char *name) {
+    return name[0] == '\\' ? name + 1 : name;
+}
+
+static PTN_UNUSED int ptn_ascii_case_equal_span_to_string(
+    const char *left,
+    size_t left_len,
+    const char *right
+) {
+    size_t right_len = strlen(right);
+    if (left_len != right_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < left_len; i++) {
+        if (ptn_ascii_lower_char(left[i]) != ptn_ascii_lower_char(right[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PTN_UNUSED int ptn_builtin_class_constant_value_span(
+    const char *class_name,
+    size_t class_len,
+    const char *constant,
+    PtnValue *out
+) {
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ArrayObject")) {
+        if (strcmp(constant, "STD_PROP_LIST") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "ARRAY_AS_PROPS") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_builtin_class_constant_value(
+    const char *class_name,
+    const char *constant,
+    PtnValue *out
+) {
+    return ptn_builtin_class_constant_value_span(class_name, strlen(class_name), constant, out);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_undeclared_static_property(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1317,6 +1369,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
         }
         free(key);
         lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+    }
+    PtnValue builtin_value;
+    if (ptn_builtin_class_constant_value(class_name, constant, &builtin_value)) {
+        return builtin_value;
     }
     return ptn_runtime_undefined_class_constant(runtime, class_name, constant);
 }

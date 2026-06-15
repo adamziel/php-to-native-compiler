@@ -2,13 +2,21 @@
     return 1;
 }
 
-static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name) {
+static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name, const char *path, size_t line) {
     PtnValue value;
     if (ptn_runtime_constant_value(runtime, name, &value)) {
         return value;
     }
-    ptn_emit_undefined_constant_error(&runtime->diagnostics, name);
-    exit(255);
+    int needed = snprintf(NULL, 0, "Undefined constant \"%s\"", name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Undefined constant \"%s\"", name);
+    ptn_throw_exception_owned_message_at(runtime, "Error", message, path, line);
     return ptn_null();
 }
 
@@ -15182,6 +15190,7 @@ static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
+static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
@@ -15194,6 +15203,7 @@ static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, 
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -15364,6 +15374,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ini_set", 2, 2, ptn_internal_ini_set },
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
+        { "interface_exists", 1, 2, ptn_internal_interface_exists },
         { "is_array", 1, 1, ptn_internal_is_array },
         { "is_bool", 1, 1, ptn_internal_is_bool },
         { "is_callable", 1, 3, ptn_internal_is_callable },
@@ -15812,7 +15823,7 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
-    PtnValue value = ptn_read_constant(runtime, name);
+    PtnValue value = ptn_read_constant(runtime, ptn_symbol_name_without_leading_slash(name), runtime->source_path, line);
     free(name);
     return value;
 }
@@ -15822,7 +15833,19 @@ static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, cons
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
-    int exists = ptn_declared_class_exists(name) || ptn_internal_class_exists_name(name);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    int exists = ptn_declared_class_exists(lookup_name) || ptn_internal_class_exists_name(lookup_name);
+    free(name);
+    return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *name = ptn_value_to_string(args[0]);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    int exists = ptn_declared_interface_exists(lookup_name);
     free(name);
     return ptn_bool(exists);
 }
@@ -15831,7 +15854,7 @@ static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const Ptn
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
-    int exists = ptn_runtime_constant_is_defined(runtime, name);
+    int exists = ptn_runtime_constant_is_defined(runtime, ptn_symbol_name_without_leading_slash(name));
     free(name);
     return ptn_bool(exists);
 }
@@ -15841,7 +15864,8 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
-    int exists = ptn_user_function_exists(runtime, name) || ptn_find_internal_function(name) != NULL;
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    int exists = ptn_user_function_exists(runtime, lookup_name) || ptn_find_internal_function(lookup_name) != NULL;
     free(name);
     return ptn_bool(exists);
 }

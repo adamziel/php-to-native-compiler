@@ -330,7 +330,7 @@ static PTN_UNUSED void ptn_emit_undefined_function_error(PtnDiagnosticSink *diag
     fputs("()\n", stream);
 }
 
-static void ptn_emit_undefined_constant_error(PtnDiagnosticSink *diagnostics, const char *name) {
+static PTN_UNUSED void ptn_emit_undefined_constant_error(PtnDiagnosticSink *diagnostics, const char *name) {
     if (!diagnostics->display_errors) {
         return;
     }

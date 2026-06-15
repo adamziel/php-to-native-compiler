@@ -938,6 +938,22 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_E_ALL);
         return 1;
     }
+    if (strcmp(name, "INI_USER") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "INI_PERDIR") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "INI_SYSTEM") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "INI_ALL") == 0) {
+        *out = ptn_int(7);
+        return 1;
+    }
     if (strcmp(name, "CASE_LOWER") == 0) {
         *out = ptn_int(0);
         return 1;
@@ -1416,7 +1432,7 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
         *out = ptn_value_borrow(constants->items[i].value);
         return 1;
     }
-    return 0;
+    return ptn_builtin_class_constant_value_span(name, class_len, constant_name, out);
 }
 
 static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {

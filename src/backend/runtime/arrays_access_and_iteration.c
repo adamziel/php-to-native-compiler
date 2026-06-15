@@ -219,25 +219,26 @@ static PTN_UNUSED PtnValue ptn_new_object(
     const PtnValue *args,
     size_t line
 ) {
+    const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    if (ptn_internal_class_name_is_reflection_function(class_name)) {
+    if (ptn_internal_class_name_is_reflection_function(lookup_class_name)) {
         return ptn_reflection_function_new(runtime, argc, args, line);
     }
 #endif
-    const char *exception_class_name = ptn_builtin_exception_class_name(class_name);
+    const char *exception_class_name = ptn_builtin_exception_class_name(lookup_class_name);
     if (exception_class_name != NULL) {
         return ptn_new_exception_object(runtime, exception_class_name, argc, args, line);
     }
-    if (ptn_class_name_is_datetime(class_name)) {
+    if (ptn_class_name_is_datetime(lookup_class_name)) {
         if (argc > 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "DateTime constructor expects at most 1 argument");
             return ptn_null();
         }
         return ptn_object_new_shell(runtime, "DateTime");
     }
-    if (!ptn_class_name_is_stdclass(class_name)) {
+    if (!ptn_class_name_is_stdclass(lookup_class_name)) {
         char message[192];
-        int written = snprintf(message, sizeof(message), "Class \"%s\" not found", class_name);
+        int written = snprintf(message, sizeof(message), "Class \"%s\" not found", lookup_class_name);
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }

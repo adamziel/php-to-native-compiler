@@ -10329,6 +10329,15 @@ fn compile_declared_class_metadata_intrinsics_to_native_binary() {
     fs::write(
         &input,
         "<?php
+interface Contract {
+}
+
+const LOOKUP_CONST = \"value\";
+
+function lookup_func() {
+    return null;
+}
+
 class BaseWorker {
 }
 
@@ -10345,8 +10354,15 @@ $worker = new Worker();
 $callback = function () { return null; };
 var_dump(class_exists(\"Worker\"));
 var_dump(class_exists(\"worker\"));
+var_dump(class_exists(\"\\\\Worker\"));
 var_dump(class_exists(\"Missing\", false));
 var_dump(class_exists(\"stdClass\"));
+var_dump(interface_exists(\"Contract\"));
+var_dump(interface_exists(\"\\\\Contract\"));
+var_dump(interface_exists(\"Missing\"));
+var_dump(interface_exists(\"ArrayAccess\"));
+var_dump(interface_exists(\"SplObserver\"));
+var_dump(interface_exists(\"\\\\SplSubject\"));
 var_dump(method_exists(\"Worker\", \"run\"));
 var_dump(method_exists($worker, \"RUN\"));
 var_dump(method_exists(\"Worker\", \"staticwork\"));
@@ -10369,6 +10385,10 @@ try {
     echo get_class($e), \": \", $e->getMessage(), \"\\n\";
 }
 var_dump(function_exists(\"get_class\"));
+var_dump(function_exists(\"interface_exists\"));
+var_dump(function_exists(\"\\\\lookup_func\"));
+var_dump(defined(\"\\\\LOOKUP_CONST\"));
+var_dump(constant(\"\\\\LOOKUP_CONST\"));
 ",
     )
     .unwrap();
@@ -10382,7 +10402,14 @@ var_dump(function_exists(\"get_class\"));
         concat!(
             "bool(true)\n",
             "bool(true)\n",
+            "bool(true)\n",
             "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -10398,17 +10425,23 @@ var_dump(function_exists(\"get_class\"));
             "TypeError: get_class(): Argument #1 ($object) must be of type object, int given\n",
             "TypeError: get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, array given\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(5) \"value\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("static int ptn_declared_class_exists("));
+    assert!(c_source.contains("static int ptn_declared_interface_exists("));
     assert!(c_source.contains("static int ptn_declared_class_method_exists("));
     assert!(c_source.contains("static PTN_UNUSED const char *ptn_declared_class_parent_name("));
     assert!(c_source.contains("ptn_internal_class_exists"));
     assert!(c_source.contains("ptn_internal_get_class"));
     assert!(c_source.contains("ptn_internal_get_parent_class"));
+    assert!(c_source.contains("ptn_internal_interface_exists"));
     assert!(c_source.contains("ptn_internal_method_exists"));
 }
 
@@ -11028,12 +11061,14 @@ fn compile_user_function_exists_registry_to_native_binary() {
         &input,
         "<?php
 function local() { return null; }
+function absolute() { echo \"absolute\\n\"; }
 class FunctionExistsBox {
     public static function helper() {}
 }
 var_dump(function_exists(\"local\"), function_exists(\"LOCAL\"), function_exists(\"strlen\"), function_exists(\"missing\"), function_exists(\"FunctionExistsBox::helper\"), function_exists(\"helper\"));
 var_dump(is_callable([\"FunctionExistsBox\", \"helper\"]));
 echo call_user_func(\"FunctionExistsBox::helper\");
+call_user_func(\"\\\\absolute\");
 ",
     )
     .unwrap();
@@ -11044,7 +11079,7 @@ echo call_user_func(\"FunctionExistsBox::helper\");
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nabsolute\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -12950,6 +12985,29 @@ var_dump(defined(\"DIRECTORY_SEPARATOR\"), defined(\"PATH_SEPARATOR\"));",
 }
 
 #[test]
+fn compile_ini_mode_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-ini-mode-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ini-mode-constants.php");
+    let output = root.join("ini-mode-constants-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(INI_USER, INI_PERDIR, INI_SYSTEM, INI_ALL, defined('INI_ALL'), constant('INI_ALL'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\nint(4)\nint(7)\nbool(true)\nint(7)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_environment_and_include_path_internals_to_native_binary() {
     let root = temp_dir("ptn-native-environment-include-path-internals");
     fs::create_dir_all(&root).unwrap();
@@ -13061,6 +13119,29 @@ var_dump(defined(\"C\"), defined(\"c\"));\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(false)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_undefined_constant_throws_catchable_error_to_native_binary() {
+    let root = temp_dir("ptn-native-undefined-constant-catch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("undefined-constant-catch.php");
+    let output = root.join("undefined-constant-catch-bin");
+    fs::write(
+        &input,
+        "<?php try { echo MISSING_CONST; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Undefined constant \"MISSING_CONST\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -22794,6 +22875,36 @@ var_dump($d);\n",
 }
 
 #[test]
+fn compile_include_path_folds_dirname_file_and_directory_separator_to_native_binary() {
+    let root = temp_dir("ptn-native-dirname-directory-separator-include");
+    let nested = root.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    let input = root.join("main.php");
+    let included = nested.join("payload.php");
+    let output = root.join("dirname-directory-separator-include-bin");
+    fs::write(&included, "<?php echo \"payload\\n\"; return \"ok\";").unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$value = include dirname(__FILE__) . DIRECTORY_SEPARATOR . \"nested\" . DIRECTORY_SEPARATOR . \"payload.php\";\n\
+var_dump($value);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "payload\nstring(2) \"ok\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+}
+
+#[test]
 fn compile_expression_statements_evaluate_and_discard_to_native_binary() {
     let root = temp_dir("ptn-native-expression-statements");
     fs::create_dir_all(&root).unwrap();
@@ -26039,6 +26150,7 @@ echo Sample::X, \"\\n\";
 var_dump(Sample::Data);
 echo Sample::label(), \"\\n\";
 var_dump(defined(\"sample::Label\"), constant(\"sample::Label\"));
+var_dump(ArrayObject::STD_PROP_LIST, \\ArrayObject::ARRAY_AS_PROPS, constant(\"arrayobject::STD_PROP_LIST\"), defined(\"ArrayObject::ARRAY_AS_PROPS\"));
 try {
     var_dump(Sample::label);
 } catch (Error $e) {
@@ -26063,6 +26175,10 @@ try {
             "hello\n",
             "bool(true)\n",
             "string(5) \"hello\"\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(1)\n",
+            "bool(true)\n",
             "Undefined constant Sample::label\n",
         )
     );
@@ -26135,6 +26251,26 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_fetch_dynamic_class_name(&runtime"));
     assert!(c_source.contains("ptn_string(\"Worker\")"));
+}
+
+#[test]
+fn compile_dynamic_new_normalizes_absolute_class_names_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-new-absolute-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-new-absolute-class.php");
+    let output = root.join("dynamic-new-absolute-class-bin");
+    fs::write(
+        &input,
+        "<?php class Worker {} $name = \"\\\\Worker\"; echo get_class(new $name), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Worker\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -29672,6 +29808,75 @@ echo ENABLED;
             "Lib\\Tools:mixed\n",
             "enabled\n",
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_namespace_aliases_apply_to_qualified_functions_and_constants() {
+    let root = temp_dir("ptn-native-namespace-qualified-function-constant-aliases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespace-qualified-function-constant-aliases.php");
+    let output = root.join("namespace-qualified-function-constant-aliases-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace Lib\Tools;
+
+const MARK = "const\n";
+
+function mark() {
+    echo __FUNCTION__, "\n";
+}
+
+namespace App;
+
+use Lib\Tools as Tools;
+
+Tools\mark();
+echo Tools\MARK;
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Lib\\Tools\\mark\nconst\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_namespace_function_declaration_precedes_internal_fallback() {
+    let root = temp_dir("ptn-native-namespace-function-before-internal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespace-function-before-internal.php");
+    let output = root.join("namespace-function-before-internal-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace Test\Ns1;
+
+function strlen($value) {
+    return __FUNCTION__;
+}
+
+echo strlen("hello"), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Test\\Ns1\\strlen\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

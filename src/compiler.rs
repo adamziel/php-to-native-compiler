@@ -673,6 +673,43 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         Expr::ShellExec { .. } => None,
         Expr::MagicConstant(MagicConstantKind::File, _) => Some(vec![source_file.to_string()]),
         Expr::MagicConstant(MagicConstantKind::Dir, _) => Some(vec![source_dir.to_string()]),
+        Expr::Constant(name, _) if name == "DIRECTORY_SEPARATOR" => {
+            Some(vec![std::path::MAIN_SEPARATOR.to_string()])
+        }
+        Expr::Constant(name, _) if name == "PATH_SEPARATOR" => {
+            Some(vec![if cfg!(windows) { ";" } else { ":" }.to_string()])
+        }
+        Expr::Call {
+            name, arguments, ..
+        } if name.eq_ignore_ascii_case("dirname")
+            && (arguments.len() == 1 || arguments.len() == 2) =>
+        {
+            let paths = bounded_include_paths(&arguments[0], source_file, source_dir)?;
+            let levels = if arguments.len() == 2 {
+                match &arguments[1] {
+                    Expr::Int(levels, _) if *levels >= 1 => usize::try_from(*levels).ok()?,
+                    _ => return None,
+                }
+            } else {
+                1
+            };
+            let mut resolved = Vec::new();
+            for path in paths {
+                push_unique_string(&mut resolved, compile_time_dirname(&path, levels));
+            }
+            Some(resolved)
+        }
+        Expr::Call {
+            name, arguments, ..
+        } if name.eq_ignore_ascii_case("realpath") && arguments.len() == 1 => {
+            let paths = bounded_include_paths(&arguments[0], source_file, source_dir)?;
+            let mut resolved = Vec::new();
+            for path in paths {
+                let canonical = fs::canonicalize(PathBuf::from(path)).ok()?;
+                push_unique_string(&mut resolved, canonical.to_string_lossy().into_owned());
+            }
+            Some(resolved)
+        }
         Expr::Binary {
             op: BinaryOp::Concat,
             left,
@@ -728,6 +765,16 @@ fn bounded_include_paths(expr: &Expr, source_file: &str, source_dir: &str) -> Op
         Expr::Grouped { expr, .. } => bounded_include_paths(expr, source_file, source_dir),
         _ => None,
     }
+}
+
+fn compile_time_dirname(path: &str, levels: usize) -> String {
+    let mut path = PathBuf::from(path);
+    for _ in 0..levels {
+        if let Some(parent) = path.parent() {
+            path = parent.to_path_buf();
+        }
+    }
+    path.to_string_lossy().into_owned()
 }
 
 fn push_unique_string(strings: &mut Vec<String>, value: String) {

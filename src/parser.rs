@@ -50,6 +50,7 @@ pub fn parse(source: &str) -> Result<Program> {
         class_aliases: HashMap::new(),
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
+        declared_functions: HashSet::new(),
         anonymous_classes: Vec::new(),
         nested_functions: Vec::new(),
         anonymous_class_name_counts: HashMap::new(),
@@ -72,6 +73,7 @@ struct Parser<'a> {
     class_aliases: HashMap<String, String>,
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
+    declared_functions: HashSet<String>,
     anonymous_classes: Vec<ClassDecl>,
     nested_functions: Vec<FunctionDecl>,
     anonymous_class_name_counts: HashMap<String, usize>,
@@ -756,15 +758,24 @@ impl Parser<'_> {
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
             NameResolution::Unqualified => {
                 let alias_key = parsed.name.to_ascii_lowercase();
+                let namespaced = self.qualify_current_namespace(&parsed.name);
                 if let Some(target) = self.function_aliases.get(&alias_key) {
                     target.clone()
+                } else if namespaced != parsed.name
+                    && self
+                        .declared_functions
+                        .contains(&namespaced.to_ascii_lowercase())
+                {
+                    namespaced
                 } else if is_modeled_internal_function_name(&alias_key) {
                     alias_key
                 } else {
-                    self.qualify_current_namespace(&parsed.name)
+                    namespaced
                 }
             }
-            NameResolution::Qualified => self.qualify_current_namespace(&parsed.name),
+            NameResolution::Qualified => {
+                self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
+            }
         };
         resolved.to_ascii_lowercase()
     }
@@ -783,7 +794,9 @@ impl Parser<'_> {
                     self.qualify_current_namespace(&parsed.name)
                 }
             }
-            NameResolution::Qualified => self.qualify_current_namespace(&parsed.name),
+            NameResolution::Qualified => {
+                self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
+            }
         }
     }
 
@@ -1881,6 +1894,7 @@ impl Parser<'_> {
             false
         };
         let (name, _) = self.parse_declaration_name("expected function name")?;
+        self.declared_functions.insert(name.to_ascii_lowercase());
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
@@ -6078,6 +6092,8 @@ fn is_modeled_builtin_interface_name(name: &str) -> bool {
         "arrayaccess"
             | "iterator"
             | "iteratoraggregate"
+            | "splobserver"
+            | "splsubject"
             | "traversable"
             | "stringable"
             | "throwable"
@@ -8190,6 +8206,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "get_called_class"
             | "get_class"
             | "get_parent_class"
+            | "interface_exists"
             | "stat"
             | "isset"
             | "empty"
@@ -8307,6 +8324,10 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "E_DEPRECATED"
             | "E_USER_DEPRECATED"
             | "E_ALL"
+            | "INI_USER"
+            | "INI_PERDIR"
+            | "INI_SYSTEM"
+            | "INI_ALL"
             | "CASE_LOWER"
             | "CASE_UPPER"
             | "SORT_REGULAR"
