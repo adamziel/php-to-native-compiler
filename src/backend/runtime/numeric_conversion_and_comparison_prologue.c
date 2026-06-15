@@ -1402,7 +1402,10 @@ static PTN_UNUSED PtnLookupResult ptn_throwable_object_property(
 static PTN_UNUSED char *ptn_throwable_message_string(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type == PTN_EXCEPTION) {
-        return ptn_duplicate_string(receiver.as.exception->message);
+        return ptn_duplicate_string_len(
+            receiver.as.exception->message,
+            receiver.as.exception->message_len
+        );
     }
     PtnLookupResult lookup = ptn_throwable_object_property(runtime, receiver, "message", line);
     if (!lookup.exists) {
@@ -1491,16 +1494,26 @@ static PTN_UNUSED PtnValue ptn_throwable_trace_value(PtnRuntime *runtime, PtnVal
 }
 
 static PTN_UNUSED PtnValue ptn_throwable_trace_string(PtnRuntime *runtime, PtnValue receiver, size_t line) {
-    (void)runtime;
-    (void)receiver;
     (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        PtnStringOperand trace = ptn_exception_trace_as_string_operand(
+            runtime,
+            receiver.as.exception
+        );
+        return ptn_owned_string_len(trace.owned, trace.len);
+    }
     return ptn_owned_string(ptn_duplicate_string("#0 {main}"));
 }
 
 static PTN_UNUSED PtnValue ptn_throwable_to_string(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type == PTN_EXCEPTION) {
-        return ptn_owned_string(ptn_value_to_string(receiver));
+        PtnStringOperand text = ptn_exception_to_string_operand(
+            runtime,
+            receiver.as.exception
+        );
+        return ptn_owned_string_len(text.owned, text.len);
     }
     const char *class_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : "Exception";
     char *message = ptn_throwable_message_string(runtime, receiver, line);
@@ -2321,9 +2334,18 @@ static PTN_UNUSED PtnValue ptn_call_method(
                 "Too many arguments to exception method"
             );
         }
-<<<<<<< HEAD
         if (ptn_exception_name_equal(name, "getMessage")) {
-            return ptn_owned_string(ptn_throwable_message_string(runtime, receiver, line));
+            if (receiver.type == PTN_EXCEPTION) {
+                return ptn_owned_string_len(
+                    ptn_duplicate_string_len(
+                        receiver.as.exception->message,
+                        receiver.as.exception->message_len
+                    ),
+                    receiver.as.exception->message_len
+                );
+            }
+            PtnStringOperand message = ptn_object_exception_message(runtime, receiver, line);
+            return ptn_owned_string_len(message.owned, message.len);
         }
         if (ptn_exception_name_equal(name, "getCode")) {
             return ptn_int(ptn_throwable_int_property(runtime, receiver, "code", 0, line));
@@ -2348,38 +2370,7 @@ static PTN_UNUSED PtnValue ptn_call_method(
         }
         if (ptn_exception_name_equal(name, "__toString")) {
             return ptn_throwable_to_string(runtime, receiver, line);
-=======
-        return ptn_owned_string_len(
-            ptn_duplicate_string_len(
-                receiver.as.exception->message,
-                receiver.as.exception->message_len
-            ),
-            receiver.as.exception->message_len
-        );
-    }
-    if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "getTrace")) {
-        if (argc != 0) {
-            ptn_throw_exception(
-                runtime,
-                "ArgumentCountError",
-                "Too many arguments to exception method getTrace()"
-            );
->>>>>>> 9a5cca772 (WIP: checkpoint (auto))
         }
-    }
-    if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "getTraceAsString")) {
-        if (argc != 0) {
-            ptn_throw_exception(
-                runtime,
-                "ArgumentCountError",
-                "Too many arguments to exception method getTraceAsString()"
-            );
-        }
-        PtnStringOperand trace = ptn_exception_trace_as_string_operand(
-            runtime,
-            receiver.as.exception
-        );
-        return ptn_owned_string_len(trace.owned, trace.len);
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (
