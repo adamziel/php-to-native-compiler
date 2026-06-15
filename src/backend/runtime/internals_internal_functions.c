@@ -10611,6 +10611,24 @@ static void ptn_emit_function_warning(
     size_t line
 );
 
+static char *ptn_fopen_c_mode(const char *mode) {
+    if (mode[0] != 'x') {
+        return ptn_duplicate_string(mode);
+    }
+    size_t len = strlen(mode);
+    char *c_mode = malloc(len + 2);
+    if (c_mode == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    c_mode[0] = 'w';
+    if (len > 1) {
+        memcpy(c_mode + 1, mode + 1, len - 1);
+    }
+    c_mode[len] = 'x';
+    c_mode[len + 1] = '\0';
+    return c_mode;
+}
+
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "fopen", 1, "filename", args[0], line);
@@ -10630,7 +10648,9 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_bool(0);
     }
 
-    FILE *stream = fopen(path, mode);
+    char *c_mode = ptn_fopen_c_mode(mode);
+    FILE *stream = fopen(path, c_mode);
+    free(c_mode);
     if (stream == NULL) {
         char detail[192];
         int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
@@ -10803,7 +10823,7 @@ static PtnResource *ptn_internal_expect_open_directory_arg(
         int written = snprintf(
             message,
             sizeof(message),
-            "%s(): Argument #1 ($dir_handle) must be an open directory resource",
+            "%s(): Argument #1 ($dir_handle) must be a valid Directory resource",
             function_name
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -11019,10 +11039,7 @@ static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnVa
 }
 
 static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "fseek", args[0], line);
-    if (resource == NULL) {
-        return ptn_null();
-    }
+    PtnValue stream_value = ptn_value_deref(args[0]);
     int64_t offset = ptn_internal_expect_integer_arg(runtime, "fseek", 2, "offset", args[1], line);
     int64_t whence = argc >= 3
         ? ptn_internal_expect_integer_arg(runtime, "fseek", 3, "whence", args[2], line)
@@ -11030,6 +11047,37 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    if (stream_value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "fseek(): Argument #1 ($stream) must be of type resource, %s given",
+            ptn_offset_container_type_name(stream_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (stream_value.as.resource->directory != NULL) {
+#if !defined(_WIN32)
+        rewinddir((DIR *)stream_value.as.resource->directory);
+#endif
+        (void)offset;
+        (void)whence;
+        return ptn_int(0);
+    }
+    if (stream_value.as.resource->stream == NULL) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "fseek(): Argument #1 ($stream) must be an open stream resource"
+        );
+        return ptn_null();
+    }
+    PtnResource *resource = stream_value.as.resource;
     int seek_whence = (int)whence;
     if (seek_whence != SEEK_SET && seek_whence != SEEK_CUR && seek_whence != SEEK_END) {
         return ptn_int(-1);
@@ -12617,26 +12665,42 @@ static int64_t ptn_stat_field_value(const struct stat *info, PtnStatField field)
     return 0;
 }
 
-static void ptn_stat_array_set(PtnValue *array, int64_t index, const char *name, int64_t value) {
+static void ptn_stat_array_set_index(PtnValue *array, int64_t index, int64_t value) {
     ptn_array_set_entry(array->as.array, ptn_array_int_key(index), ptn_int(value));
+}
+
+static void ptn_stat_array_set_name(PtnValue *array, const char *name, int64_t value) {
     ptn_array_set_entry(array->as.array, ptn_array_string_key(name), ptn_int(value));
 }
 
 static PtnValue ptn_stat_array_from_info(const struct stat *info) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    ptn_stat_array_set(&result, 0, "dev", ptn_stat_field_value(info, PTN_STAT_FIELD_DEV));
-    ptn_stat_array_set(&result, 1, "ino", ptn_stat_field_value(info, PTN_STAT_FIELD_INO));
-    ptn_stat_array_set(&result, 2, "mode", ptn_stat_field_value(info, PTN_STAT_FIELD_MODE));
-    ptn_stat_array_set(&result, 3, "nlink", ptn_stat_field_value(info, PTN_STAT_FIELD_NLINK));
-    ptn_stat_array_set(&result, 4, "uid", ptn_stat_field_value(info, PTN_STAT_FIELD_UID));
-    ptn_stat_array_set(&result, 5, "gid", ptn_stat_field_value(info, PTN_STAT_FIELD_GID));
-    ptn_stat_array_set(&result, 6, "rdev", ptn_stat_field_value(info, PTN_STAT_FIELD_RDEV));
-    ptn_stat_array_set(&result, 7, "size", ptn_stat_field_value(info, PTN_STAT_FIELD_SIZE));
-    ptn_stat_array_set(&result, 8, "atime", ptn_stat_field_value(info, PTN_STAT_FIELD_ATIME));
-    ptn_stat_array_set(&result, 9, "mtime", ptn_stat_field_value(info, PTN_STAT_FIELD_MTIME));
-    ptn_stat_array_set(&result, 10, "ctime", ptn_stat_field_value(info, PTN_STAT_FIELD_CTIME));
-    ptn_stat_array_set(&result, 11, "blksize", ptn_stat_field_value(info, PTN_STAT_FIELD_BLKSIZE));
-    ptn_stat_array_set(&result, 12, "blocks", ptn_stat_field_value(info, PTN_STAT_FIELD_BLOCKS));
+    ptn_stat_array_set_index(&result, 0, ptn_stat_field_value(info, PTN_STAT_FIELD_DEV));
+    ptn_stat_array_set_index(&result, 1, ptn_stat_field_value(info, PTN_STAT_FIELD_INO));
+    ptn_stat_array_set_index(&result, 2, ptn_stat_field_value(info, PTN_STAT_FIELD_MODE));
+    ptn_stat_array_set_index(&result, 3, ptn_stat_field_value(info, PTN_STAT_FIELD_NLINK));
+    ptn_stat_array_set_index(&result, 4, ptn_stat_field_value(info, PTN_STAT_FIELD_UID));
+    ptn_stat_array_set_index(&result, 5, ptn_stat_field_value(info, PTN_STAT_FIELD_GID));
+    ptn_stat_array_set_index(&result, 6, ptn_stat_field_value(info, PTN_STAT_FIELD_RDEV));
+    ptn_stat_array_set_index(&result, 7, ptn_stat_field_value(info, PTN_STAT_FIELD_SIZE));
+    ptn_stat_array_set_index(&result, 8, ptn_stat_field_value(info, PTN_STAT_FIELD_ATIME));
+    ptn_stat_array_set_index(&result, 9, ptn_stat_field_value(info, PTN_STAT_FIELD_MTIME));
+    ptn_stat_array_set_index(&result, 10, ptn_stat_field_value(info, PTN_STAT_FIELD_CTIME));
+    ptn_stat_array_set_index(&result, 11, ptn_stat_field_value(info, PTN_STAT_FIELD_BLKSIZE));
+    ptn_stat_array_set_index(&result, 12, ptn_stat_field_value(info, PTN_STAT_FIELD_BLOCKS));
+    ptn_stat_array_set_name(&result, "dev", ptn_stat_field_value(info, PTN_STAT_FIELD_DEV));
+    ptn_stat_array_set_name(&result, "ino", ptn_stat_field_value(info, PTN_STAT_FIELD_INO));
+    ptn_stat_array_set_name(&result, "mode", ptn_stat_field_value(info, PTN_STAT_FIELD_MODE));
+    ptn_stat_array_set_name(&result, "nlink", ptn_stat_field_value(info, PTN_STAT_FIELD_NLINK));
+    ptn_stat_array_set_name(&result, "uid", ptn_stat_field_value(info, PTN_STAT_FIELD_UID));
+    ptn_stat_array_set_name(&result, "gid", ptn_stat_field_value(info, PTN_STAT_FIELD_GID));
+    ptn_stat_array_set_name(&result, "rdev", ptn_stat_field_value(info, PTN_STAT_FIELD_RDEV));
+    ptn_stat_array_set_name(&result, "size", ptn_stat_field_value(info, PTN_STAT_FIELD_SIZE));
+    ptn_stat_array_set_name(&result, "atime", ptn_stat_field_value(info, PTN_STAT_FIELD_ATIME));
+    ptn_stat_array_set_name(&result, "mtime", ptn_stat_field_value(info, PTN_STAT_FIELD_MTIME));
+    ptn_stat_array_set_name(&result, "ctime", ptn_stat_field_value(info, PTN_STAT_FIELD_CTIME));
+    ptn_stat_array_set_name(&result, "blksize", ptn_stat_field_value(info, PTN_STAT_FIELD_BLKSIZE));
+    ptn_stat_array_set_name(&result, "blocks", ptn_stat_field_value(info, PTN_STAT_FIELD_BLOCKS));
     return result;
 }
 
