@@ -2891,5 +2891,5 @@ Newly passing rows:
 Evidence commands:
 `PHPT_PROGRESS_DIR=/tmp/ptn-vvpn-before-class-alias-correct timeout 900s tools/run-bounded-phpt.sh --classify-harness-programs /home/claude/gt/ptn_from_scratch/polecats/guard-506/ptn_from_scratch/.runtime/ptn-vvpn/full20k-class-alias-rows.txt`
 from detached worktree `/tmp/ptn-vvpn-before-worktree` at `178374c799e5`, and
-`PHPT_PROGRESS_DIR=.runtime/ptn-vvpn-class-alias-after-subclass-callbacks timeout 900s tools/run-bounded-phpt.sh --classify-harness-programs .runtime/ptn-vvpn/full20k-class-alias-rows.txt`
+`PHPT_PROGRESS_DIR=.runtime/ptn-vvpn-class-alias-after-rebased-final timeout 900s tools/run-bounded-phpt.sh --classify-harness-programs .runtime/ptn-vvpn/full20k-class-alias-rows.txt`
 on this branch.
