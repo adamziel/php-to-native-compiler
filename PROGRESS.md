@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-90cm compare64bit object/number diagnostics | 6 | 6 |
 | ptn-vvpn class_alias metadata slice | 38 | 13 |
 | ptn-w17z.36 extract typed references | 1 | 1 |
 | ptn-2cij ENV/CLEAN SKIPIF preconditions | 33 | 0 |
@@ -37,6 +38,13 @@ Current hook: `ptn-w17z.36` extract typed references passed 1/1 at
 `.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt`.
 Previous hook: `ptn-vj4r` class_alias namespace metadata passed 5/5 at
 `.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt`.
+
+## 2026-06-15 ptn-90cm Compare64bit Object/Number Diagnostics
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Final focused row pack (`.runtime/ptn-90cm-compare64bit-final-rebased/summary-20260615T173306Z.txt`) | 6 selected / 6 runnable | 6 |
+| Integrated focused merge run (`.runtime/merge-ptn-90cm-compare64bit/summary-20260615T191655Z.txt`) | 6 selected / 6 runnable | 6 |
 
 ## 2026-06-15 ptn-w17z.36 Extract Typed References
 

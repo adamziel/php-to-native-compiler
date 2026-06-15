@@ -1,0 +1,7 @@
+# ptn-90cm: Zend 64-bit comparison object/number diagnostic parity residual.
+Zend/tests/comparison/compare_001_64bit.phpt
+Zend/tests/comparison/compare_002_64bit.phpt
+Zend/tests/comparison/compare_003_64bit.phpt
+Zend/tests/comparison/compare_004_64bit.phpt
+Zend/tests/comparison/compare_005_64bit.phpt
+Zend/tests/comparison/compare_006_64bit.phpt

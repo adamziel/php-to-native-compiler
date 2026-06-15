@@ -803,6 +803,65 @@ static int ptn_array_user_compare(
     return 0;
 }
 
+static PtnRuntime *ptn_var_dump_active_runtime = NULL;
+
+static void ptn_var_dump_write(const char *data, size_t len) {
+    if (data == NULL || len == 0) {
+        return;
+    }
+    if (ptn_var_dump_active_runtime != NULL) {
+        ptn_output_write(ptn_var_dump_active_runtime, data, len);
+        return;
+    }
+    fwrite(data, 1, len, stdout);
+}
+
+static int ptn_var_dump_fputs(const char *data, FILE *stream) {
+    (void)stream;
+    ptn_var_dump_write(data, data == NULL ? 0 : strlen(data));
+    return 0;
+}
+
+static size_t ptn_var_dump_fwrite(const void *data, size_t size, size_t nmemb, FILE *stream) {
+    (void)stream;
+    if (size != 0 && nmemb > SIZE_MAX / size) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_var_dump_write((const char *)data, size * nmemb);
+    return nmemb;
+}
+
+static int ptn_var_dump_printf(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int needed = vsnprintf(NULL, 0, format, args_copy);
+    va_end(args_copy);
+    if (needed < 0) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = malloc((size_t)needed + 1);
+    if (buffer == NULL) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    int written = vsnprintf(buffer, (size_t)needed + 1, format, args);
+    va_end(args);
+    if (written < 0 || written > needed) {
+        free(buffer);
+        ptn_abort_out_of_memory();
+    }
+    ptn_var_dump_write(buffer, (size_t)written);
+    free(buffer);
+    return written;
+}
+
+#define printf(...) ptn_var_dump_printf(__VA_ARGS__)
+#define fputs(data, stream) ptn_var_dump_fputs((data), (stream))
+#define fwrite(data, size, nmemb, stream) ptn_var_dump_fwrite((data), (size), (nmemb), (stream))
+
 static void ptn_var_dump_indent(size_t indent) {
     for (size_t i = 0; i < indent; i++) {
         fputs("  ", stdout);
@@ -1355,6 +1414,8 @@ static int ptn_var_dump_magic_debug_info(
 }
 
 static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnRuntime *previous_dump_runtime = ptn_var_dump_active_runtime;
+    ptn_var_dump_active_runtime = runtime;
     for (size_t i = 0; i < argc; i++) {
         PtnDumpSeenArrays seen;
         ptn_dump_seen_arrays_init(&seen);
@@ -1367,6 +1428,7 @@ static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const Pt
         }
         ptn_dump_seen_arrays_free(&seen);
     }
+    ptn_var_dump_active_runtime = previous_dump_runtime;
     return ptn_null();
 }
 
@@ -1482,16 +1544,22 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
 }
 
 static PtnValue ptn_internal_debug_zval_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)line;
+    PtnRuntime *previous_dump_runtime = ptn_var_dump_active_runtime;
+    ptn_var_dump_active_runtime = runtime;
     for (size_t i = 0; i < argc; i++) {
         PtnDumpSeenArrays seen;
         ptn_dump_seen_arrays_init(&seen);
         ptn_debug_zval_dump_value_indented(args[i], 0, &seen);
         ptn_dump_seen_arrays_free(&seen);
     }
+    ptn_var_dump_active_runtime = previous_dump_runtime;
     return ptn_null();
 }
+
+#undef fwrite
+#undef fputs
+#undef printf
 
 static PtnValue ptn_internal__ptn_cow_debug_reset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
@@ -1649,7 +1717,6 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
 }
 
 static PtnValue ptn_internal_print_r(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)line;
     int return_output = argc >= 2 && ptn_is_truthy(args[1]);
     PtnStringBuffer buffer;
@@ -1658,7 +1725,7 @@ static PtnValue ptn_internal_print_r(PtnRuntime *runtime, size_t argc, const Ptn
     if (return_output) {
         return ptn_owned_string_len(buffer.data, buffer.len);
     }
-    fwrite(buffer.data, 1, buffer.len, stdout);
+    ptn_output_write(runtime, buffer.data, buffer.len);
     free(buffer.data);
     return ptn_bool(1);
 }
@@ -5698,7 +5765,6 @@ static PtnValue ptn_internal_array_flip(PtnRuntime *runtime, size_t argc, const 
 }
 
 static PtnValue ptn_internal_array_keys(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_keys", 1, "array", args[0]);
     int has_search_value = argc >= 2;
     int strict = argc >= 3 && ptn_is_truthy(args[2]);
@@ -5708,7 +5774,7 @@ static PtnValue ptn_internal_array_keys(PtnRuntime *runtime, size_t argc, const 
         if (has_search_value) {
             int matched = strict
                 ? ptn_compare_identical(args[1], entry->value)
-                : ptn_compare_equal(args[1], entry->value);
+                : ptn_compare_equal(runtime, args[1], entry->value, line);
             if (!matched) {
                 continue;
             }
@@ -6729,13 +6795,12 @@ static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const P
 }
 
 static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "in_array", 2, "haystack", args[1]);
     int strict = argc >= 3 && ptn_is_truthy(args[2]);
     for (size_t i = 0; i < array->len; i++) {
         int matched = strict
             ? ptn_compare_identical(args[0], array->entries[i].value)
-            : ptn_compare_equal(args[0], array->entries[i].value);
+            : ptn_compare_equal(runtime, args[0], array->entries[i].value, line);
         if (matched) {
             return ptn_bool(1);
         }
@@ -6744,13 +6809,12 @@ static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const Pt
 }
 
 static PtnValue ptn_internal_array_search(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_search", 2, "haystack", args[1]);
     int strict = argc >= 3 && ptn_is_truthy(args[2]);
     for (size_t i = 0; i < array->len; i++) {
         int matched = strict
             ? ptn_compare_identical(args[0], array->entries[i].value)
-            : ptn_compare_equal(args[0], array->entries[i].value);
+            : ptn_compare_equal(runtime, args[0], array->entries[i].value, line);
         if (matched) {
             return ptn_array_key_value(array->entries[i].key);
         }
@@ -17656,7 +17720,8 @@ static PtnValue ptn_internal_minmax(
     const char *function_name,
     size_t argc,
     const PtnValue *args,
-    int want_max
+    int want_max,
+    size_t line
 ) {
     PtnValue first = ptn_value_deref(args[0]);
     if (argc == 1 && first.type == PTN_ARRAY) {
@@ -17677,7 +17742,7 @@ static PtnValue ptn_internal_minmax(
         PtnValue best = ptn_value_clone_deref(first.as.array->entries[0].value);
         for (size_t i = 1; i < first.as.array->len; i++) {
             PtnValue candidate = ptn_value_deref(first.as.array->entries[i].value);
-            int compared = ptn_compare_order(candidate, best);
+            int compared = ptn_compare_order(runtime, candidate, best, line);
             if ((want_max && compared == PTN_COMPARE_GREATER) ||
                 (!want_max && compared == PTN_COMPARE_LESS)) {
                 ptn_value_destroy(&best);
@@ -17690,7 +17755,7 @@ static PtnValue ptn_internal_minmax(
     PtnValue best = ptn_value_clone_deref(args[0]);
     for (size_t i = 1; i < argc; i++) {
         PtnValue candidate = ptn_value_deref(args[i]);
-        int compared = ptn_compare_order(candidate, best);
+        int compared = ptn_compare_order(runtime, candidate, best, line);
         if ((want_max && compared == PTN_COMPARE_GREATER) ||
             (!want_max && compared == PTN_COMPARE_LESS)) {
             ptn_value_destroy(&best);
@@ -17701,13 +17766,11 @@ static PtnValue ptn_internal_minmax(
 }
 
 static PtnValue ptn_internal_max(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    return ptn_internal_minmax(runtime, "max", argc, args, 1);
+    return ptn_internal_minmax(runtime, "max", argc, args, 1, line);
 }
 
 static PtnValue ptn_internal_min(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    return ptn_internal_minmax(runtime, "min", argc, args, 0);
+    return ptn_internal_minmax(runtime, "min", argc, args, 0, line);
 }
 
 static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
