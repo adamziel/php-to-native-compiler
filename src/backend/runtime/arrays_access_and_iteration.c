@@ -549,6 +549,9 @@ static PTN_UNUSED void ptn_emit_undefined_property_warning(
     const char *property,
     size_t line
 ) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
     char message[192];
     int written = snprintf(
         message,
@@ -560,7 +563,15 @@ static PTN_UNUSED void ptn_emit_undefined_property_warning(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_emit_warning(&runtime->diagnostics, message, line);
+    fputc('\n', stdout);
+    runtime->diagnostics.emitted_warning = 1;
+    fputs("Warning: ", stdout);
+    fputs(message, stdout);
+    fputs(" in ", stdout);
+    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
+    fputs(" on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
 }
 
 static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_private_property_for_scope(
@@ -1724,6 +1735,13 @@ static PTN_UNUSED void ptn_object_unset_property(
         ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
     if (mutable_metadata != NULL) {
         mutable_metadata->is_unset = 1;
+        if (
+            !mutable_metadata->is_readonly &&
+            mutable_metadata->read_visibility == mutable_metadata->set_visibility
+        ) {
+            free(mutable_metadata->last_type_name);
+            mutable_metadata->last_type_name = NULL;
+        }
     }
     free(storage_key);
 }
@@ -2401,6 +2419,12 @@ static PTN_UNUSED int ptn_object_property_visible_for_foreach(
     }
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(object, key.as.string);
+    const char *display_name = metadata != NULL ? metadata->display_name : key.as.string;
+    const PtnObjectPropertyMetadata *scoped_private =
+        ptn_object_private_property_for_scope(object, display_name, access_scope);
+    if (scoped_private != NULL && strcmp(scoped_private->storage_name, key.as.string) != 0) {
+        return 0;
+    }
     if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
         return 1;
     }
@@ -2470,6 +2494,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
     iterator.index = 0;
     iterator.length = 0;
     iterator.current_key = ptn_array_int_key(0);
+    iterator.current_reference = NULL;
     iterator.watched_slot = NULL;
     iterator.line = 0;
     iterator.has_current_key = 0;
@@ -2486,6 +2511,7 @@ static PTN_UNUSED void ptn_array_iterator_clear_current_key(PtnArrayIterator *it
     }
     ptn_array_key_free(iterator->current_key);
     iterator->current_key = ptn_array_int_key(0);
+    iterator->current_reference = NULL;
     iterator->has_current_key = 0;
 }
 
@@ -2499,6 +2525,9 @@ static PTN_UNUSED void ptn_array_iterator_remember_current_key(PtnArrayIterator 
         return;
     }
     iterator->current_key = ptn_array_key_clone(iterator->array->entries[iterator->index].key);
+    iterator->current_reference = iterator->array->entries[iterator->index].value.type == PTN_REFERENCE
+        ? iterator->array->entries[iterator->index].value.as.reference
+        : NULL;
     iterator->has_current_key = 1;
 }
 
@@ -2560,9 +2589,8 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_array_snapshot(PtnArr
     if (array == NULL) {
         return iterator;
     }
-    iterator.array = array;
-    iterator.length = array->len;
-    ptn_array_retain(array);
+    iterator.array = ptn_array_clone(array);
+    iterator.length = iterator.array->len;
     iterator.valid = iterator.length != 0;
     ptn_array_iterator_remember_current_key(&iterator);
     return iterator;
@@ -2614,6 +2642,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
     iterator.access_scope = access_scope;
     iterator.valid = iterator.array->len != 0;
     iterator.live = 1;
+    ptn_object_retain(object);
     ptn_array_iterator_retain(iterator.array);
     ptn_array_iterator_skip_invisible_object_properties(&iterator);
     ptn_array_iterator_remember_current_key(&iterator);
@@ -2815,6 +2844,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
     }
+    iterator->current_reference = entry->value.as.reference;
     return ptn_value_clone(entry->value);
 }
 
@@ -2865,7 +2895,11 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
     size_t next_index = iterator->index + 1;
     if (iterator->has_current_key) {
         size_t current_index = ptn_array_find_key(iterator->array, iterator->current_key);
-        if (current_index < iterator->array->len) {
+        int current_identity_matches = current_index < iterator->array->len &&
+            (iterator->current_reference == NULL ||
+             (iterator->array->entries[current_index].value.type == PTN_REFERENCE &&
+              iterator->array->entries[current_index].value.as.reference == iterator->current_reference));
+        if (current_identity_matches) {
             next_index = current_index + 1;
         } else {
             next_index = iterator->index;
@@ -2907,7 +2941,10 @@ static PTN_UNUSED void ptn_array_iterator_destroy(PtnArrayIterator *iterator) {
         }
         iterator->array = NULL;
     }
-    iterator->object = NULL;
+    if (iterator->object != NULL) {
+        ptn_object_release(iterator->object);
+        iterator->object = NULL;
+    }
     iterator->runtime = NULL;
     iterator->access_scope = NULL;
     if (iterator->has_iterator_object) {
