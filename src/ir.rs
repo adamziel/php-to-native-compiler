@@ -148,6 +148,7 @@ pub enum TypeHint {
     Void,
     Never,
     Nullable(Box<TypeHint>),
+    Union(Vec<TypeHint>),
     Class(String),
 }
 
@@ -1385,6 +1386,9 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
         AstTypeHint::Void => TypeHint::Void,
         AstTypeHint::Never => TypeHint::Never,
         AstTypeHint::Nullable(inner) => TypeHint::Nullable(Box::new(lower_type_hint(*inner))),
+        AstTypeHint::Union(types) => {
+            TypeHint::Union(types.into_iter().map(lower_type_hint).collect())
+        }
         AstTypeHint::Class(name) => TypeHint::Class(name),
     }
 }
@@ -2852,6 +2856,11 @@ fn assertion_type_hint_text(type_hint: &AstTypeHint) -> String {
         AstTypeHint::Void => "void".to_string(),
         AstTypeHint::Never => "never".to_string(),
         AstTypeHint::Nullable(inner) => format!("?{}", assertion_type_hint_text(inner)),
+        AstTypeHint::Union(types) => types
+            .iter()
+            .map(assertion_type_hint_text)
+            .collect::<Vec<_>>()
+            .join("|"),
         AstTypeHint::Class(name) => name.clone(),
     }
 }

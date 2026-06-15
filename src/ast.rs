@@ -163,6 +163,7 @@ pub enum TypeHint {
     Void,
     Never,
     Nullable(Box<TypeHint>),
+    Union(Vec<TypeHint>),
     Class(String),
 }
 

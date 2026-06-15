@@ -2219,12 +2219,34 @@ impl Parser<'_> {
     }
 
     fn parse_type_hint(&mut self) -> Result<TypeHint> {
+        let span = self.peek().span;
+        let mut types = vec![self.parse_type_hint_atom(false)?];
+        while matches!(self.peek().kind, TokenKind::Pipe) {
+            self.advance();
+            types.push(self.parse_type_hint_atom(false)?);
+        }
+        union_type_hint(types, span)
+    }
+
+    fn parse_type_hint_atom(&mut self, allow_return_only_types: bool) -> Result<TypeHint> {
         if matches!(self.peek().kind, TokenKind::Question) {
             let span = self.advance().span;
-            let inner = self.parse_type_hint()?;
+            let inner = self.parse_type_hint_atom(allow_return_only_types)?;
             return nullable_type_hint(inner, span);
         }
         match &self.peek().kind {
+            TokenKind::Identifier(name)
+                if allow_return_only_types && name.eq_ignore_ascii_case("void") =>
+            {
+                self.advance();
+                Ok(TypeHint::Void)
+            }
+            TokenKind::Identifier(name)
+                if allow_return_only_types && name.eq_ignore_ascii_case("never") =>
+            {
+                self.advance();
+                Ok(TypeHint::Never)
+            }
             TokenKind::Null => {
                 self.advance();
                 Ok(TypeHint::Null)
@@ -2269,61 +2291,13 @@ impl Parser<'_> {
     }
 
     fn parse_return_type_hint(&mut self) -> Result<TypeHint> {
-        if matches!(self.peek().kind, TokenKind::Question) {
-            let span = self.advance().span;
-            let inner = self.parse_return_type_hint()?;
-            return nullable_type_hint(inner, span);
+        let span = self.peek().span;
+        let mut types = vec![self.parse_type_hint_atom(true)?];
+        while matches!(self.peek().kind, TokenKind::Pipe) {
+            self.advance();
+            types.push(self.parse_type_hint_atom(true)?);
         }
-        match &self.peek().kind {
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("void") => {
-                self.advance();
-                Ok(TypeHint::Void)
-            }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("never") => {
-                self.advance();
-                Ok(TypeHint::Never)
-            }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
-                self.advance();
-                Ok(TypeHint::Array)
-            }
-            TokenKind::Null => {
-                self.advance();
-                Ok(TypeHint::Null)
-            }
-            TokenKind::IntType | TokenKind::IntegerType => {
-                self.advance();
-                Ok(TypeHint::Int)
-            }
-            TokenKind::FloatType | TokenKind::DoubleType => {
-                self.advance();
-                Ok(TypeHint::Float)
-            }
-            TokenKind::StringType | TokenKind::BinaryType => {
-                self.advance();
-                Ok(TypeHint::String)
-            }
-            TokenKind::BoolType | TokenKind::BooleanType => {
-                self.advance();
-                Ok(TypeHint::Bool)
-            }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("mixed") => {
-                self.advance();
-                Ok(TypeHint::Mixed)
-            }
-            TokenKind::Backslash => {
-                let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
-                Ok(TypeHint::Class(class_name))
-            }
-            TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
-                let (class_name, _) = self.parse_resolved_class_name("expected type hint")?;
-                Ok(TypeHint::Class(class_name))
-            }
-            _ => {
-                let token = self.advance();
-                Err(Diagnostic::new("expected type hint", Some(token.span)))
-            }
-        }
+        union_type_hint(types, span)
     }
 
     fn peek_is_type_hint(&self) -> bool {
@@ -5708,8 +5682,57 @@ fn nullable_type_hint(type_hint: TypeHint, span: SourceSpan) -> Result<TypeHint>
         | TypeHint::Mixed
         | TypeHint::Void
         | TypeHint::Never
-        | TypeHint::Nullable(_) => Err(Diagnostic::new("invalid nullable type hint", Some(span))),
+        | TypeHint::Nullable(_)
+        | TypeHint::Union(_) => Err(Diagnostic::new("invalid nullable type hint", Some(span))),
         other => Ok(TypeHint::Nullable(Box::new(other))),
+    }
+}
+
+fn union_type_hint(types: Vec<TypeHint>, span: SourceSpan) -> Result<TypeHint> {
+    if types.len() == 1 {
+        return Ok(types.into_iter().next().expect("single type hint"));
+    }
+
+    let mut seen = Vec::new();
+    for type_hint in &types {
+        match type_hint {
+            TypeHint::Mixed | TypeHint::Void | TypeHint::Never | TypeHint::Nullable(_) => {
+                return Err(Diagnostic::new("invalid union type hint", Some(span)));
+            }
+            TypeHint::Union(_) => {
+                return Err(Diagnostic::new("invalid union type hint", Some(span)));
+            }
+            _ => {}
+        }
+
+        let key = type_hint_key(type_hint);
+        if seen.iter().any(|seen_key| seen_key == &key) {
+            return Err(Diagnostic::new("duplicate union type hint", Some(span)));
+        }
+        seen.push(key);
+    }
+
+    Ok(TypeHint::Union(types))
+}
+
+fn type_hint_key(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Null => "null".to_string(),
+        TypeHint::Array => "array".to_string(),
+        TypeHint::Int => "int".to_string(),
+        TypeHint::Float => "float".to_string(),
+        TypeHint::String => "string".to_string(),
+        TypeHint::Bool => "bool".to_string(),
+        TypeHint::Mixed => "mixed".to_string(),
+        TypeHint::Void => "void".to_string(),
+        TypeHint::Never => "never".to_string(),
+        TypeHint::Nullable(inner) => format!("?{}", type_hint_key(inner)),
+        TypeHint::Union(types) => types
+            .iter()
+            .map(type_hint_key)
+            .collect::<Vec<_>>()
+            .join("|"),
+        TypeHint::Class(name) => name.to_ascii_lowercase(),
     }
 }
 

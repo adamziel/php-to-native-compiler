@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.23 union type declaration parser row | 1 | 1 |
 | ptn-w17z.22 compile-time include path variables | 1 | 1 |
 | ptn-w17z.28 collected Generator runtime row pack | 6 | 6 |
 | ptn-w17z.34 output-buffer compact row | 1 | 1 |
@@ -17,14 +18,33 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T16:15Z.
-Measured latest: `ptn-w17z.22` compile-time include path variable acceptance selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and used in a compile-time concatenated include path. Previous: `ptn-w17z.28` completed the collected Generator runtime row pack at 6/6.
+Refresh: 2026-06-15T16:40Z.
+Measured latest: `ptn-w17z.23` union type declaration parser row selected 1
+row, kept 1 runnable, and passed 1/1 in the focused run.
+Latest: `ptn-w17z.23` completed generic parsing/lowering for union type
+declarations in userland function parameter and return hints, with exact boxed
+runtime checks for union arms.
+Previous: `ptn-w17z.22` supports `__DIR__` assigned to a simple variable and
+used in a compile-time concatenated include path.
 
-Current hook: `ptn-w17z.22` compile-time include path variable acceptance passed 1/1 at
-`.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
-Previous hook: `ptn-w17z.28` collected Generator runtime row pack passed 6/6 at
-`.runtime/merge-ptn-w17z28-generator-runtime/summary-20260615T163051Z.txt`.
+Current hook: `ptn-w17z.23` union type declaration parser row passed 1/1 at
+`.runtime/ptn-w17z23-fpow/summary-20260615T164026Z.txt`.
+Previous hook: `ptn-w17z.22` compile-time include path variable acceptance
+passed 1/1 at `.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt`.
+
+## 2026-06-15 ptn-w17z.23 Union Type Declaration Parser Row
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Focused `fpow.phpt` run (`.runtime/ptn-w17z23-fpow/summary-20260615T164026Z.txt`) | 1 selected / 1 runnable | 1 |
+
+Implemented behavior: userland function parameter and return type hints now
+parse and lower generic union declarations such as `int|float`, `null|Class`,
+and class/scalar return unions. Native userland call boundaries enforce boxed
+values against each union arm for fixed and variadic parameters, and return
+boundaries reject values outside the declared union. Scalar union coercion
+selection remains conservative: already-boxed matching scalar values pass,
+while broad weak-mode union coercion is not silently modeled.
 
 ## 2026-06-15 ptn-w17z.22 Compile-Time Include Path Variables
 
