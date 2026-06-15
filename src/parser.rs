@@ -3755,6 +3755,7 @@ impl Parser<'_> {
             if !self.allow_append_array_read {
                 reject_append_array_read(&left)?;
             }
+            reject_array_literal_holes(&left)?;
             return Ok(left);
         }
 
@@ -5097,6 +5098,15 @@ impl Parser<'_> {
     ) -> Result<(Vec<ArrayElement>, SourceSpan)> {
         let mut elements = Vec::new();
         while !self.at_array_terminator(&terminator) {
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                let span = self.advance().span;
+                elements.push(ArrayElement {
+                    key: None,
+                    value: ArrayElementValue::Hole(span),
+                    line: span.line,
+                });
+                continue;
+            }
             elements.push(self.parse_array_element()?);
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
@@ -6536,6 +6546,7 @@ fn collect_arrow_captures_from_expr(
                     collect_arrow_captures_from_expr(key, exclusions, seen, captures);
                 }
                 match &element.value {
+                    ArrayElementValue::Hole(_) => {}
                     ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
                         collect_arrow_captures_from_expr(value, exclusions, seen, captures);
                     }
@@ -9021,6 +9032,7 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
                     validate_control_transfers_in_expr(key)?;
                 }
                 match &element.value {
+                    ArrayElementValue::Hole(_) => {}
                     ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
                         validate_control_transfers_in_expr(value)?;
                     }
@@ -9401,6 +9413,7 @@ fn array_element_reference_to_variable(
         .as_ref()
         .and_then(|key| expr_array_literal_reference_to_variable(key, variable))
         .or_else(|| match &element.value {
+            ArrayElementValue::Hole(_) => None,
             ArrayElementValue::Reference(target) => {
                 reference_target_reference_to_variable(target, variable)
             }
@@ -9823,6 +9836,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
                     validate_anonymous_functions_in_expr(key, functions)?;
                 }
                 match &element.value {
+                    ArrayElementValue::Hole(_) => {}
                     ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
                         validate_anonymous_functions_in_expr(value, functions)?;
                     }
@@ -11380,12 +11394,22 @@ fn list_assignment_target_from_array_elements(
     span: SourceSpan,
 ) -> Result<ListAssignmentTarget> {
     let mut lowered = Vec::with_capacity(elements.len());
-    for element in elements {
+    for (index, element) in elements.into_iter().enumerate() {
+        if matches!(element.value, ArrayElementValue::Hole(_)) {
+            continue;
+        }
+        let key = element.key.or_else(|| {
+            Some(Expr::Int(
+                i64::try_from(index).expect("list destructuring index fits in i64"),
+                span,
+            ))
+        });
         let target = match element.value {
             ArrayElementValue::Value(value) => {
                 ListAssignmentElementTarget::Value(Box::new(assignment_target_from_expr(value)?))
             }
             ArrayElementValue::Reference(target) => ListAssignmentElementTarget::Reference(target),
+            ArrayElementValue::Hole(_) => unreachable!("list assignment holes are skipped"),
             ArrayElementValue::Unpack(value) => {
                 return Err(Diagnostic::new(
                     "Spread operator is not supported in assignments",
@@ -11393,10 +11417,10 @@ fn list_assignment_target_from_array_elements(
                 ));
             }
         };
-        lowered.push(ListAssignmentElement {
-            key: element.key,
-            target,
-        });
+        lowered.push(ListAssignmentElement { key, target });
+    }
+    if lowered.is_empty() {
+        return Err(Diagnostic::new("Cannot use empty list", Some(span)));
     }
     Ok(ListAssignmentTarget {
         elements: lowered,
@@ -11487,6 +11511,9 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
                     reject_append_array_read(key)?;
                 }
                 match &element.value {
+                    ArrayElementValue::Hole(span) => {
+                        return Err(Diagnostic::new("expected expression", Some(*span)));
+                    }
                     ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
                         reject_append_array_read(value)?;
                     }
@@ -11566,6 +11593,72 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::Variable(_, _)
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _) => {}
+    }
+    Ok(())
+}
+
+fn reject_array_literal_holes(expr: &Expr) -> Result<()> {
+    match expr {
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    reject_array_literal_holes(key)?;
+                }
+                match &element.value {
+                    ArrayElementValue::Hole(span) => {
+                        return Err(Diagnostic::new("expected expression", Some(*span)));
+                    }
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        reject_array_literal_holes(value)?;
+                    }
+                    ArrayElementValue::Reference(_) => {}
+                }
+            }
+        }
+        Expr::Grouped { expr, .. }
+        | Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::Clone { expr, .. } => reject_array_literal_holes(expr)?,
+        Expr::Binary { left, right, .. } => {
+            reject_array_literal_holes(left)?;
+            reject_array_literal_holes(right)?;
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            reject_array_literal_holes(condition)?;
+            if let Some(if_true) = if_true {
+                reject_array_literal_holes(if_true)?;
+            }
+            reject_array_literal_holes(if_false)?;
+        }
+        Expr::Call { arguments, .. }
+        | Expr::DynamicCall { arguments, .. }
+        | Expr::NewObject { arguments, .. }
+        | Expr::MethodCall { arguments, .. }
+        | Expr::DynamicMethodCall { arguments, .. }
+        | Expr::DynamicNewObject { arguments, .. } => {
+            for argument in arguments {
+                reject_array_literal_holes(argument)?;
+            }
+        }
+        Expr::ArrayAccess { array, index, .. } => {
+            reject_array_literal_holes(array)?;
+            if let Some(index) = index {
+                reject_array_literal_holes(index)?;
+            }
+        }
+        Expr::PropertyFetch { receiver, .. } | Expr::DynamicClassNameFetch { receiver, .. } => {
+            reject_array_literal_holes(receiver)?;
+        }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            reject_array_literal_holes(receiver)?;
+            reject_array_literal_holes(name)?;
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -11681,6 +11774,7 @@ fn is_supported_global_const_expr_with_options(
                     allow_const_array_unpack_error_operands,
                 )
             }) && match &element.value {
+                ArrayElementValue::Hole(_) => false,
                 ArrayElementValue::Value(value) => is_supported_global_const_expr_with_options(
                     value,
                     allow_const_array_unpack_error_operands,
@@ -11792,6 +11886,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
                 .as_ref()
                 .is_none_or(is_supported_parameter_default_expr)
                 && match &element.value {
+                    ArrayElementValue::Hole(_) => false,
                     ArrayElementValue::Value(value) => is_supported_parameter_default_expr(value),
                     ArrayElementValue::Unpack(value) => is_supported_parameter_default_expr(value),
                     ArrayElementValue::Reference(_) => false,
@@ -11896,6 +11991,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
                     validate_class_scoped_constant_expr(key, parent_name)?;
                 }
                 match &element.value {
+                    ArrayElementValue::Hole(_) => {}
                     ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
                         validate_class_scoped_constant_expr(value, parent_name)?;
                     }

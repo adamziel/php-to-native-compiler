@@ -2824,6 +2824,32 @@ fn parser_accepts_append_and_list_assignment_expressions() {
 }
 
 #[test]
+fn parser_accepts_short_list_assignment_holes() {
+    let program = parser::parse("<?php [,&$value] = $items;").unwrap();
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected expression statement");
+    };
+    let Expr::Assign { target, value, .. } = expression else {
+        panic!("expected assignment expression");
+    };
+    let AssignmentTarget::List(target) = target else {
+        panic!("expected list assignment target");
+    };
+
+    assert_eq!(target.elements.len(), 1);
+    assert!(matches!(
+        target.elements[0].key.as_ref(),
+        Some(Expr::Int(1, _))
+    ));
+    assert!(matches!(
+        &target.elements[0].target,
+        ListAssignmentElementTarget::Reference(ReferenceTarget::Variable { name, .. })
+            if name == "value"
+    ));
+    assert!(matches!(value.as_ref(), Expr::Variable(name, _) if name == "items"));
+}
+
+#[test]
 fn parser_accepts_variable_root_array_assignment_and_unset() {
     let program = parser::parse(
         "<?php $items[null] = \"value\"; $items[] += 2; $items[0][\"nested\"] = 3; unset($items[null], $items[0][\"nested\"], $items);",
@@ -17699,6 +17725,116 @@ NULL\n"
 }
 
 #[test]
+fn compile_short_list_reference_hole_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-short-list-reference-hole-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("short-list-reference-hole-assignment.php");
+    let output = root.join("short-list-reference-hole-assignment-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [1, 2];\n\
+[,&$value] = $items;\n\
+$value = 5;\n\
+var_dump($items);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  &int(5)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reference_list_assignment_from_value_return_emits_notice_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-list-assignment-from-value-return-notice");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-list-assignment-from-value-return-notice.php");
+    let output = root.join("reference-list-assignment-from-value-return-notice-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function no_ref($items) { return $items; }\n\
+$items = [1, 2];\n\
+[&$value] = no_ref($items);\n\
+var_dump($value);\n\
+var_dump($items);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nNotice: Attempting to set reference to non referenceable value in ptn on line 4\nint(1)\narray(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reference_list_assignment_from_property_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-list-assignment-from-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-list-assignment-from-property.php");
+    let output = root.join("reference-list-assignment-from-property-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Box { public $items = [[\"hello\"]]; }\n\
+$box = new Box();\n\
+[&$value] = $box->items;\n\
+$value[] = \"world\";\n\
+var_dump($box->items);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  &array(2) {\n    [0]=>\n    string(5) \"hello\"\n    [1]=>\n    string(5) \"world\"\n  }\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reference_list_assignment_from_static_property_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-list-assignment-from-static-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-list-assignment-from-static-property.php");
+    let output = root.join("reference-list-assignment-from-static-property-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Box { public static $items = [[\"hello\"]]; }\n\
+[&$value] = Box::$items;\n\
+$value[] = \"world\";\n\
+var_dump(Box::$items);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  &array(2) {\n    [0]=>\n    string(5) \"hello\"\n    [1]=>\n    string(5) \"world\"\n  }\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_list_reference_elements_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-list-reference-elements");
     fs::create_dir_all(&root).unwrap();
@@ -17727,8 +17863,38 @@ var_dump($items);\n",
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_iterator_by_ref_from_variable"));
     assert!(c_source.contains("ptn_runtime_reference_for_array_value_dim"));
     assert!(c_source.contains("ptn_runtime_bind_variable_reference(&runtime, \"slot\""));
+}
+
+#[test]
+fn compile_foreach_list_reference_destructuring_mutates_source_slots_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-list-reference-destructuring-mutates-source-slots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-list-reference-destructuring-mutates-source-slots.php");
+    let output = root.join("foreach-list-reference-destructuring-mutates-source-slots-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$coords = [[1, 2], [3, 4]];\n\
+foreach ($coords as [&$x, $y]) {\n\
+    $x++;\n\
+    $y++;\n\
+}\n\
+var_dump($coords);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    int(2)\n    [1]=>\n    int(2)\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    &int(4)\n    [1]=>\n    int(4)\n  }\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

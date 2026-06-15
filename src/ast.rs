@@ -778,6 +778,7 @@ pub struct ArrayElement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArrayElementValue {
+    Hole(SourceSpan),
     Value(Expr),
     Reference(ReferenceTarget),
     Unpack(Expr),
