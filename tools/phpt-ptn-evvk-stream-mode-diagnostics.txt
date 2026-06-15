@@ -1,0 +1,9 @@
+# ptn-evvk focused stream read/write mode diagnostics and metadata rows.
+ext/standard/tests/file/fread_variation3.phpt
+ext/standard/tests/file/fgets_variation4.phpt
+ext/standard/tests/file/fwrite_basic.phpt
+ext/standard/tests/file/fwrite_variation2.phpt
+ext/standard/tests/file/fwrite_variation3.phpt
+ext/standard/tests/file/fwrite_variation4.phpt
+ext/standard/tests/streams/stream_get_meta_data_file_error.phpt
+ext/standard/tests/streams/stream_get_meta_data_file_variation1.phpt

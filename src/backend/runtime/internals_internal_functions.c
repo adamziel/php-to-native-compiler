@@ -12614,6 +12614,10 @@ static char *ptn_fopen_c_mode(const char *mode) {
     return c_mode;
 }
 
+static int ptn_stream_mode_is_append(PtnResource *resource) {
+    return resource != NULL && resource->stream_mode != NULL && resource->stream_mode[0] == 'a';
+}
+
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "fopen", 1, "filename", args[0], line);
@@ -12653,6 +12657,9 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(mode);
         free(path);
         return ptn_bool(0);
+    }
+    if (mode[0] == 'a') {
+        (void)fseek(stream, 0, SEEK_SET);
     }
 
     PtnValue resource = ptn_resource(ptn_resource_new_stream(stream, path, mode));
@@ -13073,6 +13080,28 @@ static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t a
     return ptn_internal_stream_filter_attach(runtime, "stream_filter_prepend", argc, args, line, 1);
 }
 
+static void ptn_emit_stream_write_notice(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t requested_len,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Write of %zu bytes failed with errno=%d %s",
+        function_name,
+        requested_len,
+        errno,
+        strerror(errno)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_notice(&runtime->diagnostics, message, line);
+}
+
 static PtnValue ptn_internal_fwrite_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -13108,14 +13137,26 @@ static PtnValue ptn_internal_fwrite_named(
         }
     }
 
+    int64_t append_position = -1;
+    if (ptn_stream_mode_is_append(resource)) {
+        append_position = ptn_stream_tell(resource);
+    }
+    errno = 0;
     size_t written = ptn_stream_write_filtered(resource, data.data, length);
     ptn_string_operand_free(data);
     if (written != length && ptn_stream_error(resource)) {
+        ptn_emit_stream_write_notice(runtime, function_name, length, line);
         ptn_stream_clear_error(resource);
         return ptn_bool(0);
     }
     if (written > (size_t)INT64_MAX) {
         ptn_abort_out_of_memory();
+    }
+    if (append_position >= 0) {
+        if (append_position > INT64_MAX - (int64_t)written) {
+            ptn_abort_out_of_memory();
+        }
+        (void)ptn_stream_seek(resource, append_position + (int64_t)written, SEEK_SET);
     }
     return ptn_int((int64_t)written);
 }

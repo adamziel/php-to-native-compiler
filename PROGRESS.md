@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-evvk stream mode diagnostics | 8 | 8 |
 | ptn-w17z.26 Serializable/SPL unserialize row pack | 5 | 5 |
 | ptn-w17z.23 union type declaration parser row | 1 | 1 |
 | ptn-utht filtered stream copy row pack | 4 | 4 |
@@ -23,14 +24,22 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:07Z.
-Measured latest: `ptn-w17z.26` Serializable/SPL unserialize row pack selected 5 rows, kept 5 runnable, and passed 5/5 in the focused run.
-Latest: `ptn-w17z.26` completed the checked-in Serializable/SPL unserialize row pack. Previous: `ptn-w17z.23` completed the checked-in union type declaration parser row.
+Refresh: 2026-06-15T18:16Z.
+Measured latest: `ptn-evvk` stream mode diagnostics selected 8 rows, kept 8 runnable, and passed 8/8 in the focused run.
+Latest: `ptn-evvk` completed the checked-in stream mode diagnostics row pack. Previous: `ptn-w17z.26` completed the checked-in Serializable/SPL unserialize row pack.
 
-Current hook: `ptn-w17z.26` Serializable/SPL unserialize row pack passed 5/5 at
+Current hook: `ptn-evvk` stream mode diagnostics passed 8/8 at
+`.runtime/merge-ptn-evvk-stream-mode-diagnostics/summary-20260615T181618Z.txt`.
+Previous hook: `ptn-w17z.26` Serializable/SPL unserialize row pack passed 5/5 at
 `.runtime/merge-ptn-w17z26-serializable-spl-unserialize/summary-20260615T180738Z.txt`.
-Previous hook: `ptn-w17z.23` union type declaration parser row passed 1/1 at
-`.runtime/merge-ptn-w17z23-union-type-fpow/summary-20260615T180055Z.txt`.
+
+## 2026-06-15 ptn-evvk Stream Mode Diagnostics
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current master focused baseline (`.runtime/ptn-evvk-stream-mode-before/summary-20260615T163232Z.txt`) | 8 selected / 8 runnable | 7 |
+| Final rebased focused run (`.runtime/ptn-evvk-stream-mode-rebased/summary-20260615T164445Z.txt`) | 8 selected / 8 runnable | 8 |
+| Integrated focused merge run (`.runtime/merge-ptn-evvk-stream-mode-diagnostics/summary-20260615T181618Z.txt`) | 8 selected / 8 runnable | 8 |
 
 ## 2026-06-15 ptn-w17z.26 Serializable/SPL Unserialize Row Pack
 
