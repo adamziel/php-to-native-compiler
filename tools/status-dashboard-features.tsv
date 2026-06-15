@@ -1,0 +1,41 @@
+# refreshed_at_utc=2026-06-15T20:41:00Z
+# source_commit=8da347897a9e
+# php_src_revision=8c63ec400ce8e07c57a8d9499317b96a8beafb8b
+# window_start_utc=2026-06-14T21:00Z
+# window_hours=24
+feature	ported_tests	passed_tests	upstream_tests	completed_hour_utc	newly_passed_tests	evidence
+ptn-snt7 object/class metadata row pack	8	8	8	2026-06-15T20:00Z	8	.runtime/merge-ptn-snt7-object-class-metadata/summary-20260615T203520Z.txt
+ptn-456b ext-standard strings row pack	27	27	47	2026-06-15T20:00Z	27	.runtime/merge-ptn-456b-ext-standard-strings/summary-20260615T202910Z.txt
+ptn-y4f1 COW/reference sort/object walk row pack	72	59	72	2026-06-15T20:00Z	7	.runtime/merge-ptn-y4f1-array-internal/summary-20260615T201659Z.txt
+ptn-w17z.31 iterable/DNF type row pack	27	27	27	2026-06-15T20:00Z	26	.runtime/merge-ptn-w17z31-iterable-dnf/summary-20260615T200733Z.txt
+ptn-w17z.29 SPL iterator wrapper row pack	7	7	7	2026-06-15T20:00Z	5	.runtime/merge-ptn-w17z29-spl-iterator-wrapper/summary-20260615T200046Z.txt
+ptn-50g7 COW/reference array-walk and sort row pack	10	10	103	2026-06-15T19:00Z	10	.runtime/merge-ptn-50g7-cow-foreach/summary-20260615T194929Z.txt
+ptn-jrzu CSV stream parity row pack	22	22	57	2026-06-15T19:00Z	22	.runtime/merge-ptn-jrzu-csv-stream-parity/summary-20260615T193520Z.txt
+ptn-w17z.16.1 ErrorException severity row pack	2	2	2	2026-06-15T19:00Z	1	.runtime/merge-ptn-w17z16-1-errorexception-severity/summary-20260615T192939Z.txt
+ptn-w17z.16.2 nested try/finally row pack	9	9	9	2026-06-15T19:00Z	9	.runtime/merge-ptn-w17z16-2-nested-try-finally/summary-20260615T192312Z.txt
+ptn-90cm compare64bit object/number diagnostics	6	6	6	2026-06-15T19:00Z	6	.runtime/merge-ptn-90cm-compare64bit/summary-20260615T191655Z.txt
+ptn-vvpn class_alias metadata slice	38	13	38	2026-06-15T19:00Z	13	.runtime/merge-ptn-vvpn-class-alias/summary-20260615T190216Z.txt
+ptn-w17z.36 extract typed references	1	1	1	2026-06-15T18:00Z	1	.runtime/merge-ptn-w17z36-extract-typed-ref/summary-20260615T185434Z.txt
+ptn-2cij ENV/CLEAN SKIPIF preconditions	33	0	2086	2026-06-15T17:00Z	0	.runtime/ptn-2cij/env-clean-rebased/summary-20260615T171427Z.txt
+ptn-vj4r class_alias namespace metadata	5	5	5	2026-06-15T18:00Z	5	.runtime/merge-ptn-vj4r-class-alias-metadata-row-pack/summary-20260615T183720Z.txt
+ptn-144g parser residual row pack	2	2	2	2026-06-15T18:00Z	2	.runtime/merge-ptn-144g-parser-residuals/summary-20260615T182723Z.txt
+ptn-evvk stream mode diagnostics	8	8	8	2026-06-15T18:00Z	1	.runtime/merge-ptn-evvk-stream-mode-diagnostics/summary-20260615T181618Z.txt
+ptn-w17z.26 Serializable/SPL unserialize row pack	5	5	5	2026-06-15T18:00Z	5	.runtime/merge-ptn-w17z26-serializable-spl-unserialize/summary-20260615T180738Z.txt
+ptn-w17z.23 union type declaration parser row	1	1	1	2026-06-15T18:00Z	1	.runtime/merge-ptn-w17z23-union-type-fpow/summary-20260615T180055Z.txt
+ptn-utht filtered stream copy row pack	4	4	4	2026-06-15T17:00Z	4	.runtime/merge-ptn-utht-filtered-stream-copy/summary-20260615T175250Z.txt
+ptn-vqg1 temp stream wrappers row pack	3	3	3	2026-06-15T17:00Z	3	.runtime/merge-ptn-vqg1-temp-streams/summary-20260615T171433Z.txt
+ptn-w17z.30 foreach mutation visibility row pack	11	7	11	2026-06-15T17:00Z	7	.runtime/merge-ptn-w17z30-foreach-mutation/summary-20260615T170725Z.txt
+ptn-w17z.2 sort flags row pack	78	72	78	2026-06-15T16:00Z	72	.runtime/merge-ptn-w17z2-sort-flags/summary-20260615T164329Z.txt
+ptn-w17z.22 compile-time include path variables	1	1	1	2026-06-15T16:00Z	1	.runtime/ptn-w17z22-acceptance-postrebase/summary-20260615T161501Z.txt
+ptn-w17z.28 collected Generator runtime row pack	6	6	6	2026-06-15T16:00Z	6	.runtime/merge-ptn-w17z28-generator-runtime/summary-20260615T163051Z.txt
+ptn-w17z.34 output-buffer compact row	1	1	1	2026-06-15T16:00Z	1	.runtime/merge-ptn-w17z34-output-buffer-compact/summary-20260615T162323Z.txt
+ptn-w17z.35 compact closure this row pack	2	2	2	2026-06-15T16:00Z	2	.runtime/merge-ptn-w17z35-compact-closure-this/summary-20260615T160939Z.txt
+ptn-w17z.33 extract globals refs row pack	3	3	3	2026-06-15T15:00Z	3	.runtime/merge-ptn-w17z33-extract-globals-refs/summary-20260615T155503Z.txt
+ptn-w17z.25 serialize/unserialize reference identity row pack	6	6	6	2026-06-15T15:00Z	6	.runtime/merge-ptn-w17z25-serialize-reference-identity/summary-20260615T154738Z.txt
+ptn-w17z.12 magic methods/lifecycle row pack	49	49	49	2026-06-15T14:00Z	49	.runtime/merge-ptn-w17z12-magic-lifecycle/summary-20260615T144358Z.txt
+ptn-w17z.10 SKIPIF harness row pack	185	3	185	2026-06-15T17:00Z	3	.runtime/merge-ptn-w17z10-final-row-pack-classify/summary-20260615T170000Z.txt
+ptn-w17z.14 Override attribute row pack	34	34	50	2026-06-15T13:00Z	34	.runtime/ptn-w17z14-row-pack-after-rebase2/summary-20260615T133103Z.txt
+ptn-w17z.16 exception/backtrace/lifecycle row pack	41	41	41	2026-06-15T15:00Z	18	.runtime/merge-ptn-w17z16-exception-lifecycle/summary-20260615T151015Z.txt
+ptn-w17z.18 numeric/math/conversions row pack	35	35	35	2026-06-15T14:00Z	35	tools/phpt-ptn-w17z18-numeric-math-conversions-row-pack.txt
+ptn-w17z.16.3 exception formatting row pack	12	12	13	2026-06-15T16:00Z	12	.runtime/merge-ptn-w17z16-3-exception-format/summary-20260615T160318Z.txt
+ptn-kia6 by-ref/reference-boundary row pack	107	75	126	2026-06-15T13:00Z	30	.runtime/merge-ptn-kia6-by-ref-boundary-after-metadata-gate/summary-20260615T134443Z.txt

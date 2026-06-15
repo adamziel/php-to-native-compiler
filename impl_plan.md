@@ -12,8 +12,9 @@ patches for individual PHPT rows.
 - Do not use remote tunnels or expose the local network.
 - A task is ready only after it is integrated into the active branch, tested,
   documented, committed, and pushed.
-- Keep `PROGRESS.md` current in the remote repository after each meaningful
-  behavior change.
+- Record implementation evidence in the bead or merge request after each
+  meaningful behavior change. Do not update generated status dashboards from
+  implementation lanes.
 - Prefer small integrated batches over large unmerged inventory.
 - Never stop the whole production line on one failing integration. Contain the
   defect, split the work, preserve evidence, and keep independent slices moving.
@@ -32,7 +33,8 @@ The default cycle is:
 1. Choose one generic semantic capability.
 2. Implement the smallest native-exercised vertical slice.
 3. Add unit tests and at least one CLI/native binary proof.
-4. Update docs and `PROGRESS.md`.
+4. Update behavior docs when needed and record focused evidence in the bead or
+   merge request.
 5. Run `tools/checkpoint.sh`.
 6. Push only after the checkpoint commit succeeds and the remote update is a
    fast-forward.
@@ -212,7 +214,7 @@ strings as implementation conditions.
 
 ## Progress Metrics
 
-Track these in `PROGRESS.md`:
+Track these through focused evidence and the generated `STATUS.md` dashboard:
 
 - Native-compiled language features that are implemented and tested.
 - Number of Rust tests and native binary integration tests.
