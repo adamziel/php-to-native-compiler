@@ -858,6 +858,54 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STR_PAD_BOTH);
         return 1;
     }
+    if (strcmp(name, "HTML_SPECIALCHARS") == 0) {
+        *out = ptn_int(PTN_HTML_SPECIALCHARS);
+        return 1;
+    }
+    if (strcmp(name, "HTML_ENTITIES") == 0) {
+        *out = ptn_int(PTN_HTML_ENTITIES);
+        return 1;
+    }
+    if (strcmp(name, "ENT_NOQUOTES") == 0) {
+        *out = ptn_int(PTN_ENT_NOQUOTES);
+        return 1;
+    }
+    if (strcmp(name, "ENT_COMPAT") == 0) {
+        *out = ptn_int(PTN_ENT_COMPAT);
+        return 1;
+    }
+    if (strcmp(name, "ENT_QUOTES") == 0) {
+        *out = ptn_int(PTN_ENT_QUOTES);
+        return 1;
+    }
+    if (strcmp(name, "ENT_IGNORE") == 0) {
+        *out = ptn_int(PTN_ENT_IGNORE);
+        return 1;
+    }
+    if (strcmp(name, "ENT_SUBSTITUTE") == 0) {
+        *out = ptn_int(PTN_ENT_SUBSTITUTE);
+        return 1;
+    }
+    if (strcmp(name, "ENT_DISALLOWED") == 0) {
+        *out = ptn_int(PTN_ENT_DISALLOWED);
+        return 1;
+    }
+    if (strcmp(name, "ENT_HTML401") == 0) {
+        *out = ptn_int(PTN_ENT_HTML401);
+        return 1;
+    }
+    if (strcmp(name, "ENT_XML1") == 0) {
+        *out = ptn_int(PTN_ENT_XML1);
+        return 1;
+    }
+    if (strcmp(name, "ENT_XHTML") == 0) {
+        *out = ptn_int(PTN_ENT_XHTML);
+        return 1;
+    }
+    if (strcmp(name, "ENT_HTML5") == 0) {
+        *out = ptn_int(PTN_ENT_HTML5);
+        return 1;
+    }
     if (strcmp(name, "COUNT_NORMAL") == 0) {
         *out = ptn_int(PTN_COUNT_NORMAL);
         return 1;

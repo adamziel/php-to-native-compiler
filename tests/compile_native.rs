@@ -5872,6 +5872,60 @@ bool(true)\nbool(true)\n"
 }
 
 #[test]
+fn compile_html_word_and_number_string_functions_to_native_binary() {
+    let root = temp_dir("ptn-native-html-word-number-strings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("html-word-number-strings.php");
+    let output = root.join("html-word-number-strings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ENT_QUOTES, ENT_SUBSTITUTE, ENT_HTML5, HTML_SPECIALCHARS);\n\
+echo htmlspecialchars(\"A 'quote' & <tag> \\\"x\\\"\"), \"\\n\";\n\
+echo htmlspecialchars(\"\\\"300 < 400\\\" &amp;\", ENT_NOQUOTES, null, false), \"\\n\";\n\
+echo htmlspecialchars_decode(\"Roy&#039;s &lt;x&gt; &quot;y&quot; &apos;z&apos;\"), \"\\n\";\n\
+echo htmlspecialchars_decode(\"&apos; &#39; &#x27; &#63;\", ENT_QUOTES | ENT_HTML5), \"\\n\";\n\
+echo ucwords(\"testing-dashed-words\", \"-\"), \"\\n\";\n\
+echo ucwords(\"testing ranges\", \"a..e\"), \"\\n\";\n\
+echo wordwrap(\"123 1234567890 123\", 10, \"|==\", true), \"\\n\";\n\
+print_r(substr_replace(array(\"abc\" => \"llsskdkk\", 4 => \"hello\"), \"zzz\", 0, -2));\n\
+echo decbin(65), \"\\n\";\n\
+echo number_format(-1234.5678, 2), \"\\n\";\n\
+echo number_format(1234.5678, 2, \".\", \" \"), \"\\n\";\n\
+var_dump(function_exists(\"htmlspecialchars\"), function_exists(\"ucwords\"), defined(\"ENT_QUOTES\"));\n\
+try { wordwrap(\"x\", 0, \"\", false); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3)\nint(8)\nint(48)\nint(0)\n\
+A &#039;quote&#039; &amp; &lt;tag&gt; &quot;x&quot;\n\
+\"300 &lt; 400\" &amp;\n\
+Roy's <x> \"y\" &apos;z&apos;\n\
+' ' ' &#63;\n\
+Testing-Dashed-Words\n\
+TeSting raNgeS\n\
+123|==1234567890|==123\n\
+Array\n\
+(\n\
+\x20\x20\x20\x20[abc] => zzzkk\n\
+\x20\x20\x20\x20[4] => zzzlo\n\
+)\n\
+1000001\n\
+-1,234.57\n\
+1 234.57\n\
+bool(true)\nbool(true)\nbool(true)\n\
+wordwrap(): Argument #3 ($break) must not be empty\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strrev_internal_function_to_native_binary() {
     let root = temp_dir("ptn-native-strrev");
     fs::create_dir_all(&root).unwrap();
