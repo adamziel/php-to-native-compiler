@@ -11,7 +11,7 @@
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,date,pcre,standard,Reflection"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="assert.exception,date.timezone,display_errors,error_reporting,extension_dir,include_path,pcre.backtrack_limit,precision,zend.assertions"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="assert.exception,date.timezone,display_errors,error_reporting,extension_dir,include_path,max_memory_limit,memory_limit,pcre.backtrack_limit,precision,zend.assertions"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CAPTURE_STDIO,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,GET,HEADERS,PHPDBG,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT="ENV"
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT="CLEAN"
@@ -703,10 +703,6 @@ ptn_phpt_unsupported_ini_blocker() {
     key=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
 
     case "$key" in
-        memory_limit)
-            printf 'unsupported-resource-limit-ini\trequires PHP memory_limit parsing/enforcement; PTN has no Zend memory manager/resource limit boundary\n'
-            return 0
-            ;;
         register_argc_argv|variables_order|enable_post_data_reading|file_uploads|max_input_vars|max_input_nesting_level|post_max_size|always_populate_raw_post_data)
             printf 'unsupported-request-input-ini\trequires request/input/upload SAPI state controlled by %s; PTN native CLI currently has no request boundary\n' "$key"
             return 0

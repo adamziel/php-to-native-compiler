@@ -13312,6 +13312,30 @@ static int ptn_runtime_set_zend_assertions(PtnRuntime *runtime, int64_t requeste
     return 1;
 }
 
+static const char *ptn_runtime_current_memory_limit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root->memory_limit == NULL) {
+        return "128M";
+    }
+    return root->memory_limit;
+}
+
+static const char *ptn_runtime_current_max_memory_limit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root->max_memory_limit == NULL) {
+        return "-1";
+    }
+    return root->max_memory_limit;
+}
+
+static void ptn_runtime_set_memory_limit(PtnRuntime *runtime, const char *value, size_t line) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    char *copy = ptn_duplicate_string(value);
+    free(root->memory_limit);
+    root->memory_limit = copy;
+    ptn_runtime_apply_memory_limit_bound(root, line, 1);
+}
+
 static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
     return ptn_string_operand_ascii_case_equal(extension, "Core") ||
         ptn_string_operand_ascii_case_equal(extension, "date") ||
@@ -13340,6 +13364,14 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
         *out = ptn_string(".");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "max_memory_limit")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_max_memory_limit(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "memory_limit")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_memory_limit(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
@@ -13473,6 +13505,12 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "memory_limit")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        ptn_runtime_set_memory_limit(runtime, root->initial_memory_limit, line);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
         ptn_runtime_set_assert_exception(runtime, 1);
         ptn_string_operand_free(option);
@@ -13511,6 +13549,20 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_runtime_set_assert_exception(runtime, ptn_is_truthy(args[1]));
         ptn_string_operand_free(option);
         return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "memory_limit")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_memory_limit(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_memory_limit(runtime, next, line);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "max_memory_limit")) {
+        ptn_string_operand_free(option);
+        return ptn_bool(0);
     }
     PtnValue known_value;
     int known = ptn_ini_value(runtime, option, &known_value);
@@ -13705,6 +13757,14 @@ static PtnValue ptn_internal_ini_get(PtnRuntime *runtime, size_t argc, const Ptn
     int found = ptn_ini_value(runtime, option, &value);
     ptn_string_operand_free(option);
     return found ? value : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_ini_parse_quantity(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    int64_t result = ptn_parse_ini_quantity_with_warning(runtime, input.data, input.len, line);
+    ptn_string_operand_free(input);
+    return ptn_int(result);
 }
 
 static PtnValue ptn_internal_get_cfg_var(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -14675,6 +14735,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "implode", 1, 2, ptn_internal_implode },
         { "in_array", 2, 3, ptn_internal_in_array },
         { "ini_get", 1, 1, ptn_internal_ini_get },
+        { "ini_parse_quantity", 1, 1, ptn_internal_ini_parse_quantity },
         { "ini_restore", 1, 1, ptn_internal_ini_restore },
         { "ini_set", 2, 2, ptn_internal_ini_set },
         { "intdiv", 2, 2, ptn_internal_intdiv },

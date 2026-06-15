@@ -515,6 +515,9 @@ struct PtnRuntime {
     PtnValue current_receiver;
     const char *by_ref_argument_function_name_override;
     char *include_path;
+    char *memory_limit;
+    char *initial_memory_limit;
+    char *max_memory_limit;
     int strict_types;
     int initial_zend_assertions;
     int zend_assertions;

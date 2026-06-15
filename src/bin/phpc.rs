@@ -97,6 +97,8 @@ struct RuntimeIni {
     assert_exception: Option<String>,
     display_errors: Option<String>,
     error_reporting: Option<i64>,
+    memory_limit: Option<String>,
+    max_memory_limit: Option<String>,
     zend_assertions: Option<String>,
 }
 
@@ -207,9 +209,13 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
     } else if name.eq_ignore_ascii_case("display_errors") {
         ini.display_errors = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("error_reporting") {
-        if let Ok(parsed) = raw_value.trim().parse::<i64>() {
+        if let Some(parsed) = parse_error_reporting_value(raw_value.trim()) {
             ini.error_reporting = Some(parsed);
         }
+    } else if name.eq_ignore_ascii_case("memory_limit") {
+        ini.memory_limit = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("max_memory_limit") {
+        ini.max_memory_limit = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
     }
@@ -229,6 +235,177 @@ fn normalize_ini_scalar(raw_value: &str) -> String {
         "1".to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErrorReportingToken {
+    Value(i64),
+    And,
+    Or,
+    Xor,
+    Not,
+    LParen,
+    RParen,
+}
+
+struct ErrorReportingParser {
+    tokens: Vec<ErrorReportingToken>,
+    pos: usize,
+}
+
+fn parse_error_reporting_value(value: &str) -> Option<i64> {
+    if let Ok(parsed) = value.parse::<i64>() {
+        return Some(parsed);
+    }
+    let tokens = tokenize_error_reporting(value)?;
+    if tokens.is_empty() {
+        return None;
+    }
+    let mut parser = ErrorReportingParser { tokens, pos: 0 };
+    let result = parser.parse_or()?;
+    (parser.pos == parser.tokens.len()).then_some(result)
+}
+
+fn tokenize_error_reporting(value: &str) -> Option<Vec<ErrorReportingToken>> {
+    let mut tokens = Vec::new();
+    let mut chars = value.char_indices().peekable();
+    while let Some((start, ch)) = chars.next() {
+        match ch {
+            ' ' | '\t' | '\r' | '\n' => {}
+            '&' => tokens.push(ErrorReportingToken::And),
+            '|' => tokens.push(ErrorReportingToken::Or),
+            '^' => tokens.push(ErrorReportingToken::Xor),
+            '~' => tokens.push(ErrorReportingToken::Not),
+            '(' => tokens.push(ErrorReportingToken::LParen),
+            ')' => tokens.push(ErrorReportingToken::RParen),
+            '-' | '0'..='9' => {
+                let mut end = start + ch.len_utf8();
+                while let Some(&(idx, next)) = chars.peek() {
+                    if next.is_ascii_digit() {
+                        chars.next();
+                        end = idx + next.len_utf8();
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(ErrorReportingToken::Value(
+                    value[start..end].parse::<i64>().ok()?,
+                ));
+            }
+            'A'..='Z' | 'a'..='z' | '_' => {
+                let mut end = start + ch.len_utf8();
+                while let Some(&(idx, next)) = chars.peek() {
+                    if next.is_ascii_alphanumeric() || next == '_' {
+                        chars.next();
+                        end = idx + next.len_utf8();
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(ErrorReportingToken::Value(error_reporting_constant(
+                    &value[start..end],
+                )?));
+            }
+            _ => return None,
+        }
+    }
+    Some(tokens)
+}
+
+fn error_reporting_constant(name: &str) -> Option<i64> {
+    if name.eq_ignore_ascii_case("E_ERROR") {
+        Some(1)
+    } else if name.eq_ignore_ascii_case("E_WARNING") {
+        Some(2)
+    } else if name.eq_ignore_ascii_case("E_PARSE") {
+        Some(4)
+    } else if name.eq_ignore_ascii_case("E_NOTICE") {
+        Some(8)
+    } else if name.eq_ignore_ascii_case("E_CORE_ERROR") {
+        Some(16)
+    } else if name.eq_ignore_ascii_case("E_CORE_WARNING") {
+        Some(32)
+    } else if name.eq_ignore_ascii_case("E_COMPILE_ERROR") {
+        Some(64)
+    } else if name.eq_ignore_ascii_case("E_COMPILE_WARNING") {
+        Some(128)
+    } else if name.eq_ignore_ascii_case("E_USER_ERROR") {
+        Some(256)
+    } else if name.eq_ignore_ascii_case("E_USER_WARNING") {
+        Some(512)
+    } else if name.eq_ignore_ascii_case("E_USER_NOTICE") {
+        Some(1024)
+    } else if name.eq_ignore_ascii_case("E_STRICT") {
+        Some(2048)
+    } else if name.eq_ignore_ascii_case("E_RECOVERABLE_ERROR") {
+        Some(4096)
+    } else if name.eq_ignore_ascii_case("E_DEPRECATED") {
+        Some(8192)
+    } else if name.eq_ignore_ascii_case("E_USER_DEPRECATED") {
+        Some(16384)
+    } else if name.eq_ignore_ascii_case("E_ALL") {
+        Some(32767)
+    } else {
+        None
+    }
+}
+
+impl ErrorReportingParser {
+    fn parse_or(&mut self) -> Option<i64> {
+        let mut value = self.parse_xor()?;
+        while self.consume(ErrorReportingToken::Or) {
+            value |= self.parse_xor()?;
+        }
+        Some(value)
+    }
+
+    fn parse_xor(&mut self) -> Option<i64> {
+        let mut value = self.parse_and()?;
+        while self.consume(ErrorReportingToken::Xor) {
+            value ^= self.parse_and()?;
+        }
+        Some(value)
+    }
+
+    fn parse_and(&mut self) -> Option<i64> {
+        let mut value = self.parse_unary()?;
+        while self.consume(ErrorReportingToken::And) {
+            value &= self.parse_unary()?;
+        }
+        Some(value)
+    }
+
+    fn parse_unary(&mut self) -> Option<i64> {
+        if self.consume(ErrorReportingToken::Not) {
+            Some(!self.parse_unary()?)
+        } else {
+            self.parse_primary()
+        }
+    }
+
+    fn parse_primary(&mut self) -> Option<i64> {
+        match self.tokens.get(self.pos).copied()? {
+            ErrorReportingToken::Value(value) => {
+                self.pos += 1;
+                Some(value)
+            }
+            ErrorReportingToken::LParen => {
+                self.pos += 1;
+                let value = self.parse_or()?;
+                self.consume(ErrorReportingToken::RParen).then_some(value)
+            }
+            _ => None,
+        }
+    }
+
+    fn consume(&mut self, token: ErrorReportingToken) -> bool {
+        if self.tokens.get(self.pos) == Some(&token) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -258,6 +435,12 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     }
     if let Some(error_reporting) = ini.error_reporting {
         command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());
+    }
+    if let Some(memory_limit) = &ini.memory_limit {
+        command.env("PTN_PHP_MEMORY_LIMIT", memory_limit);
+    }
+    if let Some(max_memory_limit) = &ini.max_memory_limit {
+        command.env("PTN_PHP_MAX_MEMORY_LIMIT", max_memory_limit);
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);

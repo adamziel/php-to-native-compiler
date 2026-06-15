@@ -455,6 +455,177 @@ static PTN_UNUSED void ptn_emit_spaced_warning(PtnDiagnosticSink *diagnostics, c
     fputc('\n', stdout);
 }
 
+static int64_t ptn_ini_quantity_multiplier(char unit) {
+    switch (tolower((unsigned char)unit)) {
+        case 'g':
+            return 1024LL * 1024LL * 1024LL;
+        case 'm':
+            return 1024LL * 1024LL;
+        case 'k':
+            return 1024LL;
+        default:
+            return 1;
+    }
+}
+
+static int ptn_ini_quantity_is_multiplier(char unit) {
+    char lower = (char)tolower((unsigned char)unit);
+    return lower == 'g' || lower == 'm' || lower == 'k';
+}
+
+static int64_t ptn_parse_ini_quantity_bytes(const char *data, size_t len) {
+    char *copy = ptn_duplicate_string_len(data, len);
+    char *end = copy;
+    errno = 0;
+    long long parsed = strtoll(copy, &end, 0);
+    int had_digits = end != copy;
+    int64_t value = had_digits ? (int64_t)parsed : 0;
+    size_t end_offset = (size_t)(end - copy);
+    free(copy);
+
+    size_t last = len;
+    while (last > 0 && isspace((unsigned char)data[last - 1])) {
+        last--;
+    }
+    if (last == 0) {
+        return value;
+    }
+    char unit = data[last - 1];
+    size_t tail = end_offset;
+    while (tail < last && isspace((unsigned char)data[tail])) {
+        tail++;
+    }
+    if (tail < last && ptn_ini_quantity_is_multiplier(unit)) {
+        value *= ptn_ini_quantity_multiplier(unit);
+    }
+    return value;
+}
+
+static int64_t ptn_parse_ini_quantity_cstr(const char *value) {
+    return ptn_parse_ini_quantity_bytes(value, strlen(value));
+}
+
+static void ptn_emit_ini_quantity_warning(
+    PtnRuntime *runtime,
+    const char *message,
+    size_t line,
+    int trailing_blank
+) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    if (!trailing_blank && line > 0 && runtime->diagnostics.emitted_warning) {
+        fputc('\n', stdout);
+    }
+    fputs("Warning: ", stdout);
+    fputs(message, stdout);
+    fputs(" in ", stdout);
+    fputs(runtime->source_path != NULL ? runtime->source_path : "Unknown", stdout);
+    fputs(" on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+    runtime->diagnostics.emitted_warning = 1;
+    if (trailing_blank) {
+        fputc('\n', stdout);
+    }
+}
+
+static PTN_UNUSED int64_t ptn_parse_ini_quantity_with_warning(PtnRuntime *runtime, const char *data, size_t len, size_t line) {
+    char *copy = ptn_duplicate_string_len(data, len);
+    char *end = copy;
+    errno = 0;
+    long long parsed = strtoll(copy, &end, 0);
+    int had_digits = end != copy;
+    int64_t value = had_digits ? (int64_t)parsed : 0;
+    size_t end_offset = (size_t)(end - copy);
+    free(copy);
+
+    size_t last = len;
+    while (last > 0 && isspace((unsigned char)data[last - 1])) {
+        last--;
+    }
+    if (last == 0) {
+        return value;
+    }
+
+    size_t tail = end_offset;
+    while (tail < last && isspace((unsigned char)data[tail])) {
+        tail++;
+    }
+    if (tail >= last) {
+        return value;
+    }
+
+    char unit = data[last - 1];
+    char lower_unit = (char)tolower((unsigned char)unit);
+    char *raw = ptn_duplicate_string_len(data, len);
+    if (ptn_ini_quantity_is_multiplier(unit)) {
+        value *= ptn_ini_quantity_multiplier(unit);
+        if (tail != last - 1) {
+            char warning[512];
+            snprintf(
+                warning,
+                sizeof(warning),
+                "Invalid quantity \"%s\", interpreting as \"%lld %c\" for backwards compatibility",
+                raw,
+                had_digits ? parsed : 0,
+                lower_unit
+            );
+            ptn_emit_ini_quantity_warning(runtime, warning, line, 1);
+        }
+    } else {
+        char warning[512];
+        snprintf(
+            warning,
+            sizeof(warning),
+            "Invalid quantity \"%s\": unknown multiplier \"%c\", interpreting as \"%lld\" for backwards compatibility",
+            raw,
+            unit,
+            (long long)value
+        );
+        ptn_emit_ini_quantity_warning(runtime, warning, line, 1);
+    }
+    free(raw);
+    return value;
+}
+
+static void ptn_emit_memory_limit_clamp_warning(
+    PtnRuntime *runtime,
+    int64_t requested,
+    int64_t max,
+    size_t line
+) {
+    char warning[256];
+    snprintf(
+        warning,
+        sizeof(warning),
+        "Failed to set memory_limit to %lld bytes. Setting to max_memory_limit instead (currently: %lld bytes)",
+        (long long)requested,
+        (long long)max
+    );
+    ptn_emit_ini_quantity_warning(runtime, warning, line, 0);
+}
+
+static void ptn_runtime_replace_memory_limit(PtnRuntime *runtime, const char *value) {
+    char *copy = ptn_duplicate_string(value);
+    free(runtime->memory_limit);
+    runtime->memory_limit = copy;
+}
+
+static void ptn_runtime_apply_memory_limit_bound(PtnRuntime *runtime, size_t line, int warn) {
+    int64_t max = ptn_parse_ini_quantity_cstr(runtime->max_memory_limit);
+    if (max < 0) {
+        return;
+    }
+    int64_t requested = ptn_parse_ini_quantity_cstr(runtime->memory_limit);
+    if (requested < 0 || requested > max) {
+        if (warn && requested > max) {
+            ptn_emit_memory_limit_clamp_warning(runtime, requested, max, line);
+        }
+        ptn_runtime_replace_memory_limit(runtime, runtime->max_memory_limit);
+    }
+}
+
 static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
         return;
@@ -577,6 +748,20 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override = NULL;
     runtime->include_path = ptn_duplicate_string(".");
+    const char *configured_max_memory_limit = getenv("PTN_PHP_MAX_MEMORY_LIMIT");
+    runtime->max_memory_limit = ptn_duplicate_string(
+        configured_max_memory_limit == NULL || configured_max_memory_limit[0] == '\0' ?
+            "-1" :
+            configured_max_memory_limit
+    );
+    const char *configured_memory_limit = getenv("PTN_PHP_MEMORY_LIMIT");
+    runtime->memory_limit = ptn_duplicate_string(
+        configured_memory_limit == NULL || configured_memory_limit[0] == '\0' ?
+            "128M" :
+            configured_memory_limit
+    );
+    ptn_runtime_apply_memory_limit_bound(runtime, 0, 1);
+    runtime->initial_memory_limit = ptn_duplicate_string(runtime->memory_limit);
     runtime->strict_types = 0;
     runtime->zend_assertions = 1;
     int64_t configured_zend_assertions = 0;

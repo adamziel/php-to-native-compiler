@@ -21718,6 +21718,43 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
 }
 
 #[test]
+fn phpc_memory_limit_ini_and_quantity_parser_to_native_binary() {
+    let root = temp_dir("ptn-phpc-memory-limit-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("memory-limit-ini.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo ini_get('max_memory_limit'), \"\\n\";\n\
+echo ini_get('memory_limit'), \"\\n\";\n\
+echo ini_parse_quantity('-0x412'), \"\\n\";\n\
+echo ini_parse_quantity('14.2bm'), \"\\n\";\n\
+var_dump(ini_set('memory_limit', '-1'));\n\
+echo ini_get('memory_limit'), \"\\n\";\n\
+var_dump(ini_set('max_memory_limit', '128M'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("memory_limit=128M")
+        .arg("-d")
+        .arg("max_memory_limit=512M")
+        .arg("-d")
+        .arg("error_reporting=32765")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "512M\n128M\n-1042\n14680064\nstring(4) \"128M\"\n512M\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_if_elseif_else_to_native_binary() {
     let root = temp_dir("ptn-native-if-elseif-else");
     fs::create_dir_all(&root).unwrap();

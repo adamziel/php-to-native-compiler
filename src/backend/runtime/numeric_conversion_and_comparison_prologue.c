@@ -55,6 +55,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->by_ref_argument_function_name_override =
         caller_runtime->by_ref_argument_function_name_override;
     runtime->include_path = NULL;
+    runtime->memory_limit = NULL;
+    runtime->initial_memory_limit = NULL;
+    runtime->max_memory_limit = NULL;
     runtime->strict_types = caller_runtime->strict_types;
     runtime->initial_zend_assertions = caller_runtime->initial_zend_assertions;
     runtime->zend_assertions = caller_runtime->zend_assertions;
@@ -122,6 +125,12 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
         free(runtime->include_path);
         runtime->include_path = NULL;
+        free(runtime->memory_limit);
+        runtime->memory_limit = NULL;
+        free(runtime->initial_memory_limit);
+        runtime->initial_memory_limit = NULL;
+        free(runtime->max_memory_limit);
+        runtime->max_memory_limit = NULL;
         free(runtime->live_objects);
         runtime->live_objects = NULL;
         runtime->live_objects_len = 0;
