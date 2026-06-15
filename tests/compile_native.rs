@@ -5572,6 +5572,67 @@ fn compile_var_dump_recursive_object_to_native_binary() {
 }
 
 #[test]
+fn compile_serialize_unserialize_reference_identity_to_native_binary() {
+    let root = temp_dir("ptn-native-serialize-reference-identity");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serialize-reference-identity.php");
+    let output = root.join("serialize-reference-identity-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$a = [];
+$a[0] = 1;
+$a[1] =& $a[0];
+$ser = serialize($a);
+var_dump($ser);
+$b = unserialize($ser);
+$b[1] = "changed";
+var_dump($b);
+
+$c = [];
+$c[0] =& $c;
+$ser = serialize($c);
+var_dump($ser);
+$d = unserialize($ser);
+var_dump($d);
+$d[0] = "changed";
+var_dump($d);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(22) \"a:2:{i:0;i:1;i:1;R:2;}\"\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  &string(7) \"changed\"\n",
+            "  [1]=>\n",
+            "  &string(7) \"changed\"\n",
+            "}\n",
+            "string(24) \"a:1:{i:0;a:1:{i:0;R:2;}}\"\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  &array(1) {\n",
+            "    [0]=>\n",
+            "    *RECURSION*\n",
+            "  }\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(7) \"changed\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_print_expression_contexts_to_native_binary() {
     let root = temp_dir("ptn-native-print-expression-contexts");
     fs::create_dir_all(&root).unwrap();
