@@ -15718,6 +15718,8 @@ static int ptn_internal_class_exists_name(const char *class_name) {
 
 static int ptn_reflection_class_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "getConstructor")
+        || ptn_ascii_case_equal(method_name, "getExtension")
+        || ptn_ascii_case_equal(method_name, "getExtensionName")
         || ptn_ascii_case_equal(method_name, "getInterfaceNames")
         || ptn_ascii_case_equal(method_name, "getInterfaces")
         || ptn_ascii_case_equal(method_name, "getMethod")
@@ -16308,6 +16310,19 @@ static void ptn_reflection_class_check_at_most_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
+static PtnValue ptn_reflection_class_extension_name(const char *class_name) {
+    if (ptn_reflection_class_is_user_defined_name(class_name)) {
+        return ptn_bool(0);
+    }
+    if (ptn_internal_reflection_metadata_class_exists(class_name)) {
+        return ptn_string("Reflection");
+    }
+    if (ptn_ascii_case_equal(class_name, "DateTime") || ptn_ascii_case_equal(class_name, "DateTimeInterface")) {
+        return ptn_string("date");
+    }
+    return ptn_string("Core");
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -16360,6 +16375,16 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
             : ptn_declared_class_reflection_interfaces(runtime, class_name, 1);
+    }
+    if (ptn_ascii_case_equal(name, "getExtensionName")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_class_extension_name(class_name);
+    }
+    if (ptn_ascii_case_equal(name, "getExtension")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getMethod")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);
