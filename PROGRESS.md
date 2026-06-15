@@ -4,6 +4,7 @@
 | --- | ---: | ---: |
 | ptn-w17z.10 SKIPIF harness row pack | 185 | 3 |
 | ptn-w17z.14 Override attribute row pack | 34 | 34 |
+| ptn-w17z.16 exception/backtrace/lifecycle row pack | 41 | 41 |
 | ptn-w17z.18 numeric/math/conversions row pack | 35 | 35 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
@@ -22,6 +23,13 @@ Current hook: `ptn-w17z.10` full-corpus 20k SKIPIF candidate row pack moved
 integrated classify-only rerun selected 185 rows, kept all 185 runnable, and
 excluded 0 at
 `.runtime/merge-ptn-w17z10-final-row-pack-classify/summary-20260615T143546Z.txt`.
+
+## 2026-06-15 ptn-w17z.16 Exception Lifecycle Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Current master focused baseline (`/tmp/ptn-w17z16-before-final/.runtime/ptn-w17z16-row-pack-before-final41/summary-20260615T134106Z.txt`) | 41 selected / 40 runnable / 1 classified | 23 |
+| Final rebased branch focused (`.runtime/ptn-w17z16-row-pack-after-final41-skipifbase/summary-20260615T144139Z.txt`) | 41 selected / 41 runnable / 0 classified | 41 |
 
 ## 2026-06-15 ptn-kia6 By-Reference Boundary Row Pack
 

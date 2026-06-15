@@ -1715,20 +1715,13 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
         {
             raw = tolower($0)
             line = ptn_php_code_line($0)
-            if (line ~ /(^|[^[:alnum:]_$])(debug_backtrace|debug_print_backtrace)[[:space:]]*\(/ ||
-                line ~ /->[[:space:]]*gettraceasstring[[:space:]]*\(/) {
+            if (line ~ /(^|[^[:alnum:]_$])(debug_backtrace|debug_print_backtrace)[[:space:]]*\(/) {
                 print "unsupported-diagnostics-runtime\trequires debug_backtrace()/debug_print_backtrace() stack-frame snapshots, outside PTN modeled call-frame diagnostics"
                 found = 1
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])(set_error_handler|restore_error_handler|set_exception_handler|restore_exception_handler)[[:space:]]*\(/) {
                 print "unsupported-diagnostics-runtime\trequires user error/exception handler state and fallback dispatch, outside PTN modeled diagnostic channel"
-                found = 1
-                exit
-            }
-            if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+errorexception[[:space:]]*\(/ ||
-                line ~ /->[[:space:]]*getseverity[[:space:]]*\(/) {
-                print "unsupported-diagnostics-runtime\trequires ErrorException severity and trace metadata, outside PTN modeled built-in exception values"
                 found = 1
                 exit
             }

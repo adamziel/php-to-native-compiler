@@ -65,6 +65,12 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
     PtnValue value,
     size_t line
 );
+static PTN_UNUSED int ptn_try_object_to_string_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnStringOperand *out
+);
 static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
 static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value);
 static PTN_UNUSED int ptn_float_to_int_loses_precision(double value);
@@ -199,17 +205,122 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
     const PtnValue *args,
     size_t line
 ) {
-    if (argc > 3) {
-        ptn_throw_exception(runtime, "ArgumentCountError", "Exception constructor expects at most 3 arguments");
+    int is_error_exception = ptn_exception_name_equal(class_name, "ErrorException");
+    size_t max_args = is_error_exception ? 6 : 3;
+    if (argc > max_args) {
+        ptn_throw_exception(
+            runtime,
+            "ArgumentCountError",
+            is_error_exception
+                ? "ErrorException constructor expects at most 6 arguments"
+                : "Exception constructor expects at most 3 arguments"
+        );
         return ptn_null();
     }
-    char *message = argc >= 1 ? ptn_value_to_string(args[0]) : ptn_duplicate_string("");
+    char *message = ptn_duplicate_string("");
+    if (argc >= 1) {
+        PtnValue message_value = ptn_value_deref(args[0]);
+        if (message_value.type == PTN_OBJECT || message_value.type == PTN_CLOSURE) {
+            PtnStringOperand object_string;
+            if (!ptn_try_object_to_string_operand(runtime, message_value, line, &object_string)) {
+                const char *given = message_value.type == PTN_OBJECT
+                    ? message_value.as.object->class_name
+                    : "Closure";
+                int needed = snprintf(
+                    NULL,
+                    0,
+                    "Exception::__construct(): Argument #1 ($message) must be of type string, %s given",
+                    given
+                );
+                if (needed < 0) {
+                    ptn_abort_out_of_memory();
+                }
+                char *error = malloc((size_t)needed + 1);
+                if (error == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                snprintf(
+                    error,
+                    (size_t)needed + 1,
+                    "Exception::__construct(): Argument #1 ($message) must be of type string, %s given",
+                    given
+                );
+                free(message);
+                ptn_throw_exception_owned_message_at(runtime, "TypeError", error, runtime->source_path, line);
+                return ptn_null();
+            }
+            free(message);
+            message = ptn_duplicate_string_len(object_string.data, object_string.len);
+            ptn_string_operand_free(object_string);
+        } else {
+            PtnStringOperand message_string = ptn_value_to_string_operand(args[0]);
+            free(message);
+            message = ptn_duplicate_string_len(message_string.data, message_string.len);
+            ptn_string_operand_free(message_string);
+        }
+    }
+    int64_t code = 0;
+    if (argc >= 2) {
+        PtnValue code_value = ptn_value_deref(args[1]);
+        if (code_value.type == PTN_INT) {
+            code = code_value.as.integer;
+        } else if (code_value.type == PTN_BOOL) {
+            code = code_value.as.boolean ? 1 : 0;
+        } else if (code_value.type == PTN_FLOAT) {
+            code = (int64_t)code_value.as.floating;
+        }
+    }
+    int64_t severity = PTN_E_ERROR;
+    if (is_error_exception && argc >= 3) {
+        PtnValue severity_value = ptn_value_deref(args[2]);
+        if (severity_value.type == PTN_INT) {
+            severity = severity_value.as.integer;
+        } else if (severity_value.type == PTN_BOOL) {
+            severity = severity_value.as.boolean ? 1 : 0;
+        } else if (severity_value.type == PTN_FLOAT) {
+            severity = (int64_t)severity_value.as.floating;
+        }
+    }
+    const char *exception_path = runtime->source_path;
+    int has_error_exception_path_argument = 0;
+    if (is_error_exception && argc >= 4 && ptn_value_deref(args[3]).type != PTN_NULL) {
+        PtnStringOperand path_string = ptn_value_to_string_operand_with_runtime(runtime, args[3], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(message);
+            ptn_string_operand_free(path_string);
+            return ptn_null();
+        }
+        exception_path = ptn_duplicate_string_len(path_string.data, path_string.len);
+        has_error_exception_path_argument = 1;
+        ptn_string_operand_free(path_string);
+    }
+    size_t exception_line = has_error_exception_path_argument ? 0 : line;
+    if (is_error_exception && argc >= 5 && ptn_value_deref(args[4]).type != PTN_NULL) {
+        PtnValue line_value = ptn_value_deref(args[4]);
+        if (line_value.type == PTN_INT && line_value.as.integer >= 0) {
+            exception_line = (size_t)line_value.as.integer;
+        } else if (line_value.type == PTN_FLOAT && line_value.as.floating >= 0.0) {
+            exception_line = (size_t)line_value.as.floating;
+        }
+    }
+    PtnValue previous = ptn_null();
+    size_t previous_index = is_error_exception ? 5 : 2;
+    if (argc > previous_index) {
+        PtnValue previous_value = ptn_value_deref(args[previous_index]);
+        if (previous_value.type == PTN_EXCEPTION ||
+            (previous_value.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, previous_value.as.object))) {
+            previous = previous_value;
+        }
+    }
     return ptn_exception_value(ptn_exception_new_owned(
         runtime,
         class_name,
         message,
-        runtime->source_path,
-        line
+        code,
+        previous,
+        severity,
+        exception_path,
+        exception_line
     ));
 }
 

@@ -155,7 +155,7 @@ fn phpt_classifier_file_section_helpers_survive_pipefail() {
 
     let classification = classify_with_pipefail(&phpt);
     assert!(
-        classification.starts_with("unsupported-diagnostics-runtime\t"),
+        classification.starts_with("runnable\t"),
         "{classification:?}"
     );
 }
@@ -1255,18 +1255,6 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
             "--TEST--\nhandler\n--FILE--\n<?php\nset_error_handler('handler');\nrestore_error_handler();\n--EXPECT--\n",
             "unsupported-diagnostics-runtime\t",
             "user error/exception handler state",
-        ),
-        (
-            "exception trace metadata",
-            "--TEST--\ntrace\n--FILE--\n<?php\ntry { throw new Exception(); } catch (Exception $e) { echo $e->getTraceAsString(); }\n--EXPECT--\n",
-            "unsupported-diagnostics-runtime\t",
-            "stack-frame snapshots",
-        ),
-        (
-            "error exception metadata",
-            "--TEST--\nerror exception\n--FILE--\n<?php\ntry { throw new ErrorException(); } catch (ErrorException $e) { var_dump($e->getSeverity()); }\n--EXPECT--\n",
-            "unsupported-diagnostics-runtime\t",
-            "ErrorException severity",
         ),
         (
             "assert options",

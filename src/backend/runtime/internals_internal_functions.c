@@ -18230,7 +18230,14 @@ static int ptn_closure_method_exists(const char *method_name) {
 
 static int ptn_exception_method_exists(const char *method_name) {
     return ptn_exception_name_equal(method_name, "getMessage")
-        || ptn_exception_name_equal(method_name, "getTrace");
+        || ptn_exception_name_equal(method_name, "getCode")
+        || ptn_exception_name_equal(method_name, "getFile")
+        || ptn_exception_name_equal(method_name, "getLine")
+        || ptn_exception_name_equal(method_name, "getPrevious")
+        || ptn_exception_name_equal(method_name, "getTrace")
+        || ptn_exception_name_equal(method_name, "getTraceAsString")
+        || ptn_exception_name_equal(method_name, "getSeverity")
+        || ptn_exception_name_equal(method_name, "__toString");
 }
 
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name) {
