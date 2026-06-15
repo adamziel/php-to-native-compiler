@@ -1,0 +1,2 @@
+Zend/tests/ErrorException_construct.phpt
+Zend/tests/ErrorException_getSeverity.phpt

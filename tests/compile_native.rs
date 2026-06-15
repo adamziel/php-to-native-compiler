@@ -23319,6 +23319,41 @@ try {\n\
 }
 
 #[test]
+fn compile_errorexception_severity_accessors_to_native_binary() {
+    let root = temp_dir("ptn-native-errorexception-severity-accessors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("errorexception-severity-accessors.php");
+    let output = root.join("errorexception-severity-accessors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([E_ERROR, E_WARNING, E_PARSE, E_USER_DEPRECATED] as $severity) {\n\
+    try {\n\
+        throw new ErrorException('typed message', 0, $severity, __FILE__, __LINE__, null);\n\
+    } catch (ErrorException $e) {\n\
+        var_dump($e->getSeverity() === $severity);\n\
+        var_dump($e->getMessage() === 'typed message');\n\
+        var_dump($e->getCode() === 0);\n\
+        var_dump($e->getPrevious() === null);\n\
+        var_dump($e->getFile() === __FILE__);\n\
+        var_dump($e->getTraceAsString() === '#0 {main}');\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n".repeat(24)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_errorexception_subclass_constructor_type_error_to_native_binary() {
     let root = temp_dir("ptn-native-errorexception-subclass-constructor-type-error");
     fs::create_dir_all(&root).unwrap();

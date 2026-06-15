@@ -2,6 +2,7 @@
 
 | Task | Ported tests | Passed tests |
 | --- | ---: | ---: |
+| ptn-w17z.16.1 ErrorException severity row pack | 2 | 2 |
 | ptn-w17z.23 union type declaration parser row | 1 | 1 |
 | ptn-utht filtered stream copy row pack | 4 | 4 |
 | ptn-vqg1 temp stream wrappers row pack | 3 | 3 |
@@ -22,14 +23,29 @@
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 |
 
-Refresh: 2026-06-15T18:00Z.
-Measured latest: `ptn-w17z.23` union type declaration parser row selected 1 row, kept 1 runnable, and passed 1/1 in the focused run.
-Latest: `ptn-w17z.23` completed the checked-in union type declaration parser row. Previous: `ptn-utht` completed the checked-in filtered stream copy row pack.
+Refresh: 2026-06-15T18:06Z.
+Measured latest: `ptn-w17z.16.1` ErrorException severity row pack selected 2 rows, kept 2 runnable, and passed 2/2 in the focused run.
+Latest: `ptn-w17z.16.1` completed the checked-in ErrorException severity row pack. Previous: `ptn-w17z.23` completed the checked-in union type declaration parser row.
 
-Current hook: `ptn-w17z.23` union type declaration parser row passed 1/1 at
+Current hook: `ptn-w17z.16.1` ErrorException severity row pack passed 2/2 at
+`.runtime/ptn-w17z16-1-after-rebase/summary-20260615T180659Z.txt`.
+Previous hook: `ptn-w17z.23` union type declaration parser row passed 1/1 at
 `.runtime/merge-ptn-w17z23-union-type-fpow/summary-20260615T180055Z.txt`.
-Previous hook: `ptn-utht` filtered stream copy row pack passed 4/4 at
-`.runtime/merge-ptn-utht-filtered-stream-copy/summary-20260615T175250Z.txt`.
+
+## 2026-06-15 ptn-w17z.16.1 ErrorException Severity Row Pack
+
+| Evidence | Ported tests | Passed tests |
+| --- | ---: | ---: |
+| Hook-start focused baseline (`.runtime/ptn-w17z16-1-before/summary-20260615T175644Z.txt`) | 2 selected / 2 runnable / 0 classified | 1 |
+| Final rebased focused run (`.runtime/ptn-w17z16-1-after-rebase/summary-20260615T180659Z.txt`) | 2 selected / 2 runnable / 0 classified | 2 |
+
+Implemented behavior: generated C compilation now uses a fast `-O0 -g` profile
+for very large translation units when `PTN_CC_OPT_LEVEL` is unset, while normal
+small generated C still defaults to `-O2` and explicit `PTN_CC_OPT_LEVEL`
+settings continue to override the adaptive profile. This keeps large
+straight-line PHPT rows such as `Zend/tests/ErrorException_getSeverity.phpt`
+inside the run-tests timeout without changing the generic `ErrorException`
+severity/accessor runtime semantics.
 
 ## 2026-06-15 ptn-w17z.23 Union Type Declaration Parser Row
 

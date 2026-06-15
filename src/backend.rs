@@ -7889,7 +7889,7 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
             None,
         )
     })?;
-    let optimization_args = cc_optimization_args()?;
+    let optimization_args = cc_optimization_args(c_source.len())?;
     let mut command = Command::new("cc");
     command.arg("-std=c11").arg("-Wall").arg("-Wextra");
     for arg in optimization_args {
@@ -7917,8 +7917,9 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
 }
 
 const CC_OPT_LEVEL_ENV: &str = "PTN_CC_OPT_LEVEL";
+const LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD: usize = 1_000_000;
 
-fn cc_optimization_args() -> Result<Vec<&'static str>> {
+fn cc_optimization_args(c_source_len: usize) -> Result<Vec<&'static str>> {
     let value = match env::var(CC_OPT_LEVEL_ENV) {
         Ok(value) => Some(value),
         Err(env::VarError::NotPresent) => None,
@@ -7929,7 +7930,18 @@ fn cc_optimization_args() -> Result<Vec<&'static str>> {
             ))
         }
     };
-    cc_optimization_args_for(value.as_deref())
+    cc_optimization_args_for_source(value.as_deref(), c_source_len)
+}
+
+fn cc_optimization_args_for_source(
+    value: Option<&str>,
+    c_source_len: usize,
+) -> Result<Vec<&'static str>> {
+    let has_explicit_profile = value.map(str::trim).is_some_and(|value| !value.is_empty());
+    if !has_explicit_profile && c_source_len >= LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD {
+        return Ok(vec!["-O0", "-g"]);
+    }
+    cc_optimization_args_for(value)
 }
 
 fn cc_optimization_args_for(value: Option<&str>) -> Result<Vec<&'static str>> {
@@ -15792,12 +15804,39 @@ fn display_os(value: &OsStr) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::cc_optimization_args_for;
+    use super::{
+        cc_optimization_args_for, cc_optimization_args_for_source,
+        LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD,
+    };
 
     #[test]
-    fn default_c_compiler_profile_uses_o2() {
-        assert_eq!(cc_optimization_args_for(None).unwrap(), vec!["-O2"]);
-        assert_eq!(cc_optimization_args_for(Some("")).unwrap(), vec!["-O2"]);
+    fn default_c_compiler_profile_uses_o2_for_small_sources() {
+        assert_eq!(
+            cc_optimization_args_for_source(None, 0).unwrap(),
+            vec!["-O2"]
+        );
+        assert_eq!(
+            cc_optimization_args_for_source(Some(""), 0).unwrap(),
+            vec!["-O2"]
+        );
+    }
+
+    #[test]
+    fn default_c_compiler_profile_uses_debug_for_large_sources() {
+        assert_eq!(
+            cc_optimization_args_for_source(None, LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD).unwrap(),
+            vec!["-O0", "-g"]
+        );
+        assert_eq!(
+            cc_optimization_args_for_source(Some(""), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
+                .unwrap(),
+            vec!["-O0", "-g"]
+        );
+        assert_eq!(
+            cc_optimization_args_for_source(Some("2"), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
+                .unwrap(),
+            vec!["-O2"]
+        );
     }
 
     #[test]
