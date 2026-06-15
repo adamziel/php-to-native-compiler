@@ -1122,7 +1122,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
     }
     if (display_path == NULL || display_line == 0) {
         fputs("Fatal error: ", stderr);
-        fputs(exception->message, stderr);
+        fwrite(exception->message, 1, exception->message_len, stderr);
         fputc('\n', stderr);
         return;
     }

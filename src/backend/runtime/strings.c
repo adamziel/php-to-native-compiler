@@ -601,7 +601,7 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
     } else if (resolved.type == PTN_CLOSURE) {
         class_name = "Closure";
     } else if (resolved.type == PTN_EXCEPTION) {
-        return ptn_value_to_string_operand(value);
+        return ptn_exception_to_string_operand(runtime, resolved.as.exception);
     }
     if (class_name != NULL && runtime != NULL) {
         int needed = snprintf(NULL, 0, "Object of class %s could not be converted to string", class_name);

@@ -1230,6 +1230,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         memory_limit.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
+
+    let exception_string_param_max_len = classify(
+        "--TEST--\nexception trace ini\n--INI--\nzend.exception_string_param_max_len=23\n--FILE--\n<?php\nthrow new Exception();\n--EXPECTF--\nFatal error: Uncaught Exception in %s\n",
+    );
+    assert_eq!(
+        exception_string_param_max_len.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
 }
 
 #[test]
@@ -1293,6 +1301,28 @@ fn phpt_classifier_keeps_exception_get_trace_runnable() {
     );
     assert!(
         classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_exception_get_trace_as_string_runnable() {
+    let classification = classify(
+        "--TEST--\ntrace string\n--FILE--\n<?php\ntry { throw new Exception(); } catch (Exception $e) { echo $e->getTraceAsString(); }\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_reflection_property_mutation_rows() {
+    let classification = classify(
+        "--TEST--\nreflection property\n--FILE--\n<?php\n$ref = new ReflectionProperty(new Exception(), 'trace');\n$ref->setValue(new Exception(), []);\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("unsupported-internal-reflection-metadata\t"),
         "{classification:?}"
     );
 }
