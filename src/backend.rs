@@ -1110,6 +1110,28 @@ fn by_ref_parameter_for_argument(
         .map(|(_, parameter)| parameter)
 }
 
+fn by_ref_unpack_parameter_modes(
+    parameters: &[FunctionParameter],
+) -> Option<(Vec<usize>, Option<usize>)> {
+    let mut fixed_indices = Vec::new();
+    let mut variadic_index = None;
+    for (index, parameter) in parameters.iter().enumerate() {
+        if !parameter.by_ref {
+            continue;
+        }
+        if parameter.is_variadic {
+            variadic_index = Some(index);
+        } else {
+            fixed_indices.push(index);
+        }
+    }
+    if fixed_indices.is_empty() && variadic_index.is_none() {
+        None
+    } else {
+        Some((fixed_indices, variadic_index))
+    }
+}
+
 fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&'static str> {
     if name.eq_ignore_ascii_case("array_pop") && argument_index == 0 {
         return Some("array");
@@ -9935,6 +9957,7 @@ impl ValueEmitter {
                     argument_unpacks,
                     line,
                     true,
+                    Some(&constructor_parameters),
                 );
                 out.push_str("    PtnValue ");
                 out.push_str(&constructor_result);
@@ -10032,6 +10055,7 @@ impl ValueEmitter {
                     argument_unpacks,
                     line,
                     true,
+                    None,
                 );
                 out.push_str("    ptn_call_arguments_destroy(&");
                 out.push_str(&args_temp);
@@ -10063,6 +10087,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 true,
+                None,
             );
             out.push_str("    ");
             if declare_result {
@@ -11936,7 +11961,9 @@ impl ValueEmitter {
         argument_unpacks: &[bool],
         line: usize,
         dynamic_argument_materialization: bool,
+        by_ref_parameters: Option<&[FunctionParameter]>,
     ) -> String {
+        let by_ref_unpack_modes = by_ref_parameters.and_then(by_ref_unpack_parameter_modes);
         let args_temp = self.next_temp();
         out.push_str("    PtnCallArguments ");
         out.push_str(&args_temp);
@@ -11950,17 +11977,95 @@ impl ValueEmitter {
                 .copied()
                 .unwrap_or(false)
             {
-                let value_temp = self.emit_materialized_value(out, argument);
-                out.push_str("    ptn_call_arguments_unpack(&runtime, &");
-                out.push_str(&args_temp);
-                out.push_str(", ");
-                out.push_str(&value_temp);
-                out.push_str(", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
-                emit_value_cleanup(out, "    ", &value_temp);
+                if let Some((by_ref_indices, by_ref_variadic_index)) = by_ref_unpack_modes.as_ref()
+                {
+                    let indices_temp = if by_ref_indices.is_empty() {
+                        None
+                    } else {
+                        let temp = self.next_temp();
+                        out.push_str("    const size_t ");
+                        out.push_str(&temp);
+                        out.push_str("[] = { ");
+                        for (index, parameter_index) in by_ref_indices.iter().enumerate() {
+                            if index > 0 {
+                                out.push_str(", ");
+                            }
+                            out.push_str(&parameter_index.to_string());
+                        }
+                        out.push_str(" };\n");
+                        Some(temp)
+                    };
+                    let indices_expr = indices_temp.as_deref().unwrap_or("NULL");
+                    let variadic_flag = if by_ref_variadic_index.is_some() {
+                        "1"
+                    } else {
+                        "0"
+                    };
+                    let variadic_index = by_ref_variadic_index.unwrap_or(0);
+                    if let ValueExpr::Load { name, .. } = argument {
+                        out.push_str("    ptn_call_arguments_unpack_variable_with_parameter_modes(&runtime, &");
+                        out.push_str(&args_temp);
+                        out.push_str(", \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", ");
+                        out.push_str(indices_expr);
+                        out.push_str(", ");
+                        out.push_str(&by_ref_indices.len().to_string());
+                        out.push_str(", ");
+                        out.push_str(variadic_flag);
+                        out.push_str(", ");
+                        out.push_str(&variadic_index.to_string());
+                        out.push_str(", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                    } else {
+                        let value_temp = self.emit_materialized_value(out, argument);
+                        out.push_str(
+                            "    ptn_call_arguments_unpack_value_with_parameter_modes(&runtime, &",
+                        );
+                        out.push_str(&args_temp);
+                        out.push_str(", &");
+                        out.push_str(&value_temp);
+                        out.push_str(", ");
+                        out.push_str(indices_expr);
+                        out.push_str(", ");
+                        out.push_str(&by_ref_indices.len().to_string());
+                        out.push_str(", ");
+                        out.push_str(variadic_flag);
+                        out.push_str(", ");
+                        out.push_str(&variadic_index.to_string());
+                        out.push_str(", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                        emit_value_cleanup(out, "    ", &value_temp);
+                    }
+                } else {
+                    let value_temp = self.emit_materialized_value(out, argument);
+                    out.push_str("    ptn_call_arguments_unpack(&runtime, &");
+                    out.push_str(&args_temp);
+                    out.push_str(", ");
+                    out.push_str(&value_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "    ", &value_temp);
+                }
             } else {
-                let value_temp = if dynamic_argument_materialization {
+                let by_ref_parameter = by_ref_parameters.and_then(|parameters| {
+                    by_ref_parameter_for_argument(parameters, argument_index)
+                });
+                let value_temp = if let Some(parameter) = by_ref_parameter {
+                    self.emit_by_ref_call_argument(
+                        out,
+                        argument,
+                        function_name,
+                        argument_index,
+                        &parameter.name,
+                        line,
+                        true,
+                        false,
+                    )
+                } else if dynamic_argument_materialization {
                     self.emit_dynamic_call_argument(out, argument)
                 } else {
                     self.emit_call_argument(out, function_name, argument_index, argument)
@@ -12072,6 +12177,9 @@ impl ValueEmitter {
                 );
                 return result_temp;
             }
+            let direct_parameters = direct_user
+                .as_ref()
+                .map(|(_, parameters, _, _)| parameters.as_slice());
             let args_temp = self.emit_call_arguments_builder(
                 out,
                 name,
@@ -12079,6 +12187,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 false,
+                direct_parameters,
             );
             if let Some((c_name, _, receiver_class_name, visibility_check)) = &direct_user {
                 self.emit_direct_user_function_call(
@@ -12565,6 +12674,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 true,
+                None,
             );
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -13172,14 +13282,20 @@ impl ValueEmitter {
         }
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let result_temp = self.next_temp();
+        let declared_signature =
+            self.declared_instance_method_signature_for_receiver(receiver, name);
         if argument_unpacks.iter().any(|unpack| *unpack) {
+            let direct_parameters = declared_signature
+                .as_ref()
+                .map(|(_, parameters)| parameters.as_slice());
             let args_temp = self.emit_call_arguments_builder(
                 out,
                 name,
                 arguments,
                 argument_unpacks,
                 line,
-                true,
+                declared_signature.is_none(),
+                direct_parameters,
             );
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -13214,8 +13330,6 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        let declared_signature =
-            self.declared_instance_method_signature_for_receiver(receiver, name);
         let mut temps = Vec::with_capacity(arguments.len());
         let mut unwrap_append_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
@@ -13322,6 +13436,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 true,
+                None,
             );
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);

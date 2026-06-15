@@ -1,0 +1,8 @@
+# ptn-dkyr: by-reference call argument unpacking row pack.
+#
+# Rows from the broad tier-1000 arg_unpack slice that exercise userland
+# by-reference parameters reached through array argument unpacking.
+
+Zend/tests/arg_unpack/by_ref.phpt
+Zend/tests/arg_unpack/by_ref_separation.phpt
+Zend/tests/arg_unpack/traversable_with_by_ref_parameters.phpt

@@ -461,9 +461,9 @@ fn phpt_classifier_splits_unpacking_blockers() {
     let by_ref_unpack = classify(
         "--TEST--\nby-ref call unpack\n--FILE--\n<?php\nfunction inc(&$value) { $value++; }\n$items = [1];\ninc(...$items);\n--EXPECT--\n",
     );
-    assert!(
-        by_ref_unpack.starts_with("unsupported-call-unpacking-reference\t"),
-        "{by_ref_unpack:?}"
+    assert_eq!(
+        by_ref_unpack.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
     );
 
     let spl_iterator_unpack = classify(

@@ -1166,11 +1166,6 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (ptn_call_unpack_by_reference_context && !ptn_is_function_declaration(line) && ptn_spread_context(line) == "call") {
-                print "unsupported-call-unpacking-reference\trequires preserving by-reference parameter binding through spread-expanded arguments, outside PTN call unpacking runtime"
-                found = 1
-                exit
-            }
             if (ptn_deferred_generator_reason != "" &&
                 line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*&[[:space:]]*\$[a-z_]/) {
                 print "unsupported-generator-runtime\trequires generator foreach by-reference iteration boundary and generator reference diagnostics, outside PTN generator runtime"

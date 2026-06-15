@@ -5620,6 +5620,139 @@ TypeError: Only arrays and Traversables can be unpacked, int given\n"
 }
 
 #[test]
+fn compile_array_call_unpacking_by_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-array-call-unpacking-by-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-call-unpacking-by-reference.php");
+    let output = root.join("array-call-unpacking-by-reference-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function inc_all(&...$args) {
+    foreach ($args as &$arg) {
+        $arg++;
+    }
+}
+function inc_second_and_fourth($val1, &$ref1, $val2, &$ref2) {
+    $ref1++;
+    $ref2++;
+}
+class MethodMutator {
+    function incAll(&...$args) {
+        foreach ($args as &$arg) {
+            $arg++;
+        }
+    }
+}
+class ConstructorMutator {
+    function __construct(&...$args) {
+        foreach ($args as &$arg) {
+            $arg++;
+        }
+    }
+}
+
+inc_all(...[1, 2, 3]);
+
+$array = [1, 2, 3];
+inc_all(...$array);
+var_dump($array);
+
+$copy_source = [1, 2];
+$copy = $copy_source;
+inc_all(...$copy_source);
+var_dump($copy_source, $copy);
+
+$params = [0, 0, 0, 0];
+inc_second_and_fourth(...$params);
+var_dump($params);
+
+$a = 0;
+$shifted = [0, 0, 0, 0];
+inc_second_and_fourth($a, ...$shifted);
+var_dump($a, $shifted);
+
+$methodArray = [4, 5];
+(new MethodMutator())->incAll(...$methodArray);
+var_dump($methodArray);
+
+$constructorArray = [6, 7];
+new ConstructorMutator(...$constructorArray);
+var_dump($constructorArray);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(3)\n",
+            "  [2]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  int(0)\n",
+            "  [1]=>\n",
+            "  int(1)\n",
+            "  [2]=>\n",
+            "  int(0)\n",
+            "  [3]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "int(0)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(0)\n",
+            "  [2]=>\n",
+            "  int(1)\n",
+            "  [3]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(5)\n",
+            "  [1]=>\n",
+            "  int(6)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(7)\n",
+            "  [1]=>\n",
+            "  int(8)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_arguments_unpack_variable_with_parameter_modes"));
+    assert!(c_source.contains("ptn_call_arguments_unpack_value_with_parameter_modes"));
+}
+
+#[test]
 fn compile_flush_and_binary_prefixed_strings_to_native_binary() {
     let root = temp_dir("ptn-native-flush-binary-strings");
     fs::create_dir_all(&root).unwrap();

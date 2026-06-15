@@ -1806,6 +1806,24 @@ static PTN_UNUSED void ptn_call_arguments_append_owned(PtnCallArguments *argumen
     arguments->values[arguments->len++] = value;
 }
 
+static PTN_UNUSED int ptn_call_argument_index_is_by_ref(
+    size_t index,
+    const size_t *by_ref_indices,
+    size_t by_ref_indices_len,
+    int has_by_ref_variadic,
+    size_t by_ref_variadic_index
+) {
+    if (has_by_ref_variadic && index >= by_ref_variadic_index) {
+        return 1;
+    }
+    for (size_t i = 0; i < by_ref_indices_len; i++) {
+        if (by_ref_indices[i] == index) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArguments *arguments, PtnValue value, size_t line) {
     PtnValue source = ptn_value_deref(value);
     if (source.type != PTN_ARRAY) {
@@ -1830,6 +1848,162 @@ static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArg
         }
         ptn_call_arguments_append_owned(arguments, ptn_value_clone_deref(entry->value));
     }
+}
+
+static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
+    PtnRuntime *runtime,
+    PtnCallArguments *arguments,
+    PtnValue *source_value,
+    const size_t *by_ref_indices,
+    size_t by_ref_indices_len,
+    int has_by_ref_variadic,
+    size_t by_ref_variadic_index,
+    size_t line
+) {
+    PtnValue *storage = source_value != NULL && source_value->type == PTN_REFERENCE
+        ? &source_value->as.reference->value
+        : source_value;
+    PtnValue source = storage != NULL ? ptn_value_deref(*storage) : ptn_null();
+    if (source.type != PTN_ARRAY) {
+        char message[160];
+        ptn_array_unpack_invalid_operand_message(source, message, sizeof(message));
+        ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+        return;
+    }
+
+    PtnArray *array = source.as.array;
+    int needs_by_ref_entry = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_call_argument_index_is_by_ref(
+            arguments->len + i,
+            by_ref_indices,
+            by_ref_indices_len,
+            has_by_ref_variadic,
+            by_ref_variadic_index
+        )) {
+            needs_by_ref_entry = 1;
+            break;
+        }
+    }
+    if (needs_by_ref_entry && storage != NULL) {
+        PtnArray *detached = ptn_array_detach_value(storage);
+        if (detached != NULL) {
+            array = detached;
+        } else {
+            source = ptn_value_deref(*storage);
+            if (source.type == PTN_ARRAY) {
+                array = source.as.array;
+            }
+        }
+    }
+
+    ptn_call_arguments_reserve(arguments, array->len);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "Cannot use positional argument after named argument during unpacking",
+                runtime->source_path,
+                line
+            );
+            return;
+        }
+
+        if (ptn_call_argument_index_is_by_ref(
+            arguments->len,
+            by_ref_indices,
+            by_ref_indices_len,
+            has_by_ref_variadic,
+            by_ref_variadic_index
+        )) {
+            if (entry->value.type != PTN_REFERENCE) {
+                PtnValue current = entry->value;
+                entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+            }
+            ptn_call_arguments_append_owned(arguments, ptn_value_clone(entry->value));
+        } else {
+            ptn_call_arguments_append_owned(arguments, ptn_value_clone_deref(entry->value));
+        }
+    }
+}
+
+static PTN_UNUSED void ptn_call_arguments_unpack_value_with_parameter_modes(
+    PtnRuntime *runtime,
+    PtnCallArguments *arguments,
+    PtnValue *value,
+    const size_t *by_ref_indices,
+    size_t by_ref_indices_len,
+    int has_by_ref_variadic,
+    size_t by_ref_variadic_index,
+    size_t line
+) {
+    ptn_call_arguments_unpack_array_with_parameter_modes(
+        runtime,
+        arguments,
+        value,
+        by_ref_indices,
+        by_ref_indices_len,
+        has_by_ref_variadic,
+        by_ref_variadic_index,
+        line
+    );
+}
+
+static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
+    PtnRuntime *runtime,
+    PtnCallArguments *arguments,
+    const char *name,
+    const size_t *by_ref_indices,
+    size_t by_ref_indices_len,
+    int has_by_ref_variadic,
+    size_t by_ref_variadic_index,
+    size_t line
+) {
+    if (strcmp(name, "GLOBALS") == 0) {
+        PtnValue globals = ptn_runtime_globals_snapshot(runtime);
+        ptn_call_arguments_unpack_array_with_parameter_modes(
+            runtime,
+            arguments,
+            &globals,
+            by_ref_indices,
+            by_ref_indices_len,
+            has_by_ref_variadic,
+            by_ref_variadic_index,
+            line
+        );
+        ptn_value_destroy(&globals);
+        return;
+    }
+
+    PtnValue *slot = ptn_symbols_get_slot(&runtime->symbols, name);
+    if (slot == NULL) {
+        ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, runtime->source_path, line);
+        PtnValue missing = ptn_null();
+        ptn_call_arguments_unpack_array_with_parameter_modes(
+            runtime,
+            arguments,
+            &missing,
+            by_ref_indices,
+            by_ref_indices_len,
+            has_by_ref_variadic,
+            by_ref_variadic_index,
+            line
+        );
+        return;
+    }
+
+    ptn_call_arguments_unpack_array_with_parameter_modes(
+        runtime,
+        arguments,
+        slot,
+        by_ref_indices,
+        by_ref_indices_len,
+        has_by_ref_variadic,
+        by_ref_variadic_index,
+        line
+    );
 }
 
 static PTN_UNUSED void ptn_call_arguments_destroy(PtnCallArguments *arguments) {
