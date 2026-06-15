@@ -1,8 +1,8 @@
-# refreshed_at_utc=2026-06-15T20:41:00Z
-# source_commit=8da347897a9e
+# refreshed_at_utc=2026-06-15T22:24:10Z
+# source_commit=52604f155feb
 # php_src_revision=8c63ec400ce8e07c57a8d9499317b96a8beafb8b
-# window_start_utc=2026-06-14T21:00Z
-# window_hours=24
+# window_start_utc=2026-06-08T23:00Z
+# window_hours=168
 feature	ported_tests	passed_tests	upstream_tests	completed_hour_utc	newly_passed_tests	evidence
 ptn-snt7 object/class metadata row pack	8	8	8	2026-06-15T20:00Z	8	.runtime/merge-ptn-snt7-object-class-metadata/summary-20260615T203520Z.txt
 ptn-456b ext-standard strings row pack	27	27	47	2026-06-15T20:00Z	27	.runtime/merge-ptn-456b-ext-standard-strings/summary-20260615T202910Z.txt
