@@ -293,6 +293,7 @@ typedef struct {
     PtnPropertyVisibility read_visibility;
     PtnPropertyVisibility set_visibility;
     int is_readonly;
+    int is_unset;
 } PtnObjectPropertyMetadata;
 
 typedef void (*PtnObjectNativeDataFree)(void *data);
@@ -471,6 +472,33 @@ typedef int (*PtnMagicPropertyReadHandler)(
     size_t line,
     PtnValue *value_out
 );
+typedef int (*PtnMagicPropertyGetHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+);
+typedef int (*PtnMagicPropertyGetExistsHandler)(PtnRuntime *runtime, PtnValue receiver);
+typedef int (*PtnMagicPropertySetHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnValue value,
+    size_t line
+);
+typedef int (*PtnMagicPropertyUnsetHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+);
+typedef int (*PtnMagicDebugInfoHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line,
+    PtnValue *value_out
+);
 
 struct PtnRuntime {
     PtnSymbolTable symbols;
@@ -506,6 +534,12 @@ struct PtnRuntime {
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
     PtnMagicPropertyReadHandler magic_property_read;
     int *declared_user_functions;
+    PtnMagicPropertyGetHandler magic_property_get;
+    PtnMagicPropertyGetExistsHandler magic_property_get_exists;
+    PtnMagicPropertySetHandler magic_property_set;
+    PtnMagicPropertyUnsetHandler magic_property_unset;
+    PtnMagicDebugInfoHandler magic_debug_info;
+    int in_magic_property_dispatch;
     const char *source_path;
     const char *current_function_name;
     const char *current_class_name;

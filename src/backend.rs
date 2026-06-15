@@ -34,6 +34,26 @@ pub fn emit_c(module: &Module) -> String {
         .classes
         .iter()
         .any(|class| class_magic_isset_method(class, &module.classes).is_some());
+    let needs_magic_property_get = module
+        .classes
+        .iter()
+        .any(|class| class_magic_get_method(class, &module.classes).is_some());
+    let needs_magic_property_set = module
+        .classes
+        .iter()
+        .any(|class| class_magic_set_method(class, &module.classes).is_some());
+    let needs_magic_property_unset = module
+        .classes
+        .iter()
+        .any(|class| class_magic_unset_method(class, &module.classes).is_some());
+    let needs_magic_debug_info = module
+        .classes
+        .iter()
+        .any(|class| class_magic_debug_info_method(class, &module.classes).is_some());
+    let needs_magic_property_dispatch = needs_magic_property_read
+        || needs_magic_property_get
+        || needs_magic_property_set
+        || needs_magic_property_unset;
     emit_private_property_metadata_prototype(&mut out);
     emit_runtime(&mut out, &runtime_requirements);
     emit_method_visibility_prototypes(&mut out);
@@ -78,8 +98,11 @@ pub fn emit_c(module: &Module) -> String {
             runtime_requirements.closure_invoke_method_dispatch,
         );
     }
-    if needs_magic_property_read {
-        emit_magic_property_read_dispatch(&mut out, &module.classes);
+    if needs_magic_property_dispatch {
+        emit_magic_property_dispatch(&mut out, &module.classes);
+    }
+    if needs_magic_debug_info {
+        emit_magic_debug_info_dispatch(&mut out, &module.classes);
     }
     if needs_callable_dispatch {
         emit_dynamic_function_dispatch(&mut out);
@@ -114,6 +137,21 @@ pub fn emit_c(module: &Module) -> String {
     }
     if needs_magic_property_read {
         out.push_str("    runtime.magic_property_read = ptn_declared_magic_property_read;\n");
+    }
+    if needs_magic_property_get {
+        out.push_str("    runtime.magic_property_get = ptn_declared_magic_property_get;\n");
+        out.push_str(
+            "    runtime.magic_property_get_exists = ptn_declared_magic_property_get_exists;\n",
+        );
+    }
+    if needs_magic_property_set {
+        out.push_str("    runtime.magic_property_set = ptn_declared_magic_property_set;\n");
+    }
+    if needs_magic_property_unset {
+        out.push_str("    runtime.magic_property_unset = ptn_declared_magic_property_unset;\n");
+    }
+    if needs_magic_debug_info {
+        out.push_str("    runtime.magic_debug_info = ptn_declared_magic_debug_info;\n");
     }
     out.push_str("    runtime.class_scope_allows = ptn_declared_class_scope_allows;\n");
     out.push_str("    runtime.declared_class_is_readonly = ptn_declared_class_is_readonly;\n");
@@ -2394,15 +2432,50 @@ fn class_magic_get_method<'a>(
         .map(|method| method.method)
 }
 
-fn emit_magic_property_read_dispatch(out: &mut String, classes: &[ClassDecl]) {
+fn class_magic_set_method<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<&'a crate::ir::MethodDecl> {
+    class_public_method_lookup_chain(class, classes)
+        .into_iter()
+        .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__set"))
+        .map(|method| method.method)
+}
+
+fn class_magic_unset_method<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<&'a crate::ir::MethodDecl> {
+    class_public_method_lookup_chain(class, classes)
+        .into_iter()
+        .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__unset"))
+        .map(|method| method.method)
+}
+
+fn class_magic_debug_info_method<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<&'a crate::ir::MethodDecl> {
+    class_public_method_lookup_chain(class, classes)
+        .into_iter()
+        .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__debugInfo"))
+        .map(|method| method.method)
+}
+
+fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_magic_property_read(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t line, PtnValue *value_out) {\n",
     );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)property;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    (void)value_out;\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("    (void)class_name;\n");
     for class in classes {
         let Some(isset_method) = class_magic_isset_method(class, classes) else {
             continue;
@@ -2410,6 +2483,10 @@ fn emit_magic_property_read_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str(
+            "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
+        );
+        out.push_str("        runtime->in_magic_property_dispatch = 1;\n");
         out.push_str("        PtnValue ptn_isset_args[1];\n");
         out.push_str("        ptn_isset_args[0] = ptn_string(property);\n");
         out.push_str("        PtnValue ptn_isset_result = ");
@@ -2421,6 +2498,9 @@ fn emit_magic_property_read_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        ptn_value_destroy(&ptn_isset_result);\n");
         out.push_str("        ptn_value_destroy(&ptn_isset_args[0]);\n");
         out.push_str("        if (!ptn_isset_truthy) {\n");
+        out.push_str(
+            "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+        );
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
         if let Some(get_method) = class_magic_get_method(class, classes) {
@@ -2435,6 +2515,182 @@ fn emit_magic_property_read_dispatch(out: &mut String, classes: &[ClassDecl]) {
                 "        *value_out = ptn_object_read_property(runtime, resolved, property, NULL, line);\n",
             );
         }
+        out.push_str(
+            "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+        );
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_magic_property_get_exists(PtnRuntime *runtime, PtnValue receiver) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("    (void)class_name;\n");
+    for class in classes {
+        if class_magic_get_method(class, classes).is_none() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_magic_property_get(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t line, PtnValue *value_out) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)property;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    (void)value_out;\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("    (void)class_name;\n");
+    for class in classes {
+        let Some(get_method) = class_magic_get_method(class, classes) else {
+            continue;
+        };
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str(
+            "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
+        );
+        out.push_str("        runtime->in_magic_property_dispatch = 1;\n");
+        out.push_str("        PtnValue ptn_get_args[1];\n");
+        out.push_str("        ptn_get_args[0] = ptn_string(property);\n");
+        out.push_str("        *value_out = ");
+        out.push_str(&user_function_c_name(get_method.function_index));
+        out.push_str("(runtime, resolved, 1, ptn_get_args, line);\n");
+        out.push_str("        ptn_value_destroy(&ptn_get_args[0]);\n");
+        out.push_str(
+            "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+        );
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_magic_property_set(PtnRuntime *runtime, PtnValue receiver, const char *property, PtnValue value, size_t line) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)property;\n");
+    out.push_str("    (void)value;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("    (void)class_name;\n");
+    for class in classes {
+        let Some(set_method) = class_magic_set_method(class, classes) else {
+            continue;
+        };
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str(
+            "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
+        );
+        out.push_str("        runtime->in_magic_property_dispatch = 1;\n");
+        out.push_str("        PtnValue ptn_set_args[2];\n");
+        out.push_str("        ptn_set_args[0] = ptn_string(property);\n");
+        out.push_str("        ptn_set_args[1] = ptn_value_clone_deref(value);\n");
+        out.push_str("        PtnValue ptn_set_result = ");
+        out.push_str(&user_function_c_name(set_method.function_index));
+        out.push_str("(runtime, resolved, 2, ptn_set_args, line);\n");
+        out.push_str("        ptn_value_destroy(&ptn_set_result);\n");
+        out.push_str("        ptn_value_destroy(&ptn_set_args[1]);\n");
+        out.push_str("        ptn_value_destroy(&ptn_set_args[0]);\n");
+        out.push_str(
+            "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+        );
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_magic_property_unset(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t line) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)property;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("    (void)class_name;\n");
+    for class in classes {
+        let Some(unset_method) = class_magic_unset_method(class, classes) else {
+            continue;
+        };
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str(
+            "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
+        );
+        out.push_str("        runtime->in_magic_property_dispatch = 1;\n");
+        out.push_str("        PtnValue ptn_unset_args[1];\n");
+        out.push_str("        ptn_unset_args[0] = ptn_string(property);\n");
+        out.push_str("        PtnValue ptn_unset_result = ");
+        out.push_str(&user_function_c_name(unset_method.function_index));
+        out.push_str("(runtime, resolved, 1, ptn_unset_args, line);\n");
+        out.push_str("        ptn_value_destroy(&ptn_unset_result);\n");
+        out.push_str("        ptn_value_destroy(&ptn_unset_args[0]);\n");
+        out.push_str(
+            "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+        );
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+}
+
+fn emit_magic_debug_info_dispatch(out: &mut String, classes: &[ClassDecl]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_magic_debug_info(PtnRuntime *runtime, PtnValue receiver, size_t line, PtnValue *value_out) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    (void)value_out;\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("    (void)class_name;\n");
+    for class in classes {
+        let Some(debug_method) = class_magic_debug_info_method(class, classes) else {
+            continue;
+        };
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        *value_out = ");
+        out.push_str(&user_function_c_name(debug_method.function_index));
+        out.push_str("(runtime, resolved, 0, NULL, line);\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
     }

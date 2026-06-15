@@ -1,0 +1,8 @@
+# ptn-texo broad 1k magic object/class metadata row pack.
+# Source: 2026-06-15 broad tier-1000 unsupported-magic-method-metadata bucket.
+Zend/tests/__debugInfo_reference.phpt
+Zend/tests/assign_ref_to_overloaded_prop.phpt
+Zend/tests/asymmetric_visibility/__set.phpt
+Zend/tests/asymmetric_visibility/__unset.phpt
+Zend/tests/asymmetric_visibility/bug001.phpt
+Zend/tests/asymmetric_visibility/bug002.phpt

@@ -45,6 +45,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->declared_class_is_readonly = caller_runtime->declared_class_is_readonly;
     runtime->magic_property_read = caller_runtime->magic_property_read;
     runtime->declared_user_functions = caller_runtime->declared_user_functions;
+    runtime->magic_property_get = caller_runtime->magic_property_get;
+    runtime->magic_property_get_exists = caller_runtime->magic_property_get_exists;
+    runtime->magic_property_set = caller_runtime->magic_property_set;
+    runtime->magic_property_unset = caller_runtime->magic_property_unset;
+    runtime->magic_debug_info = caller_runtime->magic_debug_info;
+    runtime->in_magic_property_dispatch = caller_runtime->in_magic_property_dispatch;
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;

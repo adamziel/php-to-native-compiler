@@ -595,6 +595,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             object->property_metadata[i].read_visibility = read_visibility;
             object->property_metadata[i].set_visibility = set_visibility;
             object->property_metadata[i].is_readonly = is_readonly;
+            object->property_metadata[i].is_unset = 0;
             return;
         }
     }
@@ -624,6 +625,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->read_visibility = read_visibility;
     metadata->set_visibility = set_visibility;
     metadata->is_readonly = is_readonly;
+    metadata->is_unset = 0;
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {

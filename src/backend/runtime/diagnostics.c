@@ -568,6 +568,12 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->declared_class_is_readonly = NULL;
     runtime->magic_property_read = NULL;
     runtime->declared_user_functions = NULL;
+    runtime->magic_property_get = NULL;
+    runtime->magic_property_get_exists = NULL;
+    runtime->magic_property_set = NULL;
+    runtime->magic_property_unset = NULL;
+    runtime->magic_debug_info = NULL;
+    runtime->in_magic_property_dispatch = 0;
     runtime->source_path = NULL;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;

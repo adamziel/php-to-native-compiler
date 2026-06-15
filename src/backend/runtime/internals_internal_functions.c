@@ -1006,7 +1006,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
     }
 }
 
-static void ptn_var_dump_value(PtnValue value) {
+static PTN_UNUSED void ptn_var_dump_value(PtnValue value) {
     if (value.type == PTN_REFERENCE) {
         value = ptn_value_deref(value);
     }
@@ -1016,11 +1016,61 @@ static void ptn_var_dump_value(PtnValue value) {
     ptn_dump_seen_arrays_free(&seen);
 }
 
+static int ptn_var_dump_magic_debug_info(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnDumpSeenArrays *seen
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT ||
+        runtime == NULL ||
+        runtime->magic_debug_info == NULL) {
+        return 0;
+    }
+    PtnValue debug_info = ptn_null();
+    if (!runtime->magic_debug_info(runtime, resolved, line, &debug_info)) {
+        return 0;
+    }
+    PtnValue debug_value = ptn_value_deref(debug_info);
+    if (debug_value.type != PTN_ARRAY) {
+        ptn_value_destroy(&debug_info);
+        return 0;
+    }
+    PtnObject *object = resolved.as.object;
+    PtnArray *properties = debug_value.as.array;
+    printf("object(%s)#%zu (%zu) {\n", object->class_name, object->object_id, properties->len);
+    ptn_dump_seen_objects_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_var_dump_indent(1);
+        PtnArrayKey key = properties->entries[i].key;
+        if (key.type == PTN_ARRAY_KEY_INT) {
+            printf("[%lld]=>\n", (long long)key.as.integer);
+        } else {
+            fputs("[\"", stdout);
+            fwrite(key.as.string, 1, key.string_len, stdout);
+            fputs("\"]=>\n", stdout);
+        }
+        ptn_var_dump_value_indented(properties->entries[i].value, 1, seen);
+    }
+    ptn_dump_seen_objects_pop(seen);
+    fputs("}\n", stdout);
+    ptn_value_destroy(&debug_info);
+    return 1;
+}
+
 static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
     for (size_t i = 0; i < argc; i++) {
-        ptn_var_dump_value(args[i]);
+        PtnDumpSeenArrays seen;
+        ptn_dump_seen_arrays_init(&seen);
+        if (!ptn_var_dump_magic_debug_info(runtime, args[i], line, &seen)) {
+            PtnValue value = args[i];
+            if (value.type == PTN_REFERENCE) {
+                value = ptn_value_deref(value);
+            }
+            ptn_var_dump_value_indented(value, 0, &seen);
+        }
+        ptn_dump_seen_arrays_free(&seen);
     }
     return ptn_null();
 }
