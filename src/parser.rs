@@ -2328,7 +2328,10 @@ impl Parser<'_> {
     }
 
     fn peek_starts_class_name(&self) -> bool {
-        matches!(self.peek().kind, TokenKind::Backslash | TokenKind::Identifier(_))
+        matches!(
+            self.peek().kind,
+            TokenKind::Backslash | TokenKind::Identifier(_)
+        )
     }
 
     fn peek_starts_property_type_hint(&self) -> bool {

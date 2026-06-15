@@ -1544,8 +1544,9 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::DynamicMethodCall { arguments, .. }
         | Expr::NewObject { arguments, .. }
         | Expr::DynamicNewObject { arguments, .. } => arguments.iter().any(expr_contains_yield),
-        Expr::PropertyFetch { receiver, .. }
-        | Expr::DynamicClassNameFetch { receiver, .. } => expr_contains_yield(receiver),
+        Expr::PropertyFetch { receiver, .. } | Expr::DynamicClassNameFetch { receiver, .. } => {
+            expr_contains_yield(receiver)
+        }
         Expr::InstanceOf { expr, target, .. } => {
             expr_contains_yield(expr)
                 || matches!(target, AstInstanceOfTarget::Expr(target) if expr_contains_yield(target))
@@ -2069,8 +2070,12 @@ fn lower_compound_assignment(name: &str, line: usize, op: BinaryOp, right: Value
 impl<'a> LoweringContext<'a> {
     fn lower_instanceof_target(&mut self, target: &AstInstanceOfTarget) -> InstanceOfTarget {
         match target {
-            AstInstanceOfTarget::ClassName { name, .. } => InstanceOfTarget::ClassName(name.clone()),
-            AstInstanceOfTarget::Expr(expr) => InstanceOfTarget::Expr(Box::new(self.lower_expr(expr))),
+            AstInstanceOfTarget::ClassName { name, .. } => {
+                InstanceOfTarget::ClassName(name.clone())
+            }
+            AstInstanceOfTarget::Expr(expr) => {
+                InstanceOfTarget::Expr(Box::new(self.lower_expr(expr)))
+            }
         }
     }
 
@@ -2329,11 +2334,7 @@ impl<'a> LoweringContext<'a> {
                 receiver: Box::new(self.lower_expr(receiver)),
                 line: span.line,
             },
-            Expr::InstanceOf {
-                expr,
-                target,
-                span,
-            } => ValueExpr::InstanceOf {
+            Expr::InstanceOf { expr, target, span } => ValueExpr::InstanceOf {
                 expr: Box::new(self.lower_expr(expr)),
                 target: self.lower_instanceof_target(target),
                 line: span.line,
