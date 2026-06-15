@@ -2742,6 +2742,9 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "rsort",
         "shuffle",
         "sort",
+        "uasort",
+        "uksort",
+        "usort",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(name);
@@ -5611,6 +5614,9 @@ fn is_array_mutating_internal_call(name: &str) -> bool {
             | "rsort"
             | "shuffle"
             | "sort"
+            | "uasort"
+            | "uksort"
+            | "usort"
     )
 }
 
@@ -11864,6 +11870,40 @@ impl ValueEmitter {
             if let Some(userdata_temp) = &userdata_temp {
                 emit_value_cleanup(out, "    ", userdata_temp);
             }
+            emit_value_cleanup(out, "    ", &callback_temp);
+            emit_value_cleanup(out, "    ", &array_temp);
+            return Some(result_temp);
+        }
+
+        if matches!(
+            name.to_ascii_lowercase().as_str(),
+            "uasort" | "uksort" | "usort"
+        ) && arguments.len() == 2
+        {
+            let variable_name = variable_name?;
+            let array_temp = self.emit_materialized_value(out, &arguments[0]);
+            let callback_temp = self.emit_materialized_value(out, &arguments[1]);
+            let result_temp = self.next_temp();
+            let helper = if name.eq_ignore_ascii_case("uasort") {
+                "ptn_runtime_array_uasort_variable"
+            } else if name.eq_ignore_ascii_case("uksort") {
+                "ptn_runtime_array_uksort_variable"
+            } else {
+                "ptn_runtime_array_usort_variable"
+            };
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(helper);
+            out.push_str("(&runtime, \"");
+            out.push_str(&c_string(variable_name));
+            out.push_str("\", ");
+            out.push_str(&array_temp);
+            out.push_str(", ");
+            out.push_str(&callback_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
             emit_value_cleanup(out, "    ", &callback_temp);
             emit_value_cleanup(out, "    ", &array_temp);
             return Some(result_temp);

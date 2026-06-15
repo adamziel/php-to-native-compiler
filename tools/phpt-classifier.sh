@@ -1647,11 +1647,6 @@ ptn_phpt_first_unsupported_internal_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(u|ua|uk)sort[[:space:]]*\(/) {
-                print "unsupported-internal\trequires usort()/uasort()/uksort() user-comparator by-reference sort helpers and COW separation, outside PTN modeled sort helpers"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*&/) {
                 byref_foreach = 1
             }

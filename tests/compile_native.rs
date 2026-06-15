@@ -17181,6 +17181,9 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php rsort([3, 2, 1]);", "rsort"),
         ("<?php shuffle([1, 2, 3]);", "shuffle"),
         ("<?php sort([3, 2, 1]);", "sort"),
+        ("<?php uasort([3, 2, 1], \"strcmp\");", "uasort"),
+        ("<?php uksort([3 => \"c\", 1 => \"a\"], \"strcmp\");", "uksort"),
+        ("<?php usort([3, 2, 1], \"strcmp\");", "usort"),
         ("<?php rsort([3, 2, 1]);", "rsort"),
     ] {
         let error = parser::parse(source).unwrap_err();
@@ -17257,9 +17260,9 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
             "extra arguments are unsupported",
         ),
         (
-            "<?php $items = [3, 2, 1]; usort($items, \"cmp\");",
+            "<?php $items = [[3, 2, 1]]; usort($items[0], \"cmp\");",
             "usort",
-            "sort-family array mutation semantics are unsupported",
+            "non-variable array mutation targets are unsupported",
         ),
     ] {
         let error = parser::parse(source).unwrap_err();
@@ -17305,6 +17308,9 @@ fn parser_rejects_unsupported_sort_family_array_mutators() {
         "<?php $left = [2, 1]; $right = [\"b\", \"a\"]; array_multisort($left, SORT_ASC, SORT_REGULAR, $right, SORT_DESC, SORT_STRING);",
     )
     .unwrap();
+    parser::parse("<?php $items = [3, 2, 1]; usort($items, \"cmp\");").unwrap();
+    parser::parse("<?php $items = [3, 2, 1]; uasort($items, \"cmp\");").unwrap();
+    parser::parse("<?php $items = [3 => \"c\", 1 => \"a\"]; uksort($items, \"cmp\");").unwrap();
 }
 
 #[test]

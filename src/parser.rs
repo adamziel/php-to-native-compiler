@@ -7371,6 +7371,9 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "shuffle"
             | "sort"
             | "rsort"
+            | "uasort"
+            | "uksort"
+            | "usort"
             | "current"
             | "end"
             | "key"
@@ -7505,6 +7508,9 @@ fn is_array_by_ref_mutation_name(name: &str) -> bool {
             | "rsort"
             | "shuffle"
             | "sort"
+            | "uasort"
+            | "uksort"
+            | "usort"
     )
 }
 
@@ -7512,13 +7518,6 @@ fn is_array_path_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "array_pop" | "array_push" | "array_shift" | "array_unshift"
-    )
-}
-
-fn is_unsupported_sort_family_mutation_name(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "usort" | "uasort" | "uksort"
     )
 }
 
@@ -7634,31 +7633,6 @@ fn validate_mutating_array_internal_call(
         }
         return Err(Diagnostic::new(
             "array_multisort() requires variable array arguments and scalar sort flags; non-variable array mutation targets are unsupported",
-            Some(arguments.first().map_or(call_span, Expr::span)),
-        ));
-    }
-    if is_unsupported_sort_family_mutation_name(name) {
-        let normalized = name.to_ascii_lowercase();
-        if arguments.is_empty() {
-            return Err(Diagnostic::new(
-                format!(
-                    "{normalized}() mutates array arguments by reference; sort-family array mutation semantics are unsupported"
-                ),
-                Some(call_span),
-            ));
-        }
-        if is_direct_variable_argument(&arguments[0]) {
-            return Err(Diagnostic::new(
-                format!(
-                    "{normalized}() mutates array arguments by reference; sort-family array mutation semantics are unsupported"
-                ),
-                Some(arguments.first().map_or(call_span, Expr::span)),
-            ));
-        }
-        return Err(Diagnostic::new(
-            format!(
-                "{normalized}() requires a direct variable array argument; sort-family array mutation targets are unsupported"
-            ),
             Some(arguments.first().map_or(call_span, Expr::span)),
         ));
     }
