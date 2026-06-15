@@ -2843,3 +2843,46 @@ The submitted branch reported the focused COW/reference mutation row pack as
 (`abfb48341ef2`) before `ptn-j6gv` and `ptn-qsmv.14` landed, so the current
 dashboard keeps the newer `ptn-qsmv.14` broad 1k baseline row rather than
 downgrading to that stale broad count.
+
+## 2026-06-15 ptn-vvpn Class Alias Metadata Slice
+
+Implemented runtime class-alias metadata resolution for `class_alias()` and
+the class-name paths used by metadata queries, object construction, type
+checks, and `instanceof`. The parser/IR/backend now also support dynamic
+`instanceof` right-hand sides, including alias-resolved string targets and
+object targets.
+
+Full 20k family source manifest generated at
+`.runtime/ptn-vvpn-full-family-before/20260615T173339Z/phpt-full-corpus-20000.txt`
+from corpus revision `8c63ec400ce8e07c57a8d9499317b96a8beafb8b`. Source scans
+from that manifest found 38 `class_alias` rows
+(`.runtime/ptn-vvpn/full20k-class-alias-rows.txt`), 716 reflection/class
+property/method rows, and 464 attribute rows. Attribute and reflection probes
+remained mostly blocked by unsupported attribute/reflection/typed-property
+metadata, so this slice did not reach the requested 75 newly-green row target.
+
+Focused PHPT before/after on the full20k `class_alias` source bucket:
+baseline commit `178374c799e5` selected 38 rows, 33 runnable, 0 passed, 33
+failed. Current branch selected the same 38 rows, 33 runnable, 9 passed, 24
+failed. Both runs excluded the same 5 classifier rows
+(`unsupported-anonymous-class`, `unsupported-dynamic-eval`,
+`unsupported-internal-reflection-metadata`, `unsupported-autoload-metadata`,
+`unsupported-extension`).
+
+Newly passing rows:
+
+- `Zend/tests/class_alias/bug76451_2.phpt`
+- `Zend/tests/class_alias/class_alias_001.phpt`
+- `Zend/tests/class_alias/class_alias_006.phpt`
+- `Zend/tests/class_alias/class_alias_012.phpt`
+- `Zend/tests/class_alias/class_alias_013.phpt`
+- `Zend/tests/class_alias/class_alias_014.phpt`
+- `Zend/tests/class_alias/class_alias_021.phpt`
+- `Zend/tests/class_exists_001.phpt`
+- `Zend/tests/grammar/regression_011.phpt`
+
+Evidence commands:
+`PHPT_PROGRESS_DIR=/tmp/ptn-vvpn-before-class-alias-correct timeout 900s tools/run-bounded-phpt.sh --classify-harness-programs /home/claude/gt/ptn_from_scratch/polecats/guard-506/ptn_from_scratch/.runtime/ptn-vvpn/full20k-class-alias-rows.txt`
+from detached worktree `/tmp/ptn-vvpn-before-worktree` at `178374c799e5`, and
+`PHPT_PROGRESS_DIR=.runtime/ptn-vvpn-class-alias-after-dyn-instanceof timeout 900s tools/run-bounded-phpt.sh --classify-harness-programs .runtime/ptn-vvpn/full20k-class-alias-rows.txt`
+on this branch.
