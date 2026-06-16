@@ -42,6 +42,35 @@ pub struct TraitDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitUseDecl {
     pub name: String,
+    pub adaptations: Vec<TraitAdaptation>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TraitAdaptation {
+    Alias(TraitAliasAdaptation),
+    Precedence(TraitPrecedenceAdaptation),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitMethodReference {
+    pub trait_name: Option<String>,
+    pub method_name: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitAliasAdaptation {
+    pub method: TraitMethodReference,
+    pub alias: Option<String>,
+    pub visibility: Option<PropertyVisibility>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitPrecedenceAdaptation {
+    pub method: TraitMethodReference,
+    pub instead_of: Vec<String>,
     pub span: SourceSpan,
 }
 
