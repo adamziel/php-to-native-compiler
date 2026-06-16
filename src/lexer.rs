@@ -145,6 +145,10 @@ pub enum StringPart {
         variable: String,
         properties: Vec<String>,
     },
+    MethodCall {
+        variable: String,
+        method: String,
+    },
     ArrayAccess {
         array: String,
         indices: Vec<StringInterpolationIndex>,
@@ -934,10 +938,34 @@ impl<'a> Lexer<'a> {
                     break;
                 }
                 Some('-') if self.rest().starts_with("->") && indices.is_empty() => {
-                    let mut properties = Vec::new();
                     self.bump_char();
                     self.bump_char();
-                    properties.push(self.read_interpolation_variable_name(start)?);
+                    let first_member = self.read_interpolation_variable_name(start)?;
+                    self.skip_interpolation_whitespace();
+                    if matches!(self.peek_char(), Some('(')) {
+                        self.bump_char();
+                        self.skip_interpolation_whitespace();
+                        if !matches!(self.peek_char(), Some(')')) {
+                            return Err(Diagnostic::new(
+                                "complex string interpolation is unsupported",
+                                Some(self.current_char_span()),
+                            ));
+                        }
+                        self.bump_char();
+                        self.skip_interpolation_whitespace();
+                        if !matches!(self.peek_char(), Some('}')) {
+                            return Err(Diagnostic::new(
+                                "complex string interpolation is unsupported",
+                                Some(self.current_char_span()),
+                            ));
+                        }
+                        self.bump_char();
+                        return Ok(StringPart::MethodCall {
+                            variable: array,
+                            method: first_member,
+                        });
+                    }
+                    let mut properties = vec![first_member];
                     loop {
                         self.skip_interpolation_whitespace();
                         if !self.rest().starts_with("->") {

@@ -6,7 +6,14 @@ pub struct Program {
     pub traits: Vec<TraitDecl>,
     pub functions: Vec<FunctionDecl>,
     pub statements: Vec<Statement>,
+    pub compile_warnings: Vec<CompileWarning>,
     pub strict_types: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompileWarning {
+    pub message: String,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -869,6 +876,10 @@ pub enum StringPart {
     PropertyChain {
         variable: String,
         properties: Vec<String>,
+    },
+    MethodCall {
+        variable: String,
+        method: String,
     },
     ArrayAccess {
         array: String,

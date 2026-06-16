@@ -2042,6 +2042,65 @@ fn parser_accepts_throw_statement_and_expression() {
 }
 
 #[test]
+fn parser_rejects_static_catch_type_as_fatal() {
+    let error =
+        parser::parse("<?php\ntry {\n    throw new Exception('boom');\n} catch (static $e) {}\n")
+            .unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "Bad class name in the catch statement");
+    assert_eq!(error.span.unwrap().line, 4);
+}
+
+#[test]
+fn parser_reports_group_use_parse_errors_with_php_shapes() {
+    let cases = [
+        (
+            "<?php\nuse Foo\\Bar\\{ A, B { C } };\n",
+            "syntax error, unexpected token \"{\", expecting \"}\"",
+            2,
+        ),
+        (
+            "<?php\nuse const Foo\\Bar\\{ A, const B };\n",
+            "syntax error, unexpected token \"const\", expecting \"}\"",
+            2,
+        ),
+        (
+            "<?php\nuse Foo\\Bar\\{\\Baz};\n",
+            "syntax error, unexpected fully qualified name \"\\Baz\", expecting identifier or namespaced name or \"function\" or \"const\"",
+            2,
+        ),
+    ];
+
+    for (source, expected, line) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::ParseError, "{source}");
+        assert_eq!(error.message, expected, "{source}");
+        assert_eq!(error.span.unwrap().line, line, "{source}");
+    }
+}
+
+#[test]
+fn parser_stops_at_top_level_halt_compiler_statement() {
+    let program =
+        parser::parse("<?php echo \"before\\n\"; __HALT_COMPILER(); echo \"after\\n\";").unwrap();
+
+    assert_eq!(program.statements.len(), 1);
+}
+
+#[test]
+fn parser_rejects_halt_compiler_inside_block() {
+    let error = parser::parse("<?php\nif (true) {\n    __HALT_COMPILER();\n}\n").unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        error.message,
+        "__HALT_COMPILER() can only be used from the outermost scope"
+    );
+    assert_eq!(error.span.unwrap().line, 3);
+}
+
+#[test]
 fn parser_accepts_global_variable_statements() {
     let program = parser::parse("<?php function read_globals() { global $left, $right; }").unwrap();
 
@@ -5670,6 +5729,28 @@ echo \"name={$user->name} label={$user->profile->label}\\n\";
         "name=Ada label=ready\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_accepts_braced_method_call_interpolation() {
+    let program = parser::parse("<?php echo \"message={$e->getMessage()}\\n\";").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            StringPart::Literal("message=".to_string()),
+            StringPart::MethodCall {
+                variable: "e".to_string(),
+                method: "getMessage".to_string(),
+            },
+            StringPart::Literal("\n".to_string()),
+        ]
+    );
 }
 
 #[test]
@@ -16840,6 +16921,112 @@ fn compile_undefined_constant_throws_catchable_error_to_native_binary() {
 }
 
 #[test]
+fn compile_uncaught_undefined_namespaced_function_reports_error_to_native_binary() {
+    let root = temp_dir("ptn-native-undefined-namespaced-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("undefined-namespaced-function.php");
+    let output = root.join("undefined-namespaced-function-bin");
+    fs::write(&input, "<?php\nnamespace Hello;\nWorld();\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Call to undefined function Hello\\World() in {}:3\n\
+Stack trace:\n\
+#0 {{main}}\n  thrown in {} on line 3\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn compile_non_compound_use_imports_emit_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-non-compound-use-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-compound-use.php");
+    let output = root.join("non-compound-use-bin");
+    fs::write(&input, "<?php\nuse A;\nuse \\B;\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: The use statement with non-compound name 'A' has no effect in {} on line 2\n\n\
+Warning: The use statement with non-compound name 'B' has no effect in {} on line 3\n",
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uncaught_undefined_static_method_reports_method_error_to_native_binary() {
+    let root = temp_dir("ptn-native-undefined-static-method");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("undefined-static-method.php");
+    let output = root.join("undefined-static-method-bin");
+    fs::write(
+        &input,
+        "<?php\nnamespace Exception;\nfunction foo() { echo \"ok\\n\"; }\n\\Exception\\foo();\n\\Exception::bar();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Call to undefined method Exception::bar() in {}:5\n\
+Stack trace:\n\
+#0 {{main}}\n  thrown in {} on line 5\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn compile_qualified_namespace_constants_in_static_array_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-qualified-constant-static-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("qualified-constant-static-array.php");
+    let output = root.join("qualified-constant-static-array-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+namespace foo\\bar;\n\
+const I = 12;\n\
+namespace foo;\n\
+class Box { public static $values = array(bar\\I => bar\\I); }\n\
+print_r(Box::$values);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Array\n(\n    [12] => 12\n)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_runtime_define_and_constant_to_native_binary() {
     let root = temp_dir("ptn-native-runtime-define-constant");
     fs::create_dir_all(&root).unwrap();
@@ -16863,6 +17050,56 @@ var_dump(defined(\"USER_CONST\"), constant(\"USER_CONST\"), constant(1), constan
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\nbool(true)\nstring(5) \"value\"\nint(2)\nint(3)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_halt_compiler_offset_and_trailing_source_to_native_binary() {
+    let root = temp_dir("ptn-native-halt-compiler-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("halt-compiler-offset.php");
+    let output = root.join("halt-compiler-offset-bin");
+    let source = "<?php echo \"before\\n\"; var_dump(__COMPILER_HALT_OFFSET__); __HALT_COMPILER();\necho \"after\\n\";\n";
+    let expected_offset = source.find("__HALT_COMPILER();").unwrap() + "__HALT_COMPILER();".len();
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("before\nint({expected_offset})\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_define_reserved_halt_offset_warns_without_defining_constant() {
+    let root = temp_dir("ptn-native-define-halt-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("define-halt-offset.php");
+    let output = root.join("define-halt-offset-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(defined(\"__COMPILER_HALT_OFFSET__\"));\n\
+var_dump(define(\"__COMPILER_HALT_OFFSET__\", 1));\n\
+var_dump(defined(\"__COMPILER_HALT_OFFSET__\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+Warning: Constant __COMPILER_HALT_OFFSET__ already defined, this will be an error in PHP 9 in ptn on line 3\n\
+bool(false)\n\
+bool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -27093,6 +27330,51 @@ try {\n\
 }
 
 #[test]
+fn compile_exception_reflection_trace_mutation_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-reflection-trace-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-reflection-trace-mutation.php");
+    let output = root.join("exception-reflection-trace-mutation-bin");
+    fs::write(
+        &input,
+        "<?php
+$e = new Exception();
+$ref = new ReflectionProperty($e, 'trace');
+$ref->setValue($e, [NULL]);
+var_dump($e->getTraceAsString());
+$ref->setValue($e, [[]]);
+var_dump($e->getTraceAsString());
+$ref->setValue($e, [[
+    'file' => NULL,
+    'class' => NULL,
+    'type' => NULL,
+    'function' => NULL,
+    'args' => NULL,
+]]);
+var_dump($e->getTraceAsString());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: Expected array for frame 0"));
+    assert!(stdout.contains("string(9) \"#0 {main}\""));
+    assert!(stdout.contains("string(36) \"#0 [internal function]: ()\n#1 {main}\""));
+    assert!(stdout.contains("Warning: File name is not a string"));
+    assert!(stdout.contains("Warning: Value for class is not a string"));
+    assert!(stdout.contains("Warning: Value for type is not a string"));
+    assert!(stdout.contains("Warning: Value for function is not a string"));
+    assert!(stdout.contains("Warning: args element is not an array"));
+    assert!(stdout
+        .contains("string(58) \"#0 [unknown file]: [unknown][unknown][unknown]()\n#1 {main}\""));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_exception_method_dispatch_emits_callable_helpers_to_native_binary() {
     let root = temp_dir("ptn-native-exception-method-dispatch-helpers");
     fs::create_dir_all(&root).unwrap();
@@ -29061,6 +29343,34 @@ Warning: Undefined array key \"one\" in ptn on line 7\n\
 \n\
 Warning: Undefined array key \"two\" in ptn on line 7\n\
 a=b=zeroc=d\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_braced_method_call_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-braced-method-call-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("braced-method-call-interpolation.php");
+    let output = root.join("braced-method-call-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class MessageBox {\n\
+    public function text() { return \"ready\"; }\n\
+}\n\
+$box = new MessageBox();\n\
+echo \"value={$box->text()}\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "value=ready\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

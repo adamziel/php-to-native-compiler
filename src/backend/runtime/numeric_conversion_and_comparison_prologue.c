@@ -797,17 +797,26 @@ static void ptn_exception_append_display_function(
     ptn_string_buffer_append(buffer, function_name);
 }
 
-static void ptn_exception_append_trace_frame(
+static void ptn_exception_trace_warning(PtnRuntime *runtime, const char *message, size_t line) {
+    if (runtime != NULL) {
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+    }
+}
+
+static int ptn_exception_append_trace_frame(
+    PtnRuntime *runtime,
     PtnStringBuffer *buffer,
     size_t index,
     PtnValue frame,
-    size_t max_string_len
+    size_t max_string_len,
+    size_t line
 ) {
     ptn_string_buffer_append_format(buffer, "#%zu ", index);
     frame = ptn_value_deref(frame);
     if (frame.type != PTN_ARRAY || frame.as.array == NULL) {
+        ptn_exception_trace_warning(runtime, "Expected array for frame 0", line);
         ptn_string_buffer_append(buffer, "{main}");
-        return;
+        return 1;
     }
 
     PtnValue *file_slot = ptn_trace_array_string_slot(frame, "file");
@@ -821,10 +830,45 @@ static void ptn_exception_append_trace_frame(
             file_value.as.string.len
         );
         ptn_string_buffer_append_format(buffer, "(%lld): ", (long long)line_value.as.integer);
+    } else if (file_slot != NULL) {
+        if (file_value.type != PTN_STRING) {
+            ptn_exception_trace_warning(runtime, "File name is not a string", line);
+        }
+        ptn_string_buffer_append(buffer, "[unknown file]: ");
+    } else {
+        ptn_string_buffer_append(buffer, "[internal function]: ");
     }
 
+    PtnValue *class_slot = ptn_trace_array_string_slot(frame, "class");
+    PtnValue *type_slot = ptn_trace_array_string_slot(frame, "type");
     PtnValue *function_slot = ptn_trace_array_string_slot(frame, "function");
+    PtnValue class_value = class_slot == NULL ? ptn_null() : ptn_value_deref(*class_slot);
+    PtnValue type_value = type_slot == NULL ? ptn_null() : ptn_value_deref(*type_slot);
     PtnValue function_value = function_slot == NULL ? ptn_null() : ptn_value_deref(*function_slot);
+    if (class_slot != NULL) {
+        if (class_value.type == PTN_STRING) {
+            ptn_string_buffer_append_len(
+                buffer,
+                (const char *)class_value.as.string.data,
+                class_value.as.string.len
+            );
+        } else {
+            ptn_exception_trace_warning(runtime, "Value for class is not a string", line);
+            ptn_string_buffer_append(buffer, "[unknown]");
+        }
+    }
+    if (type_slot != NULL) {
+        if (type_value.type == PTN_STRING) {
+            ptn_string_buffer_append_len(
+                buffer,
+                (const char *)type_value.as.string.data,
+                type_value.as.string.len
+            );
+        } else {
+            ptn_exception_trace_warning(runtime, "Value for type is not a string", line);
+            ptn_string_buffer_append(buffer, "[unknown]");
+        }
+    }
     if (function_value.type == PTN_STRING) {
         char *function_name = ptn_duplicate_string_len(
             (const char *)function_value.as.string.data,
@@ -832,6 +876,9 @@ static void ptn_exception_append_trace_frame(
         );
         ptn_exception_append_display_function(buffer, function_name);
         free(function_name);
+    } else if (function_slot != NULL) {
+        ptn_exception_trace_warning(runtime, "Value for function is not a string", line);
+        ptn_string_buffer_append(buffer, "[unknown]");
     }
     ptn_string_buffer_append_char(buffer, '(');
     PtnValue *args_slot = ptn_trace_array_string_slot(frame, "args");
@@ -843,8 +890,11 @@ static void ptn_exception_append_trace_frame(
             }
             ptn_trace_append_arg(buffer, args_value.as.array->entries[i].value, max_string_len);
         }
+    } else if (args_slot != NULL) {
+        ptn_exception_trace_warning(runtime, "args element is not an array", line);
     }
     ptn_string_buffer_append_char(buffer, ')');
+    return 0;
 }
 
 static PTN_UNUSED PtnStringOperand ptn_exception_trace_as_string_operand(
@@ -861,12 +911,16 @@ static PTN_UNUSED PtnStringOperand ptn_exception_trace_as_string_operand(
             if (index != 0) {
                 ptn_string_buffer_append_char(&buffer, '\n');
             }
-            ptn_exception_append_trace_frame(
+            if (ptn_exception_append_trace_frame(
+                runtime,
                 &buffer,
                 index,
                 trace.as.array->entries[i].value,
-                max_string_len
-            );
+                max_string_len,
+                exception == NULL ? 0 : exception->line
+            )) {
+                return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
+            }
             index++;
         }
     }
