@@ -25679,6 +25679,39 @@ static void ptn_reflection_property_check_exact_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
+static void ptn_reflection_property_check_at_most_arguments(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argc,
+    size_t maximum
+) {
+    if (argc <= maximum) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionProperty::%s() expects at most %zu argument%s, %zu given",
+        method_name,
+        maximum,
+        maximum == 1 ? "" : "s",
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static int ptn_reflection_property_receiver_matches(PtnValue receiver, const char *class_name) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return 0;
+    }
+    return ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, class_name);
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_property_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -25797,14 +25830,30 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     }
     if (ptn_ascii_case_equal(name, "getValue")) {
         if (data->is_static) {
-            if (argc > 1) {
-                ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
+            ptn_reflection_property_check_at_most_arguments(runtime, name, argc, 1);
+            if (runtime->exceptions->active_exception != NULL) {
                 return ptn_null();
             }
             return ptn_runtime_read_static_property(runtime, data->class_name, data->name, data->class_name, line);
         }
-        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
+        if (argc == 0) {
+            ptn_throw_exception(
+                runtime,
+                "TypeError",
+                "ReflectionProperty::getValue(): Argument #1 ($object) must be provided for instance properties"
+            );
+            return ptn_null();
+        }
+        ptn_reflection_property_check_at_most_arguments(runtime, name, argc, 1);
         if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (!ptn_reflection_property_receiver_matches(args[0], data->class_name)) {
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Given object is not an instance of the class this property was declared in"
+            );
             return ptn_null();
         }
         return ptn_object_read_property(runtime, args[0], data->name, data->class_name, line);
