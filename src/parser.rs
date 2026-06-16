@@ -2545,135 +2545,11 @@ impl Parser<'_> {
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
             return Ok(None);
         }
-        if !self.peek_starts_property_type_hint() {
+        if !self.peek_is_type_hint() {
             return Ok(None);
         }
-        let mut type_hint = self.parse_property_type_atom()?;
-        let mut complex = false;
-        while matches!(self.peek().kind, TokenKind::Pipe | TokenKind::Ampersand) {
-            let separator = match self.advance().kind {
-                TokenKind::Pipe => "|",
-                TokenKind::Ampersand => "&",
-                _ => unreachable!("property type separator checked"),
-            };
-            let atom = self.parse_property_type_atom()?;
-            complex = true;
-            type_hint.text.push_str(separator);
-            type_hint.text.push_str(&atom.text);
-        }
-        if complex {
-            type_hint.kind = PropertyTypeKind::Unsupported;
-            type_hint.allows_null = false;
-        }
-        Ok(Some(type_hint))
-    }
-
-    fn parse_property_type_atom(&mut self) -> Result<PropertyTypeHint> {
-        let allows_null = if matches!(self.peek().kind, TokenKind::Question) {
-            self.advance();
-            true
-        } else {
-            false
-        };
-        let nullable_prefix = if allows_null { "?" } else { "" };
-        match &self.peek().kind {
-            TokenKind::Null => {
-                self.advance();
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}null"),
-                    kind: PropertyTypeKind::Null,
-                    allows_null,
-                })
-            }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
-                self.advance();
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}array"),
-                    kind: PropertyTypeKind::Array,
-                    allows_null,
-                })
-            }
-            TokenKind::IntType | TokenKind::IntegerType => {
-                let text = property_type_token_text(&self.advance().kind);
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}{text}"),
-                    kind: PropertyTypeKind::Int,
-                    allows_null,
-                })
-            }
-            TokenKind::FloatType | TokenKind::DoubleType => {
-                let text = property_type_token_text(&self.advance().kind);
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}{text}"),
-                    kind: PropertyTypeKind::Float,
-                    allows_null,
-                })
-            }
-            TokenKind::StringType | TokenKind::BinaryType => {
-                let text = property_type_token_text(&self.advance().kind);
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}{text}"),
-                    kind: PropertyTypeKind::String,
-                    allows_null,
-                })
-            }
-            TokenKind::BoolType | TokenKind::BooleanType => {
-                let text = property_type_token_text(&self.advance().kind);
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}{text}"),
-                    kind: PropertyTypeKind::Bool,
-                    allows_null,
-                })
-            }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("mixed") => {
-                if allows_null {
-                    return Err(Diagnostic::new(
-                        "Type mixed cannot be marked as nullable since mixed already includes null",
-                        Some(self.peek().span),
-                    ));
-                }
-                self.advance();
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}mixed"),
-                    kind: PropertyTypeKind::Mixed,
-                    allows_null,
-                })
-            }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("object") => {
-                self.advance();
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}object"),
-                    kind: PropertyTypeKind::Object,
-                    allows_null,
-                })
-            }
-            TokenKind::Identifier(name)
-                if matches!(
-                    name.to_ascii_lowercase().as_str(),
-                    "callable" | "false" | "iterable" | "never" | "static" | "true" | "void"
-                ) =>
-            {
-                let name = name.clone();
-                self.advance();
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}{name}"),
-                    kind: PropertyTypeKind::Unsupported,
-                    allows_null,
-                })
-            }
-            TokenKind::Backslash | TokenKind::Identifier(_) => {
-                let (class_name, _) = self.parse_resolved_class_name("expected property type")?;
-                Ok(PropertyTypeHint {
-                    text: format!("{nullable_prefix}{class_name}"),
-                    kind: PropertyTypeKind::Class(class_name),
-                    allows_null,
-                })
-            }
-            _ => Err(Diagnostic::new(
-                "expected property type",
-                Some(self.peek().span),
-            )),
-        }
+        let parsed = self.parse_type_hint_with_context(TypeHintContext::Parameter)?;
+        Ok(Some(property_type_hint_from_type_hint(&parsed.type_hint)))
     }
 
     fn parse_method_decl(
@@ -3476,6 +3352,7 @@ impl Parser<'_> {
     fn peek_starts_property_type_hint(&self) -> bool {
         match &self.peek().kind {
             TokenKind::Question
+            | TokenKind::LeftParen
             | TokenKind::Backslash
             | TokenKind::Null
             | TokenKind::IntType
@@ -3485,7 +3362,9 @@ impl Parser<'_> {
             | TokenKind::StringType
             | TokenKind::BinaryType
             | TokenKind::BoolType
-            | TokenKind::BooleanType => true,
+            | TokenKind::BooleanType
+            | TokenKind::True
+            | TokenKind::False => true,
             TokenKind::Identifier(_) => true,
             _ => false,
         }
@@ -7442,92 +7321,93 @@ fn is_unqualified_only_builtin_type_hint_name(name: &str) -> bool {
     )
 }
 
-fn property_type_token_text(kind: &TokenKind) -> &'static str {
-    match kind {
-        TokenKind::IntType => "int",
-        TokenKind::IntegerType => "integer",
-        TokenKind::FloatType => "float",
-        TokenKind::DoubleType => "double",
-        TokenKind::StringType => "string",
-        TokenKind::BinaryType => "binary",
-        TokenKind::BoolType => "bool",
-        TokenKind::BooleanType => "boolean",
-        _ => "mixed",
-    }
-}
-
 fn property_type_hint_from_type_hint(type_hint: &TypeHint) -> PropertyTypeHint {
-    match type_hint {
+    let mut property_type_hint = match type_hint {
         TypeHint::Null => PropertyTypeHint {
             text: "null".to_string(),
             kind: PropertyTypeKind::Null,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::Array => PropertyTypeHint {
             text: "array".to_string(),
             kind: PropertyTypeKind::Array,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::Int => PropertyTypeHint {
             text: "int".to_string(),
             kind: PropertyTypeKind::Int,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::Float => PropertyTypeHint {
             text: "float".to_string(),
             kind: PropertyTypeKind::Float,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::String => PropertyTypeHint {
             text: "string".to_string(),
             kind: PropertyTypeKind::String,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::Bool => PropertyTypeHint {
             text: "bool".to_string(),
             kind: PropertyTypeKind::Bool,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::True | TypeHint::False | TypeHint::Static => PropertyTypeHint {
             text: type_hint_display(type_hint),
             kind: PropertyTypeKind::Unsupported,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::Mixed => PropertyTypeHint {
             text: "mixed".to_string(),
             kind: PropertyTypeKind::Mixed,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::Object => PropertyTypeHint {
             text: "object".to_string(),
             kind: PropertyTypeKind::Object,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::Callable
         | TypeHint::Iterable
         | TypeHint::Union(_)
         | TypeHint::Intersection(_) => PropertyTypeHint {
-            text: type_hint_key(type_hint),
+            text: type_hint_display_canonical(type_hint),
             kind: PropertyTypeKind::Unsupported,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::Void | TypeHint::Never => PropertyTypeHint {
-            text: "mixed".to_string(),
+            text: type_hint_display(type_hint),
             kind: PropertyTypeKind::Unsupported,
             allows_null: false,
+            semantic_type: None,
         },
         TypeHint::Nullable(inner) => {
             let mut nested = property_type_hint_from_type_hint(inner);
             nested.text = format!("?{}", nested.text);
             nested.allows_null = true;
+            nested.semantic_type = None;
             nested
         }
         TypeHint::Class(name) => PropertyTypeHint {
             text: name.clone(),
             kind: PropertyTypeKind::Class(name.clone()),
             allows_null: false,
+            semantic_type: None,
         },
-    }
+    };
+    property_type_hint.semantic_type = Some(type_hint.clone());
+    property_type_hint
 }
 
 fn validate_parameter_type_hint(type_hint: &TypeHint, span: SourceSpan) -> Result<()> {
@@ -9901,6 +9781,22 @@ fn validate_tentative_internal_return_signature(
     if method.is_static != tentative_method.is_static {
         return Ok(());
     }
+    if let Some(unavailable_name) = method
+        .parameters
+        .iter()
+        .filter_map(|parameter| parameter.type_hint.as_ref())
+        .find_map(|type_hint| first_unavailable_class_name(type_hint, classes))
+    {
+        return Err(
+            method_signature_unresolved_compatibility_error_with_display(
+                class,
+                method,
+                tentative_method.class_name,
+                tentative_method.signature,
+                &unavailable_name,
+            ),
+        );
+    }
     if method.return_type.as_ref().is_some_and(|return_type| {
         type_hint_is_subtype(
             return_type,
@@ -10092,71 +9988,8 @@ fn unresolved_compatibility_class(
     target: &TypeHint,
     classes: &[ClassDecl],
 ) -> Option<String> {
-    if !type_hint_mentions_iterable_or_traversable(target) {
-        return None;
-    }
-    first_unavailable_intersection_class(candidate, classes)
-}
-
-fn type_hint_mentions_iterable_or_traversable(type_hint: &TypeHint) -> bool {
-    match type_hint {
-        TypeHint::Iterable => true,
-        TypeHint::Class(name) => name.eq_ignore_ascii_case("Traversable"),
-        TypeHint::Nullable(inner) => type_hint_mentions_iterable_or_traversable(inner),
-        TypeHint::Union(types) | TypeHint::Intersection(types) => {
-            types.iter().any(type_hint_mentions_iterable_or_traversable)
-        }
-        TypeHint::Null
-        | TypeHint::Array
-        | TypeHint::Int
-        | TypeHint::Float
-        | TypeHint::String
-        | TypeHint::Bool
-        | TypeHint::True
-        | TypeHint::False
-        | TypeHint::Callable
-        | TypeHint::Object
-        | TypeHint::Mixed
-        | TypeHint::Void
-        | TypeHint::Never
-        | TypeHint::Static => false,
-    }
-}
-
-fn first_unavailable_intersection_class(
-    type_hint: &TypeHint,
-    classes: &[ClassDecl],
-) -> Option<String> {
-    match type_hint {
-        TypeHint::Intersection(types) => types.iter().find_map(|member| {
-            if let TypeHint::Class(name) = member {
-                if !class_type_name_is_available(name, classes) {
-                    return Some(name.clone());
-                }
-            }
-            None
-        }),
-        TypeHint::Nullable(inner) => first_unavailable_intersection_class(inner, classes),
-        TypeHint::Union(types) => types
-            .iter()
-            .find_map(|member| first_unavailable_intersection_class(member, classes)),
-        TypeHint::Null
-        | TypeHint::Array
-        | TypeHint::Int
-        | TypeHint::Float
-        | TypeHint::String
-        | TypeHint::Bool
-        | TypeHint::True
-        | TypeHint::False
-        | TypeHint::Callable
-        | TypeHint::Object
-        | TypeHint::Iterable
-        | TypeHint::Mixed
-        | TypeHint::Void
-        | TypeHint::Never
-        | TypeHint::Static
-        | TypeHint::Class(_) => None,
-    }
+    first_unavailable_class_name(candidate, classes)
+        .or_else(|| first_unavailable_class_name(target, classes))
 }
 
 fn first_unavailable_class_name(type_hint: &TypeHint, classes: &[ClassDecl]) -> Option<String> {
@@ -10206,6 +10039,7 @@ fn parameter_type_is_contravariant(
 ) -> bool {
     match (&parameter.type_hint, &parent_parameter.type_hint) {
         (None, _) => true,
+        (Some(TypeHint::Mixed), None) => true,
         (Some(_), None) => false,
         (Some(type_hint), Some(parent_type_hint)) => {
             type_hint_is_subtype(parent_type_hint, type_hint, classes, runtime_class_aliases)
@@ -10594,6 +10428,14 @@ fn class_type_extends_or_implements(
     classes: &[ClassDecl],
     runtime_class_aliases: &HashMap<String, String>,
 ) -> bool {
+    if target_name.eq_ignore_ascii_case("Stringable")
+        && class
+            .methods
+            .iter()
+            .any(|method| method.name.eq_ignore_ascii_case("__toString"))
+    {
+        return true;
+    }
     if class.interfaces.iter().any(|interface| {
         interface_name_is_subtype(interface, target_name, classes, runtime_class_aliases)
     }) {
@@ -10668,11 +10510,19 @@ fn type_hint_display(type_hint: &TypeHint) -> String {
             }
             _ => format!("?{}", type_hint_display(inner)),
         },
-        TypeHint::Union(types) => types
-            .iter()
-            .map(|member| type_hint_union_member_display(member))
-            .collect::<Vec<_>>()
-            .join("|"),
+        TypeHint::Union(types) => {
+            let mut members = types
+                .iter()
+                .map(|member| type_hint_union_member_display(member))
+                .collect::<Vec<_>>();
+            if members
+                .iter()
+                .all(|member| union_builtin_display_rank(member).is_some())
+            {
+                members.sort_by_key(|member| union_builtin_display_rank(member).unwrap());
+            }
+            members.join("|")
+        }
         TypeHint::Intersection(types) => types
             .iter()
             .map(type_hint_display)
@@ -10689,6 +10539,21 @@ fn type_hint_accepts_null_default(type_hint: &TypeHint) -> bool {
             .iter()
             .any(|member| type_hint_accepts_null_default(member)),
         _ => false,
+    }
+}
+
+fn union_builtin_display_rank(member: &str) -> Option<usize> {
+    match member {
+        "object" => Some(0),
+        "array" => Some(1),
+        "string" => Some(2),
+        "int" => Some(3),
+        "float" => Some(4),
+        "bool" => Some(5),
+        "false" => Some(6),
+        "true" => Some(7),
+        "null" => Some(8),
+        _ => None,
     }
 }
 
@@ -11593,6 +11458,7 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
 }
 
 fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {
+    let runtime_class_aliases = HashMap::new();
     for class in classes {
         for property in &class.properties {
             let Some((parent_class, parent_property)) =
@@ -11607,6 +11473,8 @@ fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {
                 property.span,
                 parent_class,
                 parent_property.type_hint.as_ref(),
+                classes,
+                &runtime_class_aliases,
             )?;
         }
         for property in &class.static_properties {
@@ -11622,6 +11490,8 @@ fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {
                 property.span,
                 parent_class,
                 parent_property.type_hint.as_ref(),
+                classes,
+                &runtime_class_aliases,
             )?;
         }
     }
@@ -11635,11 +11505,18 @@ fn validate_property_type_pair(
     span: SourceSpan,
     parent_class: &ClassDecl,
     parent_type_hint: Option<&PropertyTypeHint>,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<()> {
     match (type_hint, parent_type_hint) {
         (None, None) => Ok(()),
         (Some(type_hint), Some(parent_type_hint))
-            if property_type_hints_are_invariant(type_hint, parent_type_hint) =>
+            if property_type_hints_are_invariant(
+                type_hint,
+                parent_type_hint,
+                classes,
+                runtime_class_aliases,
+            ) =>
         {
             Ok(())
         }
@@ -11715,7 +11592,16 @@ fn find_visible_parent_static_property<'a>(
     None
 }
 
-fn property_type_hints_are_invariant(left: &PropertyTypeHint, right: &PropertyTypeHint) -> bool {
+fn property_type_hints_are_invariant(
+    left: &PropertyTypeHint,
+    right: &PropertyTypeHint,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> bool {
+    if let (Some(left), Some(right)) = (&left.semantic_type, &right.semantic_type) {
+        return type_hint_is_subtype(left, right, classes, runtime_class_aliases)
+            && type_hint_is_subtype(right, left, classes, runtime_class_aliases);
+    }
     property_type_hint_key(left) == property_type_hint_key(right)
 }
 

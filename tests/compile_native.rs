@@ -5345,6 +5345,52 @@ fn parser_rejects_mixed_as_reserved_class_name() {
 }
 
 #[test]
+fn parser_accepts_dnf_property_type_equivalence() {
+    parser::parse(
+        "<?php
+class A {}
+class B extends A {}
+interface X {}
+class Test { public (A&B)|X $prop; }
+class Test2 extends Test { public B|X $prop; }
+",
+    )
+    .unwrap();
+
+    let error = parser::parse(
+        "<?php
+interface X {}
+interface Y {}
+class A implements X, Y {}
+class B {}
+class Test { public (X&Y)|B $prop; }
+class Test2 extends Test { public A|B $prop; }
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Type of Test2::$prop must be (X&Y)|B (as in class Test)"
+    );
+}
+
+#[test]
+fn parser_accepts_mixed_and_stringable_variance() {
+    parser::parse(
+        "<?php
+class UntypedParent { public function method($a) {} }
+class MixedChild extends UntypedParent { public function method(mixed $a) {} }
+class StringParent { public function test(): Stringable {} }
+class StringChild extends StringParent {
+    public function test(): StringChild {}
+    public function __toString() {}
+}
+",
+    )
+    .unwrap();
+}
+
+#[test]
 fn parser_rejects_asymmetric_virtual_property_hooks() {
     let error = parser::parse("<?php class Foo { public private(set) int $bar { get => 42; } }")
         .unwrap_err();

@@ -135,6 +135,7 @@ pub struct PropertyTypeHint {
     pub text: String,
     pub kind: PropertyTypeKind,
     pub allows_null: bool,
+    pub semantic_type: Option<TypeHint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
