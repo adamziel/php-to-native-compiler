@@ -3766,7 +3766,7 @@ impl Parser<'_> {
             by_ref = true;
             span = self.advance().span;
         }
-        let target_expr = self.parse_expr()?;
+        let target_expr = self.parse_expr_allowing_append_array_read()?;
         let target_span = target_expr.span();
         let target = assignment_target_from_expr(target_expr).map_err(|diagnostic| {
             if diagnostic.message == "Cannot use empty list" {
@@ -3775,6 +3775,7 @@ impl Parser<'_> {
                 Diagnostic::new("expected foreach variable", Some(target_span))
             }
         })?;
+        reject_append_array_read_in_assignment_target(&target)?;
         reject_this_foreach_target(&target)?;
         if by_ref {
             validate_foreach_by_reference_target(&target, span)?;
@@ -4362,6 +4363,14 @@ impl Parser<'_> {
         self.parse_assignment_expr()
     }
 
+    fn parse_expr_allowing_append_array_read(&mut self) -> Result<Expr> {
+        let previous_allow_append_array_read = self.allow_append_array_read;
+        self.allow_append_array_read = true;
+        let expr = self.parse_expr();
+        self.allow_append_array_read = previous_allow_append_array_read;
+        expr
+    }
+
     fn parse_assignment_expr(&mut self) -> Result<Expr> {
         let left = self.parse_ternary_expr(0)?;
         self.parse_assignment_expr_from_left(left)
@@ -4418,6 +4427,7 @@ impl Parser<'_> {
                 ));
             }
         };
+        reject_append_array_read_in_assignment_target(&target)?;
         validate_expression_assignment_target(op, &target, operator.span)?;
         if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
@@ -5350,7 +5360,7 @@ impl Parser<'_> {
             ));
         }
 
-        let first = self.parse_expr()?;
+        let first = self.parse_expr_allowing_append_array_read()?;
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();
             let value = self.parse_expr()?;
@@ -5854,7 +5864,9 @@ impl Parser<'_> {
                 self.parse_reference_target()?,
             ));
         }
-        Ok(ListExprElementTarget::Value(self.parse_expr()?))
+        Ok(ListExprElementTarget::Value(
+            self.parse_expr_allowing_append_array_read()?,
+        ))
     }
 
     fn parse_array_elements(
@@ -5925,7 +5937,7 @@ impl Parser<'_> {
             });
         }
 
-        let first = self.parse_expr()?;
+        let first = self.parse_expr_allowing_append_array_read()?;
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();
             let value = self.parse_array_element_value()?;
@@ -5948,7 +5960,9 @@ impl Parser<'_> {
             self.advance();
             return Ok(ArrayElementValue::Reference(self.parse_reference_target()?));
         }
-        Ok(ArrayElementValue::Value(self.parse_expr()?))
+        Ok(ArrayElementValue::Value(
+            self.parse_expr_allowing_append_array_read()?,
+        ))
     }
 
     fn parse_isset_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
@@ -13718,6 +13732,112 @@ fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<(
         IncDecTarget::Variable { .. }
         | IncDecTarget::DynamicVariable { .. }
         | IncDecTarget::StaticProperty { .. } => {}
+    }
+    Ok(())
+}
+
+fn reject_append_array_read_in_optional_exprs(dimensions: &[Option<Expr>]) -> Result<()> {
+    for dimension in dimensions {
+        if let Some(dimension) = dimension {
+            reject_append_array_read(dimension)?;
+        }
+    }
+    Ok(())
+}
+
+fn reject_append_array_read_in_array_dim_target(target: &ArrayDimTarget) -> Result<()> {
+    reject_append_array_read_in_optional_exprs(&target.dimensions)
+}
+
+fn reject_append_array_read_in_reference_target(target: &ReferenceTarget) -> Result<()> {
+    match target {
+        ReferenceTarget::Variable { .. } => {}
+        ReferenceTarget::ArrayDim(target) => {
+            reject_append_array_read_in_array_dim_target(target)?;
+        }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            reject_append_array_read(receiver)?;
+            reject_append_array_read_in_optional_exprs(dimensions)?;
+        }
+        ReferenceTarget::Property { receiver, .. } => {
+            reject_append_array_read(receiver)?;
+        }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            reject_append_array_read(receiver)?;
+            reject_append_array_read(name)?;
+        }
+    }
+    Ok(())
+}
+
+fn reject_append_array_read_in_list_assignment_target(target: &ListAssignmentTarget) -> Result<()> {
+    for element in &target.elements {
+        if let Some(key) = &element.key {
+            reject_append_array_read(key)?;
+        }
+        match &element.target {
+            ListAssignmentElementTarget::Value(target) => {
+                reject_append_array_read_in_assignment_target(target)?;
+            }
+            ListAssignmentElementTarget::Reference(target) => {
+                reject_append_array_read_in_reference_target(target)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reject_append_array_read_in_assignment_target(target: &AssignmentTarget) -> Result<()> {
+    match target {
+        AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
+            reject_append_array_read(receiver)?;
+        }
+        AssignmentTarget::DynamicVariable { name, .. } => {
+            reject_append_array_read(name)?;
+        }
+        AssignmentTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            reject_append_array_read(name)?;
+            reject_append_array_read_in_optional_exprs(dimensions)?;
+        }
+        AssignmentTarget::ArrayDim(target) => {
+            reject_append_array_read_in_array_dim_target(target)?;
+        }
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            reject_append_array_read(receiver)?;
+            reject_append_array_read_in_optional_exprs(dimensions)?;
+        }
+        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            reject_append_array_read_in_optional_exprs(dimensions)?;
+        }
+        AssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            reject_append_array_read(receiver)?;
+            reject_append_array_read_in_optional_exprs(dimensions)?;
+        }
+        AssignmentTarget::Property { receiver, .. } => {
+            reject_append_array_read(receiver)?;
+        }
+        AssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            reject_append_array_read(receiver)?;
+            reject_append_array_read(name)?;
+        }
+        AssignmentTarget::List(target) => {
+            reject_append_array_read_in_list_assignment_target(target)?;
+        }
     }
     Ok(())
 }

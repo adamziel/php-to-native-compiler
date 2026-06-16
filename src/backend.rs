@@ -13408,8 +13408,13 @@ impl ValueEmitter {
                 );
             }
             let value_temp = self.emit_materialized_value(out, value);
-            let result_temp =
-                self.emit_dynamic_static_property_assignment_from_temp(out, receiver, name, *line, &value_temp);
+            let result_temp = self.emit_dynamic_static_property_assignment_from_temp(
+                out,
+                receiver,
+                name,
+                *line,
+                &value_temp,
+            );
             emit_value_cleanup(out, "    ", &value_temp);
             return result_temp;
         }
@@ -14218,7 +14223,8 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        let computed_temp = self.emit_compound_binary_value(out, &current_temp, &value_temp, line, op);
+        let computed_temp =
+            self.emit_compound_binary_value(out, &current_temp, &value_temp, line, op);
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);

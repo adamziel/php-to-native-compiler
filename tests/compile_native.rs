@@ -836,6 +836,21 @@ fn parser_accepts_foreach_array_dim_binding_targets() {
     };
     assert_eq!(value_target.array, "values");
     assert_eq!(value_target.dimensions.len(), 1);
+
+    let program = parser::parse("<?php foreach ([42] as $keys[] => $values[]);").unwrap();
+    let Statement::Foreach { key, value, .. } = &program.statements[0] else {
+        panic!("expected foreach statement");
+    };
+    let Some(AssignmentTarget::ArrayDim(key_target)) = key else {
+        panic!("expected append array-dimension key target");
+    };
+    assert_eq!(key_target.array, "keys");
+    assert_eq!(key_target.dimensions, vec![None]);
+    let AssignmentTarget::ArrayDim(value_target) = value else {
+        panic!("expected append array-dimension value target");
+    };
+    assert_eq!(value_target.array, "values");
+    assert_eq!(value_target.dimensions, vec![None]);
 }
 
 #[test]
@@ -2949,6 +2964,45 @@ fn parser_accepts_append_and_list_assignment_expressions() {
             if name == "x"
     ));
     assert!(matches!(value.as_ref(), Expr::Variable(name, _) if name == "x"));
+
+    let program = parser::parse("<?php [$short[]] = [42]; list($long[]) = [43];").unwrap();
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected short list assignment statement");
+    };
+    let Expr::Assign { target, .. } = expression else {
+        panic!("expected short list assignment expression");
+    };
+    let AssignmentTarget::List(target) = target else {
+        panic!("expected short list assignment target");
+    };
+    assert_eq!(target.elements.len(), 1);
+    let ListAssignmentElementTarget::Value(target) = &target.elements[0].target else {
+        panic!("expected short list value target");
+    };
+    let AssignmentTarget::ArrayDim(target) = target.as_ref() else {
+        panic!("expected short list append target");
+    };
+    assert_eq!(target.array, "short");
+    assert_eq!(target.dimensions, vec![None]);
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected long list assignment statement");
+    };
+    let Expr::Assign { target, .. } = expression else {
+        panic!("expected long list assignment expression");
+    };
+    let AssignmentTarget::List(target) = target else {
+        panic!("expected long list assignment target");
+    };
+    assert_eq!(target.elements.len(), 1);
+    let ListAssignmentElementTarget::Value(target) = &target.elements[0].target else {
+        panic!("expected long list value target");
+    };
+    let AssignmentTarget::ArrayDim(target) = target.as_ref() else {
+        panic!("expected long list append target");
+    };
+    assert_eq!(target.array, "long");
+    assert_eq!(target.dimensions, vec![None]);
 }
 
 #[test]
@@ -18332,6 +18386,34 @@ int(2)\narray(1) {\n  [0]=>\n  string(1) \"c\"\n}\n"
 }
 
 #[test]
+fn compile_foreach_append_array_dim_targets_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-append-array-dim-targets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-append-array-dim-targets.php");
+    let output = root.join("foreach-append-array-dim-targets-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$keys = [];\n\
+$values = [];\n\
+foreach ([42, 43] as $keys[] => $values[]);\n\
+var_dump($keys, $values);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n}\n\
+array(2) {\n  [0]=>\n  int(42)\n  [1]=>\n  int(43)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_evaluates_iterable_once_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-evaluate-once");
     fs::create_dir_all(&root).unwrap();
@@ -19972,6 +20054,35 @@ echo $a, \":\", $b, \":\", $ary[0][1], \"\\n\";",
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1:2:2\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_list_assignment_append_array_dim_targets_to_native_binary() {
+    let root = temp_dir("ptn-native-list-assignment-append-array-dim-targets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("list-assignment-append-array-dim-targets.php");
+    let output = root.join("list-assignment-append-array-dim-targets-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$short = [];\n\
+$long = [];\n\
+[$short[]] = [42];\n\
+list($long[]) = [43];\n\
+var_dump($short, $long);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  int(42)\n}\n\
+array(1) {\n  [0]=>\n  int(43)\n}\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
