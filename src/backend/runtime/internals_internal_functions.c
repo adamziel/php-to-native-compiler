@@ -1095,6 +1095,71 @@ static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size
     }
 }
 
+static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
+static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
+
+static void ptn_var_dump_object_initialized_properties(
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen
+) {
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+        ptn_array_key_free(key);
+        if (entry == NULL) {
+            continue;
+        }
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_object_property_metadata_key(metadata);
+        ptn_var_dump_value_indented(entry->value, indent + 1, seen);
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (
+            entry->key.type == PTN_ARRAY_KEY_STRING &&
+            ptn_object_property_metadata(object, entry->key.as.string) != NULL
+        ) {
+            continue;
+        }
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_object_property_key(object, entry->key);
+        ptn_var_dump_value_indented(entry->value, indent + 1, seen);
+    }
+}
+
+static void ptn_debug_zval_dump_object_initialized_properties(
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen
+) {
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+        ptn_array_key_free(key);
+        if (entry == NULL) {
+            continue;
+        }
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_object_property_metadata_key(metadata);
+        ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (
+            entry->key.type == PTN_ARRAY_KEY_STRING &&
+            ptn_object_property_metadata(object, entry->key.as.string) != NULL
+        ) {
+            continue;
+        }
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_object_property_key(object, entry->key);
+        ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
+    }
+}
+
 static const char *ptn_internal_function_parameter_name(const char *name, size_t index) {
     if (name == NULL) {
         return NULL;
@@ -1523,12 +1588,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
                 properties->len
             );
             ptn_dump_seen_objects_push(seen, object);
-            for (size_t i = 0; i < properties->len; i++) {
-                ptn_var_dump_indent(indent + 1);
-                PtnArrayKey key = properties->entries[i].key;
-                ptn_var_dump_object_property_key(object, key);
-                ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
-            }
+            ptn_var_dump_object_initialized_properties(object, indent, seen);
             ptn_var_dump_object_uninitialized_properties(object, indent);
             ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
@@ -1694,12 +1754,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 object->refcount
             );
             ptn_dump_seen_objects_push(seen, object);
-            for (size_t i = 0; i < properties->len; i++) {
-                ptn_var_dump_indent(indent + 1);
-                PtnArrayKey key = properties->entries[i].key;
-                ptn_var_dump_object_property_key(object, key);
-                ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
-            }
+            ptn_debug_zval_dump_object_initialized_properties(object, indent, seen);
             if (ptn_object_uninitialized_property_dump_count(object) != 0) {
                 ptn_var_dump_object_uninitialized_properties(object, indent);
             }
@@ -28386,6 +28441,7 @@ static PtnValue ptn_declared_class_names(PtnRuntime *runtime, int include_intern
 static PtnValue ptn_declared_interface_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_trait_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const char *class_name, const char *method_name);
+static PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract);
 static PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
@@ -29351,7 +29407,8 @@ static PTN_UNUSED int ptn_runtime_register_class_alias(
 }
 
 static int ptn_reflection_class_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "getConstructor")
+    return ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "getConstructor")
         || ptn_ascii_case_equal(method_name, "getConstant")
         || ptn_ascii_case_equal(method_name, "getConstants")
         || ptn_ascii_case_equal(method_name, "getExtension")
@@ -29633,6 +29690,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_reflection_class(class_name) ||
         ptn_internal_class_name_is_reflection_object(class_name)) {
         static const char *const names[] = {
+            "__toString",
             "getConstructor",
             "getConstant",
             "getConstants",
@@ -31101,6 +31159,107 @@ static void ptn_reflection_class_throw_missing_property(
     const char *property_name
 );
 
+static char *ptn_ascii_lowercase_duplicate_string(const char *value) {
+    size_t len = strlen(value);
+    char *lower = malloc(len + 1);
+    if (lower == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        lower[i] = (char)ptn_ascii_lower_byte((unsigned char)value[i]);
+    }
+    lower[len] = '\0';
+    return lower;
+}
+
+typedef struct {
+    const char *lookup_class_name;
+    const char *property_name;
+    const char *missing_property_class_name;
+} PtnReflectionPropertyLookup;
+
+static void ptn_reflection_class_throw_invalid_qualified_property_base(
+    PtnRuntime *runtime,
+    const char *qualified_class_name,
+    const char *property_name,
+    const char *reflected_class_name
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Fully qualified property name %s::$%s does not specify a base class of %s",
+        qualified_class_name,
+        property_name,
+        reflected_class_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Fully qualified property name %s::$%s does not specify a base class of %s",
+        qualified_class_name,
+        property_name,
+        reflected_class_name
+    );
+    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+}
+
+static int ptn_reflection_property_lookup_init(
+    PtnRuntime *runtime,
+    const char *reflected_class_name,
+    char *property_name,
+    PtnReflectionPropertyLookup *lookup
+) {
+    lookup->lookup_class_name = reflected_class_name;
+    lookup->property_name = property_name;
+    lookup->missing_property_class_name = reflected_class_name;
+
+    char *separator = strstr(property_name, "::");
+    if (separator == NULL) {
+        return 1;
+    }
+
+    *separator = '\0';
+    char *qualified_class_name = property_name;
+    char *qualified_property_name = separator + 2;
+    while (*qualified_class_name == '\\') {
+        qualified_class_name++;
+    }
+
+    if (!ptn_reflection_class_symbol_exists(qualified_class_name)) {
+        char *missing_name = ptn_ascii_lowercase_duplicate_string(qualified_class_name);
+        ptn_reflection_class_throw_missing_class(runtime, missing_name);
+        free(missing_name);
+        return 0;
+    }
+
+    if (
+        !ptn_ascii_case_equal(reflected_class_name, qualified_class_name) &&
+        !ptn_declared_class_is_same_or_descendant(reflected_class_name, qualified_class_name)
+    ) {
+        ptn_reflection_class_throw_invalid_qualified_property_base(
+            runtime,
+            qualified_class_name,
+            qualified_property_name,
+            reflected_class_name
+        );
+        return 0;
+    }
+
+    lookup->lookup_class_name = qualified_class_name;
+    lookup->property_name = qualified_property_name;
+    if (!ptn_ascii_case_equal(reflected_class_name, qualified_class_name)) {
+        lookup->missing_property_class_name = qualified_class_name;
+    }
+    return 1;
+}
+
 static int ptn_builtin_exception_reflection_property_metadata(
     const char *class_name,
     const char *property_name,
@@ -31506,13 +31665,19 @@ static PTN_UNUSED PtnValue ptn_reflection_property_new(
         free(property_name);
         return ptn_null();
     }
+    PtnReflectionPropertyLookup lookup;
+    if (!ptn_reflection_property_lookup_init(runtime, class_name, property_name, &lookup)) {
+        free(class_name);
+        free(property_name);
+        return ptn_null();
+    }
     const char *declaring_class = NULL;
     int is_static = 0;
     int visibility = 0;
     int has_default = 0;
     int exists = ptn_reflection_property_class_metadata(
-        class_name,
-        property_name,
+        lookup.lookup_class_name,
+        lookup.property_name,
         &declaring_class,
         &is_static,
         &visibility,
@@ -31522,11 +31687,11 @@ static PTN_UNUSED PtnValue ptn_reflection_property_new(
     (void)visibility;
     (void)has_default;
     if (!exists) {
-        if (ptn_internal_class_property_exists(class_name, property_name)) {
+        if (ptn_internal_class_property_exists(lookup.lookup_class_name, lookup.property_name)) {
             PtnValue property = ptn_reflection_property_object_from_name_ex(
                 runtime,
-                class_name,
-                property_name,
+                lookup.lookup_class_name,
+                lookup.property_name,
                 1
             );
             free(class_name);
@@ -31537,7 +31702,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_new(
             PtnLookupResult dynamic_lookup = ptn_object_property_probe_quiet(
                 runtime,
                 target,
-                property_name,
+                lookup.property_name,
                 NULL,
                 line
             );
@@ -31545,8 +31710,8 @@ static PTN_UNUSED PtnValue ptn_reflection_property_new(
                 ptn_value_destroy(&dynamic_lookup.value);
                 PtnValue property = ptn_reflection_property_object_from_name_ex(
                     runtime,
-                    class_name,
-                    property_name,
+                    lookup.lookup_class_name,
+                    lookup.property_name,
                     1
                 );
                 free(class_name);
@@ -31554,7 +31719,11 @@ static PTN_UNUSED PtnValue ptn_reflection_property_new(
                 return property;
             }
         }
-        ptn_reflection_class_throw_missing_property(runtime, class_name, property_name);
+        ptn_reflection_class_throw_missing_property(
+            runtime,
+            lookup.missing_property_class_name,
+            lookup.property_name
+        );
         free(class_name);
         free(property_name);
         return ptn_null();
@@ -31562,7 +31731,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_new(
     PtnValue property = ptn_reflection_property_object_from_name(
         runtime,
         declaring_class,
-        property_name
+        lookup.property_name
     );
     free(class_name);
     free(property_name);
@@ -32017,6 +32186,12 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     }
     const char *class_name = data->name;
 
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_declared_class_reflection_to_string(runtime, class_name);
+    }
     if (ptn_ascii_case_equal(name, "getName")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(class_name));
@@ -32113,13 +32288,18 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             property_name_arg.len
         );
         ptn_string_operand_free(property_name_arg);
+        PtnReflectionPropertyLookup lookup;
+        if (!ptn_reflection_property_lookup_init(runtime, class_name, property_name, &lookup)) {
+            free(property_name);
+            return ptn_null();
+        }
         const char *declaring_class = NULL;
         int is_static = 0;
         int visibility = 0;
         int has_default = 0;
         int exists = ptn_reflection_property_class_metadata(
-            class_name,
-            property_name,
+            lookup.lookup_class_name,
+            lookup.property_name,
             &declaring_class,
             &is_static,
             &visibility,
@@ -32129,24 +32309,28 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         (void)visibility;
         (void)has_default;
         if (!exists) {
-            if (ptn_internal_class_property_exists(class_name, property_name)) {
+            if (ptn_internal_class_property_exists(lookup.lookup_class_name, lookup.property_name)) {
                 PtnValue property = ptn_reflection_property_object_from_name_ex(
                     runtime,
-                    class_name,
-                    property_name,
+                    lookup.lookup_class_name,
+                    lookup.property_name,
                     1
                 );
                 free(property_name);
                 return property;
             }
-            ptn_reflection_class_throw_missing_property(runtime, class_name, property_name);
+            ptn_reflection_class_throw_missing_property(
+                runtime,
+                lookup.missing_property_class_name,
+                lookup.property_name
+            );
             free(property_name);
             return ptn_null();
         }
         PtnValue property = ptn_reflection_property_object_from_name(
             runtime,
             declaring_class,
-            property_name
+            lookup.property_name
         );
         free(property_name);
         return property;

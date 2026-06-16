@@ -1063,8 +1063,8 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "readonly constructor promotion",
             "--TEST--\nreadonly promotion\n--FILE--\n<?php\nreadonly class Bag {\n    public function __construct(\n        public int $value\n    ) {}\n}\n--EXPECT--\n",
-            "unsupported-property-promotion-metadata\t",
-            "requires constructor property promotion metadata",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "readonly indirect property mutation",

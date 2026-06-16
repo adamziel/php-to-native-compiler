@@ -1704,19 +1704,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (!ptn_has_override_attribute &&
-                line ~ /function[[:space:]]+__construct[[:space:]]*\([^)]*(public|protected|private|readonly)[[:space:]]+/) {
-                print "unsupported-property-promotion-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
-                found = 1
-                exit
-            }
-            if (!ptn_has_override_attribute &&
-                line ~ /(^|[,([:space:]])(public|protected|private|readonly)[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ &&
-                line !~ /;/) {
-                print "unsupported-property-promotion-metadata\trequires constructor property promotion metadata, outside PTN modeled property declarations"
-                found = 1
-                exit
-            }
             if ((readonly_class_context || readonly_property_seen) &&
                 (line ~ /=[[:space:]]*&[[:space:]]*\$[a-z_][a-z0-9_]*->[a-z_][a-z0-9_]*/ ||
                     line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*&/ ||

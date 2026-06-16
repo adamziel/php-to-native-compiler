@@ -232,7 +232,10 @@ impl Default for ClassModifiers {
 
 impl ClassModifiers {
     fn has_promoted_property_modifier(&self) -> bool {
-        self.visibility_span.is_some() || self.set_visibility_span.is_some() || self.is_readonly
+        self.visibility_span.is_some()
+            || self.set_visibility_span.is_some()
+            || self.is_readonly
+            || self.is_final
     }
 }
 
@@ -2428,6 +2431,20 @@ impl Parser<'_> {
             },
             class_is_readonly,
         )?;
+        if allow_promoted_properties
+            && modifiers.is_abstract
+            && parameters
+                .iter()
+                .any(|parameter| parameter.promoted_property.is_some())
+        {
+            return Err(Diagnostic::new(
+                "Cannot declare promoted property in an abstract constructor",
+                parameters
+                    .iter()
+                    .find_map(|parameter| parameter.promoted_property.as_ref())
+                    .map(|promoted| promoted.span),
+            ));
+        }
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
             Some(self.parse_return_type_hint()?)
@@ -2765,11 +2782,36 @@ impl Parser<'_> {
         let promotion_modifiers = if class_name_for_promotions.is_some() {
             let modifiers = self.parse_class_modifiers()?;
             if modifiers.has_promoted_property_modifier() {
+                if modifiers.is_static {
+                    return Err(Diagnostic::new(
+                        "Cannot use the static modifier on a parameter",
+                        modifiers.static_span,
+                    ));
+                }
+                if modifiers.is_abstract {
+                    return Err(Diagnostic::new(
+                        "Cannot use the abstract modifier on a parameter",
+                        modifiers.abstract_span,
+                    ));
+                }
                 Some(modifiers)
             } else {
                 None
             }
         } else {
+            if self.peek_starts_promoted_parameter_modifier() {
+                let modifiers = self.parse_class_modifiers()?;
+                if modifiers.has_promoted_property_modifier() {
+                    return Err(Diagnostic::new(
+                        "Cannot declare promoted property outside a constructor",
+                        modifiers
+                            .visibility_span
+                            .or(modifiers.readonly_span)
+                            .or(modifiers.final_span)
+                            .or(modifiers.set_visibility_span),
+                    ));
+                }
+            }
             None
         };
         let type_hint = if self.peek_is_type_hint() {
@@ -2802,6 +2844,18 @@ impl Parser<'_> {
             let set_visibility = modifiers
                 .set_visibility
                 .unwrap_or_else(|| default_set_visibility(modifiers.visibility, is_readonly));
+            if is_variadic {
+                return Err(Diagnostic::new(
+                    "Cannot declare variadic promoted property",
+                    Some(token.span),
+                ));
+            }
+            if matches!(type_hint, Some(TypeHint::Callable)) {
+                return Err(Diagnostic::new(
+                    format!("Property {class_name}::${name} cannot have type callable"),
+                    Some(token.span),
+                ));
+            }
             if modifiers.set_visibility_span.is_some() && type_hint.is_none() {
                 return Err(Diagnostic::new(
                     format!(
@@ -2840,6 +2894,20 @@ impl Parser<'_> {
         } else {
             None
         };
+        if promoted_property.is_some()
+            && matches!(default_value, Some(Expr::Null(_)))
+            && type_hint
+                .as_ref()
+                .is_some_and(|type_hint| !type_hint_accepts_null_default(type_hint))
+        {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot use null as default value for parameter ${name} of type {}",
+                    type_hint_display(type_hint.as_ref().expect("type hint checked above"))
+                ),
+                Some(token.span),
+            ));
+        }
         Ok(FunctionParameter {
             name,
             type_hint,
@@ -6238,6 +6306,18 @@ impl Parser<'_> {
             && matches!(self.peek_n(3).kind, TokenKind::RightParen)
     }
 
+    fn peek_starts_promoted_parameter_modifier(&self) -> bool {
+        matches!(
+            &self.peek().kind,
+            TokenKind::Identifier(name)
+                if name.eq_ignore_ascii_case("public")
+                    || name.eq_ignore_ascii_case("protected")
+                    || name.eq_ignore_ascii_case("private")
+                    || name.eq_ignore_ascii_case("readonly")
+                    || name.eq_ignore_ascii_case("final")
+        )
+    }
+
     fn peek_starts_class_decl(&self) -> bool {
         token_is_identifier_named(self.peek(), "class")
             || token_is_identifier_named(self.peek(), "interface")
@@ -8038,13 +8118,24 @@ fn constructor_promoted_property_assignments(parameters: &[FunctionParameter]) -
         .filter(|parameter| parameter.promoted_property.is_some())
         .map(|parameter| {
             let span = parameter.span;
-            Statement::Expression {
-                expression: Expr::Assign {
-                    target: AssignmentTarget::Property {
-                        receiver: Box::new(Expr::Variable("this".to_string(), span)),
-                        name: parameter.name.clone(),
+            let target = AssignmentTarget::Property {
+                receiver: Box::new(Expr::Variable("this".to_string(), span)),
+                name: parameter.name.clone(),
+                span,
+            };
+            if parameter.by_ref {
+                return Statement::Expression {
+                    expression: Expr::AssignRef {
+                        target,
+                        source: Box::new(Expr::Variable(parameter.name.clone(), span)),
                         span,
                     },
+                    span,
+                };
+            }
+            Statement::Expression {
+                expression: Expr::Assign {
+                    target,
                     op: AssignmentOp::Assign,
                     value: Box::new(Expr::Variable(parameter.name.clone(), span)),
                     span,
@@ -8726,14 +8817,16 @@ fn validate_method_signature_compatibility(
             if let Some((parent_class, parent_method)) =
                 find_visible_parent_method(class, &method.name, classes)
             {
-                validate_method_signature_pair(
-                    class,
-                    method,
-                    parent_class,
-                    parent_method,
-                    classes,
-                    runtime_class_aliases,
-                )?;
+                if method_requires_parent_signature_compatibility(method, parent_method) {
+                    validate_method_signature_pair(
+                        class,
+                        method,
+                        parent_class,
+                        parent_method,
+                        classes,
+                        runtime_class_aliases,
+                    )?;
+                }
             }
 
             let mut seen_interfaces = HashSet::new();
@@ -8760,6 +8853,13 @@ fn validate_method_signature_compatibility(
         }
     }
     Ok(())
+}
+
+fn method_requires_parent_signature_compatibility(
+    method: &MethodDecl,
+    parent_method: &MethodDecl,
+) -> bool {
+    !method.name.eq_ignore_ascii_case("__construct") || parent_method.is_abstract
 }
 
 fn find_visible_parent_method<'a>(
@@ -9426,6 +9526,16 @@ fn type_hint_display(type_hint: &TypeHint) -> String {
             .collect::<Vec<_>>()
             .join("&"),
         TypeHint::Class(class_name) => class_name.clone(),
+    }
+}
+
+fn type_hint_accepts_null_default(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Null | TypeHint::Mixed | TypeHint::Nullable(_) => true,
+        TypeHint::Union(types) => types
+            .iter()
+            .any(|member| type_hint_accepts_null_default(member)),
+        _ => false,
     }
 }
 

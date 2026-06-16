@@ -13,7 +13,8 @@ use crate::ir::{
     FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile,
     InstanceOfTarget, Instruction, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint,
-    PropertyTypeKind, PropertyVisibility, ReferenceTarget, TraitDecl, TypeHint, UnaryOp, ValueExpr,
+    PropertyTypeKind, PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl, TypeHint,
+    UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -130,6 +131,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_class_metadata_helpers(
         &mut out,
         &module.classes,
+        &module.functions,
         &module.traits,
         runtime_requirements.internal_function_dispatch,
     );
@@ -3100,6 +3102,7 @@ fn emit_method_visibility_prototypes(out: &mut String) {
 fn emit_class_metadata_helpers(
     out: &mut String,
     classes: &[ClassDecl],
+    functions: &[FunctionDecl],
     traits: &[TraitDecl],
     emit_reflection_helpers: bool,
 ) {
@@ -3952,7 +3955,7 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     if emit_reflection_helpers {
-        emit_class_reflection_metadata_helpers(out, classes);
+        emit_class_reflection_metadata_helpers(out, classes, functions);
     }
 
     out.push_str(
@@ -4381,7 +4384,11 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 }
 
-fn emit_class_reflection_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
+fn emit_class_reflection_metadata_helpers(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) {
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_reflection_method_matches_filter(int is_static, int visibility, int filter_present, int filter) {\n",
     );
@@ -4435,6 +4442,26 @@ fn emit_class_reflection_metadata_helpers(out: &mut String, classes: &[ClassDecl
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        let reflection = reflection_class_to_string(class, classes, functions);
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_string(\"");
+        out.push_str(&c_string(&reflection));
+        out.push_str("\");\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_string(\"Object\");\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -4721,6 +4748,278 @@ fn emit_class_reflection_metadata_helpers(out: &mut String, classes: &[ClassDecl
     out.push_str("}\n");
 }
 
+fn reflection_class_to_string(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> String {
+    let mut out = String::new();
+    out.push_str("Class [ <user> ");
+    if class.is_abstract && !class.is_interface {
+        out.push_str("abstract ");
+    }
+    if class.is_final {
+        out.push_str("final ");
+    }
+    out.push_str(if class.is_interface {
+        "interface "
+    } else {
+        "class "
+    });
+    out.push_str(&class.name);
+    if let Some(parent_name) = &class.parent_name {
+        out.push_str(" extends ");
+        out.push_str(parent_name);
+    }
+    if !class.interfaces.is_empty() {
+        out.push_str(" implements ");
+        out.push_str(&class.interfaces.join(", "));
+    }
+    out.push_str(" ] {\n");
+    out.push_str("  @@ %s\n\n");
+
+    reflection_class_constants_to_string(&mut out, class);
+    reflection_class_properties_to_string(&mut out, "Static properties", &class.static_properties);
+
+    let visible_methods = reflection_class_visible_method_entries(class, classes);
+    let static_methods = visible_methods
+        .iter()
+        .copied()
+        .filter(|entry| entry.method.is_static)
+        .collect::<Vec<_>>();
+    let instance_methods = visible_methods
+        .iter()
+        .copied()
+        .filter(|entry| !entry.method.is_static)
+        .collect::<Vec<_>>();
+    reflection_class_methods_to_string(&mut out, "Static methods", &static_methods, functions);
+    out.push('\n');
+
+    let properties = reflection_class_visible_property_entries(class, classes)
+        .into_iter()
+        .filter(|entry| !entry.is_static)
+        .collect::<Vec<_>>();
+    reflection_class_properties_to_string(&mut out, "Properties", &properties);
+    reflection_class_methods_to_string(&mut out, "Methods", &instance_methods, functions);
+
+    out.push('}');
+    out
+}
+
+fn reflection_class_constants_to_string(out: &mut String, class: &ClassDecl) {
+    out.push_str("  - Constants [");
+    out.push_str(&class.constants.len().to_string());
+    out.push_str("] {\n");
+    for constant in &class.constants {
+        out.push_str("    Constant [ ");
+        out.push_str(method_visibility_name(constant.visibility));
+        out.push(' ');
+        out.push_str(&constant.name);
+        out.push_str(" ] { ");
+        out.push_str(&reflection_default_repr(Some(&constant.value)));
+        out.push_str(" }\n");
+    }
+    out.push_str("  }\n\n");
+}
+
+trait ReflectionPropertySummary {
+    fn reflection_name(&self) -> &str;
+    fn reflection_visibility(&self) -> PropertyVisibility;
+    fn reflection_is_static(&self) -> bool;
+    fn reflection_type_hint(&self) -> Option<&PropertyTypeHint>;
+    fn reflection_value(&self) -> Option<&ValueExpr>;
+}
+
+impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
+    fn reflection_name(&self) -> &str {
+        self.name
+    }
+
+    fn reflection_visibility(&self) -> PropertyVisibility {
+        self.visibility
+    }
+
+    fn reflection_is_static(&self) -> bool {
+        self.is_static
+    }
+
+    fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
+        self.type_hint
+    }
+
+    fn reflection_value(&self) -> Option<&ValueExpr> {
+        self.value
+    }
+}
+
+impl ReflectionPropertySummary for StaticPropertyDecl {
+    fn reflection_name(&self) -> &str {
+        &self.name
+    }
+
+    fn reflection_visibility(&self) -> PropertyVisibility {
+        self.visibility
+    }
+
+    fn reflection_is_static(&self) -> bool {
+        true
+    }
+
+    fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
+        self.type_hint.as_ref()
+    }
+
+    fn reflection_value(&self) -> Option<&ValueExpr> {
+        self.value.as_ref()
+    }
+}
+
+fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
+    out: &mut String,
+    label: &str,
+    properties: &[T],
+) {
+    out.push_str("  - ");
+    out.push_str(label);
+    out.push_str(" [");
+    out.push_str(&properties.len().to_string());
+    out.push_str("] {\n");
+    for property in properties {
+        out.push_str("    Property [ ");
+        out.push_str(method_visibility_name(property.reflection_visibility()));
+        if property.reflection_is_static() {
+            out.push_str(" static");
+        }
+        if let Some(type_hint) = property.reflection_type_hint() {
+            out.push(' ');
+            out.push_str(&type_hint.text);
+        }
+        out.push_str(" $");
+        out.push_str(property.reflection_name());
+        if let Some(value) = property.reflection_value() {
+            out.push_str(" = ");
+            out.push_str(&reflection_default_repr(Some(value)));
+        }
+        out.push_str(" ]\n");
+    }
+    out.push_str("  }\n\n");
+}
+
+fn reflection_class_methods_to_string(
+    out: &mut String,
+    label: &str,
+    methods: &[ClassMethodLookupEntry<'_>],
+    functions: &[FunctionDecl],
+) {
+    out.push_str("  - ");
+    out.push_str(label);
+    out.push_str(" [");
+    out.push_str(&methods.len().to_string());
+    out.push_str("] {\n");
+    for entry in methods {
+        let method = entry.method;
+        let function = &functions[method.function_index];
+        out.push_str("    Method [ <user");
+        if method.name.eq_ignore_ascii_case("__construct") {
+            out.push_str(", ctor");
+        }
+        out.push_str("> ");
+        out.push_str(method_visibility_name(method.visibility));
+        if method.is_static {
+            out.push_str(" static");
+        }
+        out.push_str(" method ");
+        out.push_str(&method.name);
+        out.push_str(" ] {\n");
+        out.push_str("      @@ %s\n\n");
+        reflection_parameters_to_string(out, &function.parameters);
+        if let Some(return_type) = &function.return_type {
+            out.push_str("      - Return [ ");
+            out.push_str(&type_hint_label(return_type));
+            out.push_str(" ]\n");
+        }
+        out.push_str("    }\n");
+    }
+    out.push_str("  }\n");
+}
+
+fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParameter]) {
+    out.push_str("      - Parameters [");
+    out.push_str(&parameters.len().to_string());
+    out.push_str("] {\n");
+    for (index, parameter) in parameters.iter().enumerate() {
+        out.push_str("        Parameter #");
+        out.push_str(&index.to_string());
+        out.push_str(" [ <");
+        out.push_str(if parameter.default_value.is_some() {
+            "optional"
+        } else {
+            "required"
+        });
+        out.push_str("> ");
+        if let Some(type_hint) = &parameter.type_hint {
+            out.push_str(&type_hint_label(type_hint));
+            out.push(' ');
+        }
+        if parameter.by_ref {
+            out.push('&');
+        }
+        if parameter.is_variadic {
+            out.push_str("...");
+        }
+        out.push('$');
+        out.push_str(&parameter.name);
+        if let Some(default_value) = &parameter.default_value {
+            out.push_str(" = ");
+            out.push_str(&reflection_default_repr(Some(default_value)));
+        }
+        out.push_str(" ]\n");
+    }
+    out.push_str("      }\n");
+}
+
+fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
+    match value {
+        Some(ValueExpr::String(value)) => {
+            format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+        }
+        Some(ValueExpr::Int(value)) => value.to_string(),
+        Some(ValueExpr::Float(value)) => format!("{value:?}"),
+        Some(ValueExpr::Bool(true)) => "true".to_string(),
+        Some(ValueExpr::Bool(false)) => "false".to_string(),
+        Some(ValueExpr::Null) | None => "NULL".to_string(),
+        Some(ValueExpr::Array(_)) => "Array".to_string(),
+        Some(ValueExpr::Constant { name, .. }) => name.clone(),
+        _ => "NULL".to_string(),
+    }
+}
+
+fn reflection_class_visible_property_entries<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Vec<ClassPropertyExistsEntry<'a>> {
+    class_property_exists_chain(class, classes)
+        .into_iter()
+        .filter(|entry| {
+            entry.visibility != PropertyVisibility::Private
+                || entry.declaring_class.eq_ignore_ascii_case(&class.name)
+        })
+        .collect()
+}
+
+fn reflection_class_visible_method_entries<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Vec<ClassMethodLookupEntry<'a>> {
+    class_method_lookup_chain(class, classes)
+        .into_iter()
+        .filter(|entry| {
+            entry.method.visibility != PropertyVisibility::Private
+                || entry.declaring_class.eq_ignore_ascii_case(&class.name)
+        })
+        .collect()
+}
+
 fn class_by_name<'a>(classes: &'a [ClassDecl], name: &str) -> Option<&'a ClassDecl> {
     classes
         .iter()
@@ -4768,6 +5067,7 @@ fn static_method_visibility_for_function(
     })
 }
 
+#[derive(Clone, Copy)]
 struct ClassMethodLookupEntry<'a> {
     declaring_class: &'a str,
     method: &'a crate::ir::MethodDecl,
@@ -4926,6 +5226,7 @@ struct ClassPropertyExistsEntry<'a> {
     name: &'a str,
     visibility: PropertyVisibility,
     is_static: bool,
+    type_hint: Option<&'a PropertyTypeHint>,
     value: Option<&'a ValueExpr>,
     has_default: bool,
 }
@@ -4960,6 +5261,7 @@ fn class_property_exists_chain<'a>(
                     name: property.name.as_str(),
                     visibility: property.visibility,
                     is_static: false,
+                    type_hint: property.type_hint.as_ref(),
                     value: property.value.as_ref(),
                     has_default: property.value.is_some() || property.type_hint.is_none(),
                 }),
@@ -4970,6 +5272,7 @@ fn class_property_exists_chain<'a>(
                 name: property.name.as_str(),
                 visibility: property.visibility,
                 is_static: true,
+                type_hint: property.type_hint.as_ref(),
                 value: property.value.as_ref(),
                 has_default: property.value.is_some() || property.type_hint.is_none(),
             }

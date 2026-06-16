@@ -4528,6 +4528,37 @@ class Book {
 }
 
 #[test]
+fn compile_constructor_promoted_reference_property_to_native_binary() {
+    let root = temp_dir("ptn-native-constructor-promoted-reference-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("constructor-promoted-reference-property.php");
+    let output = root.join("constructor-promoted-reference-property-bin");
+    fs::write(
+        &input,
+        "<?php
+class PromotedReferenceBox {
+    public function __construct(public array &$items) {}
+}
+
+$items = [];
+$box = new PromotedReferenceBox($items);
+$items[] = 42;
+var_dump($box->items);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  int(42)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_override_attributes_with_matching_contracts() {
     let program = parser::parse(
         "<?php
@@ -33182,6 +33213,92 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_reflection_property_metadata"));
     assert!(c_source.contains("ptn_reflection_property_new"));
+}
+
+#[test]
+fn compile_reflection_property_qualified_names_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-qualified-names");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-qualified-names.php");
+    let output = root.join("reflection-property-qualified-names-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectQualA {
+    public static $pubC = \"pubC in A\";
+    protected static $protC = \"protC in A\";
+    private static $privC = \"privC in A\";
+}
+
+class ReflectQualB extends ReflectQualA {
+    public static $pubC = \"pubC in B\";
+    protected static $protC = \"protC in B\";
+    private static $privC = \"privC in B\";
+}
+
+class ReflectQualC extends ReflectQualB {
+    public static $pubC = \"pubC in C\";
+    protected static $protC = \"protC in C\";
+    private static $privC = \"privC in C\";
+}
+
+class ReflectQualX {
+    public static $pubC = \"pubC in X\";
+}
+
+$rc = new ReflectionClass(\"ReflectQualC\");
+function show_reflect_qual_property($name) {
+    global $rc;
+    try {
+        $property = $rc->getProperty($name);
+        echo $property->getDeclaringClass()->getName(), \"::\", $property->getName(),
+            \"=\", $property->getValue(), \"\\n\";
+    } catch (ReflectionException $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+show_reflect_qual_property(\"ReflectQualA::pubC\");
+show_reflect_qual_property(\"ReflectQualB::protC\");
+show_reflect_qual_property(\"ReflectQualC::privC\");
+show_reflect_qual_property(\"reflectqualc::pubC\");
+show_reflect_qual_property(\"reflectqualc::PUBC\");
+show_reflect_qual_property(\"ReflectQualX::pubC\");
+show_reflect_qual_property(\"doesNotexist::doesNotExist\");
+
+$property = new ReflectionProperty(\"ReflectQualC\", \"ReflectQualA::privC\");
+echo $property->getDeclaringClass()->getName(), \"::\", $property->getName(),
+    \"=\", $property->getValue(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ReflectQualA::pubC=pubC in A\n",
+            "ReflectQualB::protC=protC in B\n",
+            "ReflectQualC::privC=privC in C\n",
+            "ReflectQualC::pubC=pubC in C\n",
+            "Property ReflectQualC::$PUBC does not exist\n",
+            "Fully qualified property name ReflectQualX::$pubC does not specify a base class of ReflectQualC\n",
+            "Class \"doesnotexist\" does not exist\n",
+            "ReflectQualA::privC=privC in A\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_lookup_init"));
 }
 
 #[test]
