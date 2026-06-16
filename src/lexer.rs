@@ -80,6 +80,7 @@ pub enum TokenKind {
     PlusPlus,
     MinusMinus,
     ObjectOperator,
+    NullsafeObjectOperator,
     AsteriskEqual,
     AsteriskAsteriskEqual,
     SlashEqual,
@@ -93,6 +94,7 @@ pub enum TokenKind {
     Percent,
     Ampersand,
     Pipe,
+    PipeGreater,
     Caret,
     Tilde,
     Bang,
@@ -218,6 +220,9 @@ impl<'a> Lexer<'a> {
                 c if c.is_whitespace() => self.bump_char(),
                 ';' => self.push_fixed(TokenKind::Semicolon, 1),
                 ',' => self.push_fixed(TokenKind::Comma, 1),
+                '?' if self.rest().starts_with("?->") => {
+                    self.push_fixed(TokenKind::NullsafeObjectOperator, 3)
+                }
                 '?' => self.push_fixed(TokenKind::Question, 1),
                 ':' if self.rest().starts_with("::") => self.push_fixed(TokenKind::DoubleColon, 2),
                 ':' => self.push_fixed(TokenKind::Colon, 1),
@@ -257,6 +262,7 @@ impl<'a> Lexer<'a> {
                 '&' => self.push_fixed(TokenKind::Ampersand, 1),
                 '|' if self.rest().starts_with("||") => self.push_fixed(TokenKind::OrOr, 2),
                 '|' if self.rest().starts_with("|=") => self.push_fixed(TokenKind::PipeEqual, 2),
+                '|' if self.rest().starts_with("|>") => self.push_fixed(TokenKind::PipeGreater, 2),
                 '|' => self.push_fixed(TokenKind::Pipe, 1),
                 '^' if self.rest().starts_with("^=") => self.push_fixed(TokenKind::CaretEqual, 2),
                 '^' => self.push_fixed(TokenKind::Caret, 1),

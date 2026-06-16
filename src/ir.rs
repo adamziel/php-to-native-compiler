@@ -479,6 +479,11 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    NullsafePropertyFetch {
+        receiver: Box<ValueExpr>,
+        name: String,
+        line: usize,
+    },
     DynamicPropertyFetch {
         receiver: Box<ValueExpr>,
         name: Box<ValueExpr>,
@@ -523,6 +528,10 @@ pub enum ValueExpr {
         condition: Box<ValueExpr>,
         if_true: Option<Box<ValueExpr>>,
         if_false: Box<ValueExpr>,
+        line: usize,
+    },
+    PipeValue {
+        expr: Box<ValueExpr>,
         line: usize,
     },
     Match {
@@ -1605,7 +1614,8 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::Cast { expr: name, .. }
         | Expr::Clone { expr: name, .. }
         | Expr::FirstClassCallable { callable: name, .. }
-        | Expr::Grouped { expr: name, .. } => expr_contains_yield(name),
+        | Expr::Grouped { expr: name, .. }
+        | Expr::PipeValue { expr: name, .. } => expr_contains_yield(name),
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
         | Expr::ShellExec { .. }
@@ -1631,9 +1641,9 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::DynamicMethodCall { arguments, .. }
         | Expr::NewObject { arguments, .. }
         | Expr::DynamicNewObject { arguments, .. } => arguments.iter().any(expr_contains_yield),
-        Expr::PropertyFetch { receiver, .. } | Expr::DynamicClassNameFetch { receiver, .. } => {
-            expr_contains_yield(receiver)
-        }
+        Expr::PropertyFetch { receiver, .. }
+        | Expr::NullsafePropertyFetch { receiver, .. }
+        | Expr::DynamicClassNameFetch { receiver, .. } => expr_contains_yield(receiver),
         Expr::InstanceOf { expr, target, .. } => {
             expr_contains_yield(expr)
                 || matches!(target, AstInstanceOfTarget::Expr(target) if expr_contains_yield(target))
@@ -2421,6 +2431,15 @@ impl<'a> LoweringContext<'a> {
                 name: name.clone(),
                 line: span.line,
             },
+            Expr::NullsafePropertyFetch {
+                receiver,
+                name,
+                span,
+            } => ValueExpr::NullsafePropertyFetch {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: name.clone(),
+                line: span.line,
+            },
             Expr::DynamicPropertyFetch {
                 receiver,
                 name,
@@ -2501,6 +2520,10 @@ impl<'a> LoweringContext<'a> {
                 line: span.line,
             },
             Expr::Grouped { expr, .. } => self.lower_expr(expr),
+            Expr::PipeValue { expr, span } => ValueExpr::PipeValue {
+                expr: Box::new(self.lower_expr(expr)),
+                line: span.line,
+            },
         }
     }
 
@@ -2721,6 +2744,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::PropertyFetch { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }
+        Expr::NullsafePropertyFetch { receiver, name, .. } => {
+            format!("{}?->{name}", assertion_expr_text(receiver))
+        }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             format!(
                 "{}->{{{}}}",
@@ -2844,6 +2870,7 @@ fn assertion_expr_text(expr: &Expr) -> String {
                 .join(", ")
         ),
         Expr::Grouped { expr, .. } => format!("({})", assertion_expr_text(expr)),
+        Expr::PipeValue { expr, .. } => assertion_expr_text(expr),
         Expr::AnonymousFunction(function) => assertion_anonymous_function_text(function),
     }
 }

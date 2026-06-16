@@ -7384,6 +7384,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::DynamicNewObject { .. }
         | ValueExpr::Clone { .. }
         | ValueExpr::PropertyFetch { .. }
+        | ValueExpr::NullsafePropertyFetch { .. }
         | ValueExpr::DynamicPropertyFetch { .. }
         | ValueExpr::StaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. }
@@ -7393,6 +7394,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::Cast { .. }
         | ValueExpr::Binary { .. }
         | ValueExpr::Ternary { .. }
+        | ValueExpr::PipeValue { .. }
         | ValueExpr::Match { .. } => None,
     }
 }
@@ -7970,14 +7972,17 @@ fn collect_value_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
             }
         }
-        ValueExpr::PropertyFetch { receiver, .. } => {
+        ValueExpr::PropertyFetch { receiver, .. }
+        | ValueExpr::NullsafePropertyFetch { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
         ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
-        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
+        ValueExpr::Unary { expr, .. }
+        | ValueExpr::Cast { expr, .. }
+        | ValueExpr::PipeValue { expr, .. } => {
             collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
         }
         ValueExpr::Binary { left, right, .. } => {
@@ -8608,7 +8613,8 @@ fn collect_value_runtime_requirements(
             collect_value_runtime_requirements(expr, functions, requirements);
             requirements.method_dispatch = true;
         }
-        ValueExpr::PropertyFetch { receiver, .. } => {
+        ValueExpr::PropertyFetch { receiver, .. }
+        | ValueExpr::NullsafePropertyFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
         ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
@@ -8625,7 +8631,9 @@ fn collect_value_runtime_requirements(
             }
         }
         ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => {}
-        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
+        ValueExpr::Unary { expr, .. }
+        | ValueExpr::Cast { expr, .. }
+        | ValueExpr::PipeValue { expr, .. } => {
             collect_value_runtime_requirements(expr, functions, requirements);
         }
         ValueExpr::Binary { left, right, .. } => {
@@ -9246,6 +9254,7 @@ fn value_is_temporary_write_context(value: &ValueExpr) -> bool {
         | ValueExpr::DynamicPropertyFetch { receiver, .. } => {
             property_receiver_is_temporary_write_context(receiver)
         }
+        ValueExpr::NullsafePropertyFetch { .. } | ValueExpr::PipeValue { .. } => true,
         _ => false,
     }
 }
@@ -9953,6 +9962,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .any(|argument| value_mentions_variable(argument, name))
         }
         ValueExpr::PropertyFetch { receiver, .. }
+        | ValueExpr::NullsafePropertyFetch { receiver, .. }
         | ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             value_mentions_variable(receiver, name)
         }
@@ -9968,9 +9978,9 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                 || matches!(target, InstanceOfTarget::Expr(target) if value_mentions_variable(target, name))
         }
         ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => false,
-        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
-            value_mentions_variable(expr, name)
-        }
+        ValueExpr::Unary { expr, .. }
+        | ValueExpr::Cast { expr, .. }
+        | ValueExpr::PipeValue { expr, .. } => value_mentions_variable(expr, name),
         ValueExpr::Binary { left, right, .. } => {
             value_mentions_variable(left, name) || value_mentions_variable(right, name)
         }
@@ -10067,6 +10077,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::DynamicNewObject { line, .. }
         | ValueExpr::Clone { line, .. }
         | ValueExpr::PropertyFetch { line, .. }
+        | ValueExpr::NullsafePropertyFetch { line, .. }
         | ValueExpr::DynamicPropertyFetch { line, .. }
         | ValueExpr::StaticPropertyFetch { line, .. }
         | ValueExpr::ClassConstantFetch { line, .. }
@@ -10076,6 +10087,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::Cast { line, .. }
         | ValueExpr::Binary { line, .. }
         | ValueExpr::Ternary { line, .. }
+        | ValueExpr::PipeValue { line, .. }
         | ValueExpr::Match { line, .. } => *line,
         ValueExpr::Assign { target, .. } | ValueExpr::AssignRef { target, .. } => target.line(),
         ValueExpr::Array(elements) => elements
@@ -12736,6 +12748,11 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_property_fetch(out, receiver, name, *line),
+            ValueExpr::NullsafePropertyFetch {
+                receiver,
+                name,
+                line,
+            } => self.emit_nullsafe_property_fetch(out, receiver, name, *line),
             ValueExpr::DynamicPropertyFetch {
                 receiver,
                 name,
@@ -12909,6 +12926,7 @@ impl ValueEmitter {
             ValueExpr::Yield { key, value, line } => {
                 self.emit_yield(out, key.as_deref(), value.as_deref(), *line)
             }
+            ValueExpr::PipeValue { expr, .. } => self.emit_materialized_value(out, expr),
         }
     }
 
@@ -14498,6 +14516,37 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
+    }
+
+    fn emit_nullsafe_property_fetch(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_value_deref(");
+        out.push_str(&receiver_temp);
+        out.push_str(").type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &receiver_temp);
         result_temp
     }

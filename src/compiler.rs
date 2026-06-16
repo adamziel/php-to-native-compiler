@@ -636,7 +636,7 @@ impl IncludeCollector {
                 self.collect_expr(name, source_file, source_dir)?;
                 self.collect_exprs(arguments, source_file, source_dir)
             }
-            Expr::PropertyFetch { receiver, .. } => {
+            Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
             Expr::DynamicPropertyFetch { receiver, name, .. } => {
@@ -704,7 +704,8 @@ impl IncludeCollector {
             | Expr::Throw { value: target, .. }
             | Expr::Unary { expr: target, .. }
             | Expr::Cast { expr: target, .. }
-            | Expr::Grouped { expr: target, .. } => {
+            | Expr::Grouped { expr: target, .. }
+            | Expr::PipeValue { expr: target, .. } => {
                 self.collect_expr(target, source_file, source_dir)
             }
             Expr::Yield { key, value, .. } => {
