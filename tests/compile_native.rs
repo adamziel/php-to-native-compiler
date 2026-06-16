@@ -21037,11 +21037,9 @@ echo \"source=\", $source, \" shifted=\", $shifted, \"\\n\";",
     assert!(execution.status.success());
     let expected_stdout = format!(
         "{}{}{}{}{}",
-        concat!(
-            "\n",
-            "Notice: Only variables should be passed by reference in ptn on line 3\n",
-            "int(2)\n",
-            "\n",
+        format_args!(
+            "\nNotice: Only variables should be passed by reference in {} on line 3\nint(2)\n\n",
+            input.display()
         ),
         format_args!(
             "Notice: Only variables should be passed by reference in {} on line 5\n",
@@ -21055,17 +21053,21 @@ echo \"source=\", $source, \" shifted=\", $shifted, \"\\n\";",
             "string(4) \"zero\"\n\nNotice: Only variables should be passed by reference in {} on line 7\n",
             input.display()
         ),
-        concat!(
-            "int(10)\n",
-            "array(2) {\n",
-            "  [0]=>\n",
-            "  int(10)\n",
-            "  [1]=>\n",
-            "  int(20)\n",
-            "}\n",
-            "\n",
-            "Notice: Only variables should be assigned by reference in ptn on line 11\n",
-            "source=1 shifted=2\n"
+        format_args!(
+            "{}{}{}",
+            concat!(
+                "int(10)\n",
+                "array(2) {\n",
+                "  [0]=>\n",
+                "  int(10)\n",
+                "  [1]=>\n",
+                "  int(20)\n",
+                "}\n",
+                "\n",
+                "Notice: Only variables should be assigned by reference in "
+            ),
+            input.display(),
+            " on line 11\nsource=1 shifted=2\n"
         ),
     );
     assert_eq!(
@@ -21192,11 +21194,12 @@ var_dump(array_shift(array_shift(array_shift($stack))));",
         String::from_utf8(execution.stdout).unwrap(),
         format!(
             concat!(
-            "\nNotice: Only variables should be passed by reference in ptn on line 3\n",
+            "\nNotice: Only variables should be passed by reference in {} on line 3\n",
             "int(2)\n",
             "\nNotice: Only variables should be passed by reference in {} on line 5\n",
             "\nNotice: Only variables should be passed by reference in {} on line 5\nstring(4) \"zero\"\n",
             ),
+            input.display(),
             input.display(),
             input.display()
         )
