@@ -54,6 +54,7 @@ pub struct ClassDecl {
     pub name: String,
     pub parent_name: Option<String>,
     pub interfaces: Vec<String>,
+    pub trait_uses: Vec<TraitUseDecl>,
     pub line: usize,
     pub is_abstract: bool,
     pub is_final: bool,
@@ -68,6 +69,16 @@ pub struct ClassDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitDecl {
     pub name: String,
+    pub trait_uses: Vec<TraitUseDecl>,
+    pub deprecated_message: Option<String>,
+    pub deprecated_since: Option<String>,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitUseDecl {
+    pub name: String,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1105,6 +1116,7 @@ impl<'a> LoweringContext<'a> {
             name: class.name.clone(),
             parent_name: class.parent_name.clone(),
             interfaces: class.interfaces.clone(),
+            trait_uses: lower_trait_uses(&class.trait_uses),
             line: class.span.line,
             is_abstract: class.is_abstract,
             is_final: class.is_final,
@@ -1439,7 +1451,21 @@ impl<'a> LoweringContext<'a> {
 fn lower_trait(trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
     TraitDecl {
         name: trait_decl.name.clone(),
+        trait_uses: lower_trait_uses(&trait_decl.trait_uses),
+        deprecated_message: trait_decl.attributes.deprecated_message.clone(),
+        deprecated_since: trait_decl.attributes.deprecated_since.clone(),
+        line: trait_decl.span.line,
     }
+}
+
+fn lower_trait_uses(trait_uses: &[crate::ast::TraitUseDecl]) -> Vec<TraitUseDecl> {
+    trait_uses
+        .iter()
+        .map(|trait_use| TraitUseDecl {
+            name: trait_use.name.clone(),
+            line: trait_use.span.line,
+        })
+        .collect()
 }
 
 fn lower_closure_capture(capture: &AstClosureUseCapture) -> ClosureCapture {
