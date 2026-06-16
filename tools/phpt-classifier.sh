@@ -1724,12 +1724,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[[:space:]])(protected|private)[[:space:]]+static[[:space:]]+\$[a-z_]/ ||
-                line ~ /(^|[[:space:]])static[[:space:]]+(protected|private)[[:space:]]+\$[a-z_]/) {
-                print "unsupported-property-visibility-metadata\trequires non-public static property visibility metadata, outside PTN modeled static property declarations"
-                found = 1
-                exit
-            }
             if (line ~ /[.][.][.]/ &&
                 (line ~ /(^|[[:space:]])(public|protected|private)?[[:space:]]*const[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]*=/ ||
                  line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*static[[:space:]]+\$[a-z_][a-z0-9_]*[[:space:]]*=/)) {
@@ -1960,6 +1954,15 @@ ptn_phpt_first_unsupported_internal_surface() {
             if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]+__destruct[[:space:]]*\(/) {
                 destructor_seen = 1
             }
+            if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]+__call[[:space:]]*\(/) {
+                magic_call_seen = 1
+            }
+            if (line ~ /\$this->[a-z_][a-z0-9_]*[[:space:]]*\(/) {
+                destructor_method_call_seen = 1
+            }
+            if (line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*\$this([^[:alnum:]_]|$)/) {
+                stores_this_in_object_property = 1
+            }
             if (line ~ /(^|[^[:alnum:]_$])global[[:space:]]+\$/ || line ~ /\$globals[[:space:]]*\[/) {
                 global_state_seen = 1
             }
@@ -1972,6 +1975,10 @@ ptn_phpt_first_unsupported_internal_surface() {
         END {
             if (!found && array_splice_seen && destructor_seen && global_state_seen) {
                 print "unsupported-internal\trequires array_splice() destructor reentrancy detection when element destruction mutates global array state, outside PTN modeled array_splice helper"
+                found = 1
+            }
+            if (!found && destructor_seen && magic_call_seen && destructor_method_call_seen && stores_this_in_object_property) {
+                print "unsupported-internal\trequires destructor-driven __call object resurrection/lifetime semantics, outside PTN modeled object lifetime runtime"
                 found = 1
             }
             exit found ? 0 : 1

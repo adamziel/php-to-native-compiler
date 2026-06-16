@@ -5603,8 +5603,10 @@ fn parser_accepts_simple_array_and_legacy_dollar_brace_interpolation() {
 
 #[test]
 fn parser_accepts_braced_property_interpolation() {
-    let program =
-        parser::parse("<?php echo \"name={$object->name} direct=$object->name\\n\";").unwrap();
+    let program = parser::parse(
+        "<?php echo \"name={$object->name} chain={$object->profile->label} direct=$object->name\\n\";",
+    )
+    .unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
         panic!("expected echo statement");
     };
@@ -5619,6 +5621,11 @@ fn parser_accepts_braced_property_interpolation() {
                 variable: "object".to_string(),
                 property: "name".to_string(),
             },
+            StringPart::Literal(" chain=".to_string()),
+            StringPart::PropertyChain {
+                variable: "object".to_string(),
+                properties: vec!["profile".to_string(), "label".to_string()],
+            },
             StringPart::Literal(" direct=".to_string()),
             StringPart::PropertyFetch {
                 variable: "object".to_string(),
@@ -5627,6 +5634,42 @@ fn parser_accepts_braced_property_interpolation() {
             StringPart::Literal("\n".to_string()),
         ]
     );
+}
+
+#[test]
+fn compile_braced_chained_property_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-braced-chained-property-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("braced-chained-property-interpolation.php");
+    let output = root.join("braced-chained-property-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php
+class Profile {
+    public $label = 'ready';
+}
+class User {
+    public $name = 'Ada';
+    public $profile;
+    public function __construct() {
+        $this->profile = new Profile();
+    }
+}
+$user = new User();
+echo \"name={$user->name} label={$user->profile->label}\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "name=Ada label=ready\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

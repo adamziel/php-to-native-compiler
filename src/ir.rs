@@ -2658,6 +2658,16 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
             }),
             line,
         }),
+        AstStringPart::PropertyChain {
+            variable,
+            properties,
+        } => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(lower_interpolated_property_chain(
+                variable, properties, line,
+            )),
+            line,
+        }),
         AstStringPart::ArrayAccess { array, indices } => Some(ValueExpr::Cast {
             kind: CastKind::String,
             expr: Box::new(lower_interpolated_array_access(array, indices, line)),
@@ -3439,6 +3449,25 @@ fn lower_interpolated_array_access(
         expr = ValueExpr::ArrayAccess {
             array: Box::new(expr),
             index: Box::new(lower_interpolated_array_index(index, line)),
+            line,
+        };
+    }
+    expr
+}
+
+fn lower_interpolated_property_chain(
+    variable: &str,
+    properties: &[String],
+    line: usize,
+) -> ValueExpr {
+    let mut expr = ValueExpr::Load {
+        name: variable.to_string(),
+        line,
+    };
+    for property in properties {
+        expr = ValueExpr::PropertyFetch {
+            receiver: Box::new(expr),
+            name: property.clone(),
             line,
         };
     }

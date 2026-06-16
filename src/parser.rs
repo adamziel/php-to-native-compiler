@@ -7654,7 +7654,7 @@ fn collect_arrow_captures_from_string_part(
                 captures,
             );
         }
-        StringPart::PropertyFetch { variable, .. } => {
+        StringPart::PropertyFetch { variable, .. } | StringPart::PropertyChain { variable, .. } => {
             add_arrow_capture(
                 variable,
                 SourceSpan::new(0, 0, 0, 0),
@@ -13308,6 +13308,13 @@ fn lower_string_part(part: TokenStringPart) -> StringPart {
         TokenStringPart::PropertyFetch { variable, property } => {
             StringPart::PropertyFetch { variable, property }
         }
+        TokenStringPart::PropertyChain {
+            variable,
+            properties,
+        } => StringPart::PropertyChain {
+            variable,
+            properties,
+        },
         TokenStringPart::ArrayAccess { array, indices } => StringPart::ArrayAccess {
             array,
             indices: indices

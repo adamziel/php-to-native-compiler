@@ -141,6 +141,10 @@ pub enum StringPart {
         variable: String,
         property: String,
     },
+    PropertyChain {
+        variable: String,
+        properties: Vec<String>,
+    },
     ArrayAccess {
         array: String,
         indices: Vec<StringInterpolationIndex>,
@@ -930,9 +934,19 @@ impl<'a> Lexer<'a> {
                     break;
                 }
                 Some('-') if self.rest().starts_with("->") && indices.is_empty() => {
+                    let mut properties = Vec::new();
                     self.bump_char();
                     self.bump_char();
-                    let property = self.read_interpolation_variable_name(start)?;
+                    properties.push(self.read_interpolation_variable_name(start)?);
+                    loop {
+                        self.skip_interpolation_whitespace();
+                        if !self.rest().starts_with("->") {
+                            break;
+                        }
+                        self.bump_char();
+                        self.bump_char();
+                        properties.push(self.read_interpolation_variable_name(start)?);
+                    }
                     self.skip_interpolation_whitespace();
                     if !matches!(self.peek_char(), Some('}')) {
                         return Err(Diagnostic::new(
@@ -941,9 +955,15 @@ impl<'a> Lexer<'a> {
                         ));
                     }
                     self.bump_char();
-                    return Ok(StringPart::PropertyFetch {
+                    if properties.len() == 1 {
+                        return Ok(StringPart::PropertyFetch {
+                            variable: array,
+                            property: properties.remove(0),
+                        });
+                    }
+                    return Ok(StringPart::PropertyChain {
                         variable: array,
-                        property,
+                        properties,
                     });
                 }
                 Some('[') => {
