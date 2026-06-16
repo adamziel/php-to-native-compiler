@@ -161,6 +161,7 @@ static PTN_UNUSED void ptn_runtime_pop_trace_frame(PtnRuntime *runtime, PtnTrace
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
+        ptn_runtime_run_static_property_destructors(runtime);
         ptn_runtime_run_object_destructors(runtime);
         ptn_output_buffer_flush_all(runtime);
     }

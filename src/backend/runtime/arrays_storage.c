@@ -519,6 +519,40 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
     }
 }
 
+static PTN_UNUSED void ptn_runtime_run_static_property_value_destructors(PtnValue value, size_t depth) {
+    if (depth > 1024) {
+        return;
+    }
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && value.as.object != NULL) {
+        ptn_object_retain(value.as.object);
+        ptn_object_run_destructor(value.as.object);
+        ptn_object_release(value.as.object);
+        return;
+    }
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return;
+    }
+    PtnArray *array = value.as.array;
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_runtime_run_static_property_value_destructors(array->entries[i].value, depth + 1);
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_run_static_property_destructors(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    PtnSymbolTable *static_properties = root->static_properties == NULL
+        ? &root->owned_static_properties
+        : root->static_properties;
+    size_t len = static_properties->len;
+    for (size_t i = 0; i < len; i++) {
+        ptn_runtime_run_static_property_value_destructors(static_properties->items[i].value, 0);
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char *class_name) {
     PtnObject *object = malloc(sizeof(PtnObject));
     if (object == NULL) {
