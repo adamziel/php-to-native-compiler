@@ -5360,7 +5360,7 @@ impl Parser<'_> {
             ));
         }
 
-        let first = self.parse_expr_allowing_append_array_read()?;
+        let first = self.parse_expr()?;
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();
             let value = self.parse_expr()?;
@@ -5837,7 +5837,7 @@ impl Parser<'_> {
             });
         }
 
-        let first = self.parse_expr()?;
+        let first = self.parse_expr_allowing_append_array_read()?;
         let first_span = first.span();
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();

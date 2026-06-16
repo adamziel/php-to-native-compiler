@@ -19239,6 +19239,36 @@ var_dump($items[10]);",
 }
 
 #[test]
+fn compile_false_array_offset_unset_deprecates_to_native_binary() {
+    let root = temp_dir("ptn-native-false-array-offset-unset-deprecates");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("false-array-offset-unset-deprecates.php");
+    let output = root.join("false-array-offset-unset-deprecates-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = false;\n\
+unset($a[0]);\n\
+var_dump($a);\n\
+$b = false;\n\
+unset($b[0][0]);\n\
+var_dump($b);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 3\nbool(false)\n\
+\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 6\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_array_cow_mutation_to_native_binary() {
     let root = temp_dir("ptn-native-nested-array-cow-mutation");
     fs::create_dir_all(&root).unwrap();

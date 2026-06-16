@@ -6309,6 +6309,10 @@ static PTN_UNUSED void ptn_value_array_path_unset(
         ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
         return;
     }
+    if (value->type == PTN_BOOL && !value->as.boolean) {
+        ptn_emit_false_array_conversion_deprecation(line);
+        return;
+    }
     if (segment_count == 1 && ptn_arrayaccess_can_dispatch(runtime, *value, "offsetUnset")) {
         if (segments[0].append) {
             return;
@@ -6340,6 +6344,10 @@ static PTN_UNUSED void ptn_value_array_path_unset(
             : &entry->value;
         if (entry_value->type == PTN_STRING) {
             ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+            return;
+        }
+        if (entry_value->type == PTN_BOOL && !entry_value->as.boolean) {
+            ptn_emit_false_array_conversion_deprecation(line);
             return;
         }
         if (entry_value->type != PTN_ARRAY) {
@@ -6516,6 +6524,10 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
         ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
         return;
     }
+    if (value->type == PTN_BOOL && !value->as.boolean) {
+        ptn_emit_false_array_conversion_deprecation(line);
+        return;
+    }
     if (segment_count == 1 && ptn_arrayaccess_can_dispatch(runtime, *value, "offsetUnset")) {
         if (segments[0].append) {
             return;
@@ -6547,6 +6559,10 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
             : &entry->value;
         if (entry_value->type == PTN_STRING) {
             ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+            return;
+        }
+        if (entry_value->type == PTN_BOOL && !entry_value->as.boolean) {
+            ptn_emit_false_array_conversion_deprecation(line);
             return;
         }
         if (entry_value->type != PTN_ARRAY) {
@@ -6602,6 +6618,10 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
         ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
         return;
     }
+    if (value->type == PTN_BOOL && !value->as.boolean) {
+        ptn_emit_false_array_conversion_deprecation(line);
+        return;
+    }
     if (value->type != PTN_ARRAY) {
         return;
     }
@@ -6626,6 +6646,10 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
             : &entry->value;
         if (entry_value->type == PTN_STRING) {
             ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+            return;
+        }
+        if (entry_value->type == PTN_BOOL && !entry_value->as.boolean) {
+            ptn_emit_false_array_conversion_deprecation(line);
             return;
         }
         if (entry_value->type != PTN_ARRAY) {
