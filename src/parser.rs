@@ -316,6 +316,13 @@ impl Parser<'_> {
                     validate_never_returns_in_statements(&method.body, FunctionLikeKind::Method)?;
                     validate_never_generator_return_type(&method.body, method.span)?;
                 }
+                if let Some(return_type) = &method.return_type {
+                    validate_typed_returns_have_values_in_statements(
+                        &method.body,
+                        return_type,
+                        FunctionLikeKind::Method,
+                    )?;
+                }
                 validate_anonymous_functions_in_statements(&method.body, &functions)?;
                 validate_reference_assignment_sources(&method.body, &functions)?;
                 validate_control_transfers_in_statements(&method.body, 0)?;
@@ -326,6 +333,7 @@ impl Parser<'_> {
         validate_by_reference_returns(&functions)?;
         validate_void_returns(&functions)?;
         validate_never_returns(&functions)?;
+        validate_typed_returns_have_values(&functions)?;
         validate_anonymous_functions_in_statements(&statements, &functions)?;
         validate_reference_assignment_sources(&statements, &functions)?;
         validate_control_transfers_in_statements(&statements, 0)?;
@@ -7533,7 +7541,7 @@ fn nullable_type_hint(type_hint: TypeHint, span: SourceSpan) -> Result<TypeHint>
             Some(span),
         )),
         TypeHint::Void => Err(Diagnostic::new(
-            "void cannot be marked as nullable",
+            "Void can only be used as a standalone type",
             Some(span),
         )),
         TypeHint::Never => Err(Diagnostic::new(
@@ -12350,6 +12358,19 @@ fn validate_never_returns(functions: &[FunctionDecl]) -> Result<()> {
     Ok(())
 }
 
+fn validate_typed_returns_have_values(functions: &[FunctionDecl]) -> Result<()> {
+    for function in functions {
+        if let Some(return_type) = &function.return_type {
+            validate_typed_returns_have_values_in_statements(
+                &function.body,
+                return_type,
+                FunctionLikeKind::Function,
+            )?;
+        }
+    }
+    Ok(())
+}
+
 fn validate_void_returns_in_statements(
     statements: &[Statement],
     kind: FunctionLikeKind,
@@ -12410,6 +12431,87 @@ fn validate_void_returns_in_statements(
             Statement::Switch { cases, .. } => {
                 for case in cases {
                     validate_void_returns_in_statements(&case.body, kind)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_typed_returns_have_values_in_statements(
+    statements: &[Statement],
+    return_type: &TypeHint,
+    kind: FunctionLikeKind,
+) -> Result<()> {
+    if matches!(return_type, TypeHint::Void | TypeHint::Never) {
+        return Ok(());
+    }
+    for statement in statements {
+        match statement {
+            Statement::Return { value: None, span } => {
+                let mut message = format!(
+                    "A {} with return type must return a value",
+                    kind.label()
+                );
+                if type_hint_accepts_null_default(return_type) {
+                    message.push_str(" (did you mean \"return null;\" instead of \"return;\"?)");
+                }
+                return Err(Diagnostic::new(message, Some(*span)));
+            }
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                validate_typed_returns_have_values_in_statements(then_body, return_type, kind)?;
+                validate_typed_returns_have_values_in_statements(else_body, return_type, kind)?;
+            }
+            Statement::Block { statements, .. } => {
+                validate_typed_returns_have_values_in_statements(statements, return_type, kind)?;
+            }
+            Statement::While { body, .. }
+            | Statement::DoWhile { body, .. }
+            | Statement::Foreach { body, .. } => {
+                validate_typed_returns_have_values_in_statements(body, return_type, kind)?;
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                validate_typed_returns_have_values_in_statements(
+                    initializers,
+                    return_type,
+                    kind,
+                )?;
+                validate_typed_returns_have_values_in_statements(updates, return_type, kind)?;
+                validate_typed_returns_have_values_in_statements(body, return_type, kind)?;
+            }
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                validate_typed_returns_have_values_in_statements(body, return_type, kind)?;
+                for catch in catches {
+                    validate_typed_returns_have_values_in_statements(
+                        &catch.body,
+                        return_type,
+                        kind,
+                    )?;
+                }
+                validate_typed_returns_have_values_in_statements(finally_body, return_type, kind)?;
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    validate_typed_returns_have_values_in_statements(
+                        &case.body,
+                        return_type,
+                        kind,
+                    )?;
                 }
             }
             _ => {}
@@ -13024,6 +13126,15 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             if !function.is_arrow && matches!(&function.return_type, Some(TypeHint::Never)) {
                 validate_never_returns_in_statements(&function.body, FunctionLikeKind::Function)?;
                 validate_never_generator_return_type(&function.body, function.span)?;
+            }
+            if !function.is_arrow {
+                if let Some(return_type) = &function.return_type {
+                    validate_typed_returns_have_values_in_statements(
+                        &function.body,
+                        return_type,
+                        FunctionLikeKind::Function,
+                    )?;
+                }
             }
             validate_anonymous_functions_in_statements(&function.body, functions)?;
             validate_reference_assignment_sources(&function.body, functions)?;
