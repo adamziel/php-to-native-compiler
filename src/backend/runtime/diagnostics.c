@@ -522,6 +522,9 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->suppressed = 0;
     diagnostics->error_reporting = PTN_E_ALL;
     diagnostics->display_errors = 1;
+    diagnostics->has_error_handler = 0;
+    diagnostics->error_handler = ptn_null();
+    diagnostics->error_handler_levels = PTN_E_ALL;
     int64_t configured_error_reporting = 0;
     if (ptn_parse_int64_env("PTN_PHP_ERROR_REPORTING", &configured_error_reporting)) {
         diagnostics->error_reporting = configured_error_reporting;
@@ -530,6 +533,16 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     if (ptn_parse_bool_env("PTN_PHP_DISPLAY_ERRORS", &configured_display_errors)) {
         diagnostics->display_errors = configured_display_errors;
     }
+}
+
+static PTN_UNUSED void ptn_diagnostics_clear_error_handler(PtnDiagnosticSink *diagnostics) {
+    if (diagnostics == NULL || !diagnostics->has_error_handler) {
+        return;
+    }
+    ptn_value_destroy(&diagnostics->error_handler);
+    diagnostics->error_handler = ptn_null();
+    diagnostics->has_error_handler = 0;
+    diagnostics->error_handler_levels = PTN_E_ALL;
 }
 
 static PTN_UNUSED int ptn_diagnostics_should_emit(PtnDiagnosticSink *diagnostics, int64_t severity) {

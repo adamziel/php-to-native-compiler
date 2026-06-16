@@ -175,6 +175,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_runtime_run_object_destructors(runtime);
         ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);
+        ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
     }
     ptn_symbols_free(&runtime->owned_static_property_set_visibility);
     ptn_symbols_free(&runtime->owned_static_property_read_visibility);

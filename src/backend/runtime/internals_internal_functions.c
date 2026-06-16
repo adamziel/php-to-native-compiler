@@ -6701,9 +6701,14 @@ static void ptn_array_multisort_throw_value_error(PtnRuntime *runtime, size_t po
     ptn_throw_exception(runtime, "ValueError", message);
 }
 
-static int ptn_array_multisort_compare_string_case(PtnValue left, PtnValue right) {
-    PtnStringOperand left_string = ptn_value_to_string_operand(left);
-    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+static int ptn_array_multisort_compare_string_case(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    PtnStringOperand left_string = ptn_value_to_string_operand_with_runtime(runtime, left, line);
+    PtnStringOperand right_string = ptn_value_to_string_operand_with_runtime(runtime, right, line);
     const unsigned char *left_bytes = (const unsigned char *)left_string.data;
     const unsigned char *right_bytes = (const unsigned char *)right_string.data;
     size_t shared_len = left_string.len < right_string.len ? left_string.len : right_string.len;
@@ -6738,9 +6743,14 @@ static int ptn_array_multisort_compare_string_case(PtnValue left, PtnValue right
     return compared;
 }
 
-static int ptn_array_multisort_compare_string(PtnValue left, PtnValue right) {
-    PtnStringOperand left_string = ptn_value_to_string_operand(left);
-    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+static int ptn_array_multisort_compare_string(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    PtnStringOperand left_string = ptn_value_to_string_operand_with_runtime(runtime, left, line);
+    PtnStringOperand right_string = ptn_value_to_string_operand_with_runtime(runtime, right, line);
     int compared = ptn_compare_string_bytes(
         (const unsigned char *)left_string.data,
         left_string.len,
@@ -6968,8 +6978,8 @@ static int ptn_array_multisort_compare_operand(
         case PTN_SORT_STRING:
         case PTN_SORT_LOCALE_STRING:
             compared = operand->case_insensitive
-                ? ptn_array_multisort_compare_string_case(left, right)
-                : ptn_array_multisort_compare_string(left, right);
+                ? ptn_array_multisort_compare_string_case(runtime, left, right, line)
+                : ptn_array_multisort_compare_string(runtime, left, right, line);
             break;
         case PTN_SORT_NATURAL:
             compared = operand->case_insensitive
@@ -7011,6 +7021,18 @@ static int ptn_array_multisort_compare_indices(
         return 1;
     }
     return 0;
+}
+
+static int ptn_array_multisort_flag_is_valid(int64_t flag) {
+    return flag == PTN_SORT_ASC ||
+        flag == PTN_SORT_DESC ||
+        flag == PTN_SORT_REGULAR ||
+        flag == PTN_SORT_NUMERIC ||
+        flag == PTN_SORT_STRING ||
+        flag == PTN_SORT_LOCALE_STRING ||
+        flag == PTN_SORT_NATURAL ||
+        flag == (PTN_SORT_STRING | PTN_SORT_FLAG_CASE) ||
+        flag == (PTN_SORT_NATURAL | PTN_SORT_FLAG_CASE);
 }
 
 static int ptn_array_multisort_apply_flag(
@@ -7128,6 +7150,16 @@ static int ptn_array_multisort_validate_string_operands(
         if (class_name == NULL) {
             continue;
         }
+        if (value.type == PTN_OBJECT) {
+            PtnStringOperand object_string;
+            if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+                ptn_string_operand_free(object_string);
+                if (runtime->exceptions->active_exception != NULL) {
+                    return 0;
+                }
+                continue;
+            }
+        }
 
         char message[192];
         int written = snprintf(
@@ -7187,11 +7219,27 @@ static PtnValue ptn_internal_array_multisort(PtnRuntime *runtime, size_t argc, c
 
         if (operand_count == 0) {
             ptn_array_multisort_free_operands(operands, operand_count);
-            ptn_array_multisort_throw_type_error(
-                runtime,
-                i + 1,
-                "must be an array or a sort flag"
-            );
+            if (value.type == PTN_INT) {
+                if (ptn_array_multisort_flag_is_valid(value.as.integer)) {
+                    ptn_array_multisort_throw_type_error(
+                        runtime,
+                        i + 1,
+                        "($array) must be an array or a sort flag that has not already been specified"
+                    );
+                } else {
+                    ptn_array_multisort_throw_value_error(
+                        runtime,
+                        i + 1,
+                        "($array) must be a valid sort flag"
+                    );
+                }
+            } else {
+                ptn_array_multisort_throw_type_error(
+                    runtime,
+                    i + 1,
+                    "($array) must be an array or a sort flag"
+                );
+            }
             return ptn_null();
         }
         if (value.type != PTN_INT) {
@@ -7234,17 +7282,23 @@ static PtnValue ptn_internal_array_multisort(PtnRuntime *runtime, size_t argc, c
     for (size_t i = 1; i < len; i++) {
         size_t moving = order[i];
         size_t j = i;
-        while (
-            j > 0 &&
-            ptn_array_multisort_compare_indices(
+        while (j > 0) {
+            int compared = ptn_array_multisort_compare_indices(
                 runtime,
                 operands,
                 operand_count,
                 order[j - 1],
                 moving,
                 line
-            ) > 0
-        ) {
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                free(order);
+                ptn_array_multisort_free_operands(operands, operand_count);
+                return ptn_null();
+            }
+            if (compared <= 0) {
+                break;
+            }
             order[j] = order[j - 1];
             j--;
         }
@@ -31215,6 +31269,55 @@ static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, c
     return ptn_int(previous_level);
 }
 
+static PtnValue ptn_internal_set_error_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    PtnDiagnosticSink *diagnostics = &root->diagnostics;
+    PtnValue previous = diagnostics->has_error_handler
+        ? ptn_value_clone(diagnostics->error_handler)
+        : ptn_null();
+
+    PtnValue callback = ptn_value_deref(args[0]);
+    if (callback.type == PTN_NULL) {
+        ptn_diagnostics_clear_error_handler(diagnostics);
+        return previous;
+    }
+
+    PtnValue checked = ptn_internal_expect_callback_arg(
+        runtime,
+        "set_error_handler",
+        1,
+        "callback",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&previous);
+        return ptn_null();
+    }
+
+    ptn_diagnostics_clear_error_handler(diagnostics);
+    diagnostics->error_handler = ptn_value_clone(checked);
+    diagnostics->has_error_handler = 1;
+    diagnostics->error_handler_levels = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_E_ALL;
+    ptn_value_destroy(&checked);
+    return previous;
+}
+
+static PtnValue ptn_internal_restore_error_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    ptn_diagnostics_clear_error_handler(&root->diagnostics);
+    return ptn_bool(1);
+}
+
 static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL || root->output_buffers_len == 0) {
@@ -32678,6 +32781,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
         { "reset", 1, 1, ptn_internal_reset },
+        { "restore_error_handler", 0, 0, ptn_internal_restore_error_handler },
         { "rewind", 1, 1, ptn_internal_rewind },
         { "rewinddir", 1, 1, ptn_internal_rewinddir },
         { "rmdir", 1, 2, ptn_internal_rmdir },
@@ -32685,6 +32789,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rtrim", 1, 2, ptn_internal_rtrim },
         { "scandir", 1, 3, ptn_internal_scandir },
         { "serialize", 1, 1, ptn_internal_serialize },
+        { "set_error_handler", 1, 2, ptn_internal_set_error_handler },
         { "set_include_path", 1, 1, ptn_internal_set_include_path },
         { "set_time_limit", 1, 1, ptn_internal_set_time_limit },
         { "settype", 2, 2, ptn_internal_settype },
