@@ -34148,6 +34148,13 @@ class D {
 }
 class_alias('D', 'Alias');
 var_dump(D::C);
+define('SUFFIX', random_int(1, 2) === 1 ? 'a' : 'b');
+class RuntimeUnknown {
+    #[Deprecated]
+    public const VALUE = self::class . '-' . SUFFIX;
+}
+$value = RuntimeUnknown::VALUE;
+var_dump($value === 'RuntimeUnknown-' . SUFFIX);
 ",
     )
     .unwrap();
@@ -34170,6 +34177,8 @@ var_dump(D::C);
             "string(12) \"self message\"\n",
             "\nDeprecated: Constant D::C is deprecated, alias message in ptn on line 25\n",
             "string(13) \"alias message\"\n",
+            "\nDeprecated: Constant RuntimeUnknown::VALUE is deprecated in ptn on line 31\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

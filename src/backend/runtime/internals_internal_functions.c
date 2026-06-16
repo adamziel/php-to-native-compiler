@@ -30609,6 +30609,22 @@ static PtnValue ptn_internal_rand(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_int(value);
 }
 
+static PtnValue ptn_internal_random_int(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t min = ptn_internal_expect_integer_arg(runtime, "random_int", 1, "min", args[0], line);
+    int64_t max = ptn_internal_expect_integer_arg(runtime, "random_int", 2, "max", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (min > max) {
+        ptn_throw_exception(runtime, "ValueError", "random_int(): Argument #1 ($min) must be less than or equal to argument #2 ($max)");
+        return ptn_null();
+    }
+    uint64_t span = (uint64_t)(max - min) + 1;
+    int64_t value = min + (int64_t)((uint64_t)rand() % span);
+    return ptn_int(value);
+}
+
 static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -33708,6 +33724,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "rad2deg", 1, 1, ptn_internal_rad2deg },
         { "rand", 0, 2, ptn_internal_rand },
+        { "random_int", 2, 2, ptn_internal_random_int },
         { "rawurldecode", 1, 1, ptn_internal_rawurldecode },
         { "rawurlencode", 1, 1, ptn_internal_rawurlencode },
         { "range", 2, 3, ptn_internal_range },
