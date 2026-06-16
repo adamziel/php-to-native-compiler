@@ -61,6 +61,22 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->magic_debug_info = caller_runtime->magic_debug_info;
     runtime->class_constant_initializer = caller_runtime->class_constant_initializer;
     runtime->in_magic_property_dispatch = caller_runtime->in_magic_property_dispatch;
+    runtime->magic_property_frames = NULL;
+    runtime->magic_property_frame_len = caller_runtime->magic_property_frame_len;
+    runtime->magic_property_frame_capacity = caller_runtime->magic_property_frame_len;
+    if (runtime->magic_property_frame_len != 0) {
+        runtime->magic_property_frames =
+            malloc(runtime->magic_property_frame_len * sizeof(PtnMagicPropertyFrame));
+        if (runtime->magic_property_frames == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
+            runtime->magic_property_frames[i].object_id =
+                caller_runtime->magic_property_frames[i].object_id;
+            runtime->magic_property_frames[i].property =
+                ptn_duplicate_string(caller_runtime->magic_property_frames[i].property);
+        }
+    }
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;
@@ -154,6 +170,13 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free(&runtime->owned_class_aliases);
     ptn_symbols_free(&runtime->owned_constants);
     ptn_symbols_free(&runtime->symbols);
+    for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
+        free(runtime->magic_property_frames[i].property);
+    }
+    free(runtime->magic_property_frames);
+    runtime->magic_property_frames = NULL;
+    runtime->magic_property_frame_len = 0;
+    runtime->magic_property_frame_capacity = 0;
     if (runtime->lifecycle_root == runtime) {
         free(runtime->include_path);
         runtime->include_path = NULL;

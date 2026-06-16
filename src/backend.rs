@@ -4449,6 +4449,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4461,6 +4467,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        *isset_out = ptn_is_truthy(ptn_value_deref(ptn_isset_result));\n");
         out.push_str("        ptn_value_destroy(&ptn_isset_result);\n");
         out.push_str("        ptn_value_destroy(&ptn_isset_args[0]);\n");
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -4493,6 +4500,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4511,6 +4524,9 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str("            ptn_value_destroy(&ptn_isset_args[0]);\n");
             out.push_str("            if (!ptn_isset_truthy) {\n");
             out.push_str(
+                "                ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+            );
+            out.push_str(
                 "                runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
             );
             out.push_str("                return 0;\n");
@@ -4518,6 +4534,9 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str("        }\n");
         } else {
             out.push_str("        if (require_isset) {\n");
+            out.push_str(
+                "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+            );
             out.push_str(
                 "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
             );
@@ -4534,12 +4553,16 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         } else {
             out.push_str("        if (!require_isset) {\n");
             out.push_str(
+                "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+            );
+            out.push_str(
                 "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
             );
             out.push_str("            return 0;\n");
             out.push_str("        }\n");
             out.push_str("        *value_out = ptn_null();\n");
         }
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -4592,6 +4615,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4602,6 +4631,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str(&user_function_c_name(get_method.function_index));
         out.push_str("(runtime, resolved, 1, ptn_get_args, line);\n");
         out.push_str("        ptn_value_destroy(&ptn_get_args[0]);\n");
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -4631,6 +4661,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4644,6 +4680,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        ptn_value_destroy(&ptn_set_result);\n");
         out.push_str("        ptn_value_destroy(&ptn_set_args[1]);\n");
         out.push_str("        ptn_value_destroy(&ptn_set_args[0]);\n");
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -4672,6 +4709,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4683,6 +4726,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("(runtime, resolved, 1, ptn_unset_args, line);\n");
         out.push_str("        ptn_value_destroy(&ptn_unset_result);\n");
         out.push_str("        ptn_value_destroy(&ptn_unset_args[0]);\n");
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -5901,20 +5945,12 @@ fn emit_instruction(
         } => {
             let receiver_temp = values.emit_materialized_value(out, receiver);
             let path = emit_array_unset_path_segments(out, values, dimensions);
-            let current_temp = values.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&current_temp);
-            out.push_str(" = ptn_object_read_property(&runtime, ");
+            out.push_str("    ptn_object_array_path_unset(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
             out.push_str(&c_optional_string(values.current_class_name.as_deref()));
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            out.push_str("    ptn_value_array_path_unset(&runtime, &");
-            out.push_str(&current_temp);
             out.push_str(", ");
             out.push_str(&path.name);
             out.push_str(", ");
@@ -5922,22 +5958,6 @@ fn emit_instruction(
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            let assigned_temp = values.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&assigned_temp);
-            out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
-            out.push_str(&receiver_temp);
-            out.push_str(", \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", ");
-            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
-            out.push_str(", ");
-            out.push_str(&current_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &assigned_temp);
-            emit_value_cleanup(out, "    ", &current_temp);
             emit_value_cleanup(out, "    ", &receiver_temp);
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);
@@ -11374,7 +11394,7 @@ impl ValueEmitter {
         out.push_str(");\n");
         out.push_str("    PtnValue ");
         out.push_str(&current_temp);
-        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(" = ptn_object_read_property_for_indirect_write(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -11450,7 +11470,7 @@ impl ValueEmitter {
         let current_value_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&current_value_temp);
-        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(" = ptn_object_read_property_for_indirect_write(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -13302,7 +13322,7 @@ impl ValueEmitter {
                 let current_value_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_value_temp);
-                out.push_str(" = ptn_object_read_property(&runtime, ");
+                out.push_str(" = ptn_object_read_property_for_indirect_write(&runtime, ");
                 out.push_str(&receiver_temp);
                 out.push_str(", \"");
                 out.push_str(&c_string(name));

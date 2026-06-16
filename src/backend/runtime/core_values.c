@@ -506,6 +506,11 @@ typedef struct {
     PtnValue callback;
 } PtnOutputBuffer;
 
+typedef struct {
+    size_t object_id;
+    char *property;
+} PtnMagicPropertyFrame;
+
 typedef enum {
     PTN_STREAM_BACKEND_FILE,
     PTN_STREAM_BACKEND_MEMORY,
@@ -728,6 +733,9 @@ struct PtnRuntime {
     PtnMagicDebugInfoHandler magic_debug_info;
     PtnClassConstantInitializerHandler class_constant_initializer;
     int in_magic_property_dispatch;
+    PtnMagicPropertyFrame *magic_property_frames;
+    size_t magic_property_frame_len;
+    size_t magic_property_frame_capacity;
     const char *source_path;
     const char *current_function_name;
     const char *current_class_name;

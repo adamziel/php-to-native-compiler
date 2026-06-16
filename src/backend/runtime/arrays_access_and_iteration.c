@@ -1144,6 +1144,79 @@ static PTN_UNUSED void ptn_reference_adopt_property_type(
     reference->property_name = ptn_duplicate_string(metadata->display_name);
 }
 
+static PTN_UNUSED int ptn_magic_property_is_active(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property
+) {
+    if (runtime == NULL || property == NULL) {
+        return 0;
+    }
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return 0;
+    }
+    for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
+        PtnMagicPropertyFrame *frame = &runtime->magic_property_frames[i];
+        if (
+            frame->object_id == receiver.as.object->object_id &&
+            frame->property != NULL &&
+            strcmp(frame->property, property) == 0
+        ) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED size_t ptn_magic_property_push(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property
+) {
+    size_t mark = runtime->magic_property_frame_len;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT || property == NULL) {
+        return mark;
+    }
+    if (runtime->magic_property_frame_len == runtime->magic_property_frame_capacity) {
+        size_t new_capacity = runtime->magic_property_frame_capacity == 0
+            ? 4
+            : runtime->magic_property_frame_capacity * 2;
+        if (
+            new_capacity < runtime->magic_property_frame_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnMagicPropertyFrame)
+        ) {
+            ptn_abort_out_of_memory();
+        }
+        PtnMagicPropertyFrame *new_frames = realloc(
+            runtime->magic_property_frames,
+            new_capacity * sizeof(PtnMagicPropertyFrame)
+        );
+        if (new_frames == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        runtime->magic_property_frames = new_frames;
+        runtime->magic_property_frame_capacity = new_capacity;
+    }
+    PtnMagicPropertyFrame *frame =
+        &runtime->magic_property_frames[runtime->magic_property_frame_len++];
+    frame->object_id = receiver.as.object->object_id;
+    frame->property = ptn_duplicate_string(property);
+    return mark;
+}
+
+static PTN_UNUSED void ptn_magic_property_pop(PtnRuntime *runtime, size_t mark) {
+    if (runtime == NULL || mark > runtime->magic_property_frame_len) {
+        return;
+    }
+    while (runtime->magic_property_frame_len > mark) {
+        runtime->magic_property_frame_len--;
+        free(runtime->magic_property_frames[runtime->magic_property_frame_len].property);
+        runtime->magic_property_frames[runtime->magic_property_frame_len].property = NULL;
+    }
+}
+
 static PTN_UNUSED int ptn_magic_property_get(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -1153,16 +1226,15 @@ static PTN_UNUSED int ptn_magic_property_get(
 ) {
     if (runtime == NULL ||
         runtime->magic_property_get == NULL ||
-        runtime->in_magic_property_dispatch) {
+        ptn_magic_property_is_active(runtime, receiver, property)) {
         return 0;
     }
     return runtime->magic_property_get(runtime, receiver, property, line, value_out);
 }
 
 static PTN_UNUSED int ptn_magic_property_get_exists(PtnRuntime *runtime, PtnValue receiver) {
-    if (runtime == NULL ||
-        runtime->magic_property_get_exists == NULL ||
-        runtime->in_magic_property_dispatch) {
+    (void)receiver;
+    if (runtime == NULL || runtime->magic_property_get_exists == NULL) {
         return 0;
     }
     return runtime->magic_property_get_exists(runtime, receiver);
@@ -1176,7 +1248,8 @@ static PTN_UNUSED int ptn_magic_property_isset(
     int *isset_out
 ) {
     if (runtime == NULL ||
-        runtime->magic_property_isset == NULL) {
+        runtime->magic_property_isset == NULL ||
+        ptn_magic_property_is_active(runtime, receiver, property)) {
         return 0;
     }
     return runtime->magic_property_isset(runtime, receiver, property, line, isset_out);
@@ -1191,7 +1264,7 @@ static PTN_UNUSED int ptn_magic_property_set(
 ) {
     if (runtime == NULL ||
         runtime->magic_property_set == NULL ||
-        runtime->in_magic_property_dispatch) {
+        ptn_magic_property_is_active(runtime, receiver, property)) {
         return 0;
     }
     return runtime->magic_property_set(runtime, receiver, property, value, line);
@@ -1205,7 +1278,7 @@ static PTN_UNUSED int ptn_magic_property_unset(
 ) {
     if (runtime == NULL ||
         runtime->magic_property_unset == NULL ||
-        runtime->in_magic_property_dispatch) {
+        ptn_magic_property_is_active(runtime, receiver, property)) {
         return 0;
     }
     return runtime->magic_property_unset(runtime, receiver, property, line);
@@ -1592,6 +1665,52 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             return magic_value;
         }
         ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(entry->value);
+}
+
+static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
+        return ptn_null();
+    }
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
+        0
+    );
+    if (storage_key == NULL) {
+        return ptn_null();
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
+    ptn_array_key_free(key);
+    free(storage_key);
+    if (entry == NULL) {
+        if (metadata != NULL && metadata->type_kind == PTN_PROPERTY_TYPE_ARRAY) {
+            return ptn_array_from_literal_entries(0, NULL);
+        }
+        if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {
+            ptn_throw_uninitialized_typed_property_error(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name
+            );
+            return ptn_null();
+        }
         return ptn_null();
     }
     return ptn_value_clone_deref(entry->value);
@@ -2057,6 +2176,17 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    if (metadata == NULL && entry == NULL) {
+        PtnValue magic_value = ptn_null();
+        if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
+            if (magic_value.type == PTN_REFERENCE) {
+                ptn_array_key_free(key);
+                free(storage_key);
+                return magic_value;
+            }
+            ptn_value_destroy(&magic_value);
+        }
+    }
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
         ptn_array_key_free(key);
         free(storage_key);
@@ -5500,6 +5630,63 @@ static PTN_UNUSED void ptn_value_array_path_unset(
         return;
     }
     (void)ptn_array_unset_entry(array, key);
+}
+
+static PTN_UNUSED void ptn_object_array_path_unset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return;
+    }
+    char *read_storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        1
+    );
+    if (read_storage_key == NULL) {
+        return;
+    }
+    PtnArrayKey read_key = ptn_array_string_key(read_storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, read_key);
+    ptn_array_key_free(read_key);
+    free(read_storage_key);
+    if (entry == NULL) {
+        return;
+    }
+    char *write_storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
+        0
+    );
+    if (write_storage_key == NULL) {
+        return;
+    }
+    free(write_storage_key);
+    PtnValue current = ptn_value_clone_deref(entry->value);
+    ptn_value_array_path_unset(runtime, &current, segments, segment_count, line);
+    PtnValue assigned = ptn_object_write_property_indirect(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        current,
+        line
+    );
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&current);
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_read_for_assign_op(

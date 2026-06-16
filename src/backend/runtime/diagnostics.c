@@ -657,6 +657,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->magic_debug_info = NULL;
     runtime->class_constant_initializer = NULL;
     runtime->in_magic_property_dispatch = 0;
+    runtime->magic_property_frames = NULL;
+    runtime->magic_property_frame_len = 0;
+    runtime->magic_property_frame_capacity = 0;
     runtime->source_path = NULL;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;
