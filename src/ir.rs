@@ -2682,7 +2682,7 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
 
 fn assertion_expr_text(expr: &Expr) -> String {
     match expr {
-        Expr::String(value, _) => format!("{value:?}"),
+        Expr::String(value, _) => assertion_string_text(value),
         Expr::InterpolatedString(_, _) => "\"\"".to_string(),
         Expr::ShellExec { command, .. } => format!("`{}`", command.replace('`', "\\`")),
         Expr::Int(value, _) => value.to_string(),
@@ -2916,6 +2916,20 @@ fn assertion_match_arm_text(arm: &AstMatchArm) -> String {
     format!("{} => {}", conditions, assertion_expr_text(&arm.value))
 }
 
+fn assertion_string_text(value: &str) -> String {
+    let mut text = String::with_capacity(value.len() + 2);
+    text.push('\'');
+    for ch in value.chars() {
+        match ch {
+            '\\' => text.push_str("\\\\"),
+            '\'' => text.push_str("\\'"),
+            _ => text.push(ch),
+        }
+    }
+    text.push('\'');
+    text
+}
+
 fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String {
     if function.is_arrow {
         let return_by_ref = if function.return_by_ref { "&" } else { "" };
@@ -2950,17 +2964,49 @@ fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String 
         return "function()".to_string();
     }
     let static_prefix = if function.is_static { "static " } else { "" };
-    format!("{static_prefix}function () {{\n{}\n\n}}", body.join("\n"))
+    format!("{static_prefix}function () {{\n{}\n}}", body.join("\n"))
 }
 
 fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<String> {
     match statement {
-        Statement::ClassDeclaration { source, span } => {
-            Some(assertion_source_block_text(source, span.column, indent))
+        Statement::ClassDeclaration { source, span } => Some(format!(
+            "{}\n",
+            assertion_source_block_text(source, span.column, indent)
+        )),
+        Statement::Expression { expression, .. } => {
+            Some(assertion_expression_statement_text(expression, indent))
         }
         Statement::Empty { .. } => None,
         _ => None,
     }
+}
+
+fn assertion_expression_statement_text(expr: &Expr, indent: &str) -> String {
+    match expr {
+        Expr::Match { subject, arms, .. } => {
+            assertion_match_expression_statement_text(subject, arms, indent)
+        }
+        _ => format!("{indent}{};", assertion_expr_text(expr)),
+    }
+}
+
+fn assertion_match_expression_statement_text(
+    subject: &Expr,
+    arms: &[AstMatchArm],
+    indent: &str,
+) -> String {
+    let arm_indent = format!("{indent}    ");
+    let mut text = format!("{indent}match ({}) {{", assertion_expr_text(subject));
+    for arm in arms {
+        text.push('\n');
+        text.push_str(&arm_indent);
+        text.push_str(&assertion_match_arm_text(arm));
+        text.push(',');
+    }
+    text.push('\n');
+    text.push_str(indent);
+    text.push_str("};");
+    text
 }
 
 fn assertion_source_block_text(source: &str, source_column: usize, indent: &str) -> String {

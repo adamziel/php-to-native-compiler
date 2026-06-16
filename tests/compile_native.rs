@@ -15744,6 +15744,49 @@ try {
 }
 
 #[test]
+fn compile_assertion_text_keeps_match_expression_statement_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-match-expression-text");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-match-expression-text.php");
+    let output = root.join("assert-match-expression-text-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    assert((function () {
+        match ('foo') {
+            'foo', 'bar' => false,
+            'baz' => 'a',
+            default => 'b',
+        };
+    })());
+} catch (AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL;
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "assert(): assert((function () {\n",
+            "    match ('foo') {\n",
+            "        'foo', 'bar' => false,\n",
+            "        'baz' => 'a',\n",
+            "        default => 'b',\n",
+            "    };\n",
+            "})()) failed\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_assertion_text_keeps_anonymous_class_source_to_native_binary() {
     let root = temp_dir("ptn-native-assert-anonymous-class-text");
     fs::create_dir_all(&root).unwrap();
@@ -16598,6 +16641,62 @@ echo $byRef, \"\\n\";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "zero\nstring zero\nsmall\nother\ntrue\nB\nspecific later\ncaught-int:Unhandled match case 3\ncaught-object:Unhandled match case of type Beep\ncaught-ref:RefTest::usesRef(): Argument #1 ($value) could not be passed by reference\nsame\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unhandled_match_message_honors_zero_string_param_max_len_to_native_binary() {
+    let root = temp_dir("ptn-native-match-zero-string-param-max-len");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("match-zero-string-param-max-len.php");
+    let output = root.join("match-zero-string-param-max-len-bin");
+    fs::write(
+        &input,
+        "<?php
+class Beep {}
+function test($value) {
+    try {
+        match ($value) {};
+    } catch (UnhandledMatchError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+test(null);
+test(1);
+test(5.5);
+test(5.0);
+test('foo');
+test(true);
+test(false);
+test([1, 2, 3]);
+test(new Beep());
+test(str_repeat('e', 100));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_EXCEPTION_STRING_PARAM_MAX_LEN", "0")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Unhandled match case NULL\n",
+            "Unhandled match case 1\n",
+            "Unhandled match case 5.5\n",
+            "Unhandled match case 5.0\n",
+            "Unhandled match case of type string\n",
+            "Unhandled match case true\n",
+            "Unhandled match case false\n",
+            "Unhandled match case of type array\n",
+            "Unhandled match case of type Beep\n",
+            "Unhandled match case of type string\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -33726,6 +33825,60 @@ var_dump($d);
             "object(D)#1 (0) {\n",
             "  [\"a\"]=>\n",
             "  uninitialized(int)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_inherited_uninitialized_typed_property_var_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-inherited-uninitialized-typed-property-var-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inherited-uninitialized-typed-property-var-dump.php");
+    let output = root.join("inherited-uninitialized-typed-property-var-dump-bin");
+    fs::write(
+        &input,
+        "<?php
+class P {
+    public private(set) string $bar;
+}
+
+class C extends P {
+    public function setBar($bar) {
+        var_dump($this->bar);
+        $this->bar = $bar;
+    }
+}
+
+$c = new C();
+try {
+    $c->setBar(1);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $c->setBar(1);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($c);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Typed property P::$bar must not be accessed before initialization\n",
+            "Typed property P::$bar must not be accessed before initialization\n",
+            "object(C)#1 (0) {\n",
+            "  [\"bar\"]=>\n",
+            "  uninitialized(string)\n",
             "}\n",
         )
     );
