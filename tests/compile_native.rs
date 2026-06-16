@@ -10443,7 +10443,13 @@ fn compile_preg_quote_escapes_pcre_meta_and_delimiter_to_native_binary() {
     let output = root.join("preg-quote-bin");
     fs::write(
         &input,
-        "<?php var_dump(preg_quote('a.b#c/d', '/'), preg_quote('x{y}-z'), function_exists('preg_quote'));",
+        "<?php\n\
+var_dump(preg_quote('a.b#c/d', '/'), preg_quote('x{y}-z'), function_exists('preg_quote'));\n\
+var_dump(bin2hex(preg_quote(\"a\\0b\")));\n\
+preg_match('/[a\\-c]+/', 'a---b', $dash_matches);\n\
+var_dump($dash_matches[0]);\n\
+preg_match('~^(' . preg_quote('hello#world', '~') . ')\\z~x', 'hello#world', $hash_matches);\n\
+var_dump($hash_matches[1]);\n",
     )
     .unwrap();
 
@@ -10453,7 +10459,10 @@ fn compile_preg_quote_escapes_pcre_meta_and_delimiter_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(10) \"a\\.b\\#c\\/d\"\nstring(9) \"x\\{y\\}\\-z\"\nbool(true)\n"
+        "string(10) \"a\\.b\\#c\\/d\"\nstring(9) \"x\\{y\\}\\-z\"\nbool(true)\n\
+string(12) \"615c30303062\"\n\
+string(4) \"a---\"\n\
+string(11) \"hello#world\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

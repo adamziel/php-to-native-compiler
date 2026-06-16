@@ -18929,6 +18929,8 @@ static void ptn_capture_map_push(size_t **capture_map, size_t *capture_count, si
     *capture_count = new_count;
 }
 
+static int ptn_octal_nibble(unsigned char byte);
+
 static char *ptn_pcre_pattern_to_posix(
     PtnStringOperand pattern,
     int *flags_out,
@@ -18953,6 +18955,7 @@ static char *ptn_pcre_pattern_to_posix(
     size_t capture_count = 0;
     size_t posix_group_index = 0;
     int in_char_class = 0;
+    int char_class_has_literal_hyphen = 0;
     char delimiter = pattern.data[0];
     char closing_delimiter = delimiter;
     switch (delimiter) {
@@ -19006,7 +19009,31 @@ static char *ptn_pcre_pattern_to_posix(
                 case 't':
                     ptn_string_buffer_append_char(&output, '\t');
                     break;
+                case 'z':
+                case 'Z':
+                    ptn_string_buffer_append_char(&output, in_char_class ? next : '$');
+                    break;
+                case '0': {
+                    unsigned int value = 0;
+                    size_t digits = 0;
+                    i--;
+                    while (digits < 3 && i + 1 < end) {
+                        int octal = ptn_octal_nibble((unsigned char)pattern.data[i + 1]);
+                        if (octal < 0) {
+                            break;
+                        }
+                        value = (value << 3) | (unsigned int)octal;
+                        digits++;
+                        i++;
+                    }
+                    ptn_string_buffer_append_char(&output, (char)(value & 0xff));
+                    break;
+                }
                 default:
+                    if (in_char_class && next == '-') {
+                        char_class_has_literal_hyphen = 1;
+                        break;
+                    }
                     if (next == delimiter || next == closing_delimiter || !ptn_regex_char_is_posix_special(next)) {
                         ptn_string_buffer_append_char(&output, next);
                     } else {
@@ -19020,10 +19047,14 @@ static char *ptn_pcre_pattern_to_posix(
 
         if (byte == '[') {
             in_char_class = 1;
+            char_class_has_literal_hyphen = 0;
             ptn_string_buffer_append_char(&output, byte);
             continue;
         }
         if (byte == ']') {
+            if (char_class_has_literal_hyphen) {
+                ptn_string_buffer_append_char(&output, '-');
+            }
             in_char_class = 0;
             ptn_string_buffer_append_char(&output, byte);
             continue;
