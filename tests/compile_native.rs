@@ -30397,6 +30397,61 @@ foreach (['foo', $fn, 'Bar::staticMethod', [$bar, 'instanceMethod']] as $callabl
 }
 
 #[test]
+fn compile_internal_function_parameter_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-function-parameter-reflection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-function-parameter-reflection.php");
+    let output = root.join("internal-function-parameter-reflection-bin");
+    fs::write(
+        &input,
+        "<?php
+foreach (['sort', 'array_multisort', 'array_unique'] as $name) {
+    $function = new ReflectionFunction($name);
+    var_dump($function->getName());
+    var_dump($function->getNumberOfParameters());
+    var_dump($function->getNumberOfRequiredParameters());
+    var_dump($function->isVariadic());
+    foreach ($function->getParameters() as $param) {
+        var_dump(
+            $param->getName(),
+            $param->getPosition(),
+            $param->isPassedByReference(),
+            $param->canBePassedByValue(),
+            $param->isVariadic()
+        );
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(4) \"sort\"\nint(2)\nint(1)\nbool(false)\n",
+            "string(5) \"array\"\nint(0)\nbool(true)\nbool(false)\nbool(false)\n",
+            "string(5) \"flags\"\nint(1)\nbool(false)\nbool(true)\nbool(false)\n",
+            "string(15) \"array_multisort\"\nint(2)\nint(1)\nbool(true)\n",
+            "string(5) \"array\"\nint(0)\nbool(true)\nbool(true)\nbool(false)\n",
+            "string(4) \"rest\"\nint(1)\nbool(true)\nbool(true)\nbool(true)\n",
+            "string(12) \"array_unique\"\nint(2)\nint(1)\nbool(false)\n",
+            "string(6) \"param1\"\nint(0)\nbool(false)\nbool(true)\nbool(false)\n",
+            "string(6) \"param2\"\nint(1)\nbool(false)\nbool(true)\nbool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_function_metadata"));
+    assert!(c_source.contains("ptn_internal_function_parameter_name"));
+    assert!(c_source.contains("ptn_reflection_parameter_call_method"));
+}
+
+#[test]
 fn compile_sensitive_parameter_value_reflection_to_native_binary() {
     let root = temp_dir("ptn-native-sensitive-parameter-value-reflection");
     fs::create_dir_all(&root).unwrap();
