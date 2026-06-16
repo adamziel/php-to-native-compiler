@@ -60,6 +60,7 @@ pub fn emit_c(module: &Module) -> String {
     let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
     if needs_callable_dispatch {
         runtime_requirements.internal_function_dispatch = true;
+        runtime_requirements.dynamic_function_dispatch = true;
     }
     let needs_magic_property_read = module.classes.iter().any(|class| {
         class_magic_get_method(class, &module.classes).is_some()
@@ -1451,6 +1452,38 @@ fn emit_function_metadata_parameter_names(
     name.to_string()
 }
 
+fn emit_function_metadata_parameter_type_names(
+    out: &mut String,
+    indent: &str,
+    name: &str,
+    parameters: &[FunctionParameter],
+) -> String {
+    if parameters
+        .iter()
+        .all(|parameter| parameter.type_hint.is_none())
+    {
+        return "NULL".to_string();
+    }
+    out.push_str(indent);
+    out.push_str("static const char *const ");
+    out.push_str(name);
+    out.push_str("[] = { ");
+    for (index, parameter) in parameters.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        if let Some(type_hint) = &parameter.type_hint {
+            out.push('"');
+            out.push_str(&c_string(&type_hint_label(type_hint)));
+            out.push('"');
+        } else {
+            out.push_str("NULL");
+        }
+    }
+    out.push_str(" };\n");
+    name.to_string()
+}
+
 fn emit_variadic_parameter_binding(
     out: &mut String,
     function: &FunctionDecl,
@@ -2652,6 +2685,12 @@ fn emit_user_function_dispatch(
             &format!("ptn_function_{function_index}_parameter_names"),
             &function.parameters,
         );
+        let parameter_type_names = emit_function_metadata_parameter_type_names(
+            out,
+            "        ",
+            &format!("ptn_function_{function_index}_parameter_type_names"),
+            &function.parameters,
+        );
         out.push_str("        return ptn_function_metadata_found(\"");
         out.push_str(&c_string(&function.name));
         out.push_str("\", 0, ");
@@ -2662,6 +2701,8 @@ fn emit_user_function_dispatch(
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(&parameter_names);
+        out.push_str(", ");
+        out.push_str(&parameter_type_names);
         out.push_str(");\n");
         out.push_str("    }\n");
     }
@@ -2689,6 +2730,15 @@ fn emit_user_function_dispatch(
                 &format!("ptn_function_{}_parameter_names", method.function_index),
                 &function.parameters,
             );
+            let parameter_type_names = emit_function_metadata_parameter_type_names(
+                out,
+                "        ",
+                &format!(
+                    "ptn_function_{}_parameter_type_names",
+                    method.function_index
+                ),
+                &function.parameters,
+            );
             out.push_str("        return ptn_function_metadata_found(\"");
             out.push_str(&c_string(&class.name));
             out.push_str("::");
@@ -2701,6 +2751,8 @@ fn emit_user_function_dispatch(
             out.push_str(if is_variadic { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(&parameter_names);
+            out.push_str(", ");
+            out.push_str(&parameter_type_names);
             out.push_str(");\n");
             out.push_str("    }\n");
         }
@@ -6285,7 +6337,9 @@ fn emit_callable_dispatch(
     out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
-    out.push_str("    PtnValue result = ptn_call_function(runtime, name, argc, args, line);\n");
+    out.push_str(
+        "    PtnValue result = ptn_call_dynamic_function_name(runtime, name, argc, args, line);\n",
+    );
     out.push_str("    free(name);\n");
     out.push_str("    return result;\n");
     out.push_str("}\n");
@@ -14987,6 +15041,12 @@ impl ValueEmitter {
             &format!("ptn_closure_{function_index}_parameter_names"),
             &function.parameters,
         );
+        let parameter_type_names = emit_function_metadata_parameter_type_names(
+            out,
+            "    ",
+            &format!("ptn_closure_{function_index}_parameter_type_names"),
+            &function.parameters,
+        );
         out.push_str("    PtnValue ");
         out.push_str(&closure_temp);
         out.push_str(" = ptn_closure(&runtime, ");
@@ -15001,6 +15061,8 @@ impl ValueEmitter {
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(&parameter_names);
+        out.push_str(", ");
+        out.push_str(&parameter_type_names);
         out.push_str("), ");
         out.push_str(if function.is_static { "1" } else { "0" });
         out.push_str(", ");
