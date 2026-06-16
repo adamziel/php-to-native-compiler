@@ -4624,7 +4624,11 @@ impl Parser<'_> {
     }
 
     fn parse_postfix_expr(&mut self) -> Result<Expr> {
-        let mut expr = self.parse_primary_expr()?;
+        let expr = self.parse_primary_expr()?;
+        self.parse_postfix_expr_from(expr, true)
+    }
+
+    fn parse_postfix_expr_from(&mut self, mut expr: Expr, allow_calls: bool) -> Result<Expr> {
         loop {
             match self.peek().kind {
                 TokenKind::LeftBracket => {
@@ -4670,7 +4674,7 @@ impl Parser<'_> {
                             }
                         },
                     };
-                    if !matches!(self.peek().kind, TokenKind::LeftParen) {
+                    if !matches!(self.peek().kind, TokenKind::LeftParen) || !allow_calls {
                         let span = combine_spans(start_span, member_span);
                         expr = if let Some(name) = literal_name {
                             if nullsafe {
@@ -4758,6 +4762,9 @@ impl Parser<'_> {
                     };
                 }
                 TokenKind::LeftParen => {
+                    if !allow_calls {
+                        break;
+                    }
                     let start_span = expr.span();
                     if self.peek_is_first_class_callable_arguments() {
                         let right_span = self.parse_first_class_callable_arguments()?;
@@ -5384,8 +5391,9 @@ impl Parser<'_> {
             let TokenKind::Variable(name) = token.kind else {
                 unreachable!("variable token was just matched")
             };
-            let class_name = Expr::Variable(name, token.span);
-            let mut span = combine_spans(start_span, token.span);
+            let class_name =
+                self.parse_postfix_expr_from(Expr::Variable(name, token.span), false)?;
+            let mut span = combine_spans(start_span, class_name.span());
             let (arguments, argument_names, argument_unpacks) =
                 if matches!(self.peek().kind, TokenKind::LeftParen) {
                     let (arguments, argument_names, argument_unpacks, right_span) =

@@ -3677,6 +3677,24 @@ fn parser_accepts_dynamic_class_name_fetch_syntax() {
 }
 
 #[test]
+fn parser_accepts_dynamic_new_array_dim_class_names() {
+    let program = parser::parse("<?php $arr = [new stdClass]; $obj = new $arr[0];").unwrap();
+
+    assert!(matches!(
+        &program.statements[1],
+        Statement::Assign {
+            value: Expr::DynamicNewObject { class_name, .. },
+            ..
+        } if matches!(
+            class_name.as_ref(),
+            Expr::ArrayAccess { array, index, .. }
+                if matches!(array.as_ref(), Expr::Variable(name, _) if name == "arr")
+                    && matches!(index.as_deref(), Some(Expr::Int(0, _)))
+        )
+    ));
+}
+
+#[test]
 fn parser_accepts_in_array_class_constant_reducer_syntax() {
     let source = "<?php
 $haystack = [Sample::A];
@@ -31871,6 +31889,30 @@ fn compile_dynamic_new_normalizes_absolute_class_names_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Worker\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_new_array_dim_class_name_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-new-array-dim-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-new-array-dim-class.php");
+    let output = root.join("dynamic-new-array-dim-class-bin");
+    fs::write(
+        &input,
+        "<?php
+$arr = [new stdClass];
+$arr[0]->a = clone $arr[0];
+echo get_class(new $arr[0]), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "stdClass\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
