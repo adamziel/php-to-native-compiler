@@ -10197,6 +10197,14 @@ fn validate_control_transfers_in_statements(
     statements: &[Statement],
     control_depth: usize,
 ) -> Result<()> {
+    validate_control_transfers_in_statements_inner(statements, control_depth, &mut Vec::new())
+}
+
+fn validate_control_transfers_in_statements_inner(
+    statements: &[Statement],
+    control_depth: usize,
+    finally_control_depths: &mut Vec<usize>,
+) -> Result<()> {
     for statement in statements {
         match statement {
             Statement::Assign { value, .. }
@@ -10241,7 +10249,11 @@ fn validate_control_transfers_in_statements(
                 }
             }
             Statement::Block { statements, .. } => {
-                validate_control_transfers_in_statements(statements, control_depth)?;
+                validate_control_transfers_in_statements_inner(
+                    statements,
+                    control_depth,
+                    finally_control_depths,
+                )?;
             }
             Statement::If {
                 condition,
@@ -10250,19 +10262,35 @@ fn validate_control_transfers_in_statements(
                 ..
             } => {
                 validate_control_transfers_in_expr(condition)?;
-                validate_control_transfers_in_statements(then_body, control_depth)?;
-                validate_control_transfers_in_statements(else_body, control_depth)?;
+                validate_control_transfers_in_statements_inner(
+                    then_body,
+                    control_depth,
+                    finally_control_depths,
+                )?;
+                validate_control_transfers_in_statements_inner(
+                    else_body,
+                    control_depth,
+                    finally_control_depths,
+                )?;
             }
             Statement::While {
                 condition, body, ..
             } => {
                 validate_control_transfers_in_expr(condition)?;
-                validate_control_transfers_in_statements(body, control_depth + 1)?;
+                validate_control_transfers_in_statements_inner(
+                    body,
+                    control_depth + 1,
+                    finally_control_depths,
+                )?;
             }
             Statement::DoWhile {
                 body, condition, ..
             } => {
-                validate_control_transfers_in_statements(body, control_depth + 1)?;
+                validate_control_transfers_in_statements_inner(
+                    body,
+                    control_depth + 1,
+                    finally_control_depths,
+                )?;
                 validate_control_transfers_in_expr(condition)?;
             }
             Statement::For {
@@ -10272,12 +10300,24 @@ fn validate_control_transfers_in_statements(
                 body,
                 ..
             } => {
-                validate_control_transfers_in_statements(initializers, control_depth)?;
+                validate_control_transfers_in_statements_inner(
+                    initializers,
+                    control_depth,
+                    finally_control_depths,
+                )?;
                 if let Some(condition) = condition {
                     validate_control_transfers_in_expr(condition)?;
                 }
-                validate_control_transfers_in_statements(updates, control_depth)?;
-                validate_control_transfers_in_statements(body, control_depth + 1)?;
+                validate_control_transfers_in_statements_inner(
+                    updates,
+                    control_depth,
+                    finally_control_depths,
+                )?;
+                validate_control_transfers_in_statements_inner(
+                    body,
+                    control_depth + 1,
+                    finally_control_depths,
+                )?;
             }
             Statement::Foreach {
                 iterable,
@@ -10291,7 +10331,11 @@ fn validate_control_transfers_in_statements(
                     validate_control_transfers_in_assignment_target(key)?;
                 }
                 validate_control_transfers_in_assignment_target(value)?;
-                validate_control_transfers_in_statements(body, control_depth + 1)?;
+                validate_control_transfers_in_statements_inner(
+                    body,
+                    control_depth + 1,
+                    finally_control_depths,
+                )?;
             }
             Statement::Switch {
                 expression, cases, ..
@@ -10301,7 +10345,11 @@ fn validate_control_transfers_in_statements(
                     if let Some(condition) = &case.condition {
                         validate_control_transfers_in_expr(condition)?;
                     }
-                    validate_control_transfers_in_statements(&case.body, control_depth + 1)?;
+                    validate_control_transfers_in_statements_inner(
+                        &case.body,
+                        control_depth + 1,
+                        finally_control_depths,
+                    )?;
                 }
             }
             Statement::Break { level, span } => validate_control_transfer_target(
@@ -10309,12 +10357,14 @@ fn validate_control_transfers_in_statements(
                 *level,
                 *span,
                 control_depth,
+                finally_control_depths,
             )?,
             Statement::Continue { level, span } => validate_control_transfer_target(
                 ControlTransfer::Continue,
                 *level,
                 *span,
                 control_depth,
+                finally_control_depths,
             )?,
             Statement::Try {
                 body,
@@ -10322,11 +10372,26 @@ fn validate_control_transfers_in_statements(
                 finally_body,
                 ..
             } => {
-                validate_control_transfers_in_statements(body, control_depth)?;
+                validate_control_transfers_in_statements_inner(
+                    body,
+                    control_depth,
+                    finally_control_depths,
+                )?;
                 for catch in catches {
-                    validate_control_transfers_in_statements(&catch.body, control_depth)?;
+                    validate_control_transfers_in_statements_inner(
+                        &catch.body,
+                        control_depth,
+                        finally_control_depths,
+                    )?;
                 }
-                validate_control_transfers_in_statements(finally_body, control_depth)?;
+                finally_control_depths.push(control_depth);
+                let result = validate_control_transfers_in_statements_inner(
+                    finally_body,
+                    control_depth,
+                    finally_control_depths,
+                );
+                finally_control_depths.pop();
+                result?;
             }
             Statement::Increment { target, .. } => {
                 validate_control_transfers_in_inc_dec_target(target)?;
@@ -10354,6 +10419,7 @@ fn validate_control_transfer_target(
     level: usize,
     span: SourceSpan,
     control_depth: usize,
+    finally_control_depths: &[usize],
 ) -> Result<()> {
     let keyword = transfer.keyword();
     if level == 0 {
@@ -10372,6 +10438,16 @@ fn validate_control_transfer_target(
         let suffix = if level == 1 { "level" } else { "levels" };
         return Err(Diagnostic::new(
             format!("Cannot '{keyword}' {level} {suffix}"),
+            Some(span),
+        ));
+    }
+    let target_depth = control_depth - level;
+    if finally_control_depths
+        .iter()
+        .any(|finally_control_depth| target_depth < *finally_control_depth)
+    {
+        return Err(Diagnostic::new(
+            "jump out of a finally block is disallowed",
             Some(span),
         ));
     }

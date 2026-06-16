@@ -5425,6 +5425,44 @@ fn parser_rejects_goto_out_of_finally() {
 }
 
 #[test]
+fn parser_rejects_break_continue_out_of_finally() {
+    for (source, line) in [
+        (
+            "<?php\nwhile (true) {\n    try {\n    } finally {\n        break;\n    }\n}\n",
+            5,
+        ),
+        (
+            "<?php\nwhile (true) {\n    try {\n    } finally {\n        continue;\n    }\n}\n",
+            5,
+        ),
+        (
+            "<?php\nwhile (true) {\n    try {\n    } finally {\n        while (true) {\n            break 2;\n        }\n    }\n}\n",
+            6,
+        ),
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Fatal);
+        assert_eq!(error.message, "jump out of a finally block is disallowed");
+        assert_eq!(error.span.unwrap().line, line);
+    }
+}
+
+#[test]
+fn parser_accepts_break_within_finally_local_loop() {
+    parser::parse(
+        "<?php
+try {
+} finally {
+    while (true) {
+        break;
+    }
+}
+",
+    )
+    .unwrap();
+}
+
+#[test]
 fn parser_accepts_goto_leaving_loop_and_within_same_loop() {
     parser::parse(
         "<?php
