@@ -135,6 +135,7 @@ pub enum PropertyTypeKind {
 pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub attributes: AttributeMetadata,
     pub value: Expr,
     pub span: SourceSpan,
 }
@@ -170,6 +171,7 @@ pub struct FunctionDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParameter {
     pub name: String,
+    pub attributes: AttributeMetadata,
     pub type_hint: Option<TypeHint>,
     pub by_ref: bool,
     pub is_variadic: bool,
@@ -202,6 +204,13 @@ pub struct AnonymousFunction {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AttributeMetadata {
+    pub total_count: u16,
+    pub attribute_count: u16,
+    pub allow_dynamic_properties_count: u16,
+    pub delayed_target_validation_count: u16,
+    pub deprecated_count: u16,
+    pub no_discard_count: u16,
+    pub override_count: u16,
     pub has_override: bool,
     pub has_attribute: bool,
     pub has_allow_dynamic_properties: bool,
