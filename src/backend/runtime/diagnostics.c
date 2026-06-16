@@ -21,8 +21,9 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
     ptn_symbols_ensure_index(symbols, symbols->len + 1);
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {
-        ptn_value_destroy(&symbols->items[index].value);
+        PtnValue old_value = symbols->items[index].value;
         symbols->items[index].value = stored_value;
+        ptn_value_destroy(&old_value);
         return;
     }
     if (symbols->len == symbols->capacity) {
@@ -198,6 +199,40 @@ static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closu
     if (source->has_wrapped_callable) {
         copy.as.closure->has_wrapped_callable = 1;
         copy.as.closure->wrapped_callable = ptn_value_clone(source->wrapped_callable);
+    }
+    if (source->bound_scope_name != NULL) {
+        copy.as.closure->bound_scope_name = ptn_duplicate_string(source->bound_scope_name);
+    }
+    return copy;
+}
+
+static PTN_UNUSED void ptn_closure_set_bound_scope_name(PtnValue closure, const char *scope_name) {
+    PtnClosure *resolved = ptn_closure_from_value(closure);
+    free(resolved->bound_scope_name);
+    resolved->bound_scope_name = scope_name == NULL ? NULL : ptn_duplicate_string(scope_name);
+}
+
+static PTN_UNUSED PtnValue ptn_closure_clone_bound(
+    PtnRuntime *runtime,
+    PtnValue closure,
+    size_t argc,
+    const PtnValue *args
+) {
+    PtnValue copy = ptn_closure_clone(runtime, closure);
+    if (argc < 2) {
+        return copy;
+    }
+    PtnValue scope = ptn_value_deref(args[1]);
+    if (scope.type == PTN_NULL) {
+        ptn_closure_set_bound_scope_name(copy, NULL);
+    } else if (scope.type == PTN_STRING) {
+        char *scope_name = ptn_value_to_string(scope);
+        ptn_closure_set_bound_scope_name(copy, scope_name);
+        free(scope_name);
+    } else if (scope.type == PTN_OBJECT) {
+        ptn_closure_set_bound_scope_name(copy, scope.as.object->class_name);
+    } else if (scope.type == PTN_EXCEPTION) {
+        ptn_closure_set_bound_scope_name(copy, scope.as.exception->class_name);
     }
     return copy;
 }
@@ -690,6 +725,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->magic_property_unset = NULL;
     runtime->magic_debug_info = NULL;
     runtime->class_constant_initializer = NULL;
+    runtime->new_instance_without_constructor = NULL;
     runtime->in_magic_property_dispatch = 0;
     runtime->magic_property_frames = NULL;
     runtime->magic_property_frame_len = 0;

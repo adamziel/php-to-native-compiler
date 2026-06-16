@@ -351,6 +351,7 @@ struct PtnClosure {
     PtnSymbolTable captures;
     int has_wrapped_callable;
     PtnValue wrapped_callable;
+    char *bound_scope_name;
 };
 
 typedef enum {
@@ -686,6 +687,11 @@ typedef int (*PtnClassConstantInitializerHandler)(
     const char *class_name,
     const char *constant_name
 );
+typedef PtnValue (*PtnNewInstanceWithoutConstructorHandler)(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+);
 
 struct PtnRuntime {
     PtnSymbolTable symbols;
@@ -734,6 +740,7 @@ struct PtnRuntime {
     PtnMagicPropertyUnsetHandler magic_property_unset;
     PtnMagicDebugInfoHandler magic_debug_info;
     PtnClassConstantInitializerHandler class_constant_initializer;
+    PtnNewInstanceWithoutConstructorHandler new_instance_without_constructor;
     int in_magic_property_dispatch;
     PtnMagicPropertyFrame *magic_property_frames;
     size_t magic_property_frame_len;
@@ -1371,6 +1378,7 @@ static PTN_UNUSED PtnValue ptn_closure(
     closure->captures.index_capacity = 0;
     closure->has_wrapped_callable = 0;
     closure->wrapped_callable = ptn_null();
+    closure->bound_scope_name = NULL;
     PtnValue value;
     value.type = PTN_CLOSURE;
     value.owned = 1;

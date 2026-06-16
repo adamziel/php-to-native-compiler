@@ -160,6 +160,16 @@ pub fn emit_c(module: &Module) -> String {
         emit_dynamic_function_dispatch(&mut out);
         emit_callable_dispatch(&mut out, &module.functions, needs_method_dispatch);
     }
+    if !module.classes.is_empty() {
+        emit_declared_class_new_instance_without_constructor(
+            &mut out,
+            &module.source_file,
+            &module.source_dir,
+            &module.functions,
+            &module.classes,
+            &module.includes,
+        );
+    }
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
@@ -215,6 +225,11 @@ pub fn emit_c(module: &Module) -> String {
     }
     out.push_str("    runtime.class_scope_allows = ptn_declared_class_scope_allows;\n");
     out.push_str("    runtime.declared_class_is_readonly = ptn_declared_class_is_readonly;\n");
+    if !module.classes.is_empty() {
+        out.push_str(
+            "    runtime.new_instance_without_constructor = ptn_declared_class_new_instance_without_constructor;\n",
+        );
+    }
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
@@ -776,6 +791,62 @@ fn emit_user_function_prototypes(
             "(PtnRuntime *caller_runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line);\n",
         );
     }
+}
+
+fn emit_declared_class_new_instance_without_constructor(
+    out: &mut String,
+    source_file: &str,
+    source_dir: &str,
+    functions: &[FunctionDecl],
+    classes: &[ClassDecl],
+    includes: &[IncludeFile],
+) {
+    let mut values = ValueEmitter::new(source_file, source_dir, functions, classes, includes);
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_new_instance_without_constructor(PtnRuntime *caller_runtime, const char *class_name, size_t line) {\n",
+    );
+    out.push_str("    PtnRuntime runtime;\n");
+    out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
+    let mut emitted_branch = false;
+    for declared_class in classes {
+        out.push_str("    ");
+        if emitted_branch {
+            out.push_str("} else ");
+        }
+        out.push_str("if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&declared_class.name));
+        out.push_str("\")) {\n");
+        if declared_class.is_interface || declared_class.is_abstract {
+            out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate ");
+            out.push_str(if declared_class.is_interface {
+                "interface "
+            } else {
+                "abstract class "
+            });
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str("\");\n");
+            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    return ptn_null();\n");
+        } else {
+            values.emit_declared_object_shell_with_properties(
+                out,
+                "result",
+                declared_class,
+                declared_class.line,
+                true,
+            );
+            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    return result;\n");
+        }
+        emitted_branch = true;
+    }
+    if emitted_branch {
+        out.push_str("    }\n");
+    }
+    out.push_str("    (void)line;\n");
+    out.push_str("    ptn_runtime_free(&runtime);\n");
+    out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
 }
 
 fn emit_user_functions(
@@ -5093,10 +5164,8 @@ fn emit_method_dispatch(
     out.push_str("    }\n");
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
     out.push_str("        if (ptn_ascii_case_equal(method_name, \"bindTo\")) {\n");
-    out.push_str("            (void)argc;\n");
-    out.push_str("            (void)args;\n");
     out.push_str("            (void)line;\n");
-    out.push_str("            return ptn_closure_clone(runtime, resolved);\n");
+    out.push_str("            return ptn_closure_clone_bound(runtime, resolved, argc, args);\n");
     out.push_str("        }\n");
     if needs_closure_invoke_dispatch {
         out.push_str("        if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
@@ -14381,33 +14450,14 @@ impl ValueEmitter {
         result_temp
     }
 
-    fn emit_declared_new_object(
+    fn emit_declared_object_shell_with_properties(
         &mut self,
         out: &mut String,
         result_temp: &str,
         declared_class: &ClassDecl,
-        arguments: &[ValueExpr],
-        argument_unpacks: &[bool],
-        line: usize,
+        _line: usize,
         declare_result: bool,
     ) {
-        if declared_class.is_interface || declared_class.is_abstract {
-            out.push_str("    ");
-            if declare_result {
-                out.push_str("PtnValue ");
-            }
-            out.push_str(result_temp);
-            out.push_str(" = ptn_null();\n");
-            out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate ");
-            out.push_str(if declared_class.is_interface {
-                "interface "
-            } else {
-                "abstract class "
-            });
-            out.push_str(&c_string(&declared_class.name));
-            out.push_str("\");\n");
-            return;
-        }
         out.push_str("    ");
         if declare_result {
             out.push_str("PtnValue ");
@@ -14468,6 +14518,42 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &assigned_temp);
             emit_value_cleanup(out, "    ", &value_temp);
         }
+    }
+
+    fn emit_declared_new_object(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        declared_class: &ClassDecl,
+        arguments: &[ValueExpr],
+        argument_unpacks: &[bool],
+        line: usize,
+        declare_result: bool,
+    ) {
+        if declared_class.is_interface || declared_class.is_abstract {
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate ");
+            out.push_str(if declared_class.is_interface {
+                "interface "
+            } else {
+                "abstract class "
+            });
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str("\");\n");
+            return;
+        }
+        self.emit_declared_object_shell_with_properties(
+            out,
+            result_temp,
+            declared_class,
+            line,
+            declare_result,
+        );
         if let Some((
             constructor_declaring_class,
             constructor_name,

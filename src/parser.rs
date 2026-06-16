@@ -9331,6 +9331,31 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
             else {
                 continue;
             };
+            if parent_property.visibility == PropertyVisibility::Private {
+                continue;
+            }
+            if parent_property.set_visibility == PropertyVisibility::Private
+                && parent_property.visibility != PropertyVisibility::Private
+            {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot override final property {}::${}",
+                        parent.name, parent_property.name
+                    ),
+                    Some(property.span),
+                ));
+            }
+            if parent_property.set_visibility == parent_property.visibility
+                && property.set_visibility != property.visibility
+            {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Set access level of {}::${} must be omitted (as in class {})",
+                        class.name, property.name, parent.name
+                    ),
+                    Some(property.span),
+                ));
+            }
             if visibility_rank(property.set_visibility)
                 <= visibility_rank(parent_property.set_visibility)
             {
@@ -12238,10 +12263,7 @@ fn validate_reference_assignment_target_source(
             ));
         }
         AssignmentTarget::StaticProperty { .. } => {
-            return Err(Diagnostic::new(
-                "unsupported by-reference assignment target",
-                Some(span),
-            ));
+            return Ok(());
         }
         AssignmentTarget::List(_) => {
             return Err(Diagnostic::new(

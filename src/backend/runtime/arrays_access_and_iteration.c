@@ -1408,12 +1408,6 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
         PtnPropertyVisibility visibility = (for_write || unset_write)
             ? scoped_private->set_visibility
             : scoped_private->read_visibility;
-        int readonly_initialized = (for_write || unset_write) &&
-            scoped_private->is_readonly &&
-            ptn_object_property_storage_initialized(object, scoped_private->storage_name);
-        if (readonly_initialized) {
-            return ptn_duplicate_string(scoped_private->storage_name);
-        }
         if (!ptn_property_visibility_allows(
             runtime,
             visibility,
@@ -1423,14 +1417,7 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             if (quiet) {
                 return NULL;
             }
-            if (for_write && scoped_private->is_readonly) {
-                ptn_throw_readonly_property_initialize_error(
-                    runtime,
-                    scoped_private->declaring_class,
-                    property,
-                    access_scope
-                );
-            } else if (for_write && scoped_private->set_visibility != scoped_private->read_visibility) {
+            if (for_write && scoped_private->set_visibility != scoped_private->read_visibility) {
                 if (indirect_write) {
                     ptn_throw_property_indirect_set_visibility_error(
                         runtime,
@@ -1449,14 +1436,31 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         1
                     );
                 } else {
-                    ptn_throw_property_set_visibility_error(
-                        runtime,
-                        scoped_private->set_visibility,
-                        scoped_private->declaring_class,
-                        property,
-                        access_scope
-                    );
+                    if (scoped_private->is_readonly) {
+                        ptn_throw_readonly_property_set_visibility_error(
+                            runtime,
+                            scoped_private->set_visibility,
+                            scoped_private->declaring_class,
+                            property,
+                            access_scope
+                        );
+                    } else {
+                        ptn_throw_property_set_visibility_error(
+                            runtime,
+                            scoped_private->set_visibility,
+                            scoped_private->declaring_class,
+                            property,
+                            access_scope
+                        );
+                    }
                 }
+            } else if (for_write && scoped_private->is_readonly) {
+                ptn_throw_readonly_property_initialize_error(
+                    runtime,
+                    scoped_private->declaring_class,
+                    property,
+                    access_scope
+                );
             } else if (unset_write && scoped_private->set_visibility != scoped_private->read_visibility) {
                 ptn_throw_property_unset_visibility_error(
                     runtime,
@@ -1476,6 +1480,12 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             }
             return NULL;
         }
+        int readonly_initialized = (for_write || unset_write) &&
+            scoped_private->is_readonly &&
+            ptn_object_property_storage_initialized(object, scoped_private->storage_name);
+        if (readonly_initialized) {
+            return ptn_duplicate_string(scoped_private->storage_name);
+        }
         return ptn_duplicate_string(scoped_private->storage_name);
     }
     const PtnObjectPropertyMetadata *shared_property =
@@ -1484,12 +1494,6 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
         PtnPropertyVisibility visibility = (for_write || unset_write)
             ? shared_property->set_visibility
             : shared_property->read_visibility;
-        int readonly_initialized = (for_write || unset_write) &&
-            shared_property->is_readonly &&
-            ptn_object_property_storage_initialized(object, shared_property->storage_name);
-        if (readonly_initialized) {
-            return ptn_duplicate_string(shared_property->storage_name);
-        }
         if (!ptn_property_visibility_allows(
             runtime,
             visibility,
@@ -1499,14 +1503,7 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             if (quiet) {
                 return NULL;
             }
-            if (for_write && shared_property->is_readonly) {
-                ptn_throw_readonly_property_initialize_error(
-                    runtime,
-                    shared_property->declaring_class,
-                    property,
-                    access_scope
-                );
-            } else if (for_write && shared_property->set_visibility != shared_property->read_visibility) {
+            if (for_write && shared_property->set_visibility != shared_property->read_visibility) {
                 if (indirect_write) {
                     ptn_throw_property_indirect_set_visibility_error(
                         runtime,
@@ -1525,14 +1522,31 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         1
                     );
                 } else {
-                    ptn_throw_property_set_visibility_error(
-                        runtime,
-                        shared_property->set_visibility,
-                        shared_property->declaring_class,
-                        property,
-                        access_scope
-                    );
+                    if (shared_property->is_readonly) {
+                        ptn_throw_readonly_property_set_visibility_error(
+                            runtime,
+                            shared_property->set_visibility,
+                            shared_property->declaring_class,
+                            property,
+                            access_scope
+                        );
+                    } else {
+                        ptn_throw_property_set_visibility_error(
+                            runtime,
+                            shared_property->set_visibility,
+                            shared_property->declaring_class,
+                            property,
+                            access_scope
+                        );
+                    }
                 }
+            } else if (for_write && shared_property->is_readonly) {
+                ptn_throw_readonly_property_initialize_error(
+                    runtime,
+                    shared_property->declaring_class,
+                    property,
+                    access_scope
+                );
             } else if (unset_write && shared_property->set_visibility != shared_property->read_visibility) {
                 ptn_throw_property_unset_visibility_error(
                     runtime,
@@ -1551,6 +1565,12 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                 );
             }
             return NULL;
+        }
+        int readonly_initialized = (for_write || unset_write) &&
+            shared_property->is_readonly &&
+            ptn_object_property_storage_initialized(object, shared_property->storage_name);
+        if (readonly_initialized) {
+            return ptn_duplicate_string(shared_property->storage_name);
         }
         return ptn_duplicate_string(shared_property->storage_name);
     }
@@ -5062,6 +5082,14 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
     size_t line,
     int emit_null_key_deprecation
 );
+static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line
+);
 
 static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
     PtnRuntime *runtime,
@@ -5410,6 +5438,22 @@ static PTN_UNUSED void ptn_array_set_path_leaf(
     ptn_array_write_entry(runtime, array, key, ptn_value_clone(ptn_value_deref(value)));
 }
 
+static PTN_UNUSED PtnValue ptn_array_set_path_leaf_result(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    const PtnArrayPathSegment *segment,
+    PtnValue value,
+    size_t line,
+    int emit_null_key_deprecation
+) {
+    ptn_array_path_emit_null_key_deprecation(runtime, segment, line, emit_null_key_deprecation);
+    PtnArrayKey key;
+    if (!ptn_array_path_segment_key(runtime, array, segment, line, &key)) {
+        return ptn_null();
+    }
+    return ptn_array_write_entry_result(runtime, array, key, value);
+}
+
 static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
     PtnRuntime *runtime,
     const PtnArrayPathSegment *segments,
@@ -5476,6 +5520,68 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
         value,
         line,
         emit_null_key_deprecation
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result(
+    PtnRuntime *runtime,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line
+) {
+    if (segment_count == 0) {
+        return ptn_value_clone_deref(value);
+    }
+
+    char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+    if (global_name == NULL) {
+        return ptn_null();
+    }
+
+    if (segment_count == 1) {
+        PtnValue result = ptn_runtime_write_global_variable_result(runtime, global_name, value);
+        free(global_name);
+        return result;
+    }
+
+    PtnValue *slot = ptn_runtime_global_variable_slot_for_write(runtime, global_name);
+    free(global_name);
+    if (slot == NULL) {
+        return ptn_null();
+    }
+
+    if (segment_count == 2) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (slot_value->type == PTN_STRING) {
+            if (segments[1].append) {
+                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                return ptn_null();
+            }
+            ptn_runtime_string_offset_set(runtime, slot_value, segments[1].value, value, line);
+            return ptn_value_clone_deref(value);
+        }
+    }
+
+    PtnArray *array = ptn_array_root_slot_for_write(runtime, slot, line);
+    if (array == NULL) {
+        return ptn_null();
+    }
+
+    for (size_t i = 1; i + 1 < segment_count; i++) {
+        array = ptn_array_descend_for_write(runtime, array, &segments[i], line, 1);
+        if (array == NULL) {
+            return ptn_null();
+        }
+    }
+
+    return ptn_array_set_path_leaf_result(
+        runtime,
+        array,
+        &segments[segment_count - 1],
+        value,
+        line,
+        1
     );
 }
 
@@ -5582,6 +5688,87 @@ static PTN_UNUSED void ptn_runtime_array_path_set(
     size_t line
 ) {
     ptn_runtime_array_path_set_impl(runtime, name, segments, segment_count, value, line, 1);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line
+) {
+    if (ptn_runtime_is_globals_name(name)) {
+        return ptn_runtime_globals_array_path_set_result(
+            runtime,
+            segments,
+            segment_count,
+            value,
+            line
+        );
+    }
+    if (segment_count == 0) {
+        return ptn_value_clone_deref(value);
+    }
+
+    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    if (slot != NULL && segment_count == 1) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (slot_value->type == PTN_STRING) {
+            if (segments[0].append) {
+                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                return ptn_null();
+            }
+            ptn_runtime_string_offset_set(runtime, slot_value, segments[0].value, value, line);
+            return ptn_value_clone_deref(value);
+        }
+    }
+    if (slot != NULL && segment_count == 1) {
+        PtnValue slot_value = ptn_value_deref(*slot);
+        if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetSet")) {
+            PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
+            ptn_arrayaccess_write(runtime, slot_value, key, value, line);
+            return ptn_value_clone_deref(value);
+        }
+    }
+    if (slot != NULL && segment_count > 1) {
+        PtnValue slot_value = ptn_value_deref(*slot);
+        if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
+            PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
+            PtnValue nested = ptn_arrayaccess_read(runtime, slot_value, key, line);
+            PtnValue result = ptn_value_array_path_set_result(
+                runtime,
+                &nested,
+                segments + 1,
+                segment_count - 1,
+                value,
+                line
+            );
+            ptn_value_destroy(&nested);
+            return result;
+        }
+    }
+
+    PtnArray *array = ptn_runtime_array_root_for_write(runtime, name, line);
+    if (array == NULL) {
+        return ptn_null();
+    }
+
+    for (size_t i = 0; i + 1 < segment_count; i++) {
+        array = ptn_array_descend_for_write(runtime, array, &segments[i], line, 1);
+        if (array == NULL) {
+            return ptn_null();
+        }
+    }
+
+    return ptn_array_set_path_leaf_result(
+        runtime,
+        array,
+        &segments[segment_count - 1],
+        value,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_runtime_array_path_set_from_assign_op(
@@ -5761,6 +5948,69 @@ static PTN_UNUSED void ptn_value_array_path_set(
     size_t line
 ) {
     ptn_value_array_path_set_impl(runtime, target, segments, segment_count, value, line, 1);
+}
+
+static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line
+) {
+    if (target == NULL || segment_count == 0) {
+        return ptn_value_clone_deref(value);
+    }
+
+    PtnValue *target_value = target->type == PTN_REFERENCE ? &target->as.reference->value : target;
+    if (segment_count == 1 && target_value->type == PTN_STRING) {
+        if (segments[0].append) {
+            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            return ptn_null();
+        }
+        ptn_runtime_string_offset_set(runtime, target_value, segments[0].value, value, line);
+        return ptn_value_clone_deref(value);
+    }
+    if (segment_count == 1 && ptn_arrayaccess_can_dispatch(runtime, *target_value, "offsetSet")) {
+        PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
+        ptn_arrayaccess_write(runtime, *target_value, key, value, line);
+        return ptn_value_clone_deref(value);
+    }
+    if (segment_count > 1 && ptn_arrayaccess_can_dispatch(runtime, *target_value, "offsetGet")) {
+        PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
+        PtnValue nested = ptn_arrayaccess_read(runtime, *target_value, key, line);
+        PtnValue result = ptn_value_array_path_set_result(
+            runtime,
+            &nested,
+            segments + 1,
+            segment_count - 1,
+            value,
+            line
+        );
+        ptn_value_destroy(&nested);
+        return result;
+    }
+
+    PtnArray *array = ptn_array_root_slot_for_write(runtime, target, line);
+    if (array == NULL) {
+        return ptn_null();
+    }
+
+    for (size_t i = 0; i + 1 < segment_count; i++) {
+        array = ptn_array_descend_for_write(runtime, array, &segments[i], line, 1);
+        if (array == NULL) {
+            return ptn_null();
+        }
+    }
+
+    return ptn_array_set_path_leaf_result(
+        runtime,
+        array,
+        &segments[segment_count - 1],
+        value,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_value_array_path_set_from_assign_op(
