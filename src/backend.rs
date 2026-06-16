@@ -485,7 +485,25 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
         "\nstatic PTN_UNUSED int ptn_value_satisfies_class_type_hint(PtnRuntime *runtime, PtnValue value, const char *expected_class_name) {\n",
     );
     out.push_str("    value = ptn_value_deref(value);\n");
-    out.push_str("    const char *resolved_expected_class_name = ptn_runtime_resolve_class_alias(runtime, expected_class_name);\n");
+    out.push_str("    const char *resolved_expected_class_name = expected_class_name;\n");
+    out.push_str("    if (resolved_expected_class_name == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(resolved_expected_class_name, \"static\")) {\n");
+    out.push_str("        resolved_expected_class_name = runtime->current_called_class_name != NULL ? runtime->current_called_class_name : runtime->current_class_name;\n");
+    out.push_str(
+        "    } else if (ptn_ascii_case_equal(resolved_expected_class_name, \"self\")) {\n",
+    );
+    out.push_str("        resolved_expected_class_name = runtime->current_class_name;\n");
+    out.push_str(
+        "    } else if (ptn_ascii_case_equal(resolved_expected_class_name, \"parent\")) {\n",
+    );
+    out.push_str("        resolved_expected_class_name = runtime->current_class_name != NULL ? ptn_declared_class_parent_name(runtime->current_class_name) : NULL;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (resolved_expected_class_name == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    resolved_expected_class_name = ptn_runtime_resolve_class_alias(runtime, resolved_expected_class_name);\n");
     out.push_str("    if (value.type == PTN_OBJECT) {\n");
     out.push_str("        if (ptn_object_is_generator(value.as.object)) {\n");
     out.push_str(
@@ -902,25 +920,33 @@ fn emit_user_functions(
         out.push_str("    runtime.current_function_name = \"");
         out.push_str(&c_string(&function.display_name));
         out.push_str("\";\n");
-        out.push_str("    runtime.current_class_name = ");
-        out.push_str(&c_optional_string(function.class_name.as_deref()));
-        out.push_str(";\n");
-        out.push_str("    runtime.current_called_class_name = caller_runtime->called_class_name_override != NULL ? caller_runtime->called_class_name_override : ");
-        out.push_str(&c_optional_string(function.class_name.as_deref()));
-        out.push_str(";\n");
         if function.is_anonymous {
+            out.push_str("    const char *ptn_closure_scope_class = NULL;\n");
+            out.push_str("    const char *ptn_closure_called_class = NULL;\n");
+            out.push_str("    if (receiver.type == PTN_CLOSURE) {\n");
             out.push_str(
-                "    if (receiver.type == PTN_CLOSURE && receiver.as.closure->bound_scope_name != NULL) {\n",
+                "        ptn_closure_scope_class = receiver.as.closure->scope_class_name;\n",
             );
             out.push_str(
-                "        runtime.current_class_name = receiver.as.closure->bound_scope_name;\n",
-            );
-            out.push_str(
-                "        runtime.current_called_class_name = receiver.as.closure->bound_scope_name;\n",
+                "        ptn_closure_called_class = receiver.as.closure->called_class_name;\n",
             );
             out.push_str("    }\n");
+            out.push_str("    runtime.current_class_name = ptn_closure_scope_class != NULL ? ptn_closure_scope_class : ");
+            out.push_str(&c_optional_string(function.class_name.as_deref()));
+            out.push_str(";\n");
+            out.push_str("    runtime.current_called_class_name = caller_runtime->called_class_name_override != NULL ? caller_runtime->called_class_name_override : (ptn_closure_called_class != NULL ? ptn_closure_called_class : runtime.current_class_name);\n");
+        } else {
+            out.push_str("    runtime.current_class_name = ");
+            out.push_str(&c_optional_string(function.class_name.as_deref()));
+            out.push_str(";\n");
+            out.push_str("    runtime.current_called_class_name = caller_runtime->called_class_name_override != NULL ? caller_runtime->called_class_name_override : ");
+            out.push_str(&c_optional_string(function.class_name.as_deref()));
+            out.push_str(";\n");
         }
         out.push_str("    runtime.call_site_line = line;\n");
+        if function.is_anonymous {
+            out.push_str("    char *ptn_closure_trace_name = NULL;\n");
+        }
         if call_frame_parameter_count == 0 {
             out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, 0, NULL);\n");
         } else {
@@ -942,6 +968,31 @@ fn emit_user_functions(
             out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, ");
             out.push_str(&call_frame_parameter_count.to_string());
             out.push_str(", ptn_parameter_names);\n");
+        }
+        if function.is_anonymous {
+            out.push_str("    if (receiver.type == PTN_CLOSURE && receiver.as.closure->scope_class_name != NULL) {\n");
+            out.push_str("        const char *ptn_closure_trace_scope = receiver.as.closure->scope_class_name;\n");
+            out.push_str("        PtnValue ptn_closure_bound_this;\n");
+            out.push_str("        const char *ptn_closure_trace_separator = (ptn_ascii_case_equal(ptn_closure_trace_scope, \"Closure\") && ptn_symbols_get(&receiver.as.closure->captures, \"this\", &ptn_closure_bound_this)) ? \"->\" : \"::\";\n");
+            out.push_str("        int ptn_closure_trace_needed = snprintf(NULL, 0, \"%s%s");
+            out.push_str(&c_string(&function.display_name));
+            out.push_str("\", ptn_closure_trace_scope, ptn_closure_trace_separator);\n");
+            out.push_str("        if (ptn_closure_trace_needed < 0) {\n");
+            out.push_str("            ptn_abort_out_of_memory();\n");
+            out.push_str("        }\n");
+            out.push_str(
+                "        ptn_closure_trace_name = malloc((size_t)ptn_closure_trace_needed + 1);\n",
+            );
+            out.push_str("        if (ptn_closure_trace_name == NULL) {\n");
+            out.push_str("            ptn_abort_out_of_memory();\n");
+            out.push_str("        }\n");
+            out.push_str("        snprintf(ptn_closure_trace_name, (size_t)ptn_closure_trace_needed + 1, \"%s%s");
+            out.push_str(&c_string(&function.display_name));
+            out.push_str("\", ptn_closure_trace_scope, ptn_closure_trace_separator);\n");
+            out.push_str(
+                "        runtime.owned_trace_frame.function_name = ptn_closure_trace_name;\n",
+            );
+            out.push_str("    }\n");
         }
         if let Some(trace_display_name) = instance_method_trace_display_name(function) {
             out.push_str("    runtime.owned_trace_frame.function_name = \"");
@@ -1069,7 +1120,7 @@ fn emit_user_functions(
             let parameter_cast_temp = if let Some(type_hint) = type_hint {
                 if type_hint_uses_generic_runtime_check(type_hint) {
                     let mut condition =
-                        type_hint_condition(&parameter_source, "caller_runtime", type_hint);
+                        type_hint_condition(&parameter_source, "&runtime", type_hint);
                     if allows_null && !type_hint_allows_null(Some(type_hint)) {
                         condition = format!(
                             "ptn_value_deref({parameter_source}).type == PTN_NULL || ({condition})"
@@ -1146,7 +1197,7 @@ fn emit_user_functions(
                             out.push_str(&parameter_source);
                             out.push_str(").type != PTN_NULL && ");
                         }
-                        out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, ");
+                        out.push_str("!ptn_value_satisfies_class_type_hint(&runtime, ");
                         out.push_str(&parameter_source);
                         out.push_str(", \"");
                         out.push_str(&c_string(class_name));
@@ -1309,6 +1360,9 @@ fn emit_user_functions(
             out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
             out.push_str("    ptn_runtime_free(&runtime);\n");
+            if function.is_anonymous {
+                out.push_str("    free(ptn_closure_trace_name);\n");
+            }
             out.push_str("    return ptn_generator_value;\n");
             out.push_str("}\n");
             continue;
@@ -1330,6 +1384,9 @@ fn emit_user_functions(
         }
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
         out.push_str("    ptn_runtime_free(&runtime);\n");
+        if function.is_anonymous {
+            out.push_str("    free(ptn_closure_trace_name);\n");
+        }
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
     }
@@ -1453,7 +1510,7 @@ fn emit_variadic_parameter_binding(
             out.push_str("        if (!(");
             out.push_str(&type_hint_condition(
                 &format!("args[{index_temp}]"),
-                "caller_runtime",
+                "&runtime",
                 type_hint,
             ));
             out.push_str(")) {\n");
@@ -1535,7 +1592,7 @@ fn emit_variadic_parameter_binding(
             out.push_str(&index_temp);
             out.push_str("]).type != PTN_NULL && ");
         }
-        out.push_str("!ptn_value_satisfies_class_type_hint(caller_runtime, args[");
+        out.push_str("!ptn_value_satisfies_class_type_hint(&runtime, args[");
         out.push_str(&index_temp);
         out.push_str("], \"");
         out.push_str(&c_string(class_name));
@@ -2209,6 +2266,125 @@ fn type_hint_union_member_label(type_hint: &TypeHint) -> String {
     }
 }
 
+fn type_hint_label_uses_runtime_static(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Static => true,
+        TypeHint::Nullable(inner) => type_hint_label_uses_runtime_static(inner),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            types.iter().any(type_hint_label_uses_runtime_static)
+        }
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Class(_) => false,
+    }
+}
+
+fn type_hint_label_runtime_static_count(type_hint: &TypeHint) -> usize {
+    match type_hint {
+        TypeHint::Static => 1,
+        TypeHint::Nullable(inner) => type_hint_label_runtime_static_count(inner),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            types.iter().map(type_hint_label_runtime_static_count).sum()
+        }
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Class(_) => 0,
+    }
+}
+
+fn type_hint_runtime_static_label_format(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Static => "%s".to_string(),
+        TypeHint::Nullable(inner) => match inner.as_ref() {
+            TypeHint::Iterable => "Traversable|array|null".to_string(),
+            TypeHint::Union(_) | TypeHint::Intersection(_) => {
+                format!("{}|null", type_hint_runtime_static_label_format(inner))
+            }
+            _ => format!("?{}", type_hint_runtime_static_label_format(inner)),
+        },
+        TypeHint::Union(types) => types
+            .iter()
+            .map(type_hint_union_member_runtime_static_label_format)
+            .collect::<Vec<_>>()
+            .join("|"),
+        TypeHint::Intersection(types) => types
+            .iter()
+            .map(type_hint_runtime_static_label_format)
+            .collect::<Vec<_>>()
+            .join("&"),
+        _ => type_hint_label(type_hint),
+    }
+}
+
+fn type_hint_union_member_runtime_static_label_format(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Intersection(_) => {
+            format!("({})", type_hint_runtime_static_label_format(type_hint))
+        }
+        _ => type_hint_runtime_static_label_format(type_hint),
+    }
+}
+
+fn emit_return_type_error_label(out: &mut String, return_type: &TypeHint) -> bool {
+    if !type_hint_label_uses_runtime_static(return_type) {
+        out.push_str("        const char *ptn_return_expected_type_name = \"");
+        out.push_str(&c_string(&type_hint_label(return_type)));
+        out.push_str("\";\n");
+        return false;
+    }
+
+    let label_format = type_hint_runtime_static_label_format(return_type);
+    let static_count = type_hint_label_runtime_static_count(return_type);
+    out.push_str("        const char *ptn_return_static_type_name = runtime.current_called_class_name != NULL ? runtime.current_called_class_name : \"static\";\n");
+    out.push_str("        int ptn_return_expected_type_name_len = snprintf(NULL, 0, \"");
+    out.push_str(&c_string(&label_format));
+    out.push('"');
+    for _ in 0..static_count {
+        out.push_str(", ptn_return_static_type_name");
+    }
+    out.push_str(");\n");
+    out.push_str("        if (ptn_return_expected_type_name_len < 0) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        char *ptn_return_expected_type_name_owned = malloc((size_t)ptn_return_expected_type_name_len + 1);\n");
+    out.push_str("        if (ptn_return_expected_type_name_owned == NULL) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        snprintf(ptn_return_expected_type_name_owned, (size_t)ptn_return_expected_type_name_len + 1, \"");
+    out.push_str(&c_string(&label_format));
+    out.push('"');
+    for _ in 0..static_count {
+        out.push_str(", ptn_return_static_type_name");
+    }
+    out.push_str(");\n");
+    out.push_str("        const char *ptn_return_expected_type_name = ptn_return_expected_type_name_owned;\n");
+    true
+}
+
 fn emit_generic_return_type_boundary(
     out: &mut String,
     return_type: &TypeHint,
@@ -2221,11 +2397,13 @@ fn emit_generic_return_type_boundary(
         return_type,
     ));
     out.push_str(")) {\n");
+    let free_expected_label = emit_return_type_error_label(out, return_type);
     out.push_str("        ptn_throw_user_return_type_error(caller_runtime, \"");
     out.push_str(&c_string(function_name));
-    out.push_str("\", \"");
-    out.push_str(&c_string(&type_hint_label(return_type)));
-    out.push_str("\", ptn_return_value);\n");
+    out.push_str("\", ptn_return_expected_type_name, ptn_return_value);\n");
+    if free_expected_label {
+        out.push_str("        free(ptn_return_expected_type_name_owned);\n");
+    }
     out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
     out.push_str("        ptn_runtime_free(&runtime);\n");
     out.push_str("        return ptn_null();\n");
@@ -5176,8 +5354,91 @@ fn emit_method_dispatch(
     out.push_str("    }\n");
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
     out.push_str("        if (ptn_ascii_case_equal(method_name, \"bindTo\")) {\n");
-    out.push_str("            (void)line;\n");
-    out.push_str("            return ptn_closure_clone_bound(runtime, resolved, argc, args);\n");
+    out.push_str("            if (argc < 1) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Closure::bindTo() expects at least 1 argument\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            return ptn_closure_bind_to(runtime, resolved, args[0], argc >= 2, argc >= 2 ? args[1] : ptn_null(), \"Closure::bindTo\", 1, 2, line);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"call\")) {\n");
+    out.push_str("            if (argc < 1) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Closure::call() expects at least 1 argument\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            PtnValue new_this = ptn_value_deref(args[0]);\n");
+    out.push_str("            const char *scope_class_name = NULL;\n");
+    out.push_str("            if (new_this.type == PTN_OBJECT) {\n");
+    out.push_str("                scope_class_name = new_this.as.object->class_name;\n");
+    out.push_str("            } else if (new_this.type == PTN_EXCEPTION) {\n");
+    out.push_str("                scope_class_name = new_this.as.exception->class_name;\n");
+    out.push_str("            } else {\n");
+    out.push_str("                char ptn_call_message[160];\n");
+    out.push_str("                int ptn_call_written = snprintf(ptn_call_message, sizeof(ptn_call_message), \"Closure::call(): Argument #1 ($newThis) must be of type object, %s given\", ptn_offset_container_type_name(new_this));\n");
+    out.push_str("                if (ptn_call_written < 0 || (size_t)ptn_call_written >= sizeof(ptn_call_message)) {\n");
+    out.push_str("                    ptn_abort_out_of_memory();\n");
+    out.push_str("                }\n");
+    out.push_str(
+        "                ptn_throw_exception(runtime, \"TypeError\", ptn_call_message);\n",
+    );
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            if (resolved.as.closure->has_wrapped_callable) {\n");
+    out.push_str("                PtnValue ptn_wrapped = ptn_value_deref(resolved.as.closure->wrapped_callable);\n");
+    out.push_str("                if (ptn_wrapped.type == PTN_STRING) {\n");
+    out.push_str("                    ptn_emit_warning(&runtime->diagnostics, \"Cannot rebind scope of closure created from function, this will be an error in PHP 9\", line);\n");
+    out.push_str("                    return ptn_null();\n");
+    out.push_str("                }\n");
+    out.push_str(
+        "                if (ptn_wrapped.type == PTN_ARRAY && ptn_wrapped.as.array->len == 2) {\n",
+    );
+    out.push_str(
+        "                    PtnArrayKey ptn_wrapped_receiver_key = ptn_array_int_key(0);\n",
+    );
+    out.push_str(
+        "                    PtnArrayKey ptn_wrapped_method_key = ptn_array_int_key(1);\n",
+    );
+    out.push_str("                    PtnArrayEntry *ptn_wrapped_receiver_entry = ptn_array_entry_for_key(ptn_wrapped.as.array, ptn_wrapped_receiver_key);\n");
+    out.push_str("                    PtnArrayEntry *ptn_wrapped_method_entry = ptn_array_entry_for_key(ptn_wrapped.as.array, ptn_wrapped_method_key);\n");
+    out.push_str("                    ptn_array_key_free(ptn_wrapped_receiver_key);\n");
+    out.push_str("                    ptn_array_key_free(ptn_wrapped_method_key);\n");
+    out.push_str("                    if (ptn_wrapped_receiver_entry != NULL && ptn_wrapped_method_entry != NULL) {\n");
+    out.push_str("                        PtnValue ptn_wrapped_receiver = ptn_value_deref(ptn_wrapped_receiver_entry->value);\n");
+    out.push_str("                        PtnValue ptn_wrapped_method = ptn_value_deref(ptn_wrapped_method_entry->value);\n");
+    out.push_str("                        if ((ptn_wrapped_receiver.type == PTN_OBJECT || ptn_wrapped_receiver.type == PTN_EXCEPTION) && ptn_wrapped_method.type == PTN_STRING) {\n");
+    out.push_str("                            const char *ptn_wrapped_declaring_class = ptn_wrapped_receiver.type == PTN_OBJECT ? ptn_wrapped_receiver.as.object->class_name : ptn_wrapped_receiver.as.exception->class_name;\n");
+    out.push_str("                            const char *ptn_new_this_class = new_this.type == PTN_OBJECT ? new_this.as.object->class_name : new_this.as.exception->class_name;\n");
+    out.push_str("                            if (!ptn_ascii_case_equal(ptn_new_this_class, ptn_wrapped_declaring_class) && !ptn_declared_class_is_same_or_descendant(ptn_new_this_class, ptn_wrapped_declaring_class)) {\n");
+    out.push_str("                                char *ptn_wrapped_method_name = ptn_value_to_string(ptn_wrapped_method);\n");
+    out.push_str("                                char ptn_call_warning[256];\n");
+    out.push_str("                                int ptn_call_warning_written = snprintf(ptn_call_warning, sizeof(ptn_call_warning), \"Cannot bind method %s::%s() to object of class %s, this will be an error in PHP 9\", ptn_wrapped_declaring_class, ptn_wrapped_method_name, ptn_new_this_class);\n");
+    out.push_str("                                free(ptn_wrapped_method_name);\n");
+    out.push_str("                                if (ptn_call_warning_written < 0 || (size_t)ptn_call_warning_written >= sizeof(ptn_call_warning)) {\n");
+    out.push_str("                                    ptn_abort_out_of_memory();\n");
+    out.push_str("                                }\n");
+    out.push_str("                                ptn_emit_warning(&runtime->diagnostics, ptn_call_warning, line);\n");
+    out.push_str("                                return ptn_null();\n");
+    out.push_str("                            }\n");
+    out.push_str("                        }\n");
+    out.push_str("                    }\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("            if (!resolved.as.closure->has_wrapped_callable && ptn_internal_class_exists_name(scope_class_name)) {\n");
+    out.push_str("                char ptn_call_warning[192];\n");
+    out.push_str("                int ptn_call_warning_written = snprintf(ptn_call_warning, sizeof(ptn_call_warning), \"Cannot bind closure to scope of internal class %s, this will be an error in PHP 9\", scope_class_name);\n");
+    out.push_str("                if (ptn_call_warning_written < 0 || (size_t)ptn_call_warning_written >= sizeof(ptn_call_warning)) {\n");
+    out.push_str("                    ptn_abort_out_of_memory();\n");
+    out.push_str("                }\n");
+    out.push_str(
+        "                ptn_emit_warning(&runtime->diagnostics, ptn_call_warning, line);\n",
+    );
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            PtnValue bound = ptn_closure_clone(runtime, resolved);\n");
+    out.push_str("            ptn_closure_set_scope(bound, scope_class_name, scope_class_name);\n");
+    out.push_str("            ptn_closure_set_capture(bound, \"this\", new_this);\n");
+    out.push_str("            PtnValue call_result = ptn_call_callable(runtime, bound, argc - 1, argc > 1 ? args + 1 : NULL, line);\n");
+    out.push_str("            ptn_value_destroy(&bound);\n");
+    out.push_str("            return call_result;\n");
     out.push_str("        }\n");
     if needs_closure_invoke_dispatch {
         out.push_str("        if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
@@ -5248,9 +5509,15 @@ fn emit_method_dispatch(
                 function,
                 "line",
             );
-            out.push_str("            return ");
+            out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
+            out.push_str("            runtime->called_class_name_override = class_name;\n");
+            out.push_str("            PtnValue ptn_method_result = ");
             out.push_str(&user_function_c_name(method.function_index));
             out.push_str("(runtime, resolved, argc, args, line);\n");
+            out.push_str(
+                "            runtime->called_class_name_override = ptn_previous_called_class;\n",
+            );
+            out.push_str("            return ptn_method_result;\n");
             out.push_str("            }\n");
             out.push_str("            if (ptn_inaccessible_visibility == NULL) {\n");
             out.push_str("                ptn_inaccessible_visibility = \"");
@@ -6838,6 +7105,7 @@ fn emit_try(
     let frame_temp = values.next_temp();
     let caught_temp = values.next_temp();
     let saved_trace_temp = values.next_temp();
+    let saved_called_class_override_temp = values.next_temp();
     let end_label = values.next_label("ptn_try_end");
     let control_dispatch_label =
         (!finally_body.is_empty()).then(|| values.next_label("ptn_try_finally_dispatch"));
@@ -6888,6 +7156,9 @@ fn emit_try(
     out.push_str("        PtnTraceFrame *");
     out.push_str(&saved_trace_temp);
     out.push_str(" = runtime.trace_frame;\n");
+    out.push_str("        const char *");
+    out.push_str(&saved_called_class_override_temp);
+    out.push_str(" = runtime.called_class_name_override;\n");
     out.push_str("        ptn_try_frame_push(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
@@ -6953,6 +7224,9 @@ fn emit_try(
         out.push_str("                runtime.trace_frame = ");
         out.push_str(&saved_trace_temp);
         out.push_str(";\n");
+        out.push_str("                runtime.called_class_name_override = ");
+        out.push_str(&saved_called_class_override_temp);
+        out.push_str(";\n");
         out.push_str("                runtime.warn_by_ref_argument_mismatch = 0;\n");
         out.push_str("                runtime.throw_argument_count_errors = 0;\n");
         emit_exceptional_finally_and_rethrow(
@@ -6970,6 +7244,9 @@ fn emit_try(
     }
     out.push_str("            runtime.trace_frame = ");
     out.push_str(&saved_trace_temp);
+    out.push_str(";\n");
+    out.push_str("            runtime.called_class_name_override = ");
+    out.push_str(&saved_called_class_override_temp);
     out.push_str(";\n");
     out.push_str("            runtime.warn_by_ref_argument_mismatch = 0;\n");
     out.push_str("            runtime.throw_argument_count_errors = 0;\n");
@@ -8878,6 +9155,10 @@ fn collect_value_runtime_requirements(
                 requirements.internal_function_dispatch = true;
                 requirements.dynamic_function_dispatch = true;
             }
+            if name.eq_ignore_ascii_case("bindTo") || name.eq_ignore_ascii_case("call") {
+                requirements.internal_function_dispatch = true;
+                requirements.dynamic_function_dispatch = true;
+            }
         }
         ValueExpr::DynamicMethodCall {
             receiver,
@@ -9987,6 +10268,7 @@ struct ValueEmitter {
     current_trait_name: Option<String>,
     current_function_return_by_ref: bool,
     current_function_is_generator: bool,
+    current_function_is_anonymous: bool,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
     includes: Vec<IncludeFile>,
@@ -10573,6 +10855,299 @@ fn emit_static_call_receiver(out: &mut String, receiver_class_name: Option<&str>
     }
 }
 
+fn function_uses_this(function: &FunctionDecl) -> bool {
+    instructions_use_this(&function.body)
+}
+
+fn instructions_use_this(instructions: &[Instruction]) -> bool {
+    instructions.iter().any(instruction_uses_this)
+}
+
+fn instruction_uses_this(instruction: &Instruction) -> bool {
+    match instruction {
+        Instruction::Store { value, .. } | Instruction::StoreRef { source: value, .. } => {
+            value_expr_uses_this(value)
+        }
+        Instruction::StoreArrayDim {
+            dimensions, value, ..
+        } => dimensions.iter().flatten().any(value_expr_uses_this) || value_expr_uses_this(value),
+        Instruction::StoreArrayDimRef { target, source } => {
+            array_dim_target_uses_this(target) || value_expr_uses_this(source)
+        }
+        Instruction::Increment { target, .. } => inc_dec_target_uses_this(target),
+        Instruction::UnsetDynamicVariable { name, .. } => value_expr_uses_this(name),
+        Instruction::BindStatic { value, .. } => value.as_ref().is_some_and(value_expr_uses_this),
+        Instruction::UnsetArrayDim { dimensions, .. } => {
+            dimensions.iter().any(value_expr_uses_this)
+        }
+        Instruction::UnsetDynamicArrayDim {
+            name, dimensions, ..
+        } => value_expr_uses_this(name) || dimensions.iter().any(value_expr_uses_this),
+        Instruction::UnsetPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => value_expr_uses_this(receiver) || dimensions.iter().any(value_expr_uses_this),
+        Instruction::UnsetProperty { receiver, .. }
+        | Instruction::DefineConstant {
+            value: receiver, ..
+        }
+        | Instruction::Expression(receiver)
+        | Instruction::Echo(receiver)
+        | Instruction::Throw {
+            value: receiver, ..
+        } => value_expr_uses_this(receiver),
+        Instruction::InternalCall { arguments, .. } => arguments.iter().any(value_expr_uses_this),
+        Instruction::Return { value, .. } => value.as_ref().is_some_and(value_expr_uses_this),
+        Instruction::Try {
+            body,
+            catches,
+            finally_body,
+        } => {
+            instructions_use_this(body)
+                || catches
+                    .iter()
+                    .any(|catch| instructions_use_this(&catch.body))
+                || instructions_use_this(finally_body)
+        }
+        Instruction::Branch {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            value_expr_uses_this(condition)
+                || instructions_use_this(then_body)
+                || instructions_use_this(else_body)
+        }
+        Instruction::While { condition, body } | Instruction::DoWhile { condition, body } => {
+            value_expr_uses_this(condition) || instructions_use_this(body)
+        }
+        Instruction::For {
+            initializers,
+            condition,
+            updates,
+            body,
+        } => {
+            instructions_use_this(initializers)
+                || condition.as_ref().is_some_and(value_expr_uses_this)
+                || instructions_use_this(updates)
+                || instructions_use_this(body)
+        }
+        Instruction::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            ..
+        } => {
+            value_expr_uses_this(iterable)
+                || key.as_ref().is_some_and(assignment_target_uses_this)
+                || assignment_target_uses_this(value)
+                || instructions_use_this(body)
+        }
+        Instruction::Switch { expression, cases } => {
+            value_expr_uses_this(expression)
+                || cases.iter().any(|case| {
+                    case.condition.as_ref().is_some_and(value_expr_uses_this)
+                        || instructions_use_this(&case.body)
+                })
+        }
+        Instruction::UnsetVariable { .. }
+        | Instruction::BindGlobal { .. }
+        | Instruction::DeclareFunction { .. }
+        | Instruction::Break { .. }
+        | Instruction::Continue { .. }
+        | Instruction::Label { .. }
+        | Instruction::Goto { .. } => false,
+    }
+}
+
+fn value_expr_uses_this(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::Load { name, .. } => name == "this",
+        ValueExpr::Closure { .. }
+        | ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null
+        | ValueExpr::Constant { .. }
+        | ValueExpr::MagicConstant { .. }
+        | ValueExpr::StaticPropertyFetch { .. }
+        | ValueExpr::ClassConstantFetch { .. } => false,
+        ValueExpr::LegacyDollarBraceStringVariable { .. } => false,
+        ValueExpr::DynamicVariable { name, .. }
+        | ValueExpr::ArrayAppendAccess { array: name, .. }
+        | ValueExpr::Empty { target: name }
+        | ValueExpr::Print { expression: name }
+        | ValueExpr::Include { path: name, .. }
+        | ValueExpr::Throw { value: name, .. }
+        | ValueExpr::FirstClassCallable { callable: name, .. }
+        | ValueExpr::Clone { expr: name, .. }
+        | ValueExpr::Unary { expr: name, .. }
+        | ValueExpr::Cast { expr: name, .. }
+        | ValueExpr::PipeValue { expr: name, .. }
+        | ValueExpr::DynamicClassNameFetch { receiver: name, .. } => value_expr_uses_this(name),
+        ValueExpr::IncDec { target, .. } => inc_dec_target_uses_this(target),
+        ValueExpr::Assign { target, value, .. } => {
+            assignment_target_uses_this(target) || value_expr_uses_this(value)
+        }
+        ValueExpr::AssignRef { target, source } => {
+            assignment_target_uses_this(target) || value_expr_uses_this(source)
+        }
+        ValueExpr::Array(elements) => elements.iter().any(array_element_uses_this),
+        ValueExpr::ArrayAccess { array, index, .. } => {
+            value_expr_uses_this(array) || value_expr_uses_this(index)
+        }
+        ValueExpr::Isset { targets } => targets.iter().any(value_expr_uses_this),
+        ValueExpr::Yield { key, value, .. } => {
+            key.as_ref().is_some_and(|key| value_expr_uses_this(key))
+                || value
+                    .as_ref()
+                    .is_some_and(|value| value_expr_uses_this(value))
+        }
+        ValueExpr::InternalCall { arguments, .. }
+        | ValueExpr::DynamicCall { arguments, .. }
+        | ValueExpr::MethodCall { arguments, .. }
+        | ValueExpr::NewObject { arguments, .. } => arguments.iter().any(value_expr_uses_this),
+        ValueExpr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            value_expr_uses_this(receiver)
+                || value_expr_uses_this(name)
+                || arguments.iter().any(value_expr_uses_this)
+        }
+        ValueExpr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => value_expr_uses_this(class_name) || arguments.iter().any(value_expr_uses_this),
+        ValueExpr::PropertyFetch { receiver, .. }
+        | ValueExpr::NullsafePropertyFetch { receiver, .. } => value_expr_uses_this(receiver),
+        ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
+            value_expr_uses_this(receiver) || value_expr_uses_this(name)
+        }
+        ValueExpr::InstanceOf { expr, target, .. } => {
+            value_expr_uses_this(expr)
+                || matches!(target, InstanceOfTarget::Expr(target) if value_expr_uses_this(target))
+        }
+        ValueExpr::Binary { left, right, .. } => {
+            value_expr_uses_this(left) || value_expr_uses_this(right)
+        }
+        ValueExpr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            value_expr_uses_this(condition)
+                || if_true
+                    .as_ref()
+                    .is_some_and(|if_true| value_expr_uses_this(if_true))
+                || value_expr_uses_this(if_false)
+        }
+        ValueExpr::Match { subject, arms, .. } => {
+            value_expr_uses_this(subject)
+                || arms.iter().any(|arm| {
+                    arm.conditions.iter().any(value_expr_uses_this)
+                        || value_expr_uses_this(&arm.value)
+                })
+        }
+    }
+}
+
+fn array_element_uses_this(element: &IrArrayElement) -> bool {
+    element.key.as_ref().is_some_and(value_expr_uses_this)
+        || match &element.value {
+            IrArrayElementValue::Value(value) => value_expr_uses_this(value),
+            IrArrayElementValue::Reference(target) => reference_target_uses_this(target),
+            IrArrayElementValue::Unpack { value, .. } => value_expr_uses_this(value),
+        }
+}
+
+fn array_dim_target_uses_this(target: &crate::ir::ArrayDimTarget) -> bool {
+    target.dimensions.iter().flatten().any(value_expr_uses_this)
+}
+
+fn assignment_target_uses_this(target: &AssignmentTarget) -> bool {
+    match target {
+        AssignmentTarget::Variable { .. }
+        | AssignmentTarget::ArrayDim { .. }
+        | AssignmentTarget::StaticProperty { .. } => false,
+        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            dimensions.iter().flatten().any(value_expr_uses_this)
+        }
+        AssignmentTarget::DynamicVariable { name, .. } => value_expr_uses_this(name),
+        AssignmentTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => value_expr_uses_this(name) || dimensions.iter().flatten().any(value_expr_uses_this),
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_expr_uses_this(receiver) || dimensions.iter().flatten().any(value_expr_uses_this)
+        }
+        AssignmentTarget::Property { receiver, .. } => value_expr_uses_this(receiver),
+        AssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            value_expr_uses_this(receiver) || value_expr_uses_this(name)
+        }
+        AssignmentTarget::List(list) => list_assignment_target_uses_this(list),
+    }
+}
+
+fn list_assignment_target_uses_this(list: &ListAssignmentTarget) -> bool {
+    list.elements.iter().any(|element| {
+        element.key.as_ref().is_some_and(value_expr_uses_this)
+            || match &element.target {
+                ListAssignmentElementTarget::Value(target) => assignment_target_uses_this(target),
+                ListAssignmentElementTarget::Reference(target) => {
+                    reference_target_uses_this(target)
+                }
+            }
+    })
+}
+
+fn reference_target_uses_this(target: &ReferenceTarget) -> bool {
+    match target {
+        ReferenceTarget::Variable { .. } | ReferenceTarget::ArrayDim(_) => false,
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_expr_uses_this(receiver) || dimensions.iter().flatten().any(value_expr_uses_this)
+        }
+        ReferenceTarget::Property { receiver, .. } => value_expr_uses_this(receiver),
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            value_expr_uses_this(receiver) || value_expr_uses_this(name)
+        }
+    }
+}
+
+fn inc_dec_target_uses_this(target: &IncDecTarget) -> bool {
+    match target {
+        IncDecTarget::Variable { .. }
+        | IncDecTarget::ArrayDim { .. }
+        | IncDecTarget::StaticProperty { .. } => false,
+        IncDecTarget::DynamicVariable { name, .. } => value_expr_uses_this(name),
+        IncDecTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => value_expr_uses_this(name) || dimensions.iter().flatten().any(value_expr_uses_this),
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_expr_uses_this(receiver) || dimensions.iter().flatten().any(value_expr_uses_this)
+        }
+        IncDecTarget::Property { receiver, .. } => value_expr_uses_this(receiver),
+    }
+}
+
 impl ValueEmitter {
     fn new(
         source_file: &str,
@@ -10591,6 +11166,7 @@ impl ValueEmitter {
             None,
             None,
             None,
+            false,
             false,
             false,
             false,
@@ -10622,6 +11198,7 @@ impl ValueEmitter {
             function.return_by_ref,
             function.is_generator,
             function.is_anonymous,
+            function.is_anonymous,
         )
     }
 
@@ -10638,6 +11215,7 @@ impl ValueEmitter {
         current_function_return_by_ref: bool,
         current_function_is_generator: bool,
         use_runtime_class_scope: bool,
+        current_function_is_anonymous: bool,
     ) -> Self {
         Self {
             next_temp: 0,
@@ -10654,6 +11232,7 @@ impl ValueEmitter {
             current_trait_name: current_trait_name.map(str::to_string),
             current_function_return_by_ref,
             current_function_is_generator,
+            current_function_is_anonymous,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
             includes: includes.to_vec(),
@@ -10762,6 +11341,9 @@ impl ValueEmitter {
             || class_name.eq_ignore_ascii_case("static")
             || class_name.eq_ignore_ascii_case("parent")
         {
+            if self.current_function_is_anonymous {
+                return None;
+            }
             let Some(current_class_name) = &self.current_class_name else {
                 return Some(format!(
                     "Cannot use \"{}\" in the global scope",
@@ -10782,6 +11364,15 @@ impl ValueEmitter {
             }
         }
         None
+    }
+
+    fn class_name_fetch_uses_runtime_scope(&self, class_name: &str) -> bool {
+        if class_name.eq_ignore_ascii_case("static") {
+            return true;
+        }
+        self.current_function_is_anonymous
+            && (class_name.eq_ignore_ascii_case("self")
+                || class_name.eq_ignore_ascii_case("parent"))
     }
 
     fn static_call_target_class_name(&self, class_name: &str) -> String {
@@ -14261,6 +14852,7 @@ impl ValueEmitter {
             .parameters
             .iter()
             .any(|parameter| parameter.is_variadic);
+        let uses_this = function_uses_this(function);
         let parameter_names = emit_function_metadata_parameter_names(
             out,
             "    ",
@@ -14281,7 +14873,20 @@ impl ValueEmitter {
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(&parameter_names);
-        out.push_str("));\n");
+        out.push_str("), ");
+        out.push_str(if function.is_static { "1" } else { "0" });
+        out.push_str(", ");
+        out.push_str(if uses_this { "1" } else { "0" });
+        out.push_str(");\n");
+        out.push_str("    ptn_closure_set_scope(");
+        out.push_str(&closure_temp);
+        out.push_str(", ");
+        out.push_str(&c_optional_string(function.class_name.as_deref()));
+        out.push_str(
+            ", runtime.current_called_class_name != NULL ? runtime.current_called_class_name : ",
+        );
+        out.push_str(&c_optional_string(function.class_name.as_deref()));
+        out.push_str(");\n");
         if !function.is_static {
             out.push_str("    if (runtime.has_current_receiver) {\n");
             out.push_str("        ptn_closure_set_capture(");
@@ -14362,12 +14967,18 @@ impl ValueEmitter {
             return result_temp;
         }
         let result_temp = self.next_temp();
-        if let Some(declared_class) = self
-            .classes
-            .iter()
-            .find(|class| class.name.eq_ignore_ascii_case(class_name))
-            .cloned()
-        {
+        let class_uses_runtime_scope = self.class_name_fetch_uses_runtime_scope(class_name);
+        let compile_time_class_name = if class_uses_runtime_scope {
+            None
+        } else {
+            Some(self.class_name_fetch_name(class_name))
+        };
+        if let Some(declared_class) = compile_time_class_name.as_deref().and_then(|name| {
+            self.classes
+                .iter()
+                .find(|class| class.name.eq_ignore_ascii_case(name))
+                .cloned()
+        }) {
             self.emit_declared_new_object(
                 out,
                 &result_temp,
@@ -14382,19 +14993,35 @@ impl ValueEmitter {
             out.push_str(&result_temp);
             out.push_str(";\n");
             let class_lookup_temp = self.next_temp();
-            out.push_str("    const char *");
-            out.push_str(&class_lookup_temp);
-            out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
-            out.push_str(&c_string(class_name));
-            out.push_str("\");\n");
+            if class_uses_runtime_scope {
+                let scoped_class_temp = self.next_temp();
+                self.emit_runtime_scoped_class_name_cstr(out, &scoped_class_temp, class_name, line);
+                out.push_str("    const char *");
+                out.push_str(&class_lookup_temp);
+                out.push_str(" = ");
+                out.push_str(&scoped_class_temp);
+                out.push_str("_class_name != NULL ? ptn_runtime_resolve_class_alias(&runtime, ");
+                out.push_str(&scoped_class_temp);
+                out.push_str("_class_name) : NULL;\n");
+            } else {
+                out.push_str("    const char *");
+                out.push_str(&class_lookup_temp);
+                out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+                out.push_str(&c_string(
+                    compile_time_class_name.as_deref().unwrap_or(class_name),
+                ));
+                out.push_str("\");\n");
+            }
 
             let declared_classes = self.classes.clone();
-            let mut emitted_branch = false;
+            out.push_str("    if (");
+            out.push_str(&class_lookup_temp);
+            out.push_str(" == NULL) {\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
             for declared_class in declared_classes {
-                out.push_str("    ");
-                if emitted_branch {
-                    out.push_str("} else ");
-                }
+                out.push_str("    } else ");
                 out.push_str("if (ptn_ascii_case_equal(");
                 out.push_str(&class_lookup_temp);
                 out.push_str(", \"");
@@ -14409,31 +15036,18 @@ impl ValueEmitter {
                     line,
                     false,
                 );
-                emitted_branch = true;
             }
-            if emitted_branch {
-                out.push_str("    } else {\n");
-                self.emit_runtime_new_object(
-                    out,
-                    &result_temp,
-                    &class_lookup_temp,
-                    arguments,
-                    argument_unpacks,
-                    line,
-                    false,
-                );
-                out.push_str("    }\n");
-            } else {
-                self.emit_runtime_new_object(
-                    out,
-                    &result_temp,
-                    &class_lookup_temp,
-                    arguments,
-                    argument_unpacks,
-                    line,
-                    false,
-                );
-            }
+            out.push_str("    } else {\n");
+            self.emit_runtime_new_object(
+                out,
+                &result_temp,
+                &class_lookup_temp,
+                arguments,
+                argument_unpacks,
+                line,
+                false,
+            );
+            out.push_str("    }\n");
         }
         result_temp
     }
@@ -15361,39 +15975,8 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
-            } else if class_name.eq_ignore_ascii_case("static") {
-                let fallback_class_name = self.class_name_fetch_name(class_name);
-                out.push_str(";\n");
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str("_receiver = ptn_value_deref(receiver);\n");
-                out.push_str("    if (");
-                out.push_str(&result_temp);
-                out.push_str("_receiver.type == PTN_STRING) {\n");
-                out.push_str("        ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_value_clone_deref(");
-                out.push_str(&result_temp);
-                out.push_str("_receiver);\n");
-                out.push_str("    } else if (");
-                out.push_str(&result_temp);
-                out.push_str("_receiver.type == PTN_OBJECT || ");
-                out.push_str(&result_temp);
-                out.push_str("_receiver.type == PTN_EXCEPTION || ");
-                out.push_str(&result_temp);
-                out.push_str("_receiver.type == PTN_CLOSURE) {\n");
-                out.push_str("        ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_runtime_fetch_dynamic_class_name(&runtime, receiver, ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
-                out.push_str("    } else {\n");
-                out.push_str("        ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_string(\"");
-                out.push_str(&c_string(&fallback_class_name));
-                out.push_str("\");\n");
-                out.push_str("    }\n");
+            } else if self.class_name_fetch_uses_runtime_scope(class_name) {
+                self.emit_runtime_scoped_class_name_fetch(out, &result_temp, class_name, line);
             } else {
                 let resolved_class_name = self.class_name_fetch_name(class_name);
                 out.push_str(" = ptn_string(\"");
@@ -15401,16 +15984,116 @@ impl ValueEmitter {
                 out.push_str("\");\n");
             }
         } else {
-            let resolved_class_name = self.static_member_class_name(class_name);
-            out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
-            out.push_str(&c_string(&resolved_class_name));
-            out.push_str("\", \"");
-            out.push_str(&c_string(name));
+            if self.class_name_fetch_uses_runtime_scope(class_name) {
+                out.push_str(" = ptn_null();\n");
+                self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+                out.push_str("    if (");
+                out.push_str(&result_temp);
+                out.push_str("_class_name != NULL) {\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_read_class_constant(&runtime, ");
+                out.push_str(&result_temp);
+                out.push_str("_class_name, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+            } else {
+                let resolved_class_name = self.static_member_class_name(class_name);
+                out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+        }
+        result_temp
+    }
+
+    fn emit_runtime_scoped_class_name_fetch(
+        &self,
+        out: &mut String,
+        result_temp: &str,
+        class_name: &str,
+        line: usize,
+    ) {
+        out.push_str(" = ptn_null();\n");
+        self.emit_runtime_scoped_class_name_cstr(out, result_temp, class_name, line);
+        out.push_str("    if (");
+        out.push_str(result_temp);
+        out.push_str("_class_name != NULL) {\n");
+        out.push_str("        ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_owned_string(ptn_duplicate_string(");
+        out.push_str(result_temp);
+        out.push_str("_class_name));\n");
+        out.push_str("    }\n");
+    }
+
+    fn emit_runtime_scoped_class_name_cstr(
+        &self,
+        out: &mut String,
+        result_temp: &str,
+        class_name: &str,
+        line: usize,
+    ) {
+        out.push_str("    const char *");
+        out.push_str(result_temp);
+        out.push_str("_class_name = NULL;\n");
+        if class_name.eq_ignore_ascii_case("static") {
+            out.push_str("    ");
+            out.push_str(result_temp);
+            out.push_str("_class_name = runtime.current_called_class_name != NULL ? runtime.current_called_class_name : runtime.current_class_name;\n");
+        } else if class_name.eq_ignore_ascii_case("self") {
+            out.push_str("    ");
+            out.push_str(result_temp);
+            out.push_str("_class_name = runtime.current_class_name;\n");
+        } else {
+            out.push_str("    if (runtime.current_class_name != NULL) {\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(
+                "_class_name = ptn_declared_class_parent_name(runtime.current_class_name);\n",
+            );
+            out.push_str("    }\n");
+        }
+        if class_name.eq_ignore_ascii_case("parent") {
+            out.push_str("    if (");
+            out.push_str(result_temp);
+            out.push_str("_class_name == NULL) {\n");
+            out.push_str("        if (runtime.current_class_name != NULL) {\n");
+            out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use \\\"parent\\\" when current class scope has no parent\", \"");
+            out.push_str(&c_string(&self.source_file));
             out.push_str("\", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            out.push_str("        } else {\n");
+            out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use \\\"parent\\\" in the global scope\", \"");
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("        }\n");
+            out.push_str("    }\n");
+        } else {
+            out.push_str("    if (");
+            out.push_str(result_temp);
+            out.push_str("_class_name == NULL) {\n");
+            out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"");
+            out.push_str("Cannot use \\\"");
+            out.push_str(&c_string(&class_name.to_ascii_lowercase()));
+            out.push_str("\\\" in the global scope");
+            out.push_str("\", \"");
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
         }
-        result_temp
     }
 
     fn emit_dynamic_class_name_fetch(

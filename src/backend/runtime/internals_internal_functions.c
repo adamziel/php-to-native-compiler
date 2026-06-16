@@ -26285,6 +26285,7 @@ static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const P
     return result;
 }
 
+static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -26483,6 +26484,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "class_exists", 1, 2, ptn_internal_class_exists },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "closedir", 1, 1, ptn_internal_closedir },
+        { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "compact", 1, PTN_VARIADIC_ARGS, ptn_internal_compact },
         { "constant", 1, 1, ptn_internal_constant },
@@ -26864,6 +26866,20 @@ static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t a
     return ptn_closure_wrap_callable(runtime, callable, metadata);
 }
 
+static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_closure_bind_to(
+        runtime,
+        args[0],
+        args[1],
+        argc >= 3,
+        argc >= 3 ? args[2] : ptn_null(),
+        "Closure::bind",
+        2,
+        3,
+        line
+    );
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ReflectionClass");
 }
@@ -27088,7 +27104,9 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
 }
 
 static int ptn_reflection_function_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "getName")
+    return ptn_ascii_case_equal(method_name, "getClosureScopeClass")
+        || ptn_ascii_case_equal(method_name, "getClosure")
+        || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
         || ptn_ascii_case_equal(method_name, "getNumberOfParameters")
         || ptn_ascii_case_equal(method_name, "getNumberOfRequiredParameters")
@@ -27165,6 +27183,7 @@ static int ptn_limit_iterator_method_exists(const char *method_name) {
 
 static int ptn_closure_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__invoke")
+        || ptn_ascii_case_equal(method_name, "bind")
         || ptn_ascii_case_equal(method_name, "bindTo")
         || ptn_ascii_case_equal(method_name, "fromCallable");
 }
@@ -27289,6 +27308,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_reflection_function(class_name)) {
         static const char *const names[] = {
+            "getClosureScopeClass",
+            "getClosure",
             "getName",
             "getNamespaceName",
             "getNumberOfParameters",
@@ -27404,7 +27425,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         return result;
     }
     if (ptn_internal_class_name_is_closure(class_name)) {
-        static const char *const names[] = { "__invoke", "bindTo", "fromCallable" };
+        static const char *const names[] = { "__invoke", "bind", "bindTo", "fromCallable" };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
@@ -28677,6 +28698,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
 
 typedef struct {
     PtnFunctionMetadata metadata;
+    char *closure_scope_class_name;
 } PtnReflectionFunctionData;
 
 typedef struct {
@@ -28710,6 +28732,11 @@ static void ptn_limit_iterator_clear_cached_key(PtnLimitIteratorData *data) {
 }
 
 static void ptn_reflection_function_data_free(void *data) {
+    PtnReflectionFunctionData *function_data = (PtnReflectionFunctionData *)data;
+    if (function_data == NULL) {
+        return;
+    }
+    free(function_data->closure_scope_class_name);
     free(data);
 }
 
@@ -28940,6 +28967,10 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
         ptn_abort_out_of_memory();
     }
     data->metadata = metadata;
+    data->closure_scope_class_name = NULL;
+    if (target.type == PTN_CLOSURE && target.as.closure->scope_class_name != NULL) {
+        data->closure_scope_class_name = ptn_duplicate_string(target.as.closure->scope_class_name);
+    }
 
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionFunction");
     object.as.object->native_data = data;
@@ -29388,6 +29419,14 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
         return ptn_null();
     }
     PtnFunctionMetadata metadata = data->metadata;
+    if (ptn_ascii_case_equal(name, "getClosureScopeClass")) {
+        return data->closure_scope_class_name == NULL
+            ? ptn_null()
+            : ptn_reflection_class_object_from_name(runtime, data->closure_scope_class_name);
+    }
+    if (ptn_ascii_case_equal(name, "getClosure")) {
+        return ptn_closure_wrap_callable(runtime, ptn_string(metadata.name), metadata);
+    }
     if (ptn_ascii_case_equal(name, "getName")) {
         return ptn_owned_string(ptn_duplicate_string(metadata.name));
     }

@@ -158,6 +158,24 @@ static PTN_UNUSED PtnClosure *ptn_closure_from_value(PtnValue closure) {
     return resolved.as.closure;
 }
 
+static PTN_UNUSED void ptn_closure_replace_scope(char **target, const char *class_name) {
+    free(*target);
+    *target = class_name == NULL ? NULL : ptn_duplicate_string(class_name);
+}
+
+static PTN_UNUSED void ptn_closure_set_scope(
+    PtnValue closure,
+    const char *scope_class_name,
+    const char *called_class_name
+) {
+    PtnClosure *resolved = ptn_closure_from_value(closure);
+    ptn_closure_replace_scope(&resolved->scope_class_name, scope_class_name);
+    ptn_closure_replace_scope(
+        &resolved->called_class_name,
+        called_class_name != NULL ? called_class_name : scope_class_name
+    );
+}
+
 static PTN_UNUSED void ptn_closure_set_capture(PtnValue closure, const char *name, PtnValue value) {
     PtnClosure *resolved = ptn_closure_from_value(closure);
     ptn_symbols_set(&resolved->captures, name, ptn_value_deref(value));
@@ -186,8 +204,11 @@ static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closu
         runtime,
         source->function_index,
         source->display_name,
-        source->metadata
+        source->metadata,
+        source->is_static,
+        source->uses_this
     );
+    ptn_closure_set_scope(copy, source->scope_class_name, source->called_class_name);
     for (size_t i = 0; i < source->captures.len; i++) {
         PtnSymbol *capture = &source->captures.items[i];
         if (capture->value.type == PTN_REFERENCE) {
@@ -242,7 +263,7 @@ static PTN_UNUSED PtnValue ptn_closure_wrap_callable(
     PtnValue callable,
     PtnFunctionMetadata metadata
 ) {
-    PtnValue closure = ptn_closure(runtime, (size_t)-1, "Closure::__invoke", metadata);
+    PtnValue closure = ptn_closure(runtime, (size_t)-1, "Closure::__invoke", metadata, 0, 0);
     closure.as.closure->has_wrapped_callable = 1;
     closure.as.closure->wrapped_callable = ptn_value_clone_deref(callable);
     return closure;
@@ -261,6 +282,186 @@ static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *na
     }
     symbols->len--;
     ptn_symbols_rebuild_index(symbols, symbols->len);
+}
+
+static const char *ptn_closure_bind_argument_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            return "null";
+        case PTN_BOOL:
+            return "bool";
+        case PTN_INT:
+            return "int";
+        case PTN_FLOAT:
+            return "float";
+        case PTN_STRING:
+            return "string";
+        case PTN_ARRAY:
+            return "array";
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_RESOURCE:
+            return "resource";
+        case PTN_REFERENCE:
+            return ptn_closure_bind_argument_type_name(value.as.reference->value);
+    }
+    return "unknown";
+}
+
+static int ptn_closure_bind_scope_class_exists(const char *class_name) {
+    return ptn_declared_class_exists(class_name)
+        || ptn_ascii_case_equal(class_name, "Closure")
+        || ptn_ascii_case_equal(class_name, "stdClass")
+        || ptn_ascii_case_equal(class_name, "Generator")
+        || ptn_ascii_case_equal(class_name, "DateTime")
+        || ptn_builtin_exception_class_name(class_name) != NULL;
+}
+
+static PTN_UNUSED PtnValue ptn_closure_bind_to(
+    PtnRuntime *runtime,
+    PtnValue closure_value,
+    PtnValue new_this_value,
+    int has_new_scope,
+    PtnValue new_scope_value,
+    const char *function_name,
+    size_t new_this_position,
+    size_t new_scope_position,
+    size_t line
+) {
+    PtnValue resolved_closure = ptn_value_deref(closure_value);
+    if (resolved_closure.type != PTN_CLOSURE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($closure) must be of type Closure, %s given",
+            function_name,
+            ptn_closure_bind_argument_type_name(resolved_closure)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnValue new_this = ptn_value_deref(new_this_value);
+    if (new_this.type != PTN_NULL && new_this.type != PTN_OBJECT && new_this.type != PTN_EXCEPTION) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($newThis) must be of type object or null, %s given",
+            function_name,
+            new_this_position,
+            ptn_closure_bind_argument_type_name(new_this)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnClosure *source = resolved_closure.as.closure;
+    if (source->is_static && new_this.type != PTN_NULL) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "Cannot bind an instance to a static closure, this will be an error in PHP 9",
+            line
+        );
+        return ptn_null();
+    }
+
+    const char *scope_class_name = source->scope_class_name;
+    char *owned_scope = NULL;
+    if (has_new_scope) {
+        PtnValue scope = ptn_value_deref(new_scope_value);
+        if (scope.type == PTN_NULL) {
+            scope_class_name = "Closure";
+        } else if (scope.type == PTN_STRING) {
+            owned_scope = ptn_value_to_string(scope);
+            if (ptn_ascii_case_equal(owned_scope, "static")) {
+                scope_class_name = source->scope_class_name;
+            } else if (!ptn_closure_bind_scope_class_exists(owned_scope)) {
+                char message[192];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Class \"%s\" not found",
+                    owned_scope
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    free(owned_scope);
+                    ptn_abort_out_of_memory();
+                }
+                ptn_emit_warning(&runtime->diagnostics, message, line);
+                free(owned_scope);
+                return ptn_null();
+            } else {
+                scope_class_name = owned_scope;
+            }
+        } else if (scope.type == PTN_OBJECT) {
+            scope_class_name = scope.as.object->class_name;
+        } else if (scope.type == PTN_EXCEPTION) {
+            scope_class_name = scope.as.exception->class_name;
+        } else {
+            char message[224];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #%zu ($newScope) must be of type object|string|null, %s given",
+                function_name,
+                new_scope_position,
+                ptn_closure_bind_argument_type_name(scope)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+    }
+
+    PtnValue existing_this;
+    int has_existing_this = ptn_symbols_get(&source->captures, "this", &existing_this);
+    if (new_this.type == PTN_NULL && source->uses_this && has_existing_this) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "Cannot unbind $this of closure using $this, this will be an error in PHP 9",
+            line
+        );
+        free(owned_scope);
+        return ptn_null();
+    }
+
+    PtnValue bound = ptn_closure_clone(runtime, resolved_closure);
+    const char *called_class_name = scope_class_name;
+    if (new_this.type == PTN_NULL) {
+        ptn_symbols_unset(&bound.as.closure->captures, "this");
+    } else {
+        const char *new_this_class_name = new_this.type == PTN_EXCEPTION
+            ? new_this.as.exception->class_name
+            : new_this.as.object->class_name;
+        if (!has_new_scope) {
+            called_class_name = new_this_class_name;
+        }
+        if (scope_class_name == NULL) {
+            scope_class_name = "Closure";
+        }
+        ptn_closure_set_capture(bound, "this", new_this);
+    }
+    if (called_class_name == NULL) {
+        called_class_name = scope_class_name;
+    }
+    ptn_closure_set_scope(bound, scope_class_name, called_class_name);
+    free(owned_scope);
+    return bound;
 }
 
 static int ptn_parse_int64_env(const char *name, int64_t *out) {
