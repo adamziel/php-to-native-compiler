@@ -1178,13 +1178,42 @@ static void ptn_debug_zval_dump_object_initialized_properties(
     }
 }
 
+static int ptn_internal_function_first_parameter_is_array_reference(const char *name) {
+    if (name == NULL) {
+        return 0;
+    }
+    return ptn_ascii_case_equal(name, "array_pop") ||
+        ptn_ascii_case_equal(name, "array_push") ||
+        ptn_ascii_case_equal(name, "array_shift") ||
+        ptn_ascii_case_equal(name, "array_splice") ||
+        ptn_ascii_case_equal(name, "array_unshift") ||
+        ptn_ascii_case_equal(name, "array_walk") ||
+        ptn_ascii_case_equal(name, "array_walk_recursive") ||
+        ptn_ascii_case_equal(name, "arsort") ||
+        ptn_ascii_case_equal(name, "asort") ||
+        ptn_ascii_case_equal(name, "end") ||
+        ptn_ascii_case_equal(name, "krsort") ||
+        ptn_ascii_case_equal(name, "ksort") ||
+        ptn_ascii_case_equal(name, "natcasesort") ||
+        ptn_ascii_case_equal(name, "natsort") ||
+        ptn_ascii_case_equal(name, "next") ||
+        ptn_ascii_case_equal(name, "prev") ||
+        ptn_ascii_case_equal(name, "reset") ||
+        ptn_ascii_case_equal(name, "rsort") ||
+        ptn_ascii_case_equal(name, "shuffle") ||
+        ptn_ascii_case_equal(name, "sort") ||
+        ptn_ascii_case_equal(name, "uasort") ||
+        ptn_ascii_case_equal(name, "uksort") ||
+        ptn_ascii_case_equal(name, "usort");
+}
+
 static const char *ptn_internal_function_parameter_name(const char *name, size_t index) {
     if (name == NULL) {
         return NULL;
     }
     if (index == 0) {
         if (ptn_ascii_case_equal(name, "array_multisort") ||
-            ptn_ascii_case_equal(name, "sort")) {
+            ptn_internal_function_first_parameter_is_array_reference(name)) {
             return "array";
         }
         if (ptn_ascii_case_equal(name, "strlen") ||
@@ -1222,6 +1251,35 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
             return "type";
         }
     }
+    if (index == 2) {
+        if (ptn_ascii_case_equal(name, "preg_match") ||
+            ptn_ascii_case_equal(name, "preg_match_all")) {
+            return "matches";
+        }
+        if (ptn_ascii_case_equal(name, "similar_text")) {
+            return "percent";
+        }
+    }
+    if (index == 1 && ptn_ascii_case_equal(name, "parse_str")) {
+        return "result";
+    }
+    if (index == 2 && ptn_ascii_case_equal(name, "is_callable")) {
+        return "callable_name";
+    }
+    if (index == 3 &&
+        (ptn_ascii_case_equal(name, "str_replace") ||
+            ptn_ascii_case_equal(name, "str_ireplace"))) {
+        return "count";
+    }
+    if (index == 4 &&
+        (ptn_ascii_case_equal(name, "preg_replace") ||
+            ptn_ascii_case_equal(name, "preg_replace_callback"))) {
+        return "count";
+    }
+    if (index >= 2 &&
+        (ptn_ascii_case_equal(name, "sscanf") || ptn_ascii_case_equal(name, "fscanf"))) {
+        return "";
+    }
     return NULL;
 }
 
@@ -1232,7 +1290,33 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
     if (ptn_ascii_case_equal(name, "array_multisort")) {
         return 1;
     }
-    if (ptn_ascii_case_equal(name, "sort") && index == 0) {
+    if (index == 0 && ptn_internal_function_first_parameter_is_array_reference(name)) {
+        return 1;
+    }
+    if (index == 2 &&
+        (ptn_ascii_case_equal(name, "preg_match") ||
+            ptn_ascii_case_equal(name, "preg_match_all") ||
+            ptn_ascii_case_equal(name, "similar_text"))) {
+        return 1;
+    }
+    if (index == 1 && ptn_ascii_case_equal(name, "parse_str")) {
+        return 1;
+    }
+    if (index == 2 && ptn_ascii_case_equal(name, "is_callable")) {
+        return 1;
+    }
+    if (index == 3 &&
+        (ptn_ascii_case_equal(name, "str_replace") ||
+            ptn_ascii_case_equal(name, "str_ireplace"))) {
+        return 1;
+    }
+    if (index == 4 &&
+        (ptn_ascii_case_equal(name, "preg_replace") ||
+            ptn_ascii_case_equal(name, "preg_replace_callback"))) {
+        return 1;
+    }
+    if (index >= 2 &&
+        (ptn_ascii_case_equal(name, "sscanf") || ptn_ascii_case_equal(name, "fscanf"))) {
         return 1;
     }
     return 0;
@@ -1245,7 +1329,7 @@ static int ptn_internal_function_parameter_can_be_passed_by_value(const char *na
     if (ptn_ascii_case_equal(name, "array_multisort")) {
         return 1;
     }
-    if (ptn_ascii_case_equal(name, "sort") && index == 0) {
+    if (ptn_internal_function_parameter_by_ref(name, index)) {
         return 0;
     }
     return 1;

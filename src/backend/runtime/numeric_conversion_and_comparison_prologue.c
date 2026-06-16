@@ -482,13 +482,16 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
         ptn_emit_only_variables_passed_by_reference_notice_at(runtime, notice_line);
         runtime->by_ref_argument_notice_emitted = 1;
     }
+    const int has_parameter_name = parameter_name != NULL && parameter_name[0] != '\0';
     int needed = snprintf(
         NULL,
         0,
-        "%s(): Argument #%zu ($%s) must be passed by reference, value given",
+        has_parameter_name
+            ? "%s(): Argument #%zu ($%s) must be passed by reference, value given"
+            : "%s(): Argument #%zu must be passed by reference, value given",
         function_name,
         position,
-        parameter_name
+        has_parameter_name ? parameter_name : ""
     );
     if (needed < 0) {
         ptn_abort_out_of_memory();
@@ -500,10 +503,12 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
     snprintf(
         message,
         (size_t)needed + 1,
-        "%s(): Argument #%zu ($%s) must be passed by reference, value given",
+        has_parameter_name
+            ? "%s(): Argument #%zu ($%s) must be passed by reference, value given"
+            : "%s(): Argument #%zu must be passed by reference, value given",
         function_name,
         position,
-        parameter_name
+        has_parameter_name ? parameter_name : ""
     );
     ptn_emit_warning(&runtime->diagnostics, message, line);
     free(message);

@@ -23032,6 +23032,47 @@ var_dump(function_exists(\"call_user_func_array\"), function_exists(\"CALL_USER_
 }
 
 #[test]
+fn compile_call_user_func_array_internal_by_ref_count_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-array-internal-by-ref-count-warns");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-array-internal-by-ref-count-warns.php");
+    let output = root.join("call-user-func-array-internal-by-ref-count-warns-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+namespace Foo;\n\
+call_user_func_array(\"str_replace\", [\"a\", \"b\", \"c\", new \\stdClass]);\n\
+echo \"--\\n\";\n\
+call_user_func_array(\"str_replace\", [\"search\" => \"a\", \"replace\" => \"b\", \"subject\" => \"c\", \"count\" => new \\stdClass]);\n\
+echo \"--\\n\";\n\
+$count = 0;\n\
+var_dump(call_user_func_array(\"str_replace\", [\"a\", \"b\", \"a\", &$count]));\n\
+var_dump($count);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: str_replace(): Argument #4 ($count) must be passed by reference, value given in ptn on line 3\n",
+            "--\n",
+            "\nWarning: str_replace(): Argument #4 ($count) must be passed by reference, value given in ptn on line 5\n",
+            "--\n",
+            "string(1) \"b\"\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_call_warn_reference_argument_mismatches"));
+}
+
+#[test]
 fn compile_call_user_func_array_multisort_prefer_ref_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-array-multisort-prefer-ref");
     fs::create_dir_all(&root).unwrap();
@@ -23123,7 +23164,7 @@ var_dump(\\call_user_func('sort', []));",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dynamic_call_effective_internal_name"));
-    assert!(c_source.contains("ptn_dynamic_call_warn_first_reference_argument_mismatch"));
+    assert!(c_source.contains("ptn_dynamic_call_warn_reference_argument_mismatches"));
 }
 
 #[test]
@@ -32452,7 +32493,7 @@ var_dump(\\call_user_func('sort', []));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_dynamic_call_warn_first_reference_argument_mismatch"));
+    assert!(c_source.contains("ptn_dynamic_call_warn_reference_argument_mismatches"));
     assert!(c_source.contains("ptn_dynamic_call_prepare_first_array_argument"));
 }
 

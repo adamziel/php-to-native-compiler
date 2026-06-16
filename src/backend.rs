@@ -7074,17 +7074,33 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED void ptn_dynamic_call_warn_first_reference_argument_mismatch(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
+        "\nstatic PTN_UNUSED void ptn_dynamic_call_warn_reference_argument_mismatches(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
-    out.push_str("    if (!runtime->warn_by_ref_argument_mismatch || argc == 0 || args == NULL || !ptn_dynamic_call_mutates_first_array_argument(name)) {\n");
-    out.push_str("        return;\n");
-    out.push_str("    }\n");
-    out.push_str("    if (args[0].type == PTN_REFERENCE) {\n");
-    out.push_str("        return;\n");
-    out.push_str("    }\n");
     out.push_str(
-        "    ptn_emit_by_reference_argument_warning(runtime, name, 1, \"array\", line);\n",
+        "    if (!runtime->warn_by_ref_argument_mismatch || argc == 0 || args == NULL) {\n",
     );
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnFunctionMetadata metadata = ptn_find_function_metadata(name);\n");
+    out.push_str("    if (!metadata.found || !metadata.is_internal) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    for (size_t i = 0; i < argc; i++) {\n");
+    out.push_str("        if (!ptn_function_metadata_parameter_by_ref(metadata, i)) {\n");
+    out.push_str("            continue;\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        if (ptn_function_metadata_parameter_can_be_passed_by_value(metadata, i)) {\n",
+    );
+    out.push_str("            continue;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (args[i].type == PTN_REFERENCE) {\n");
+    out.push_str("            continue;\n");
+    out.push_str("        }\n");
+    out.push_str("        char fallback[64];\n");
+    out.push_str("        const char *parameter_name = ptn_function_metadata_parameter_name(metadata, i, fallback, sizeof(fallback));\n");
+    out.push_str("        ptn_emit_by_reference_argument_warning(runtime, metadata.name != NULL ? metadata.name : name, i + 1, parameter_name, line);\n");
+    out.push_str("    }\n");
     out.push_str("}\n");
 }
 
@@ -7103,7 +7119,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("        ptn_throw_exception_at(runtime, \"Error\", \"Cannot call compact() dynamically\", runtime->source_path, line);\n");
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, dynamic_lookup_name, argc, args, line);\n");
+    out.push_str("    ptn_dynamic_call_warn_reference_argument_mismatches(runtime, dynamic_lookup_name, argc, args, line);\n");
     out.push_str("    const PtnValue *call_args = args;\n");
     out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(dynamic_lookup_name, argc, args, &call_args);\n");
     out.push_str(
@@ -7435,7 +7451,7 @@ fn emit_callable_dispatch(
     out.push_str("    }\n");
     out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
     out.push_str("    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n");
-    out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, dynamic_lookup_name, argc, args, line);\n");
+    out.push_str("    ptn_dynamic_call_warn_reference_argument_mismatches(runtime, dynamic_lookup_name, argc, args, line);\n");
     out.push_str("    const PtnValue *call_args = args;\n");
     out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(dynamic_lookup_name, argc, args, &call_args);\n");
     out.push_str(
