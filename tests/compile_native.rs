@@ -33774,6 +33774,71 @@ try {
 }
 
 #[test]
+fn compile_deprecated_class_constant_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-deprecated-class-constant-reads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("deprecated-class-constant-reads.php");
+    let output = root.join("deprecated-class-constant-reads-bin");
+    fs::write(
+        &input,
+        "<?php
+class Clazz {
+    #[Deprecated]
+    public const TEST = 1;
+    #[Deprecated(\"use Clazz::TEST instead\")]
+    public const TEST2 = 2;
+    #[Deprecated]
+    public const TEST3 = 3;
+    public const MESSAGE = \"constant message\";
+    #[Deprecated(self::MESSAGE)]
+    public const TEST4 = 4;
+    #[Deprecated(self::TEST5)]
+    public const TEST5 = \"self message\";
+}
+var_dump(Clazz::TEST);
+var_dump(constant('Clazz::TEST2'));
+var_dump(defined('Clazz::TEST3'));
+var_dump(Clazz::TEST4);
+var_dump(Clazz::TEST5);
+class D {
+    #[Deprecated(Alias::C)]
+    public const C = \"alias message\";
+}
+class_alias('D', 'Alias');
+var_dump(D::C);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nDeprecated: Constant Clazz::TEST is deprecated in ptn on line 15\n",
+            "int(1)\n",
+            "\nDeprecated: Constant Clazz::TEST2 is deprecated, use Clazz::TEST instead in ptn on line 16\n",
+            "int(2)\n",
+            "bool(true)\n",
+            "\nDeprecated: Constant Clazz::TEST4 is deprecated, constant message in ptn on line 18\n",
+            "int(4)\n",
+            "\nDeprecated: Constant Clazz::TEST5 is deprecated, self message in ptn on line 19\n",
+            "string(12) \"self message\"\n",
+            "\nDeprecated: Constant D::C is deprecated, alias message in ptn on line 25\n",
+            "string(13) \"alias message\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_define_class_constant_deprecation(&runtime"));
+    assert!(c_source.contains("Constant Clazz::TEST4 is deprecated, constant message"));
+    assert!(c_source.contains("Constant Clazz::TEST5 is deprecated, self message"));
+}
+
+#[test]
 fn compile_class_name_fetches_to_native_binary() {
     let root = temp_dir("ptn-native-class-name-fetches");
     fs::create_dir_all(&root).unwrap();

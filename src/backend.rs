@@ -5,13 +5,13 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::ast::{AssignmentOp, IncludeKind};
+use crate::ast::{AssignmentOp, AttributeConstantReference, IncludeKind};
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
-    BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, CompileWarning,
-    DeprecatedMessageDependency, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult,
-    IncDecTarget, IncludeFile, InstanceOfTarget, Instruction, ListAssignmentElement,
+    BinaryOp, CastKind, CatchClause as IrCatchClause, ClassConstantDecl, ClassDecl, ClosureCapture,
+    CompileWarning, DeprecatedMessageDependency, FunctionDecl, FunctionParameter, IncDecOp,
+    IncDecResult, IncDecTarget, IncludeFile, InstanceOfTarget, Instruction, ListAssignmentElement,
     ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind, MatchArm as IrMatchArm,
     Module, PropertyTypeHint, PropertyTypeKind, PropertyVisibility, ReferenceTarget,
     StaticPropertyDecl, TraitDecl, TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
@@ -2060,6 +2060,26 @@ fn emit_class_constant_initializer_helper(
             out.push_str("\", ");
             out.push_str(&value_temp);
             out.push_str(");\n");
+            if let Some(reference) = class_constant_deprecated_runtime_message_reference(constant) {
+                emit_class_constant_deprecation_from_runtime_reference(
+                    out,
+                    &mut values,
+                    class,
+                    constant,
+                    reference,
+                );
+            } else if let Some(warning) = class_constant_deprecated_warning_message(class, constant)
+            {
+                out.push_str(
+                    "            ptn_runtime_define_class_constant_deprecation(&runtime, \"",
+                );
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&warning));
+                out.push_str("\");\n");
+            }
             emit_value_cleanup(out, "            ", &value_temp);
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
@@ -3139,6 +3159,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str(
         "static const char *ptn_declared_private_property_class(const char *class_name, const char *property_name);\n",
     );
+    out.push_str("static const char *ptn_declared_class_canonical_name(const char *name);\n");
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
     out.push_str(
         "static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
@@ -3205,6 +3226,64 @@ fn emit_class_metadata_helpers(
         out.push_str("    }\n");
     }
     out.push_str("    return NULL;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_declared_class_canonical_name(const char *name) {\n",
+    );
+    out.push_str("    if (name == NULL) {\n");
+    out.push_str("        return NULL;\n");
+    out.push_str("    }\n");
+    for class_name in [
+        "stdClass",
+        "Generator",
+        "ArrayObject",
+        "ArrayIterator",
+        "RecursiveArrayIterator",
+        "IteratorIterator",
+        "FilterIterator",
+        "CallbackFilterIterator",
+        "InfiniteIterator",
+        "LimitIterator",
+        "ReflectionClass",
+        "ReflectionObject",
+    ] {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return \"");
+        out.push_str(class_name);
+        out.push_str("\";\n");
+        out.push_str("    }\n");
+    }
+    for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return \"");
+        out.push_str(class_name);
+        out.push_str("\";\n");
+        out.push_str("    }\n");
+    }
+    for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return \"");
+        out.push_str(class_name);
+        out.push_str("\";\n");
+        out.push_str("    }\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\";\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return name;\n");
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_exists(const char *name) {\n");
@@ -12473,6 +12552,96 @@ fn emit_deprecated_message_dependency(
     out.push_str(");\n");
 }
 
+fn class_constant_deprecated_warning_message(
+    class: &ClassDecl,
+    constant: &ClassConstantDecl,
+) -> Option<String> {
+    if constant.deprecated_message_runtime_reference.is_some() {
+        return None;
+    }
+    deprecated_warning_message_for_parts(
+        &format!("Constant {}::{}", class.name, constant.name),
+        constant.deprecated_message.as_deref(),
+        constant.deprecated_since.as_deref(),
+    )
+}
+
+fn class_constant_deprecated_runtime_message_reference(
+    constant: &ClassConstantDecl,
+) -> Option<&AttributeConstantReference> {
+    constant.deprecated_message_runtime_reference.as_ref()
+}
+
+fn runtime_class_constant_message_class_name<'a>(
+    class: &'a ClassDecl,
+    referenced_class: &'a str,
+) -> Option<&'a str> {
+    if referenced_class.eq_ignore_ascii_case("self")
+        || referenced_class.eq_ignore_ascii_case("static")
+    {
+        Some(&class.name)
+    } else if referenced_class.eq_ignore_ascii_case("parent") {
+        class.parent_name.as_deref()
+    } else {
+        Some(referenced_class)
+    }
+}
+
+fn emit_class_constant_deprecation_from_runtime_reference(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    class: &ClassDecl,
+    constant: &ClassConstantDecl,
+    reference: &AttributeConstantReference,
+) {
+    let message_temp = values.next_temp();
+    out.push_str("            PtnValue ");
+    out.push_str(&message_temp);
+    out.push_str(" = ");
+    match reference {
+        AttributeConstantReference::Constant(name) => {
+            out.push_str("ptn_read_constant(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", runtime.source_path, 0)");
+        }
+        AttributeConstantReference::ClassConstant { class_name, name } => {
+            let Some(class_name) = runtime_class_constant_message_class_name(class, class_name)
+            else {
+                out.push_str("ptn_null()");
+                out.push_str(";\n");
+                emit_value_cleanup(out, "            ", &message_temp);
+                return;
+            };
+            out.push_str("ptn_runtime_read_class_constant(&runtime, \"");
+            out.push_str(&c_string(class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", 0)");
+        }
+    }
+    out.push_str(";\n");
+    out.push_str("            if (runtime.exceptions->active_exception == NULL) {\n");
+    out.push_str(
+        "                ptn_runtime_define_class_constant_deprecation_from_value(&runtime, \"",
+    );
+    out.push_str(&c_string(&class.name));
+    out.push_str("\", \"");
+    out.push_str(&c_string(&constant.name));
+    out.push_str("\", \"Constant ");
+    out.push_str(&c_string(&class.name));
+    out.push_str("::");
+    out.push_str(&c_string(&constant.name));
+    out.push_str("\", \"");
+    out.push_str(&c_string(
+        constant.deprecated_since.as_deref().unwrap_or(""),
+    ));
+    out.push_str("\", ");
+    out.push_str(&message_temp);
+    out.push_str(");\n");
+    out.push_str("            }\n");
+    emit_value_cleanup(out, "            ", &message_temp);
+}
+
 fn emit_deprecated_function_warning(
     out: &mut String,
     indent: &str,
@@ -13159,6 +13328,9 @@ impl ValueEmitter {
         let constant = class_constant_lookup_chain(class, &self.classes)
             .into_iter()
             .find(|constant| constant.name.eq_ignore_ascii_case(name))?;
+        if constant.deprecated_message_runtime_reference.is_some() {
+            return None;
+        }
         let message = deprecated_warning_message_for_parts(
             &format!("Constant {}::{}", resolved_class_name, name),
             constant.deprecated_message.as_deref(),
@@ -18598,9 +18770,7 @@ impl ValueEmitter {
                     out.push_str(&result_temp);
                     out.push_str("_class_name, \"");
                     out.push_str(&c_string(name));
-                    out.push_str("\", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(");\n");
+                    out.push_str("\", 0);\n");
                     out.push_str("        }\n");
                 } else {
                     out.push_str("        ");
@@ -18642,9 +18812,7 @@ impl ValueEmitter {
                     out.push_str(&c_string(&resolved_class_name));
                     out.push_str("\", \"");
                     out.push_str(&c_string(name));
-                    out.push_str("\", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(");\n");
+                    out.push_str("\", 0);\n");
                     out.push_str("    }\n");
                 } else {
                     out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");

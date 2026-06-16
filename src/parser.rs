@@ -4485,45 +4485,112 @@ impl Parser<'_> {
                         Some(span),
                     ));
                 }
-                TokenKind::Identifier(name)
-                    if bracket_depth == 1
-                        && paren_depth == 1
-                        && matches!(self.peek().kind, TokenKind::Colon) =>
-                {
-                    pending_argument_name = Some(name);
+                TokenKind::Identifier(name) if bracket_depth == 1 && paren_depth == 1 => {
+                    let parsed_name = self.parse_name_from_first(
+                        name,
+                        span,
+                        None,
+                        "expected attribute argument",
+                    )?;
+                    if matches!(self.peek().kind, TokenKind::Colon) {
+                        pending_argument_name = Some(parsed_name.name);
+                    } else if matches!(self.peek().kind, TokenKind::LeftParen) {
+                        return Err(Diagnostic::new(
+                            "Constant expression contains invalid operations",
+                            Some(parsed_name.span),
+                        ));
+                    } else if matches!(self.peek().kind, TokenKind::DoubleColon) {
+                        self.advance();
+                        let member = self.advance().clone();
+                        let TokenKind::Identifier(member_name) = member.kind else {
+                            return Err(Diagnostic::new(
+                                "expected class constant name",
+                                Some(member.span),
+                            ));
+                        };
+                        let class_name = self.resolve_class_name(&parsed_name);
+                        let class_name = self.resolve_runtime_class_alias_name(&class_name);
+                        let text = format!("{class_name}::{member_name}");
+                        arguments.record_value(
+                            pending_argument_name.take(),
+                            ParsedAttributeArgumentValue {
+                                text,
+                                constant_reference: Some(
+                                    AttributeConstantReference::ClassConstant {
+                                        class_name,
+                                        name: member_name,
+                                    },
+                                ),
+                            },
+                        );
+                    } else {
+                        let name = self.resolve_constant_name(&parsed_name);
+                        arguments.record_value(
+                            pending_argument_name.take(),
+                            ParsedAttributeArgumentValue {
+                                text: name.clone(),
+                                constant_reference: Some(AttributeConstantReference::Constant(
+                                    name,
+                                )),
+                            },
+                        );
+                    }
                 }
-                TokenKind::Identifier(_)
-                    if bracket_depth == 1
-                        && paren_depth == 1
-                        && matches!(self.peek().kind, TokenKind::LeftParen) =>
-                {
-                    return Err(Diagnostic::new(
-                        "Constant expression contains invalid operations",
-                        Some(span),
-                    ));
-                }
-                TokenKind::Identifier(class_name)
-                    if bracket_depth == 1
-                        && paren_depth == 1
-                        && matches!(self.peek().kind, TokenKind::DoubleColon)
-                        && matches!(self.peek_next().kind, TokenKind::Identifier(_)) =>
-                {
-                    self.advance();
-                    let member = self.advance().clone();
-                    let TokenKind::Identifier(name) = member.kind else {
-                        unreachable!("peek_next guarded class constant attribute argument");
+                TokenKind::Backslash if bracket_depth == 1 && paren_depth == 1 => {
+                    let first_token = self.advance().clone();
+                    let Some(first_segment) = name_segment_from_token(&first_token.kind) else {
+                        return Err(Diagnostic::new(
+                            "expected attribute argument",
+                            Some(first_token.span),
+                        ));
                     };
-                    let text = format!("{class_name}::{name}");
-                    arguments.record_value(
-                        pending_argument_name.take(),
-                        ParsedAttributeArgumentValue {
-                            text,
-                            constant_reference: Some(AttributeConstantReference::ClassConstant {
-                                class_name,
-                                name,
-                            }),
-                        },
-                    );
+                    let parsed_name = self.parse_name_from_first(
+                        first_segment,
+                        first_token.span,
+                        Some(span),
+                        "expected attribute argument",
+                    )?;
+                    if matches!(self.peek().kind, TokenKind::LeftParen) {
+                        return Err(Diagnostic::new(
+                            "Constant expression contains invalid operations",
+                            Some(parsed_name.span),
+                        ));
+                    } else if matches!(self.peek().kind, TokenKind::DoubleColon) {
+                        self.advance();
+                        let member = self.advance().clone();
+                        let TokenKind::Identifier(member_name) = member.kind else {
+                            return Err(Diagnostic::new(
+                                "expected class constant name",
+                                Some(member.span),
+                            ));
+                        };
+                        let class_name = self.resolve_class_name(&parsed_name);
+                        let class_name = self.resolve_runtime_class_alias_name(&class_name);
+                        let text = format!("{class_name}::{member_name}");
+                        arguments.record_value(
+                            pending_argument_name.take(),
+                            ParsedAttributeArgumentValue {
+                                text,
+                                constant_reference: Some(
+                                    AttributeConstantReference::ClassConstant {
+                                        class_name,
+                                        name: member_name,
+                                    },
+                                ),
+                            },
+                        );
+                    } else {
+                        let name = self.resolve_constant_name(&parsed_name);
+                        arguments.record_value(
+                            pending_argument_name.take(),
+                            ParsedAttributeArgumentValue {
+                                text: name.clone(),
+                                constant_reference: Some(AttributeConstantReference::Constant(
+                                    name,
+                                )),
+                            },
+                        );
+                    }
                 }
                 TokenKind::String(value) if bracket_depth == 1 && paren_depth == 1 => {
                     arguments.record_text(pending_argument_name.take(), value);
@@ -4539,15 +4606,6 @@ impl Parser<'_> {
                 }
                 TokenKind::False | TokenKind::Null if bracket_depth == 1 && paren_depth == 1 => {
                     arguments.record_text(pending_argument_name.take(), String::new());
-                }
-                TokenKind::Identifier(name) if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record_value(
-                        pending_argument_name.take(),
-                        ParsedAttributeArgumentValue {
-                            text: name.clone(),
-                            constant_reference: Some(AttributeConstantReference::Constant(name)),
-                        },
-                    );
                 }
                 TokenKind::RightParen if bracket_depth == 1 && paren_depth > 0 => {
                     paren_depth -= 1;

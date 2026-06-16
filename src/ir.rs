@@ -150,6 +150,7 @@ pub struct ClassConstantDecl {
     pub deprecated_message: Option<String>,
     pub deprecated_since: Option<String>,
     pub deprecated_message_dependency: Option<DeprecatedMessageDependency>,
+    pub deprecated_message_runtime_reference: Option<AttributeConstantReference>,
     pub value: ValueExpr,
 }
 
@@ -900,6 +901,7 @@ struct DeprecatedMetadata {
     message: Option<String>,
     since: Option<String>,
     message_dependency: Option<DeprecatedMessageDependency>,
+    message_runtime_reference: Option<AttributeConstantReference>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1117,6 +1119,7 @@ impl<'a> LoweringContext<'a> {
             message,
             since: attributes.deprecated_since.clone(),
             message_dependency,
+            message_runtime_reference: None,
         }
     }
 
@@ -1129,27 +1132,37 @@ impl<'a> LoweringContext<'a> {
         class_constant_deprecations: &HashMap<String, DeprecatedMetadata>,
     ) -> DeprecatedMetadata {
         let current_subject = format!("Constant {class_name}::{current_name}");
-        let message = attributes
-            .deprecated_message_constant
-            .as_ref()
-            .and_then(|reference| match reference {
-                AttributeConstantReference::Constant(name) => self
-                    .constant_values
-                    .get(&name.to_ascii_lowercase())
-                    .cloned(),
-                AttributeConstantReference::ClassConstant {
-                    class_name: referenced_class,
-                    name,
-                } => self
-                    .resolve_attribute_class_name(referenced_class, class_name)
-                    .filter(|resolved| resolved.eq_ignore_ascii_case(class_name))
-                    .and_then(|_| {
-                        class_constant_values
-                            .get(&name.to_ascii_lowercase())
-                            .cloned()
-                    }),
-            })
-            .or_else(|| attributes.deprecated_message.clone());
+        let referenced_message =
+            attributes
+                .deprecated_message_constant
+                .as_ref()
+                .and_then(|reference| match reference {
+                    AttributeConstantReference::Constant(name) => self
+                        .constant_values
+                        .get(&name.to_ascii_lowercase())
+                        .cloned(),
+                    AttributeConstantReference::ClassConstant {
+                        class_name: referenced_class,
+                        name,
+                    } => self
+                        .resolve_attribute_class_name(referenced_class, class_name)
+                        .filter(|resolved| resolved.eq_ignore_ascii_case(class_name))
+                        .and_then(|_| {
+                            class_constant_values
+                                .get(&name.to_ascii_lowercase())
+                                .cloned()
+                        }),
+                });
+        let message = referenced_message.clone().or_else(|| {
+            attributes
+                .deprecated_message_constant
+                .is_none()
+                .then(|| attributes.deprecated_message.clone())
+                .flatten()
+        });
+        let message_runtime_reference = (referenced_message.is_none())
+            .then(|| attributes.deprecated_message_constant.clone())
+            .flatten();
         let message_dependency = attributes
             .deprecated_message_constant
             .as_ref()
@@ -1190,6 +1203,7 @@ impl<'a> LoweringContext<'a> {
             message,
             since: attributes.deprecated_since.clone(),
             message_dependency,
+            message_runtime_reference,
         }
     }
 
@@ -1306,6 +1320,7 @@ impl<'a> LoweringContext<'a> {
                     deprecated_message: metadata.message,
                     deprecated_since: metadata.since,
                     deprecated_message_dependency: metadata.message_dependency,
+                    deprecated_message_runtime_reference: metadata.message_runtime_reference,
                     value: self.lower_expr(&constant.value),
                 }
             })
@@ -1770,6 +1785,7 @@ fn collect_constant_deprecations_in(
                                     message: metadata.message.clone(),
                                     since: metadata.since.clone(),
                                 }),
+                            message_runtime_reference: None,
                         };
                         constants.insert(declaration.name.to_ascii_lowercase(), metadata);
                     }
@@ -1853,6 +1869,7 @@ fn collect_class_constant_deprecations(
                 message,
                 since: constant.attributes.deprecated_since.clone(),
                 message_dependency: None,
+                message_runtime_reference: None,
             },
         );
     }

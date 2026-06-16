@@ -800,6 +800,10 @@ struct PtnRuntime {
     PtnSymbolTable *class_aliases;
     PtnSymbolTable owned_class_constants;
     PtnSymbolTable *class_constants;
+    PtnSymbolTable owned_class_constant_deprecations;
+    PtnSymbolTable *class_constant_deprecations;
+    const char *class_constant_deprecation_suppress_class;
+    const char *class_constant_deprecation_suppress_constant;
     PtnSymbolTable owned_static_properties;
     PtnSymbolTable *static_properties;
     PtnSymbolTable owned_static_property_read_visibility;
@@ -911,6 +915,7 @@ static PTN_UNUSED char *ptn_duplicate_string(const char *string);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
+static PTN_UNUSED const char *ptn_declared_class_canonical_name(const char *name);
 static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name);
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);
 static PTN_UNUSED void ptn_emit_user_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);

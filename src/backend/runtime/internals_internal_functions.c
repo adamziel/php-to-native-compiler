@@ -3,6 +3,20 @@
 }
 
 static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name, const char *path, size_t line) {
+    const char *separator = strstr(name, "::");
+    if (separator != NULL && separator != name && separator[2] != '\0') {
+        size_t class_len = (size_t)(separator - name);
+        char *class_name = malloc(class_len + 1);
+        if (class_name == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(class_name, name, class_len);
+        class_name[class_len] = '\0';
+        const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+        PtnValue value = ptn_runtime_read_class_constant(runtime, resolved_class_name, separator + 2, line);
+        free(class_name);
+        return value;
+    }
     PtnValue value;
     if (ptn_runtime_constant_value(runtime, name, &value)) {
         return value;

@@ -7,6 +7,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->class_aliases = caller_runtime->class_aliases;
     ptn_symbols_init(&runtime->owned_class_constants);
     runtime->class_constants = caller_runtime->class_constants;
+    ptn_symbols_init(&runtime->owned_class_constant_deprecations);
+    runtime->class_constant_deprecations = caller_runtime->class_constant_deprecations;
+    runtime->class_constant_deprecation_suppress_class =
+        caller_runtime->class_constant_deprecation_suppress_class;
+    runtime->class_constant_deprecation_suppress_constant =
+        caller_runtime->class_constant_deprecation_suppress_constant;
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = caller_runtime->static_properties;
     ptn_symbols_init(&runtime->owned_static_property_read_visibility);
@@ -197,6 +203,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free(&runtime->owned_static_property_set_visibility);
     ptn_symbols_free(&runtime->owned_static_property_read_visibility);
     ptn_symbols_free(&runtime->owned_static_properties);
+    ptn_symbols_free(&runtime->owned_class_constant_deprecations);
     ptn_symbols_free(&runtime->owned_class_constants);
     ptn_symbols_free(&runtime->owned_class_aliases);
     ptn_symbols_free(&runtime->owned_constants);
@@ -2010,6 +2017,12 @@ static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_table(PtnRuntime *r
     return runtime->class_constants == NULL ? &runtime->owned_class_constants : runtime->class_constants;
 }
 
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_deprecation_table(PtnRuntime *runtime) {
+    return runtime->class_constant_deprecations == NULL
+        ? &runtime->owned_class_constant_deprecations
+        : runtime->class_constant_deprecations;
+}
+
 static PTN_UNUSED int ptn_property_class_names_equal(const char *left, const char *right) {
     if (left == NULL || right == NULL) {
         return 0;
@@ -2467,6 +2480,92 @@ static PTN_UNUSED void ptn_runtime_define_class_constant(
     free(key);
 }
 
+static PTN_UNUSED void ptn_runtime_define_class_constant_deprecation(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    const char *warning
+) {
+    if (warning == NULL || warning[0] == '\0') {
+        return;
+    }
+    char *key = ptn_class_constant_key(class_name, constant);
+    ptn_symbols_set(ptn_runtime_class_constant_deprecation_table(runtime), key, ptn_string(warning));
+    free(key);
+}
+
+static PTN_UNUSED char *ptn_deprecated_warning_message_for_parts(
+    const char *subject,
+    const char *since,
+    const char *message
+) {
+    int has_since = since != NULL && since[0] != '\0';
+    int has_message = message != NULL && message[0] != '\0';
+    size_t len = strlen(subject) + strlen(" is deprecated");
+    if (has_since) {
+        len += strlen(" since ") + strlen(since);
+    }
+    if (has_message) {
+        len += strlen(", ") + strlen(message);
+    }
+    char *warning = malloc(len + 1);
+    if (warning == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    warning[0] = '\0';
+    strcat(warning, subject);
+    strcat(warning, " is deprecated");
+    if (has_since) {
+        strcat(warning, " since ");
+        strcat(warning, since);
+    }
+    if (has_message) {
+        strcat(warning, ", ");
+        strcat(warning, message);
+    }
+    return warning;
+}
+
+static PTN_UNUSED void ptn_runtime_define_class_constant_deprecation_from_value(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    const char *subject,
+    const char *since,
+    PtnValue message_value
+) {
+    char *message = ptn_value_to_string(message_value);
+    char *warning = ptn_deprecated_warning_message_for_parts(subject, since, message);
+    ptn_runtime_define_class_constant_deprecation(runtime, class_name, constant, warning);
+    free(warning);
+    free(message);
+}
+
+static void ptn_runtime_emit_class_constant_deprecation(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    size_t line
+) {
+    if (runtime == NULL || line == 0) {
+        return;
+    }
+    if (runtime->class_constant_deprecation_suppress_class != NULL &&
+        runtime->class_constant_deprecation_suppress_constant != NULL &&
+        ptn_ascii_case_equal(runtime->class_constant_deprecation_suppress_class, class_name) &&
+        strcmp(runtime->class_constant_deprecation_suppress_constant, constant) == 0) {
+        return;
+    }
+    char *key = ptn_class_constant_key(class_name, constant);
+    PtnValue warning;
+    if (ptn_symbols_get(ptn_runtime_class_constant_deprecation_table(runtime), key, &warning)) {
+        char *message = ptn_value_to_string(warning);
+        ptn_emit_user_deprecation(&runtime->diagnostics, message, line);
+        free(message);
+    }
+    free(key);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     PtnRuntime *runtime,
     const char *class_name,
@@ -2493,12 +2592,13 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
     const char *constant,
     size_t line
 ) {
-    (void)line;
-    const char *lookup_class_name = class_name;
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    const char *lookup_class_name = ptn_declared_class_canonical_name(resolved_class_name);
     while (lookup_class_name != NULL) {
         char *key = ptn_class_constant_key(lookup_class_name, constant);
         PtnValue value;
         if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+            ptn_runtime_emit_class_constant_deprecation(runtime, lookup_class_name, constant, line);
             free(key);
             return ptn_value_clone_deref(value);
         }
@@ -2509,6 +2609,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
                 return ptn_null();
             }
             if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+                ptn_runtime_emit_class_constant_deprecation(runtime, lookup_class_name, constant, line);
                 free(key);
                 return ptn_value_clone_deref(value);
             }
@@ -2517,10 +2618,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
         lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
     }
     PtnValue builtin_value;
-    if (ptn_builtin_class_constant_value(class_name, constant, &builtin_value)) {
+    if (ptn_builtin_class_constant_value(resolved_class_name, constant, &builtin_value)) {
         return builtin_value;
     }
-    return ptn_runtime_undefined_class_constant(runtime, class_name, constant);
+    return ptn_runtime_undefined_class_constant(runtime, resolved_class_name, constant);
 }
 
 static PTN_UNUSED const char *ptn_dynamic_class_name_fetch_type_name(PtnValue value) {

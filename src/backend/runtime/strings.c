@@ -1915,23 +1915,52 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
 
     size_t class_len = (size_t)(separator - name);
     const char *constant_name = separator + 2;
-    PtnSymbolTable *constants = ptn_runtime_class_constant_table(runtime);
-    for (size_t i = 0; i < constants->len; i++) {
-        const char *stored_name = constants->items[i].name;
-        const char *stored_separator = strstr(stored_name, "::");
-        if (stored_separator == NULL || (size_t)(stored_separator - stored_name) != class_len) {
-            continue;
+    char *class_name = malloc(class_len + 1);
+    if (class_name == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(class_name, name, class_len);
+    class_name[class_len] = '\0';
+
+    const char *lookup_class_name =
+        ptn_declared_class_canonical_name(ptn_runtime_resolve_class_alias(runtime, class_name));
+    while (lookup_class_name != NULL) {
+        char *key = ptn_class_constant_key(lookup_class_name, constant_name);
+        PtnValue value;
+        if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+            *out = ptn_value_borrow(value);
+            free(key);
+            free(class_name);
+            return 1;
         }
-        if (!ptn_ascii_case_equal_n(stored_name, name, class_len)) {
-            continue;
+        if (runtime->class_constant_initializer != NULL &&
+            runtime->class_constant_initializer(runtime, lookup_class_name, constant_name)) {
+            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+                free(key);
+                free(class_name);
+                return 0;
+            }
+            if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+                *out = ptn_value_borrow(value);
+                free(key);
+                free(class_name);
+                return 1;
+            }
         }
-        if (strcmp(stored_separator + 2, constant_name) != 0) {
-            continue;
-        }
-        *out = ptn_value_borrow(constants->items[i].value);
+        free(key);
+        lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+    }
+
+    if (ptn_builtin_class_constant_value_span(name, class_len, constant_name, out)) {
+        free(class_name);
         return 1;
     }
-    return ptn_builtin_class_constant_value_span(name, class_len, constant_name, out);
+    if (ptn_builtin_class_constant_value(class_name, constant_name, out)) {
+        free(class_name);
+        return 1;
+    }
+    free(class_name);
+    return 0;
 }
 
 static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
