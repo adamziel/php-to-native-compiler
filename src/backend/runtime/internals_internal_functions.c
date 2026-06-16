@@ -13994,7 +13994,28 @@ static unsigned char ptn_ascii_lower_byte(unsigned char byte) {
     return byte;
 }
 
-static int ptn_compare_string_bytes_ascii_case_insensitive(
+static int ptn_compare_string_bytes_php_result(
+    const unsigned char *left,
+    size_t left_len,
+    const unsigned char *right,
+    size_t right_len
+) {
+    size_t shared_len = left_len < right_len ? left_len : right_len;
+    for (size_t i = 0; i < shared_len; i++) {
+        if (left[i] != right[i]) {
+            return (int)left[i] - (int)right[i];
+        }
+    }
+    if (left_len < right_len) {
+        return -1;
+    }
+    if (left_len > right_len) {
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_compare_string_bytes_ascii_case_insensitive_php_result(
     const unsigned char *left,
     size_t left_len,
     const unsigned char *right,
@@ -14004,20 +14025,17 @@ static int ptn_compare_string_bytes_ascii_case_insensitive(
     for (size_t i = 0; i < shared_len; i++) {
         unsigned char left_byte = ptn_ascii_lower_byte(left[i]);
         unsigned char right_byte = ptn_ascii_lower_byte(right[i]);
-        if (left_byte < right_byte) {
-            return PTN_COMPARE_LESS;
-        }
-        if (left_byte > right_byte) {
-            return PTN_COMPARE_GREATER;
+        if (left_byte != right_byte) {
+            return (int)left_byte - (int)right_byte;
         }
     }
     if (left_len < right_len) {
-        return PTN_COMPARE_LESS;
+        return -1;
     }
     if (left_len > right_len) {
-        return PTN_COMPARE_GREATER;
+        return 1;
     }
-    return PTN_COMPARE_EQUAL;
+    return 0;
 }
 
 static PtnValue ptn_internal_strtolower(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -17760,7 +17778,7 @@ static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnV
     (void)argc;
     PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "strcmp", 1, "string1", args[0], line);
     PtnStringOperand right = ptn_internal_expect_string_arg(runtime, "strcmp", 2, "string2", args[1], line);
-    int compared = ptn_compare_string_bytes(
+    int compared = ptn_compare_string_bytes_php_result(
         (const unsigned char *)left.data,
         left.len,
         (const unsigned char *)right.data,
@@ -17768,20 +17786,14 @@ static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnV
     );
     ptn_string_operand_free(left);
     ptn_string_operand_free(right);
-    if (compared < 0) {
-        return ptn_int(-1);
-    }
-    if (compared > 0) {
-        return ptn_int(1);
-    }
-    return ptn_int(0);
+    return ptn_int(compared);
 }
 
 static PtnValue ptn_internal_strcasecmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "strcasecmp", 1, "string1", args[0], line);
     PtnStringOperand right = ptn_internal_expect_string_arg(runtime, "strcasecmp", 2, "string2", args[1], line);
-    int compared = ptn_compare_string_bytes_ascii_case_insensitive(
+    int compared = ptn_compare_string_bytes_ascii_case_insensitive_php_result(
         (const unsigned char *)left.data,
         left.len,
         (const unsigned char *)right.data,
@@ -17789,13 +17801,7 @@ static PtnValue ptn_internal_strcasecmp(PtnRuntime *runtime, size_t argc, const 
     );
     ptn_string_operand_free(left);
     ptn_string_operand_free(right);
-    if (compared < 0) {
-        return ptn_int(-1);
-    }
-    if (compared > 0) {
-        return ptn_int(1);
-    }
-    return ptn_int(0);
+    return ptn_int(compared);
 }
 
 static int ptn_natcompare_number(
@@ -17965,7 +17971,7 @@ static PtnValue ptn_internal_strnatcasecmp(PtnRuntime *runtime, size_t argc, con
     return ptn_int(compared < 0 ? -1 : (compared > 0 ? 1 : 0));
 }
 
-static int ptn_compare_string_prefix_bytes(
+static int ptn_compare_string_prefix_bytes_php_result(
     const unsigned char *left,
     size_t left_len,
     const unsigned char *right,
@@ -17974,10 +17980,10 @@ static int ptn_compare_string_prefix_bytes(
 ) {
     size_t left_prefix_len = left_len < limit ? left_len : limit;
     size_t right_prefix_len = right_len < limit ? right_len : limit;
-    return ptn_compare_string_bytes(left, left_prefix_len, right, right_prefix_len);
+    return ptn_compare_string_bytes_php_result(left, left_prefix_len, right, right_prefix_len);
 }
 
-static int ptn_compare_string_prefix_bytes_ascii_case_insensitive(
+static int ptn_compare_string_prefix_bytes_ascii_case_insensitive_php_result(
     const unsigned char *left,
     size_t left_len,
     const unsigned char *right,
@@ -17986,7 +17992,12 @@ static int ptn_compare_string_prefix_bytes_ascii_case_insensitive(
 ) {
     size_t left_prefix_len = left_len < limit ? left_len : limit;
     size_t right_prefix_len = right_len < limit ? right_len : limit;
-    return ptn_compare_string_bytes_ascii_case_insensitive(left, left_prefix_len, right, right_prefix_len);
+    return ptn_compare_string_bytes_ascii_case_insensitive_php_result(
+        left,
+        left_prefix_len,
+        right,
+        right_prefix_len
+    );
 }
 
 static PtnValue ptn_internal_strncmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -18003,7 +18014,7 @@ static PtnValue ptn_internal_strncmp(PtnRuntime *runtime, size_t argc, const Ptn
             "strncmp(): Argument #3 ($length) must be greater than or equal to 0"
         );
     }
-    int compared = ptn_compare_string_prefix_bytes(
+    int compared = ptn_compare_string_prefix_bytes_php_result(
         (const unsigned char *)left.data,
         left.len,
         (const unsigned char *)right.data,
@@ -18012,13 +18023,7 @@ static PtnValue ptn_internal_strncmp(PtnRuntime *runtime, size_t argc, const Ptn
     );
     ptn_string_operand_free(left);
     ptn_string_operand_free(right);
-    if (compared < 0) {
-        return ptn_int(-1);
-    }
-    if (compared > 0) {
-        return ptn_int(1);
-    }
-    return ptn_int(0);
+    return ptn_int(compared);
 }
 
 static PtnValue ptn_internal_strncasecmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -18035,7 +18040,7 @@ static PtnValue ptn_internal_strncasecmp(PtnRuntime *runtime, size_t argc, const
             "strncasecmp(): Argument #3 ($length) must be greater than or equal to 0"
         );
     }
-    int compared = ptn_compare_string_prefix_bytes_ascii_case_insensitive(
+    int compared = ptn_compare_string_prefix_bytes_ascii_case_insensitive_php_result(
         (const unsigned char *)left.data,
         left.len,
         (const unsigned char *)right.data,
@@ -18044,13 +18049,7 @@ static PtnValue ptn_internal_strncasecmp(PtnRuntime *runtime, size_t argc, const
     );
     ptn_string_operand_free(left);
     ptn_string_operand_free(right);
-    if (compared < 0) {
-        return ptn_int(-1);
-    }
-    if (compared > 0) {
-        return ptn_int(1);
-    }
-    return ptn_int(0);
+    return ptn_int(compared);
 }
 
 static int ptn_string_window_from_offset_length(
@@ -18181,14 +18180,14 @@ static PtnValue ptn_internal_substr_compare(PtnRuntime *runtime, size_t argc, co
     if (has_length) {
         size_t limit = (size_t)raw_length;
         compared = case_insensitive
-            ? ptn_compare_string_prefix_bytes_ascii_case_insensitive(
+            ? ptn_compare_string_prefix_bytes_ascii_case_insensitive_php_result(
                 (const unsigned char *)haystack.data + start,
                 window_len,
                 (const unsigned char *)needle.data,
                 needle.len,
                 limit
             )
-            : ptn_compare_string_prefix_bytes(
+            : ptn_compare_string_prefix_bytes_php_result(
                 (const unsigned char *)haystack.data + start,
                 window_len,
                 (const unsigned char *)needle.data,
@@ -18197,13 +18196,13 @@ static PtnValue ptn_internal_substr_compare(PtnRuntime *runtime, size_t argc, co
             );
     } else {
         compared = case_insensitive
-            ? ptn_compare_string_bytes_ascii_case_insensitive(
+            ? ptn_compare_string_bytes_ascii_case_insensitive_php_result(
                 (const unsigned char *)haystack.data + start,
                 window_len,
                 (const unsigned char *)needle.data,
                 needle.len
             )
-            : ptn_compare_string_bytes(
+            : ptn_compare_string_bytes_php_result(
                 (const unsigned char *)haystack.data + start,
                 window_len,
                 (const unsigned char *)needle.data,
@@ -18212,13 +18211,7 @@ static PtnValue ptn_internal_substr_compare(PtnRuntime *runtime, size_t argc, co
     }
     ptn_string_operand_free(haystack);
     ptn_string_operand_free(needle);
-    if (compared < 0) {
-        return ptn_int(-1);
-    }
-    if (compared > 0) {
-        return ptn_int(1);
-    }
-    return ptn_int(0);
+    return ptn_int(compared);
 }
 
 static size_t ptn_similar_text_score(
