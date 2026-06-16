@@ -2417,6 +2417,15 @@ fn emit_compile_warnings(out: &mut String, warnings: &[CompileWarning], source_f
                 out.push_str(&warning.line.to_string());
                 out.push_str(");\n");
             }
+            CompileWarningKind::Deprecation => {
+                out.push_str("    ptn_emit_compile_deprecation(&runtime, \"");
+                out.push_str(&c_string(&warning.message));
+                out.push_str("\", \"");
+                out.push_str(&c_string(source_file));
+                out.push_str("\", ");
+                out.push_str(&warning.line.to_string());
+                out.push_str(");\n");
+            }
             CompileWarningKind::UncaughtError => {
                 out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"");
                 out.push_str(&c_string(&warning.message));
@@ -3711,6 +3720,7 @@ fn emit_class_metadata_helpers(
         "Closure",
         "DateTime",
         "DateTimeImmutable",
+        "DateTimeZone",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(builtin);

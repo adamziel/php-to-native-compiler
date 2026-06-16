@@ -2439,6 +2439,12 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "DateTimeZone")) {
+        if (strcmp(constant, "ALL") == 0) {
+            *out = ptn_int(2047);
+            return 1;
+        }
+    }
     return 0;
 }
 

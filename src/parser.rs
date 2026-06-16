@@ -292,7 +292,11 @@ impl Parser<'_> {
         validate_interface_method_conflicts(&classes)?;
         validate_override_attributes(&classes, &traits)?;
         validate_traversable_implementations(&classes)?;
-        validate_method_signature_compatibility(&classes, &self.runtime_class_aliases)?;
+        validate_method_signature_compatibility(
+            &classes,
+            &self.runtime_class_aliases,
+            &mut self.compile_warnings,
+        )?;
         validate_abstract_methods(&classes)?;
         validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
@@ -8946,6 +8950,13 @@ fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
     )
 }
 
+fn is_modeled_builtin_date_class_name(name: &str) -> bool {
+    matches!(
+        name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+        "datetime" | "datetimeimmutable" | "datetimezone"
+    )
+}
+
 fn modeled_builtin_interface_extends(interface_name: &str, target_name: &str) -> bool {
     let interface_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
     let target_name = target_name.trim_start_matches('\\').to_ascii_lowercase();
@@ -9540,6 +9551,7 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
         };
         if parent_name.eq_ignore_ascii_case("stdClass")
             || is_modeled_spl_iterator_class_name(parent_name)
+            || is_modeled_builtin_date_class_name(parent_name)
             || is_modeled_builtin_exception_class_name(parent_name)
             || parent_name.eq_ignore_ascii_case("Generator")
         {
@@ -9735,13 +9747,14 @@ fn validate_traversable_implementations(classes: &[ClassDecl]) -> Result<()> {
 fn validate_method_signature_compatibility(
     classes: &[ClassDecl],
     runtime_class_aliases: &HashMap<String, String>,
+    compile_warnings: &mut Vec<CompileWarning>,
 ) -> Result<()> {
     for class in classes {
         for method in &class.methods {
             if method.visibility == PropertyVisibility::Private {
                 continue;
             }
-            if let Some((parent_class, parent_method)) =
+            let has_visible_parent_method = if let Some((parent_class, parent_method)) =
                 find_visible_parent_method(class, &method.name, classes)
             {
                 if method_requires_parent_signature_compatibility(method, parent_method) {
@@ -9752,6 +9765,24 @@ fn validate_method_signature_compatibility(
                         parent_method,
                         classes,
                         runtime_class_aliases,
+                    )?;
+                }
+                true
+            } else {
+                false
+            };
+
+            if !has_visible_parent_method {
+                if let Some(tentative_method) =
+                    find_tentative_internal_parent_method(class, &method.name, classes)
+                {
+                    validate_tentative_internal_return_signature(
+                        class,
+                        method,
+                        &tentative_method,
+                        classes,
+                        runtime_class_aliases,
+                        compile_warnings,
                     )?;
                 }
             }
@@ -9779,6 +9810,120 @@ fn validate_method_signature_compatibility(
             }
         }
     }
+    Ok(())
+}
+
+#[derive(Clone)]
+struct TentativeInternalMethod {
+    class_name: &'static str,
+    signature: &'static str,
+    return_type: TypeHint,
+    is_static: bool,
+}
+
+fn find_tentative_internal_parent_method(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &[ClassDecl],
+) -> Option<TentativeInternalMethod> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        let normalized = name.trim_start_matches('\\').to_ascii_lowercase();
+        if !seen.insert(normalized.clone()) {
+            break;
+        }
+        if let Some(method) = tentative_internal_method(&normalized, method_name) {
+            return Some(method);
+        }
+        parent_name = find_class(classes, name).and_then(|parent| parent.parent_name.as_deref());
+    }
+    None
+}
+
+fn tentative_internal_method(
+    normalized_class_name: &str,
+    method_name: &str,
+) -> Option<TentativeInternalMethod> {
+    match (normalized_class_name, method_name.to_ascii_lowercase().as_str()) {
+        ("datetimezone", "listidentifiers") => Some(TentativeInternalMethod {
+            class_name: "DateTimeZone",
+            signature:
+                "listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null): array",
+            return_type: TypeHint::Array,
+            is_static: true,
+        }),
+        ("datetime", "createfromformat") => Some(TentativeInternalMethod {
+            class_name: "DateTime",
+            signature:
+                "createFromFormat(string $format, string $datetime, ?DateTimeZone $timezone = null): DateTime|false",
+            return_type: TypeHint::Union(vec![
+                TypeHint::Class("DateTime".to_string()),
+                TypeHint::False,
+            ]),
+            is_static: true,
+        }),
+        ("datetime", "modify") => Some(TentativeInternalMethod {
+            class_name: "DateTime",
+            signature: "modify(string $modifier): DateTime|false",
+            return_type: TypeHint::Union(vec![
+                TypeHint::Class("DateTime".to_string()),
+                TypeHint::False,
+            ]),
+            is_static: false,
+        }),
+        _ => None,
+    }
+}
+
+fn validate_tentative_internal_return_signature(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    tentative_method: &TentativeInternalMethod,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+    compile_warnings: &mut Vec<CompileWarning>,
+) -> Result<()> {
+    if method.is_static != tentative_method.is_static {
+        return Ok(());
+    }
+    if method.return_type.as_ref().is_some_and(|return_type| {
+        type_hint_is_subtype(
+            return_type,
+            &tentative_method.return_type,
+            classes,
+            runtime_class_aliases,
+        )
+    }) {
+        return Ok(());
+    }
+    if method.attributes.return_type_will_change_count > 0 {
+        return Ok(());
+    }
+    if let Some(return_type) = method.return_type.as_ref() {
+        if let Some(unavailable_name) = first_unavailable_class_name(return_type, classes) {
+            return Err(
+                method_signature_unresolved_compatibility_error_with_display(
+                    class,
+                    method,
+                    tentative_method.class_name,
+                    tentative_method.signature,
+                    &unavailable_name,
+                ),
+            );
+        }
+    }
+    compile_warnings.push(CompileWarning {
+        message: format!(
+            "Return type of {}::{} should either be compatible with {}::{}, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice",
+            class.name,
+            method_signature_display(method),
+            tentative_method.class_name,
+            tentative_method.signature,
+        ),
+        span: method.span,
+        kind: CompileWarningKind::Deprecation,
+    });
     Ok(())
 }
 
@@ -10000,6 +10145,32 @@ fn first_unavailable_intersection_class(
     }
 }
 
+fn first_unavailable_class_name(type_hint: &TypeHint, classes: &[ClassDecl]) -> Option<String> {
+    match type_hint {
+        TypeHint::Class(name) if !class_type_name_is_available(name, classes) => Some(name.clone()),
+        TypeHint::Nullable(inner) => first_unavailable_class_name(inner, classes),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => types
+            .iter()
+            .find_map(|member| first_unavailable_class_name(member, classes)),
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Static
+        | TypeHint::Class(_) => None,
+    }
+}
+
 fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
     is_modeled_builtin_interface_name(name)
         || name.eq_ignore_ascii_case("stdClass")
@@ -10007,6 +10178,7 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("IteratorIterator")
         || name.eq_ignore_ascii_case("ArrayObject")
         || name.eq_ignore_ascii_case("Generator")
+        || is_modeled_builtin_date_class_name(name)
         || is_modeled_builtin_exception_class_name(name)
         || find_class(classes, name).is_some()
 }
@@ -10058,6 +10230,26 @@ fn method_signature_unresolved_compatibility_error(
             method_signature_display_canonical(method),
             parent_class.name,
             method_signature_display_canonical(parent_method),
+            unavailable_name
+        ),
+        Some(method.span),
+    )
+}
+
+fn method_signature_unresolved_compatibility_error_with_display(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    parent_class_name: &str,
+    parent_method_signature: &str,
+    unavailable_name: &str,
+) -> Diagnostic {
+    Diagnostic::new(
+        format!(
+            "Could not check compatibility between {}::{} and {}::{}, because class {} is not available",
+            class.name,
+            method_signature_display_canonical(method),
+            parent_class_name,
+            parent_method_signature,
             unavailable_name
         ),
         Some(method.span),
@@ -10128,6 +10320,9 @@ fn parameter_default_display(default_value: &Expr) -> String {
         Expr::Float(value, _) => value.to_string(),
         Expr::String(value, _) => format!("'{}'", value.replace('\'', "\\'")),
         Expr::Array { elements, .. } if elements.is_empty() => "[]".to_string(),
+        Expr::ClassConstantFetch {
+            class_name, name, ..
+        } => format!("{class_name}::{name}"),
         _ => "<expression>".to_string(),
     }
 }
@@ -10361,6 +10556,10 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
         ][..]
     } else if candidate_name.eq_ignore_ascii_case("Generator") {
         &["Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("DateTime")
+        || candidate_name.eq_ignore_ascii_case("DateTimeImmutable")
+    {
+        &["DateTimeInterface"][..]
     } else {
         &[][..]
     };
@@ -12744,6 +12943,9 @@ fn statement_contains_yield(statement: &Statement) -> bool {
         Statement::Return {
             value: Some(value), ..
         }
+        | Statement::Exit {
+            value: Some(value), ..
+        }
         | Statement::Throw { value, .. } => expr_contains_yield(value),
         Statement::Try {
             body,
@@ -12764,6 +12966,7 @@ fn statement_contains_yield(statement: &Statement) -> bool {
         | Statement::Break { .. }
         | Statement::Continue { .. }
         | Statement::Return { value: None, .. }
+        | Statement::Exit { value: None, .. }
         | Statement::Label { .. }
         | Statement::Goto { .. }
         | Statement::InlineHtml { .. } => false,
@@ -12772,7 +12975,7 @@ fn statement_contains_yield(statement: &Statement) -> bool {
 
 fn expr_contains_yield(expr: &Expr) -> bool {
     match expr {
-        Expr::Yield { .. } => true,
+        Expr::Yield { .. } | Expr::YieldFrom { .. } => true,
         Expr::AnonymousFunction(_) => false,
         Expr::DynamicVariable { name, .. }
         | Expr::FirstClassCallable { callable: name, .. }

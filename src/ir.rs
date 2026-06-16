@@ -44,6 +44,7 @@ pub struct CompileWarning {
 pub enum CompileWarningKind {
     Warning,
     UncaughtError,
+    Deprecation,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1923,12 +1924,17 @@ fn lower_compile_warnings(warnings: &[AstCompileWarning]) -> Vec<CompileWarning>
         .map(|warning| CompileWarning {
             message: warning.message.clone(),
             line: warning.span.line,
-            kind: match warning.kind {
-                AstCompileWarningKind::Warning => CompileWarningKind::Warning,
-                AstCompileWarningKind::UncaughtError => CompileWarningKind::UncaughtError,
-            },
+            kind: lower_compile_warning_kind(warning.kind),
         })
         .collect()
+}
+
+fn lower_compile_warning_kind(kind: AstCompileWarningKind) -> CompileWarningKind {
+    match kind {
+        AstCompileWarningKind::Warning => CompileWarningKind::Warning,
+        AstCompileWarningKind::UncaughtError => CompileWarningKind::UncaughtError,
+        AstCompileWarningKind::Deprecation => CompileWarningKind::Deprecation,
+    }
 }
 
 fn lower_trait_uses(trait_uses: &[crate::ast::TraitUseDecl]) -> Vec<TraitUseDecl> {

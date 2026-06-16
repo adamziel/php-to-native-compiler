@@ -34930,6 +34930,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_datetime_immutable(class_name)
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
+        || ptn_ascii_case_equal(class_name, "DateTimeZone")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
         || ptn_builtin_exception_class_name(class_name) != NULL;
 }

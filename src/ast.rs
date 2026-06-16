@@ -21,6 +21,7 @@ pub struct CompileWarning {
 pub enum CompileWarningKind {
     Warning,
     UncaughtError,
+    Deprecation,
 }
 
 #[derive(Debug, Clone, PartialEq)]
