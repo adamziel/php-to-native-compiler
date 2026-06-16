@@ -3196,6 +3196,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_reflection_reference(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_reflection_reference_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_internal_class_name_is_sensitive_parameter_value(receiver.as.object->class_name)
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {

@@ -3335,6 +3335,7 @@ fn emit_class_metadata_helpers(
         "ReflectionObject",
         "ReflectionParameter",
         "ReflectionProperty",
+        "ReflectionReference",
         "ReflectionType",
         "ReflectionNamedType",
         "ReflectionUnionType",
@@ -9695,6 +9696,9 @@ fn collect_reference_target_legacy_dollar_brace_deprecations(
 ) {
     match target {
         ReferenceTarget::Variable { .. } => {}
+        ReferenceTarget::DynamicVariable { name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
         ReferenceTarget::ArrayDim(target) => {
             collect_array_dim_target_legacy_dollar_brace_deprecations(target, deprecations);
         }
@@ -9769,6 +9773,16 @@ fn collect_assignment_target_legacy_dollar_brace_deprecations(
             ..
         } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+        }
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(array, deprecations);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
@@ -10237,6 +10251,9 @@ fn collect_reference_target_runtime_requirements(
 ) {
     match target {
         ReferenceTarget::Variable { .. } => {}
+        ReferenceTarget::DynamicVariable { name, .. } => {
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
         ReferenceTarget::ArrayDim(target) => {
             for dimension in &target.dimensions {
                 if let Some(dimension) = dimension {
@@ -10285,6 +10302,16 @@ fn collect_assignment_target_runtime_requirements(
             }
         }
         AssignmentTarget::ArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
+            }
+        }
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            collect_value_runtime_requirements(array, functions, requirements);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -11096,6 +11123,10 @@ fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
             name: name.clone(),
             line: *line,
         }),
+        ValueExpr::DynamicVariable { name, line } => Some(ReferenceTarget::DynamicVariable {
+            name: name.clone(),
+            line: *line,
+        }),
         ValueExpr::ArrayAccess { .. } | ValueExpr::ArrayAppendAccess { .. } => {
             reference_array_dim_target_from_value(value)
         }
@@ -11712,6 +11743,7 @@ impl AssignmentTargetLine for AssignmentTarget {
             | AssignmentTarget::PropertyArrayDim { line, .. }
             | AssignmentTarget::StaticPropertyArrayDim { line, .. }
             | AssignmentTarget::DynamicStaticPropertyArrayDim { line, .. }
+            | AssignmentTarget::ValueArrayDim { line, .. }
             | AssignmentTarget::DynamicProperty { line, .. } => *line,
             AssignmentTarget::Property { line, .. }
             | AssignmentTarget::StaticProperty { line, .. }
@@ -11725,6 +11757,7 @@ impl AssignmentTargetLine for ReferenceTarget {
     fn line(&self) -> usize {
         match self {
             ReferenceTarget::Variable { line, .. } => *line,
+            ReferenceTarget::DynamicVariable { line, .. } => *line,
             ReferenceTarget::ArrayDim(target) => target.line,
             ReferenceTarget::PropertyArrayDim { line, .. } => *line,
             ReferenceTarget::Property { line, .. } => *line,
@@ -11745,6 +11778,7 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
             | AssignmentTarget::PropertyArrayDim { .. }
             | AssignmentTarget::StaticPropertyArrayDim { .. }
             | AssignmentTarget::DynamicStaticPropertyArrayDim { .. }
+            | AssignmentTarget::ValueArrayDim { .. }
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
             | AssignmentTarget::StaticProperty { .. }
@@ -11807,6 +11841,15 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
                     .any(|dimension| value_mentions_variable(dimension, name))
         }
         AssignmentTarget::ArrayDim { array, .. } => array == name,
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            value_mentions_variable(array, name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
         AssignmentTarget::PropertyArrayDim {
             receiver,
             dimensions,
@@ -11852,6 +11895,9 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
 fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> bool {
     match target {
         ReferenceTarget::Variable { name: target, .. } => target == name,
+        ReferenceTarget::DynamicVariable { name: target, .. } => {
+            value_mentions_variable(target, name)
+        }
         ReferenceTarget::ArrayDim(target) => target.array == name,
         ReferenceTarget::PropertyArrayDim {
             receiver,
@@ -12587,6 +12633,9 @@ fn assignment_target_uses_this(target: &AssignmentTarget) -> bool {
         } => {
             value_expr_uses_this(receiver) || dimensions.iter().flatten().any(value_expr_uses_this)
         }
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => value_expr_uses_this(array) || dimensions.iter().flatten().any(value_expr_uses_this),
         AssignmentTarget::DynamicVariable { name, .. } => value_expr_uses_this(name),
         AssignmentTarget::DynamicArrayDim {
             name, dimensions, ..
@@ -12622,6 +12671,7 @@ fn list_assignment_target_uses_this(list: &ListAssignmentTarget) -> bool {
 fn reference_target_uses_this(target: &ReferenceTarget) -> bool {
     match target {
         ReferenceTarget::Variable { .. } | ReferenceTarget::ArrayDim(_) => false,
+        ReferenceTarget::DynamicVariable { name, .. } => value_expr_uses_this(name),
         ReferenceTarget::PropertyArrayDim {
             receiver,
             dimensions,
@@ -13529,6 +13579,11 @@ impl ValueEmitter {
                         "parser rejects null coalescing assignment for dynamic static property array offsets"
                     );
                 }
+                AssignmentTarget::ValueArrayDim { .. } => {
+                    unreachable!(
+                        "parser rejects null coalescing assignment for value array offsets"
+                    );
+                }
                 AssignmentTarget::List(_) => {
                     unreachable!("parser rejects null coalescing assignment for list targets");
                 }
@@ -13716,6 +13771,47 @@ impl ValueEmitter {
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &snapshot_temp);
             emit_value_cleanup(out, "    ", &value_temp);
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+            return result_temp;
+        }
+
+        if let AssignmentTarget::ValueArrayDim {
+            array,
+            dimensions,
+            line,
+        } = target
+        {
+            if assignment_compound_binary_op(op).is_some() {
+                unreachable!("parser rejects compound assignment for value array offsets");
+            }
+            let array_temp = self.emit_materialized_value(out, array);
+            let path = emit_array_path_segments(out, self, dimensions);
+            let value_temp = self.emit_materialized_value(out, value);
+            let snapshot_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&snapshot_temp);
+            out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+            out.push_str(&value_temp);
+            out.push_str(");\n");
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_value_array_path_set_result(&runtime, &");
+            out.push_str(&array_temp);
+            out.push_str(", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&snapshot_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &snapshot_temp);
+            emit_value_cleanup(out, "    ", &value_temp);
+            emit_value_cleanup(out, "    ", &array_temp);
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
@@ -14092,7 +14188,7 @@ impl ValueEmitter {
         let receiver_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
         let path = emit_array_path_segments(out, self, dimensions);
         let current_temp = self.next_temp();
-        out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
+        out.push_str("    ptn_validate_property_modify_receiver(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -15093,8 +15189,23 @@ impl ValueEmitter {
                     "parser rejects by-reference assignment to dynamic static property array targets"
                 );
             }
-            AssignmentTarget::DynamicProperty { .. } => {
-                unreachable!("parser rejects by-reference assignment to dynamic property targets");
+            AssignmentTarget::ValueArrayDim { .. } => {
+                unreachable!("parser rejects by-reference assignment to value array targets");
+            }
+            AssignmentTarget::DynamicProperty {
+                receiver,
+                name,
+                line,
+            } => {
+                self.emit_bind_reference_target(
+                    out,
+                    &ReferenceTarget::DynamicProperty {
+                        receiver: receiver.clone(),
+                        name: name.clone(),
+                        line: *line,
+                    },
+                    reference_temp,
+                );
             }
             AssignmentTarget::Property {
                 receiver,
@@ -15238,6 +15349,40 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &snapshot_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                result_temp
+            }
+            AssignmentTarget::ValueArrayDim {
+                array,
+                dimensions,
+                line,
+            } => {
+                let array_temp = self.emit_materialized_value(out, array);
+                let path = emit_array_path_segments(out, self, dimensions);
+                let snapshot_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&snapshot_temp);
+                out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+                out.push_str(value_temp);
+                out.push_str(");\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_array_path_set_result(&runtime, &");
+                out.push_str(&array_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&snapshot_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &snapshot_temp);
+                emit_value_cleanup(out, "    ", &array_temp);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
@@ -15661,6 +15806,17 @@ impl ValueEmitter {
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
                 out.push_str(reference_temp);
+                out.push_str(");\n");
+            }
+            ReferenceTarget::DynamicVariable { name, line } => {
+                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                out.push_str("    ptn_runtime_bind_variable_reference(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
                 out.push_str(");\n");
             }
             ReferenceTarget::ArrayDim(target) => {
@@ -16761,6 +16917,13 @@ impl ValueEmitter {
             }
             IncDecTarget::Property { receiver, name, .. } => {
                 let receiver_temp = self.emit_materialized_value(out, receiver);
+                out.push_str("    ptn_validate_property_increment_receiver(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
@@ -20199,6 +20362,19 @@ impl ValueEmitter {
                 out.push_str(" = ptn_runtime_reference_for_variable(&runtime, \"");
                 out.push_str(&c_string(name));
                 out.push_str("\");\n");
+                temp
+            }
+            ReferenceTarget::DynamicVariable { name, line } => {
+                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_runtime_reference_for_variable(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
                 temp
             }
             ReferenceTarget::ArrayDim(target) => {

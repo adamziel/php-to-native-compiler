@@ -32332,6 +32332,7 @@ static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, cons
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(PtnRuntime *runtime, const char *name);
@@ -32800,6 +32801,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rename", 2, 3, ptn_internal_rename },
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
+        { "ReflectionReference::fromArrayElement", 2, 2, ptn_internal_reflection_reference_from_array_element },
         { "reset", 1, 1, ptn_internal_reset },
         { "restore_error_handler", 0, 0, ptn_internal_restore_error_handler },
         { "rewind", 1, 1, ptn_internal_rewind },
@@ -33051,6 +33053,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char 
     return ptn_ascii_case_equal(class_name, "ReflectionProperty");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_reference(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionReference");
+}
+
 static int ptn_internal_reflection_metadata_class_exists(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Reflection")
         || ptn_ascii_case_equal(class_name, "ReflectionAttribute")
@@ -33062,6 +33068,7 @@ static int ptn_internal_reflection_metadata_class_exists(const char *class_name)
         || ptn_ascii_case_equal(class_name, "ReflectionObject")
         || ptn_ascii_case_equal(class_name, "ReflectionParameter")
         || ptn_ascii_case_equal(class_name, "ReflectionProperty")
+        || ptn_ascii_case_equal(class_name, "ReflectionReference")
         || ptn_ascii_case_equal(class_name, "ReflectionType")
         || ptn_ascii_case_equal(class_name, "ReflectionNamedType")
         || ptn_ascii_case_equal(class_name, "ReflectionUnionType")
@@ -33507,6 +33514,11 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "setValue");
 }
 
+static int ptn_reflection_reference_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "fromArrayElement")
+        || ptn_ascii_case_equal(method_name, "getId");
+}
+
 static int ptn_array_iterator_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "count")
         || ptn_ascii_case_equal(method_name, "current")
@@ -33609,6 +33621,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_reflection_property(class_name)) {
         return ptn_reflection_property_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_reflection_reference(class_name)) {
+        return ptn_reflection_reference_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_sensitive_parameter_value(class_name)) {
         return ptn_sensitive_parameter_value_method_exists(method_name);
@@ -33812,6 +33827,11 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isWritable",
             "setValue",
         };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_reflection_reference(class_name)) {
+        static const char *const names[] = { "fromArrayElement", "getId" };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
@@ -39203,6 +39223,163 @@ static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, c
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     return ptn_array_key_exists_value(runtime, args[0], args[1], line);
+}
+
+typedef struct {
+    PtnReference *reference;
+} PtnReflectionReferenceData;
+
+static void ptn_reflection_reference_data_free(void *data) {
+    PtnReflectionReferenceData *reference_data = (PtnReflectionReferenceData *)data;
+    if (reference_data == NULL) {
+        return;
+    }
+    ptn_reference_release(reference_data->reference);
+    free(reference_data);
+}
+
+static PtnReflectionReferenceData *ptn_reflection_reference_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_reflection_reference(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionReference object");
+        return NULL;
+    }
+    return (PtnReflectionReferenceData *)receiver.as.object->native_data;
+}
+
+static PtnValue ptn_reflection_reference_object_from_reference(
+    PtnRuntime *runtime,
+    PtnReference *reference
+) {
+    PtnReflectionReferenceData *data = malloc(sizeof(PtnReflectionReferenceData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (reference->refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    reference->refcount++;
+    data->reference = reference;
+    PtnValue object = ptn_object_new_shell(runtime, "ReflectionReference");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_reflection_reference_data_free;
+    return object;
+}
+
+static void ptn_reflection_reference_throw_key_type_error(
+    PtnRuntime *runtime,
+    PtnValue key
+) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionReference::fromArrayElement(): Argument #2 ($key) must be of type string|int, %s given",
+        ptn_offset_container_type_name(key)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PtnValue ptn_internal_reflection_reference_from_array_element(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    (void)line;
+    PtnValue array_value = ptn_value_deref(args[0]);
+    if (array_value.type != PTN_ARRAY) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionReference::fromArrayElement(): Argument #1 ($array) must be of type array, %s given",
+            ptn_offset_container_type_name(array_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnValue key_value = ptn_value_deref(args[1]);
+    switch (key_value.type) {
+        case PTN_INT:
+        case PTN_STRING:
+        case PTN_BOOL:
+        case PTN_FLOAT:
+        case PTN_NULL:
+        case PTN_RESOURCE:
+            break;
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_REFERENCE:
+            ptn_reflection_reference_throw_key_type_error(runtime, key_value);
+            return ptn_null();
+    }
+
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array_value.as.array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        ptn_throw_exception(runtime, "ReflectionException", "Array key not found");
+        return ptn_null();
+    }
+    if (entry->value.type != PTN_REFERENCE) {
+        return ptn_null();
+    }
+    return ptn_reflection_reference_object_from_reference(runtime, entry->value.as.reference);
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_reference_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (ptn_ascii_case_equal(name, "getId")) {
+        if (argc != 0) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionReference::getId() expects exactly 0 arguments, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnReflectionReferenceData *data = ptn_reflection_reference_data(runtime, receiver);
+        if (data == NULL) {
+            return ptn_null();
+        }
+        char id[2 + sizeof(void *) * 2 + 1];
+        int written = snprintf(id, sizeof(id), "%p", (void *)data->reference);
+        if (written < 0 || (size_t)written >= sizeof(id)) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_owned_string(ptn_duplicate_string(id));
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static void ptn_throw_internal_argument_count_error(

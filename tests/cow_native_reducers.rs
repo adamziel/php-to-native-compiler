@@ -156,6 +156,33 @@ echo $array[0], \":\", $array[1], \"\\n\";",
             expected_stdout: "5:5\n",
         },
         CowReducerCase {
+            name: "call_result_array_dim_assignment_return_reference",
+            oracle: "Zend/tests/dereference/dereference_006.phpt",
+            source: "<?php\n\
+function &slot(&$arg) { return $arg; }\n\
+$items = [1];\n\
+slot($items)[0] = 2;\n\
+slot($items)[] = 3;\n\
+echo count($items), \":\", $items[0], \":\", $items[1], \"\\n\";",
+            expected_stdout: "2:2:3\n",
+        },
+        CowReducerCase {
+            name: "dynamic_method_reference_source",
+            oracle: "Zend/tests/dereference/dereference_008.phpt",
+            source: "<?php\n\
+class Box {\n\
+    public $items = [1];\n\
+    public function &items() { return $this->items; }\n\
+}\n\
+$box = new Box;\n\
+$method = \"items\";\n\
+$ref =& $box->$method();\n\
+$ref[] = 2;\n\
+$out = $box->$method();\n\
+echo count($out), \":\", $out[0], \":\", $out[1], \"\\n\";",
+            expected_stdout: "2:1:2\n",
+        },
+        CowReducerCase {
             name: "nested_extracted_child_write",
             oracle: "Zend/tests/bug35163.phpt",
             source: "<?php\n\
@@ -413,6 +440,57 @@ var_dump(array_reverse($items));",
             expected_stdout: "array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  &string(1) \"c\"\n}\narray(3) {\n  [0]=>\n  &string(1) \"c\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"a\"\n}\n",
         },
         CowReducerCase {
+            name: "dynamic_property_reference_assignment",
+            oracle: "Zend/tests/bugGH-8655.phpt",
+            source: "<?php\n\
+class Foo { public $foo; }\n\
+function hydrate(&$properties, $object) {\n\
+    foreach ($properties as $name => &$value) {\n\
+        $object->$name = &$value;\n\
+    }\n\
+}\n\
+$object = new Foo;\n\
+$properties = [\"foo\" => 123];\n\
+hydrate($properties, $object);\n\
+$properties[\"foo\"] = 456;\n\
+echo $object->foo, \"\\n\";\n\
+$object->foo = 789;\n\
+echo $properties[\"foo\"], \":\", $object->foo, \"\\n\";",
+            expected_stdout: "456\n789:789\n",
+        },
+        CowReducerCase {
+            name: "reflection_reference_array_element_separates_cast_property",
+            oracle: "Zend/tests/bugGH-8655.phpt",
+            source: "<?php\n\
+class Foo { public $foo; }\n\
+function hydrate($properties, $object) {\n\
+    foreach ($properties as $name => &$value) {\n\
+        $object->$name = &$value;\n\
+    }\n\
+}\n\
+$object = new Foo;\n\
+hydrate([\"foo\" => 123], $object);\n\
+$arrayCast = (array) $object;\n\
+$object->foo = 234;\n\
+var_dump(ReflectionReference::fromArrayElement($arrayCast, \"foo\"));\n\
+echo $arrayCast[\"foo\"], \"\\n\";",
+            expected_stdout: "NULL\n123\n",
+        },
+        CowReducerCase {
+            name: "object_clone_separates_property_references",
+            oracle: "Zend/tests/clone/bug68262.phpt",
+            source: "<?php\n\
+class C { public $p; }\n\
+$first = new C;\n\
+$first->p = \"init\";\n\
+$ref =& $first->p;\n\
+unset($ref);\n\
+$clone = clone $first;\n\
+$clone->p = \"foo\";\n\
+var_dump($first->p);",
+            expected_stdout: "string(4) \"init\"\n",
+        },
+        CowReducerCase {
             name: "string_offset_shared_alias",
             oracle: "Zend/tests/str_offset_001.phpt",
             source: "<?php\n\
@@ -506,7 +584,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 34, "COW reducer pass count changed");
+    assert_eq!(passed, 39, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

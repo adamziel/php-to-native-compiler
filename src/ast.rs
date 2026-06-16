@@ -480,6 +480,11 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<Expr>>,
         span: SourceSpan,
     },
+    ValueArrayDim {
+        array: Box<Expr>,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,
@@ -525,6 +530,10 @@ pub enum ListAssignmentElementTarget {
 pub enum ReferenceTarget {
     Variable {
         name: String,
+        span: SourceSpan,
+    },
+    DynamicVariable {
+        name: Box<Expr>,
         span: SourceSpan,
     },
     ArrayDim(ArrayDimTarget),

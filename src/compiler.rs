@@ -608,6 +608,7 @@ impl IncludeCollector {
             AssignmentTarget::PropertyArrayDim { .. }
             | AssignmentTarget::StaticPropertyArrayDim { .. }
             | AssignmentTarget::DynamicStaticPropertyArrayDim { .. }
+            | AssignmentTarget::ValueArrayDim { .. }
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
             | AssignmentTarget::StaticProperty { .. }
@@ -619,6 +620,9 @@ impl IncludeCollector {
         match target {
             ReferenceTarget::Variable { name, .. } => {
                 self.path_env.remove(name);
+            }
+            ReferenceTarget::DynamicVariable { .. } => {
+                self.path_env.clear();
             }
             ReferenceTarget::ArrayDim(target) => {
                 self.path_env.remove(&target.array);
@@ -867,6 +871,17 @@ impl IncludeCollector {
                 }
                 Ok(())
             }
+            AssignmentTarget::ValueArrayDim {
+                array, dimensions, ..
+            } => {
+                self.collect_expr(array, source_file, source_dir)?;
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
             AssignmentTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
@@ -918,6 +933,9 @@ impl IncludeCollector {
         source_dir: &str,
     ) -> Result<()> {
         match target {
+            ReferenceTarget::DynamicVariable { name, .. } => {
+                self.collect_expr(name, source_file, source_dir)
+            }
             ReferenceTarget::ArrayDim(target) => {
                 self.collect_array_dim_target(target, source_file, source_dir)
             }

@@ -7880,6 +7880,16 @@ fn collect_arrow_captures_from_assignment_target(
                 }
             }
         }
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            collect_arrow_captures_from_expr(array, exclusions, seen, captures);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
+        }
         AssignmentTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
@@ -7922,6 +7932,9 @@ fn collect_arrow_captures_from_reference_target(
     match target {
         ReferenceTarget::Variable { name, span } => {
             add_arrow_capture(name, *span, exclusions, seen, captures);
+        }
+        ReferenceTarget::DynamicVariable { name, .. } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
         }
         ReferenceTarget::ArrayDim(target) => {
             add_arrow_capture(&target.array, target.span, exclusions, seen, captures);
@@ -11195,6 +11208,12 @@ fn validate_control_transfers_in_assignment_target(target: &AssignmentTarget) ->
             validate_control_transfers_in_expr(receiver)?;
             validate_control_transfers_in_optional_exprs(dimensions)?;
         }
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            validate_control_transfers_in_expr(array)?;
+            validate_control_transfers_in_optional_exprs(dimensions)?;
+        }
         AssignmentTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
@@ -11249,6 +11268,9 @@ fn validate_control_transfers_in_list_expr(list: &ListExpr) -> Result<()> {
 fn validate_control_transfers_in_reference_target(target: &ReferenceTarget) -> Result<()> {
     match target {
         ReferenceTarget::Variable { .. } => {}
+        ReferenceTarget::DynamicVariable { name, .. } => {
+            validate_control_transfers_in_expr(name)?;
+        }
         ReferenceTarget::ArrayDim(target) => {
             validate_control_transfers_in_array_dim_target(target)?;
         }
@@ -11362,6 +11384,7 @@ fn validate_recursive_reference_assignment_value(
         AssignmentTarget::PropertyArrayDim { .. } => return Ok(()),
         AssignmentTarget::StaticPropertyArrayDim { .. } => return Ok(()),
         AssignmentTarget::DynamicStaticPropertyArrayDim { .. } => return Ok(()),
+        AssignmentTarget::ValueArrayDim { .. } => return Ok(()),
         AssignmentTarget::Property { .. } => return Ok(()),
         AssignmentTarget::DynamicProperty { .. } => return Ok(()),
         AssignmentTarget::StaticProperty { .. } => return Ok(()),
@@ -11535,6 +11558,9 @@ fn reference_target_reference_to_variable(
         ReferenceTarget::Variable { name, span } if name == variable => {
             Some(RecursiveReferenceDiagnostic::RecursiveArray(*span))
         }
+        ReferenceTarget::DynamicVariable { name, .. } => {
+            expr_array_literal_reference_to_variable(name, variable)
+        }
         ReferenceTarget::ArrayDim(target) if target.array == variable => {
             Some(RecursiveReferenceDiagnostic::SameArrayElement(target.span))
         }
@@ -11579,9 +11605,11 @@ fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
 fn validate_reference_source_expr(source: &Expr) -> Result<()> {
     match source {
         Expr::Variable(_, _)
+        | Expr::DynamicVariable { .. }
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. }
         | Expr::PropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. } => Ok(()),
@@ -13300,6 +13328,7 @@ fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
     let span = expr.span();
     match expr {
         Expr::Variable(name, span) => Ok(ReferenceTarget::Variable { name, span }),
+        Expr::DynamicVariable { name, span } => Ok(ReferenceTarget::DynamicVariable { name, span }),
         Expr::Grouped { expr, .. } => reference_target_from_expr(*expr),
         array_expr @ Expr::ArrayAccess { .. } => {
             reference_array_dim_target_from_expr(array_expr, span)
@@ -13537,6 +13566,18 @@ fn assignment_array_dim_target_from_expr(expr: Expr) -> Result<AssignmentTarget>
                     span: combine_spans(property_span, span),
                 });
             }
+            Expr::Call { .. }
+            | Expr::DynamicCall { .. }
+            | Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. } => {
+                let value_span = current.span();
+                dimensions.reverse();
+                return Ok(AssignmentTarget::ValueArrayDim {
+                    array: Box::new(current),
+                    dimensions,
+                    span: combine_spans(value_span, span),
+                });
+            }
             Expr::Grouped { expr, .. } => {
                 current = *expr;
             }
@@ -13558,6 +13599,7 @@ fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
         | AssignmentTarget::PropertyArrayDim { span, .. }
         | AssignmentTarget::StaticPropertyArrayDim { span, .. }
         | AssignmentTarget::DynamicStaticPropertyArrayDim { span, .. }
+        | AssignmentTarget::ValueArrayDim { span, .. }
         | AssignmentTarget::Property { span, .. }
         | AssignmentTarget::DynamicProperty { span, .. }
         | AssignmentTarget::StaticProperty { span, .. }
@@ -13570,6 +13612,7 @@ fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
 fn reference_target_span(target: &ReferenceTarget) -> SourceSpan {
     match target {
         ReferenceTarget::Variable { span, .. } => *span,
+        ReferenceTarget::DynamicVariable { span, .. } => *span,
         ReferenceTarget::ArrayDim(target) => target.span,
         ReferenceTarget::PropertyArrayDim { span, .. } => *span,
         ReferenceTarget::Property { span, .. } => *span,
@@ -13677,6 +13720,10 @@ fn validate_coalesce_assignment_target(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
             Some(span),
         )),
+        AssignmentTarget::ValueArrayDim { .. } => Err(Diagnostic::new(
+            "null coalescing assignment currently supports variables, array/string offsets, and properties",
+            Some(span),
+        )),
         AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::DynamicProperty { .. } => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
@@ -13713,6 +13760,10 @@ fn validate_expression_assignment_target(
         | AssignmentTarget::PropertyArrayDim { .. }
         | AssignmentTarget::StaticPropertyArrayDim { .. }
         | AssignmentTarget::DynamicStaticPropertyArrayDim { .. } => Ok(()),
+        AssignmentTarget::ValueArrayDim { .. } => Err(Diagnostic::new(
+            "compound assignment expressions currently support variables, array/string offsets, and properties",
+            Some(span),
+        )),
         AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::DynamicProperty { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
@@ -13797,13 +13848,14 @@ fn validate_reference_assignment_target_source(
                 Some(span),
             ));
         }
-        AssignmentTarget::Property { .. } => {}
-        AssignmentTarget::DynamicProperty { .. } => {
+        AssignmentTarget::ValueArrayDim { .. } => {
             return Err(Diagnostic::new(
                 "unsupported by-reference assignment target",
                 Some(span),
             ));
         }
+        AssignmentTarget::Property { .. } => {}
+        AssignmentTarget::DynamicProperty { .. } => {}
         AssignmentTarget::StaticProperty { .. } => {
             return Ok(());
         }
@@ -14168,6 +14220,9 @@ fn reject_append_array_read_in_array_dim_target(target: &ArrayDimTarget) -> Resu
 fn reject_append_array_read_in_reference_target(target: &ReferenceTarget) -> Result<()> {
     match target {
         ReferenceTarget::Variable { .. } => {}
+        ReferenceTarget::DynamicVariable { name, .. } => {
+            reject_append_array_read(name)?;
+        }
         ReferenceTarget::ArrayDim(target) => {
             reject_append_array_read_in_array_dim_target(target)?;
         }
@@ -14242,6 +14297,12 @@ fn reject_append_array_read_in_assignment_target(target: &AssignmentTarget) -> R
             ..
         } => {
             reject_append_array_read(receiver)?;
+            reject_append_array_read_in_optional_exprs(dimensions)?;
+        }
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            reject_append_array_read(array)?;
             reject_append_array_read_in_optional_exprs(dimensions)?;
         }
         AssignmentTarget::Property { receiver, .. } => {
