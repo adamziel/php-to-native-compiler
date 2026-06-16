@@ -33737,6 +33737,48 @@ var_dump(Store::$items);
 }
 
 #[test]
+fn compile_dynamic_static_property_array_dim_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-static-property-array-dim-assignments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-static-property-array-dim-assignments.php");
+    let output = root.join("dynamic-static-property-array-dim-assignments-bin");
+    fs::write(
+        &input,
+        "<?php
+class DynamicStaticStore {
+    private static $items = [\"seed\" => 1];
+
+    public function mutate() {
+        $this::$items[] = 2;
+        $this::$items[\"seed\"] += 4;
+        var_dump($this::$items);
+    }
+}
+
+(new DynamicStaticStore())->mutate();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [\"seed\"]=>\n",
+            "  int(5)\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_static_property_isset_empty_and_coalesce_to_native_binary() {
     let root = temp_dir("ptn-native-static-property-isset-empty-coalesce");
     fs::create_dir_all(&root).unwrap();

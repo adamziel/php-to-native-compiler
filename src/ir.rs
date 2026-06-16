@@ -502,6 +502,11 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    DynamicStaticPropertyFetch {
+        receiver: Box<ValueExpr>,
+        name: String,
+        line: usize,
+    },
     ClassConstantFetch {
         class_name: String,
         name: String,
@@ -624,6 +629,12 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
+    DynamicStaticPropertyArrayDim {
+        receiver: Box<ValueExpr>,
+        name: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
     Property {
         receiver: Box<ValueExpr>,
         name: String,
@@ -636,6 +647,11 @@ pub enum AssignmentTarget {
     },
     StaticProperty {
         class_name: String,
+        name: String,
+        line: usize,
+    },
+    DynamicStaticProperty {
+        receiver: Box<ValueExpr>,
         name: String,
         line: usize,
     },
@@ -1655,6 +1671,7 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::MagicConstant(_, _)
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. } => false,
+        Expr::DynamicStaticPropertyFetch { receiver, .. } => expr_contains_yield(receiver),
         Expr::Assign { target, value, .. } => {
             assignment_target_contains_yield(target) || expr_contains_yield(value)
         }
@@ -1737,6 +1754,11 @@ fn assignment_target_contains_yield(target: &AstAssignmentTarget) -> bool {
         AstAssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
             dimensions.iter().flatten().any(expr_contains_yield)
         }
+        AstAssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
         AstAssignmentTarget::DynamicVariable { name, .. } => expr_contains_yield(name),
         AstAssignmentTarget::DynamicArrayDim {
             name, dimensions, ..
@@ -1749,6 +1771,9 @@ fn assignment_target_contains_yield(target: &AstAssignmentTarget) -> bool {
         AstAssignmentTarget::Property { receiver, .. } => expr_contains_yield(receiver),
         AstAssignmentTarget::DynamicProperty { receiver, name, .. } => {
             expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
+        AstAssignmentTarget::DynamicStaticProperty { receiver, .. } => {
+            expr_contains_yield(receiver)
         }
         AstAssignmentTarget::List(list) => list.elements.iter().any(|element| {
             element.key.as_ref().is_some_and(expr_contains_yield)
@@ -1857,6 +1882,24 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 line: span.line,
             },
+            AstAssignmentTarget::DynamicStaticPropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                span,
+            } => AssignmentTarget::DynamicStaticPropertyArrayDim {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
+            },
             AstAssignmentTarget::Property {
                 receiver,
                 name,
@@ -1881,6 +1924,15 @@ impl<'a> LoweringContext<'a> {
                 span,
             } => AssignmentTarget::StaticProperty {
                 class_name: class_name.clone(),
+                name: name.clone(),
+                line: span.line,
+            },
+            AstAssignmentTarget::DynamicStaticProperty {
+                receiver,
+                name,
+                span,
+            } => AssignmentTarget::DynamicStaticProperty {
+                receiver: Box::new(self.lower_expr(receiver)),
                 name: name.clone(),
                 line: span.line,
             },
@@ -2220,9 +2272,11 @@ impl<'a> LoweringContext<'a> {
                 | AssignmentTarget::DynamicArrayDim { .. }
                 | AssignmentTarget::PropertyArrayDim { .. }
                 | AssignmentTarget::StaticPropertyArrayDim { .. }
+                | AssignmentTarget::DynamicStaticPropertyArrayDim { .. }
                 | AssignmentTarget::Property { .. }
                 | AssignmentTarget::DynamicProperty { .. }
-                | AssignmentTarget::StaticProperty { .. } => (op, self.lower_expr(value)),
+                | AssignmentTarget::StaticProperty { .. }
+                | AssignmentTarget::DynamicStaticProperty { .. } => (op, self.lower_expr(value)),
                 AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::List(_) => {
                     unreachable!("parser rejects compound assignment expression targets")
                 }
@@ -2503,6 +2557,15 @@ impl<'a> LoweringContext<'a> {
                 span,
             } => ValueExpr::StaticPropertyFetch {
                 class_name: class_name.clone(),
+                name: name.clone(),
+                line: span.line,
+            },
+            Expr::DynamicStaticPropertyFetch {
+                receiver,
+                name,
+                span,
+            } => ValueExpr::DynamicStaticPropertyFetch {
+                receiver: Box::new(self.lower_expr(receiver)),
                 name: name.clone(),
                 line: span.line,
             },
@@ -2830,6 +2893,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::StaticPropertyFetch {
             class_name, name, ..
         } => format!("{class_name}::${name}"),
+        Expr::DynamicStaticPropertyFetch { receiver, name, .. } => {
+            format!("{}::${name}", assertion_expr_text(receiver))
+        }
         Expr::ClassConstantFetch {
             class_name, name, ..
         } => format!("{class_name}::{name}"),
@@ -3261,6 +3327,24 @@ fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
             }
             text
         }
+        AstAssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            let mut text = format!("{}::${name}", assertion_expr_text(receiver));
+            for dimension in dimensions {
+                let index = dimension
+                    .as_ref()
+                    .map(assertion_expr_text)
+                    .unwrap_or_default();
+                text.push('[');
+                text.push_str(&index);
+                text.push(']');
+            }
+            text
+        }
         AstAssignmentTarget::Property { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }
@@ -3274,6 +3358,9 @@ fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
         AstAssignmentTarget::StaticProperty {
             class_name, name, ..
         } => format!("{class_name}::${name}"),
+        AstAssignmentTarget::DynamicStaticProperty { receiver, name, .. } => {
+            format!("{}::${name}", assertion_expr_text(receiver))
+        }
         AstAssignmentTarget::List(_) => "list(...)".to_string(),
     }
 }

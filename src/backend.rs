@@ -8951,6 +8951,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::NullsafePropertyFetch { .. }
         | ValueExpr::DynamicPropertyFetch { .. }
         | ValueExpr::StaticPropertyFetch { .. }
+        | ValueExpr::DynamicStaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. }
         | ValueExpr::DynamicClassNameFetch { .. }
         | ValueExpr::InstanceOf { .. }
@@ -9398,12 +9399,27 @@ fn collect_assignment_target_legacy_dollar_brace_deprecations(
                 }
             }
         }
+        AssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+        }
         AssignmentTarget::Property { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
         AssignmentTarget::DynamicProperty { receiver, name, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
+        AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
         AssignmentTarget::List(target) => {
             collect_list_assignment_legacy_dollar_brace_deprecations(target, deprecations);
@@ -9550,6 +9566,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
+        ValueExpr::DynamicStaticPropertyFetch { receiver, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
         ValueExpr::Unary { expr, .. }
         | ValueExpr::Cast { expr, .. }
@@ -9927,6 +9946,18 @@ fn collect_assignment_target_runtime_requirements(
                 }
             }
         }
+        AssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
+            }
+        }
         AssignmentTarget::Property { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
@@ -9935,6 +9966,9 @@ fn collect_assignment_target_runtime_requirements(
             collect_value_runtime_requirements(name, functions, requirements);
         }
         AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+        }
         AssignmentTarget::List(target) => {
             for element in &target.elements {
                 if let Some(key) = &element.key {
@@ -10204,6 +10238,9 @@ fn collect_value_runtime_requirements(
         ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
             collect_value_runtime_requirements(name, functions, requirements);
+        }
+        ValueExpr::DynamicStaticPropertyFetch { receiver, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
         }
         ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
@@ -11309,9 +11346,11 @@ impl AssignmentTargetLine for AssignmentTarget {
             | AssignmentTarget::ArrayDim { line, .. }
             | AssignmentTarget::PropertyArrayDim { line, .. }
             | AssignmentTarget::StaticPropertyArrayDim { line, .. }
+            | AssignmentTarget::DynamicStaticPropertyArrayDim { line, .. }
             | AssignmentTarget::DynamicProperty { line, .. } => *line,
             AssignmentTarget::Property { line, .. }
-            | AssignmentTarget::StaticProperty { line, .. } => *line,
+            | AssignmentTarget::StaticProperty { line, .. }
+            | AssignmentTarget::DynamicStaticProperty { line, .. } => *line,
             AssignmentTarget::List(target) => target.line,
         }
     }
@@ -11340,9 +11379,11 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
             | AssignmentTarget::ArrayDim { .. }
             | AssignmentTarget::PropertyArrayDim { .. }
             | AssignmentTarget::StaticPropertyArrayDim { .. }
+            | AssignmentTarget::DynamicStaticPropertyArrayDim { .. }
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
-            | AssignmentTarget::StaticProperty { .. } => false,
+            | AssignmentTarget::StaticProperty { .. }
+            | AssignmentTarget::DynamicStaticProperty { .. } => false,
         },
     })
 }
@@ -11416,6 +11457,17 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
             .iter()
             .flatten()
             .any(|dimension| value_mentions_variable(dimension, name)),
+        AssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_mentions_variable(receiver, name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
         AssignmentTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
         AssignmentTarget::DynamicProperty {
             receiver,
@@ -11425,6 +11477,9 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
             value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
         }
         AssignmentTarget::StaticProperty { .. } => false,
+        AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
+            value_mentions_variable(receiver, name)
+        }
         AssignmentTarget::List(target) => list_assignment_references_variable(target, name),
     }
 }
@@ -11589,6 +11644,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         }
         ValueExpr::PropertyFetch { receiver, .. }
         | ValueExpr::NullsafePropertyFetch { receiver, .. }
+        | ValueExpr::DynamicStaticPropertyFetch { receiver, .. }
         | ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             value_mentions_variable(receiver, name)
         }
@@ -11706,6 +11762,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::NullsafePropertyFetch { line, .. }
         | ValueExpr::DynamicPropertyFetch { line, .. }
         | ValueExpr::StaticPropertyFetch { line, .. }
+        | ValueExpr::DynamicStaticPropertyFetch { line, .. }
         | ValueExpr::ClassConstantFetch { line, .. }
         | ValueExpr::DynamicClassNameFetch { line, .. }
         | ValueExpr::InstanceOf { line, .. }
@@ -11979,6 +12036,7 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
         | ValueExpr::Unary { expr: name, .. }
         | ValueExpr::Cast { expr: name, .. }
         | ValueExpr::PipeValue { expr: name, .. }
+        | ValueExpr::DynamicStaticPropertyFetch { receiver: name, .. }
         | ValueExpr::DynamicClassNameFetch { receiver: name, .. } => value_expr_uses_this(name),
         ValueExpr::IncDec { target, .. } => inc_dec_target_uses_this(target),
         ValueExpr::Assign { target, value, .. } => {
@@ -12072,6 +12130,13 @@ fn assignment_target_uses_this(target: &AssignmentTarget) -> bool {
         AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
             dimensions.iter().flatten().any(value_expr_uses_this)
         }
+        AssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_expr_uses_this(receiver) || dimensions.iter().flatten().any(value_expr_uses_this)
+        }
         AssignmentTarget::DynamicVariable { name, .. } => value_expr_uses_this(name),
         AssignmentTarget::DynamicArrayDim {
             name, dimensions, ..
@@ -12087,6 +12152,7 @@ fn assignment_target_uses_this(target: &AssignmentTarget) -> bool {
         AssignmentTarget::DynamicProperty { receiver, name, .. } => {
             value_expr_uses_this(receiver) || value_expr_uses_this(name)
         }
+        AssignmentTarget::DynamicStaticProperty { receiver, .. } => value_expr_uses_this(receiver),
         AssignmentTarget::List(list) => list_assignment_target_uses_this(list),
     }
 }
@@ -12894,6 +12960,11 @@ impl ValueEmitter {
                         "parser rejects null coalescing assignment for static property array offsets"
                     );
                 }
+                AssignmentTarget::DynamicStaticPropertyArrayDim { .. } => {
+                    unreachable!(
+                        "parser rejects null coalescing assignment for dynamic static property array offsets"
+                    );
+                }
                 AssignmentTarget::List(_) => {
                     unreachable!("parser rejects null coalescing assignment for list targets");
                 }
@@ -12917,6 +12988,11 @@ impl ValueEmitter {
                 } => {
                     return self.emit_static_property_coalesce_assignment(
                         out, class_name, name, *line, value,
+                    );
+                }
+                AssignmentTarget::DynamicStaticProperty { .. } => {
+                    unreachable!(
+                        "parser rejects null coalescing assignment for dynamic static properties"
                     );
                 }
             }
@@ -13144,6 +13220,37 @@ impl ValueEmitter {
             return result_temp;
         }
 
+        if let AssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            line,
+        } = target
+        {
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                return self.emit_dynamic_static_property_array_dim_compound_assignment(
+                    out,
+                    receiver,
+                    name,
+                    dimensions,
+                    *line,
+                    compound_op,
+                    value,
+                );
+            }
+            let value_temp = self.emit_materialized_value(out, value);
+            let result_temp = self.emit_dynamic_static_property_array_dim_assignment_from_temp(
+                out,
+                receiver,
+                name,
+                dimensions,
+                *line,
+                &value_temp,
+            );
+            emit_value_cleanup(out, "    ", &value_temp);
+            return result_temp;
+        }
+
         if let AssignmentTarget::DynamicVariable { name, line } = target {
             let name_temp = self.emit_dynamic_property_name(out, name, *line);
             let value_temp = self.emit_materialized_value(out, value);
@@ -13282,6 +13389,29 @@ impl ValueEmitter {
                     value,
                 );
             }
+        }
+
+        if let AssignmentTarget::DynamicStaticProperty {
+            receiver,
+            name,
+            line,
+        } = target
+        {
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                return self.emit_dynamic_static_property_compound_assignment(
+                    out,
+                    receiver,
+                    name,
+                    *line,
+                    compound_op,
+                    value,
+                );
+            }
+            let value_temp = self.emit_materialized_value(out, value);
+            let result_temp =
+                self.emit_dynamic_static_property_assignment_from_temp(out, receiver, name, *line, &value_temp);
+            emit_value_cleanup(out, "    ", &value_temp);
+            return result_temp;
         }
 
         let value_temp = self.emit_materialized_value(out, value);
@@ -13534,6 +13664,217 @@ impl ValueEmitter {
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
+        result_temp
+    }
+
+    fn emit_dynamic_static_property_array_dim_assignment_from_temp(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        value_temp: &str,
+    ) -> String {
+        let (class_value_temp, class_name_temp) =
+            self.emit_dynamic_class_name_cstr(out, receiver, line);
+        let path = emit_array_path_segments(out, self, dimensions);
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let snapshot_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&snapshot_temp);
+        out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+        out.push_str(value_temp);
+        out.push_str(");\n");
+        out.push_str("    ptn_value_array_path_set(&runtime, &");
+        out.push_str(&current_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&snapshot_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&current_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone(");
+        out.push_str(&snapshot_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &snapshot_temp);
+        out.push_str("    free(");
+        out.push_str(&class_name_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &class_value_temp);
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        result_temp
+    }
+
+    fn emit_dynamic_static_property_assignment_from_temp(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+        value_temp: &str,
+    ) -> String {
+        let (class_value_temp, class_name_temp) =
+            self.emit_dynamic_class_name_cstr(out, receiver, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_write_static_property(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    free(");
+        out.push_str(&class_name_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &class_value_temp);
+        result_temp
+    }
+
+    fn emit_dynamic_static_property_array_dim_compound_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        op: BinaryOp,
+        value: &ValueExpr,
+    ) -> String {
+        let (class_value_temp, class_name_temp) =
+            self.emit_dynamic_class_name_cstr(out, receiver, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_runtime_validate_static_property_write(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", 1)) {\n");
+        let path = emit_array_path_segments(out, self, dimensions);
+        let value_temp = self.emit_materialized_value(out, value);
+
+        let current_value_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_value_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let current_element_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_element_temp);
+        out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
+        out.push_str(&current_value_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let computed_temp =
+            self.emit_compound_binary_value(out, &current_element_temp, &value_temp, line, op);
+        out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
+        out.push_str(&current_value_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&computed_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&current_value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        out.push_str("    ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&computed_temp);
+        out.push_str(";\n");
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &current_element_temp);
+        emit_value_cleanup(out, "    ", &current_value_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        out.push_str("    }\n");
+        out.push_str("    free(");
+        out.push_str(&class_name_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &class_value_temp);
         result_temp
     }
 
@@ -13838,6 +14179,77 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_dynamic_static_property_compound_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+        op: BinaryOp,
+        value: &ValueExpr,
+    ) -> String {
+        let (class_value_temp, class_name_temp) =
+            self.emit_dynamic_class_name_cstr(out, receiver, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_runtime_validate_static_property_write(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", 1)) {\n");
+        let value_temp = self.emit_materialized_value(out, value);
+
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let computed_temp = self.emit_compound_binary_value(out, &current_temp, &value_temp, line, op);
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&computed_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        out.push_str("    ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&computed_temp);
+        out.push_str(";\n");
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
+        out.push_str("    }\n");
+        out.push_str("    free(");
+        out.push_str(&class_name_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &class_value_temp);
+        result_temp
+    }
+
     fn emit_reference_assignment(
         &mut self,
         out: &mut String,
@@ -14110,6 +14522,11 @@ impl ValueEmitter {
                     "parser rejects by-reference assignment to static property array targets"
                 );
             }
+            AssignmentTarget::DynamicStaticPropertyArrayDim { .. } => {
+                unreachable!(
+                    "parser rejects by-reference assignment to dynamic static property array targets"
+                );
+            }
             AssignmentTarget::DynamicProperty { .. } => {
                 unreachable!("parser rejects by-reference assignment to dynamic property targets");
             }
@@ -14149,6 +14566,9 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+            }
+            AssignmentTarget::DynamicStaticProperty { .. } => {
+                unreachable!("parser rejects by-reference assignment to dynamic static properties");
             }
             AssignmentTarget::List(_) => {
                 unreachable!("parser rejects by-reference assignment to list targets");
@@ -14273,6 +14693,14 @@ impl ValueEmitter {
             } => self.emit_static_property_array_dim_assignment_from_temp(
                 out, class_name, name, dimensions, *line, value_temp,
             ),
+            AssignmentTarget::DynamicStaticPropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                line,
+            } => self.emit_dynamic_static_property_array_dim_assignment_from_temp(
+                out, receiver, name, dimensions, *line, value_temp,
+            ),
             AssignmentTarget::Property {
                 receiver,
                 name,
@@ -14345,6 +14773,13 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 result_temp
             }
+            AssignmentTarget::DynamicStaticProperty {
+                receiver,
+                name,
+                line,
+            } => self.emit_dynamic_static_property_assignment_from_temp(
+                out, receiver, name, *line, value_temp,
+            ),
             AssignmentTarget::List(target) => {
                 self.emit_list_assignment_from_temp(out, target, value_temp, false)
             }
@@ -15044,6 +15479,11 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_static_property_fetch(out, class_name, name, *line),
+            ValueExpr::DynamicStaticPropertyFetch {
+                receiver,
+                name,
+                line,
+            } => self.emit_dynamic_static_property_fetch(out, receiver, name, *line),
             ValueExpr::ClassConstantFetch {
                 class_name,
                 name,
@@ -17228,6 +17668,50 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_dynamic_class_name_cstr(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        line: usize,
+    ) -> (String, String) {
+        let class_value_temp = self.emit_dynamic_class_name_fetch(out, receiver, line);
+        let class_name_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&class_name_temp);
+        out.push_str(" = ptn_value_to_string(");
+        out.push_str(&class_value_temp);
+        out.push_str(");\n");
+        (class_value_temp, class_name_temp)
+    }
+
+    fn emit_dynamic_static_property_fetch(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+    ) -> String {
+        let (class_value_temp, class_name_temp) =
+            self.emit_dynamic_class_name_cstr(out, receiver, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    free(");
+        out.push_str(&class_name_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &class_value_temp);
+        result_temp
+    }
+
     fn emit_static_property_lookup_quiet(
         &mut self,
         out: &mut String,
@@ -18794,6 +19278,7 @@ impl ValueEmitter {
                 | ValueExpr::Clone { .. }
                 | ValueExpr::DynamicPropertyFetch { .. }
                 | ValueExpr::StaticPropertyFetch { .. }
+                | ValueExpr::DynamicStaticPropertyFetch { .. }
                 | ValueExpr::ClassConstantFetch { .. }
                 | ValueExpr::DynamicClassNameFetch { .. }
                 | ValueExpr::Include { .. }

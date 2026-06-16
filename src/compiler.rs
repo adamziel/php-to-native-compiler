@@ -607,9 +607,11 @@ impl IncludeCollector {
             }
             AssignmentTarget::PropertyArrayDim { .. }
             | AssignmentTarget::StaticPropertyArrayDim { .. }
+            | AssignmentTarget::DynamicStaticPropertyArrayDim { .. }
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
-            | AssignmentTarget::StaticProperty { .. } => {}
+            | AssignmentTarget::StaticProperty { .. }
+            | AssignmentTarget::DynamicStaticProperty { .. } => {}
         }
     }
 
@@ -704,6 +706,9 @@ impl IncludeCollector {
             Expr::DynamicPropertyFetch { receiver, name, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)?;
                 self.collect_expr(name, source_file, source_dir)
+            }
+            Expr::DynamicStaticPropertyFetch { receiver, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)
             }
             Expr::DynamicClassNameFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
@@ -849,6 +854,19 @@ impl IncludeCollector {
                 }
                 Ok(())
             }
+            AssignmentTarget::DynamicStaticPropertyArrayDim {
+                receiver,
+                dimensions,
+                ..
+            } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
             AssignmentTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
@@ -885,6 +903,9 @@ impl IncludeCollector {
                     }
                 }
                 Ok(())
+            }
+            AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)
             }
             AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => Ok(()),
         }

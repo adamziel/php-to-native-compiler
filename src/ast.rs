@@ -463,6 +463,12 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<Expr>>,
         span: SourceSpan,
     },
+    DynamicStaticPropertyArrayDim {
+        receiver: Box<Expr>,
+        name: String,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,
@@ -475,6 +481,11 @@ pub enum AssignmentTarget {
     },
     StaticProperty {
         class_name: String,
+        name: String,
+        span: SourceSpan,
+    },
+    DynamicStaticProperty {
+        receiver: Box<Expr>,
         name: String,
         span: SourceSpan,
     },
@@ -754,6 +765,11 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    DynamicStaticPropertyFetch {
+        receiver: Box<Expr>,
+        name: String,
+        span: SourceSpan,
+    },
     ClassConstantFetch {
         class_name: String,
         name: String,
@@ -991,6 +1007,7 @@ impl Expr {
             | Expr::NullsafePropertyFetch { span, .. }
             | Expr::DynamicPropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }
+            | Expr::DynamicStaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. }
             | Expr::DynamicClassNameFetch { span, .. }
             | Expr::InstanceOf { span, .. }
