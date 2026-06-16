@@ -18210,6 +18210,45 @@ var_dump($items);\n",
 }
 
 #[test]
+fn compile_reference_list_assignment_from_non_referenceable_rvalue_fatals_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-list-assignment-non-referenceable-rvalue");
+    fs::create_dir_all(&root).unwrap();
+    let cases = [
+        (
+            "literal",
+            "<?php\nlist(&$foo) = [42];\n",
+            2usize,
+        ),
+        (
+            "constant",
+            "<?php\nconst FOO = 10;\n[&$f] = FOO;\n",
+            3usize,
+        ),
+    ];
+
+    for (name, source, line) in cases {
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "Fatal error: Cannot assign reference to non referenceable value in {} on line {line}\n",
+                input.display()
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn compile_reference_list_assignment_from_property_to_native_binary() {
     let root = temp_dir("ptn-native-reference-list-assignment-from-property");
     fs::create_dir_all(&root).unwrap();

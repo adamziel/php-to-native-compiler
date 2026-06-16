@@ -9794,6 +9794,21 @@ fn list_reference_source_warns_non_referenceable(value: &ValueExpr) -> bool {
     )
 }
 
+fn list_reference_source_fatals_non_referenceable(value: &ValueExpr) -> bool {
+    !matches!(
+        value,
+        ValueExpr::Load { .. }
+            | ValueExpr::ArrayAccess { .. }
+            | ValueExpr::ArrayAppendAccess { .. }
+            | ValueExpr::PropertyFetch { .. }
+            | ValueExpr::StaticPropertyFetch { .. }
+            | ValueExpr::InternalCall { .. }
+            | ValueExpr::DynamicCall { .. }
+            | ValueExpr::MethodCall { .. }
+            | ValueExpr::DynamicMethodCall { .. }
+    )
+}
+
 fn list_assignment_references_variable(target: &ListAssignmentTarget, name: &str) -> bool {
     target.elements.iter().any(|element| match &element.target {
         ListAssignmentElementTarget::Reference(target) => {
@@ -12202,6 +12217,11 @@ impl ValueEmitter {
         }
 
         let value_temp = self.emit_materialized_value(out, value);
+        if list_assignment_has_reference(target)
+            && list_reference_source_fatals_non_referenceable(value)
+        {
+            self.emit_non_referenceable_list_reference_fatal(out, value_temp.as_str(), target.line);
+        }
         let result_temp = self.emit_list_assignment_from_temp(
             out,
             target,
@@ -12210,6 +12230,30 @@ impl ValueEmitter {
         );
         emit_value_cleanup(out, "    ", &value_temp);
         result_temp
+    }
+
+    fn emit_non_referenceable_list_reference_fatal(
+        &self,
+        out: &mut String,
+        value_temp: &str,
+        line: usize,
+    ) {
+        emit_value_cleanup(out, "    ", value_temp);
+        out.push_str("    fflush(stdout);\n");
+        out.push_str("    if (runtime.diagnostics.display_errors) {\n");
+        out.push_str(
+            "        FILE *ptn_list_ref_fatal_stream = runtime.diagnostics.stream == NULL ? stderr : runtime.diagnostics.stream;\n",
+        );
+        out.push_str(
+            "        fputs(\"Fatal error: Cannot assign reference to non referenceable value in ",
+        );
+        out.push_str(&c_string(&self.source_file));
+        out.push_str(" on line ");
+        out.push_str(&line.to_string());
+        out.push_str("\\n\", ptn_list_ref_fatal_stream);\n");
+        out.push_str("    }\n");
+        out.push_str("    ptn_runtime_free(&runtime);\n");
+        out.push_str("    exit(255);\n");
     }
 
     fn emit_list_assignment_from_temp(
