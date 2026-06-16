@@ -10218,7 +10218,8 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::PropertyFetch { .. }
-        | Expr::DynamicPropertyFetch { .. } => Ok(()),
+        | Expr::DynamicPropertyFetch { .. }
+        | Expr::StaticPropertyFetch { .. } => Ok(()),
         Expr::Grouped { expr, .. } => validate_reference_source_expr(expr),
         Expr::ArrayAccess { .. } => validate_array_reference_lvalue_expr(
             source,

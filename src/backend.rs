@@ -12276,6 +12276,22 @@ impl ValueEmitter {
             out.push_str(&line.to_string());
             out.push_str(");\n");
         }
+        if let ValueExpr::StaticPropertyFetch {
+            class_name,
+            name: property_name,
+            line: property_line,
+        } = source
+        {
+            let reference_temp =
+                self.emit_static_property_reference(out, class_name, property_name, *property_line);
+            out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&reference_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &reference_temp);
+            return;
+        }
         if let Some(target) = reference_target_from_value(source) {
             let reference_temp = self.emit_reference_target(out, &target);
             out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
