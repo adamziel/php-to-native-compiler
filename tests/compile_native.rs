@@ -4973,6 +4973,54 @@ class Worker {
 }
 
 #[test]
+fn compile_trait_aliases_and_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-aliases-precedence");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-aliases-precedence.php");
+    let output = root.join("trait-aliases-precedence-bin");
+    fs::write(
+        &input,
+        "<?php
+trait A {
+    public function smallTalk() { echo 'a'; }
+    public function bigTalk() { echo 'A'; }
+}
+trait B {
+    public function smallTalk() { echo 'b'; }
+    public function bigTalk() { echo 'B'; }
+    public static function stat() { echo \"S\\n\"; }
+}
+class Talker {
+    use A, B {
+        B::smallTalk insteadof A;
+        A::bigTalk insteadof B;
+        B::bigTalk as talk;
+        B::stat as statAlias;
+    }
+}
+$talker = new Talker;
+$talker->smallTalk();
+$talker->bigTalk();
+$talker->talk();
+echo \"\\n\";
+Talker::statAlias();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "bAB\nS\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Talker::talk"));
+    assert!(c_source.contains("Talker::statAlias"));
+}
+
+#[test]
 fn parser_allows_trait_imported_abstract_methods_in_concrete_class() {
     let program = parser::parse(
         "<?php
@@ -26410,6 +26458,76 @@ try {\n\
         format!(
             "48656c6c6f00576f726c64\n#0 {}(5): test('\\xD1\\x82\\xD0\\xB5\\xD1\\x81\\xD1\\x82')\n#1 {{main}}\nException: Hello\0World in {}:2\nStack trace:\n#0 {}(5): test('\\xD1\\x82\\xD0\\xB5\\xD1\\x81\\xD1\\x82')\n#1 {{main}}",
             input.display(),
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_exception_method_dispatch_emits_callable_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-method-dispatch-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-method-dispatch-helpers.php");
+    let output = root.join("exception-method-dispatch-helpers-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    throw new Error('boom');
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "boom\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_call_callable("));
+    assert!(c_source.contains("static int ptn_internal_class_exists_name("));
+    assert!(c_source.contains("static PTN_UNUSED int ptn_internal_class_method_exists("));
+}
+
+#[test]
+fn compile_debug_print_backtrace_in_required_file_to_native_binary() {
+    let root = temp_dir("ptn-native-debug-print-backtrace-require");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("debug-print-backtrace-require.php");
+    let include = root.join("trace.inc");
+    let output = root.join("debug-print-backtrace-require-bin");
+    fs::write(&include, "<?php\ndebug_print_backtrace();\n").unwrap();
+    fs::write(
+        &input,
+        "<?php
+class c1
+{
+    public static function go()
+    {
+        return require('trace.inc');
+    }
+}
+
+c1::go();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "#0 {}(6): require()\n#1 {}(10): c1::go()\n",
             input.display(),
             input.display()
         )

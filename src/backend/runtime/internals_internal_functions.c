@@ -1610,6 +1610,55 @@ static PtnValue ptn_internal_debug_zval_dump(PtnRuntime *runtime, size_t argc, c
     return ptn_null();
 }
 
+static PtnValue ptn_internal_debug_print_backtrace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    size_t index = 0;
+    PtnTraceFrame *frame = runtime == NULL ? NULL : runtime->trace_frame;
+    if (
+        frame != NULL &&
+        frame->function_name != NULL &&
+        ptn_ascii_case_equal(frame->function_name, "debug_print_backtrace")
+    ) {
+        frame = frame->previous;
+    }
+    for (; frame != NULL; frame = frame->previous) {
+        if (frame->function_name == NULL) {
+            continue;
+        }
+        const char *file = frame->file;
+        size_t frame_line = frame->line;
+        if ((file == NULL || frame_line == 0) && runtime != NULL && runtime->source_path != NULL && runtime->call_site_line != 0) {
+            file = runtime->source_path;
+            frame_line = runtime->call_site_line;
+        }
+        ptn_string_buffer_append_format(&buffer, "#%zu ", index);
+        if (file != NULL && frame_line != 0) {
+            ptn_string_buffer_append_format(&buffer, "%s(%zu): ", file, frame_line);
+        }
+        ptn_exception_append_display_function(&buffer, frame->function_name);
+        ptn_string_buffer_append_char(&buffer, '(');
+        for (size_t i = 0; i < frame->argc; i++) {
+            if (i != 0) {
+                ptn_string_buffer_append(&buffer, ", ");
+            }
+            ptn_trace_append_arg(
+                &buffer,
+                frame->args[i],
+                ptn_runtime_exception_string_param_max_len(runtime)
+            );
+        }
+        ptn_string_buffer_append(&buffer, ")\n");
+        index++;
+    }
+    ptn_output_write(runtime, buffer.data, buffer.len);
+    free(buffer.data);
+    return ptn_null();
+}
+
 #undef fwrite
 #undef fputs
 #undef printf
@@ -27098,6 +27147,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "date", 1, 2, ptn_internal_date },
         { "date_default_timezone_get", 0, 0, ptn_internal_date_default_timezone_get },
         { "date_default_timezone_set", 1, 1, ptn_internal_date_default_timezone_set },
+        { "debug_print_backtrace", 0, 0, ptn_internal_debug_print_backtrace },
         { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
         { "decbin", 1, 1, ptn_internal_decbin },
         { "dechex", 1, 1, ptn_internal_dechex },

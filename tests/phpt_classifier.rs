@@ -557,12 +557,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires PHP hidden-suffix anonymous class generated names",
         ),
         (
-            "trait adaptation",
-            "--TEST--\ntrait adaptation\n--FILE--\n<?php\ntrait SharedBehavior { public function run() {} }\nclass Worker { use SharedBehavior { run as go; } }\n--EXPECT--\n",
-            "unsupported-trait-declaration\t",
-            "requires trait adaptation aliases",
-        ),
-        (
             "generator yield from",
             "--TEST--\nyield from\n--FILE--\n<?php\nfunction gen() { yield from []; }\n--EXPECT--\n",
             "unsupported-generator-runtime\t",

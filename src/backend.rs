@@ -44,19 +44,23 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
-    let runtime_requirements = module_runtime_requirements(module);
+    let mut runtime_requirements = module_runtime_requirements(module);
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let serializable_deprecations = collect_module_serializable_deprecations(module);
     let magic_declaration_fatals = collect_module_magic_declaration_fatals(module);
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
-    let needs_callable_dispatch = runtime_requirements.internal_function_dispatch
+    let needs_direct_callable_dispatch = runtime_requirements.internal_function_dispatch
         || runtime_requirements.dynamic_function_dispatch;
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
     let needs_method_dispatch = runtime_requirements.method_dispatch
         || runtime_requirements.internal_function_dispatch
         || has_declared_methods
-        || needs_callable_dispatch;
+        || needs_direct_callable_dispatch;
+    let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
+    if needs_callable_dispatch {
+        runtime_requirements.internal_function_dispatch = true;
+    }
     let needs_magic_property_read = module.classes.iter().any(|class| {
         class_magic_get_method(class, &module.classes).is_some()
             || class_magic_isset_method(class, &module.classes).is_some()
@@ -103,7 +107,7 @@ pub fn emit_c(module: &Module) -> String {
         &mut out,
         &module.functions,
         runtime_requirements.internal_function_dispatch,
-        needs_callable_dispatch,
+        runtime_requirements.dynamic_function_dispatch,
         needs_method_dispatch,
     );
     emit_include_helpers(
@@ -156,8 +160,10 @@ pub fn emit_c(module: &Module) -> String {
     if needs_magic_debug_info {
         emit_magic_debug_info_dispatch(&mut out, &module.classes);
     }
-    if needs_callable_dispatch {
+    if runtime_requirements.dynamic_function_dispatch {
         emit_dynamic_function_dispatch(&mut out);
+    }
+    if needs_callable_dispatch {
         emit_callable_dispatch(&mut out, &module.functions, needs_method_dispatch);
     }
     if !module.classes.is_empty() {
@@ -6232,10 +6238,8 @@ fn emit_callable_dispatch(
     out.push_str("                exit(255);\n");
     out.push_str("        }\n");
     out.push_str("    }\n");
-    out.push_str("    char *name = ptn_dynamic_function_name(resolved);\n");
-    out.push_str(
-        "    PtnValue result = ptn_call_dynamic_function_name(runtime, name, argc, args, line);\n",
-    );
+    out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
+    out.push_str("    PtnValue result = ptn_call_function(runtime, name, argc, args, line);\n");
     out.push_str("    free(name);\n");
     out.push_str("    return result;\n");
     out.push_str("}\n");
@@ -14310,21 +14314,53 @@ impl ValueEmitter {
                 out.push_str("            ptn_include_seen[");
                 out.push_str(&candidate.to_string());
                 out.push_str("] = 1;\n");
+                let trace_temp = self.next_temp();
+                out.push_str("            PtnTraceFrame ");
+                out.push_str(&trace_temp);
+                out.push_str(";\n");
+                out.push_str("            ptn_runtime_push_trace_frame(&runtime, &");
+                out.push_str(&trace_temp);
+                out.push_str(", \"");
+                out.push_str(include_kind_text(kind));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(", 0, NULL);\n");
                 out.push_str("            ");
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(&include_c_name(*candidate));
                 out.push_str("(&runtime);\n");
+                out.push_str("            ptn_runtime_pop_trace_frame(&runtime, &");
+                out.push_str(&trace_temp);
+                out.push_str(");\n");
                 out.push_str("        }\n");
             } else {
                 out.push_str("        ptn_include_seen[");
                 out.push_str(&candidate.to_string());
                 out.push_str("] = 1;\n");
+                let trace_temp = self.next_temp();
+                out.push_str("        PtnTraceFrame ");
+                out.push_str(&trace_temp);
+                out.push_str(";\n");
+                out.push_str("        ptn_runtime_push_trace_frame(&runtime, &");
+                out.push_str(&trace_temp);
+                out.push_str(", \"");
+                out.push_str(include_kind_text(kind));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(", 0, NULL);\n");
                 out.push_str("        ");
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(&include_c_name(*candidate));
                 out.push_str("(&runtime);\n");
+                out.push_str("        ptn_runtime_pop_trace_frame(&runtime, &");
+                out.push_str(&trace_temp);
+                out.push_str(");\n");
             }
         }
         out.push_str("    } else {\n");
