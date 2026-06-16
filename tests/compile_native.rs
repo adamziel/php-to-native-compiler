@@ -28666,6 +28666,41 @@ fn compile_include_path_variable_concatenation_to_native_binary() {
 }
 
 #[test]
+fn compile_include_exports_include_path_variable_to_native_binary() {
+    let root = temp_dir("ptn-native-include-exported-path-variable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let helper = root.join("helper.inc");
+    let payload = root.join("payload.inc");
+    let output = root.join("include-exported-path-variable-bin");
+    fs::write(
+        &helper,
+        "<?php $payload_path = __DIR__ . DIRECTORY_SEPARATOR . 'payload.inc';",
+    )
+    .unwrap();
+    fs::write(&payload, "<?php echo \"payload:$label\\n\"; return 42;").unwrap();
+    fs::write(
+        &input,
+        "<?php $label = 'caller'; require_once __DIR__ . '/helper.inc'; $value = include $payload_path; echo \"value=$value\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "payload:caller\nvalue=42\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("ptn_include_file_1(&runtime)"));
+}
+
+#[test]
 fn compile_bounded_dynamic_include_paths_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-include-paths");
     fs::create_dir_all(&root).unwrap();

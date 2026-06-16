@@ -640,8 +640,9 @@ impl IncludeCollector {
                 let candidates = self.resolve_include(path, *span, source_file, source_dir)?;
                 self.resolutions.insert(
                     (source_file.to_string(), span.byte_start, span.byte_end),
-                    candidates,
+                    candidates.clone(),
                 );
+                self.apply_include_path_env_effects(&candidates)?;
                 Ok(())
             }
             Expr::AnonymousFunction(function) => self.collect_with_fresh_path_env(|collector| {
@@ -1012,6 +1013,27 @@ impl IncludeCollector {
         });
         self.collect_program(&program, &source_file, &source_dir)?;
         Ok(index)
+    }
+
+    fn apply_include_path_env_effects(&mut self, candidates: &[usize]) -> Result<()> {
+        if candidates.is_empty() {
+            return Ok(());
+        }
+
+        let before = self.path_env.clone();
+        let mut candidate_envs = Vec::with_capacity(candidates.len());
+        for candidate in candidates {
+            let include = self.sources[*candidate].clone();
+            self.path_env = before.clone();
+            self.collect_top_level_statements(
+                &include.program.statements,
+                &include.source_file,
+                &include.source_dir,
+            )?;
+            candidate_envs.push(self.path_env.clone());
+        }
+        self.path_env = merge_many_include_path_envs(&candidate_envs);
+        Ok(())
     }
 
     fn add_path_aliases(&mut self, index: usize, aliases: Vec<String>) {
