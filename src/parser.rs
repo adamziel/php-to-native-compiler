@@ -7160,6 +7160,13 @@ fn collect_arrow_captures_from_assignment_target(
                 }
             }
         }
+        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
+        }
         AssignmentTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
@@ -8147,7 +8154,7 @@ fn validate_method_signature_pair(
     parent_method: &MethodDecl,
     classes: &[ClassDecl],
 ) -> Result<()> {
-    if method.return_by_ref != parent_method.return_by_ref {
+    if parent_method.return_by_ref && !method.return_by_ref {
         return Err(method_signature_compatibility_error(
             class,
             method,
@@ -9798,6 +9805,9 @@ fn validate_control_transfers_in_assignment_target(target: &AssignmentTarget) ->
             validate_control_transfers_in_expr(receiver)?;
             validate_control_transfers_in_optional_exprs(dimensions)?;
         }
+        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            validate_control_transfers_in_optional_exprs(dimensions)?;
+        }
         AssignmentTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
@@ -9963,6 +9973,7 @@ fn validate_recursive_reference_assignment_value(
         AssignmentTarget::DynamicArrayDim { .. } => return Ok(()),
         AssignmentTarget::ArrayDim(target) => &target.array,
         AssignmentTarget::PropertyArrayDim { .. } => return Ok(()),
+        AssignmentTarget::StaticPropertyArrayDim { .. } => return Ok(()),
         AssignmentTarget::Property { .. } => return Ok(()),
         AssignmentTarget::DynamicProperty { .. } => return Ok(()),
         AssignmentTarget::StaticProperty { .. } => return Ok(()),
@@ -11784,6 +11795,10 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
             dimensions,
             span,
         }),
+        AssignmentTarget::StaticPropertyArrayDim { span, .. } => Err(Diagnostic::new(
+            "increment/decrement expression target must be a variable, array offset, or property",
+            Some(span),
+        )),
         AssignmentTarget::Property {
             receiver,
             name,
@@ -12023,6 +12038,19 @@ fn assignment_array_dim_target_from_expr(expr: Expr) -> Result<AssignmentTarget>
                     span: combine_spans(property_span, span),
                 });
             }
+            Expr::StaticPropertyFetch {
+                class_name,
+                name,
+                span: property_span,
+            } => {
+                dimensions.reverse();
+                return Ok(AssignmentTarget::StaticPropertyArrayDim {
+                    class_name,
+                    name,
+                    dimensions,
+                    span: combine_spans(property_span, span),
+                });
+            }
             Expr::Grouped { expr, .. } => {
                 current = *expr;
             }
@@ -12042,6 +12070,7 @@ fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
         | AssignmentTarget::DynamicVariable { span, .. }
         | AssignmentTarget::DynamicArrayDim { span, .. }
         | AssignmentTarget::PropertyArrayDim { span, .. }
+        | AssignmentTarget::StaticPropertyArrayDim { span, .. }
         | AssignmentTarget::Property { span, .. }
         | AssignmentTarget::DynamicProperty { span, .. }
         | AssignmentTarget::StaticProperty { span, .. } => *span,
@@ -12072,6 +12101,10 @@ fn validate_foreach_by_reference_target(target: &AssignmentTarget, span: SourceS
         AssignmentTarget::Variable { .. }
         | AssignmentTarget::ArrayDim(_)
         | AssignmentTarget::Property { .. } => Ok(()),
+        AssignmentTarget::StaticPropertyArrayDim { .. } => Err(Diagnostic::new(
+            "unsupported by-reference assignment target",
+            Some(span),
+        )),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "foreach destructuring is unsupported",
             Some(assignment_target_span(target)),
@@ -12117,6 +12150,10 @@ fn validate_coalesce_assignment_target(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
             Some(span),
         )),
+        AssignmentTarget::StaticPropertyArrayDim { .. } => Err(Diagnostic::new(
+            "null coalescing assignment currently supports variables, array/string offsets, and properties",
+            Some(span),
+        )),
         AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::DynamicProperty { .. } => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
@@ -12145,7 +12182,8 @@ fn validate_expression_assignment_target(
         AssignmentTarget::Variable { .. } => Ok(()),
         AssignmentTarget::ArrayDim(_)
         | AssignmentTarget::DynamicArrayDim { .. }
-        | AssignmentTarget::PropertyArrayDim { .. } => Ok(()),
+        | AssignmentTarget::PropertyArrayDim { .. }
+        | AssignmentTarget::StaticPropertyArrayDim { .. } => Ok(()),
         AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::DynamicProperty { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
@@ -12186,6 +12224,12 @@ fn validate_reference_assignment_target_source(
             }
         }
         AssignmentTarget::PropertyArrayDim { .. } => {}
+        AssignmentTarget::StaticPropertyArrayDim { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
+        }
         AssignmentTarget::Property { .. } => {}
         AssignmentTarget::DynamicProperty { .. } => {
             return Err(Diagnostic::new(

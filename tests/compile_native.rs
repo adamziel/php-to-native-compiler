@@ -11986,6 +11986,50 @@ echo $child->label(), \"\\n\";
 }
 
 #[test]
+fn compile_private_constructor_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-private-constructor-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("private-constructor-visibility.php");
+    let output = root.join("private-constructor-visibility-bin");
+    fs::write(
+        &input,
+        "<?php
+class Hidden {
+    private function __construct($label) {
+        echo \"ctor:$label\\n\";
+    }
+
+    public static function make() {
+        return new Hidden(\"inside\");
+    }
+}
+
+Hidden::make();
+try {
+    new Hidden(\"outside\");
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ctor:inside\nCall to private method Hidden::__construct() from global scope\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_method_visibility_error(&runtime"));
+    assert!(c_source.contains("Hidden::__construct"));
+}
+
+#[test]
 fn compile_anonymous_class_metadata_and_instanceof_to_native_binary() {
     let root = temp_dir("ptn-native-anonymous-class-metadata-instanceof");
     fs::create_dir_all(&root).unwrap();
@@ -18818,7 +18862,9 @@ fn compile_append_method_call_arguments_use_declared_parameter_modes_to_native_b
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "Fatal error: Cannot use [] for reading in {} on line 1\n",
+            "\nFatal error: Uncaught Error: Cannot use [] for reading in {}:1\nStack trace:\n#0 {}(1): Box->run()\n#1 {{main}}\n  thrown in {} on line 1\n",
+            input.display(),
+            input.display(),
             input.display()
         )
     );
@@ -22271,6 +22317,65 @@ var_dump(function_exists(\"usort\"), function_exists(\"uasort\"), function_exist
     assert!(c_source.contains("ptn_runtime_array_uasort_variable"));
     assert!(c_source.contains("ptn_runtime_array_uksort_variable"));
     assert!(c_source.contains("ptn_array_user_sort_entries"));
+}
+
+#[test]
+fn compile_user_comparator_sort_callback_mutation_to_native_binary() {
+    let root = temp_dir("ptn-native-user-comparator-sort-callback-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-comparator-sort-callback-mutation.php");
+    let output = root.join("user-comparator-sort-callback-mutation-bin");
+    fs::write(
+        &input,
+        "<?php
+function cmpmut($a, $b) {
+    unset($GLOBALS[\"my_var\"][2]);
+    $GLOBALS[\"ref\"] = $GLOBALS[\"my_var\"];
+    return $a <=> $b;
+}
+
+$my_var = [
+    1 => \"entry_1\",
+    2 => \"entry_2\",
+    3 => \"entry_3\",
+    4 => \"entry_4\",
+    5 => \"entry_5\",
+];
+usort($my_var, \"cmpmut\");
+echo count($my_var), \":\", $my_var[0], \":\", $my_var[4], \":\", (array_key_exists(2, $my_var) ? \"has2\" : \"no2\"), \"\\n\";
+echo count($ref), \":\", (array_key_exists(2, $ref) ? \"has2\" : \"no2\"), \"\\n\";
+
+$array = [
+    1 => \"entry_1\",
+    2 => \"entry_2\",
+    3 => \"entry_3\",
+    4 => \"entry_4\",
+    5 => \"entry_5\",
+];
+usort($array, function($a, $b) use (&$array, &$ref2) {
+    unset($array[2]);
+    $ref2 = $array;
+    return $a <=> $b;
+});
+echo count($array), \":\", $array[0], \":\", $array[4], \":\", (array_key_exists(2, $array) ? \"has2\" : \"no2\"), \"\\n\";
+echo count($ref2), \":\", (array_key_exists(2, $ref2) ? \"has2\" : \"no2\"), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "5:entry_1:entry_5:has2\n4:no2\n5:entry_1:entry_5:has2\n4:no2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_user_sorted_snapshot"));
+    assert!(c_source.contains("ptn_array_commit_sorted_snapshot_to_slot"));
 }
 
 #[test]
@@ -30787,6 +30892,58 @@ try {
         "Access to undeclared static property Known::$missing\nAccess to undeclared static property Missing::$value\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_static_property_array_dim_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-array-dim-assignments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-array-dim-assignments.php");
+    let output = root.join("static-property-array-dim-assignments-bin");
+    fs::write(
+        &input,
+        "<?php
+class Store {
+    public static $items = [\"a\" => 1];
+
+    public static function mutate() {
+        self::$items[\"a\"] += 2;
+        self::$items[\"b\"] = 4;
+        self::$items[\"a\"] = 9;
+    }
+}
+
+Store::$items[\"c\"] = 5;
+Store::mutate();
+var_dump(Store::$items);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [\"a\"]=>\n",
+            "  int(9)\n",
+            "  [\"c\"]=>\n",
+            "  int(5)\n",
+            "  [\"b\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_set(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_set_from_assign_op(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
 }
 
 #[test]
