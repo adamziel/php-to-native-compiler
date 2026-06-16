@@ -405,7 +405,7 @@ impl Parser<'_> {
                 classes.push(class);
             } else {
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                let statement = self.parse_statement()?;
+                let statement = self.parse_statement_with_attributes(attributes)?;
                 self.note_runtime_class_alias_statement(&statement);
                 statements.push(statement);
             }
@@ -1626,7 +1626,7 @@ impl Parser<'_> {
                 ));
             }
             return Ok(ParsedClassMember::Constants(
-                self.parse_class_constant_declarations(modifiers.visibility)?,
+                self.parse_class_constant_declarations(modifiers.visibility, attributes)?,
             ));
         }
         if class_is_interface && matches!(self.peek().kind, TokenKind::Variable(_)) {
@@ -1916,13 +1916,31 @@ impl Parser<'_> {
     fn parse_class_constant_declarations(
         &mut self,
         visibility: PropertyVisibility,
+        attributes: ParsedAttributes,
     ) -> Result<Vec<ClassConstantDecl>> {
         self.expect_const()?;
-        let mut constants = vec![self.parse_class_constant_declaration(visibility)?];
+        let mut constants =
+            vec![self.parse_class_constant_declaration(visibility, attributes.clone())?];
         while matches!(self.peek().kind, TokenKind::Comma) {
+            if attributes.total_count > 0 {
+                return Err(Diagnostic::new(
+                    "Cannot apply attributes to multiple constants at once",
+                    Some(self.peek().span),
+                ));
+            }
             self.advance();
-            constants.push(self.parse_class_constant_declaration(visibility)?);
+            constants.push(
+                self.parse_class_constant_declaration(visibility, AttributeMetadata::default())?,
+            );
         }
+        validate_builtin_attributes_for_target(
+            &attributes,
+            AttributeTarget::ClassConstant,
+            constants
+                .first()
+                .map(|constant| constant.span)
+                .unwrap_or_else(|| self.previous_span()),
+        )?;
         self.expect_const_statement_terminator()?;
         Ok(constants)
     }
@@ -1930,6 +1948,7 @@ impl Parser<'_> {
     fn parse_class_constant_declaration(
         &mut self,
         visibility: PropertyVisibility,
+        attributes: ParsedAttributes,
     ) -> Result<ClassConstantDecl> {
         let looks_like_typed_constant = (self.peek_is_type_hint()
             || matches!(self.peek().kind, TokenKind::Identifier(_)))
@@ -1958,6 +1977,7 @@ impl Parser<'_> {
         Ok(ClassConstantDecl {
             name,
             visibility,
+            attributes,
             value,
             span: token.span,
         })
@@ -2487,6 +2507,13 @@ impl Parser<'_> {
 
     fn parse_statement(&mut self) -> Result<Statement> {
         let attributes = self.parse_attribute_groups()?;
+        self.parse_statement_with_attributes(attributes)
+    }
+
+    fn parse_statement_with_attributes(
+        &mut self,
+        attributes: ParsedAttributes,
+    ) -> Result<Statement> {
         match self.peek().kind {
             TokenKind::Semicolon => self.parse_empty_statement(),
             TokenKind::Echo => self.parse_echo(),
@@ -2503,7 +2530,7 @@ impl Parser<'_> {
             TokenKind::Throw => self.parse_throw_statement(),
             TokenKind::Try => self.parse_try(),
             TokenKind::Goto => self.parse_goto(),
-            TokenKind::Const => self.parse_const(),
+            TokenKind::Const => self.parse_const(attributes),
             TokenKind::Global => self.parse_global(),
             TokenKind::Function if matches!(self.peek_next().kind, TokenKind::Identifier(_)) => {
                 self.parse_nested_function_decl_statement(attributes)
@@ -2910,6 +2937,7 @@ impl Parser<'_> {
         }
         Ok(FunctionParameter {
             name,
+            attributes,
             type_hint,
             by_ref,
             is_variadic,
@@ -3528,7 +3556,7 @@ impl Parser<'_> {
         Some(combine_spans(left, right))
     }
 
-    fn parse_const(&mut self) -> Result<Statement> {
+    fn parse_const(&mut self, attributes: ParsedAttributes) -> Result<Statement> {
         let span = self.expect_const()?;
         if self.block_depth != 0 {
             return Err(Diagnostic::new(
@@ -3539,9 +3567,16 @@ impl Parser<'_> {
 
         let mut declarations = vec![self.parse_const_declaration()?];
         while matches!(self.peek().kind, TokenKind::Comma) {
+            if attributes.total_count > 0 {
+                return Err(Diagnostic::new(
+                    "Cannot apply attributes to multiple constants at once",
+                    Some(self.peek().span),
+                ));
+            }
             self.advance();
             declarations.push(self.parse_const_declaration()?);
         }
+        validate_builtin_attributes_for_target(&attributes, AttributeTarget::Constant, span)?;
         self.expect_const_statement_terminator()?;
         Ok(Statement::Const { declarations, span })
     }
@@ -8049,24 +8084,54 @@ fn apply_parsed_attribute(
     arguments: &ParsedAttributeArguments,
 ) {
     if name_segments.len() != 1 {
+        attributes.total_count = attributes.total_count.saturating_add(1);
         return;
     }
+    attributes.total_count = attributes.total_count.saturating_add(1);
     let name = &name_segments[0];
     if name.eq_ignore_ascii_case("Override") {
+        attributes.override_count = attributes.override_count.saturating_add(1);
         attributes.has_override = true;
     } else if name.eq_ignore_ascii_case("Attribute") {
+        attributes.attribute_count = attributes.attribute_count.saturating_add(1);
         attributes.has_attribute = true;
     } else if name.eq_ignore_ascii_case("AllowDynamicProperties") {
+        attributes.allow_dynamic_properties_count =
+            attributes.allow_dynamic_properties_count.saturating_add(1);
         attributes.has_allow_dynamic_properties = true;
+    } else if name.eq_ignore_ascii_case("DelayedTargetValidation") {
+        attributes.delayed_target_validation_count =
+            attributes.delayed_target_validation_count.saturating_add(1);
     } else if name.eq_ignore_ascii_case("Deprecated") {
+        attributes.deprecated_count = attributes.deprecated_count.saturating_add(1);
         attributes.deprecated_message = Some(arguments.message().unwrap_or_default());
         attributes.deprecated_since = arguments.since.clone();
     } else if name.eq_ignore_ascii_case("NoDiscard") {
+        attributes.no_discard_count = attributes.no_discard_count.saturating_add(1);
         attributes.no_discard_message = Some(arguments.message().unwrap_or_default());
     }
 }
 
 fn merge_parsed_attributes(attributes: &mut AttributeMetadata, group: AttributeMetadata) {
+    attributes.total_count = attributes.total_count.saturating_add(group.total_count);
+    attributes.attribute_count = attributes
+        .attribute_count
+        .saturating_add(group.attribute_count);
+    attributes.allow_dynamic_properties_count = attributes
+        .allow_dynamic_properties_count
+        .saturating_add(group.allow_dynamic_properties_count);
+    attributes.delayed_target_validation_count = attributes
+        .delayed_target_validation_count
+        .saturating_add(group.delayed_target_validation_count);
+    attributes.deprecated_count = attributes
+        .deprecated_count
+        .saturating_add(group.deprecated_count);
+    attributes.no_discard_count = attributes
+        .no_discard_count
+        .saturating_add(group.no_discard_count);
+    attributes.override_count = attributes
+        .override_count
+        .saturating_add(group.override_count);
     attributes.has_override |= group.has_override;
     attributes.has_attribute |= group.has_attribute;
     attributes.has_allow_dynamic_properties |= group.has_allow_dynamic_properties;
@@ -9983,27 +10048,169 @@ fn find_trait<'a>(traits: &'a [TraitDecl], name: &str) -> Option<&'a TraitDecl> 
         .find(|trait_decl| trait_decl.name.eq_ignore_ascii_case(name))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AttributeTarget {
+    Class,
+    Function,
+    Method,
+    Parameter,
+    ClassConstant,
+    Constant,
+}
+
+fn validate_builtin_attributes_for_target(
+    attributes: &AttributeMetadata,
+    target: AttributeTarget,
+    span: SourceSpan,
+) -> Result<()> {
+    validate_builtin_attribute_repetition("Attribute", attributes.attribute_count, span)?;
+    validate_builtin_attribute_repetition(
+        "AllowDynamicProperties",
+        attributes.allow_dynamic_properties_count,
+        span,
+    )?;
+    validate_builtin_attribute_repetition(
+        "DelayedTargetValidation",
+        attributes.delayed_target_validation_count,
+        span,
+    )?;
+    validate_builtin_attribute_repetition("Deprecated", attributes.deprecated_count, span)?;
+    validate_builtin_attribute_repetition("NoDiscard", attributes.no_discard_count, span)?;
+    validate_builtin_attribute_repetition("Override", attributes.override_count, span)?;
+
+    if attributes.delayed_target_validation_count > 0 {
+        return Ok(());
+    }
+
+    validate_builtin_attribute_target(
+        "Attribute",
+        attributes.attribute_count,
+        target,
+        &[AttributeTarget::Class],
+        "class",
+        span,
+    )?;
+    validate_builtin_attribute_target(
+        "AllowDynamicProperties",
+        attributes.allow_dynamic_properties_count,
+        target,
+        &[AttributeTarget::Class],
+        "class",
+        span,
+    )?;
+    validate_builtin_attribute_target(
+        "Deprecated",
+        attributes.deprecated_count,
+        target,
+        &[
+            AttributeTarget::Class,
+            AttributeTarget::Function,
+            AttributeTarget::Method,
+            AttributeTarget::ClassConstant,
+            AttributeTarget::Constant,
+        ],
+        "class, function, method, class constant, constant",
+        span,
+    )?;
+    validate_builtin_attribute_target(
+        "NoDiscard",
+        attributes.no_discard_count,
+        target,
+        &[AttributeTarget::Function, AttributeTarget::Method],
+        "function, method",
+        span,
+    )?;
+    Ok(())
+}
+
+fn validate_builtin_attribute_repetition(name: &str, count: u16, span: SourceSpan) -> Result<()> {
+    if count > 1 {
+        return Err(Diagnostic::new(
+            format!("Attribute \"{name}\" must not be repeated"),
+            Some(span),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_builtin_attribute_target(
+    name: &str,
+    count: u16,
+    target: AttributeTarget,
+    allowed_targets: &[AttributeTarget],
+    allowed_display: &str,
+    span: SourceSpan,
+) -> Result<()> {
+    if count == 0 || allowed_targets.contains(&target) {
+        return Ok(());
+    }
+    Err(Diagnostic::new(
+        format!(
+            "Attribute \"{name}\" cannot target {} (allowed targets: {allowed_display})",
+            attribute_target_name(target)
+        ),
+        Some(span),
+    ))
+}
+
+fn attribute_target_name(target: AttributeTarget) -> &'static str {
+    match target {
+        AttributeTarget::Class => "class",
+        AttributeTarget::Function => "function",
+        AttributeTarget::Method => "method",
+        AttributeTarget::Parameter => "parameter",
+        AttributeTarget::ClassConstant => "class constant",
+        AttributeTarget::Constant => "constant",
+    }
+}
+
+fn attribute_delays_target_validation(attributes: &AttributeMetadata) -> bool {
+    attributes.delayed_target_validation_count > 0
+}
+
 fn validate_builtin_attribute_targets(
     classes: &[ClassDecl],
     traits: &[TraitDecl],
     functions: &[FunctionDecl],
 ) -> Result<()> {
     for function in functions {
-        if function.attributes.has_attribute {
+        validate_builtin_attributes_for_target(
+            &function.attributes,
+            AttributeTarget::Function,
+            function.span,
+        )?;
+        for parameter in &function.parameters {
+            validate_builtin_attributes_for_target(
+                &parameter.attributes,
+                AttributeTarget::Parameter,
+                parameter.span,
+            )?;
+        }
+        if function.attributes.has_attribute
+            && !attribute_delays_target_validation(&function.attributes)
+        {
             return Err(Diagnostic::new(
                 "Attribute \"Attribute\" cannot target function (allowed targets: class)",
                 Some(function.span),
             ));
         }
-        validate_no_discard_function_target(
-            function.attributes.no_discard_message.is_some(),
-            function.return_type.as_ref(),
-            &format!("Function {}", function.name),
-            function.span,
-        )?;
+        if !attribute_delays_target_validation(&function.attributes) {
+            validate_no_discard_function_target(
+                function.attributes.no_discard_message.is_some(),
+                function.return_type.as_ref(),
+                &format!("Function {}", function.name),
+                function.span,
+            )?;
+        }
     }
     for class in classes {
-        if class.attributes.has_attribute {
+        validate_builtin_attributes_for_target(
+            &class.attributes,
+            AttributeTarget::Class,
+            class.span,
+        )?;
+        if class.attributes.has_attribute && !attribute_delays_target_validation(&class.attributes)
+        {
             if class.is_interface {
                 return Err(Diagnostic::new(
                     format!("Cannot apply #[\\Attribute] to interface {}", class.name),
@@ -10020,7 +10227,10 @@ fn validate_builtin_attribute_targets(
                 ));
             }
         }
-        if class.attributes.has_allow_dynamic_properties && class.is_interface {
+        if class.attributes.has_allow_dynamic_properties
+            && class.is_interface
+            && !attribute_delays_target_validation(&class.attributes)
+        {
             return Err(Diagnostic::new(
                 format!(
                     "Cannot apply #[\\AllowDynamicProperties] to interface {}",
@@ -10029,20 +10239,47 @@ fn validate_builtin_attribute_targets(
                 Some(class.span),
             ));
         }
-        if class.attributes.deprecated_message.is_some() && class.is_interface {
+        if class.attributes.deprecated_message.is_some()
+            && class.is_interface
+            && !attribute_delays_target_validation(&class.attributes)
+        {
             return Err(Diagnostic::new(
                 format!("Cannot apply #[\\Deprecated] to interface {}", class.name),
                 Some(class.span),
             ));
         }
-        if class.attributes.deprecated_message.is_some() && !class.is_interface {
+        if class.attributes.deprecated_message.is_some()
+            && !class.is_interface
+            && !attribute_delays_target_validation(&class.attributes)
+        {
             return Err(Diagnostic::new(
                 format!("Cannot apply #[\\Deprecated] to class {}", class.name),
                 Some(class.span),
             ));
         }
+        for constant in &class.constants {
+            validate_builtin_attributes_for_target(
+                &constant.attributes,
+                AttributeTarget::ClassConstant,
+                constant.span,
+            )?;
+        }
         for method in &class.methods {
-            if method.attributes.has_attribute {
+            validate_builtin_attributes_for_target(
+                &method.attributes,
+                AttributeTarget::Method,
+                method.span,
+            )?;
+            for parameter in &method.parameters {
+                validate_builtin_attributes_for_target(
+                    &parameter.attributes,
+                    AttributeTarget::Parameter,
+                    parameter.span,
+                )?;
+            }
+            if method.attributes.has_attribute
+                && !attribute_delays_target_validation(&method.attributes)
+            {
                 return Err(Diagnostic::new(
                     "Attribute \"Attribute\" cannot target method (allowed targets: class)",
                     Some(method.span),
@@ -10051,6 +10288,7 @@ fn validate_builtin_attribute_targets(
             if method.attributes.no_discard_message.is_some()
                 && (method.name.eq_ignore_ascii_case("__construct")
                     || method.name.eq_ignore_ascii_case("__clone"))
+                && !attribute_delays_target_validation(&method.attributes)
             {
                 return Err(Diagnostic::new(
                     format!(
@@ -10060,22 +10298,33 @@ fn validate_builtin_attribute_targets(
                     Some(method.span),
                 ));
             }
-            validate_no_discard_function_target(
-                method.attributes.no_discard_message.is_some(),
-                method.return_type.as_ref(),
-                &format!("Method {}::{}", class.name, method.name),
-                method.span,
-            )?;
+            if !attribute_delays_target_validation(&method.attributes) {
+                validate_no_discard_function_target(
+                    method.attributes.no_discard_message.is_some(),
+                    method.return_type.as_ref(),
+                    &format!("Method {}::{}", class.name, method.name),
+                    method.span,
+                )?;
+            }
         }
     }
     for trait_decl in traits {
-        if trait_decl.attributes.has_attribute {
+        validate_builtin_attributes_for_target(
+            &trait_decl.attributes,
+            AttributeTarget::Class,
+            trait_decl.span,
+        )?;
+        if trait_decl.attributes.has_attribute
+            && !attribute_delays_target_validation(&trait_decl.attributes)
+        {
             return Err(Diagnostic::new(
                 format!("Cannot apply #[\\Attribute] to trait {}", trait_decl.name),
                 Some(trait_decl.span),
             ));
         }
-        if trait_decl.attributes.has_allow_dynamic_properties {
+        if trait_decl.attributes.has_allow_dynamic_properties
+            && !attribute_delays_target_validation(&trait_decl.attributes)
+        {
             return Err(Diagnostic::new(
                 format!(
                     "Cannot apply #[\\AllowDynamicProperties] to trait {}",
@@ -10083,6 +10332,27 @@ fn validate_builtin_attribute_targets(
                 ),
                 Some(trait_decl.span),
             ));
+        }
+        for constant in &trait_decl.constants {
+            validate_builtin_attributes_for_target(
+                &constant.attributes,
+                AttributeTarget::ClassConstant,
+                constant.span,
+            )?;
+        }
+        for method in &trait_decl.methods {
+            validate_builtin_attributes_for_target(
+                &method.attributes,
+                AttributeTarget::Method,
+                method.span,
+            )?;
+            for parameter in &method.parameters {
+                validate_builtin_attributes_for_target(
+                    &parameter.attributes,
+                    AttributeTarget::Parameter,
+                    parameter.span,
+                )?;
+            }
         }
     }
     Ok(())

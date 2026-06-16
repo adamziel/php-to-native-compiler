@@ -4803,6 +4803,54 @@ function important(): int { return 1; }
             .as_deref(),
         Some("1234")
     );
+
+    let repeated_attribute =
+        parser::parse("<?php #[Attribute] #[Attribute] class A {}").unwrap_err();
+    assert_eq!(repeated_attribute.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        repeated_attribute.message,
+        "Attribute \"Attribute\" must not be repeated"
+    );
+
+    let parameter_target =
+        parser::parse("<?php function demo(#[Deprecated] $value) {}").unwrap_err();
+    assert_eq!(parameter_target.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        parameter_target.message,
+        "Attribute \"Deprecated\" cannot target parameter (allowed targets: class, function, method, class constant, constant)"
+    );
+
+    let constant_target = parser::parse("<?php #[Attribute] const EXAMPLE = true;").unwrap_err();
+    assert_eq!(constant_target.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        constant_target.message,
+        "Attribute \"Attribute\" cannot target constant (allowed targets: class)"
+    );
+
+    let repeated_const_deprecated =
+        parser::parse("<?php #[Deprecated] #[Deprecated] const MY_CONST = true;").unwrap_err();
+    assert_eq!(repeated_const_deprecated.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        repeated_const_deprecated.message,
+        "Attribute \"Deprecated\" must not be repeated"
+    );
+
+    let multiple_constants =
+        parser::parse("<?php #[Foo] const First = 1, Second = 2;").unwrap_err();
+    assert_eq!(multiple_constants.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        multiple_constants.message,
+        "Cannot apply attributes to multiple constants at once"
+    );
+
+    let delayed_repetition =
+        parser::parse("<?php #[DelayedTargetValidation] #[NoDiscard] #[NoDiscard] class Demo {}")
+            .unwrap_err();
+    assert_eq!(delayed_repetition.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        delayed_repetition.message,
+        "Attribute \"NoDiscard\" must not be repeated"
+    );
 }
 
 #[test]
