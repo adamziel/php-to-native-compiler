@@ -7462,6 +7462,7 @@ var_dump(ptn_next_token(\",\"));\n\
 var_dump(substr_compare(\"abcde\", \"df\", -2) < 0);\n\
 var_dump(substr_compare(\"abcde\", \"bcg\", 1, 2));\n\
 var_dump(substr_compare(\"abcde\", \"BC\", 1, 2, true));\n\
+var_dump(substr_compare(\"abcde\", \"abcdef\", -10, 10) < 0);\n\
 try { substr_compare(\"abcde\", \"abc\", 0, -1); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { substr_compare(\"abcde\", \"abc\", 99); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 $percent = 0;\n\
@@ -7488,6 +7489,7 @@ string(1) \"b\"\n\
 bool(true)\n\
 int(0)\n\
 int(0)\n\
+bool(true)\n\
 substr_compare(): Argument #4 ($length) must be greater than or equal to 0\n\
 substr_compare(): Argument #3 ($offset) must be contained in argument #1 ($haystack)\n\
 int(3)\n\
@@ -8689,6 +8691,53 @@ bool(true)\n"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("static PtnValue ptn_internal_sprintf("));
+}
+
+#[test]
+fn compile_sprintf_trace_and_variadic_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-sprintf-trace-and-variadic-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sprintf-trace-and-variadic-metadata.php");
+    let output = root.join("sprintf-trace-and-variadic-metadata-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$missingLine = __LINE__ + 1;\n\
+try { sprintf(\"%s/%s/%s\", \"foo\", \"bar\"); } catch (\\Throwable $e) { $missing = (string) $e; }\n\
+$objectLine = __LINE__ + 1;\n\
+try { sprintf(\"%s\", new stdClass()); } catch (\\Throwable $e) { $object = (string) $e; }\n\
+var_dump(str_contains($missing, \"ArgumentCountError: 4 arguments are required, 3 given in \" . __FILE__ . \":\" . $missingLine));\n\
+var_dump(str_contains($missing, \"#0 \" . __FILE__ . \"(\" . $missingLine . \"): sprintf('%s/%s/%s', 'foo', 'bar')\"));\n\
+var_dump(str_contains($object, \"Error: Object of class stdClass could not be converted to string in \" . __FILE__ . \":\" . $objectLine));\n\
+var_dump(str_contains($object, \"#0 {main}\"));\n\
+var_dump(str_contains($object, \"Object(stdClass)\"));\n\
+$sprintf = new ReflectionFunction(\"sprintf\");\n\
+var_dump($sprintf->isVariadic(), $sprintf->getNumberOfParameters(), $sprintf->getNumberOfRequiredParameters());",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+int(2)\n\
+int(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_exception_owned_message_at_with_trace_frame"));
+    assert!(
+        c_source.contains("ptn_value_to_string_operand_with_runtime_skipping_current_trace_frame")
+    );
 }
 
 #[test]
@@ -13451,6 +13500,11 @@ var_dump($internal->isVariadic());
 var_dump($internal->getNumberOfParameters());
 var_dump($internal->getNumberOfRequiredParameters());
 
+$sprintf = new \\ReflectionFunction(\"sprintf\");
+var_dump($sprintf->isVariadic());
+var_dump($sprintf->getNumberOfParameters());
+var_dump($sprintf->getNumberOfRequiredParameters());
+
 $user = new \\ReflectionFunction(\"A\\\\B\\\\foo\");
 var_dump($user->getName());
 var_dump($user->isInternal());
@@ -13481,6 +13535,9 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
             "string(0) \"\"\n",
             "string(4) \"sort\"\n",
             "bool(false)\n",
+            "int(2)\n",
+            "int(1)\n",
+            "bool(true)\n",
             "int(2)\n",
             "int(1)\n",
             "string(7) \"A\\B\\foo\"\n",
