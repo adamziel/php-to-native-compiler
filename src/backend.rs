@@ -1826,6 +1826,9 @@ fn emit_return_type_boundary(
         TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool => {
             emit_return_scalar_cast_boundary(out, return_type, return_by_ref);
         }
+        TypeHint::True | TypeHint::False => {
+            emit_generic_return_type_boundary(out, return_type, function_name);
+        }
         TypeHint::Class(class_name) => {
             out.push_str(
                 "    if (!ptn_value_satisfies_class_type_hint(&runtime, ptn_return_value, \"",
@@ -1855,9 +1858,11 @@ fn emit_return_type_boundary(
                 emit_nullable_return_type_boundary(out, inner, function_name, return_by_ref);
             }
         }
-        TypeHint::Object | TypeHint::Iterable | TypeHint::Union(_) | TypeHint::Intersection(_) => {
-            emit_generic_return_type_boundary(out, return_type, function_name);
-        }
+        TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Static
+        | TypeHint::Union(_)
+        | TypeHint::Intersection(_) => emit_generic_return_type_boundary(out, return_type, function_name),
         TypeHint::Callable | TypeHint::Mixed | TypeHint::Void => {}
     }
 }
@@ -1870,6 +1875,12 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
         TypeHint::Float => format!("ptn_value_deref({value_expr}).type == PTN_FLOAT"),
         TypeHint::String => format!("ptn_value_deref({value_expr}).type == PTN_STRING"),
         TypeHint::Bool => format!("ptn_value_deref({value_expr}).type == PTN_BOOL"),
+        TypeHint::True => format!(
+            "ptn_value_deref({value_expr}).type == PTN_BOOL && ptn_value_deref({value_expr}).as.boolean"
+        ),
+        TypeHint::False => format!(
+            "ptn_value_deref({value_expr}).type == PTN_BOOL && !ptn_value_deref({value_expr}).as.boolean"
+        ),
         TypeHint::Object => format!("ptn_value_satisfies_object_type_hint({value_expr})"),
         TypeHint::Iterable => {
             format!("ptn_value_satisfies_iterable_type_hint({runtime_expr}, {value_expr})")
@@ -1877,6 +1888,9 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
         TypeHint::Callable => "1".to_string(),
         TypeHint::Mixed => "1".to_string(),
         TypeHint::Void | TypeHint::Never => "0".to_string(),
+        TypeHint::Static => format!(
+            "ptn_value_satisfies_class_type_hint({runtime_expr}, {value_expr}, ({runtime_expr})->current_called_class_name != NULL ? ({runtime_expr})->current_called_class_name : ({runtime_expr})->current_class_name)"
+        ),
         TypeHint::Nullable(inner) => format!(
             "ptn_value_deref({value_expr}).type == PTN_NULL || ({})",
             type_hint_condition(value_expr, runtime_expr, inner)
@@ -1916,12 +1930,15 @@ fn type_hint_label(type_hint: &TypeHint) -> String {
         TypeHint::Float => "float".to_string(),
         TypeHint::String => "string".to_string(),
         TypeHint::Bool => "bool".to_string(),
+        TypeHint::True => "true".to_string(),
+        TypeHint::False => "false".to_string(),
         TypeHint::Callable => "callable".to_string(),
         TypeHint::Object => "object".to_string(),
         TypeHint::Iterable => "Traversable|array".to_string(),
         TypeHint::Mixed => "mixed".to_string(),
         TypeHint::Void => "void".to_string(),
         TypeHint::Never => "never".to_string(),
+        TypeHint::Static => "static".to_string(),
         TypeHint::Nullable(inner) => match inner.as_ref() {
             TypeHint::Iterable => "Traversable|array|null".to_string(),
             TypeHint::Union(_) | TypeHint::Intersection(_) => {
@@ -1975,9 +1992,13 @@ fn emit_generic_return_type_boundary(
 
 fn type_hint_uses_generic_runtime_check(type_hint: &TypeHint) -> bool {
     match type_hint {
-        TypeHint::Object | TypeHint::Iterable | TypeHint::Union(_) | TypeHint::Intersection(_) => {
-            true
-        }
+        TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Static
+        | TypeHint::Union(_)
+        | TypeHint::Intersection(_) => true,
         TypeHint::Nullable(inner) => type_hint_uses_generic_runtime_check(inner),
         TypeHint::Null
         | TypeHint::Array
@@ -2053,8 +2074,11 @@ fn emit_nullable_return_type_boundary(
             out.push_str("    }\n");
         }
         TypeHint::Null
+        | TypeHint::True
+        | TypeHint::False
         | TypeHint::Object
         | TypeHint::Iterable
+        | TypeHint::Static
         | TypeHint::Callable
         | TypeHint::Mixed
         | TypeHint::Void
@@ -2074,8 +2098,11 @@ fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static
         Some(
             TypeHint::Null
             | TypeHint::Array
+            | TypeHint::True
+            | TypeHint::False
             | TypeHint::Object
             | TypeHint::Iterable
+            | TypeHint::Static
             | TypeHint::Callable
             | TypeHint::Mixed
             | TypeHint::Void
@@ -7262,9 +7289,13 @@ fn type_hint_accepts_default_value(type_hint: &TypeHint, value: &ValueExpr) -> b
         TypeHint::Float => matches!(value, ValueExpr::Float(_)),
         TypeHint::String => matches!(value, ValueExpr::String(_)),
         TypeHint::Bool => matches!(value, ValueExpr::Bool(_)),
-        TypeHint::Callable | TypeHint::Object | TypeHint::Intersection(_) | TypeHint::Class(_) => {
-            false
-        }
+        TypeHint::True => matches!(value, ValueExpr::Bool(true)),
+        TypeHint::False => matches!(value, ValueExpr::Bool(false)),
+        TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Static
+        | TypeHint::Intersection(_)
+        | TypeHint::Class(_) => false,
         TypeHint::Iterable => matches!(value, ValueExpr::Array(_)),
         TypeHint::Mixed => true,
         TypeHint::Void | TypeHint::Never => false,
@@ -7287,9 +7318,12 @@ fn type_hint_allows_implicit_nullable_default(type_hint: &TypeHint) -> bool {
         | TypeHint::Float
         | TypeHint::String
         | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
         | TypeHint::Callable
         | TypeHint::Object
         | TypeHint::Iterable
+        | TypeHint::Static
         | TypeHint::Intersection(_)
         | TypeHint::Class(_) => true,
     }
