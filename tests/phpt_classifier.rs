@@ -1114,12 +1114,6 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "unsupported-internal-attribute-metadata\t",
             "requires internal attribute/reflection metadata",
         ),
-        (
-            "complete arginfo registry reflection",
-            "--TEST--\narginfo sweep\n--FILE--\n<?php\nforeach (get_defined_functions()[\"internal\"] as $function) { var_dump($function); }\n--EXPECT--\n",
-            "unsupported-internal-reflection-metadata\t",
-            "requires complete internal arginfo/class registry reflection",
-        ),
     ];
 
     for (name, phpt, category, reason) in cases {
@@ -1632,23 +1626,26 @@ fn phpt_classifier_keeps_variadic_parameter_rows_runnable() {
 }
 
 #[test]
-fn phpt_classifier_excludes_unsupported_mutating_array_internals() {
+fn phpt_classifier_keeps_function_registry_and_destructor_magic_rows_runnable() {
     let cases = [
+        (
+            "function registry sweep",
+            "--TEST--\narginfo sweep\n--FILE--\n<?php\nforeach (get_defined_functions()[\"internal\"] as $function) { var_dump($function); }\n--EXPECT--\n",
+        ),
         (
             "destructor __call object resurrection",
             "--TEST--\ndestructor call resurrection\n--FILE--\n<?php\nclass Driver { public $obj; function close() { echo $this->obj->i; } }\nclass A { function __call($m, $a) { $d = new Driver; $d->obj = $this; } function __destruct() { $this->close(); } }\nnew A;\n--EXPECT--\n",
-            "requires destructor-driven __call object resurrection/lifetime semantics",
+        ),
+        (
+            "reflection new instance without constructor",
+            "--TEST--\nreflection instance\n--FILE--\n<?php\nclass Box { public $v = 1; }\n$rc = new ReflectionClass(Box::class);\n$obj = $rc->newInstanceWithoutConstructor();\nvar_dump($obj instanceof Box);\n--EXPECT--\nbool(true)\n",
         ),
     ];
 
-    for (name, phpt, reason) in cases {
+    for (name, phpt) in cases {
         let classification = classify(phpt);
         assert!(
-            classification.starts_with("unsupported-internal\t"),
-            "{name}: {classification:?}"
-        );
-        assert!(
-            classification.contains(reason),
+            classification.starts_with("runnable\t"),
             "{name}: {classification:?}"
         );
     }

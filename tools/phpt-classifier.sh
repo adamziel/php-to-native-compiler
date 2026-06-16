@@ -1718,12 +1718,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])get_defined_functions[[:space:]]*\(/ ||
-                line ~ /->[[:space:]]*newinstancewithoutconstructor[[:space:]]*\(/) {
-                print "unsupported-internal-reflection-metadata\trequires complete internal arginfo/class registry reflection, outside PTN modeled metadata"
-                found = 1
-                exit
-            }
             if ((readonly_class_context || readonly_property_seen) &&
                 (line ~ /=[[:space:]]*&[[:space:]]*\$[a-z_][a-z0-9_]*->[a-z_][a-z0-9_]*/ ||
                     line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*&/ ||
@@ -1963,18 +1957,6 @@ ptn_phpt_first_unsupported_internal_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]+__destruct[[:space:]]*\(/) {
-                destructor_seen = 1
-            }
-            if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]+__call[[:space:]]*\(/) {
-                magic_call_seen = 1
-            }
-            if (line ~ /\$this->[a-z_][a-z0-9_]*[[:space:]]*\(/) {
-                destructor_method_call_seen = 1
-            }
-            if (line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*\$this([^[:alnum:]_]|$)/) {
-                stores_this_in_object_property = 1
-            }
             if (line ~ /(^|[^[:alnum:]_$])global[[:space:]]+\$/ || line ~ /\$globals[[:space:]]*\[/) {
                 global_state_seen = 1
             }
@@ -1985,10 +1967,6 @@ ptn_phpt_first_unsupported_internal_surface() {
             }
         }
         END {
-            if (!found && destructor_seen && magic_call_seen && destructor_method_call_seen && stores_this_in_object_property) {
-                print "unsupported-internal\trequires destructor-driven __call object resurrection/lifetime semantics, outside PTN modeled object lifetime runtime"
-                found = 1
-            }
             exit found ? 0 : 1
         }
     '

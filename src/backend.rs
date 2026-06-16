@@ -2886,6 +2886,33 @@ fn emit_user_function_dispatch(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str("\nstatic PtnValue ptn_user_function_names(PtnRuntime *runtime) {\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    let has_global_functions = functions
+        .iter()
+        .any(|function| !function.is_anonymous && function.class_name.is_none());
+    if has_global_functions {
+        out.push_str("    int64_t next_index = 0;\n");
+    } else {
+        out.push_str("    (void)runtime;\n");
+    }
+    for (index, function) in functions.iter().enumerate() {
+        if function.is_anonymous || function.class_name.is_some() {
+            continue;
+        }
+        out.push_str(
+            "    if (runtime->declared_user_functions == NULL || runtime->declared_user_functions[",
+        );
+        out.push_str(&index.to_string());
+        out.push_str("]) {\n");
+        out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(next_index++), ptn_string(\"");
+        out.push_str(&c_string(&function.name.to_ascii_lowercase()));
+        out.push_str("\"));\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PtnFunctionMetadata ptn_user_function_metadata(const char *name) {\n");
     if functions
         .iter()

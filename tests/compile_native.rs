@@ -14297,6 +14297,65 @@ try {
 }
 
 #[test]
+fn compile_get_defined_functions_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-get-defined-functions-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-defined-functions-metadata.php");
+    let output = root.join("get-defined-functions-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+function MixedCaseFunction() {}
+if (true) {
+    function ConditionalFunction() {}
+}
+class FunctionListClass {
+    public static function methodEntry() {}
+}
+
+$defined = get_defined_functions();
+var_dump(isset($defined[\"internal\"]));
+var_dump(isset($defined[\"user\"]));
+var_dump(in_array(\"strlen\", $defined[\"internal\"]));
+var_dump(in_array(\"get_defined_functions\", $defined[\"internal\"]));
+var_dump(in_array(\"Closure::bind\", $defined[\"internal\"]));
+var_dump(in_array(\"_ptn_cow_debug_reset\", $defined[\"internal\"]));
+var_dump(in_array(\"mixedcasefunction\", $defined[\"user\"]));
+var_dump(in_array(\"conditionalfunction\", $defined[\"user\"]));
+var_dump(in_array(\"MixedCaseFunction\", $defined[\"user\"]));
+var_dump(in_array(\"FunctionListClass::methodEntry\", $defined[\"user\"]));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_defined_functions"));
+    assert!(c_source.contains("ptn_internal_function_names"));
+    assert!(c_source.contains("ptn_user_function_names"));
+}
+
+#[test]
 fn compile_class_alias_metadata_lists_and_validation_to_native_binary() {
     let root = temp_dir("ptn-native-class-alias-metadata-lists");
     fs::create_dir_all(&root).unwrap();
