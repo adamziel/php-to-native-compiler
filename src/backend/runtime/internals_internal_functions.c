@@ -1168,6 +1168,50 @@ static int ptn_internal_function_parameter_can_be_passed_by_value(const char *na
     return 1;
 }
 
+static const PtnParameterMetadata PTN_INTERNAL_HTMLSPECIALCHARS_PARAMETERS[] = {
+    { "string", "string", "string", 0, 1, 0, 0, 1 },
+    { "flags", "int", "int", 0, 1, 0, 0, 1 },
+    { "encoding", "string", "?string", 1, 1, 0, 0, 1 },
+    { "double_encode", "bool", "bool", 0, 1, 0, 0, 1 },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAMETERS[] = {
+    { "table", "int", "int", 0, 1, 0, 0, 1 },
+    { "flags", "int", "int", 0, 1, 0, 0, 1 },
+    { "encoding", "string", "string", 0, 1, 0, 0, 1 },
+};
+
+static const char *ptn_internal_function_parameter_default_display(PtnFunctionMetadata metadata, size_t index) {
+    if (!metadata.is_internal || metadata.name == NULL) {
+        return NULL;
+    }
+    if (ptn_ascii_case_equal(metadata.name, "htmlspecialchars")) {
+        switch (index) {
+            case 1:
+                return "ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401";
+            case 2:
+                return "null";
+            case 3:
+                return "true";
+            default:
+                return NULL;
+        }
+    }
+    if (ptn_ascii_case_equal(metadata.name, "get_html_translation_table")) {
+        switch (index) {
+            case 0:
+                return "HTML_SPECIALCHARS";
+            case 1:
+                return "ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401";
+            case 2:
+                return "\"UTF-8\"";
+            default:
+                return NULL;
+        }
+    }
+    return NULL;
+}
+
 static const char *ptn_function_metadata_parameter_name(PtnFunctionMetadata metadata, size_t index, char *fallback, size_t fallback_len) {
     if (metadata.parameters != NULL && index < metadata.parameter_count && metadata.parameters[index].name != NULL) {
         return metadata.parameters[index].name;
@@ -2306,6 +2350,7 @@ typedef struct {
     size_t id_len;
     size_t id_capacity;
     int failed;
+    int unexpected_end;
 } PtnUnserializeState;
 
 typedef struct {
@@ -2337,6 +2382,7 @@ static void ptn_unserialize_state_init(
     state->id_len = 0;
     state->id_capacity = 0;
     state->failed = 0;
+    state->unexpected_end = 0;
 }
 
 static void ptn_unserialize_state_free(PtnUnserializeState *state) {
@@ -2363,6 +2409,7 @@ static void ptn_unserialize_fail(PtnUnserializeState *state) {
 
 static int ptn_unserialize_require(PtnUnserializeState *state, size_t count) {
     if (!ptn_unserialize_has(state, count)) {
+        state->unexpected_end = 1;
         ptn_unserialize_fail(state);
         return 0;
     }
@@ -2370,7 +2417,12 @@ static int ptn_unserialize_require(PtnUnserializeState *state, size_t count) {
 }
 
 static int ptn_unserialize_consume(PtnUnserializeState *state, char expected) {
-    if (!ptn_unserialize_has(state, 1) || state->data[state->pos] != expected) {
+    if (!ptn_unserialize_has(state, 1)) {
+        state->unexpected_end = 1;
+        ptn_unserialize_fail(state);
+        return 0;
+    }
+    if (state->data[state->pos] != expected) {
         ptn_unserialize_fail(state);
         return 0;
     }
@@ -2416,8 +2468,12 @@ static void ptn_unserialize_update_slot(PtnUnserializeState *state, size_t id, P
 }
 
 static int ptn_unserialize_parse_unsigned(PtnUnserializeState *state, size_t *value) {
-    if (!ptn_unserialize_has(state, 1) ||
-        (state->data[state->pos] < '0' || state->data[state->pos] > '9')) {
+    if (!ptn_unserialize_has(state, 1)) {
+        state->unexpected_end = 1;
+        ptn_unserialize_fail(state);
+        return 0;
+    }
+    if (state->data[state->pos] < '0' || state->data[state->pos] > '9') {
         ptn_unserialize_fail(state);
         return 0;
     }
@@ -2465,6 +2521,7 @@ static int ptn_unserialize_parse_int64(PtnUnserializeState *state, int64_t *valu
 static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *key) {
     size_t key_start = state->pos;
     if (!ptn_unserialize_has(state, 2)) {
+        state->unexpected_end = 1;
         ptn_unserialize_fail_at(state, key_start);
         return 0;
     }
@@ -2577,6 +2634,14 @@ static void ptn_unserialize_emit_error_warning(
         ptn_abort_out_of_memory();
     }
     ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_unserialize_emit_unexpected_end_warning(PtnRuntime *runtime, size_t line) {
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "unserialize(): Unexpected end of serialized data",
+        line
+    );
 }
 
 static void ptn_unserialize_emit_extra_data_warning(
@@ -2974,6 +3039,7 @@ typedef struct {
     size_t line;
     size_t id_len;
     int failed;
+    int unexpected_end;
 } PtnUnserializeSavedInput;
 
 static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -2999,6 +3065,7 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
         saved.line = active_state->line;
         saved.id_len = active_state->id_len;
         saved.failed = active_state->failed;
+        saved.unexpected_end = active_state->unexpected_end;
 
         active_state->data = (const char *)input.data;
         active_state->len = input.len;
@@ -3006,8 +3073,10 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
         active_state->error_pos = 0;
         active_state->line = line;
         active_state->failed = 0;
+        active_state->unexpected_end = 0;
         PtnUnserializeValue parsed = ptn_unserialize_parse_value(active_state, runtime);
         int failed = active_state->failed;
+        int unexpected_end = active_state->unexpected_end;
         size_t error_pos = active_state->error_pos;
         size_t parsed_pos = active_state->pos;
 
@@ -3018,8 +3087,12 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
         active_state->line = saved.line;
         active_state->id_len = saved.id_len;
         active_state->failed = saved.failed;
+        active_state->unexpected_end = saved.unexpected_end;
 
         if (failed) {
+            if (unexpected_end) {
+                ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+            }
             ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
             ptn_value_destroy(&parsed.value);
             ptn_string_operand_free(input);
@@ -3045,6 +3118,7 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
     }
     PtnUnserializeValue parsed = ptn_unserialize_parse_value(&state, runtime);
     int failed = state.failed;
+    int unexpected_end = state.unexpected_end;
     size_t error_pos = state.error_pos;
     size_t parsed_pos = state.pos;
     if (runtime != NULL) {
@@ -3052,6 +3126,9 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
     }
 
     if (failed) {
+        if (unexpected_end) {
+            ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+        }
         ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
         ptn_value_destroy(&parsed.value);
         ptn_unserialize_state_free(&state);
@@ -11603,11 +11680,22 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                 }
                 positional_scan++;
             }
-            if (!position_overflow && positional_scan < format.len && format.data[positional_scan] == '$') {
+            if (positional_scan < format.len && format.data[positional_scan] == '$') {
+                if (position_overflow) {
+                    ptn_string_operand_free(format);
+                    free(output.data);
+                    ptn_throw_exception(
+                        runtime,
+                        "ValueError",
+                        "Argument number specifier must be greater than zero and less than 2147483647"
+                    );
+                    return ptn_null();
+                }
                 if (position <= 0) {
                     ptn_string_operand_free(format);
                     free(output.data);
                     ptn_throw_exception(runtime, "ValueError", "Argument number specifier must be greater than zero");
+                    return ptn_null();
                 }
                 selected_arg_index = (size_t)position;
                 has_positional_arg = 1;
@@ -28821,6 +28909,35 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
     if (function == NULL) {
         return ptn_function_metadata_not_found();
     }
+    if (ptn_ascii_case_equal(function->name, "htmlspecialchars")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_HTMLSPECIALCHARS_PARAMETERS) / sizeof(PTN_INTERNAL_HTMLSPECIALCHARS_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_HTMLSPECIALCHARS_PARAMETERS,
+            "string",
+            "string",
+            0,
+            1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "get_html_translation_table")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAMETERS) /
+                sizeof(PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAMETERS,
+            "array",
+            "array",
+            0,
+            1
+        );
+    }
     int is_variadic = function->max_args == PTN_VARIADIC_ARGS;
     size_t parameter_count = is_variadic ? function->min_args + 1 : function->max_args;
     return ptn_function_metadata_found(
@@ -29273,7 +29390,8 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
 }
 
 static int ptn_reflection_function_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "getClosureScopeClass")
+    return ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "getClosureScopeClass")
         || ptn_ascii_case_equal(method_name, "getClosure")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
@@ -32641,6 +32759,73 @@ static PtnValue ptn_reflection_function_size_result(size_t value) {
     return ptn_int((int64_t)value);
 }
 
+static const char *ptn_reflection_function_extension_name(PtnFunctionMetadata metadata) {
+    if (!metadata.is_internal) {
+        return NULL;
+    }
+    return "standard";
+}
+
+static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+
+    if (metadata.is_internal) {
+        const char *extension_name = ptn_reflection_function_extension_name(metadata);
+        ptn_string_buffer_append_format(
+            &buffer,
+            "Function [ <internal:%s> function %s ] {\n\n",
+            extension_name == NULL ? "Core" : extension_name,
+            metadata.name
+        );
+    } else {
+        ptn_string_buffer_append_format(
+            &buffer,
+            "Function [ <user> function %s ] {\n\n",
+            metadata.name
+        );
+    }
+
+    ptn_string_buffer_append_format(&buffer, "  - Parameters [%zu] {\n", metadata.parameter_count);
+    for (size_t i = 0; i < metadata.parameter_count; i++) {
+        char fallback[32];
+        const char *parameter_name = ptn_function_metadata_parameter_name(
+            metadata,
+            i,
+            fallback,
+            sizeof(fallback)
+        );
+        const char *type_display = ptn_function_metadata_parameter_type_display_name(metadata, i);
+        const char *default_display = ptn_internal_function_parameter_default_display(metadata, i);
+        ptn_string_buffer_append_format(
+            &buffer,
+            "    Parameter #%zu [ <%s> ",
+            i,
+            i < metadata.required_parameter_count ? "required" : "optional"
+        );
+        if (type_display != NULL) {
+            ptn_string_buffer_append_format(&buffer, "%s ", type_display);
+        }
+        if (ptn_function_metadata_parameter_is_variadic(metadata, i)) {
+            ptn_string_buffer_append(&buffer, "...");
+        }
+        if (ptn_function_metadata_parameter_by_ref(metadata, i)) {
+            ptn_string_buffer_append(&buffer, "&");
+        }
+        ptn_string_buffer_append_format(&buffer, "$%s", parameter_name);
+        if (default_display != NULL) {
+            ptn_string_buffer_append_format(&buffer, " = %s", default_display);
+        }
+        ptn_string_buffer_append(&buffer, " ]\n");
+    }
+    ptn_string_buffer_append(&buffer, "  }\n");
+    if (metadata.return_type_display_name != NULL) {
+        ptn_string_buffer_append_format(&buffer, "  - Return [ %s ]\n", metadata.return_type_display_name);
+    }
+    ptn_string_buffer_append(&buffer, "}\n");
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
 static PtnValue ptn_reflection_named_type_object_from_metadata(
     PtnRuntime *runtime,
     const char *name,
@@ -33280,6 +33465,9 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
         return ptn_null();
     }
     PtnFunctionMetadata metadata = data->metadata;
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        return ptn_reflection_function_to_string(metadata);
+    }
     if (ptn_ascii_case_equal(name, "getClosureScopeClass")) {
         return data->closure_scope_class_name == NULL
             ? ptn_null()

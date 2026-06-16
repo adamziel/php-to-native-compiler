@@ -6765,6 +6765,38 @@ var_dump(unserialize($encoded . 'tail'));
 }
 
 #[test]
+fn compile_unserialize_unexpected_end_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-unexpected-end-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-unexpected-end-warning.php");
+    let output = root.join("unserialize-unexpected-end-warning-bin");
+    fs::write(
+        &input,
+        "<?php
+$payload = 'a:1:{i:0;O:9:\"Exception\":2:{s:7:\"' . \"\\0\" . '*' . \"\\0\" . 'file\";s:0:\"\";}';
+var_dump(unserialize($payload));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 49 of 50 bytes"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_array_backed_unserialize_incomplete_classes_to_native_binary() {
     let root = temp_dir("ptn-native-spl-incomplete-unserialize");
     fs::create_dir_all(&root).unwrap();
@@ -8963,6 +8995,49 @@ bool(true)\n"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("static PtnValue ptn_internal_sprintf("));
+}
+
+#[test]
+fn compile_sprintf_positional_specifier_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-sprintf-positional-specifier-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sprintf-positional-specifier-errors.php");
+    let output = root.join("sprintf-positional-specifier-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+foreach ([
+    fn() => sprintf('%$s, %2$s %1$s', 'a', 'b'),
+    fn() => sprintf('%3$s, %2$s %1$s', 'a', 'b'),
+    fn() => sprintf('%2147483648$s, %2$s %1$s', 'a', 'b'),
+] as $call) {
+    try {
+        $call();
+    } catch (Throwable $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Argument number specifier must be greater than zero and less than 2147483647\n",
+            "4 arguments are required, 3 given\n",
+            "Argument number specifier must be greater than zero and less than 2147483647\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("position_overflow"));
+    assert!(c_source.contains("ptn_internal_sprintf"));
 }
 
 #[test]
@@ -13871,6 +13946,57 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
     assert!(c_source.contains("ptn_user_function_metadata"));
     assert!(c_source.contains("ptn_reflection_function_new"));
     assert!(c_source.contains("ptn_reflection_function_call_method"));
+}
+
+#[test]
+fn compile_reflection_function_to_string_internal_signatures_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-function-to-string-internal-signatures");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-to-string-internal-signatures.php");
+    let output = root.join("reflection-function-to-string-internal-signatures-bin");
+    fs::write(
+        &input,
+        "<?php
+echo new ReflectionFunction('htmlspecialchars'), \"\\n\";
+echo new ReflectionFunction('get_html_translation_table'), \"\\n\";
+var_dump(method_exists('ReflectionFunction', '__toString'));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Function [ <internal:standard> function htmlspecialchars ] {\n\n",
+            "  - Parameters [4] {\n",
+            "    Parameter #0 [ <required> string $string ]\n",
+            "    Parameter #1 [ <optional> int $flags = ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ]\n",
+            "    Parameter #2 [ <optional> ?string $encoding = null ]\n",
+            "    Parameter #3 [ <optional> bool $double_encode = true ]\n",
+            "  }\n",
+            "  - Return [ string ]\n",
+            "}\n\n",
+            "Function [ <internal:standard> function get_html_translation_table ] {\n\n",
+            "  - Parameters [3] {\n",
+            "    Parameter #0 [ <optional> int $table = HTML_SPECIALCHARS ]\n",
+            "    Parameter #1 [ <optional> int $flags = ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ]\n",
+            "    Parameter #2 [ <optional> string $encoding = \"UTF-8\" ]\n",
+            "  }\n",
+            "  - Return [ array ]\n",
+            "}\n\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_function_to_string"));
+    assert!(c_source.contains("PTN_INTERNAL_HTMLSPECIALCHARS_PARAMETERS"));
+    assert!(c_source.contains("PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAMETERS"));
 }
 
 #[test]
