@@ -301,6 +301,7 @@ impl Parser<'_> {
         validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
         validate_property_override_set_visibility(&classes)?;
+        validate_property_type_invariance(&classes)?;
         validate_class_scoped_constant_exprs(&classes)?;
         for class in &classes {
             validate_method_names(class)?;
@@ -9503,6 +9504,15 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
     let mut names = HashSet::new();
     for class in classes {
         let lookup_name = class.name.to_ascii_lowercase();
+        if is_reserved_class_name(&lookup_name) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot use \"{}\" as a class name as it is reserved",
+                    class.name
+                ),
+                Some(class.span),
+            ));
+        }
         if !names.insert(lookup_name.clone()) {
             return Err(Diagnostic::new(
                 format!("Cannot declare class {lookup_name}, because the name is already in use"),
@@ -9520,6 +9530,10 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
         }
     }
     Ok(())
+}
+
+fn is_reserved_class_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("mixed")
 }
 
 fn validate_trait_names(traits: &[TraitDecl]) -> Result<()> {
@@ -10174,6 +10188,7 @@ fn first_unavailable_class_name(type_hint: &TypeHint, classes: &[ClassDecl]) -> 
 fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
     is_modeled_builtin_interface_name(name)
         || name.eq_ignore_ascii_case("stdClass")
+        || name.eq_ignore_ascii_case("Closure")
         || name.eq_ignore_ascii_case("ArrayIterator")
         || name.eq_ignore_ascii_case("IteratorIterator")
         || name.eq_ignore_ascii_case("ArrayObject")
@@ -10479,6 +10494,11 @@ fn type_atom_is_subtype(
     match (candidate, target) {
         (TypeAtom::True | TypeAtom::False, TypeAtom::Bool) => true,
         (TypeAtom::Static, TypeAtom::Object) => true,
+        (TypeAtom::Class(candidate), TypeAtom::Callable)
+            if candidate.eq_ignore_ascii_case("Closure") =>
+        {
+            true
+        }
         (TypeAtom::Class(_), TypeAtom::Object) => true,
         (TypeAtom::Class(candidate), TypeAtom::Class(target)) => {
             class_type_name_is_subtype(candidate, target, classes, runtime_class_aliases)
@@ -11570,6 +11590,290 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
         }
     }
     Ok(())
+}
+
+fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        for property in &class.properties {
+            let Some((parent_class, parent_property)) =
+                find_visible_parent_property(class, &property.name, classes)
+            else {
+                continue;
+            };
+            validate_property_type_pair(
+                class,
+                &property.name,
+                property.type_hint.as_ref(),
+                property.span,
+                parent_class,
+                parent_property.type_hint.as_ref(),
+            )?;
+        }
+        for property in &class.static_properties {
+            let Some((parent_class, parent_property)) =
+                find_visible_parent_static_property(class, &property.name, classes)
+            else {
+                continue;
+            };
+            validate_property_type_pair(
+                class,
+                &property.name,
+                property.type_hint.as_ref(),
+                property.span,
+                parent_class,
+                parent_property.type_hint.as_ref(),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_property_type_pair(
+    class: &ClassDecl,
+    property_name: &str,
+    type_hint: Option<&PropertyTypeHint>,
+    span: SourceSpan,
+    parent_class: &ClassDecl,
+    parent_type_hint: Option<&PropertyTypeHint>,
+) -> Result<()> {
+    match (type_hint, parent_type_hint) {
+        (None, None) => Ok(()),
+        (Some(type_hint), Some(parent_type_hint))
+            if property_type_hints_are_invariant(type_hint, parent_type_hint) =>
+        {
+            Ok(())
+        }
+        (_, Some(parent_type_hint)) => Err(Diagnostic::new(
+            format!(
+                "Type of {}::${} must be {} (as in class {})",
+                class.name,
+                property_name,
+                property_type_hint_display(parent_type_hint),
+                parent_class.name
+            ),
+            Some(span),
+        )),
+        (Some(_), None) => Err(Diagnostic::new(
+            format!(
+                "Type of {}::${} must be omitted to match the parent definition in class {}",
+                class.name, property_name, parent_class.name
+            ),
+            Some(span),
+        )),
+    }
+}
+
+fn find_visible_parent_property<'a>(
+    class: &ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a PropertyDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let parent = find_class(classes, name)?;
+        if let Some(property) = parent
+            .properties
+            .iter()
+            .find(|candidate| candidate.name == property_name)
+        {
+            if property.visibility != PropertyVisibility::Private {
+                return Some((parent, property));
+            }
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn find_visible_parent_static_property<'a>(
+    class: &ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a StaticPropertyDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let parent = find_class(classes, name)?;
+        if let Some(property) = parent
+            .static_properties
+            .iter()
+            .find(|candidate| candidate.name == property_name)
+        {
+            if property.visibility != PropertyVisibility::Private {
+                return Some((parent, property));
+            }
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn property_type_hints_are_invariant(left: &PropertyTypeHint, right: &PropertyTypeHint) -> bool {
+    property_type_hint_key(left) == property_type_hint_key(right)
+}
+
+fn property_type_hint_key(type_hint: &PropertyTypeHint) -> String {
+    match &type_hint.kind {
+        PropertyTypeKind::Null => "null".to_string(),
+        PropertyTypeKind::Array => nullable_property_type_key("array", type_hint.allows_null),
+        PropertyTypeKind::Int => nullable_property_type_key("int", type_hint.allows_null),
+        PropertyTypeKind::Float => nullable_property_type_key("float", type_hint.allows_null),
+        PropertyTypeKind::String => nullable_property_type_key("string", type_hint.allows_null),
+        PropertyTypeKind::Bool => nullable_property_type_key("bool", type_hint.allows_null),
+        PropertyTypeKind::Mixed => "mixed".to_string(),
+        PropertyTypeKind::Object => nullable_property_type_key("object", type_hint.allows_null),
+        PropertyTypeKind::Class(name) => nullable_property_type_key(
+            &format!(
+                "class:{}",
+                name.trim_start_matches('\\').to_ascii_lowercase()
+            ),
+            type_hint.allows_null,
+        ),
+        PropertyTypeKind::Unsupported => property_type_text_key(&type_hint.text),
+    }
+}
+
+fn nullable_property_type_key(base: &str, allows_null: bool) -> String {
+    if allows_null {
+        let mut members = vec![base.to_string(), "null".to_string()];
+        members.sort();
+        return format!("union:{}", members.join("|"));
+    }
+    base.to_string()
+}
+
+fn property_type_text_key(text: &str) -> String {
+    let text = text.trim();
+    if let Some(inner) = text.strip_prefix('?') {
+        let mut members = vec![property_type_text_key(inner), "null".to_string()];
+        members.sort();
+        return format!("union:{}", members.join("|"));
+    }
+    if text.contains('|') {
+        let mut members = text
+            .split('|')
+            .map(property_type_text_key)
+            .collect::<Vec<_>>();
+        members.sort();
+        return format!("union:{}", members.join("|"));
+    }
+    if text.contains('&') {
+        let mut members = text
+            .split('&')
+            .map(property_type_text_key)
+            .collect::<Vec<_>>();
+        members.sort();
+        return format!("intersection:{}", members.join("&"));
+    }
+    property_type_atom_key(text)
+}
+
+fn property_type_atom_key(text: &str) -> String {
+    match text
+        .trim()
+        .trim_start_matches('\\')
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "integer" => "int".to_string(),
+        "double" => "float".to_string(),
+        "boolean" => "bool".to_string(),
+        "binary" => "string".to_string(),
+        "null" | "array" | "int" | "float" | "string" | "bool" | "mixed" | "object"
+        | "callable" | "false" | "true" | "iterable" | "never" | "static" | "void" => {
+            text.trim().trim_start_matches('\\').to_ascii_lowercase()
+        }
+        class_name => format!("class:{class_name}"),
+    }
+}
+
+fn property_type_hint_display(type_hint: &PropertyTypeHint) -> String {
+    match &type_hint.kind {
+        PropertyTypeKind::Null => "null".to_string(),
+        PropertyTypeKind::Array => nullable_property_type_display("array", type_hint.allows_null),
+        PropertyTypeKind::Int => nullable_property_type_display("int", type_hint.allows_null),
+        PropertyTypeKind::Float => nullable_property_type_display("float", type_hint.allows_null),
+        PropertyTypeKind::String => nullable_property_type_display("string", type_hint.allows_null),
+        PropertyTypeKind::Bool => nullable_property_type_display("bool", type_hint.allows_null),
+        PropertyTypeKind::Mixed => "mixed".to_string(),
+        PropertyTypeKind::Object => nullable_property_type_display("object", type_hint.allows_null),
+        PropertyTypeKind::Class(name) => {
+            nullable_property_type_display(name, type_hint.allows_null)
+        }
+        PropertyTypeKind::Unsupported => property_type_text_display(&type_hint.text),
+    }
+}
+
+fn nullable_property_type_display(base: &str, allows_null: bool) -> String {
+    if allows_null {
+        format!("?{base}")
+    } else {
+        base.to_string()
+    }
+}
+
+fn property_type_text_display(text: &str) -> String {
+    let text = text.trim();
+    if let Some(inner) = text.strip_prefix('?') {
+        return format!("?{}", property_type_text_display(inner));
+    }
+    if text.contains('|') {
+        let mut members = text
+            .split('|')
+            .map(property_type_text_display)
+            .collect::<Vec<_>>();
+        if members
+            .iter()
+            .all(|member| property_union_builtin_display_rank(member).is_some())
+        {
+            members.sort_by_key(|member| property_union_builtin_display_rank(member).unwrap());
+        }
+        return members.join("|");
+    }
+    if text.contains('&') {
+        return text
+            .split('&')
+            .map(property_type_text_display)
+            .collect::<Vec<_>>()
+            .join("&");
+    }
+    property_type_atom_display(text)
+}
+
+fn property_type_atom_display(text: &str) -> String {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "integer" => "int".to_string(),
+        "double" => "float".to_string(),
+        "boolean" => "bool".to_string(),
+        "binary" => "string".to_string(),
+        "null" | "array" | "int" | "float" | "string" | "bool" | "mixed" | "object"
+        | "callable" | "false" | "true" | "iterable" | "never" | "static" | "void" => {
+            text.trim().to_ascii_lowercase()
+        }
+        _ => text.trim().to_string(),
+    }
+}
+
+fn property_union_builtin_display_rank(member: &str) -> Option<usize> {
+    match member {
+        "object" => Some(0),
+        "array" => Some(1),
+        "string" => Some(2),
+        "int" => Some(3),
+        "float" => Some(4),
+        "bool" => Some(5),
+        "false" => Some(6),
+        "true" => Some(7),
+        "null" => Some(8),
+        _ => None,
+    }
 }
 
 fn validate_method_names(class: &ClassDecl) -> Result<()> {

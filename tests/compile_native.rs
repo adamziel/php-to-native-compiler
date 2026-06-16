@@ -5290,6 +5290,61 @@ fn parser_rejects_asymmetric_set_visibility_when_parent_omits_it() {
 }
 
 #[test]
+fn parser_rejects_invariant_property_type_overrides() {
+    let cases = [
+        (
+            "<?php class A { public mixed $foo; } class B extends A { public int $foo; }",
+            "Type of B::$foo must be mixed (as in class A)",
+        ),
+        (
+            "<?php class A { public int $foo; } class B extends A { public $foo; }",
+            "Type of B::$foo must be int (as in class A)",
+        ),
+        (
+            "<?php class A { public $foo; } class B extends A { public mixed $foo; }",
+            "Type of B::$foo must be omitted to match the parent definition in class A",
+        ),
+        (
+            "<?php class A { public bool|int|float|string|array|object|null $foo; } class B extends A { public mixed $foo; }",
+            "Type of B::$foo must be object|array|string|int|float|bool|null (as in class A)",
+        ),
+        (
+            "<?php class A { public static mixed $foo; } class B extends A { public static string $foo; }",
+            "Type of B::$foo must be mixed (as in class A)",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{source}");
+    }
+}
+
+#[test]
+fn parser_accepts_closure_as_callable_covariant_return() {
+    parser::parse(
+        "<?php
+class A {
+    public function foo(Closure $c): callable {}
+}
+class B extends A {
+    public function foo(callable $c): Closure {}
+}
+",
+    )
+    .unwrap();
+}
+
+#[test]
+fn parser_rejects_mixed_as_reserved_class_name() {
+    let error = parser::parse("<?php class mixed {}").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot use \"mixed\" as a class name as it is reserved"
+    );
+}
+
+#[test]
 fn parser_rejects_asymmetric_virtual_property_hooks() {
     let error = parser::parse("<?php class Foo { public private(set) int $bar { get => 42; } }")
         .unwrap_err();
