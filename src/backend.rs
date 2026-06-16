@@ -4409,6 +4409,93 @@ fn emit_class_reflection_metadata_helpers(out: &mut String, classes: &[ClassDecl
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+        out.push_str("    (void)declaring_class;\n");
+        out.push_str("    (void)is_static;\n");
+        out.push_str("    (void)visibility;\n");
+        out.push_str("    (void)has_default;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            if entry.visibility == PropertyVisibility::Private
+                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            *declaring_class = \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\";\n");
+            out.push_str("            *is_static = ");
+            out.push_str(if entry.is_static { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            *visibility = ");
+            out.push_str(c_property_visibility(entry.visibility));
+            out.push_str(";\n");
+            out.push_str("            *has_default = ");
+            out.push_str(if entry.has_default { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            if entry.visibility == PropertyVisibility::Private
+                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(&c_property_default_value(entry.value));
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_interfaces(PtnRuntime *runtime, const char *class_name, int objects) {\n",
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
@@ -4657,6 +4744,8 @@ struct ClassPropertyExistsEntry<'a> {
     name: &'a str,
     visibility: PropertyVisibility,
     is_static: bool,
+    value: Option<&'a ValueExpr>,
+    has_default: bool,
 }
 
 struct ClassPropertyVarsEntry<'a> {
@@ -4689,6 +4778,8 @@ fn class_property_exists_chain<'a>(
                     name: property.name.as_str(),
                     visibility: property.visibility,
                     is_static: false,
+                    value: property.value.as_ref(),
+                    has_default: property.value.is_some() || property.type_hint.is_none(),
                 }),
         );
         properties.extend(class.static_properties.iter().map(|property| {
@@ -4697,6 +4788,8 @@ fn class_property_exists_chain<'a>(
                 name: property.name.as_str(),
                 visibility: property.visibility,
                 is_static: true,
+                value: property.value.as_ref(),
+                has_default: property.value.is_some() || property.type_hint.is_none(),
             }
         }));
 
@@ -20215,10 +20308,59 @@ fn c_property_default_value(value: Option<&ValueExpr>) -> String {
         Some(ValueExpr::Float(value)) => format!("ptn_float({:?})", value),
         Some(ValueExpr::Bool(value)) => format!("ptn_bool({})", if *value { "1" } else { "0" }),
         Some(ValueExpr::Null) | None => "ptn_null()".to_string(),
+        Some(ValueExpr::Constant { name, line }) => format!(
+            "ptn_read_constant(runtime, \"{}\", runtime != NULL ? runtime->source_path : NULL, {})",
+            c_string(name.trim_start_matches('\\')),
+            line
+        ),
+        Some(ValueExpr::Binary {
+            op, left, right, ..
+        }) => c_property_default_binary_value(*op, left, right)
+            .unwrap_or_else(|| "ptn_null()".to_string()),
         Some(ValueExpr::Array(elements)) => {
             c_property_default_array_value(elements).unwrap_or_else(|| "ptn_null()".to_string())
         }
         _ => "ptn_null()".to_string(),
+    }
+}
+
+fn c_property_default_binary_value(
+    op: BinaryOp,
+    left: &ValueExpr,
+    right: &ValueExpr,
+) -> Option<String> {
+    let left = c_property_default_int_value(left)?;
+    let right = c_property_default_int_value(right)?;
+    let value = c_property_default_eval_int_binary(op, left, right)?;
+    Some(format!("ptn_int({})", c_i64_literal(value)))
+}
+
+fn c_property_default_int_value(value: &ValueExpr) -> Option<i64> {
+    match value {
+        ValueExpr::Int(value) => Some(*value),
+        ValueExpr::Binary {
+            op, left, right, ..
+        } => c_property_default_eval_int_binary(
+            *op,
+            c_property_default_int_value(left)?,
+            c_property_default_int_value(right)?,
+        ),
+        _ => None,
+    }
+}
+
+fn c_property_default_eval_int_binary(op: BinaryOp, left: i64, right: i64) -> Option<i64> {
+    match op {
+        BinaryOp::Add => left.checked_add(right),
+        BinaryOp::Subtract => left.checked_sub(right),
+        BinaryOp::Multiply => left.checked_mul(right),
+        BinaryOp::Modulo if right != 0 => left.checked_rem(right),
+        BinaryOp::ShiftLeft if (0..63).contains(&right) => left.checked_shl(right as u32),
+        BinaryOp::ShiftRight if (0..63).contains(&right) => left.checked_shr(right as u32),
+        BinaryOp::BitwiseAnd => Some(left & right),
+        BinaryOp::BitwiseOr => Some(left | right),
+        BinaryOp::BitwiseXor => Some(left ^ right),
+        _ => None,
     }
 }
 

@@ -13521,6 +13521,13 @@ class ChildReflect extends BaseReflect {
     public function ping() {}
 }
 
+class PrivateReflectBase {
+    private function hidden() {}
+}
+
+class PrivateReflectChild extends PrivateReflectBase {
+}
+
 $object = new ChildReflect();
 $reflection = new ReflectionObject($object);
 var_dump(get_class($reflection));
@@ -13531,6 +13538,11 @@ var_dump($reflection->isSubclassOf(\"BaseReflect\"));
 var_dump($reflection->hasMethod(\"ping\"));
 var_dump($reflection->hasMethod(\"hiddenBase\"));
 var_dump(method_exists($object, \"hiddenBase\"));
+
+$privateReflection = new ReflectionClass(\"PrivateReflectChild\");
+var_dump($privateReflection->hasMethod(\"hidden\"));
+var_dump($privateReflection->hasMethod(\"HIDDEN\"));
+var_dump($privateReflection->hasMethod(\"missing\"));
 
 $reflectionOfReflection = new ReflectionObject($reflection);
 var_dump($reflectionOfReflection->getName());
@@ -13564,6 +13576,9 @@ try {
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
             "string(16) \"ReflectionObject\"\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -31427,7 +31442,9 @@ namespace {
     use Foo\\Bar\\One;
     $class = One::class;
     $x = new $class;
+    $y = new $class();
     var_dump($x);
+    var_dump($y);
     Foo\\Bar\\Three::run();
     Foo\\Bar\\Three::check();
     echo strlen(date('Ymd')), \"\\n\";
@@ -31445,6 +31462,8 @@ namespace {
         concat!(
             "object(Foo\\Bar\\One)#1 (0) {\n",
             "}\n",
+            "object(Foo\\Bar\\One)#2 (0) {\n",
+            "}\n",
             "string(11) \"Foo\\Bar\\Two\"\n",
             "string(13) \"Foo\\Bar\\Three\"\n",
             "string(11) \"Foo\\Bar\\One\"\n",
@@ -31459,7 +31478,7 @@ namespace {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_read_class_constant(&runtime"));
-    assert!(c_source.contains("ptn_value_to_string(ptn_value_deref("));
+    assert!(c_source.contains("ptn_dynamic_new_class_name_from_value("));
     assert!(c_source.contains("ptn_internal_date"));
 }
 
@@ -31818,6 +31837,123 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_property_exists"));
     assert!(c_source.contains("ptn_object_public_property_slot_exists"));
+}
+
+#[test]
+fn compile_reflection_property_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-metadata.php");
+    let output = root.join("reflection-property-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectPropBase {
+    protected $base = \"base\";
+}
+
+class ReflectPropChild extends ReflectPropBase {
+    public $name;
+    private static $count = 3;
+}
+
+$rc = new ReflectionClass(\"ReflectPropChild\");
+$base = $rc->getProperty(\"base\");
+var_dump($base->getName());
+var_dump($base->getDeclaringClass()->getName());
+var_dump($base->isProtected());
+var_dump($base->isStatic());
+var_dump($base->hasDefaultValue());
+var_dump($base->getDefaultValue());
+var_dump($base->getModifiers());
+var_dump($base->__toString());
+
+$prop = new ReflectionProperty(\"ReflectPropChild\", \"name\");
+$object = new ReflectPropChild();
+var_dump($prop->isPublic());
+var_dump($prop->isDefault());
+var_dump($prop->isDynamic());
+var_dump($prop->getValue($object));
+$prop->setValue($object, \"updated\");
+var_dump($object->name);
+
+$static = new ReflectionProperty(\"ReflectPropChild\", \"count\");
+var_dump($static->isPrivate());
+var_dump($static->isStatic());
+var_dump($static->getModifiers());
+var_dump($static->getValue());
+$static->setValue(9);
+var_dump($static->getValue());
+
+$internal = new ReflectionProperty(Exception::class, \"message\");
+var_dump($internal->getDeclaringClass()->getName());
+var_dump($internal->isProtected());
+var_dump($internal->hasDefaultValue());
+var_dump($internal->getDefaultValue());
+$internal->__construct(ErrorException::class, \"severity\");
+var_dump($internal->getName());
+var_dump($internal->getDeclaringClass()->getName());
+var_dump($internal->getDefaultValue());
+
+var_dump(method_exists(\"ReflectionProperty\", \"getModifiers\"));
+var_dump(in_array(\"getProperty\", get_class_methods(\"ReflectionClass\")));
+try {
+    $rc->getProperty(\"missing\");
+} catch (ReflectionException $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(4) \"base\"\n",
+            "string(15) \"ReflectPropBase\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(4) \"base\"\n",
+            "int(2)\n",
+            "string(38) \"Property [ protected $base = 'base' ]\n",
+            "\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "NULL\n",
+            "string(7) \"updated\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(20)\n",
+            "int(3)\n",
+            "int(9)\n",
+            "string(9) \"Exception\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(0) \"\"\n",
+            "string(8) \"severity\"\n",
+            "string(14) \"ErrorException\"\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "ReflectionException: Property ReflectPropChild::$missing does not exist\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_property_metadata"));
+    assert!(c_source.contains("ptn_reflection_property_new"));
 }
 
 #[test]

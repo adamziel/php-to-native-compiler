@@ -5324,10 +5324,31 @@ impl Parser<'_> {
         if token_is_identifier_named(self.peek(), "class") {
             return self.parse_anonymous_class_expr(start_span);
         }
-        if matches!(
-            self.peek().kind,
-            TokenKind::Variable(_) | TokenKind::Dollar | TokenKind::LeftParen
-        ) {
+        if matches!(self.peek().kind, TokenKind::Variable(_)) {
+            let token = self.advance().clone();
+            let TokenKind::Variable(name) = token.kind else {
+                unreachable!("variable token was just matched")
+            };
+            let class_name = Expr::Variable(name, token.span);
+            let mut span = combine_spans(start_span, token.span);
+            let (arguments, argument_names, argument_unpacks) =
+                if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    let (arguments, argument_names, argument_unpacks, right_span) =
+                        self.parse_call_arguments()?;
+                    span = combine_spans(start_span, right_span);
+                    (arguments, argument_names, argument_unpacks)
+                } else {
+                    (Vec::new(), Vec::new(), Vec::new())
+                };
+            return Ok(Expr::DynamicNewObject {
+                class_name: Box::new(class_name),
+                arguments,
+                argument_names,
+                argument_unpacks,
+                span,
+            });
+        }
+        if matches!(self.peek().kind, TokenKind::Dollar | TokenKind::LeftParen) {
             let class_name = self.parse_postfix_expr()?;
             let mut span = combine_spans(start_span, class_name.span());
             let (arguments, argument_names, argument_unpacks) =

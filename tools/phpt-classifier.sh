@@ -1664,9 +1664,10 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\(/ ||
-                line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::/) {
-                print "unsupported-internal-reflection-metadata\trequires ReflectionProperty metadata/mutation support, outside PTN modeled reflection metadata"
+            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ ||
+                line ~ /->[[:space:]]*(getattributes|getdoccomment|gettype|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isfinal|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
+                line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_|export|setaccessible|getmodifiernames)/) {
+                print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                 found = 1
                 exit
             }
