@@ -1862,7 +1862,9 @@ fn emit_return_type_boundary(
         | TypeHint::Iterable
         | TypeHint::Static
         | TypeHint::Union(_)
-        | TypeHint::Intersection(_) => emit_generic_return_type_boundary(out, return_type, function_name),
+        | TypeHint::Intersection(_) => {
+            emit_generic_return_type_boundary(out, return_type, function_name)
+        }
         TypeHint::Callable | TypeHint::Mixed | TypeHint::Void => {}
     }
 }

@@ -6415,7 +6415,9 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
             Some(span),
         ));
     }
-    if types.iter().any(|type_hint| matches!(type_hint, TypeHint::True))
+    if types
+        .iter()
+        .any(|type_hint| matches!(type_hint, TypeHint::True))
         && types
             .iter()
             .any(|type_hint| matches!(type_hint, TypeHint::False))
@@ -6425,7 +6427,10 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
             Some(span),
         ));
     }
-    if types.iter().any(|type_hint| matches!(type_hint, TypeHint::Bool)) {
+    if types
+        .iter()
+        .any(|type_hint| matches!(type_hint, TypeHint::Bool))
+    {
         if types
             .iter()
             .any(|type_hint| matches!(type_hint, TypeHint::False))
@@ -6445,7 +6450,9 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
             ));
         }
     }
-    if types.iter().any(|type_hint| matches!(type_hint, TypeHint::Object))
+    if types
+        .iter()
+        .any(|type_hint| matches!(type_hint, TypeHint::Object))
         && types.iter().any(type_hint_is_explicit_class_like)
     {
         return Err(Diagnostic::new(
