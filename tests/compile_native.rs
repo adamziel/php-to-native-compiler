@@ -331,6 +331,13 @@ fn lexer_accepts_numeric_literal_separators_and_radices() {
 }
 
 #[test]
+fn lexer_accepts_php_high_byte_identifier_names() {
+    let tokens = lexer::lex("<?php $\u{e0fc}ber = 1; class \u{e0fc}berK {}").unwrap();
+    assert!(matches!(&tokens[1].kind, TokenKind::Variable(name) if name == "\u{e0fc}ber"));
+    assert!(matches!(&tokens[6].kind, TokenKind::Identifier(name) if name == "\u{e0fc}berK"));
+}
+
+#[test]
 fn lexer_treats_oversized_integer_literals_as_floats() {
     let tokens = lexer::lex(
         "<?php 9223372036854775808 0x8000000000000000 0b1000000000000000000000000000000000000000000000000000000000000000",
@@ -6950,6 +6957,78 @@ var_dump(unserialize($payload));
 }
 
 #[test]
+fn compile_unserialize_duplicate_key_reference_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-duplicate-key-reference-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-duplicate-key-reference-errors.php");
+    let output = root.join("unserialize-duplicate-key-reference-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(unserialize('a:7:{i:0;i:04;s:1:"a";i:2;i:9617006;i:4;s:1:"a";i:4;s:1:"a";R:5;s:1:"7";R:3;s:1:"a";R:5;;s:18;}}'));
+$poc = 'a:9:{i:0;s:4:"0000";i:0;s:4:"0000";i:0;R:2;s:4:"5003";R:2;s:4:"0000";R:2;s:4:"0000";R:2;s:4:"';
+$poc .= "\x06";
+$poc .= '000";R:2;s:4:"0000";d:0;s:4:"0000";a:9:{s:4:"0000";';
+var_dump(unserialize($poc));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 64 of 96 bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 43 of 145 bytes"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("bool(false)").count(), 2, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unserialize_huge_custom_payload_length_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-huge-custom-payload-length");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-huge-custom-payload-length.php");
+    let output = root.join("unserialize-huge-custom-payload-length-bin");
+    fs::write(
+        &input,
+        r#"<?php
+echo unserialize('C:3:"XYZ":18446744075857035259:{}');
+echo "===DONE===\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Insufficient data for unserializing - "),
+        "{stdout}"
+    );
+    assert!(stdout.contains(" required, 1 present"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 32 of 33 bytes"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("===DONE===\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_array_backed_unserialize_incomplete_classes_to_native_binary() {
     let root = temp_dir("ptn-native-spl-incomplete-unserialize");
     fs::create_dir_all(&root).unwrap();
@@ -7031,7 +7110,7 @@ try {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "Warning: SplObjectStorage::unserialize(): Unexpected end of serialized data in ptn on line 4\n",
+            "\nWarning: SplObjectStorage::unserialize(): Unexpected end of serialized data in ptn on line 4\n",
             "Error at offset 24 of 113 bytes\n",
         )
     );

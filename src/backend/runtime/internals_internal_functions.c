@@ -2278,11 +2278,11 @@ static int ptn_serialize_append_serializable_object(
 }
 
 static void ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state) {
-    if (ptn_serialize_append_serializable_object(buffer, object, state)) {
-        return;
-    }
     if (ptn_serialize_object_is_spl_array_backed(object)) {
         ptn_serialize_append_spl_array_backed_object(buffer, object, state);
+        return;
+    }
+    if (ptn_serialize_append_serializable_object(buffer, object, state)) {
         return;
     }
     ptn_string_buffer_append_format(
@@ -2406,6 +2406,9 @@ typedef struct {
     size_t id_capacity;
     int failed;
     int unexpected_end;
+    int insufficient_data;
+    size_t insufficient_required;
+    size_t insufficient_present;
 } PtnUnserializeState;
 
 typedef struct {
@@ -2438,6 +2441,9 @@ static void ptn_unserialize_state_init(
     state->id_capacity = 0;
     state->failed = 0;
     state->unexpected_end = 0;
+    state->insufficient_data = 0;
+    state->insufficient_required = 0;
+    state->insufficient_present = 0;
 }
 
 static void ptn_unserialize_state_free(PtnUnserializeState *state) {
@@ -2469,6 +2475,19 @@ static int ptn_unserialize_require(PtnUnserializeState *state, size_t count) {
         return 0;
     }
     return 1;
+}
+
+static size_t ptn_unserialize_remaining(PtnUnserializeState *state) {
+    return state->pos <= state->len ? state->len - state->pos : 0;
+}
+
+static int ptn_unserialize_require_payload(PtnUnserializeState *state, size_t count) {
+    if (!ptn_unserialize_has(state, count)) {
+        state->insufficient_data = 1;
+        state->insufficient_required = count;
+        state->insufficient_present = ptn_unserialize_remaining(state);
+    }
+    return ptn_unserialize_require(state, count);
 }
 
 static int ptn_unserialize_consume(PtnUnserializeState *state, char expected) {
@@ -2522,6 +2541,26 @@ static void ptn_unserialize_update_slot(PtnUnserializeState *state, size_t id, P
     }
 }
 
+static void ptn_unserialize_invalidate_id(PtnUnserializeState *state, size_t id) {
+    if (id == 0 || id > state->id_len) {
+        return;
+    }
+    state->ids[id - 1].slot = NULL;
+    state->ids[id - 1].reference = NULL;
+}
+
+static void ptn_unserialize_invalidate_slot(PtnUnserializeState *state, PtnValue *slot) {
+    if (slot == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < state->id_len; i++) {
+        if (state->ids[i].slot == slot) {
+            state->ids[i].slot = NULL;
+            state->ids[i].reference = NULL;
+        }
+    }
+}
+
 static int ptn_unserialize_parse_unsigned(PtnUnserializeState *state, size_t *value) {
     if (!ptn_unserialize_has(state, 1)) {
         state->unexpected_end = 1;
@@ -2533,14 +2572,19 @@ static int ptn_unserialize_parse_unsigned(PtnUnserializeState *state, size_t *va
         return 0;
     }
     size_t result = 0;
+    int overflowed = 0;
     while (ptn_unserialize_has(state, 1) &&
            state->data[state->pos] >= '0' &&
            state->data[state->pos] <= '9') {
         size_t digit = (size_t)(state->data[state->pos] - '0');
-        if (result > (SIZE_MAX - digit) / 10) {
-            ptn_abort_out_of_memory();
+        if (!overflowed) {
+            if (result > (SIZE_MAX - digit) / 10) {
+                result = SIZE_MAX;
+                overflowed = 1;
+            } else {
+                result = result * 10 + digit;
+            }
         }
-        result = result * 10 + digit;
         state->pos++;
     }
     *value = result;
@@ -2688,15 +2732,35 @@ static void ptn_unserialize_emit_error_warning(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_emit_warning(&runtime->diagnostics, message, line);
+    ptn_emit_runtime_warning(runtime, message, line);
 }
 
 static void ptn_unserialize_emit_unexpected_end_warning(PtnRuntime *runtime, size_t line) {
-    ptn_emit_warning(
-        &runtime->diagnostics,
+    ptn_emit_runtime_warning(
+        runtime,
         "unserialize(): Unexpected end of serialized data",
         line
     );
+}
+
+static void ptn_unserialize_emit_insufficient_data_warning(
+    PtnRuntime *runtime,
+    size_t required,
+    size_t present,
+    size_t line
+) {
+    char message[176];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Insufficient data for unserializing - %zu required, %zu present",
+        required,
+        present
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
 }
 
 static void ptn_unserialize_emit_extra_data_warning(
@@ -2716,7 +2780,7 @@ static void ptn_unserialize_emit_extra_data_warning(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_emit_warning(&runtime->diagnostics, message, line);
+    ptn_emit_runtime_warning(runtime, message, line);
 }
 
 static PtnValue ptn_unserialize_new_object_shell(PtnRuntime *runtime, const char *class_name) {
@@ -2830,6 +2894,14 @@ static int ptn_unserialize_store_entry(
     PtnArrayKey key,
     PtnUnserializeValue parsed
 ) {
+    size_t existing_index = ptn_array_find_key(array, key);
+    if (existing_index < array->len) {
+        ptn_unserialize_invalidate_slot(state, &array->entries[existing_index].value);
+        ptn_array_set_entry(array, key, parsed.value);
+        ptn_unserialize_invalidate_id(state, parsed.id);
+        return 1;
+    }
+
     PtnArrayKey lookup = ptn_array_key_clone(key);
     ptn_array_set_entry(array, key, parsed.value);
     size_t index = ptn_array_find_key(array, lookup);
@@ -2940,6 +3012,10 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 !ptn_unserialize_consume(state, '{')) {
                 return result;
             }
+            if (count > ptn_unserialize_remaining(state)) {
+                ptn_unserialize_fail(state);
+                return result;
+            }
             PtnArray *array = ptn_unserialize_new_array_with_capacity(count);
             result.value = ptn_array(array);
             result.id = ptn_unserialize_add_slot(state, &result.value);
@@ -2977,6 +3053,11 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '{')) {
                 free(class_name);
+                return result;
+            }
+            if (property_count > ptn_unserialize_remaining(state)) {
+                free(class_name);
+                ptn_unserialize_fail(state);
                 return result;
             }
             result.value = ptn_unserialize_new_object_shell(runtime, class_name);
@@ -3017,7 +3098,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 !ptn_unserialize_parse_unsigned(state, &payload_len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '{') ||
-                !ptn_unserialize_require(state, payload_len)) {
+                !ptn_unserialize_require_payload(state, payload_len)) {
                 free(class_name);
                 return result;
             }
@@ -3095,6 +3176,9 @@ typedef struct {
     size_t id_len;
     int failed;
     int unexpected_end;
+    int insufficient_data;
+    size_t insufficient_required;
+    size_t insufficient_present;
 } PtnUnserializeSavedInput;
 
 static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -3121,6 +3205,9 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
         saved.id_len = active_state->id_len;
         saved.failed = active_state->failed;
         saved.unexpected_end = active_state->unexpected_end;
+        saved.insufficient_data = active_state->insufficient_data;
+        saved.insufficient_required = active_state->insufficient_required;
+        saved.insufficient_present = active_state->insufficient_present;
 
         active_state->data = (const char *)input.data;
         active_state->len = input.len;
@@ -3129,9 +3216,15 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
         active_state->line = line;
         active_state->failed = 0;
         active_state->unexpected_end = 0;
+        active_state->insufficient_data = 0;
+        active_state->insufficient_required = 0;
+        active_state->insufficient_present = 0;
         PtnUnserializeValue parsed = ptn_unserialize_parse_value(active_state, runtime);
         int failed = active_state->failed;
         int unexpected_end = active_state->unexpected_end;
+        int insufficient_data = active_state->insufficient_data;
+        size_t insufficient_required = active_state->insufficient_required;
+        size_t insufficient_present = active_state->insufficient_present;
         size_t error_pos = active_state->error_pos;
         size_t parsed_pos = active_state->pos;
 
@@ -3143,10 +3236,21 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
         active_state->id_len = saved.id_len;
         active_state->failed = saved.failed;
         active_state->unexpected_end = saved.unexpected_end;
+        active_state->insufficient_data = saved.insufficient_data;
+        active_state->insufficient_required = saved.insufficient_required;
+        active_state->insufficient_present = saved.insufficient_present;
 
         if (failed) {
             if (unexpected_end) {
                 ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+            }
+            if (insufficient_data) {
+                ptn_unserialize_emit_insufficient_data_warning(
+                    runtime,
+                    insufficient_required,
+                    insufficient_present,
+                    line
+                );
             }
             ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
             ptn_value_destroy(&parsed.value);
@@ -3174,6 +3278,9 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
     PtnUnserializeValue parsed = ptn_unserialize_parse_value(&state, runtime);
     int failed = state.failed;
     int unexpected_end = state.unexpected_end;
+    int insufficient_data = state.insufficient_data;
+    size_t insufficient_required = state.insufficient_required;
+    size_t insufficient_present = state.insufficient_present;
     size_t error_pos = state.error_pos;
     size_t parsed_pos = state.pos;
     if (runtime != NULL) {
@@ -3183,6 +3290,14 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
     if (failed) {
         if (unexpected_end) {
             ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+        }
+        if (insufficient_data) {
+            ptn_unserialize_emit_insufficient_data_warning(
+                runtime,
+                insufficient_required,
+                insufficient_present,
+                line
+            );
         }
         ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
         ptn_value_destroy(&parsed.value);

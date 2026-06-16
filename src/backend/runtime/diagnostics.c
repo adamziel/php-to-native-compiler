@@ -737,6 +737,7 @@ static PTN_UNUSED void ptn_emit_runtime_warning(PtnRuntime *runtime, const char 
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
+    fputc('\n', stdout);
     diagnostics->emitted_warning = 1;
     fputs("Warning: ", stdout);
     fputs(message, stdout);

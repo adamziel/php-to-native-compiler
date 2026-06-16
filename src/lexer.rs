@@ -851,7 +851,7 @@ impl<'a> Lexer<'a> {
                         }
                         let mut name = String::new();
                         while let Some(ch) = self.peek_char() {
-                            if ch.is_ascii_alphanumeric() || ch == '_' {
+                            if is_ident_continue(ch) {
                                 name.push(ch);
                                 self.bump_char();
                             } else {
@@ -1078,7 +1078,7 @@ impl<'a> Lexer<'a> {
             Some(ch) if is_ident_start(ch) => {
                 let mut key = String::new();
                 while let Some(ch) = self.peek_char() {
-                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                    if is_ident_continue(ch) {
                         key.push(ch);
                         self.bump_char();
                     } else {
@@ -1261,7 +1261,7 @@ impl<'a> Lexer<'a> {
         }
         let mut name = String::new();
         while let Some(ch) = self.peek_char() {
-            if ch.is_ascii_alphanumeric() || ch == '_' {
+            if is_ident_continue(ch) {
                 name.push(ch);
                 self.bump_char();
             } else {
@@ -1294,10 +1294,11 @@ impl<'a> Lexer<'a> {
     }
 
     fn starts_heredoc_interpolation(&self) -> bool {
-        matches!(
-            self.rest().chars().nth(1),
-            Some('$') | Some('{') | Some('a'..='z') | Some('A'..='Z') | Some('_')
-        )
+        match self.rest().chars().nth(1) {
+            Some('$' | '{') => true,
+            Some(ch) => is_ident_start(ch),
+            None => false,
+        }
     }
 
     fn starts_string_interpolation(&self) -> bool {
@@ -1506,7 +1507,7 @@ impl<'a> Lexer<'a> {
         }
         let mut name = String::new();
         while let Some(ch) = self.peek_char() {
-            if ch.is_ascii_alphanumeric() || ch == '_' {
+            if is_ident_continue(ch) {
                 name.push(ch);
                 self.bump_char();
             } else {
@@ -1524,7 +1525,7 @@ impl<'a> Lexer<'a> {
         let start = self.current_span(0);
         let mut text = String::new();
         while let Some(ch) = self.peek_char() {
-            if ch.is_ascii_alphanumeric() || ch == '_' {
+            if is_ident_continue(ch) {
                 text.push(ch);
                 self.bump_char();
             } else {
@@ -1649,7 +1650,19 @@ impl<'a> Lexer<'a> {
 }
 
 fn is_ident_start(ch: char) -> bool {
-    ch.is_ascii_alphabetic() || ch == '_'
+    ch.is_ascii_alphabetic() || ch == '_' || is_php_identifier_high_byte(ch)
+}
+
+fn is_ident_continue(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_' || is_php_identifier_high_byte(ch)
+}
+
+fn is_php_identifier_high_byte(ch: char) -> bool {
+    if !ch.is_ascii() && (ch as u32) < PHP_BINARY_BYTE_SENTINEL_BASE {
+        return true;
+    }
+    let offset = (ch as u32).saturating_sub(PHP_BINARY_BYTE_SENTINEL_BASE);
+    (0x80..=0xff).contains(&offset)
 }
 
 fn validate_heredoc_label(label: &str, span: SourceSpan) -> Result<()> {
@@ -1657,7 +1670,7 @@ fn validate_heredoc_label(label: &str, span: SourceSpan) -> Result<()> {
     let Some(first) = chars.next() else {
         return Err(Diagnostic::new("expected heredoc label", Some(span)));
     };
-    if !is_ident_start(first) || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+    if !is_ident_start(first) || !chars.all(is_ident_continue) {
         return Err(Diagnostic::new("invalid heredoc label", Some(span)));
     }
     Ok(())
