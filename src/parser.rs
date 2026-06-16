@@ -314,9 +314,9 @@ impl Parser<'_> {
                 }
                 if matches!(&method.return_type, Some(TypeHint::Never)) {
                     validate_never_returns_in_statements(&method.body, FunctionLikeKind::Method)?;
-                    validate_never_generator_return_type(&method.body, method.span)?;
                 }
                 if let Some(return_type) = &method.return_type {
+                    validate_generator_return_type(&method.body, return_type, method.span)?;
                     validate_typed_returns_have_values_in_statements(
                         &method.body,
                         return_type,
@@ -12352,7 +12352,6 @@ fn validate_never_returns(functions: &[FunctionDecl]) -> Result<()> {
     for function in functions {
         if matches!(&function.return_type, Some(TypeHint::Never)) {
             validate_never_returns_in_statements(&function.body, FunctionLikeKind::Function)?;
-            validate_never_generator_return_type(&function.body, function.span)?;
         }
     }
     Ok(())
@@ -12361,6 +12360,7 @@ fn validate_never_returns(functions: &[FunctionDecl]) -> Result<()> {
 fn validate_typed_returns_have_values(functions: &[FunctionDecl]) -> Result<()> {
     for function in functions {
         if let Some(return_type) = &function.return_type {
+            validate_generator_return_type(&function.body, return_type, function.span)?;
             validate_typed_returns_have_values_in_statements(
                 &function.body,
                 return_type,
@@ -12444,16 +12444,16 @@ fn validate_typed_returns_have_values_in_statements(
     return_type: &TypeHint,
     kind: FunctionLikeKind,
 ) -> Result<()> {
-    if matches!(return_type, TypeHint::Void | TypeHint::Never) {
+    if matches!(return_type, TypeHint::Void | TypeHint::Never)
+        || statements_contain_yield(statements)
+    {
         return Ok(());
     }
     for statement in statements {
         match statement {
             Statement::Return { value: None, span } => {
-                let mut message = format!(
-                    "A {} with return type must return a value",
-                    kind.label()
-                );
+                let mut message =
+                    format!("A {} with return type must return a value", kind.label());
                 if type_hint_accepts_null_default(return_type) {
                     message.push_str(" (did you mean \"return null;\" instead of \"return;\"?)");
                 }
@@ -12481,11 +12481,7 @@ fn validate_typed_returns_have_values_in_statements(
                 body,
                 ..
             } => {
-                validate_typed_returns_have_values_in_statements(
-                    initializers,
-                    return_type,
-                    kind,
-                )?;
+                validate_typed_returns_have_values_in_statements(initializers, return_type, kind)?;
                 validate_typed_returns_have_values_in_statements(updates, return_type, kind)?;
                 validate_typed_returns_have_values_in_statements(body, return_type, kind)?;
             }
@@ -12581,14 +12577,38 @@ fn validate_never_returns_in_statements(
     Ok(())
 }
 
-fn validate_never_generator_return_type(statements: &[Statement], span: SourceSpan) -> Result<()> {
-    if statements_contain_yield(statements) {
+fn validate_generator_return_type(
+    statements: &[Statement],
+    return_type: &TypeHint,
+    span: SourceSpan,
+) -> Result<()> {
+    if statements_contain_yield(statements) && !type_hint_accepts_generator_return(return_type) {
         return Err(Diagnostic::new(
-            "Generator return type must be a supertype of Generator, never given",
+            format!(
+                "Generator return type must be a supertype of Generator, {} given",
+                type_hint_display(return_type)
+            ),
             Some(span),
         ));
     }
     Ok(())
+}
+
+fn type_hint_accepts_generator_return(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Mixed | TypeHint::Object | TypeHint::Iterable => true,
+        TypeHint::Class(name) => matches!(
+            name.rsplit('\\')
+                .next()
+                .unwrap_or(name)
+                .to_ascii_lowercase()
+                .as_str(),
+            "generator" | "iterator" | "traversable"
+        ),
+        TypeHint::Nullable(inner) => type_hint_accepts_generator_return(inner),
+        TypeHint::Union(types) => types.iter().any(type_hint_accepts_generator_return),
+        _ => false,
+    }
 }
 
 fn value_is_null_literal(value: &Expr) -> bool {
@@ -13125,10 +13145,10 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
             }
             if !function.is_arrow && matches!(&function.return_type, Some(TypeHint::Never)) {
                 validate_never_returns_in_statements(&function.body, FunctionLikeKind::Function)?;
-                validate_never_generator_return_type(&function.body, function.span)?;
             }
             if !function.is_arrow {
                 if let Some(return_type) = &function.return_type {
+                    validate_generator_return_type(&function.body, return_type, function.span)?;
                     validate_typed_returns_have_values_in_statements(
                         &function.body,
                         return_type,

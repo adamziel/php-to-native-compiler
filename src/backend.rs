@@ -2434,16 +2434,13 @@ fn emit_magic_declaration_fatals(
 }
 
 fn return_type_needs_runtime_context(return_type: &TypeHint) -> bool {
-    !matches!(
-        return_type,
-        TypeHint::Callable | TypeHint::Mixed | TypeHint::Void
-    )
+    !matches!(return_type, TypeHint::Callable | TypeHint::Void)
 }
 
 fn return_type_needs_return_value_was_set(return_type: &TypeHint) -> bool {
     !matches!(
         return_type,
-        TypeHint::Callable | TypeHint::Mixed | TypeHint::Void | TypeHint::Never
+        TypeHint::Callable | TypeHint::Void | TypeHint::Never
     )
 }
 
@@ -2531,6 +2528,18 @@ fn emit_return_type_boundary(
                 emit_nullable_return_type_boundary(out, inner, function_name, return_by_ref);
             }
         }
+        TypeHint::Mixed => {
+            out.push_str("    if (!ptn_return_value_was_set) {\n");
+            out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
+            out.push_str(&c_string(function_name));
+            out.push_str(
+                "\", \"mixed\", ptn_return_value, ptn_return_value_was_set, ptn_return_line);\n",
+            );
+            out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            out.push_str("        return ptn_null();\n");
+            out.push_str("    }\n");
+        }
         TypeHint::Object
         | TypeHint::Iterable
         | TypeHint::Static
@@ -2538,7 +2547,7 @@ fn emit_return_type_boundary(
         | TypeHint::Intersection(_) => {
             emit_generic_return_type_boundary(out, return_type, function_name)
         }
-        TypeHint::Callable | TypeHint::Mixed | TypeHint::Void => {}
+        TypeHint::Callable | TypeHint::Void => {}
     }
 }
 
