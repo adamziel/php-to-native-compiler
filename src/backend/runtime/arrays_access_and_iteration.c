@@ -3344,6 +3344,37 @@ static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
     PtnValue container,
     size_t line
 );
+static PTN_UNUSED void ptn_emit_illegal_string_offset_warning(
+    PtnRuntime *runtime,
+    const char *key,
+    size_t line
+);
+static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, int *warn_illegal);
+
+static PTN_UNUSED void ptn_warn_illegal_string_reference_key(
+    PtnRuntime *runtime,
+    PtnValue container,
+    const PtnValue *key_value,
+    size_t line
+) {
+    PtnValue value = ptn_value_deref(container);
+    if (value.type != PTN_STRING || key_value == NULL) {
+        return;
+    }
+
+    PtnValue key = ptn_value_deref(*key_value);
+    if (key.type != PTN_STRING) {
+        return;
+    }
+
+    int64_t offset = 0;
+    int warn_illegal = 0;
+    char *key_string = ptn_duplicate_string_len((const char *)key.as.string.data, key.as.string.len);
+    if (ptn_string_to_offset(key_string, &offset, &warn_illegal) && warn_illegal) {
+        ptn_emit_illegal_string_offset_warning(runtime, key_string, line);
+    }
+    free(key_string);
+}
 
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
     PtnRuntime *runtime,
@@ -3364,6 +3395,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
             ptn_emit_indirect_modification_overloaded_element_notice(runtime, slot_value, line);
             return ptn_reference_value(ptn_reference_new_owned(value));
         }
+        ptn_warn_illegal_string_reference_key(runtime, slot_value, key_value, line);
     }
 
     PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
@@ -3423,6 +3455,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
     if (value->type == PTN_ARRAY) {
         array = ptn_array_detach_value(value);
     } else if (value->type == PTN_STRING) {
+        ptn_warn_illegal_string_reference_key(runtime, *value, key_value, line);
         ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     } else if ((array = ptn_array_convertible_scalar_for_write(value, line)) != NULL) {
@@ -5074,6 +5107,9 @@ static PTN_UNUSED PtnArray *ptn_array_descend_for_reference_write(
         return converted;
     }
     if (entry_value->type == PTN_STRING) {
+        if (!segment->append) {
+            ptn_warn_illegal_string_reference_key(runtime, *entry_value, &segment->value, line);
+        }
         ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
         return NULL;
     }
@@ -5183,6 +5219,11 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
         }
     }
 
+    if (slot != NULL && !segments[0].append) {
+        PtnValue slot_value = ptn_value_deref(*slot);
+        ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line);
+    }
+
     PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
     if (array == NULL) {
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
@@ -5230,6 +5271,12 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
     if (segment_count == 0) {
         ptn_runtime_bind_variable_reference(runtime, name, reference);
         return;
+    }
+
+    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    if (slot != NULL && !segments[0].append) {
+        PtnValue slot_value = ptn_value_deref(*slot);
+        ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line);
     }
 
     PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
@@ -5306,6 +5353,9 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
     if (target_value->type == PTN_ARRAY) {
         array = ptn_array_detach_value(target_value);
     } else if (target_value->type == PTN_STRING) {
+        if (!segments[0].append) {
+            ptn_warn_illegal_string_reference_key(runtime, *target_value, &segments[0].value, line);
+        }
         ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     } else if ((array = ptn_array_convertible_scalar_for_write(target_value, line)) != NULL) {
@@ -5371,6 +5421,9 @@ static PTN_UNUSED void ptn_value_bind_array_path_reference(
     if (target_value->type == PTN_ARRAY) {
         array = ptn_array_detach_value(target_value);
     } else if (target_value->type == PTN_STRING) {
+        if (!segments[0].append) {
+            ptn_warn_illegal_string_reference_key(runtime, *target_value, &segments[0].value, line);
+        }
         ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
         return;
     } else if ((array = ptn_array_convertible_scalar_for_write(target_value, line)) != NULL) {

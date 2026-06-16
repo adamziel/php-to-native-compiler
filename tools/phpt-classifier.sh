@@ -1366,6 +1366,12 @@ ptn_phpt_first_unsupported_language_surface() {
             } else if (ptn_function_body_pending && ptn_line_open_braces == 0 && line ~ /;/) {
                 ptn_function_body_pending = 0
             }
+            if (!ptn_function_declaration_line && ptn_function_body_depth > 0 && ptn_line_open_braces > 0) {
+                ptn_function_body_depth += ptn_line_open_braces
+            }
+            if (!ptn_class_declaration_line && ptn_class_body_depth > 0 && ptn_line_open_braces > 0) {
+                ptn_class_body_depth += ptn_line_open_braces
+            }
             if (line ~ /(^|[^[:alnum:]_$])interface[[:space:]]+[a-z_\\][a-z0-9_\\]*/) {
                 saw_interface = 1
             }
@@ -1494,16 +1500,6 @@ ptn_phpt_first_unsupported_language_surface() {
                     ptn_class_body_depth = 0
                 }
             }
-            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*\$[a-z_][a-z0-9_]*[[:space:]]*\[[[:space:]]*\][^)]*as([^[:alnum:]_]|$)/) {
-                print "unsupported-expression-diagnostics\trequires array-append read diagnostics (`[]` in read context), outside PTN expression diagnostics"
-                found = 1
-                exit
-            }
-            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*\$this([^[:alnum:]_]|$)/) {
-                print "unsupported-expression-diagnostics\trequires foreach assignment diagnostics for `$this`, outside PTN special-variable assignment diagnostics"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[^[:alnum:]_$])eval[[:space:]]*\(/) {
                 print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
                 found = 1
@@ -1516,6 +1512,11 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (ptn_has_named_modeled_array_internal_call(line)) {
                 print "unsupported-internal-call-binding\trequires named-argument binding for modeled array internal calls, outside PTN internal-call lowering"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(date_create_from_format|date_parse_from_format)[[:space:]]*\(/) {
+                print "unsupported-internal\trequires date format parser diagnostics and fractional-second normalization outside PTN modeled date runtime"
                 found = 1
                 exit
             }
@@ -1711,6 +1712,12 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (!ptn_has_override_attribute &&
                 line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
                 print "unsupported-typed-property-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[[:space:]])(protected|private)[[:space:]]+static[[:space:]]+\$[a-z_]/ ||
+                line ~ /(^|[[:space:]])static[[:space:]]+(protected|private)[[:space:]]+\$[a-z_]/) {
+                print "unsupported-property-visibility-metadata\trequires non-public static property visibility metadata, outside PTN modeled static property declarations"
                 found = 1
                 exit
             }
@@ -1952,20 +1959,10 @@ ptn_phpt_first_unsupported_internal_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*&/) {
-                byref_foreach = 1
-            }
-            if (line ~ /(^|[^[:alnum:]_$])(array_shift|array_unshift)[[:space:]]*\(/) {
-                positional_mutator = 1
-            }
         }
         END {
             if (!found && array_splice_seen && destructor_seen && global_state_seen) {
                 print "unsupported-internal\trequires array_splice() destructor reentrancy detection when element destruction mutates global array state, outside PTN modeled array_splice helper"
-                found = 1
-            }
-            if (!found && byref_foreach && positional_mutator) {
-                print "unsupported-internal\trequires by-reference foreach iterator-pointer preservation under positional array mutation, outside PTN foreach iterator model"
                 found = 1
             }
             exit found ? 0 : 1
