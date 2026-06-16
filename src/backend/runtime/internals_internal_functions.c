@@ -1056,6 +1056,12 @@ typedef struct {
     int sorting;
 } PtnArrayObjectData;
 
+static void ptn_unserialize_hydrate_spl_array_backed_object(
+    PtnRuntime *runtime,
+    PtnValue object,
+    size_t line
+);
+
 static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         printf("[%lld]=>\n", (long long)key.as.integer);
@@ -2445,6 +2451,19 @@ static PtnValue ptn_serialize_spl_storage_value(PtnObject *object) {
     return ptn_array_from_literal_entries(0, NULL);
 }
 
+static const char *ptn_serialize_spl_array_object_iterator_class(PtnObject *object) {
+    if (!ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject") ||
+        object->native_data == NULL) {
+        return NULL;
+    }
+    PtnArrayObjectData *data = (PtnArrayObjectData *)object->native_data;
+    if (data->iterator_class == NULL ||
+        ptn_ascii_case_equal(data->iterator_class, "ArrayIterator")) {
+        return NULL;
+    }
+    return data->iterator_class;
+}
+
 static void ptn_serialize_append_spl_array_backed_object(
     PtnStringBuffer *buffer,
     PtnObject *object,
@@ -2463,7 +2482,14 @@ static void ptn_serialize_append_spl_array_backed_object(
     ptn_string_buffer_append(buffer, "i:2;");
     PtnValue properties = ptn_array(object->properties);
     ptn_serialize_append_value_with_id(buffer, properties, state, 0);
-    ptn_string_buffer_append(buffer, "i:3;N;}");
+    ptn_string_buffer_append(buffer, "i:3;");
+    const char *iterator_class = ptn_serialize_spl_array_object_iterator_class(object);
+    if (iterator_class == NULL) {
+        ptn_string_buffer_append(buffer, "N;");
+    } else {
+        ptn_serialize_append_string(buffer, iterator_class, strlen(iterator_class));
+    }
+    ptn_string_buffer_append_char(buffer, '}');
 }
 
 static int ptn_serialize_append_serializable_object(
@@ -3476,6 +3502,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             if (!ptn_unserialize_consume(state, '}')) {
                 return result;
             }
+            ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
             return result;
         }
         case 'C': {
@@ -39411,6 +39438,141 @@ static char *ptn_spl_array_object_iterator_class_arg(
     }
     ptn_throw_exception(runtime, "TypeError", message);
     return NULL;
+}
+
+static const PtnValue *ptn_unserialize_spl_array_backed_slot(PtnObject *object, char slot) {
+    int64_t integer_slot = (int64_t)(slot - '0');
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (entry->key.type == PTN_ARRAY_KEY_INT &&
+            entry->key.as.integer == integer_slot) {
+            return &entry->value;
+        }
+        if (entry->key.type == PTN_ARRAY_KEY_STRING &&
+            entry->key.string_len == 1 &&
+            entry->key.as.string[0] == slot) {
+            return &entry->value;
+        }
+    }
+    return NULL;
+}
+
+static int64_t ptn_unserialize_spl_array_backed_flags(PtnObject *object) {
+    const PtnValue *slot = ptn_unserialize_spl_array_backed_slot(object, '0');
+    if (slot == NULL) {
+        return 0;
+    }
+    return ptn_value_to_integer(*slot);
+}
+
+static PtnValue ptn_unserialize_spl_array_backed_storage(PtnObject *object) {
+    const PtnValue *slot = ptn_unserialize_spl_array_backed_slot(object, '1');
+    if (slot == NULL) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+    PtnValue storage = ptn_value_deref(*slot);
+    if (storage.type != PTN_ARRAY && storage.type != PTN_OBJECT) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+    return ptn_value_clone(storage);
+}
+
+static char *ptn_unserialize_spl_array_object_iterator_class(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    const PtnValue *slot = ptn_unserialize_spl_array_backed_slot(object, '3');
+    if (slot == NULL) {
+        return ptn_duplicate_string("ArrayIterator");
+    }
+    PtnValue value = ptn_value_deref(*slot);
+    if (value.type == PTN_NULL) {
+        return ptn_duplicate_string("ArrayIterator");
+    }
+    if (value.type != PTN_STRING) {
+        return ptn_duplicate_string("ArrayIterator");
+    }
+    char *class_name = ptn_duplicate_string_len(
+        (const char *)value.as.string.data,
+        value.as.string.len
+    );
+    if (ptn_ascii_case_equal(class_name, "ArrayIterator")) {
+        free(class_name);
+        return ptn_duplicate_string("ArrayIterator");
+    }
+    if (runtime != NULL && !ptn_spl_iterator_class_is_array_iterator_descendant(runtime, class_name)) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot deserialize ArrayObject with iterator class '%s'",
+            class_name
+        );
+        free(class_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "UnexpectedValueException", message, runtime->source_path, line);
+        return NULL;
+    }
+    return class_name;
+}
+
+static void ptn_unserialize_replace_native_data(
+    PtnObject *object,
+    void *native_data,
+    PtnObjectNativeDataFree free_fn
+) {
+    if (object->native_data_free != NULL) {
+        object->native_data_free(object->native_data);
+    }
+    object->native_data = native_data;
+    object->native_data_free = free_fn;
+}
+
+static void ptn_unserialize_hydrate_spl_array_backed_object(
+    PtnRuntime *runtime,
+    PtnValue object,
+    size_t line
+) {
+    object = ptn_value_deref(object);
+    if (object.type != PTN_OBJECT) {
+        return;
+    }
+    PtnObject *instance = object.as.object;
+    if (ptn_internal_class_name_is_array_iterator(instance->class_name) ||
+        ptn_internal_class_name_is_recursive_array_iterator(instance->class_name) ||
+        ptn_declared_class_is_same_or_descendant(instance->class_name, "ArrayIterator")) {
+        PtnArrayIteratorData *data = malloc(sizeof(PtnArrayIteratorData));
+        if (data == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->storage = ptn_unserialize_spl_array_backed_storage(instance);
+        data->index = 0;
+        data->flags = ptn_unserialize_spl_array_backed_flags(instance);
+        ptn_unserialize_replace_native_data(instance, data, ptn_array_iterator_data_free);
+        ptn_spl_declare_storage_property(runtime, object, "ArrayIterator", data->storage, line);
+        return;
+    }
+    if (ptn_internal_class_name_is_array_object(instance->class_name) ||
+        ptn_declared_class_is_same_or_descendant(instance->class_name, "ArrayObject")) {
+        char *iterator_class = ptn_unserialize_spl_array_object_iterator_class(runtime, instance, line);
+        if (iterator_class == NULL) {
+            return;
+        }
+        PtnArrayObjectData *data = malloc(sizeof(PtnArrayObjectData));
+        if (data == NULL) {
+            free(iterator_class);
+            ptn_abort_out_of_memory();
+        }
+        data->storage = ptn_unserialize_spl_array_backed_storage(instance);
+        data->flags = ptn_unserialize_spl_array_backed_flags(instance);
+        data->iterator_class = iterator_class;
+        data->sorting = 0;
+        ptn_unserialize_replace_native_data(instance, data, ptn_array_object_data_free);
+        ptn_spl_declare_storage_property(runtime, object, "ArrayObject", data->storage, line);
+    }
 }
 
 static PtnValue ptn_spl_prepare_backing_storage(

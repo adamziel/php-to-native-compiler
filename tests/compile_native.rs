@@ -7563,6 +7563,44 @@ var_dump(unserialize($encoded));
 }
 
 #[test]
+fn compile_array_object_unserialize_preserves_iterator_class_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-iterator-class-unserialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-iterator-class-unserialize.php");
+    let output = root.join("array-object-iterator-class-unserialize-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyArrayIterator extends ArrayIterator {}
+
+$arrayObject = new ArrayObject([1, 2, 3]);
+$arrayObject->setIteratorClass("MyArrayIterator");
+$encoded = serialize($arrayObject);
+echo $encoded, "\n";
+$decoded = unserialize($encoded);
+echo $decoded->getIteratorClass(), "\n";
+var_dump(count($decoded));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("i:3;s:15:\"MyArrayIterator\";"), "{stdout}");
+    assert!(stdout.contains("\nMyArrayIterator\n"), "{stdout}");
+    assert!(stdout.ends_with("int(3)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_unserialize_payload_error_to_native_binary() {
     let root = temp_dir("ptn-native-spl-object-storage-unserialize");
     fs::create_dir_all(&root).unwrap();
