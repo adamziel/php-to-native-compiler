@@ -414,6 +414,9 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
         "$right = <<<'TXT'\n",
         "$literal\\n\n",
         "TXT;\n",
+        "$spaced = <<<  SPACED\n",
+        "ok\n",
+        "SPACED;\n",
     );
     let program = parser::parse(source).unwrap();
     let Statement::Assign { value, .. } = &program.statements[0] else {
@@ -425,6 +428,11 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
         panic!("expected assignment");
     };
     assert!(matches!(value, Expr::String(value, _) if value == "$literal\\n"));
+
+    let Statement::Assign { value, .. } = &program.statements[2] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value == "ok"));
 }
 
 #[test]
@@ -7373,6 +7381,7 @@ var_dump(substr_compare(\"abcde\", \"df\", -2) < 0);\n\
 var_dump(substr_compare(\"abcde\", \"bcg\", 1, 2));\n\
 var_dump(substr_compare(\"abcde\", \"BC\", 1, 2, true));\n\
 try { substr_compare(\"abcde\", \"abc\", 0, -1); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { substr_compare(\"abcde\", \"abc\", 99); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 $percent = 0;\n\
 var_dump(similar_text(\"abcdefgh\", \"efg\", $percent));\n\
 var_dump($percent);\n\
@@ -7398,6 +7407,7 @@ bool(true)\n\
 int(0)\n\
 int(0)\n\
 substr_compare(): Argument #4 ($length) must be greater than or equal to 0\n\
+substr_compare(): Argument #3 ($offset) must be contained in argument #1 ($haystack)\n\
 int(3)\n\
 float(54.54545454545455)\n\
 bool(true)\n\
@@ -10056,6 +10066,37 @@ fn compile_strip_tags_registry_and_scalar_conversion_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(5) \"12345\"\nstring(1) \"1\"\nstring(2) \"xy\"\nstring(5) \"a < b\"\nstring(2) \"ab\"\nstring(3) \" ok\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_strip_tags_nested_and_php_state_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-strip-tags-state-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strip-tags-state-edges.php");
+    let output = root.join("strip-tags-state-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(strip_tags('<? ax'));\n\
+var_dump(strip_tags('<a/b>', '<a>'));\n\
+var_dump(strip_tags('<foo<>bar>'));\n\
+var_dump(strip_tags('<foo<!>bar>'));\n\
+var_dump(strip_tags('<foo<?>bar>'));\n\
+var_dump(strip_tags(\"<?= '<?= 1 ?>' ?>2\"));\n\
+var_dump(strip_tags(\"This text is shown <?XML:NAMESPACE PREFIX = ST1 /><b>This Text disappears</b>\"));\n\
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(1) \"2\"\nstring(39) \"This text is shown This Text disappears\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

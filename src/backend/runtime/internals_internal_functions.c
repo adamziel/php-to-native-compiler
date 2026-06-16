@@ -13388,6 +13388,22 @@ static PtnValue ptn_internal_substr_compare(PtnRuntime *runtime, size_t argc, co
         );
         return ptn_null();
     }
+    if (
+        (raw_offset >= 0 && (uint64_t)raw_offset > (uint64_t)haystack.len) ||
+        (raw_offset < 0 &&
+            (raw_offset == INT64_MIN
+                ? ((uint64_t)INT64_MAX + 1)
+                : (uint64_t)(-raw_offset)) > (uint64_t)haystack.len)
+    ) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "substr_compare(): Argument #3 ($offset) must be contained in argument #1 ($haystack)"
+        );
+        return ptn_null();
+    }
 
     size_t start = 0;
     size_t end = haystack.len;
@@ -15979,6 +15995,7 @@ static int ptn_strip_tags_build_allowed_set_from_value(
 
 static size_t ptn_strip_tags_find_tag_end(const char *input, size_t len, size_t start) {
     unsigned char quote = 0;
+    size_t nested = 0;
     for (size_t i = start; i < len; i++) {
         unsigned char byte = (unsigned char)input[i];
         if (quote != 0) {
@@ -15991,7 +16008,40 @@ static size_t ptn_strip_tags_find_tag_end(const char *input, size_t len, size_t 
             quote = byte;
             continue;
         }
+        if (byte == '<') {
+            nested++;
+            continue;
+        }
         if (byte == '>') {
+            if (nested > 0) {
+                nested--;
+                continue;
+            }
+            return i;
+        }
+    }
+    return len;
+}
+
+static size_t ptn_strip_tags_find_php_tag_end(const char *input, size_t len, size_t start) {
+    unsigned char quote = 0;
+    for (size_t i = start; i < len; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        if (quote != 0) {
+            if (byte == '\\' && i + 1 < len) {
+                i++;
+                continue;
+            }
+            if (byte == quote) {
+                quote = 0;
+            }
+            continue;
+        }
+        if (byte == '"' || byte == '\'') {
+            quote = byte;
+            continue;
+        }
+        if (byte == '?' && i + 1 < len && input[i + 1] == '>') {
             return i;
         }
     }
@@ -16024,12 +16074,11 @@ static int ptn_strip_tags_extract_tag_name(
         name[name_len++] = (char)tolower((unsigned char)input[i]);
         i++;
     }
-    if (
-        i < len &&
-        input[i] != '>' &&
-        input[i] != '/' &&
-        !isspace((unsigned char)input[i])
-    ) {
+    if (i < len && input[i] == '/') {
+        if (i + 1 < len && input[i + 1] != '>' && !isspace((unsigned char)input[i + 1])) {
+            return 0;
+        }
+    } else if (i < len && input[i] != '>' && !isspace((unsigned char)input[i])) {
         return 0;
     }
     name[name_len] = '\0';
@@ -16075,14 +16124,14 @@ static char *ptn_strip_tags_string(
     while (input_offset < len) {
         if (input[input_offset] == '<') {
             if (input_offset + 1 < len && input[input_offset + 1] == '?') {
-                size_t tag_end = input_offset + 2;
-                while (tag_end + 1 < len && !(input[tag_end] == '?' && input[tag_end + 1] == '>')) {
-                    tag_end++;
-                }
-                if (tag_end + 1 < len) {
+                size_t tag_end = ptn_strip_tags_find_php_tag_end(input, len, input_offset + 2);
+                if (tag_end < len) {
                     input_offset = tag_end + 2;
                     continue;
                 }
+                tag_end = ptn_strip_tags_find_tag_end(input, len, input_offset + 1);
+                input_offset = tag_end < len ? tag_end + 1 : len;
+                continue;
             } else if (input_offset + 1 < len && input[input_offset + 1] == '%') {
                 size_t tag_end = input_offset + 2;
                 while (tag_end + 1 < len && !(input[tag_end] == '%' && input[tag_end + 1] == '>')) {

@@ -501,6 +501,7 @@ impl<'a> Lexer<'a> {
         self.bump_char();
         self.bump_char();
 
+        self.skip_horizontal_whitespace();
         let (label, nowdoc) = self.lex_heredoc_label(start)?;
         self.skip_horizontal_whitespace();
         match self.peek_char() {
