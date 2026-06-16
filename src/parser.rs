@@ -3267,7 +3267,11 @@ impl Parser<'_> {
     fn parse_const_declaration(&mut self) -> Result<ConstDeclaration> {
         let (name, token_span) = self.parse_declaration_name("expected constant name")?;
         if is_reserved_compile_time_constant_declaration_name(&name) {
-            let local_name = name.rsplit('\\').next().unwrap_or(&name);
+            let source_name = self
+                .source
+                .get(token_span.byte_start..token_span.byte_end)
+                .unwrap_or(&name);
+            let local_name = source_name.rsplit('\\').next().unwrap_or(source_name);
             return Err(Diagnostic::new(
                 format!("Cannot redeclare constant '{local_name}'"),
                 Some(token_span),
