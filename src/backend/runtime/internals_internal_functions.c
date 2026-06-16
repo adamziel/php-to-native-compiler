@@ -34637,8 +34637,16 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
         return result;
     }
 
-    ptn_emit_undefined_function_error(&runtime->diagnostics, name);
-    exit(255);
+    int needed = snprintf(NULL, 0, "Call to undefined function %s()", name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Call to undefined function %s()", name);
+    ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
     return ptn_null();
 }
 /* PTN_INTERNAL_FUNCTIONS_END */

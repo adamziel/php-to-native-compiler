@@ -1014,7 +1014,7 @@ impl Parser<'_> {
                 self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
             }
         };
-        resolved.to_ascii_lowercase()
+        resolved
     }
 
     fn resolve_constant_name(&self, parsed: &ParsedName) -> String {
