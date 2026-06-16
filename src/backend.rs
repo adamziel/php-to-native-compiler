@@ -151,6 +151,7 @@ pub fn emit_c(module: &Module) -> String {
             &mut out,
             &module.classes,
             &module.functions,
+            needs_callable_dispatch,
             runtime_requirements.closure_invoke_method_dispatch,
         );
     }
@@ -159,6 +160,9 @@ pub fn emit_c(module: &Module) -> String {
     }
     if needs_magic_debug_info {
         emit_magic_debug_info_dispatch(&mut out, &module.classes);
+    }
+    if runtime_requirements.dynamic_function_dispatch || needs_callable_dispatch {
+        emit_dynamic_call_reference_argument_helpers(&mut out);
     }
     if runtime_requirements.dynamic_function_dispatch {
         emit_dynamic_function_dispatch(&mut out);
@@ -1451,6 +1455,68 @@ fn emit_function_metadata_parameter_names(
     name.to_string()
 }
 
+fn type_hint_reflection_named_type_name(type_hint: &TypeHint) -> Option<String> {
+    Some(match type_hint {
+        TypeHint::Null => "null".to_string(),
+        TypeHint::Array => "array".to_string(),
+        TypeHint::Int => "int".to_string(),
+        TypeHint::Float => "float".to_string(),
+        TypeHint::String => "string".to_string(),
+        TypeHint::Bool => "bool".to_string(),
+        TypeHint::True => "true".to_string(),
+        TypeHint::False => "false".to_string(),
+        TypeHint::Callable => "callable".to_string(),
+        TypeHint::Object => "object".to_string(),
+        TypeHint::Iterable => "iterable".to_string(),
+        TypeHint::Mixed => "mixed".to_string(),
+        TypeHint::Void => "void".to_string(),
+        TypeHint::Never => "never".to_string(),
+        TypeHint::Static => "static".to_string(),
+        TypeHint::Nullable(inner) => type_hint_reflection_named_type_name(inner)?,
+        TypeHint::Class(class_name) => class_name.clone(),
+        TypeHint::Union(_) | TypeHint::Intersection(_) => return None,
+    })
+}
+
+fn emit_function_metadata_parameter_type_names(
+    out: &mut String,
+    indent: &str,
+    name: &str,
+    parameters: &[FunctionParameter],
+) -> String {
+    let type_names: Vec<Option<String>> = parameters
+        .iter()
+        .map(|parameter| {
+            parameter
+                .type_hint
+                .as_ref()
+                .and_then(type_hint_reflection_named_type_name)
+        })
+        .collect();
+    if type_names.iter().all(Option::is_none) {
+        return "NULL".to_string();
+    }
+    out.push_str(indent);
+    out.push_str("static const char *const ");
+    out.push_str(name);
+    out.push_str("[] = { ");
+    for (index, type_name) in type_names.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        match type_name {
+            Some(type_name) => {
+                out.push('"');
+                out.push_str(&c_string(type_name));
+                out.push('"');
+            }
+            None => out.push_str("NULL"),
+        }
+    }
+    out.push_str(" };\n");
+    name.to_string()
+}
+
 fn emit_variadic_parameter_binding(
     out: &mut String,
     function: &FunctionDecl,
@@ -2652,6 +2718,12 @@ fn emit_user_function_dispatch(
             &format!("ptn_function_{function_index}_parameter_names"),
             &function.parameters,
         );
+        let parameter_type_names = emit_function_metadata_parameter_type_names(
+            out,
+            "        ",
+            &format!("ptn_function_{function_index}_parameter_type_names"),
+            &function.parameters,
+        );
         out.push_str("        return ptn_function_metadata_found(\"");
         out.push_str(&c_string(&function.name));
         out.push_str("\", 0, ");
@@ -2662,6 +2734,8 @@ fn emit_user_function_dispatch(
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(&parameter_names);
+        out.push_str(", ");
+        out.push_str(&parameter_type_names);
         out.push_str(");\n");
         out.push_str("    }\n");
     }
@@ -2689,6 +2763,15 @@ fn emit_user_function_dispatch(
                 &format!("ptn_function_{}_parameter_names", method.function_index),
                 &function.parameters,
             );
+            let parameter_type_names = emit_function_metadata_parameter_type_names(
+                out,
+                "        ",
+                &format!(
+                    "ptn_function_{}_parameter_type_names",
+                    method.function_index
+                ),
+                &function.parameters,
+            );
             out.push_str("        return ptn_function_metadata_found(\"");
             out.push_str(&c_string(&class.name));
             out.push_str("::");
@@ -2701,6 +2784,8 @@ fn emit_user_function_dispatch(
             out.push_str(if is_variadic { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(&parameter_names);
+            out.push_str(", ");
+            out.push_str(&parameter_type_names);
             out.push_str(");\n");
             out.push_str("    }\n");
         }
@@ -3113,6 +3198,8 @@ fn emit_class_metadata_helpers(
         "ReflectionUnionType",
         "ReflectionIntersectionType",
         "ReflectionException",
+        "SensitiveParameter",
+        "SensitiveParameterValue",
         "ArrayIterator",
         "RecursiveArrayIterator",
         "ArrayObject",
@@ -5436,6 +5523,7 @@ fn emit_method_dispatch(
     out: &mut String,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
+    needs_callable_dispatch: bool,
     needs_closure_invoke_dispatch: bool,
 ) {
     out.push_str(
@@ -5455,86 +5543,92 @@ fn emit_method_dispatch(
     out.push_str("            }\n");
     out.push_str("            return ptn_closure_bind_to(runtime, resolved, args[0], argc >= 2, argc >= 2 ? args[1] : ptn_null(), \"Closure::bindTo\", 1, 2, line);\n");
     out.push_str("        }\n");
-    out.push_str("        if (ptn_ascii_case_equal(method_name, \"call\")) {\n");
-    out.push_str("            if (argc < 1) {\n");
-    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Closure::call() expects at least 1 argument\");\n");
-    out.push_str("                return ptn_null();\n");
-    out.push_str("            }\n");
-    out.push_str("            PtnValue new_this = ptn_value_deref(args[0]);\n");
-    out.push_str("            const char *scope_class_name = NULL;\n");
-    out.push_str("            if (new_this.type == PTN_OBJECT) {\n");
-    out.push_str("                scope_class_name = new_this.as.object->class_name;\n");
-    out.push_str("            } else if (new_this.type == PTN_EXCEPTION) {\n");
-    out.push_str("                scope_class_name = new_this.as.exception->class_name;\n");
-    out.push_str("            } else {\n");
-    out.push_str("                char ptn_call_message[160];\n");
-    out.push_str("                int ptn_call_written = snprintf(ptn_call_message, sizeof(ptn_call_message), \"Closure::call(): Argument #1 ($newThis) must be of type object, %s given\", ptn_offset_container_type_name(new_this));\n");
-    out.push_str("                if (ptn_call_written < 0 || (size_t)ptn_call_written >= sizeof(ptn_call_message)) {\n");
-    out.push_str("                    ptn_abort_out_of_memory();\n");
-    out.push_str("                }\n");
-    out.push_str(
-        "                ptn_throw_exception(runtime, \"TypeError\", ptn_call_message);\n",
-    );
-    out.push_str("                return ptn_null();\n");
-    out.push_str("            }\n");
-    out.push_str("            if (resolved.as.closure->has_wrapped_callable) {\n");
-    out.push_str("                PtnValue ptn_wrapped = ptn_value_deref(resolved.as.closure->wrapped_callable);\n");
-    out.push_str("                if (ptn_wrapped.type == PTN_STRING) {\n");
-    out.push_str("                    ptn_emit_warning(&runtime->diagnostics, \"Cannot rebind scope of closure created from function, this will be an error in PHP 9\", line);\n");
-    out.push_str("                    return ptn_null();\n");
-    out.push_str("                }\n");
-    out.push_str(
-        "                if (ptn_wrapped.type == PTN_ARRAY && ptn_wrapped.as.array->len == 2) {\n",
-    );
-    out.push_str(
-        "                    PtnArrayKey ptn_wrapped_receiver_key = ptn_array_int_key(0);\n",
-    );
-    out.push_str(
-        "                    PtnArrayKey ptn_wrapped_method_key = ptn_array_int_key(1);\n",
-    );
-    out.push_str("                    PtnArrayEntry *ptn_wrapped_receiver_entry = ptn_array_entry_for_key(ptn_wrapped.as.array, ptn_wrapped_receiver_key);\n");
-    out.push_str("                    PtnArrayEntry *ptn_wrapped_method_entry = ptn_array_entry_for_key(ptn_wrapped.as.array, ptn_wrapped_method_key);\n");
-    out.push_str("                    ptn_array_key_free(ptn_wrapped_receiver_key);\n");
-    out.push_str("                    ptn_array_key_free(ptn_wrapped_method_key);\n");
-    out.push_str("                    if (ptn_wrapped_receiver_entry != NULL && ptn_wrapped_method_entry != NULL) {\n");
-    out.push_str("                        PtnValue ptn_wrapped_receiver = ptn_value_deref(ptn_wrapped_receiver_entry->value);\n");
-    out.push_str("                        PtnValue ptn_wrapped_method = ptn_value_deref(ptn_wrapped_method_entry->value);\n");
-    out.push_str("                        if ((ptn_wrapped_receiver.type == PTN_OBJECT || ptn_wrapped_receiver.type == PTN_EXCEPTION) && ptn_wrapped_method.type == PTN_STRING) {\n");
-    out.push_str("                            const char *ptn_wrapped_declaring_class = ptn_wrapped_receiver.type == PTN_OBJECT ? ptn_wrapped_receiver.as.object->class_name : ptn_wrapped_receiver.as.exception->class_name;\n");
-    out.push_str("                            const char *ptn_new_this_class = new_this.type == PTN_OBJECT ? new_this.as.object->class_name : new_this.as.exception->class_name;\n");
-    out.push_str("                            if (!ptn_ascii_case_equal(ptn_new_this_class, ptn_wrapped_declaring_class) && !ptn_declared_class_is_same_or_descendant(ptn_new_this_class, ptn_wrapped_declaring_class)) {\n");
-    out.push_str("                                char *ptn_wrapped_method_name = ptn_value_to_string(ptn_wrapped_method);\n");
-    out.push_str("                                char ptn_call_warning[256];\n");
-    out.push_str("                                int ptn_call_warning_written = snprintf(ptn_call_warning, sizeof(ptn_call_warning), \"Cannot bind method %s::%s() to object of class %s, this will be an error in PHP 9\", ptn_wrapped_declaring_class, ptn_wrapped_method_name, ptn_new_this_class);\n");
-    out.push_str("                                free(ptn_wrapped_method_name);\n");
-    out.push_str("                                if (ptn_call_warning_written < 0 || (size_t)ptn_call_warning_written >= sizeof(ptn_call_warning)) {\n");
-    out.push_str("                                    ptn_abort_out_of_memory();\n");
-    out.push_str("                                }\n");
-    out.push_str("                                ptn_emit_warning(&runtime->diagnostics, ptn_call_warning, line);\n");
-    out.push_str("                                return ptn_null();\n");
-    out.push_str("                            }\n");
-    out.push_str("                        }\n");
-    out.push_str("                    }\n");
-    out.push_str("                }\n");
-    out.push_str("            }\n");
-    out.push_str("            if (!resolved.as.closure->has_wrapped_callable && ptn_internal_class_exists_name(scope_class_name)) {\n");
-    out.push_str("                char ptn_call_warning[192];\n");
-    out.push_str("                int ptn_call_warning_written = snprintf(ptn_call_warning, sizeof(ptn_call_warning), \"Cannot bind closure to scope of internal class %s, this will be an error in PHP 9\", scope_class_name);\n");
-    out.push_str("                if (ptn_call_warning_written < 0 || (size_t)ptn_call_warning_written >= sizeof(ptn_call_warning)) {\n");
-    out.push_str("                    ptn_abort_out_of_memory();\n");
-    out.push_str("                }\n");
-    out.push_str(
-        "                ptn_emit_warning(&runtime->diagnostics, ptn_call_warning, line);\n",
-    );
-    out.push_str("                return ptn_null();\n");
-    out.push_str("            }\n");
-    out.push_str("            PtnValue bound = ptn_closure_clone(runtime, resolved);\n");
-    out.push_str("            ptn_closure_set_scope(bound, scope_class_name, scope_class_name);\n");
-    out.push_str("            ptn_closure_set_capture(bound, \"this\", new_this);\n");
-    out.push_str("            PtnValue call_result = ptn_call_callable(runtime, bound, argc - 1, argc > 1 ? args + 1 : NULL, line);\n");
-    out.push_str("            ptn_value_destroy(&bound);\n");
-    out.push_str("            return call_result;\n");
-    out.push_str("        }\n");
+    if needs_callable_dispatch {
+        out.push_str("        if (ptn_ascii_case_equal(method_name, \"call\")) {\n");
+        out.push_str("            if (argc < 1) {\n");
+        out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Closure::call() expects at least 1 argument\");\n");
+        out.push_str("                return ptn_null();\n");
+        out.push_str("            }\n");
+        out.push_str("            PtnValue new_this = ptn_value_deref(args[0]);\n");
+        out.push_str("            const char *scope_class_name = NULL;\n");
+        out.push_str("            if (new_this.type == PTN_OBJECT) {\n");
+        out.push_str("                scope_class_name = new_this.as.object->class_name;\n");
+        out.push_str("            } else if (new_this.type == PTN_EXCEPTION) {\n");
+        out.push_str("                scope_class_name = new_this.as.exception->class_name;\n");
+        out.push_str("            } else {\n");
+        out.push_str("                char ptn_call_message[160];\n");
+        out.push_str("                int ptn_call_written = snprintf(ptn_call_message, sizeof(ptn_call_message), \"Closure::call(): Argument #1 ($newThis) must be of type object, %s given\", ptn_offset_container_type_name(new_this));\n");
+        out.push_str("                if (ptn_call_written < 0 || (size_t)ptn_call_written >= sizeof(ptn_call_message)) {\n");
+        out.push_str("                    ptn_abort_out_of_memory();\n");
+        out.push_str("                }\n");
+        out.push_str(
+            "                ptn_throw_exception(runtime, \"TypeError\", ptn_call_message);\n",
+        );
+        out.push_str("                return ptn_null();\n");
+        out.push_str("            }\n");
+        out.push_str("            if (resolved.as.closure->has_wrapped_callable) {\n");
+        out.push_str("                PtnValue ptn_wrapped = ptn_value_deref(resolved.as.closure->wrapped_callable);\n");
+        out.push_str("                if (ptn_wrapped.type == PTN_STRING) {\n");
+        out.push_str("                    ptn_emit_warning(&runtime->diagnostics, \"Cannot rebind scope of closure created from function, this will be an error in PHP 9\", line);\n");
+        out.push_str("                    return ptn_null();\n");
+        out.push_str("                }\n");
+        out.push_str(
+            "                if (ptn_wrapped.type == PTN_ARRAY && ptn_wrapped.as.array->len == 2) {\n",
+        );
+        out.push_str(
+            "                    PtnArrayKey ptn_wrapped_receiver_key = ptn_array_int_key(0);\n",
+        );
+        out.push_str(
+            "                    PtnArrayKey ptn_wrapped_method_key = ptn_array_int_key(1);\n",
+        );
+        out.push_str("                    PtnArrayEntry *ptn_wrapped_receiver_entry = ptn_array_entry_for_key(ptn_wrapped.as.array, ptn_wrapped_receiver_key);\n");
+        out.push_str("                    PtnArrayEntry *ptn_wrapped_method_entry = ptn_array_entry_for_key(ptn_wrapped.as.array, ptn_wrapped_method_key);\n");
+        out.push_str("                    ptn_array_key_free(ptn_wrapped_receiver_key);\n");
+        out.push_str("                    ptn_array_key_free(ptn_wrapped_method_key);\n");
+        out.push_str("                    if (ptn_wrapped_receiver_entry != NULL && ptn_wrapped_method_entry != NULL) {\n");
+        out.push_str("                        PtnValue ptn_wrapped_receiver = ptn_value_deref(ptn_wrapped_receiver_entry->value);\n");
+        out.push_str("                        PtnValue ptn_wrapped_method = ptn_value_deref(ptn_wrapped_method_entry->value);\n");
+        out.push_str("                        if ((ptn_wrapped_receiver.type == PTN_OBJECT || ptn_wrapped_receiver.type == PTN_EXCEPTION) && ptn_wrapped_method.type == PTN_STRING) {\n");
+        out.push_str("                            const char *ptn_wrapped_declaring_class = ptn_wrapped_receiver.type == PTN_OBJECT ? ptn_wrapped_receiver.as.object->class_name : ptn_wrapped_receiver.as.exception->class_name;\n");
+        out.push_str("                            const char *ptn_new_this_class = new_this.type == PTN_OBJECT ? new_this.as.object->class_name : new_this.as.exception->class_name;\n");
+        out.push_str("                            if (!ptn_ascii_case_equal(ptn_new_this_class, ptn_wrapped_declaring_class) && !ptn_declared_class_is_same_or_descendant(ptn_new_this_class, ptn_wrapped_declaring_class)) {\n");
+        out.push_str("                                char *ptn_wrapped_method_name = ptn_value_to_string(ptn_wrapped_method);\n");
+        out.push_str("                                char ptn_call_warning[256];\n");
+        out.push_str("                                int ptn_call_warning_written = snprintf(ptn_call_warning, sizeof(ptn_call_warning), \"Cannot bind method %s::%s() to object of class %s, this will be an error in PHP 9\", ptn_wrapped_declaring_class, ptn_wrapped_method_name, ptn_new_this_class);\n");
+        out.push_str("                                free(ptn_wrapped_method_name);\n");
+        out.push_str("                                if (ptn_call_warning_written < 0 || (size_t)ptn_call_warning_written >= sizeof(ptn_call_warning)) {\n");
+        out.push_str("                                    ptn_abort_out_of_memory();\n");
+        out.push_str("                                }\n");
+        out.push_str("                                ptn_emit_warning(&runtime->diagnostics, ptn_call_warning, line);\n");
+        out.push_str("                                return ptn_null();\n");
+        out.push_str("                            }\n");
+        out.push_str("                        }\n");
+        out.push_str("                    }\n");
+        out.push_str("                }\n");
+        out.push_str("            }\n");
+        out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+        out.push_str("            if (!resolved.as.closure->has_wrapped_callable && ptn_internal_class_exists_name(scope_class_name)) {\n");
+        out.push_str("                char ptn_call_warning[192];\n");
+        out.push_str("                int ptn_call_warning_written = snprintf(ptn_call_warning, sizeof(ptn_call_warning), \"Cannot bind closure to scope of internal class %s, this will be an error in PHP 9\", scope_class_name);\n");
+        out.push_str("                if (ptn_call_warning_written < 0 || (size_t)ptn_call_warning_written >= sizeof(ptn_call_warning)) {\n");
+        out.push_str("                    ptn_abort_out_of_memory();\n");
+        out.push_str("                }\n");
+        out.push_str(
+            "                ptn_emit_warning(&runtime->diagnostics, ptn_call_warning, line);\n",
+        );
+        out.push_str("                return ptn_null();\n");
+        out.push_str("            }\n");
+        out.push_str("#endif\n");
+        out.push_str("            PtnValue bound = ptn_closure_clone(runtime, resolved);\n");
+        out.push_str(
+            "            ptn_closure_set_scope(bound, scope_class_name, scope_class_name);\n",
+        );
+        out.push_str("            ptn_closure_set_capture(bound, \"this\", new_this);\n");
+        out.push_str("            PtnValue call_result = ptn_call_callable(runtime, bound, argc - 1, argc > 1 ? args + 1 : NULL, line);\n");
+        out.push_str("            ptn_value_destroy(&bound);\n");
+        out.push_str("            return call_result;\n");
+        out.push_str("        }\n");
+    }
     if needs_closure_invoke_dispatch {
         out.push_str("        if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
         out.push_str("            const char *previous_name = runtime->by_ref_argument_function_name_override;\n");
@@ -5845,13 +5939,23 @@ fn emit_method_dispatch(
     out.push_str("}\n");
 }
 
-fn emit_dynamic_function_dispatch(out: &mut String) {
-    out.push_str("\nstatic PTN_UNUSED char *ptn_dynamic_function_name(PtnValue callable) {\n");
-    out.push_str("    return ptn_callable_function_name(callable);\n");
+fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_dynamic_call_effective_internal_name(PtnRuntime *runtime, const char *name) {\n",
+    );
+    out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str("    if (ptn_user_function_exists(runtime, lookup_name) || ptn_find_internal_function(lookup_name) != NULL) {\n");
+    out.push_str("        return lookup_name;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *namespace_separator = strrchr(lookup_name, '\\\\');\n");
+    out.push_str("    if (namespace_separator != NULL && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
+    out.push_str("        return namespace_separator + 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    return lookup_name;\n");
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic int ptn_dynamic_call_mutates_first_array_argument(const char *name) {\n",
+        "\nstatic PTN_UNUSED int ptn_dynamic_call_mutates_first_array_argument(const char *name) {\n",
     );
     for name in [
         "array_pop",
@@ -5888,7 +5992,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PtnValue *ptn_dynamic_call_prepare_first_array_argument(const char *name, size_t argc, const PtnValue *args, const PtnValue **call_args_out) {\n",
+        "\nstatic PTN_UNUSED PtnValue *ptn_dynamic_call_prepare_first_array_argument(const char *name, size_t argc, const PtnValue *args, const PtnValue **call_args_out) {\n",
     );
     out.push_str("    *call_args_out = args;\n");
     out.push_str(
@@ -5921,7 +6025,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic void ptn_dynamic_call_free_prepared_first_array_argument(PtnValue *prepared_args) {\n",
+        "\nstatic PTN_UNUSED void ptn_dynamic_call_free_prepared_first_array_argument(PtnValue *prepared_args) {\n",
     );
     out.push_str("    if (prepared_args == NULL) {\n");
     out.push_str("        return;\n");
@@ -5931,7 +6035,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic void ptn_dynamic_call_warn_first_reference_argument_mismatch(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
+        "\nstatic PTN_UNUSED void ptn_dynamic_call_warn_first_reference_argument_mismatch(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    if (!runtime->warn_by_ref_argument_mismatch || argc == 0 || args == NULL || !ptn_dynamic_call_mutates_first_array_argument(name)) {\n");
     out.push_str("        return;\n");
@@ -5943,20 +6047,26 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "    ptn_emit_by_reference_argument_warning(runtime, name, 1, \"array\", line);\n",
     );
     out.push_str("}\n");
+}
+
+fn emit_dynamic_function_dispatch(out: &mut String) {
+    out.push_str("\nstatic PTN_UNUSED char *ptn_dynamic_function_name(PtnValue callable) {\n");
+    out.push_str("    return ptn_callable_function_name(callable);\n");
+    out.push_str("}\n");
 
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_dynamic_function_name(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str(
-        "    const char *dynamic_lookup_name = ptn_symbol_name_without_leading_slash(name);\n",
+        "    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n",
     );
     out.push_str("    if (ptn_ascii_case_equal(dynamic_lookup_name, \"compact\")) {\n");
     out.push_str("        ptn_throw_exception_at(runtime, \"Error\", \"Cannot call compact() dynamically\", runtime->source_path, line);\n");
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, name, argc, args, line);\n");
+    out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, dynamic_lookup_name, argc, args, line);\n");
     out.push_str("    const PtnValue *call_args = args;\n");
-    out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(name, argc, args, &call_args);\n");
+    out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(dynamic_lookup_name, argc, args, &call_args);\n");
     out.push_str(
         "    PtnValue result = ptn_call_function(runtime, name, argc, call_args, line);\n",
     );
@@ -6285,7 +6395,14 @@ fn emit_callable_dispatch(
     out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
-    out.push_str("    PtnValue result = ptn_call_function(runtime, name, argc, args, line);\n");
+    out.push_str("    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n");
+    out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, dynamic_lookup_name, argc, args, line);\n");
+    out.push_str("    const PtnValue *call_args = args;\n");
+    out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(dynamic_lookup_name, argc, args, &call_args);\n");
+    out.push_str(
+        "    PtnValue result = ptn_call_function(runtime, name, argc, call_args, line);\n",
+    );
+    out.push_str("    ptn_dynamic_call_free_prepared_first_array_argument(prepared_args);\n");
     out.push_str("    free(name);\n");
     out.push_str("    return result;\n");
     out.push_str("}\n");
@@ -9280,6 +9397,8 @@ fn collect_value_runtime_requirements(
             if class_name.eq_ignore_ascii_case("ReflectionClass")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
                 || class_name.eq_ignore_ascii_case("ReflectionMethod")
+                || class_name.eq_ignore_ascii_case("SensitiveParameter")
+                || class_name.eq_ignore_ascii_case("SensitiveParameterValue")
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")
                 || class_name.eq_ignore_ascii_case("CallbackFilterIterator")
@@ -14987,6 +15106,12 @@ impl ValueEmitter {
             &format!("ptn_closure_{function_index}_parameter_names"),
             &function.parameters,
         );
+        let parameter_type_names = emit_function_metadata_parameter_type_names(
+            out,
+            "    ",
+            &format!("ptn_closure_{function_index}_parameter_type_names"),
+            &function.parameters,
+        );
         out.push_str("    PtnValue ");
         out.push_str(&closure_temp);
         out.push_str(" = ptn_closure(&runtime, ");
@@ -15001,6 +15126,8 @@ impl ValueEmitter {
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(&parameter_names);
+        out.push_str(", ");
+        out.push_str(&parameter_type_names);
         out.push_str("), ");
         out.push_str(if function.is_static { "1" } else { "0" });
         out.push_str(", ");
