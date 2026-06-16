@@ -37,8 +37,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 <table aria-label="status metadata">
   <thead><tr><th>field</th><th>value</th></tr></thead>
   <tbody>
-    <tr><td>last refresh</td><td>2026-06-15T22:24:10Z</td></tr>
-    <tr><td>source commit</td><td><code>52604f155feb</code></td></tr>
+    <tr><td>last refresh</td><td>2026-06-16T16:00:10Z</td></tr>
+    <tr><td>source commit</td><td><code>4cc1a06c47bb</code></td></tr>
     <tr><td>php-src revision</td><td><code>8c63ec400ce8e07c57a8d9499317b96a8beafb8b</code></td></tr>
     <tr><td>upstream PHPT corpus</td><td><code>php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)</code></td></tr>
     <tr><td>evidence source</td><td><code>tools/status-dashboard-features.tsv</code></td></tr>
@@ -54,15 +54,24 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     <tr><td>upstream tests</td><td class="num">21867</td></tr>
   </tbody>
 </table>
+<h2>Recent Progress</h2>
+<table aria-label="recent progress">
+  <thead><tr><th>window</th><th class="num">newly passed tests</th></tr></thead>
+  <tbody>
+    <tr><td>latest hour (2026-06-16T16:00Z)</td><td class="num">0</td></tr>
+    <tr><td>last 24 hours (2026-06-15T17:00Z - 2026-06-16T16:00Z)</td><td class="num">166</td></tr>
+    <tr><td>last 7 days (2026-06-09T17:00Z - 2026-06-16T16:00Z)</td><td class="num">435</td></tr>
+  </tbody>
+</table>
 <section class="chart-panel" aria-labelledby="passing-history-title">
   <h2 id="passing-history-title">7-Day Passing History</h2>
-  <p class="summary">566 cumulative passed tests across 168 hourly points, ending 2026-06-15T22:00Z.</p>
+  <p class="summary">566 cumulative passed tests across 168 hourly points, ending 2026-06-16T16:00Z. Newly passed: 0 in the latest hour, 166 in the last 24 hours, 435 in the last 7 days.</p>
   <svg id="passing-history-chart" class="line-chart" data-history-points="168" data-corpus-total="21867" viewBox="0 0 720 152" role="img" aria-label="Cumulative passing tests by hour">
     <line class="chart-grid" x1="38" y1="14" x2="38" y2="126"></line>
     <line class="chart-grid" x1="38" y1="126" x2="694" y2="126"></line>
-    <polyline id="passing-history-line" class="chart-line" data-points="168" points="38.00,100.08 41.93,100.08 45.86,100.08 49.78,100.08 53.71,100.08 57.64,100.08 61.57,100.08 65.50,100.08 69.43,100.08 73.35,100.08 77.28,100.08 81.21,100.08 85.14,100.08 89.07,100.08 92.99,100.08 96.92,100.08 100.85,100.08 104.78,100.08 108.71,100.08 112.63,100.08 116.56,100.08 120.49,100.08 124.42,100.08 128.35,100.08 132.28,100.08 136.20,100.08 140.13,100.08 144.06,100.08 147.99,100.08 151.92,100.08 155.84,100.08 159.77,100.08 163.70,100.08 167.63,100.08 171.56,100.08 175.49,100.08 179.41,100.08 183.34,100.08 187.27,100.08 191.20,100.08 195.13,100.08 199.05,100.08 202.98,100.08 206.91,100.08 210.84,100.08 214.77,100.08 218.69,100.08 222.62,100.08 226.55,100.08 230.48,100.08 234.41,100.08 238.34,100.08 242.26,100.08 246.19,100.08 250.12,100.08 254.05,100.08 257.98,100.08 261.90,100.08 265.83,100.08 269.76,100.08 273.69,100.08 277.62,100.08 281.54,100.08 285.47,100.08 289.40,100.08 293.33,100.08 297.26,100.08 301.19,100.08 305.11,100.08 309.04,100.08 312.97,100.08 316.90,100.08 320.83,100.08 324.75,100.08 328.68,100.08 332.61,100.08 336.54,100.08 340.47,100.08 344.40,100.08 348.32,100.08 352.25,100.08 356.18,100.08 360.11,100.08 364.04,100.08 367.96,100.08 371.89,100.08 375.82,100.08 379.75,100.08 383.68,100.08 387.60,100.08 391.53,100.08 395.46,100.08 399.39,100.08 403.32,100.08 407.25,100.08 411.17,100.08 415.10,100.08 419.03,100.08 422.96,100.08 426.89,100.08 430.81,100.08 434.74,100.08 438.67,100.08 442.60,100.08 446.53,100.08 450.46,100.08 454.38,100.08 458.31,100.08 462.24,100.08 466.17,100.08 470.10,100.08 474.02,100.08 477.95,100.08 481.88,100.08 485.81,100.08 489.74,100.08 493.66,100.08 497.59,100.08 501.52,100.08 505.45,100.08 509.38,100.08 513.31,100.08 517.23,100.08 521.16,100.08 525.09,100.08 529.02,100.08 532.95,100.08 536.87,100.08 540.80,100.08 544.73,100.08 548.66,100.08 552.59,100.08 556.51,100.08 560.44,100.08 564.37,100.08 568.30,100.08 572.23,100.08 576.16,100.08 580.08,100.08 584.01,100.08 587.94,100.08 591.87,100.08 595.80,100.08 599.72,100.08 603.65,100.08 607.58,100.08 611.51,100.08 615.44,100.08 619.37,100.08 623.29,100.08 627.22,100.08 631.15,100.08 635.08,100.08 639.01,100.08 642.93,100.08 646.86,100.08 650.79,100.08 654.72,100.08 658.65,87.41 662.57,70.79 666.50,65.45 670.43,46.85 674.36,43.48 678.29,40.52 682.22,28.45 686.14,14.00 690.07,14.00 694.00,14.00"></polyline>
-    <text class="chart-label" x="38" y="146">2026-06-08T23:00Z</text>
-    <text class="chart-label" x="694" y="146" text-anchor="end">2026-06-15T22:00Z</text>
+    <polyline id="passing-history-line" class="chart-line" data-points="168" points="38.00,100.08 41.93,100.08 45.86,100.08 49.78,100.08 53.71,100.08 57.64,100.08 61.57,100.08 65.50,100.08 69.43,100.08 73.35,100.08 77.28,100.08 81.21,100.08 85.14,100.08 89.07,100.08 92.99,100.08 96.92,100.08 100.85,100.08 104.78,100.08 108.71,100.08 112.63,100.08 116.56,100.08 120.49,100.08 124.42,100.08 128.35,100.08 132.28,100.08 136.20,100.08 140.13,100.08 144.06,100.08 147.99,100.08 151.92,100.08 155.84,100.08 159.77,100.08 163.70,100.08 167.63,100.08 171.56,100.08 175.49,100.08 179.41,100.08 183.34,100.08 187.27,100.08 191.20,100.08 195.13,100.08 199.05,100.08 202.98,100.08 206.91,100.08 210.84,100.08 214.77,100.08 218.69,100.08 222.62,100.08 226.55,100.08 230.48,100.08 234.41,100.08 238.34,100.08 242.26,100.08 246.19,100.08 250.12,100.08 254.05,100.08 257.98,100.08 261.90,100.08 265.83,100.08 269.76,100.08 273.69,100.08 277.62,100.08 281.54,100.08 285.47,100.08 289.40,100.08 293.33,100.08 297.26,100.08 301.19,100.08 305.11,100.08 309.04,100.08 312.97,100.08 316.90,100.08 320.83,100.08 324.75,100.08 328.68,100.08 332.61,100.08 336.54,100.08 340.47,100.08 344.40,100.08 348.32,100.08 352.25,100.08 356.18,100.08 360.11,100.08 364.04,100.08 367.96,100.08 371.89,100.08 375.82,100.08 379.75,100.08 383.68,100.08 387.60,100.08 391.53,100.08 395.46,100.08 399.39,100.08 403.32,100.08 407.25,100.08 411.17,100.08 415.10,100.08 419.03,100.08 422.96,100.08 426.89,100.08 430.81,100.08 434.74,100.08 438.67,100.08 442.60,100.08 446.53,100.08 450.46,100.08 454.38,100.08 458.31,100.08 462.24,100.08 466.17,100.08 470.10,100.08 474.02,100.08 477.95,100.08 481.88,100.08 485.81,100.08 489.74,100.08 493.66,100.08 497.59,100.08 501.52,100.08 505.45,100.08 509.38,100.08 513.31,100.08 517.23,100.08 521.16,100.08 525.09,100.08 529.02,100.08 532.95,100.08 536.87,100.08 540.80,100.08 544.73,100.08 548.66,100.08 552.59,100.08 556.51,100.08 560.44,100.08 564.37,100.08 568.30,100.08 572.23,100.08 576.16,100.08 580.08,100.08 584.01,100.08 587.94,87.41 591.87,70.79 595.80,65.45 599.72,46.85 603.65,43.48 607.58,40.52 611.51,28.45 615.44,14.00 619.37,14.00 623.29,14.00 627.22,14.00 631.15,14.00 635.08,14.00 639.01,14.00 642.93,14.00 646.86,14.00 650.79,14.00 654.72,14.00 658.65,14.00 662.57,14.00 666.50,14.00 670.43,14.00 674.36,14.00 678.29,14.00 682.22,14.00 686.14,14.00 690.07,14.00 694.00,14.00"></polyline>
+    <text class="chart-label" x="38" y="146">2026-06-09T17:00Z</text>
+    <text class="chart-label" x="694" y="146" text-anchor="end">2026-06-16T16:00Z</text>
     <text class="chart-label" x="44" y="24">566 passed</text>
   </svg>
 </section>
@@ -112,24 +121,6 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 <table aria-label="last 7 days">
   <thead><tr><th>hour (UTC)</th><th class="num">newly passed tests</th><th class="num">cumulative passed tests</th></tr></thead>
   <tbody>
-    <tr><td>2026-06-08T23:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T00:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T01:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T02:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T03:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T04:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T05:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T06:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T07:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T08:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T09:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T10:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T11:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T12:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T13:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T14:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T15:00Z</td><td class="num">0</td><td class="num">131</td></tr>
-    <tr><td>2026-06-09T16:00Z</td><td class="num">0</td><td class="num">131</td></tr>
     <tr><td>2026-06-09T17:00Z</td><td class="num">0</td><td class="num">131</td></tr>
     <tr><td>2026-06-09T18:00Z</td><td class="num">0</td><td class="num">131</td></tr>
     <tr><td>2026-06-09T19:00Z</td><td class="num">0</td><td class="num">131</td></tr>
@@ -280,6 +271,24 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     <tr><td>2026-06-15T20:00Z</td><td class="num">73</td><td class="num">566</td></tr>
     <tr><td>2026-06-15T21:00Z</td><td class="num">0</td><td class="num">566</td></tr>
     <tr><td>2026-06-15T22:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-15T23:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T00:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T01:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T02:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T03:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T04:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T05:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T06:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T07:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T08:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T09:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T10:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T11:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T12:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T13:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T14:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T15:00Z</td><td class="num">0</td><td class="num">566</td></tr>
+    <tr><td>2026-06-16T16:00Z</td><td class="num">0</td><td class="num">566</td></tr>
   </tbody>
 </table>
 <script>

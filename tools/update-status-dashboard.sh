@@ -284,6 +284,25 @@ chart_points="$(
     '
 )"
 chart_last_hour="${history_hours[$((window_hours - 1))]}"
+latest_hour_new="${history_new_values[$((window_hours - 1))]}"
+recent_24h_start_index=0
+if (( window_hours > 24 )); then
+  recent_24h_start_index=$((window_hours - 24))
+fi
+recent_24h_total=0
+for ((i = recent_24h_start_index; i < window_hours; i++)); do
+  recent_24h_total=$((recent_24h_total + history_new_values[i]))
+done
+recent_24h_start="${history_hours[$recent_24h_start_index]}"
+history_window_label="last ${window_hours} hours"
+if (( window_hours % 24 == 0 )); then
+  history_window_days=$((window_hours / 24))
+  if (( history_window_days == 1 )); then
+    history_window_label="last day"
+  else
+    history_window_label="last ${history_window_days} days"
+  fi
+fi
 
 {
   echo "# PTN Status"
@@ -304,6 +323,14 @@ chart_last_hour="${history_hours[$((window_hours - 1))]}"
   printf '| ported tests | %s |\n' "$total_ported"
   printf '| passed tests | %s |\n' "$total_passed"
   printf '| upstream tests | %s |\n' "$total_upstream"
+  echo
+  echo "## Recent Progress"
+  echo
+  echo "| window | newly passed tests |"
+  echo "| --- | ---: |"
+  printf '| latest hour (%s) | %s |\n' "$chart_last_hour" "$latest_hour_new"
+  printf '| last 24 hours (%s - %s) | %s |\n' "$recent_24h_start" "$chart_last_hour" "$recent_24h_total"
+  printf '| %s (%s - %s) | %s |\n' "$history_window_label" "$window_start" "$chart_last_hour" "$history_new_total"
   echo
   echo "## Feature Table"
   echo
@@ -386,12 +413,34 @@ chart_last_hour="${history_hours[$((window_hours - 1))]}"
   printf '    <tr><td>upstream tests</td><td class="num">%s</td></tr>\n' "$(html_escape "$total_upstream")"
   echo '  </tbody>'
   echo '</table>'
+  echo '<h2>Recent Progress</h2>'
+  echo '<table aria-label="recent progress">'
+  echo '  <thead><tr><th>window</th><th class="num">newly passed tests</th></tr></thead>'
+  echo '  <tbody>'
+  printf '    <tr><td>latest hour (%s)</td><td class="num">%s</td></tr>\n' \
+    "$(html_escape "$chart_last_hour")" \
+    "$(html_escape "$latest_hour_new")"
+  printf '    <tr><td>last 24 hours (%s - %s)</td><td class="num">%s</td></tr>\n' \
+    "$(html_escape "$recent_24h_start")" \
+    "$(html_escape "$chart_last_hour")" \
+    "$(html_escape "$recent_24h_total")"
+  printf '    <tr><td>%s (%s - %s)</td><td class="num">%s</td></tr>\n' \
+    "$(html_escape "$history_window_label")" \
+    "$(html_escape "$window_start")" \
+    "$(html_escape "$chart_last_hour")" \
+    "$(html_escape "$history_new_total")"
+  echo '  </tbody>'
+  echo '</table>'
   echo '<section class="chart-panel" aria-labelledby="passing-history-title">'
   echo '  <h2 id="passing-history-title">7-Day Passing History</h2>'
-  printf '  <p class="summary">%s cumulative passed tests across %s hourly points, ending %s.</p>\n' \
+  printf '  <p class="summary">%s cumulative passed tests across %s hourly points, ending %s. Newly passed: %s in the latest hour, %s in the last 24 hours, %s in the %s.</p>\n' \
     "$(html_escape "$total_passed")" \
     "$(html_escape "$window_hours")" \
-    "$(html_escape "$chart_last_hour")"
+    "$(html_escape "$chart_last_hour")" \
+    "$(html_escape "$latest_hour_new")" \
+    "$(html_escape "$recent_24h_total")" \
+    "$(html_escape "$history_new_total")" \
+    "$(html_escape "$history_window_label")"
   echo '  <svg id="passing-history-chart" class="line-chart" data-history-points="'"$(html_escape "$window_hours")"'" data-corpus-total="'"$(html_escape "$total_upstream")"'" viewBox="0 0 720 152" role="img" aria-label="Cumulative passing tests by hour">'
   echo '    <line class="chart-grid" x1="38" y1="14" x2="38" y2="126"></line>'
   echo '    <line class="chart-grid" x1="38" y1="126" x2="694" y2="126"></line>'
