@@ -4642,7 +4642,10 @@ impl Parser<'_> {
             TokenKind::Yield => self.parse_yield_expr(token.span),
             TokenKind::Identifier(name) => {
                 if name.eq_ignore_ascii_case("fn")
-                    && matches!(self.peek().kind, TokenKind::LeftParen)
+                    && matches!(
+                        self.peek().kind,
+                        TokenKind::LeftParen | TokenKind::Ampersand
+                    )
                 {
                     return self.parse_arrow_function_expr(token.span, false, attributes);
                 }
