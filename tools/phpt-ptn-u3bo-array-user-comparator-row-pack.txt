@@ -1,9 +1,0 @@
-# ptn-u3bo focused user-comparator set-operation row pack.
-# Rows are relative to PHP_SRC_PHPT.
-ext/standard/tests/array/array_udiff_assoc_variation.phpt
-ext/standard/tests/array/array_udiff_assoc_variation5.phpt
-ext/standard/tests/array/array_udiff_uassoc_variation6.phpt
-ext/standard/tests/array/array_udiff_variation5.phpt
-ext/standard/tests/array/array_uintersect_assoc_basic2.phpt
-ext/standard/tests/array/array_uintersect_assoc_variation5.phpt
-ext/standard/tests/array/array_uintersect_uassoc_variation6.phpt

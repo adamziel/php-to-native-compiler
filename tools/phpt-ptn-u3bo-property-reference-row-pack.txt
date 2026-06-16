@@ -1,7 +1,0 @@
-# ptn-u3bo focused COW/reference object-property row pack.
-# Rows are relative to PHP_SRC_PHPT.
-Zend/tests/assign_obj_ref_byval_function.phpt
-Zend/tests/assign_obj_ref_return.phpt
-Zend/tests/assign_ref_to_overloaded_prop.phpt
-Zend/tests/exceptions/exception_getters_with_ref_props.phpt
-Zend/tests/foreach/foreach_by_ref_to_property.phpt
