@@ -6556,6 +6556,35 @@ echo str_replace(\"\\n\", \"\", $dump), \"\\n\";\n",
 }
 
 #[test]
+fn compile_output_buffer_captures_runtime_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-output-buffer-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-buffer-warning.php");
+    let output = root.join("output-buffer-warning-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_start();\n\
+echo $missing;\n\
+$captured = ob_get_clean();\n\
+echo \"visible\\n\";\n\
+var_dump(str_contains($captured, 'Warning: Undefined variable $missing'));\n\
+var_dump(str_starts_with($captured, \"\\nWarning:\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "visible\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_ob_clean_clears_active_output_buffer_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-clean");
     fs::create_dir_all(&root).unwrap();
@@ -10941,6 +10970,36 @@ var_dump($hash_matches[1]);\n",
 string(12) \"615c30303062\"\n\
 string(4) \"a---\"\n\
 string(11) \"hello#world\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_preg_match_expectf_float_atom_to_native_binary() {
+    let root = temp_dir("ptn-native-preg-match-expectf-float");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-match-expectf-float.php");
+    let output = root.join("preg-match-expectf-float-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$float = '[+-]?(?:\\\\d+|(?=\\\\.\\\\d))(?:\\\\.\\\\d+)?(?:[Ee][+-]?\\\\d+)?';\n\
+$regex = '/^' . $float . '$/s';\n\
+var_dump(preg_match($regex, '1.5'));\n\
+var_dump(preg_match($regex, '.5'));\n\
+var_dump(preg_match($regex, '1E+3'));\n\
+var_dump(preg_match($regex, 'abc'));\n\
+var_dump(preg_match('/^a$/s', \"a\\n\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(1)\nint(1)\nint(0)\nint(1)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -19511,6 +19570,47 @@ var_dump($value[0]);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "\nWarning: Undefined array key \"7.5\" in ptn on line 3\nNULL\n\nWarning: Undefined array key 0 in ptn on line 4\nNULL\n\nWarning: Trying to access array offset on int in ptn on line 6\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_invalid_array_offset_key_context_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-invalid-array-offset-key-contexts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("invalid-array-offset-key-contexts.php");
+    let output = root.join("invalid-array-offset-key-contexts-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [];\n\
+foreach ([\n\
+    function () use (&$items) { return isset($items[[]]); },\n\
+    function () use (&$items) { return empty($items[[]]); },\n\
+    function () use (&$items) { return $items[[]] ?? 'default'; },\n\
+    function () use (&$items) { unset($items[[]]); },\n\
+    function () use (&$items) { $ref =& $items[[]]; return null; },\n\
+] as $case) {\n\
+    try {\n\
+        var_dump($case());\n\
+    } catch (Throwable $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot access offset of type array in isset or empty\n\
+Cannot access offset of type array in isset or empty\n\
+Cannot access offset of type array on array\n\
+Cannot unset offset of type array on array\n\
+Cannot access offset of type array on array\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

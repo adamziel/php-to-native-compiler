@@ -14,6 +14,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     ptn_symbols_init(&runtime->owned_static_property_set_visibility);
     runtime->static_property_set_visibility = caller_runtime->static_property_set_visibility;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
+    runtime->diagnostics.runtime = runtime;
     runtime->diagnostics.error_reporting = caller_runtime->diagnostics.error_reporting;
     runtime->diagnostics.emitted_deprecation = caller_runtime->diagnostics.emitted_deprecation;
     runtime->diagnostics.emitted_warning = caller_runtime->diagnostics.emitted_warning;

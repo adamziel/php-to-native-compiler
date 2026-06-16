@@ -694,6 +694,7 @@ struct PtnTryFrame {
 };
 
 typedef struct {
+    PtnRuntime *runtime;
     FILE *stream;
     int emitted_deprecation;
     int emitted_warning;
@@ -900,6 +901,7 @@ static PTN_UNUSED int ptn_object_is_generator(PtnObject *object);
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED char *ptn_duplicate_string(const char *string);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
+static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
 static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name);
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);

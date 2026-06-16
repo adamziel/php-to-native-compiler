@@ -991,7 +991,8 @@ static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
     if (diagnostics != NULL) {
         diagnostics->emitted_deprecation = 1;
     }
-    printf(
+    ptn_diagnostic_printf(
+        diagnostics,
         "\nDeprecated: Implicit conversion from float %.16G to int loses precision in %s on line %zu\n",
         value,
         path,
@@ -1023,7 +1024,8 @@ static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation_at(
     if (diagnostics != NULL) {
         diagnostics->emitted_deprecation = 1;
     }
-    printf(
+    ptn_diagnostic_printf(
+        diagnostics,
         "\nDeprecated: Implicit conversion from float-string \"%s\" to int loses precision in %s on line %zu\n",
         value,
         path,
@@ -1055,7 +1057,10 @@ static PTN_UNUSED void ptn_emit_non_numeric_value_warning(PtnDiagnosticSink *dia
     if (diagnostics != NULL && !ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
-    printf("\nWarning: A non-numeric value encountered in ptn-generated-code on line 0\n");
+    ptn_diagnostic_output_cstr(
+        diagnostics,
+        "\nWarning: A non-numeric value encountered in ptn-generated-code on line 0\n"
+    );
 }
 
 static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {

@@ -19763,6 +19763,18 @@ static int ptn_regex_char_is_posix_special(char byte) {
     }
 }
 
+static int ptn_pcre_pattern_starts_with(
+    PtnStringOperand pattern,
+    size_t offset,
+    size_t end,
+    const char *literal
+) {
+    size_t literal_len = strlen(literal);
+    return offset <= end &&
+        literal_len <= end - offset &&
+        memcmp(pattern.data + offset, literal, literal_len) == 0;
+}
+
 static void ptn_capture_map_push(size_t **capture_map, size_t *capture_count, size_t group_index) {
     size_t new_count = *capture_count + 1;
     size_t *new_map = realloc(*capture_map, new_count * sizeof(size_t));
@@ -19820,6 +19832,14 @@ static char *ptn_pcre_pattern_to_posix(
             break;
     }
     for (size_t i = 1; i < end; i++) {
+        const char *float_atom = "(?:\\d+|(?=\\.\\d))(?:\\.\\d+)?(?:[Ee][+-]?\\d+)?";
+        if (!in_char_class && ptn_pcre_pattern_starts_with(pattern, i, end, float_atom)) {
+            ptn_string_buffer_append(&output, "([0-9]+(\\.[0-9]+)?|\\.[0-9]+)([Ee][+-]?[0-9]+)?");
+            posix_group_index += 3;
+            i += strlen(float_atom) - 1;
+            continue;
+        }
+
         char byte = pattern.data[i];
         if (byte == '\\' && i + 1 < end) {
             char next = pattern.data[++i];
@@ -19902,6 +19922,11 @@ static char *ptn_pcre_pattern_to_posix(
             }
             in_char_class = 0;
             ptn_string_buffer_append_char(&output, byte);
+            continue;
+        }
+
+        if (!in_char_class && byte == '$' && i + 1 == end) {
+            ptn_string_buffer_append(&output, "\n?$");
             continue;
         }
 
