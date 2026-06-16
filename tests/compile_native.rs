@@ -10153,6 +10153,69 @@ try { base_convert(\"10\", 1, 10); } catch (\\ValueError $e) { echo $e->getMessa
 }
 
 #[test]
+fn compile_base_output_integer_parameter_coercion_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-base-output-integer-coercion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("base-output-integer-coercion.php");
+    let output = root.join("base-output-integer-coercion-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([\"decbin\", \"dechex\", \"decoct\"] as $function) {\n\
+    var_dump($function(\"039\"));\n\
+}\n\
+foreach ([\"0x5F\", \"0X5f\", \"9223372036854775808\", \"9.223372036854776E+18\"] as $value) {\n\
+    foreach ([\"decbin\", \"dechex\", \"decoct\"] as $function) {\n\
+        try { var_dump($function($value)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+    }\n\
+}\n\
+foreach ([-9.223372036854776E+18] as $value) {\n\
+    foreach ([\"decbin\", \"dechex\", \"decoct\"] as $function) {\n\
+        var_dump($function($value));\n\
+    }\n\
+}\n\
+foreach ([9.223372036854776E+18] as $value) {\n\
+    foreach ([\"decbin\", \"dechex\", \"decoct\"] as $function) {\n\
+        try { var_dump($function($value)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(6) \"100111\"\n",
+            "string(2) \"27\"\n",
+            "string(2) \"47\"\n",
+            "decbin(): Argument #1 ($num) must be of type int, string given\n",
+            "dechex(): Argument #1 ($num) must be of type int, string given\n",
+            "decoct(): Argument #1 ($num) must be of type int, string given\n",
+            "decbin(): Argument #1 ($num) must be of type int, string given\n",
+            "dechex(): Argument #1 ($num) must be of type int, string given\n",
+            "decoct(): Argument #1 ($num) must be of type int, string given\n",
+            "decbin(): Argument #1 ($num) must be of type int, string given\n",
+            "dechex(): Argument #1 ($num) must be of type int, string given\n",
+            "decoct(): Argument #1 ($num) must be of type int, string given\n",
+            "decbin(): Argument #1 ($num) must be of type int, string given\n",
+            "dechex(): Argument #1 ($num) must be of type int, string given\n",
+            "decoct(): Argument #1 ($num) must be of type int, string given\n",
+            "string(64) \"1000000000000000000000000000000000000000000000000000000000000000\"\n",
+            "string(16) \"8000000000000000\"\n",
+            "string(22) \"1000000000000000000000\"\n",
+            "decbin(): Argument #1 ($num) must be of type int, float given\n",
+            "dechex(): Argument #1 ($num) must be of type int, float given\n",
+            "decoct(): Argument #1 ($num) must be of type int, float given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_numeric_internals_reject_unsupported_operands_to_native_binary() {
     let root = temp_dir("ptn-native-numeric-internal-operand-diagnostics");
     fs::create_dir_all(&root).unwrap();

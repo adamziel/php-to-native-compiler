@@ -27622,7 +27622,7 @@ static int64_t ptn_internal_expect_integer_arg_with_precision_location(
             if (!isfinite(value.as.floating)) {
                 break;
             }
-            if (value.as.floating < (double)INT64_MIN || value.as.floating > (double)INT64_MAX) {
+            if (ptn_float_to_int_out_of_range(value.as.floating)) {
                 break;
             }
             if (ptn_float_to_int_loses_precision(value.as.floating)) {
@@ -27643,18 +27643,17 @@ static int64_t ptn_internal_expect_integer_arg_with_precision_location(
             return (int64_t)value.as.floating;
         case PTN_STRING: {
             PtnNumber number;
+            double numeric_value = 0.0;
             int has_trailing_non_numeric_data = 0;
             if (
+                ptn_numeric_arg_string_to_double(value.as.string, &numeric_value) &&
                 ptn_arithmetic_string_to_number(value.as.string, &number, &has_trailing_non_numeric_data) &&
                 !has_trailing_non_numeric_data
             ) {
                 if (number.type == PTN_NUMBER_FLOAT && !isfinite(number.floating)) {
                     break;
                 }
-                if (
-                    number.type == PTN_NUMBER_FLOAT &&
-                    (number.floating < (double)INT64_MIN || number.floating > (double)INT64_MAX)
-                ) {
+                if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_out_of_range(number.floating)) {
                     break;
                 }
                 if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
