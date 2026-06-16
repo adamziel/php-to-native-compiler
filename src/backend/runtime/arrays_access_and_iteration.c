@@ -42,7 +42,106 @@ static PTN_UNUSED int ptn_compare_number_types(PtnValue left, PtnValue right, in
     return 0;
 }
 
+typedef struct {
+    int negative;
+    const unsigned char *digits;
+    size_t len;
+} PtnDecimalIntegerString;
+
+static PTN_UNUSED int ptn_parse_decimal_integer_string(
+    PtnString string,
+    PtnDecimalIntegerString *parsed
+) {
+    if (string.len == 0) {
+        return 0;
+    }
+
+    const unsigned char *cursor = string.data;
+    const unsigned char *limit = string.data + string.len;
+    while (cursor < limit && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (cursor >= limit) {
+        return 0;
+    }
+
+    int negative = 0;
+    if (*cursor == '+' || *cursor == '-') {
+        negative = *cursor == '-';
+        cursor++;
+    }
+
+    const unsigned char *digits_start = cursor;
+    while (cursor < limit && isdigit((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (cursor == digits_start) {
+        return 0;
+    }
+    const unsigned char *digits_end = cursor;
+
+    while (cursor < limit && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (cursor != limit) {
+        return 0;
+    }
+
+    const unsigned char *significant = digits_start;
+    while (significant < digits_end && *significant == '0') {
+        significant++;
+    }
+
+    parsed->negative = negative && significant < digits_end;
+    parsed->digits = significant;
+    parsed->len = (size_t)(digits_end - significant);
+    return 1;
+}
+
+static PTN_UNUSED int ptn_compare_decimal_integer_strings(
+    PtnString left,
+    PtnString right,
+    int *compared
+) {
+    PtnDecimalIntegerString left_integer;
+    PtnDecimalIntegerString right_integer;
+    if (!ptn_parse_decimal_integer_string(left, &left_integer) ||
+        !ptn_parse_decimal_integer_string(right, &right_integer)) {
+        return 0;
+    }
+
+    if (left_integer.len == 0 && right_integer.len == 0) {
+        *compared = PTN_COMPARE_EQUAL;
+        return 1;
+    }
+    if (left_integer.negative != right_integer.negative) {
+        *compared = left_integer.negative ? PTN_COMPARE_LESS : PTN_COMPARE_GREATER;
+        return 1;
+    }
+    if (left_integer.len != right_integer.len) {
+        int ordered = left_integer.len < right_integer.len
+            ? PTN_COMPARE_LESS
+            : PTN_COMPARE_GREATER;
+        *compared = left_integer.negative ? -ordered : ordered;
+        return 1;
+    }
+
+    int byte_compare = memcmp(left_integer.digits, right_integer.digits, left_integer.len);
+    if (byte_compare == 0) {
+        *compared = PTN_COMPARE_EQUAL;
+        return 1;
+    }
+    int ordered = byte_compare < 0 ? PTN_COMPARE_LESS : PTN_COMPARE_GREATER;
+    *compared = left_integer.negative ? -ordered : ordered;
+    return 1;
+}
+
 static PTN_UNUSED int ptn_compare_strings_loose(PtnString left, PtnString right) {
+    int compared = PTN_COMPARE_EQUAL;
+    if (ptn_compare_decimal_integer_strings(left, right, &compared)) {
+        return compared;
+    }
+
     double left_number = 0.0;
     double right_number = 0.0;
     if (!ptn_string_has_embedded_nul(left) &&

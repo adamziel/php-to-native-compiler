@@ -3765,6 +3765,14 @@ static PTN_UNUSED int ptn_is_numeric_string(const char *string, double *number) 
         return 0;
     }
 
+    const char *numeric_start = start;
+    if (*numeric_start == '+' || *numeric_start == '-') {
+        numeric_start++;
+    }
+    if (numeric_start[0] == '0' && (numeric_start[1] == 'x' || numeric_start[1] == 'X')) {
+        return 0;
+    }
+
     char *end = NULL;
     double parsed = strtod(start, &end);
     if (end == start) {

@@ -18251,6 +18251,34 @@ var_dump(null < -4, null > -4, null <=> -4, -4 <=> null, null <=> 0, null <=> -I
 }
 
 #[test]
+fn compile_large_numeric_string_loose_comparisons_to_native_binary() {
+    let root = temp_dir("ptn-native-large-numeric-string-comparisons");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("large-numeric-string-comparisons.php");
+    let output = root.join("large-numeric-string-comparisons-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(\"9223372036854775807\" == \"9223372036854775808\");\n\
+var_dump(\"-9223372036854775808\" == \"-9223372036854775809\");\n\
+var_dump(\"0x7fffffffffffffff\" == \"9223372036854775808\");\n\
+var_dump(\"999223372036854775807\" == \"999223372036854775808\");\n\
+var_dump(\"899223372036854775807\" > \"00999223372036854775807\");\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_object_number_and_type_order_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-object-number-comparisons");
     fs::create_dir_all(&root).unwrap();
