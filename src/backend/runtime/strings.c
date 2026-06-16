@@ -1077,6 +1077,122 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STR_PAD_BOTH);
         return 1;
     }
+    if (strcmp(name, "JSON_ERROR_NONE") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_NONE);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_DEPTH") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_DEPTH);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_STATE_MISMATCH") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_STATE_MISMATCH);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_CTRL_CHAR") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_CTRL_CHAR);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_SYNTAX") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_SYNTAX);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_UTF8") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_UTF8);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_RECURSION") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_RECURSION);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_INF_OR_NAN") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_INF_OR_NAN);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_UNSUPPORTED_TYPE") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_UNSUPPORTED_TYPE);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_INVALID_PROPERTY_NAME") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_INVALID_PROPERTY_NAME);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_UTF16") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_UTF16);
+        return 1;
+    }
+    if (strcmp(name, "JSON_ERROR_NON_BACKED_ENUM") == 0) {
+        *out = ptn_int(PTN_JSON_ERROR_NON_BACKED_ENUM);
+        return 1;
+    }
+    if (strcmp(name, "JSON_HEX_TAG") == 0) {
+        *out = ptn_int(PTN_JSON_HEX_TAG);
+        return 1;
+    }
+    if (strcmp(name, "JSON_HEX_AMP") == 0) {
+        *out = ptn_int(PTN_JSON_HEX_AMP);
+        return 1;
+    }
+    if (strcmp(name, "JSON_HEX_APOS") == 0) {
+        *out = ptn_int(PTN_JSON_HEX_APOS);
+        return 1;
+    }
+    if (strcmp(name, "JSON_HEX_QUOT") == 0) {
+        *out = ptn_int(PTN_JSON_HEX_QUOT);
+        return 1;
+    }
+    if (strcmp(name, "JSON_FORCE_OBJECT") == 0) {
+        *out = ptn_int(PTN_JSON_FORCE_OBJECT);
+        return 1;
+    }
+    if (strcmp(name, "JSON_NUMERIC_CHECK") == 0) {
+        *out = ptn_int(PTN_JSON_NUMERIC_CHECK);
+        return 1;
+    }
+    if (strcmp(name, "JSON_UNESCAPED_SLASHES") == 0) {
+        *out = ptn_int(PTN_JSON_UNESCAPED_SLASHES);
+        return 1;
+    }
+    if (strcmp(name, "JSON_PRETTY_PRINT") == 0) {
+        *out = ptn_int(PTN_JSON_PRETTY_PRINT);
+        return 1;
+    }
+    if (strcmp(name, "JSON_UNESCAPED_UNICODE") == 0) {
+        *out = ptn_int(PTN_JSON_UNESCAPED_UNICODE);
+        return 1;
+    }
+    if (strcmp(name, "JSON_PARTIAL_OUTPUT_ON_ERROR") == 0) {
+        *out = ptn_int(PTN_JSON_PARTIAL_OUTPUT_ON_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "JSON_PRESERVE_ZERO_FRACTION") == 0) {
+        *out = ptn_int(PTN_JSON_PRESERVE_ZERO_FRACTION);
+        return 1;
+    }
+    if (strcmp(name, "JSON_UNESCAPED_LINE_TERMINATORS") == 0) {
+        *out = ptn_int(PTN_JSON_UNESCAPED_LINE_TERMINATORS);
+        return 1;
+    }
+    if (strcmp(name, "JSON_OBJECT_AS_ARRAY") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "JSON_BIGINT_AS_STRING") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "JSON_INVALID_UTF8_IGNORE") == 0) {
+        *out = ptn_int(PTN_JSON_INVALID_UTF8_IGNORE);
+        return 1;
+    }
+    if (strcmp(name, "JSON_INVALID_UTF8_SUBSTITUTE") == 0) {
+        *out = ptn_int(PTN_JSON_INVALID_UTF8_SUBSTITUTE);
+        return 1;
+    }
+    if (strcmp(name, "JSON_THROW_ON_ERROR") == 0) {
+        *out = ptn_int(PTN_JSON_THROW_ON_ERROR);
+        return 1;
+    }
     if (strcmp(name, "HTML_SPECIALCHARS") == 0) {
         *out = ptn_int(PTN_HTML_SPECIALCHARS);
         return 1;
