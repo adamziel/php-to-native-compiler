@@ -153,6 +153,97 @@ static PTN_UNUSED int ptn_compare_strings_loose(PtnString left, PtnString right)
     return ptn_compare_value_strings(left, right);
 }
 
+static PTN_UNUSED int ptn_runtime_memory_limit_bytes(PtnRuntime *runtime, size_t *limit_out) {
+    if (runtime == NULL || limit_out == NULL) {
+        return 0;
+    }
+
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    const char *text = root != NULL && root->memory_limit != NULL
+        ? root->memory_limit
+        : runtime->memory_limit;
+    if (text == NULL) {
+        return 0;
+    }
+
+    while (isspace((unsigned char)*text)) {
+        text++;
+    }
+    errno = 0;
+    char *end = NULL;
+    long long parsed = strtoll(text, &end, 0);
+    if (end == text || parsed <= 0 || errno == ERANGE) {
+        return 0;
+    }
+    while (end != NULL && isspace((unsigned char)*end)) {
+        end++;
+    }
+
+    uint64_t multiplier = 1;
+    if (end != NULL && *end != '\0') {
+        switch (tolower((unsigned char)*end)) {
+            case 'g':
+                multiplier = 1024ULL * 1024ULL * 1024ULL;
+                break;
+            case 'm':
+                multiplier = 1024ULL * 1024ULL;
+                break;
+            case 'k':
+                multiplier = 1024ULL;
+                break;
+            default:
+                multiplier = 1;
+                break;
+        }
+    }
+
+    uint64_t magnitude = (uint64_t)parsed;
+    if (magnitude > (uint64_t)SIZE_MAX / multiplier) {
+        return 0;
+    }
+    *limit_out = (size_t)(magnitude * multiplier);
+    return 1;
+}
+
+static PTN_UNUSED void ptn_array_enforce_memory_limit_for_entry_write(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnArrayKey key,
+    size_t line
+) {
+    if (runtime == NULL || array == NULL || array->len < array->capacity) {
+        return;
+    }
+    if (ptn_array_find_key(array, key) < array->len) {
+        return;
+    }
+
+    size_t new_capacity = array->capacity == 0 ? 8 : array->capacity * 2;
+    if (new_capacity < array->capacity || new_capacity > SIZE_MAX / sizeof(PtnArrayEntry)) {
+        ptn_emit_memory_allocation_overflow_error(runtime, new_capacity, sizeof(PtnArrayEntry), 0, line);
+        return;
+    }
+    size_t allocation_size = new_capacity * sizeof(PtnArrayEntry);
+
+    size_t limit = 0;
+    if (!ptn_runtime_memory_limit_bytes(runtime, &limit) || limit == 0 || allocation_size <= limit) {
+        return;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)",
+        limit,
+        allocation_size
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
+}
+
 static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right);
@@ -6344,6 +6435,7 @@ static PTN_UNUSED void ptn_array_set_path_leaf(
     if (!ptn_array_path_segment_key(runtime, array, segment, line, &key)) {
         return;
     }
+    ptn_array_enforce_memory_limit_for_entry_write(runtime, array, key, line);
     ptn_array_write_entry(runtime, array, key, ptn_value_clone(ptn_value_deref(value)));
 }
 
@@ -6360,6 +6452,7 @@ static PTN_UNUSED PtnValue ptn_array_set_path_leaf_result(
     if (!ptn_array_path_segment_key(runtime, array, segment, line, &key)) {
         return ptn_null();
     }
+    ptn_array_enforce_memory_limit_for_entry_write(runtime, array, key, line);
     return ptn_array_write_entry_result(runtime, array, key, value);
 }
 

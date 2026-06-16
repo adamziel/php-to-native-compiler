@@ -711,65 +711,13 @@ static PTN_UNUSED PtnStringOperand ptn_concat_string_operand(
     return ptn_value_to_string_operand_with_runtime(runtime, value, line);
 }
 
-static PTN_UNUSED int ptn_concat_memory_limit_bytes(PtnRuntime *runtime, size_t *limit_out) {
-    if (runtime == NULL || limit_out == NULL) {
-        return 0;
-    }
-
-    PtnRuntime *root = ptn_runtime_root(runtime);
-    const char *text = root != NULL && root->memory_limit != NULL
-        ? root->memory_limit
-        : runtime->memory_limit;
-    if (text == NULL) {
-        return 0;
-    }
-
-    while (isspace((unsigned char)*text)) {
-        text++;
-    }
-    errno = 0;
-    char *end = NULL;
-    long long parsed = strtoll(text, &end, 0);
-    if (end == text || parsed <= 0 || errno == ERANGE) {
-        return 0;
-    }
-    while (end != NULL && isspace((unsigned char)*end)) {
-        end++;
-    }
-
-    uint64_t multiplier = 1;
-    if (end != NULL && *end != '\0') {
-        switch (tolower((unsigned char)*end)) {
-            case 'g':
-                multiplier = 1024ULL * 1024ULL * 1024ULL;
-                break;
-            case 'm':
-                multiplier = 1024ULL * 1024ULL;
-                break;
-            case 'k':
-                multiplier = 1024ULL;
-                break;
-            default:
-                multiplier = 1;
-                break;
-        }
-    }
-
-    uint64_t magnitude = (uint64_t)parsed;
-    if (magnitude > (uint64_t)SIZE_MAX / multiplier) {
-        return 0;
-    }
-    *limit_out = (size_t)(magnitude * multiplier);
-    return 1;
-}
-
 static PTN_UNUSED void ptn_concat_enforce_memory_limit(
     PtnRuntime *runtime,
     size_t joined_len,
     size_t line
 ) {
     size_t limit = 0;
-    if (!ptn_concat_memory_limit_bytes(runtime, &limit) || limit == 0) {
+    if (!ptn_runtime_memory_limit_bytes(runtime, &limit) || limit == 0) {
         return;
     }
 

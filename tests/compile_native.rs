@@ -20212,6 +20212,35 @@ $e .= $i;\n",
 }
 
 #[test]
+fn compile_array_append_obeys_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-array-append-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-append-memory-limit.php");
+    let output = root.join("array-append-memory-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [];\n\
+for ($i = 0; $i < 100; $i++) { $items[] = $i; }\n\
+echo \"unreachable\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "1K")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Allowed memory size of 1024 bytes exhausted"));
+    assert!(stderr.contains("tried to allocate "));
+    assert!(stderr.contains("array-append-memory-limit.php on line 3"));
+}
+
+#[test]
 fn compile_array_offset_assignment_and_unset_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-assignment-unset");
     fs::create_dir_all(&root).unwrap();
