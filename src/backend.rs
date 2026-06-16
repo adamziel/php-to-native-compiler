@@ -1426,7 +1426,7 @@ fn instance_method_trace_display_name(function: &FunctionDecl) -> Option<String>
     Some(format!("{class_name}->{method_name}"))
 }
 
-fn emit_function_metadata_parameter_names(
+fn emit_function_metadata_parameters(
     out: &mut String,
     indent: &str,
     name: &str,
@@ -1436,16 +1436,39 @@ fn emit_function_metadata_parameter_names(
         return "NULL".to_string();
     }
     out.push_str(indent);
-    out.push_str("static const char *const ");
+    out.push_str("static const PtnParameterMetadata ");
     out.push_str(name);
     out.push_str("[] = { ");
     for (index, parameter) in parameters.iter().enumerate() {
         if index > 0 {
             out.push_str(", ");
         }
-        out.push('"');
+        let type_metadata = parameter
+            .type_hint
+            .as_ref()
+            .and_then(reflection_named_type_metadata);
+        out.push_str("{ \"");
         out.push_str(&c_string(&parameter.name));
-        out.push('"');
+        out.push_str("\", ");
+        if let Some(type_metadata) = type_metadata {
+            out.push('"');
+            out.push_str(&c_string(&type_metadata.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&type_metadata.display_name));
+            out.push_str("\", ");
+            out.push_str(if type_metadata.allows_null { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+        } else {
+            out.push_str("NULL, NULL, 0, 0");
+        }
+        out.push_str(", ");
+        out.push_str(if parameter.by_ref { "1" } else { "0" });
+        out.push_str(", ");
+        out.push_str(if parameter.is_variadic { "1" } else { "0" });
+        out.push_str(", ");
+        out.push_str(if parameter.by_ref { "0" } else { "1" });
+        out.push_str(" }");
     }
     out.push_str(" };\n");
     name.to_string()
@@ -2268,6 +2291,88 @@ fn type_hint_label(type_hint: &TypeHint) -> String {
     }
 }
 
+struct ReflectionNamedTypeMetadata {
+    name: String,
+    display_name: String,
+    allows_null: bool,
+    is_builtin: bool,
+}
+
+fn reflection_named_type_metadata(type_hint: &TypeHint) -> Option<ReflectionNamedTypeMetadata> {
+    let named_type = match type_hint {
+        TypeHint::Nullable(inner) => inner.as_ref(),
+        TypeHint::Union(_) | TypeHint::Intersection(_) => return None,
+        other => other,
+    };
+    if matches!(named_type, TypeHint::Void | TypeHint::Never) {
+        return None;
+    }
+    Some(ReflectionNamedTypeMetadata {
+        name: reflection_named_type_name(named_type),
+        display_name: type_hint_label(type_hint),
+        allows_null: type_hint_allows_null(Some(type_hint)),
+        is_builtin: reflection_named_type_is_builtin(named_type),
+    })
+}
+
+fn emit_reflection_type_metadata_arguments(out: &mut String, type_hint: Option<&TypeHint>) {
+    out.push_str(", ");
+    if let Some(type_metadata) = type_hint.and_then(reflection_named_type_metadata) {
+        out.push('"');
+        out.push_str(&c_string(&type_metadata.name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&type_metadata.display_name));
+        out.push_str("\", ");
+        out.push_str(if type_metadata.allows_null { "1" } else { "0" });
+        out.push_str(", ");
+        out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+    } else {
+        out.push_str("NULL, NULL, 0, 0");
+    }
+}
+
+fn reflection_named_type_name(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Null => "null".to_string(),
+        TypeHint::Array => "array".to_string(),
+        TypeHint::Int => "int".to_string(),
+        TypeHint::Float => "float".to_string(),
+        TypeHint::String => "string".to_string(),
+        TypeHint::Bool => "bool".to_string(),
+        TypeHint::True => "true".to_string(),
+        TypeHint::False => "false".to_string(),
+        TypeHint::Callable => "callable".to_string(),
+        TypeHint::Object => "object".to_string(),
+        TypeHint::Iterable => "iterable".to_string(),
+        TypeHint::Mixed => "mixed".to_string(),
+        TypeHint::Static => "static".to_string(),
+        TypeHint::Class(class_name) => class_name.clone(),
+        TypeHint::Nullable(inner) => reflection_named_type_name(inner),
+        TypeHint::Void | TypeHint::Never | TypeHint::Union(_) | TypeHint::Intersection(_) => {
+            type_hint_label(type_hint)
+        }
+    }
+}
+
+fn reflection_named_type_is_builtin(type_hint: &TypeHint) -> bool {
+    matches!(
+        type_hint,
+        TypeHint::Null
+            | TypeHint::Array
+            | TypeHint::Int
+            | TypeHint::Float
+            | TypeHint::String
+            | TypeHint::Bool
+            | TypeHint::True
+            | TypeHint::False
+            | TypeHint::Callable
+            | TypeHint::Object
+            | TypeHint::Iterable
+            | TypeHint::Mixed
+            | TypeHint::Static
+    )
+}
+
 fn type_hint_union_member_label(type_hint: &TypeHint) -> String {
     match type_hint {
         TypeHint::Intersection(_) => format!("({})", type_hint_label(type_hint)),
@@ -2646,10 +2751,10 @@ fn emit_user_function_dispatch(
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&function.name));
         out.push_str("\")) {\n");
-        let parameter_names = emit_function_metadata_parameter_names(
+        let parameters = emit_function_metadata_parameters(
             out,
             "        ",
-            &format!("ptn_function_{function_index}_parameter_names"),
+            &format!("ptn_function_{function_index}_parameters"),
             &function.parameters,
         );
         out.push_str("        return ptn_function_metadata_found(\"");
@@ -2661,7 +2766,8 @@ fn emit_user_function_dispatch(
         out.push_str(", ");
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(", ");
-        out.push_str(&parameter_names);
+        out.push_str(&parameters);
+        emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
         out.push_str(");\n");
         out.push_str("    }\n");
     }
@@ -2683,10 +2789,10 @@ fn emit_user_function_dispatch(
             out.push_str("::");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
-            let parameter_names = emit_function_metadata_parameter_names(
+            let parameters = emit_function_metadata_parameters(
                 out,
                 "        ",
-                &format!("ptn_function_{}_parameter_names", method.function_index),
+                &format!("ptn_function_{}_parameters", method.function_index),
                 &function.parameters,
             );
             out.push_str("        return ptn_function_metadata_found(\"");
@@ -2700,7 +2806,8 @@ fn emit_user_function_dispatch(
             out.push_str(", ");
             out.push_str(if is_variadic { "1" } else { "0" });
             out.push_str(", ");
-            out.push_str(&parameter_names);
+            out.push_str(&parameters);
+            emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
             out.push_str(");\n");
             out.push_str("    }\n");
         }
@@ -14981,10 +15088,10 @@ impl ValueEmitter {
             .iter()
             .any(|parameter| parameter.is_variadic);
         let uses_this = function_uses_this(function);
-        let parameter_names = emit_function_metadata_parameter_names(
+        let parameters = emit_function_metadata_parameters(
             out,
             "    ",
-            &format!("ptn_closure_{function_index}_parameter_names"),
+            &format!("ptn_closure_{function_index}_parameters"),
             &function.parameters,
         );
         out.push_str("    PtnValue ");
@@ -15000,7 +15107,8 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(", ");
-        out.push_str(&parameter_names);
+        out.push_str(&parameters);
+        emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
         out.push_str("), ");
         out.push_str(if function.is_static { "1" } else { "0" });
         out.push_str(", ");
