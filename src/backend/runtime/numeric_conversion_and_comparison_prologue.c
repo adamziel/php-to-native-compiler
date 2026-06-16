@@ -2372,7 +2372,8 @@ static PTN_UNUSED int ptn_builtin_class_constant_value(
 static PTN_UNUSED PtnValue ptn_runtime_undeclared_static_property(
     PtnRuntime *runtime,
     const char *class_name,
-    const char *property
+    const char *property,
+    size_t line
 ) {
     char message[256];
     int written = snprintf(
@@ -2385,7 +2386,7 @@ static PTN_UNUSED PtnValue ptn_runtime_undeclared_static_property(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Error", message);
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
     return ptn_null();
 }
 
@@ -2593,7 +2594,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
         return ptn_value_clone_deref(value);
     }
     free(key);
-    return ptn_runtime_undeclared_static_property(runtime, class_name, property);
+    return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
 }
 
 static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
@@ -2652,7 +2653,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
         &declaring_class
     );
     if (key == NULL) {
-        return ptn_runtime_undeclared_static_property(runtime, class_name, property);
+        return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
     }
 
     PtnValue read_visibility_value;
@@ -2703,7 +2704,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
     PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_static_property_table(runtime), key);
     if (slot == NULL) {
         free(key);
-        return ptn_runtime_undeclared_static_property(runtime, class_name, property);
+        return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
     }
     if (slot->type != PTN_REFERENCE) {
         PtnValue current = *slot;
@@ -2731,7 +2732,7 @@ static PTN_UNUSED int ptn_runtime_validate_static_property_write(
         &declaring_class
     );
     if (key == NULL) {
-        PtnValue missing = ptn_runtime_undeclared_static_property(runtime, class_name, property);
+        PtnValue missing = ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
         ptn_value_destroy(&missing);
         return 0;
     }
@@ -2806,7 +2807,7 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
         &declaring_class
     );
     if (key == NULL) {
-        return ptn_runtime_undeclared_static_property(runtime, class_name, property);
+        return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
     }
     PtnValue read_visibility_value;
     PtnValue set_visibility_value;
@@ -2932,7 +2933,7 @@ static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
         &declaring_class
     );
     if (key == NULL) {
-        PtnValue missing = ptn_runtime_undeclared_static_property(runtime, class_name, property);
+        PtnValue missing = ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
         ptn_value_destroy(&missing);
         return;
     }
