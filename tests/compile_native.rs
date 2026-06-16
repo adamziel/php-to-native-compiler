@@ -22332,17 +22332,23 @@ var_dump($referenced);",
 }
 
 #[test]
-fn compile_call_user_func_namespaced_sort_literal_warns_to_native_binary() {
-    let root = temp_dir("ptn-native-call-user-func-namespaced-sort-literal-warns");
+fn compile_call_user_func_sort_prefer_ref_temporaries_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-sort-prefer-ref-temporaries");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("call-user-func-namespaced-sort-literal-warns.php");
-    let output = root.join("call-user-func-namespaced-sort-literal-warns-bin");
+    let input = root.join("call-user-func-sort-prefer-ref-temporaries.php");
+    let output = root.join("call-user-func-sort-prefer-ref-temporaries-bin");
     fs::write(
         &input,
         "<?php\n\
 namespace Foo;\n\
+$items = [3, 2, 1];\n\
+var_dump(call_user_func('sort', $items));\n\
+var_dump($items);\n\
 var_dump(call_user_func('sort', []));\n\
-var_dump(\\call_user_func('sort', []));",
+var_dump(\\call_user_func('\\sort', []));\n\
+$ref = [3, 2, 1];\n\
+var_dump(call_user_func_array('sort', [&$ref]));\n\
+var_dump($ref);",
     )
     .unwrap();
 
@@ -22353,17 +22359,37 @@ var_dump(\\call_user_func('sort', []));",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "\nWarning: sort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 3\n",
-            "bool(true)\n",
             "\nWarning: sort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 4\n",
             "bool(true)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(3)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "\nWarning: sort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 6\n",
+            "bool(true)\n",
+            "\nWarning: sort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 7\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dynamic_call_effective_internal_name"));
-    assert!(c_source.contains("ptn_dynamic_call_warn_first_reference_argument_mismatch"));
+    assert!(c_source.contains("ptn_dynamic_call_warn_internal_reference_argument_mismatches"));
+    assert!(c_source.contains("ptn_dynamic_call_prepare_first_array_argument"));
 }
 
 #[test]
