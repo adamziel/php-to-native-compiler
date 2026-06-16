@@ -614,6 +614,7 @@ impl Parser<'_> {
         target: ParsedName,
     ) -> Result<()> {
         if kind == UseDeclarationKind::Class
+            && self.current_namespace.is_none()
             && !target.name.contains('\\')
             && matches!(
                 target.resolution,
