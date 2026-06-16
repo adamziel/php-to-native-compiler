@@ -1450,6 +1450,17 @@ static PTN_UNUSED PtnValue ptn_null(void) {
     return value;
 }
 
+static PTN_UNUSED PtnValue ptn_missing(void) {
+    PtnValue value;
+    value.type = PTN_NULL;
+    value.owned = -1;
+    return value;
+}
+
+static PTN_UNUSED int ptn_value_is_missing(PtnValue value) {
+    return value.type == PTN_NULL && value.owned == -1;
+}
+
 static PTN_UNUSED PtnValue ptn_bool(int boolean) {
     PtnValue value;
     value.type = PTN_BOOL;

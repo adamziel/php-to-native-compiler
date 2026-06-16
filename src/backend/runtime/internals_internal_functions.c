@@ -34364,6 +34364,8 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
         || ptn_ascii_case_equal(method_name, "getParameters")
         || ptn_ascii_case_equal(method_name, "getReturnType")
+        || ptn_ascii_case_equal(method_name, "invoke")
+        || ptn_ascii_case_equal(method_name, "invokeArgs")
         || ptn_ascii_case_equal(method_name, "getNumberOfParameters")
         || ptn_ascii_case_equal(method_name, "getNumberOfRequiredParameters")
         || ptn_ascii_case_equal(method_name, "getShortName")
@@ -34681,6 +34683,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getNamespaceName",
             "getParameters",
             "getReturnType",
+            "invoke",
+            "invokeArgs",
             "getNumberOfParameters",
             "getNumberOfRequiredParameters",
             "getShortName",
@@ -38326,6 +38330,88 @@ static void ptn_reflection_check_no_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
+static void ptn_reflection_check_exact_arguments(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t argc,
+    size_t expected
+) {
+    if (argc == expected) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s::%s() expects exactly %zu argument%s, %zu given",
+        class_name,
+        method_name,
+        expected,
+        expected == 1 ? "" : "s",
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static PtnValue ptn_reflection_function_dispatch_invoke(
+    PtnRuntime *runtime,
+    PtnReflectionFunctionData *data,
+    size_t function_argc,
+    const PtnValue *function_args,
+    size_t line
+) {
+    int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    runtime->warn_by_ref_argument_mismatch = 1;
+    runtime->throw_argument_count_errors = 1;
+    PtnValue result = ptn_call_function(runtime, data->metadata.name, function_argc, function_args, line);
+    runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
+    runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    return result;
+}
+
+static int ptn_reflection_function_collect_invoke_args(
+    PtnRuntime *runtime,
+    const char *method_name,
+    PtnValue arg,
+    size_t *argc_out,
+    PtnValue **args_out
+) {
+    PtnValue resolved = ptn_value_deref(arg);
+    if (resolved.type != PTN_ARRAY) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionFunction::%s(): Argument #1 ($args) must be of type array, %s given",
+            method_name,
+            ptn_count_operand_type_name(resolved)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    *argc_out = resolved.as.array->len;
+    *args_out = NULL;
+    if (resolved.as.array->len == 0) {
+        return 1;
+    }
+    *args_out = malloc(resolved.as.array->len * sizeof(PtnValue));
+    if (*args_out == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < resolved.as.array->len; i++) {
+        (*args_out)[i] = ptn_value_clone(resolved.as.array->entries[i].value);
+    }
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_function_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -39230,17 +39316,47 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    (void)args;
-    (void)line;
-    ptn_reflection_check_no_arguments(runtime, "ReflectionFunction", name, argc);
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
     PtnReflectionFunctionData *data = ptn_reflection_function_data(runtime, receiver);
     if (data == NULL) {
         return ptn_null();
     }
     PtnFunctionMetadata metadata = data->metadata;
+    if (ptn_ascii_case_equal(name, "invoke")) {
+        return ptn_reflection_function_dispatch_invoke(runtime, data, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "invokeArgs")) {
+        ptn_reflection_check_exact_arguments(runtime, "ReflectionFunction", "invokeArgs", argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        size_t function_argc = 0;
+        PtnValue *function_args = NULL;
+        if (!ptn_reflection_function_collect_invoke_args(
+                runtime,
+                "invokeArgs",
+                args[0],
+                &function_argc,
+                &function_args
+            )) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_reflection_function_dispatch_invoke(
+            runtime,
+            data,
+            function_argc,
+            function_args,
+            line
+        );
+        for (size_t i = 0; i < function_argc; i++) {
+            ptn_value_destroy(&function_args[i]);
+        }
+        free(function_args);
+        return result;
+    }
+    ptn_reflection_check_no_arguments(runtime, "ReflectionFunction", name, argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     if (ptn_ascii_case_equal(name, "__toString")) {
         return ptn_reflection_function_to_string(metadata);
     }

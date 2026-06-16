@@ -1104,6 +1104,9 @@ fn emit_user_functions(
                     out.push_str(&guard_name);
                     out.push_str(" = argc <= ");
                     out.push_str(&parameter_index.to_string());
+                    out.push_str(" || ptn_value_is_missing(args[");
+                    out.push_str(&parameter_index.to_string());
+                    out.push_str("])");
                     out.push_str(";\n");
                     out.push_str("    PtnValue ");
                     out.push_str(&value_name);
@@ -21815,7 +21818,7 @@ impl ValueEmitter {
                 out.push_str(temp);
                 out.push(')');
             } else {
-                out.push_str("ptn_null()");
+                out.push_str("ptn_missing()");
             }
         }
         out.push_str(" };\n");
@@ -21823,7 +21826,7 @@ impl ValueEmitter {
             out,
             result_temp,
             direct_user,
-            &arguments.len().to_string(),
+            &frame_len.to_string(),
             &args_temp,
             line,
             called_class_override,

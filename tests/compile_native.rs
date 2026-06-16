@@ -12618,6 +12618,46 @@ echo collect(right: side(\"R\"), left: side(\"L\"), middle: side(\"M\")), \"\\n\
 }
 
 #[test]
+fn compile_sparse_named_reference_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-sparse-named-reference-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sparse-named-reference-arguments.php");
+    let output = root.join("sparse-named-reference-arguments-bin");
+    fs::write(
+        &input,
+        "<?php
+function test(&$p00 = null, $p01 = null, &$p02 = null, $p03 = null, &$p04 = null, $p05 = null) {
+    $p00++;
+    $p04++;
+}
+
+$v00 = $v01 = $v04 = $v05 = 0;
+test(p04: $v04, p05: $v05, p00: $v00, p01: $v01);
+echo $v00 . \" \" . $v01 . \" \" . $v04 . \" \" . $v05 . \"\\n\";
+
+$values = array(0 => 0, 1 => 0, 4 => 0, 5 => 0);
+test(p04: $values[4], p05: $values[5], p00: $values[0], p01: $values[1]);
+echo $values[0] . \" \" . $values[1] . \" \" . $values[4] . \" \" . $values[5] . \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1 0 1 0\n1 0 1 0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_missing()"));
+    assert!(c_source.contains("ptn_value_is_missing"));
+}
+
+#[test]
 fn compile_user_function_named_argument_diagnostics_to_native_binary() {
     let cases = [
         (
@@ -14879,6 +14919,45 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
     assert!(c_source.contains("ptn_user_function_metadata"));
     assert!(c_source.contains("ptn_reflection_function_new"));
     assert!(c_source.contains("ptn_reflection_function_call_method"));
+}
+
+#[test]
+fn compile_reflection_function_invoke_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-function-invoke");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-invoke.php");
+    let output = root.join("reflection-function-invoke-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace ReflectInvoke;
+
+function &ret_ref($value) {
+    return $value;
+}
+
+$function = new \\ReflectionFunction(\"ReflectInvoke\\\\ret_ref\");
+var_dump($function->invoke(42));
+var_dump($function->invokeArgs(array(43)));
+var_dump(\\method_exists(\"ReflectionFunction\", \"invoke\"));
+var_dump(\\method_exists(\"ReflectionFunction\", \"invokeArgs\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("int(42)\n", "int(43)\n", "bool(true)\n", "bool(true)\n",)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_function_dispatch_invoke"));
+    assert!(c_source.contains("ptn_reflection_function_collect_invoke_args"));
 }
 
 #[test]
