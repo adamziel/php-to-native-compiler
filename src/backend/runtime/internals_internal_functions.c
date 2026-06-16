@@ -28337,6 +28337,65 @@ static PTN_UNUSED int ptn_runtime_class_or_interface_exists(PtnRuntime *runtime,
         || ptn_internal_interface_exists_name(resolved_name);
 }
 
+enum {
+    PTN_CLASS_ALIAS_SOURCE_MISSING = 0,
+    PTN_CLASS_ALIAS_SOURCE_CLASS = 1,
+    PTN_CLASS_ALIAS_SOURCE_INTERFACE = 2,
+    PTN_CLASS_ALIAS_SOURCE_TRAIT = 3
+};
+
+static int ptn_runtime_class_alias_source_kind(PtnRuntime *runtime, const char *class_name) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    if (ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name)) {
+        return PTN_CLASS_ALIAS_SOURCE_CLASS;
+    }
+    if (ptn_declared_interface_exists(resolved_name) || ptn_internal_interface_exists_name(resolved_name)) {
+        return PTN_CLASS_ALIAS_SOURCE_INTERFACE;
+    }
+    if (ptn_declared_trait_exists(resolved_name)) {
+        return PTN_CLASS_ALIAS_SOURCE_TRAIT;
+    }
+    return PTN_CLASS_ALIAS_SOURCE_MISSING;
+}
+
+static const char *ptn_class_alias_source_kind_label(int kind) {
+    if (kind == PTN_CLASS_ALIAS_SOURCE_INTERFACE) {
+        return "interface";
+    }
+    if (kind == PTN_CLASS_ALIAS_SOURCE_TRAIT) {
+        return "trait";
+    }
+    return "class";
+}
+
+static int ptn_class_alias_name_is_reserved(const char *alias_name) {
+    const char *name = ptn_symbol_name_without_leading_slash(alias_name);
+    const char *short_name = strrchr(name, '\\');
+    if (short_name != NULL) {
+        short_name++;
+    } else {
+        short_name = name;
+    }
+    return ptn_ascii_case_equal(short_name, "array")
+        || ptn_ascii_case_equal(short_name, "bool")
+        || ptn_ascii_case_equal(short_name, "boolean")
+        || ptn_ascii_case_equal(short_name, "callable")
+        || ptn_ascii_case_equal(short_name, "false")
+        || ptn_ascii_case_equal(short_name, "float")
+        || ptn_ascii_case_equal(short_name, "double")
+        || ptn_ascii_case_equal(short_name, "int")
+        || ptn_ascii_case_equal(short_name, "integer")
+        || ptn_ascii_case_equal(short_name, "iterable")
+        || ptn_ascii_case_equal(short_name, "mixed")
+        || ptn_ascii_case_equal(short_name, "never")
+        || ptn_ascii_case_equal(short_name, "null")
+        || ptn_ascii_case_equal(short_name, "object")
+        || ptn_ascii_case_equal(short_name, "resource")
+        || ptn_ascii_case_equal(short_name, "string")
+        || ptn_ascii_case_equal(short_name, "true")
+        || ptn_ascii_case_equal(short_name, "void");
+}
+
 static void ptn_emit_class_alias_warning(
     PtnRuntime *runtime,
     const char *format,
@@ -28364,19 +28423,78 @@ static PTN_UNUSED int ptn_runtime_register_class_alias(
 ) {
     const char *source_lookup_name = ptn_symbol_name_without_leading_slash(source_name);
     const char *source_resolved_name = ptn_runtime_resolve_class_alias(runtime, source_lookup_name);
-    if (!ptn_runtime_class_or_interface_exists(runtime, source_resolved_name)) {
+    int source_kind = ptn_runtime_class_alias_source_kind(runtime, source_resolved_name);
+    if (source_kind == PTN_CLASS_ALIAS_SOURCE_MISSING) {
         ptn_emit_class_alias_warning(runtime, "Class \"%s\" not found", source_lookup_name, line);
         return 0;
     }
 
     const char *alias_lookup_name = ptn_symbol_name_without_leading_slash(alias_name);
-    if (ptn_runtime_class_or_interface_exists(runtime, alias_lookup_name)) {
-        ptn_emit_class_alias_warning(
+    if (ptn_class_alias_name_is_reserved(alias_lookup_name)) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "Cannot use \"%s\" as a class alias as it is reserved",
+            alias_lookup_name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Cannot use \"%s\" as a class alias as it is reserved",
+            alias_lookup_name
+        );
+        if (runtime->diagnostics.emitted_deprecation) {
+            fputc('\n', stdout);
+        }
+        ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
+        free(message);
+        return 0;
+    }
+    if (strcmp(alias_lookup_name, "_") == 0) {
+        ptn_emit_runtime_deprecation(
             runtime,
-            "Cannot declare class %s, because the name is already in use",
-            alias_lookup_name,
+            "Using \"_\" as a class alias is deprecated since 8.4",
             line
         );
+    }
+
+    if (ptn_runtime_class_alias_source_kind(runtime, alias_lookup_name) != PTN_CLASS_ALIAS_SOURCE_MISSING) {
+        const char *kind_label = ptn_class_alias_source_kind_label(source_kind);
+        const char *path = runtime->source_path != NULL ? runtime->source_path : "ptn";
+        int needed = snprintf(
+            NULL,
+            0,
+            "Cannot redeclare %s %s (previously declared in %s:%zu)",
+            kind_label,
+            alias_lookup_name,
+            path,
+            line
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Cannot redeclare %s %s (previously declared in %s:%zu)",
+            kind_label,
+            alias_lookup_name,
+            path,
+            line
+        );
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(message);
         return 0;
     }
 
@@ -28384,6 +28502,7 @@ static PTN_UNUSED int ptn_runtime_register_class_alias(
     if (aliases == NULL) {
         return 0;
     }
+
     char *key = ptn_class_alias_key(alias_lookup_name);
     PtnValue value = ptn_owned_string(ptn_duplicate_string(source_resolved_name));
     ptn_symbols_set(aliases, key, value);
@@ -29908,7 +30027,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             return ptn_null();
         }
         char *method_name = ptn_value_to_string(args[0]);
-        int exists = ptn_internal_class_method_exists(class_name, method_name);
+        int exists = ptn_declared_user_class_or_interface_exists(class_name)
+            ? ptn_declared_class_method_exists(class_name, method_name)
+            : ptn_internal_class_method_exists(class_name, method_name);
         free(method_name);
         return ptn_bool(exists);
     }
@@ -31476,11 +31597,12 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
 }
 
 static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
-    int exists = ptn_declared_trait_exists(name);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    int exists = ptn_declared_trait_exists(resolved_name);
     free(name);
     return ptn_bool(exists);
 }

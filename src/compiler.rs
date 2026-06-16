@@ -11,7 +11,7 @@ use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{lower_with_source_and_includes, IncludeResolutionMap, IncludeSource};
 use crate::lexer::decode_php_source_bytes;
-use crate::parser::parse;
+use crate::parser::{parse, parse_with_runtime_class_aliases};
 
 const MAX_BOUNDED_INCLUDE_CANDIDATES: usize = 32;
 
@@ -67,6 +67,7 @@ struct IncludeCollector {
     by_path: HashMap<PathBuf, usize>,
     resolutions: IncludeResolutionMap,
     path_env: IncludePathEnv,
+    runtime_class_aliases: HashMap<String, String>,
 }
 
 impl IncludeCollector {
@@ -76,6 +77,7 @@ impl IncludeCollector {
             by_path: HashMap::new(),
             resolutions: IncludeResolutionMap::new(),
             path_env: IncludePathEnv::new(),
+            runtime_class_aliases: HashMap::new(),
         }
     }
 
@@ -122,7 +124,20 @@ impl IncludeCollector {
                 })?;
             }
         }
-        self.collect_statements(&program.statements, source_file, source_dir)
+        self.collect_top_level_statements(&program.statements, source_file, source_dir)
+    }
+
+    fn collect_top_level_statements(
+        &mut self,
+        statements: &[Statement],
+        source_file: &str,
+        source_dir: &str,
+    ) -> Result<()> {
+        for statement in statements {
+            self.note_runtime_class_alias_statement(statement);
+            self.collect_statement(statement, source_file, source_dir)?;
+        }
+        Ok(())
     }
 
     fn collect_with_fresh_path_env<F>(&mut self, f: F) -> Result<()>
@@ -372,6 +387,49 @@ impl IncludeCollector {
                 Ok(())
             }
         }
+    }
+
+    fn note_runtime_class_alias_statement(&mut self, statement: &Statement) {
+        let Some((name, arguments, argument_names, argument_unpacks)) = (match statement {
+            Statement::Call {
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                ..
+            } => Some((name, arguments, argument_names, argument_unpacks)),
+            Statement::Expression {
+                expression:
+                    Expr::Call {
+                        name,
+                        arguments,
+                        argument_names,
+                        argument_unpacks,
+                        ..
+                    },
+                ..
+            } => Some((name, arguments, argument_names, argument_unpacks)),
+            _ => None,
+        }) else {
+            return;
+        };
+        if !name.eq_ignore_ascii_case("class_alias")
+            || arguments.len() < 2
+            || argument_names.iter().take(2).any(Option::is_some)
+            || argument_unpacks.iter().take(2).any(|unpack| *unpack)
+        {
+            return;
+        }
+        let Some(target) = compile_time_class_alias_string(&arguments[0]) else {
+            return;
+        };
+        let Some(alias) = compile_time_class_alias_string(&arguments[1]) else {
+            return;
+        };
+        self.runtime_class_aliases.insert(
+            normalize_runtime_class_alias_key(&alias),
+            normalize_runtime_class_alias_target(&target),
+        );
     }
 
     fn collect_switch_case(
@@ -937,7 +995,7 @@ impl IncludeCollector {
             )
         })?;
         let source = decode_php_source_bytes(&source_bytes);
-        let program = parse(&source)?;
+        let program = parse_with_runtime_class_aliases(&source, &self.runtime_class_aliases)?;
 
         let index = self.sources.len();
         self.by_path.insert(canonical_path.clone(), index);
@@ -1142,4 +1200,33 @@ fn include_path_aliases(resolved_path: &Path, canonical_path: &Path) -> Vec<Stri
     push_unique_string(&mut aliases, resolved_path.to_string_lossy().into_owned());
     push_unique_string(&mut aliases, canonical_path.to_string_lossy().into_owned());
     aliases
+}
+
+fn normalize_runtime_class_alias_key(name: &str) -> String {
+    normalize_runtime_class_alias_target(name).to_ascii_lowercase()
+}
+
+fn normalize_runtime_class_alias_target(name: &str) -> String {
+    name.trim_start_matches('\\').to_string()
+}
+
+fn compile_time_class_alias_string(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::String(value, _) => Some(value.clone()),
+        Expr::ClassConstantFetch {
+            class_name, name, ..
+        } if name.eq_ignore_ascii_case("class") => Some(class_name.clone()),
+        Expr::Binary {
+            op: BinaryOp::Concat,
+            left,
+            right,
+            ..
+        } => {
+            let mut value = compile_time_class_alias_string(left)?;
+            value.push_str(&compile_time_class_alias_string(right)?);
+            Some(value)
+        }
+        Expr::Grouped { expr, .. } => compile_time_class_alias_string(expr),
+        _ => None,
+    }
 }

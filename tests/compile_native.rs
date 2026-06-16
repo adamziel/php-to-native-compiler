@@ -1720,6 +1720,19 @@ class ChildType extends ParentType {
     )
     .unwrap();
 
+    parser::parse(
+        "<?php
+class AliasTarget {}
+class_alias('AliasTarget', 'AliasName');
+class ParentAliasType {
+    public function check(AliasTarget $value): AliasTarget {}
+}
+class ChildAliasType extends ParentAliasType {
+    public function check(AliasName $value): AliasName {}
+}",
+    )
+    .unwrap();
+
     let error = parser::parse(
         "<?php
 class ParentItems {
@@ -1750,6 +1763,27 @@ class ChildDnf extends ParentDnf {
     assert_eq!(
         error.message,
         "Declaration of ChildDnf::both(): LeftMarker|RightMarker must be compatible with ParentDnf::both(): LeftMarker&RightMarker"
+    );
+}
+
+#[test]
+fn parser_rejects_static_interface_method_conflict_through_class_alias() {
+    let error = parser::parse(
+        "<?php
+interface d {
+    static function B();
+}
+interface c {
+    function b();
+}
+class_alias('c', 'w');
+interface a extends d, w { }
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot make non static method c::B() static in class d"
     );
 }
 
@@ -12953,6 +12987,95 @@ try {
 }
 
 #[test]
+fn compile_class_alias_metadata_lists_and_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-class-alias-metadata-lists");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-alias-metadata-lists.php");
+    let output = root.join("class-alias-metadata-lists-bin");
+    fs::write(
+        &input,
+        "<?php
+class SourceAlias {
+    public static function ping() {
+        echo \"ping\\n\";
+    }
+}
+interface ContractAlias {}
+trait TraitAlias {}
+class_alias('SourceAlias', 'aliasclass');
+class_alias('ContractAlias', 'aliasinterface');
+class_alias('TraitAlias', 'aliastrait');
+AliasClass::ping();
+$classes = get_declared_classes();
+$interfaces = get_declared_interfaces();
+$traits = get_declared_traits();
+echo end($classes), \"\\n\";
+echo end($interfaces), \"\\n\";
+echo end($traits), \"\\n\";
+var_dump(class_exists('aliasclass'));
+var_dump(interface_exists('aliasinterface'));
+var_dump(trait_exists('aliastrait'));
+var_dump(class_exists('aliastrait'));
+var_dump(class_alias('SourceAlias', 'aliasclass'));
+class_alias('SourceAlias', '_');
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with(concat!(
+            "ping\n",
+            "aliasclass\n",
+            "aliasinterface\n",
+            "aliastrait\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+        )),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Warning: Cannot redeclare class aliasclass (previously declared in "));
+    assert!(stdout.contains("Deprecated: Using \"_\" as a class alias is deprecated since 8.4"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_append_declared_alias_names"));
+    assert!(c_source.contains("ptn_runtime_class_alias_source_kind"));
+}
+
+#[test]
+fn compile_class_alias_rejects_reserved_alias_names_to_native_binary() {
+    let root = temp_dir("ptn-native-class-alias-reserved-names");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-alias-reserved-names.php");
+    let output = root.join("class-alias-reserved-names-bin");
+    fs::write(
+        &input,
+        "<?php
+class SourceReservedAlias {}
+class_alias('SourceReservedAlias', 'bool');
+echo \"unreachable\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert!(String::from_utf8(execution.stderr)
+        .unwrap()
+        .contains("Fatal error: Cannot use \"bool\" as a class alias as it is reserved"));
+}
+
+#[test]
 fn compile_get_class_vars_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-get-class-vars-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -13391,6 +13514,7 @@ fn compile_reflection_object_metadata_to_native_binary() {
         &input,
         "<?php
 class BaseReflect {
+    private function hiddenBase() {}
 }
 
 class ChildReflect extends BaseReflect {
@@ -13405,6 +13529,8 @@ var_dump($reflection->getParentClass()->getName());
 var_dump($reflection->isInstance($object));
 var_dump($reflection->isSubclassOf(\"BaseReflect\"));
 var_dump($reflection->hasMethod(\"ping\"));
+var_dump($reflection->hasMethod(\"hiddenBase\"));
+var_dump(method_exists($object, \"hiddenBase\"));
 
 $reflectionOfReflection = new ReflectionObject($reflection);
 var_dump($reflectionOfReflection->getName());
@@ -13433,6 +13559,8 @@ try {
             "string(16) \"ReflectionObject\"\n",
             "string(12) \"ChildReflect\"\n",
             "string(11) \"BaseReflect\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -34898,6 +35026,44 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_class_alias_include_signature_compatibility_to_native_binary() {
+    let root = temp_dir("ptn-native-class-alias-include-signature");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-alias-include-signature.php");
+    let include = root.join("class-alias-include-signature.inc.php");
+    let output = root.join("class-alias-include-signature-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo {}
+class_alias('Foo', 'Bar');
+require __DIR__ . '/class-alias-include-signature.inc.php';
+echo "done\n";
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &include,
+        r#"<?php
+class A {
+    public function test(Foo $foo) {}
+}
+class B extends A {
+    public function test(Bar $foo) {}
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

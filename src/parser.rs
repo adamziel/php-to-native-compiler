@@ -39,6 +39,13 @@ const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
     "class constant fetches are unsupported; class constants and enum cases require class metadata";
 
 pub fn parse(source: &str) -> Result<Program> {
+    parse_with_runtime_class_aliases(source, &HashMap::new())
+}
+
+pub(crate) fn parse_with_runtime_class_aliases(
+    source: &str,
+    runtime_class_aliases: &HashMap<String, String>,
+) -> Result<Program> {
     let tokens = lex(source)?;
     Parser {
         source,
@@ -52,7 +59,7 @@ pub fn parse(source: &str) -> Result<Program> {
         class_aliases: HashMap::new(),
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
-        runtime_class_aliases: HashMap::new(),
+        runtime_class_aliases: runtime_class_aliases.clone(),
         declared_functions: HashSet::new(),
         declared_constants: HashSet::new(),
         declared_class_names: HashMap::new(),
@@ -251,9 +258,10 @@ impl Parser<'_> {
         validate_builtin_attribute_targets(&classes, &traits, &functions)?;
         validate_parent_class_names(&classes)?;
         validate_interface_references(&classes)?;
+        validate_interface_method_conflicts(&classes)?;
         validate_override_attributes(&classes, &traits)?;
         validate_traversable_implementations(&classes)?;
-        validate_method_signature_compatibility(&classes)?;
+        validate_method_signature_compatibility(&classes, &self.runtime_class_aliases)?;
         validate_abstract_methods(&classes)?;
         validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
@@ -4877,6 +4885,7 @@ impl Parser<'_> {
                 let lowercase = parsed_name.name.to_ascii_lowercase();
                 if matches!(self.peek().kind, TokenKind::DoubleColon) {
                     let class_name = self.resolve_class_name(&parsed_name);
+                    let class_name = self.resolve_runtime_class_alias_name(&class_name);
                     self.parse_static_member_expr(class_name, parsed_name.span)
                 } else if matches!(self.peek().kind, TokenKind::LeftParen) {
                     if self.peek_is_first_class_callable_arguments() {
@@ -4949,8 +4958,9 @@ impl Parser<'_> {
                     "expected fully qualified name",
                 )?;
                 if matches!(self.peek().kind, TokenKind::DoubleColon) {
+                    let class_name = self.resolve_class_name(&parsed_name);
                     return self.parse_static_member_expr(
-                        self.resolve_class_name(&parsed_name),
+                        self.resolve_runtime_class_alias_name(&class_name),
                         parsed_name.span,
                     );
                 }
@@ -8387,6 +8397,67 @@ fn validate_interface_references(classes: &[ClassDecl]) -> Result<()> {
     Ok(())
 }
 
+fn validate_interface_method_conflicts(classes: &[ClassDecl]) -> Result<()> {
+    for interface in classes.iter().filter(|class| class.is_interface) {
+        let mut seen_interfaces = HashSet::new();
+        let mut inherited_methods = Vec::new();
+        for parent_name in &interface.interfaces {
+            collect_interface_hierarchy_methods(
+                parent_name,
+                classes,
+                &mut seen_interfaces,
+                &mut inherited_methods,
+            );
+        }
+        inherited_methods.extend(interface.methods.iter().map(|method| (interface, method)));
+        for (index, (left_interface, left_method)) in inherited_methods.iter().enumerate() {
+            for (right_interface, right_method) in inherited_methods.iter().skip(index + 1) {
+                if !left_method.name.eq_ignore_ascii_case(&right_method.name)
+                    || left_method.is_static == right_method.is_static
+                {
+                    continue;
+                }
+                let (non_static_interface, static_interface, static_method) =
+                    if left_method.is_static {
+                        (*right_interface, *left_interface, *left_method)
+                    } else {
+                        (*left_interface, *right_interface, *right_method)
+                    };
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot make non static method {}::{}() static in class {}",
+                        non_static_interface.name, static_method.name, static_interface.name
+                    ),
+                    Some(static_method.span),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_interface_hierarchy_methods<'a>(
+    interface_name: &str,
+    classes: &'a [ClassDecl],
+    seen: &mut HashSet<String>,
+    methods: &mut Vec<(&'a ClassDecl, &'a MethodDecl)>,
+) {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return;
+    }
+    let Some(interface) = find_class(classes, interface_name) else {
+        return;
+    };
+    if !interface.is_interface {
+        return;
+    }
+    methods.extend(interface.methods.iter().map(|method| (interface, method)));
+    for parent_name in &interface.interfaces {
+        collect_interface_hierarchy_methods(parent_name, classes, seen, methods);
+    }
+}
+
 fn class_hierarchy_implements_interface(
     classes: &[ClassDecl],
     class: &ClassDecl,
@@ -8455,7 +8526,10 @@ fn validate_traversable_implementations(classes: &[ClassDecl]) -> Result<()> {
     Ok(())
 }
 
-fn validate_method_signature_compatibility(classes: &[ClassDecl]) -> Result<()> {
+fn validate_method_signature_compatibility(
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> Result<()> {
     for class in classes {
         for method in &class.methods {
             if method.visibility == PropertyVisibility::Private {
@@ -8470,6 +8544,7 @@ fn validate_method_signature_compatibility(classes: &[ClassDecl]) -> Result<()> 
                     parent_class,
                     parent_method,
                     classes,
+                    runtime_class_aliases,
                 )?;
             }
 
@@ -8491,6 +8566,7 @@ fn validate_method_signature_compatibility(classes: &[ClassDecl]) -> Result<()> 
                     interface,
                     interface_method,
                     classes,
+                    runtime_class_aliases,
                 )?;
             }
         }
@@ -8554,6 +8630,7 @@ fn validate_method_signature_pair(
     parent_class: &ClassDecl,
     parent_method: &MethodDecl,
     classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<()> {
     if parent_method.return_by_ref && !method.return_by_ref {
         return Err(method_signature_compatibility_error(
@@ -8583,7 +8660,12 @@ fn validate_method_signature_pair(
                 parent_method,
             ));
         }
-        if !parameter_type_is_contravariant(parameter, parent_parameter, classes) {
+        if !parameter_type_is_contravariant(
+            parameter,
+            parent_parameter,
+            classes,
+            runtime_class_aliases,
+        ) {
             return Err(method_signature_compatibility_error(
                 class,
                 method,
@@ -8602,7 +8684,12 @@ fn validate_method_signature_pair(
                 parent_method,
             ));
         };
-        if !type_hint_is_subtype(return_type, parent_return_type, classes) {
+        if !type_hint_is_subtype(
+            return_type,
+            parent_return_type,
+            classes,
+            runtime_class_aliases,
+        ) {
             if let Some(unavailable_name) =
                 unresolved_compatibility_class(return_type, parent_return_type, classes)
             {
@@ -8713,12 +8800,13 @@ fn parameter_type_is_contravariant(
     parameter: &FunctionParameter,
     parent_parameter: &FunctionParameter,
     classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
 ) -> bool {
     match (&parameter.type_hint, &parent_parameter.type_hint) {
         (None, _) => true,
         (Some(_), None) => false,
         (Some(type_hint), Some(parent_type_hint)) => {
-            type_hint_is_subtype(parent_type_hint, type_hint, classes)
+            type_hint_is_subtype(parent_type_hint, type_hint, classes, runtime_class_aliases)
         }
     }
 }
@@ -8852,13 +8940,18 @@ struct TypeAlternative {
     atoms: Vec<TypeAtom>,
 }
 
-fn type_hint_is_subtype(candidate: &TypeHint, target: &TypeHint, classes: &[ClassDecl]) -> bool {
+fn type_hint_is_subtype(
+    candidate: &TypeHint,
+    target: &TypeHint,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> bool {
     let candidate_alternatives = type_hint_alternatives(candidate);
     let target_alternatives = type_hint_alternatives(target);
     candidate_alternatives.iter().all(|candidate| {
-        target_alternatives
-            .iter()
-            .any(|target| type_alternative_is_subtype(candidate, target, classes))
+        target_alternatives.iter().any(|target| {
+            type_alternative_is_subtype(candidate, target, classes, runtime_class_aliases)
+        })
     })
 }
 
@@ -8945,16 +9038,21 @@ fn type_alternative_is_subtype(
     candidate: &TypeAlternative,
     target: &TypeAlternative,
     classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
 ) -> bool {
     target.atoms.iter().all(|target_atom| {
-        candidate
-            .atoms
-            .iter()
-            .any(|candidate_atom| type_atom_is_subtype(candidate_atom, target_atom, classes))
+        candidate.atoms.iter().any(|candidate_atom| {
+            type_atom_is_subtype(candidate_atom, target_atom, classes, runtime_class_aliases)
+        })
     })
 }
 
-fn type_atom_is_subtype(candidate: &TypeAtom, target: &TypeAtom, classes: &[ClassDecl]) -> bool {
+fn type_atom_is_subtype(
+    candidate: &TypeAtom,
+    target: &TypeAtom,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> bool {
     if matches!(candidate, TypeAtom::Never) || matches!(target, TypeAtom::Mixed) {
         return true;
     }
@@ -8966,30 +9064,59 @@ fn type_atom_is_subtype(candidate: &TypeAtom, target: &TypeAtom, classes: &[Clas
         (TypeAtom::Static, TypeAtom::Object) => true,
         (TypeAtom::Class(_), TypeAtom::Object) => true,
         (TypeAtom::Class(candidate), TypeAtom::Class(target)) => {
-            class_type_name_is_subtype(candidate, target, classes)
+            class_type_name_is_subtype(candidate, target, classes, runtime_class_aliases)
         }
         _ => false,
     }
+}
+
+fn resolve_runtime_class_alias_from_map(
+    name: &str,
+    runtime_class_aliases: &HashMap<String, String>,
+) -> String {
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
+        "self" | "static" | "parent"
+    ) {
+        return name.to_string();
+    }
+    let mut resolved = normalize_runtime_class_alias_target(name);
+    let mut seen = HashSet::new();
+    loop {
+        let key = normalize_runtime_class_alias_key(&resolved);
+        if !seen.insert(key.clone()) {
+            break;
+        }
+        let Some(target) = runtime_class_aliases.get(&key) else {
+            break;
+        };
+        resolved = normalize_runtime_class_alias_target(target);
+    }
+    resolved
 }
 
 fn class_type_name_is_subtype(
     candidate_name: &str,
     target_name: &str,
     classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
 ) -> bool {
-    if candidate_name.eq_ignore_ascii_case(target_name) {
+    let candidate_name =
+        resolve_runtime_class_alias_from_map(candidate_name, runtime_class_aliases);
+    let target_name = resolve_runtime_class_alias_from_map(target_name, runtime_class_aliases);
+    if candidate_name.eq_ignore_ascii_case(&target_name) {
         return true;
     }
-    if builtin_class_type_is_subtype(candidate_name, target_name) {
+    if builtin_class_type_is_subtype(&candidate_name, &target_name) {
         return true;
     }
-    let Some(candidate) = find_class(classes, candidate_name) else {
+    let Some(candidate) = find_class(classes, &candidate_name) else {
         return false;
     };
     if candidate.is_interface {
-        return interface_type_extends(candidate, target_name, classes);
+        return interface_type_extends(candidate, &target_name, classes, runtime_class_aliases);
     }
-    class_type_extends_or_implements(candidate, target_name, classes)
+    class_type_extends_or_implements(candidate, &target_name, classes, runtime_class_aliases)
 }
 
 fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> bool {
@@ -9024,46 +9151,56 @@ fn class_type_extends_or_implements(
     class: &ClassDecl,
     target_name: &str,
     classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
 ) -> bool {
-    if class
-        .interfaces
-        .iter()
-        .any(|interface| interface_name_is_subtype(interface, target_name, classes))
-    {
+    if class.interfaces.iter().any(|interface| {
+        interface_name_is_subtype(interface, target_name, classes, runtime_class_aliases)
+    }) {
         return true;
     }
     let Some(parent_name) = class.parent_name.as_deref() else {
         return false;
     };
+    let parent_name = resolve_runtime_class_alias_from_map(parent_name, runtime_class_aliases);
     if parent_name.eq_ignore_ascii_case(target_name)
-        || builtin_class_type_is_subtype(parent_name, target_name)
+        || builtin_class_type_is_subtype(&parent_name, target_name)
     {
         return true;
     }
-    find_class(classes, parent_name)
-        .is_some_and(|parent| class_type_extends_or_implements(parent, target_name, classes))
+    find_class(classes, &parent_name).is_some_and(|parent| {
+        class_type_extends_or_implements(parent, target_name, classes, runtime_class_aliases)
+    })
 }
 
 fn interface_name_is_subtype(
     interface_name: &str,
     target_name: &str,
     classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
 ) -> bool {
+    let interface_name =
+        resolve_runtime_class_alias_from_map(interface_name, runtime_class_aliases);
     if interface_name.eq_ignore_ascii_case(target_name)
-        || builtin_class_type_is_subtype(interface_name, target_name)
+        || builtin_class_type_is_subtype(&interface_name, target_name)
     {
         return true;
     }
-    find_class(classes, interface_name)
+    find_class(classes, &interface_name)
         .filter(|interface| interface.is_interface)
-        .is_some_and(|interface| interface_type_extends(interface, target_name, classes))
+        .is_some_and(|interface| {
+            interface_type_extends(interface, target_name, classes, runtime_class_aliases)
+        })
 }
 
-fn interface_type_extends(interface: &ClassDecl, target_name: &str, classes: &[ClassDecl]) -> bool {
-    interface
-        .interfaces
-        .iter()
-        .any(|parent_name| interface_name_is_subtype(parent_name, target_name, classes))
+fn interface_type_extends(
+    interface: &ClassDecl,
+    target_name: &str,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> bool {
+    interface.interfaces.iter().any(|parent_name| {
+        interface_name_is_subtype(parent_name, target_name, classes, runtime_class_aliases)
+    })
 }
 
 fn type_hint_display(type_hint: &TypeHint) -> String {
