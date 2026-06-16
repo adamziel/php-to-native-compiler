@@ -28409,6 +28409,107 @@ foo();
 }
 
 #[test]
+fn compile_nested_foreach_finally_goto_cleanup_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-foreach-finally-goto-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-foreach-finally-goto-cleanup.php");
+    let output = root.join("nested-foreach-finally-goto-cleanup-bin");
+    fs::write(
+        &input,
+        r#"<?php
+foreach ([new stdClass] as $a) {
+    try {
+        foreach ([new stdClass] as $a) {
+            try {
+                foreach ([new stdClass] as $a) {
+                    goto out;
+                }
+            } finally {
+                echo "finally1\n";
+            }
+out: ;
+        }
+    } finally {
+        echo "finally2\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "finally1\nfinally2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_foreach_exception_cleanup_before_finally_and_catch_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-foreach-exception-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-foreach-exception-cleanup.php");
+    let output = root.join("nested-foreach-exception-cleanup-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class A {
+    public $n = 0;
+    function __construct($n) {
+        $this->n = $n;
+    }
+    function __destruct() {
+        echo "destruct" . $this->n . "\n";
+    }
+}
+
+foreach ([new A(1)] as $a) {
+    $a = null;
+    try {
+        foreach ([new A(2)] as $a) {
+            $a = null;
+            try {
+                foreach ([new A(3)] as $a) {
+                    $a = null;
+                    throw new Exception();
+                }
+            } finally {
+                echo "finally1\n";
+            }
+        }
+    } catch (Exception $e) {
+        echo "catch\n";
+    } finally {
+        echo "finally2\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "destruct3\n",
+            "finally1\n",
+            "destruct2\n",
+            "catch\n",
+            "finally2\n",
+            "destruct1\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_goto_inside_plain_blocks_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-goto-jump14-blocks");
     fs::create_dir_all(&root).unwrap();
