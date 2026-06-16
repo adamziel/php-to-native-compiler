@@ -4306,7 +4306,7 @@ impl Parser<'_> {
                 return Err(Diagnostic::new("unterminated attribute", Some(start)));
             }
             let name = self.parse_name("expected attribute name")?;
-            let modeled = is_modeled_builtin_attribute_name(&name.name);
+            let modeled = is_modeled_builtin_attribute(&name);
             let arguments = if matches!(self.peek().kind, TokenKind::LeftParen) {
                 if modeled {
                     self.parse_attribute_arguments()?
@@ -4317,7 +4317,7 @@ impl Parser<'_> {
             } else {
                 ParsedAttributeArguments::default()
             };
-            apply_parsed_attribute(&mut attributes, &name.name, &arguments);
+            apply_parsed_attribute(&mut attributes, &name, &arguments);
             if matches!(self.peek().kind, TokenKind::Comma) {
                 self.advance();
                 if matches!(self.peek().kind, TokenKind::RightBracket) {
@@ -8031,22 +8031,25 @@ impl ParsedAttributeArguments {
     }
 }
 
-fn is_modeled_builtin_attribute_name(name: &str) -> bool {
-    !name.contains('\\')
-        && matches!(
-            name.to_ascii_lowercase().as_str(),
-            "override" | "attribute" | "allowdynamicproperties" | "deprecated" | "nodiscard"
-        )
+fn is_modeled_builtin_attribute(name: &ParsedName) -> bool {
+    matches!(
+        name.resolution,
+        NameResolution::Unqualified | NameResolution::FullyQualified
+    ) && matches!(
+        name.name.to_ascii_lowercase().as_str(),
+        "override" | "attribute" | "allowdynamicproperties" | "deprecated" | "nodiscard"
+    )
 }
 
 fn apply_parsed_attribute(
     attributes: &mut AttributeMetadata,
-    name: &str,
+    name: &ParsedName,
     arguments: &ParsedAttributeArguments,
 ) {
-    if name.contains('\\') {
+    if !is_modeled_builtin_attribute(name) {
         return;
     }
+    let name = &name.name;
     if name.eq_ignore_ascii_case("Override") {
         attributes.has_override = true;
     } else if name.eq_ignore_ascii_case("Attribute") {

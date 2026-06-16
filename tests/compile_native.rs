@@ -4750,6 +4750,19 @@ class Bag {}
 }
 
 #[test]
+fn parser_ignores_unmodeled_attribute_arguments_without_parsing_metadata() {
+    let source = "<?php
+#[Vendor\\Meta(new class { public function run() {} }, [\"nested\" => [1]])]
+function plain() {}
+";
+    let program = parser::parse(source).unwrap();
+
+    assert_eq!(program.functions.len(), 1);
+    assert!(program.functions[0].attributes.deprecated_message.is_none());
+    assert!(program.functions[0].attributes.no_discard_message.is_none());
+}
+
+#[test]
 fn parser_rejects_unmatched_override_attributes() {
     let cases = [
         (
