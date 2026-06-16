@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
-    AssignmentTarget, AttributeMetadata, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
-    ClassDecl, ClosureUseCapture, CompileWarning, ConstDeclaration, Expr, FunctionDecl,
-    FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget,
-    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, ListExpr,
-    ListExprElement, ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program,
-    PromotedProperty, PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility,
-    ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
+    AssignmentTarget, AttributeConstantReference, AttributeMetadata, BinaryOp, CastKind,
+    CatchClause, ClassConstantDecl, ClassDecl, ClosureUseCapture, CompileWarning, ConstDeclaration,
+    Expr, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeKind,
+    InstanceOfTarget, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
+    ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl,
+    Program, PromotedProperty, PropertyDecl, PropertyTypeHint, PropertyTypeKind,
+    PropertyVisibility, ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
     StringInterpolationIndex, StringPart, SwitchCase, TraitAdaptation, TraitAliasAdaptation,
     TraitDecl, TraitMethodReference, TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp,
     UnsetTarget,
@@ -3667,7 +3667,7 @@ impl Parser<'_> {
             ));
         }
 
-        let mut declarations = vec![self.parse_const_declaration()?];
+        let mut declarations = vec![self.parse_const_declaration(attributes.clone())?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             if attributes.total_count > 0 {
                 return Err(Diagnostic::new(
@@ -3676,7 +3676,7 @@ impl Parser<'_> {
                 ));
             }
             self.advance();
-            declarations.push(self.parse_const_declaration()?);
+            declarations.push(self.parse_const_declaration(AttributeMetadata::default())?);
         }
         validate_builtin_attributes_for_target(&attributes, AttributeTarget::Constant, span)?;
         self.expect_const_statement_terminator()?;
@@ -3743,7 +3743,10 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_const_declaration(&mut self) -> Result<ConstDeclaration> {
+    fn parse_const_declaration(
+        &mut self,
+        attributes: ParsedAttributes,
+    ) -> Result<ConstDeclaration> {
         let (name, token_span) = self.parse_declaration_name("expected constant name")?;
         if is_reserved_compile_time_constant_declaration_name(&name) {
             let source_name = self
@@ -3767,6 +3770,7 @@ impl Parser<'_> {
         }
         Ok(ConstDeclaration {
             name,
+            attributes,
             value,
             span: token_span,
         })
@@ -4498,20 +4502,52 @@ impl Parser<'_> {
                         Some(span),
                     ));
                 }
+                TokenKind::Identifier(class_name)
+                    if bracket_depth == 1
+                        && paren_depth == 1
+                        && matches!(self.peek().kind, TokenKind::DoubleColon)
+                        && matches!(self.peek_next().kind, TokenKind::Identifier(_)) =>
+                {
+                    self.advance();
+                    let member = self.advance().clone();
+                    let TokenKind::Identifier(name) = member.kind else {
+                        unreachable!("peek_next guarded class constant attribute argument");
+                    };
+                    let text = format!("{class_name}::{name}");
+                    arguments.record_value(
+                        pending_argument_name.take(),
+                        ParsedAttributeArgumentValue {
+                            text,
+                            constant_reference: Some(AttributeConstantReference::ClassConstant {
+                                class_name,
+                                name,
+                            }),
+                        },
+                    );
+                }
                 TokenKind::String(value) if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record(pending_argument_name.take(), value);
+                    arguments.record_text(pending_argument_name.take(), value);
                 }
                 TokenKind::Int(value) if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record(pending_argument_name.take(), value.to_string());
+                    arguments.record_text(pending_argument_name.take(), value.to_string());
                 }
                 TokenKind::Float(value) if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record(pending_argument_name.take(), value.to_string());
+                    arguments.record_text(pending_argument_name.take(), value.to_string());
                 }
                 TokenKind::True if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record(pending_argument_name.take(), "1".to_string());
+                    arguments.record_text(pending_argument_name.take(), "1".to_string());
                 }
                 TokenKind::False | TokenKind::Null if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record(pending_argument_name.take(), String::new());
+                    arguments.record_text(pending_argument_name.take(), String::new());
+                }
+                TokenKind::Identifier(name) if bracket_depth == 1 && paren_depth == 1 => {
+                    arguments.record_value(
+                        pending_argument_name.take(),
+                        ParsedAttributeArgumentValue {
+                            text: name.clone(),
+                            constant_reference: Some(AttributeConstantReference::Constant(name)),
+                        },
+                    );
                 }
                 TokenKind::RightParen if bracket_depth == 1 && paren_depth > 0 => {
                     paren_depth -= 1;
@@ -8165,21 +8201,36 @@ fn escape_token_text(value: &str) -> String {
         .collect()
 }
 
+struct ParsedAttributeArgumentValue {
+    text: String,
+    constant_reference: Option<AttributeConstantReference>,
+}
+
 #[derive(Default)]
 struct ParsedAttributeArguments {
-    positional: Vec<String>,
-    message: Option<String>,
+    positional: Vec<ParsedAttributeArgumentValue>,
+    message: Option<ParsedAttributeArgumentValue>,
     since: Option<String>,
 }
 
 impl ParsedAttributeArguments {
-    fn record(&mut self, name: Option<String>, value: String) {
+    fn record_text(&mut self, name: Option<String>, value: String) {
+        self.record_value(
+            name,
+            ParsedAttributeArgumentValue {
+                text: value,
+                constant_reference: None,
+            },
+        );
+    }
+
+    fn record_value(&mut self, name: Option<String>, value: ParsedAttributeArgumentValue) {
         match name.as_deref() {
             Some(name) if name.eq_ignore_ascii_case("message") => {
                 self.message = Some(value);
             }
             Some(name) if name.eq_ignore_ascii_case("since") => {
-                self.since = Some(value);
+                self.since = Some(value.text);
             }
             Some(_) => {}
             None => self.positional.push(value),
@@ -8188,8 +8239,16 @@ impl ParsedAttributeArguments {
 
     fn message(&self) -> Option<String> {
         self.message
-            .clone()
-            .or_else(|| self.positional.first().cloned())
+            .as_ref()
+            .or_else(|| self.positional.first())
+            .map(|value| value.text.clone())
+    }
+
+    fn message_constant_reference(&self) -> Option<AttributeConstantReference> {
+        self.message
+            .as_ref()
+            .or_else(|| self.positional.first())
+            .and_then(|value| value.constant_reference.clone())
     }
 }
 
@@ -8220,6 +8279,7 @@ fn apply_parsed_attribute(
     } else if name.eq_ignore_ascii_case("Deprecated") {
         attributes.deprecated_count = attributes.deprecated_count.saturating_add(1);
         attributes.deprecated_message = Some(arguments.message().unwrap_or_default());
+        attributes.deprecated_message_constant = arguments.message_constant_reference();
         attributes.deprecated_since = arguments.since.clone();
     } else if name.eq_ignore_ascii_case("NoDiscard") {
         attributes.no_discard_count = attributes.no_discard_count.saturating_add(1);
@@ -8252,6 +8312,7 @@ fn merge_parsed_attributes(attributes: &mut AttributeMetadata, group: AttributeM
     attributes.has_allow_dynamic_properties |= group.has_allow_dynamic_properties;
     if group.deprecated_message.is_some() {
         attributes.deprecated_message = group.deprecated_message;
+        attributes.deprecated_message_constant = group.deprecated_message_constant;
         attributes.deprecated_since = group.deprecated_since;
     }
     if group.no_discard_message.is_some() {

@@ -10,11 +10,11 @@ use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, CompileWarning,
-    FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile,
-    InstanceOfTarget, Instruction, ListAssignmentElement, ListAssignmentElementTarget,
-    ListAssignmentTarget, MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint,
-    PropertyTypeKind, PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl,
-    TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
+    DeprecatedMessageDependency, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult,
+    IncDecTarget, IncludeFile, InstanceOfTarget, Instruction, ListAssignmentElement,
+    ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind, MatchArm as IrMatchArm,
+    Module, PropertyTypeHint, PropertyTypeKind, PropertyVisibility, ReferenceTarget,
+    StaticPropertyDecl, TraitDecl, TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -49,7 +49,8 @@ pub fn emit_c(module: &Module) -> String {
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let serializable_deprecations = collect_module_serializable_deprecations(module);
-    let trait_use_deprecations = collect_module_trait_use_deprecations(module);
+    let mut trait_use_deprecations = collect_module_trait_use_deprecations(module);
+    trait_use_deprecations.sort_by_key(|deprecation| deprecation.line);
     let magic_declaration_fatals = collect_module_magic_declaration_fatals(module);
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
     let needs_direct_callable_dispatch = runtime_requirements.internal_function_dispatch
@@ -265,7 +266,6 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_file,
     );
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
-    emit_trait_use_deprecations(&mut out, &trait_use_deprecations);
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
     let early_constant_indexes = emit_static_property_initializers_with_constants(
@@ -286,9 +286,22 @@ pub fn emit_c(module: &Module) -> String {
     let mut finally_stack = Vec::new();
     let return_label = values.next_label("ptn_main_return");
     out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
+    let mut trait_deprecation_index = 0usize;
     for (instruction_index, instruction) in module.instructions.iter().enumerate() {
         if early_constant_indexes.contains(&instruction_index) {
             continue;
+        }
+        if let Some(line) = instruction_runtime_line(instruction) {
+            let start = trait_deprecation_index;
+            while trait_deprecation_index < trait_use_deprecations.len()
+                && trait_use_deprecations[trait_deprecation_index].line <= line
+            {
+                trait_deprecation_index += 1;
+            }
+            emit_trait_use_deprecations(
+                &mut out,
+                &trait_use_deprecations[start..trait_deprecation_index],
+            );
         }
         emit_instruction(
             &mut out,
@@ -301,6 +314,7 @@ pub fn emit_c(module: &Module) -> String {
             None,
         );
     }
+    emit_trait_use_deprecations(&mut out, &trait_use_deprecations[trait_deprecation_index..]);
     emit_label_reference(&mut out, &return_label);
     out.push_str("    ");
     out.push_str(&return_label);
@@ -1971,7 +1985,10 @@ fn emit_static_property_initializers_with_constants(
             if emitted_constant_indexes.contains(&instruction_index) {
                 continue;
             }
-            let Instruction::DefineConstant { name, value, line } = instruction else {
+            let Instruction::DefineConstant {
+                name, value, line, ..
+            } = instruction
+            else {
                 continue;
             };
             if *line >= class.line {
@@ -2115,7 +2132,7 @@ fn emit_legacy_dollar_brace_deprecations(
     deprecations: &[LegacyDollarBraceDeprecation],
 ) {
     for deprecation in deprecations {
-        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str("    ptn_emit_user_deprecation(&runtime.diagnostics, \"");
         out.push_str(&c_string(LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE));
         out.push_str("\", ");
         out.push_str(&deprecation.line.to_string());
@@ -2192,7 +2209,7 @@ fn emit_trait_use_deprecations(out: &mut String, deprecations: &[TraitUseDepreca
         ) else {
             continue;
         };
-        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str("    ptn_emit_user_deprecation(&runtime.diagnostics, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", ");
         out.push_str(&deprecation.line.to_string());
@@ -7318,7 +7335,7 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
         out.push_str("            case ");
         out.push_str(&index.to_string());
         out.push_str(":\n");
-        out.push_str("                ptn_emit_warning(&runtime->diagnostics, \"");
+        out.push_str("                ptn_emit_user_warning(&runtime->diagnostics, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", line);\n");
         out.push_str("                return;\n");
@@ -7348,7 +7365,7 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
         out.push_str("        if (ptn_ascii_case_equal(lookup_name, \"");
         out.push_str(&c_string(&function.name));
         out.push_str("\")) {\n");
-        out.push_str("            ptn_emit_warning(&runtime->diagnostics, \"");
+        out.push_str("            ptn_emit_user_warning(&runtime->diagnostics, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", line);\n");
         out.push_str("            free(name);\n");
@@ -7383,7 +7400,7 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
         out.push_str("        if (ptn_declared_class_is_same_or_descendant(class_name, \"");
         out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
-        out.push_str("            ptn_emit_warning(&runtime->diagnostics, \"");
+        out.push_str("            ptn_emit_user_warning(&runtime->diagnostics, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", line);\n");
         out.push_str("            return;\n");
@@ -7551,7 +7568,9 @@ fn emit_instruction(
         Instruction::StoreArrayDimRef { target, source } => {
             values.emit_store_reference_source_to_array_dim(out, target, source, source_path);
         }
-        Instruction::DefineConstant { name, value, line } => {
+        Instruction::DefineConstant {
+            name, value, line, ..
+        } => {
             let emitted_value = values.emit_const_materialized_value(out, value);
             out.push_str("    (void)ptn_runtime_define_constant_if_absent(&runtime, \"");
             out.push_str(&c_string(name));
@@ -12254,6 +12273,63 @@ fn array_element_runtime_line(element: &IrArrayElement) -> usize {
         .unwrap_or(element.line)
 }
 
+fn array_dim_target_line(target: &crate::ir::ArrayDimTarget) -> Option<usize> {
+    (target.line != 0).then_some(target.line).or_else(|| {
+        target
+            .dimensions
+            .iter()
+            .flatten()
+            .find_map(value_expr_runtime_line)
+    })
+}
+
+fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
+    match instruction {
+        Instruction::Store { value, .. } => value_expr_runtime_line(value),
+        Instruction::StoreRef { line, .. }
+        | Instruction::StoreArrayDim { line, .. }
+        | Instruction::Increment { line, .. }
+        | Instruction::UnsetDynamicVariable { line, .. }
+        | Instruction::BindStatic { line, .. }
+        | Instruction::UnsetArrayDim { line, .. }
+        | Instruction::UnsetDynamicArrayDim { line, .. }
+        | Instruction::UnsetPropertyArrayDim { line, .. }
+        | Instruction::UnsetProperty { line, .. }
+        | Instruction::DefineConstant { line, .. }
+        | Instruction::InternalCall { line, .. }
+        | Instruction::Return { line, .. }
+        | Instruction::Throw { line, .. }
+        | Instruction::Foreach { line, .. }
+        | Instruction::Break { line, .. }
+        | Instruction::Continue { line, .. } => Some(*line),
+        Instruction::StoreArrayDimRef { target, source } => {
+            array_dim_target_line(target).or_else(|| value_expr_runtime_line(source))
+        }
+        Instruction::Expression(value) | Instruction::Echo(value) => value_expr_runtime_line(value),
+        Instruction::Branch { condition, .. }
+        | Instruction::While { condition, .. }
+        | Instruction::DoWhile { condition, .. } => value_expr_runtime_line(condition),
+        Instruction::For {
+            initializers,
+            condition,
+            updates,
+            body,
+        } => initializers
+            .iter()
+            .chain(updates)
+            .chain(body)
+            .find_map(instruction_runtime_line)
+            .or_else(|| condition.as_ref().and_then(value_expr_runtime_line)),
+        Instruction::Switch { expression, .. } => value_expr_runtime_line(expression),
+        Instruction::Try { body, .. } => body.iter().find_map(instruction_runtime_line),
+        Instruction::UnsetVariable { .. }
+        | Instruction::BindGlobal { .. }
+        | Instruction::DeclareFunction { .. }
+        | Instruction::Label { .. }
+        | Instruction::Goto { .. } => None,
+    }
+}
+
 fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
     let line = match value {
         ValueExpr::String(_)
@@ -12376,6 +12452,27 @@ fn deprecated_call_subject(
     }
 }
 
+fn emit_deprecated_message_dependency(
+    out: &mut String,
+    indent: &str,
+    dependency: &DeprecatedMessageDependency,
+    line_expr: &str,
+) {
+    let Some(message) = deprecated_warning_message_for_parts(
+        &dependency.subject,
+        dependency.message.as_deref(),
+        dependency.since.as_deref(),
+    ) else {
+        return;
+    };
+    out.push_str(indent);
+    out.push_str("ptn_emit_user_deprecation(&runtime.diagnostics, \"");
+    out.push_str(&c_string(&message));
+    out.push_str("\", ");
+    out.push_str(line_expr);
+    out.push_str(");\n");
+}
+
 fn emit_deprecated_function_warning(
     out: &mut String,
     indent: &str,
@@ -12387,7 +12484,7 @@ fn emit_deprecated_function_warning(
         return;
     };
     out.push_str(indent);
-    out.push_str("ptn_emit_deprecation(");
+    out.push_str("ptn_emit_user_deprecation(");
     out.push_str(diagnostics_expr);
     out.push_str(", \"");
     out.push_str(&c_string(&message));
@@ -12435,7 +12532,7 @@ fn emit_dynamic_method_deprecated_warning(
     out.push_str(indent);
     out.push_str("}\n");
     out.push_str(indent);
-    out.push_str("ptn_emit_deprecation(");
+    out.push_str("ptn_emit_user_deprecation(");
     out.push_str(diagnostics_expr);
     out.push_str(", ptn_magic_deprecated_warning, ");
     out.push_str(line_expr);
@@ -12474,7 +12571,7 @@ fn emit_dynamic_method_no_discard_warning(
     out.push_str(indent);
     out.push_str("}\n");
     out.push_str(indent);
-    out.push_str("ptn_emit_warning(");
+    out.push_str("ptn_emit_user_warning(");
     out.push_str(diagnostics_expr);
     out.push_str(", ptn_magic_no_discard_warning, ");
     out.push_str(line_expr);
@@ -13052,6 +13149,24 @@ impl ValueEmitter {
         self.static_property_class_name(class_name)
     }
 
+    fn class_constant_deprecation(
+        &self,
+        class_name: &str,
+        name: &str,
+    ) -> Option<(String, Option<&DeprecatedMessageDependency>)> {
+        let resolved_class_name = self.static_member_class_name(class_name);
+        let class = class_by_name(&self.classes, &resolved_class_name)?;
+        let constant = class_constant_lookup_chain(class, &self.classes)
+            .into_iter()
+            .find(|constant| constant.name.eq_ignore_ascii_case(name))?;
+        let message = deprecated_warning_message_for_parts(
+            &format!("Constant {}::{}", resolved_class_name, name),
+            constant.deprecated_message.as_deref(),
+            constant.deprecated_since.as_deref(),
+        )?;
+        Some((message, constant.deprecated_message_dependency.as_ref()))
+    }
+
     fn class_name_fetch_name(&self, class_name: &str) -> String {
         if class_name.eq_ignore_ascii_case("self") || class_name.eq_ignore_ascii_case("static") {
             if let Some(current_class_name) = &self.current_class_name {
@@ -13302,7 +13417,7 @@ impl ValueEmitter {
             return;
         };
         let line = value_expr_runtime_line(value).unwrap_or(function.line);
-        out.push_str("    ptn_emit_warning(&runtime.diagnostics, \"");
+        out.push_str("    ptn_emit_user_warning(&runtime.diagnostics, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", ");
         out.push_str(&line.to_string());
@@ -16373,13 +16488,72 @@ impl ValueEmitter {
                 result,
                 line,
             } => self.emit_inc_dec_expression(out, target, *op, *result, *line),
-            ValueExpr::Constant { name, line } => {
-                format!(
-                    "ptn_read_constant(&runtime, \"{}\", \"{}\", {})",
-                    c_string(name),
-                    c_string(&self.source_file),
-                    line
-                )
+            ValueExpr::Constant {
+                name,
+                deprecated_message,
+                deprecated_since,
+                deprecated_message_dependency,
+                line,
+            } => {
+                let message = deprecated_warning_message_for_parts(
+                    &format!("Constant {}", name.trim_start_matches('\\')),
+                    deprecated_message.as_deref(),
+                    deprecated_since.as_deref(),
+                );
+                if let Some(dependency) = deprecated_message_dependency {
+                    let result_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_null();\n");
+                    emit_deprecated_message_dependency(out, "    ", dependency, &line.to_string());
+                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                    if let Some(message) = message {
+                        out.push_str("        ptn_emit_user_deprecation(&runtime.diagnostics, \"");
+                        out.push_str(&c_string(&message));
+                        out.push_str("\", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                        out.push_str(
+                            "        if (runtime.exceptions->active_exception == NULL) {\n",
+                        );
+                        out.push_str("            ");
+                        out.push_str(&result_temp);
+                        out.push_str(" = ptn_read_constant(&runtime, \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&self.source_file));
+                        out.push_str("\", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                        out.push_str("        }\n");
+                    } else {
+                        out.push_str("        ");
+                        out.push_str(&result_temp);
+                        out.push_str(" = ptn_read_constant(&runtime, \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&self.source_file));
+                        out.push_str("\", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                    }
+                    out.push_str("    }\n");
+                    result_temp
+                } else {
+                    if let Some(message) = message {
+                        out.push_str("    ptn_emit_user_deprecation(&runtime.diagnostics, \"");
+                        out.push_str(&c_string(&message));
+                        out.push_str("\", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                    }
+                    format!(
+                        "ptn_read_constant(&runtime, \"{}\", \"{}\", {})",
+                        c_string(name),
+                        c_string(&self.source_file),
+                        line
+                    )
+                }
             }
             ValueExpr::MagicConstant { kind, line } => match kind {
                 MagicConstantKind::Line => format!("ptn_int({line})"),
@@ -18399,25 +18573,88 @@ impl ValueEmitter {
                 out.push_str("    if (");
                 out.push_str(&result_temp);
                 out.push_str("_class_name != NULL) {\n");
-                out.push_str("        ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_runtime_read_class_constant(&runtime, ");
-                out.push_str(&result_temp);
-                out.push_str("_class_name, \"");
-                out.push_str(&c_string(name));
-                out.push_str("\", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
+                if let Some((message, dependency)) =
+                    self.class_constant_deprecation(class_name, name)
+                {
+                    if let Some(dependency) = dependency {
+                        emit_deprecated_message_dependency(
+                            out,
+                            "        ",
+                            dependency,
+                            &line.to_string(),
+                        );
+                    }
+                    out.push_str("        if (runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("            ptn_emit_user_deprecation(&runtime.diagnostics, \"");
+                    out.push_str(&c_string(&message));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("        }\n");
+                    out.push_str("        if (runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("            ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_runtime_read_class_constant(&runtime, ");
+                    out.push_str(&result_temp);
+                    out.push_str("_class_name, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("        }\n");
+                } else {
+                    out.push_str("        ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_runtime_read_class_constant(&runtime, ");
+                    out.push_str(&result_temp);
+                    out.push_str("_class_name, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
                 out.push_str("    }\n");
             } else {
                 let resolved_class_name = self.static_member_class_name(class_name);
-                out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
-                out.push_str(&c_string(&resolved_class_name));
-                out.push_str("\", \"");
-                out.push_str(&c_string(name));
-                out.push_str("\", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
+                if let Some((message, dependency)) =
+                    self.class_constant_deprecation(class_name, name)
+                {
+                    out.push_str(" = ptn_null();\n");
+                    if let Some(dependency) = dependency {
+                        emit_deprecated_message_dependency(
+                            out,
+                            "    ",
+                            dependency,
+                            &line.to_string(),
+                        );
+                    }
+                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("        ptn_emit_user_deprecation(&runtime.diagnostics, \"");
+                    out.push_str(&c_string(&message));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    }\n");
+                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("        ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    }\n");
+                } else {
+                    out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
             }
         }
         result_temp
@@ -21259,7 +21496,7 @@ impl ValueEmitter {
         ) else {
             return;
         };
-        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str("    ptn_emit_user_deprecation(&runtime.diagnostics, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", ");
         out.push_str(&line.to_string());
@@ -22713,7 +22950,7 @@ fn c_property_default_value(value: Option<&ValueExpr>) -> String {
         Some(ValueExpr::Float(value)) => format!("ptn_float({:?})", value),
         Some(ValueExpr::Bool(value)) => format!("ptn_bool({})", if *value { "1" } else { "0" }),
         Some(ValueExpr::Null) | None => "ptn_null()".to_string(),
-        Some(ValueExpr::Constant { name, line }) => format!(
+        Some(ValueExpr::Constant { name, line, .. }) => format!(
             "ptn_read_constant(runtime, \"{}\", runtime != NULL ? runtime->source_path : NULL, {})",
             c_string(name.trim_start_matches('\\')),
             line

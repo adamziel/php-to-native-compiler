@@ -229,8 +229,15 @@ pub struct AttributeMetadata {
     pub has_attribute: bool,
     pub has_allow_dynamic_properties: bool,
     pub deprecated_message: Option<String>,
+    pub deprecated_message_constant: Option<AttributeConstantReference>,
     pub deprecated_since: Option<String>,
     pub no_discard_message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttributeConstantReference {
+    Constant(String),
+    ClassConstant { class_name: String, name: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -433,6 +440,7 @@ pub struct SwitchCase {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstDeclaration {
     pub name: String,
+    pub attributes: AttributeMetadata,
     pub value: Expr,
     pub span: SourceSpan,
 }

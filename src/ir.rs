@@ -3,11 +3,12 @@ use std::collections::HashMap;
 use crate::ast::{
     AnonymousFunction as AstAnonymousFunction, ArrayDimTarget as AstArrayDimTarget,
     ArrayElement as AstArrayElement, ArrayElementValue as AstArrayElementValue, AssignmentOp,
-    AssignmentTarget as AstAssignmentTarget, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
-    CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
-    ClosureUseCapture as AstClosureUseCapture, CompileWarning as AstCompileWarning, Expr,
-    FunctionDecl as AstFunctionDecl, FunctionParameter as AstFunctionParameter,
-    IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
+    AssignmentTarget as AstAssignmentTarget, AttributeConstantReference, AttributeMetadata,
+    BinaryOp as AstBinaryOp, CastKind as AstCastKind, CatchClause as AstCatchClause,
+    ClassDecl as AstClassDecl, ClosureUseCapture as AstClosureUseCapture,
+    CompileWarning as AstCompileWarning, Expr, FunctionDecl as AstFunctionDecl,
+    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
+    IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
     IncludeKind as AstIncludeKind, InstanceOfTarget as AstInstanceOfTarget,
     ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
@@ -146,7 +147,17 @@ pub enum PropertyTypeKind {
 pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub deprecated_message: Option<String>,
+    pub deprecated_since: Option<String>,
+    pub deprecated_message_dependency: Option<DeprecatedMessageDependency>,
     pub value: ValueExpr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeprecatedMessageDependency {
+    pub subject: String,
+    pub message: Option<String>,
+    pub since: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -282,6 +293,9 @@ pub enum Instruction {
     DefineConstant {
         name: String,
         value: ValueExpr,
+        deprecated_message: Option<String>,
+        deprecated_since: Option<String>,
+        deprecated_message_dependency: Option<DeprecatedMessageDependency>,
         line: usize,
     },
     Expression(ValueExpr),
@@ -407,6 +421,9 @@ pub enum ValueExpr {
     },
     Constant {
         name: String,
+        deprecated_message: Option<String>,
+        deprecated_since: Option<String>,
+        deprecated_message_dependency: Option<DeprecatedMessageDependency>,
         line: usize,
     },
     MagicConstant {
@@ -869,11 +886,20 @@ pub fn lower_with_source_and_includes(
 
 struct LoweringContext<'a> {
     functions: Vec<FunctionDecl>,
+    constant_deprecations: HashMap<String, DeprecatedMetadata>,
+    constant_values: HashMap<String, String>,
     source_file: String,
     source_dir: String,
     include_resolutions: &'a IncludeResolutionMap,
     current_class_name: Option<String>,
     current_trait_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DeprecatedMetadata {
+    message: Option<String>,
+    since: Option<String>,
+    message_dependency: Option<DeprecatedMessageDependency>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -921,8 +947,12 @@ impl<'a> LoweringContext<'a> {
         source_dir: String,
         include_resolutions: &'a IncludeResolutionMap,
     ) -> Self {
+        let constant_values = collect_constant_values(program);
+        let constant_deprecations = collect_constant_deprecations(program, &constant_values);
         let mut context = Self {
             functions: Vec::new(),
+            constant_deprecations,
+            constant_values,
             source_file,
             source_dir,
             include_resolutions,
@@ -1022,7 +1052,18 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_file, include.source_file.clone());
         let previous_source_dir =
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+        let include_constant_values = collect_constant_values(&include.program);
+        let include_constant_deprecations =
+            collect_constant_deprecations(&include.program, &include_constant_values);
+        let previous_constant_deprecations = std::mem::replace(
+            &mut self.constant_deprecations,
+            include_constant_deprecations,
+        );
+        let previous_constant_values =
+            std::mem::replace(&mut self.constant_values, include_constant_values);
         let instructions = self.lower_statements(&include.program.statements);
+        self.constant_deprecations = previous_constant_deprecations;
+        self.constant_values = previous_constant_values;
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
         IncludeFile {
@@ -1031,6 +1072,140 @@ impl<'a> LoweringContext<'a> {
             path_aliases: include.path_aliases.clone(),
             instructions,
             compile_warnings: lower_compile_warnings(&include.program.compile_warnings),
+        }
+    }
+
+    fn global_deprecated_metadata(
+        &self,
+        attributes: &AttributeMetadata,
+        current_name: &str,
+    ) -> DeprecatedMetadata {
+        let current_subject = format!("Constant {}", current_name.trim_start_matches('\\'));
+        let message = attributes
+            .deprecated_message_constant
+            .as_ref()
+            .and_then(|reference| match reference {
+                AttributeConstantReference::Constant(name) => self
+                    .constant_values
+                    .get(&name.to_ascii_lowercase())
+                    .cloned(),
+                AttributeConstantReference::ClassConstant { .. } => None,
+            })
+            .or_else(|| attributes.deprecated_message.clone());
+        let message_dependency = attributes
+            .deprecated_message_constant
+            .as_ref()
+            .and_then(|reference| match reference {
+                AttributeConstantReference::Constant(name) => {
+                    let subject = format!("Constant {}", name.trim_start_matches('\\'));
+                    (subject != current_subject)
+                        .then(|| {
+                            self.constant_deprecations
+                                .get(&name.to_ascii_lowercase())
+                                .map(|metadata| (subject, metadata))
+                        })
+                        .flatten()
+                }
+                AttributeConstantReference::ClassConstant { .. } => None,
+            })
+            .map(|(subject, metadata)| DeprecatedMessageDependency {
+                subject,
+                message: metadata.message.clone(),
+                since: metadata.since.clone(),
+            });
+        DeprecatedMetadata {
+            message,
+            since: attributes.deprecated_since.clone(),
+            message_dependency,
+        }
+    }
+
+    fn class_deprecated_metadata(
+        &self,
+        attributes: &AttributeMetadata,
+        class_name: &str,
+        current_name: &str,
+        class_constant_values: &HashMap<String, String>,
+        class_constant_deprecations: &HashMap<String, DeprecatedMetadata>,
+    ) -> DeprecatedMetadata {
+        let current_subject = format!("Constant {class_name}::{current_name}");
+        let message = attributes
+            .deprecated_message_constant
+            .as_ref()
+            .and_then(|reference| match reference {
+                AttributeConstantReference::Constant(name) => self
+                    .constant_values
+                    .get(&name.to_ascii_lowercase())
+                    .cloned(),
+                AttributeConstantReference::ClassConstant {
+                    class_name: referenced_class,
+                    name,
+                } => self
+                    .resolve_attribute_class_name(referenced_class, class_name)
+                    .filter(|resolved| resolved.eq_ignore_ascii_case(class_name))
+                    .and_then(|_| {
+                        class_constant_values
+                            .get(&name.to_ascii_lowercase())
+                            .cloned()
+                    }),
+            })
+            .or_else(|| attributes.deprecated_message.clone());
+        let message_dependency = attributes
+            .deprecated_message_constant
+            .as_ref()
+            .and_then(|reference| match reference {
+                AttributeConstantReference::Constant(name) => {
+                    let subject = format!("Constant {}", name.trim_start_matches('\\'));
+                    (subject != current_subject)
+                        .then(|| {
+                            self.constant_deprecations
+                                .get(&name.to_ascii_lowercase())
+                                .map(|metadata| (subject, metadata))
+                        })
+                        .flatten()
+                }
+                AttributeConstantReference::ClassConstant {
+                    class_name: referenced_class,
+                    name,
+                } => self
+                    .resolve_attribute_class_name(referenced_class, class_name)
+                    .and_then(|resolved_class| {
+                        let subject = format!("Constant {resolved_class}::{name}");
+                        if subject == current_subject
+                            || !resolved_class.eq_ignore_ascii_case(class_name)
+                        {
+                            return None;
+                        }
+                        class_constant_deprecations
+                            .get(&name.to_ascii_lowercase())
+                            .map(|metadata| (subject, metadata))
+                    }),
+            })
+            .map(|(subject, metadata)| DeprecatedMessageDependency {
+                subject,
+                message: metadata.message.clone(),
+                since: metadata.since.clone(),
+            });
+        DeprecatedMetadata {
+            message,
+            since: attributes.deprecated_since.clone(),
+            message_dependency,
+        }
+    }
+
+    fn resolve_attribute_class_name(
+        &self,
+        referenced_class: &str,
+        current_class: &str,
+    ) -> Option<String> {
+        if referenced_class.eq_ignore_ascii_case("self")
+            || referenced_class.eq_ignore_ascii_case("static")
+        {
+            Some(current_class.to_string())
+        } else if referenced_class.eq_ignore_ascii_case(current_class) {
+            Some(current_class.to_string())
+        } else {
+            Some(referenced_class.trim_start_matches('\\').to_string())
         }
     }
 
@@ -1107,13 +1282,32 @@ impl<'a> LoweringContext<'a> {
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
             })
             .collect();
+        let class_constant_values =
+            collect_class_constant_values(&class.constants, &self.constant_values);
+        let class_constant_deprecations = collect_class_constant_deprecations(
+            &class.constants,
+            &self.constant_values,
+            &class_constant_values,
+        );
         let constants = class
             .constants
             .iter()
-            .map(|constant| ClassConstantDecl {
-                name: constant.name.clone(),
-                visibility: lower_property_visibility(constant.visibility),
-                value: self.lower_expr(&constant.value),
+            .map(|constant| {
+                let metadata = self.class_deprecated_metadata(
+                    &constant.attributes,
+                    &class.name,
+                    &constant.name,
+                    &class_constant_values,
+                    &class_constant_deprecations,
+                );
+                ClassConstantDecl {
+                    name: constant.name.clone(),
+                    visibility: lower_property_visibility(constant.visibility),
+                    deprecated_message: metadata.message,
+                    deprecated_since: metadata.since,
+                    deprecated_message_dependency: metadata.message_dependency,
+                    value: self.lower_expr(&constant.value),
+                }
             })
             .collect();
         let methods = class
@@ -1272,9 +1466,14 @@ impl<'a> LoweringContext<'a> {
                 }
                 Statement::Const { declarations, .. } => {
                     for declaration in declarations {
+                        let metadata = self
+                            .global_deprecated_metadata(&declaration.attributes, &declaration.name);
                         instructions.push(Instruction::DefineConstant {
                             name: declaration.name.clone(),
                             value: self.lower_expr(&declaration.value),
+                            deprecated_message: metadata.message,
+                            deprecated_since: metadata.since,
+                            deprecated_message_dependency: metadata.message_dependency,
                             line: declaration.span.line,
                         });
                     }
@@ -1507,6 +1706,174 @@ fn lower_trait(trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
         deprecated_message: trait_decl.attributes.deprecated_message.clone(),
         deprecated_since: trait_decl.attributes.deprecated_since.clone(),
         line: trait_decl.span.line,
+    }
+}
+
+fn collect_constant_deprecations(
+    program: &Program,
+    constant_values: &HashMap<String, String>,
+) -> HashMap<String, DeprecatedMetadata> {
+    let mut constants = HashMap::new();
+    collect_constant_deprecations_in(&program.statements, constant_values, &mut constants);
+    constants
+}
+
+fn collect_constant_deprecations_in(
+    statements: &[Statement],
+    constant_values: &HashMap<String, String>,
+    constants: &mut HashMap<String, DeprecatedMetadata>,
+) {
+    for statement in statements {
+        match statement {
+            Statement::Const { declarations, .. } => {
+                for declaration in declarations {
+                    if declaration.attributes.deprecated_message.is_some()
+                        || declaration.attributes.deprecated_since.is_some()
+                    {
+                        let metadata = DeprecatedMetadata {
+                            message: declaration
+                                .attributes
+                                .deprecated_message_constant
+                                .as_ref()
+                                .and_then(|reference| match reference {
+                                    AttributeConstantReference::Constant(name) => {
+                                        constant_values.get(&name.to_ascii_lowercase()).cloned()
+                                    }
+                                    AttributeConstantReference::ClassConstant { .. } => None,
+                                })
+                                .or_else(|| declaration.attributes.deprecated_message.clone()),
+                            since: declaration.attributes.deprecated_since.clone(),
+                            message_dependency: declaration
+                                .attributes
+                                .deprecated_message_constant
+                                .as_ref()
+                                .and_then(|reference| match reference {
+                                    AttributeConstantReference::Constant(name) => {
+                                        let subject =
+                                            format!("Constant {}", name.trim_start_matches('\\'));
+                                        let current_subject = format!(
+                                            "Constant {}",
+                                            declaration.name.trim_start_matches('\\')
+                                        );
+                                        (subject != current_subject)
+                                            .then(|| {
+                                                constants
+                                                    .get(&name.to_ascii_lowercase())
+                                                    .map(|metadata| (subject, metadata))
+                                            })
+                                            .flatten()
+                                    }
+                                    AttributeConstantReference::ClassConstant { .. } => None,
+                                })
+                                .map(|(subject, metadata)| DeprecatedMessageDependency {
+                                    subject,
+                                    message: metadata.message.clone(),
+                                    since: metadata.since.clone(),
+                                }),
+                        };
+                        constants.insert(declaration.name.to_ascii_lowercase(), metadata);
+                    }
+                }
+            }
+            Statement::Block { statements, .. } => {
+                collect_constant_deprecations_in(statements, constant_values, constants);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_constant_values(program: &Program) -> HashMap<String, String> {
+    let mut constants = HashMap::new();
+    collect_constant_values_in(&program.statements, &mut constants);
+    constants
+}
+
+fn collect_constant_values_in(statements: &[Statement], constants: &mut HashMap<String, String>) {
+    for statement in statements {
+        match statement {
+            Statement::Const { declarations, .. } => {
+                for declaration in declarations {
+                    if let Some(value) = string_constant_value(&declaration.value, constants, None)
+                    {
+                        constants.insert(declaration.name.to_ascii_lowercase(), value);
+                    }
+                }
+            }
+            Statement::Block { statements, .. } => {
+                collect_constant_values_in(statements, constants);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_class_constant_values(
+    constants: &[crate::ast::ClassConstantDecl],
+    global_constants: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut values = HashMap::new();
+    for constant in constants {
+        if let Some(value) = string_constant_value(&constant.value, global_constants, Some(&values))
+        {
+            values.insert(constant.name.to_ascii_lowercase(), value);
+        }
+    }
+    values
+}
+
+fn collect_class_constant_deprecations(
+    constants: &[crate::ast::ClassConstantDecl],
+    global_constants: &HashMap<String, String>,
+    class_constant_values: &HashMap<String, String>,
+) -> HashMap<String, DeprecatedMetadata> {
+    let mut deprecations = HashMap::new();
+    for constant in constants {
+        if constant.attributes.deprecated_message.is_none()
+            && constant.attributes.deprecated_since.is_none()
+        {
+            continue;
+        }
+        let message = constant
+            .attributes
+            .deprecated_message_constant
+            .as_ref()
+            .and_then(|reference| match reference {
+                AttributeConstantReference::Constant(name) => {
+                    global_constants.get(&name.to_ascii_lowercase()).cloned()
+                }
+                AttributeConstantReference::ClassConstant { name, .. } => class_constant_values
+                    .get(&name.to_ascii_lowercase())
+                    .cloned(),
+            })
+            .or_else(|| constant.attributes.deprecated_message.clone());
+        deprecations.insert(
+            constant.name.to_ascii_lowercase(),
+            DeprecatedMetadata {
+                message,
+                since: constant.attributes.deprecated_since.clone(),
+                message_dependency: None,
+            },
+        );
+    }
+    deprecations
+}
+
+fn string_constant_value(
+    expr: &Expr,
+    global_constants: &HashMap<String, String>,
+    class_constants: Option<&HashMap<String, String>>,
+) -> Option<String> {
+    match expr {
+        Expr::String(value, _) => Some(value.clone()),
+        Expr::Constant(name, _) => global_constants.get(&name.to_ascii_lowercase()).cloned(),
+        Expr::ClassConstantFetch { name, .. } => {
+            class_constants.and_then(|constants| constants.get(&name.to_ascii_lowercase()).cloned())
+        }
+        Expr::Grouped { expr, .. } => {
+            string_constant_value(expr, global_constants, class_constants)
+        }
+        _ => None,
     }
 }
 
@@ -2438,10 +2805,17 @@ impl<'a> LoweringContext<'a> {
                 target: self.lower_assignment_target(target),
                 source: Box::new(self.lower_expr(source)),
             },
-            Expr::Constant(name, span) => ValueExpr::Constant {
-                name: name.clone(),
-                line: span.line,
-            },
+            Expr::Constant(name, span) => {
+                let metadata = self.constant_deprecations.get(&name.to_ascii_lowercase());
+                ValueExpr::Constant {
+                    name: name.clone(),
+                    deprecated_message: metadata.and_then(|metadata| metadata.message.clone()),
+                    deprecated_since: metadata.and_then(|metadata| metadata.since.clone()),
+                    deprecated_message_dependency: metadata
+                        .and_then(|metadata| metadata.message_dependency.clone()),
+                    line: span.line,
+                }
+            }
             Expr::MagicConstant(kind, span) => ValueExpr::MagicConstant {
                 kind: lower_magic_constant_kind(*kind),
                 line: span.line,

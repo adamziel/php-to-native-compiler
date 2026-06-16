@@ -3099,7 +3099,7 @@ static PTN_UNUSED void ptn_emit_no_discard_for_internal_method(
 ) {
     const char *message = ptn_internal_no_discard_method_warning(receiver, method_name);
     if (message != NULL) {
-        ptn_emit_warning(&runtime->diagnostics, message, line);
+        ptn_emit_user_warning(&runtime->diagnostics, message, line);
     }
 }
 

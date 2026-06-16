@@ -913,7 +913,11 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
 static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name);
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);
+static PTN_UNUSED void ptn_emit_user_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);
 static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
+#endif
 static void ptn_symbols_free(PtnSymbolTable *symbols);
 static PTN_UNUSED void ptn_cow_debug_note_string_alloc(void);
 static PTN_UNUSED void ptn_cow_debug_note_string_free(void);

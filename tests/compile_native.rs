@@ -4906,6 +4906,63 @@ function important(): int { return 1; }
 }
 
 #[test]
+fn compile_attribute_diagnostics_route_through_user_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-attribute-diagnostics-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("attribute-diagnostics-handler.php");
+    let output = root.join("attribute-diagnostics-handler-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function (int $errno, string $errstr) {
+    echo $errno, ':', $errstr, \"\\n\";
+    return true;
+});
+
+#[\\Deprecated(TEST)]
+const TEST = 'from itself';
+
+#[\\Deprecated]
+function old_fn(): int { return 1; }
+
+#[\\NoDiscard]
+function important(): int { return 2; }
+
+#[\\Deprecated]
+trait OldTrait {}
+
+class UsesTrait {
+    use OldTrait;
+}
+
+TEST;
+old_fn();
+important();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "16384:Trait OldTrait used by UsesTrait is deprecated\n",
+            "16384:Constant TEST is deprecated, from itself\n",
+            "16384:Function old_fn() is deprecated\n",
+            "512:The return value of function important() should either be used or intentionally ignored by casting it as (void)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_emit_user_deprecation(&runtime.diagnostics"));
+    assert!(c_source.contains("ptn_emit_user_warning(&runtime.diagnostics"));
+}
+
+#[test]
 fn parser_rejects_unmatched_override_attributes() {
     let cases = [
         (
