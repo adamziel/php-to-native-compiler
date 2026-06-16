@@ -3659,7 +3659,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shift_path(
 
 static PTN_UNUSED PtnValue ptn_runtime_array_shift_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
     ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
-    PtnValue temporary = ptn_value_clone_deref(value);
+    PtnValue temporary = ptn_value_deep_clone(ptn_value_deref(value));
     (void)ptn_internal_expect_array_arg(runtime, "array_shift", 1, "array", temporary);
     PtnArray *array = ptn_array_detach_value(&temporary);
     PtnValue result = ptn_array_shift_value(array);
@@ -3723,6 +3723,17 @@ static int ptn_array_user_compare_entries(
         );
 }
 
+static void ptn_array_destroy_entry_buffer(PtnArrayEntry *entries, size_t len) {
+    if (entries == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < len; i++) {
+        ptn_array_key_free(entries[i].key);
+        ptn_value_destroy(&entries[i].value);
+    }
+    free(entries);
+}
+
 static void ptn_array_user_sort_entries(
     PtnRuntime *runtime,
     const char *function_name,
@@ -3733,34 +3744,59 @@ static void ptn_array_user_sort_entries(
     size_t line
 ) {
     int bool_deprecation_emitted = 0;
-    for (size_t i = 1; i < array->len; i++) {
-        PtnArrayEntry moving = array->entries[i];
+    size_t source_len = array->len;
+    PtnArrayEntry *snapshot = NULL;
+    if (source_len != 0) {
+        if (source_len > SIZE_MAX / sizeof(PtnArrayEntry)) {
+            ptn_abort_out_of_memory();
+        }
+        snapshot = malloc(source_len * sizeof(PtnArrayEntry));
+        if (snapshot == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < source_len; i++) {
+            snapshot[i].key = ptn_array_key_clone(array->entries[i].key);
+            snapshot[i].value = ptn_value_clone(array->entries[i].value);
+        }
+    }
+
+    ptn_array_retain(array);
+    for (size_t i = 1; i < source_len; i++) {
+        PtnArrayEntry moving = snapshot[i];
         size_t j = i;
         while (j > 0 && ptn_array_user_compare_entries(
                 runtime,
                 function_name,
                 callback,
-                &array->entries[j - 1],
+                &snapshot[j - 1],
                 &moving,
                 compare_keys,
                 &bool_deprecation_emitted,
                 line
             ) > 0) {
-            array->entries[j] = array->entries[j - 1];
+            snapshot[j] = snapshot[j - 1];
             j--;
         }
-        array->entries[j] = moving;
+        snapshot[j] = moving;
     }
+
+    ptn_array_destroy_entry_buffer(array->entries, array->len);
+    free(array->index_slots);
+    array->entries = snapshot;
+    array->index_slots = NULL;
+    array->index_capacity = 0;
+    array->len = source_len;
+    array->capacity = source_len;
     if (reindex) {
-        for (size_t i = 0; i < array->len; i++) {
+        for (size_t i = 0; i < source_len; i++) {
             if (i > (size_t)INT64_MAX) {
                 ptn_abort_out_of_memory();
             }
             ptn_array_key_free(array->entries[i].key);
             array->entries[i].key = ptn_array_int_key((int64_t)i);
         }
-        ptn_array_recompute_next_auto_key(array);
     }
+    ptn_array_recompute_next_auto_key(array);
     array->current_index = 0;
     ptn_array_rebuild_index(array);
 }
@@ -3802,6 +3838,9 @@ static PtnValue ptn_runtime_user_comparator_sort_variable(
         callback
     );
     sorter(runtime, array, checked_callback, line);
+    PtnValue sorted = ptn_value_borrow(ptn_array(array));
+    ptn_runtime_write_variable(runtime, name, sorted);
+    ptn_array_free(array);
     ptn_value_destroy(&checked_callback);
     return ptn_bool(1);
 }
@@ -3834,6 +3873,7 @@ static PtnValue ptn_runtime_user_comparator_sort_path(
         callback
     );
     sorter(runtime, array, checked_callback, line);
+    ptn_array_free(array);
     ptn_value_destroy(&checked_callback);
     return ptn_bool(1);
 }
@@ -5445,6 +5485,7 @@ static PtnValue ptn_internal_user_comparator_sort(
         args[1]
     );
     sorter(runtime, array, callback, line);
+    ptn_array_free(array);
     ptn_value_destroy(&callback);
     return ptn_bool(1);
 }

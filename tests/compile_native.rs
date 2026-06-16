@@ -18210,6 +18210,37 @@ var_dump($items);\n",
 }
 
 #[test]
+fn compile_reference_list_assignment_from_non_referenceable_rvalue_fatals_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-list-assignment-non-referenceable-rvalue");
+    fs::create_dir_all(&root).unwrap();
+    let cases = [
+        ("literal", "<?php\nlist(&$foo) = [42];\n", 2usize),
+        ("constant", "<?php\nconst FOO = 10;\n[&$f] = FOO;\n", 3usize),
+    ];
+
+    for (name, source, line) in cases {
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "Fatal error: Cannot assign reference to non referenceable value in {} on line {line}\n",
+                input.display()
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn compile_reference_list_assignment_from_property_to_native_binary() {
     let root = temp_dir("ptn-native-reference-list-assignment-from-property");
     fs::create_dir_all(&root).unwrap();
@@ -18615,11 +18646,14 @@ function ref(&$x) {\n\
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
+        format!(
+            concat!(
             "\nWarning: ref(): Argument #1 ($x) must be passed by reference, value given in ptn on line 2\n",
             "bool(true)\n",
-            "\nNotice: Only variables should be passed by reference in ptn on line 3\n",
+            "\nNotice: Only variables should be passed by reference in {} on line 3\n",
             "bool(true)\n",
+            ),
+            input.display()
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -20901,8 +20935,8 @@ var_dump(array_shift(array_shift(array_shift($stack))));",
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
+    let expected_stdout = format!(
+        "{}{}{}{}{}",
         concat!(
             "int(2)\n",
             "int(1)\n",
@@ -20947,11 +20981,21 @@ var_dump(array_shift(array_shift(array_shift($stack))));",
             "  string(3) \"top\"\n",
             "}\n",
             "\n",
-            "Notice: Only variables should be passed by reference in ptn on line 19\n",
-            "\n",
-            "Notice: Only variables should be passed by reference in ptn on line 19\n",
-            "string(4) \"zero\"\n",
-        )
+        ),
+        format_args!(
+            "Notice: Only variables should be passed by reference in {} on line 19\n",
+            input.display()
+        ),
+        "\n",
+        format_args!(
+            "Notice: Only variables should be passed by reference in {} on line 19\n",
+            input.display()
+        ),
+        "string(4) \"zero\"\n",
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        expected_stdout
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -20991,36 +21035,88 @@ echo \"source=\", $source, \" shifted=\", $shifted, \"\\n\";",
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let expected_stdout = format!(
+        "{}{}{}{}{}",
+        format_args!(
+            "\nNotice: Only variables should be passed by reference in {} on line 3\nint(2)\n\n",
+            input.display()
+        ),
+        format_args!(
+            "Notice: Only variables should be passed by reference in {} on line 5\n",
+            input.display()
+        ),
+        format_args!(
+            "\nNotice: Only variables should be passed by reference in {} on line 5\n",
+            input.display()
+        ),
+        format_args!(
+            "string(4) \"zero\"\n\nNotice: Only variables should be passed by reference in {} on line 7\n",
+            input.display()
+        ),
+        format_args!(
+            "{}{}{}",
+            concat!(
+                "int(10)\n",
+                "array(2) {\n",
+                "  [0]=>\n",
+                "  int(10)\n",
+                "  [1]=>\n",
+                "  int(20)\n",
+                "}\n",
+                "\n",
+                "Notice: Only variables should be assigned by reference in "
+            ),
+            input.display(),
+            " on line 11\nsource=1 shifted=2\n"
+        ),
+    );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "\n",
-            "Notice: Only variables should be passed by reference in ptn on line 3\n",
-            "int(2)\n",
-            "\n",
-            "Notice: Only variables should be passed by reference in ptn on line 5\n",
-            "\n",
-            "Notice: Only variables should be passed by reference in ptn on line 5\n",
-            "string(4) \"zero\"\n",
-            "\n",
-            "Notice: Only variables should be passed by reference in ptn on line 7\n",
-            "int(10)\n",
-            "array(2) {\n",
-            "  [0]=>\n",
-            "  int(10)\n",
-            "  [1]=>\n",
-            "  int(20)\n",
-            "}\n",
-            "\n",
-            "Notice: Only variables should be assigned by reference in ptn on line 11\n",
-            "source=1 shifted=2\n"
-        )
+        expected_stdout
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_next_temporary"));
     assert!(c_source.contains("ptn_runtime_array_shift_temporary"));
+}
+
+#[test]
+fn compile_array_pop_temporary_method_result_detaches_to_native_binary() {
+    let root = temp_dir("ptn-native-array-pop-temporary-method-result");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-pop-temporary-method-result.php");
+    let output = root.join("array-pop-temporary-method-result-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class ObjectPath\n\
+{\n\
+    static protected $type = [0 => \"main\"];\n\
+\n\
+    static function getType()\n\
+    {\n\
+        return self::$type;\n\
+    }\n\
+}\n\
+print_r(ObjectPath::getType());\n\
+$object_type = array_pop((ObjectPath::getType()));\n\
+print_r(ObjectPath::getType());",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Array\n(\n    [0] => main\n)\n\nNotice: Only variables should be passed by reference in {} on line 12\nArray\n(\n    [0] => main\n)\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -21096,12 +21192,16 @@ var_dump(array_shift(array_shift(array_shift($stack))));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "\nNotice: Only variables should be passed by reference in ptn on line 3\n",
+        format!(
+            concat!(
+            "\nNotice: Only variables should be passed by reference in {} on line 3\n",
             "int(2)\n",
-            "\nNotice: Only variables should be passed by reference in ptn on line 5\n",
-            "\nNotice: Only variables should be passed by reference in ptn on line 5\n",
-            "string(4) \"zero\"\n",
+            "\nNotice: Only variables should be passed by reference in {} on line 5\n",
+            "\nNotice: Only variables should be passed by reference in {} on line 5\nstring(4) \"zero\"\n",
+            ),
+            input.display(),
+            input.display(),
+            input.display()
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -23890,6 +23990,41 @@ var_dump($x, $removed, $a, $rep, function_exists(\"array_splice\"));",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_splice"));
     assert!(c_source.contains("ptn_array_splice_values"));
+}
+
+#[test]
+fn compile_array_splice_temporary_method_result_to_native_binary() {
+    let root = temp_dir("ptn-native-array-splice-temporary-method-result");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-splice-temporary-method-result.php");
+    let output = root.join("array-splice-temporary-method-result-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class X {\n\
+    protected static $arr = [\"a\", \"b\", \"c\"];\n\
+    public static function getArr() { return self::$arr; }\n\
+}\n\
+array_splice(X::getArr(), 1, 1);\n\
+print_r(X::getArr());",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nNotice: Only variables should be passed by reference in {} on line 6\nArray\n(\n    [0] => a\n    [1] => b\n    [2] => c\n)\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_splice"));
+    assert!(c_source.contains("ptn_by_ref_argument_source_or_temporary"));
 }
 
 #[test]
