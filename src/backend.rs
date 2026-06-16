@@ -54,6 +54,7 @@ pub fn emit_c(module: &Module) -> String {
     trait_use_deprecations.sort_by_key(|deprecation| deprecation.line);
     let magic_declaration_fatals = collect_module_magic_declaration_fatals(module);
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
+    let magic_debug_info_deprecations = collect_module_magic_debug_info_return_deprecations(module);
     let needs_direct_callable_dispatch = runtime_requirements.internal_function_dispatch
         || runtime_requirements.dynamic_function_dispatch;
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
@@ -277,6 +278,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
+    emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
     let early_constant_indexes = emit_static_property_initializers_with_constants(
         &mut out,
         &mut values,
@@ -2256,6 +2258,12 @@ struct MagicVisibilityWarning {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct MagicDebugInfoReturnDeprecation {
+    class_name: String,
+    line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct MagicDeclarationFatal {
     message: String,
     line: usize,
@@ -2380,6 +2388,19 @@ fn emit_magic_visibility_warnings(out: &mut String, warnings: &[MagicVisibilityW
         out.push_str(&c_string(&warning.method_name));
         out.push_str("() must have public visibility\", ");
         out.push_str(&warning.line.to_string());
+        out.push_str(");\n");
+    }
+}
+
+fn emit_magic_debug_info_return_deprecations(
+    out: &mut String,
+    deprecations: &[MagicDebugInfoReturnDeprecation],
+) {
+    for deprecation in deprecations {
+        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"Returning null from ");
+        out.push_str(&c_string(&deprecation.class_name));
+        out.push_str("::__debugInfo() is deprecated, make the return type non-nullable and return an empty array instead\", ");
+        out.push_str(&deprecation.line.to_string());
         out.push_str(");\n");
     }
 }
@@ -9772,6 +9793,34 @@ fn collect_module_magic_visibility_warnings(module: &Module) -> Vec<MagicVisibil
         }
     }
     warnings
+}
+
+fn collect_module_magic_debug_info_return_deprecations(
+    module: &Module,
+) -> Vec<MagicDebugInfoReturnDeprecation> {
+    let mut deprecations = Vec::new();
+    for class in &module.classes {
+        for method in &class.methods {
+            if !method.name.eq_ignore_ascii_case("__debugInfo") {
+                continue;
+            }
+            let Some(function) = module.functions.get(method.function_index) else {
+                continue;
+            };
+            let Some(return_type) = function.return_type.as_ref() else {
+                continue;
+            };
+            if magic_return_type_is_debug_info_compatible(return_type)
+                && type_hint_allows_null(Some(return_type))
+            {
+                deprecations.push(MagicDebugInfoReturnDeprecation {
+                    class_name: class.name.clone(),
+                    line: method.line,
+                });
+            }
+        }
+    }
+    deprecations
 }
 
 fn collect_module_parameter_default_diagnostics(module: &Module) -> ParameterDefaultDiagnostics {
